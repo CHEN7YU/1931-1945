@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171c19" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23252d29' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%23cfb278' stroke-width='2' d='M6 24 12 10 17 20 22 6 27 24Z'/%3E%3C/svg%3E" />
+    <title>烽火山河 · 中国战场</title>
+  </head>
+  <body>
+    <canvas id="world" aria-label="三维战场"></canvas>
+    <div class="grain" aria-hidden="true"></div>
+    <div id="loading"><span class="loading-mark">山河</span><p>正在构建战场…</p></div>
+    <main id="menu" hidden>
+      <header class="masthead">
+        <a class="brand" href="./"><span class="brand-mark">山河</span><span>烽火山河<small>EMBERS OF CHINA</small></span></a>
+        <span class="build-tag"><i></i> 浏览器玩法原型 <span>PRE-ALPHA 0.1</span></span>
+      </header>
+      <section class="hero">
+        <div class="eyebrow"><span class="line"></span> 中国战场 / 1931 — 1945</div>
+        <h1>一寸山河<br />一寸血<span>。</span></h1>
+        <p class="hero-copy">不为解锁而战。<br />选择战场，率领小队，即刻出击。</p>
+        <div class="theater-note"><span class="coordinate">34°33′ N &nbsp; 117°44′ E</span><span>鲁南 · 台儿庄主题战场</span></div>
+      </section>
+      <aside class="operation-panel">
+        <div class="panel-heading"><span>作战部署</span><span class="index">01 / OPERATIONS</span></div>
+        <div class="map-preview">
+          <svg viewBox="0 0 400 150" aria-hidden="true">
+            <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#afb19c" stroke-opacity=".13" /></pattern></defs>
+            <path fill="url(#grid)" d="M0 0h400v150H0z"/>
+            <path d="M-10 130L100 105 220 95 410 10" fill="none" stroke="#aab6af" stroke-opacity=".25" stroke-width="23"/>
+            <g fill="#9e9f84" opacity=".35"><path d="M35 30h35v22H35zM85 25h25v40H85zM135 35h45v26h-45zM195 15h30v42h-30zM250 28h26v25h-26zM50 68h43v16H50zM120 70h26v20h-26zM179 72h30v15h-30zM238 65h35v16h-35zM290 85h27v33h-27zM333 63h35v27h-35zM180 120h35v23h-35zM240 110h30v33h-30z"/></g>
+            <path d="M40 121L120 100 202 80 280 58 350 27" fill="none" stroke="#d4b16e" stroke-dasharray="4 5" />
+            <g fill="#d4b16e" font-family="sans-serif" font-size="11"><circle cx="120" cy="100" r="10" fill="#343c32" stroke="#d4b16e"/><text x="116" y="104">A</text><circle cx="202" cy="80" r="10" fill="#343c32" stroke="#d4b16e"/><text x="198" y="84">B</text><circle cx="280" cy="58" r="10" fill="#343c32" stroke="#d4b16e"/><text x="276" y="62">C</text></g>
+          </svg>
+          <span class="map-stamp">TAIERZHUANG / 1938</span>
+        </div>
+        <div class="map-title"><div><span class="eyebrow">当前可玩战场</span><h2>台儿庄 <span>巷战</span></h2></div><span class="mode-tag">单人 · 人机</span></div>
+        <p class="map-description">穿过残损商铺、石板街与运河，依次夺取三个据点。原创主题布局，非历史地形复原；载具采用简化街机操控。</p>
+        <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
+        <div id="squad-choices" class="squad-choices">
+          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span><strong>步兵小队</strong><small>4人含工兵 / 步枪</small></button>
+          <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>3人车组 / 主炮</small></button>
+          <button class="squad-choice" data-type="mortar" aria-pressed="false"><span class="unit-icon">⌁</span><strong>迫击炮组</strong><small>3人 / 区域压制</small></button>
+          <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>单人飞行员 / 机炮</small></button>
+        </div>
+        <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>可在暂停菜单分别调整效果</small></label>
+        <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
+        <p class="deployment-note">仅中国阵营可玩 <span>·</span> 无养成 <span>·</span> 整队阵亡后换队</p>
+      </aside>
+      <footer class="menu-footer"><span><i></i> 原创场景 / CC0 扫描材质 / 美术迭代版</span><span>WASD 移动 <b>·</b> 右键举枪瞄准 <b>·</b> Y 切换队员 <b>·</b> X 小队命令</span><span>谨记历史，珍视和平</span></footer>
+    </main>
+    <section id="hud" hidden>
+      <div class="hud-top"><div class="battle-name">台儿庄<span>中国军队 · 据点进攻</span></div><div id="objectives"></div><div class="battle-time"><span id="timer">10:00</span><small>剩余作战时间</small></div></div>
+      <div class="objective-banner"><span id="objective-title">夺取 A · 南街路口</span><small id="objective-help">进入据点范围并清除守军</small><div class="capture-track"><div id="capture-fill"></div></div></div>
+      <div id="kill-feed"></div>
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="hit-marker">×</div>
+      <div id="damage-vignette"></div>
+      <div id="aim-label" hidden>弹着点</div>
+      <div id="toast" role="status"></div>
+      <div id="interaction-prompt" role="status" hidden></div>
+      <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
+      <div class="hud-bottom">
+        <div class="squad-status"><div class="hud-label" id="unit-title">步兵小队</div><div id="members"></div><span class="squad-hint" id="squad-hint">Y 切换存活队员</span></div>
+        <div class="battle-controls" id="battle-controls"></div>
+        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
+      </div>
+      <button id="pause-button" class="hud-button">Esc 暂停</button>
+      <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>
+      <div id="scoreboard" hidden><span class="eyebrow">本局战况 / TAB</span><h2>中国军队 · 台儿庄</h2><div id="scoreboard-stats"></div><p>按住 Tab 查看 · 松开继续观察战场</p></div>
+    </section>
+    <section id="overlay" class="overlay" hidden>
+      <div class="dialog">
+        <span class="eyebrow" id="overlay-kicker">作战暂停</span>
+        <h2 id="overlay-title">重整队伍，再出发。</h2>
+        <p id="overlay-description">当前小队仍在作战；整队阵亡后才能选择其他小队。</p>
+        <div id="battle-summary"></div>
+        <div id="redeploy-choices" class="redeploy-choices"></div>
+        <div id="deployment-options" hidden>
+          <div class="deployment-context"><canvas id="deployment-map" width="176" height="176"></canvas><div><span class="eyebrow">战场仍在进行</span><strong id="deployment-objective"></strong><p id="deployment-selection">选择其他小队，再选择重生点。</p></div></div>
+          <div id="spawn-choices" class="spawn-choices" aria-label="选择重生点"></div>
+          <p id="deployment-error" role="status"></p>
+          <button id="confirm-deploy" class="primary-button" disabled>选择小队后出击 <span>↗</span></button>
+        </div>
+        <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
+        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength"><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>B 可在战斗中切换；不改变移速和枪械操作。</small></label>
+        <fieldset id="quality-settings" hidden>
+          <legend>图形设置 · 手动</legend>
+          <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
+          <div class="quality-options">
+            <label><input id="quality-shadows" type="checkbox" data-quality-effect="shadows" checked /> 动态阴影</label>
+            <label><input id="quality-fog" type="checkbox" data-quality-effect="fog" checked /> 距离雾</label>
+            <label><input id="quality-smoke" type="checkbox" data-quality-effect="smoke" checked /> 场景烟雾</label>
+            <label><input id="quality-grain" type="checkbox" data-quality-effect="grain" checked /> 画面颗粒</label>
+          </div>
+          <small id="quality-status" role="status"></small>
+          <small>不改变战局 · 仅当前页面有效 · 自动降级与后期尚未接入</small>
+        </fieldset>
+        <button id="back-menu" class="text-button">返回作战大厅</button>
+        <p class="dialog-hint">浏览器需捕获鼠标才能瞄准；Esc 释放鼠标并暂停。<br />如不支持鼠标捕获，可按住右键拖动瞄准。</p>
+      </div>
+    </section>
+    <div id="fatal" class="overlay" hidden><div class="dialog"><h2>战场未能加载</h2><p id="fatal-message"></p><button onclick="location.reload()" class="primary-button">重新加载</button></div></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

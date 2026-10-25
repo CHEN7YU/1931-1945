@@ -1,0 +1,68 @@
+export const RIFLE = Object.freeze({ magazine: 5, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
+const clamp = value => Math.max(0, Math.min(1, value));
+const smooth = (time, from, to) => { const t = clamp((time - from) / (to - from)); return t * t * (3 - 2 * t); };
+
+export function createRifleState() {
+  return { ammo: RIFLE.magazine, action: 'idle', elapsed: 0, queuedReload: false, shots: 0 };
+}
+
+export function reloadRifle(state) {
+  if (state.ammo === RIFLE.magazine || state.action === 'reload') return false;
+  if (state.action === 'cycle') state.queuedReload = true;
+  else { state.action = 'reload'; state.elapsed = 0; }
+  return true;
+}
+
+export function shootRifle(state) {
+  if (state.action !== 'idle') return false;
+  if (state.ammo <= 0) { reloadRifle(state); return false; }
+  state.ammo--;
+  state.shots++;
+  state.action = 'cycle';
+  state.elapsed = 0;
+  return true;
+}
+
+export function advanceRifle(state, dt) {
+  if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Rifle requires a non-negative finite timestep');
+  const events = [];
+  while (dt > 0 && state.action !== 'idle') {
+    const reloading = state.action === 'reload';
+    const duration = reloading ? RIFLE.reloadSeconds : RIFLE.cycleSeconds;
+    const end = Math.min(duration, state.elapsed + dt);
+    const cues = reloading ? [[.12, 'unlock'], [.4, 'extract'], [1.45, 'load'], [2.3, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
+    for (const [at, cue] of cues) if (state.elapsed < at && end >= at) events.push(cue);
+    dt -= end - state.elapsed;
+    state.elapsed = end;
+    if (end < duration) break;
+    if (reloading) { state.ammo = RIFLE.magazine; events.push('ready'); }
+    state.action = 'idle';
+    state.elapsed = 0;
+    if (state.queuedReload) {
+      state.queuedReload = false;
+      reloadRifle(state);
+    }
+  }
+  return events;
+}
+
+export function riflePose(state) {
+  const reload = state.action === 'reload';
+  const cycling = state.action === 'cycle';
+  const t = state.elapsed;
+  const open = reload
+    ? smooth(t, .05, .2) * (1 - smooth(t, 2.4, 2.67))
+    : cycling ? smooth(t, .08, .2) * (1 - smooth(t, .5, .64)) : 0;
+  const pull = reload
+    ? smooth(t, .2, .45) * (1 - smooth(t, 2.12, 2.38))
+    : cycling ? smooth(t, .2, .34) * (1 - smooth(t, .38, .54)) : 0;
+  const hand = reload ? smooth(t, .02, .2) * (1 - smooth(t, 2.4, 2.7)) : cycling ? smooth(t, .08, .18) * (1 - smooth(t, .54, .65)) : 0;
+  const loading = reload ? smooth(t, .5, .85) * (1 - smooth(t, 1.8, 2.15)) : 0;
+  return {
+    boltLift: open * Math.PI / 3, boltTravel: pull * .09,
+    hand, loading, cartridgePush: reload ? smooth(t, 1.1, 1.65) : 0,
+    clipVisible: reload && t > .6 && t < 1.95,
+    lower: reload ? smooth(t, 0, .25) * (1 - smooth(t, 2.4, 2.7)) : 0,
+    recoil: cycling ? (1 - smooth(t, 0, .12)) : 0,
+  };
+}

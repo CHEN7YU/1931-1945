@@ -1,0 +1,46 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+const snapshot = () => page.evaluate(() => window.__battle);
+try {
+  await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
+  await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
+  let data = await snapshot();
+  assert.ok(data.allies.every(actor => actor.targetKind === 'closed-armor'));
+  await page.keyboard.down('w');
+  await page.waitForFunction(() => window.__battle.position.z < 2, null, { timeout: 20000 });
+  await page.keyboard.up('w');
+  await page.waitForFunction(() => window.__battle.combatStats.armorThreatsObserved > 0, null, { timeout: 60000 });
+  data = await snapshot();
+  const startTime = data.time, health = data.health;
+  await page.waitForFunction(time => window.__battle.time > time + 8, startTime, { timeout: 30000 });
+  data = await snapshot();
+  assert.equal(data.health, health, 'observed sealed armor takes no rifle damage during live enemy contact');
+  assert.equal(data.combatStats.aiRifleShotsAtArmor, 0);
+  assert.equal(data.combatStats.aiRifleShots, 0, 'riflemen do not merely keep firing while hull damage is disabled');
+  assert.ok(data.enemyPositions.some(actor => ['armor-alert', 'evade-armor', 'cover-from-armor', 'open-door'].includes(actor.mode)), 'riflemen react to armor through alert, cover or evasion');
+  await page.mouse.down({ button: 'right' });
+  await page.evaluate(() => document.dispatchEvent(new MouseEvent('mousemove', { movementY: 758 })));
+  await page.waitForTimeout(150);
+  await page.mouse.down();
+  await page.waitForFunction(health => window.__battle.health < health, health);
+  await page.mouse.up(); await page.mouse.up({ button: 'right' });
+  assert.ok((await snapshot()).health > 0, 'blast damage remains effective; sealed armor is not globally invulnerable');
+  await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
+  await page.locator('#squad-choices [data-type="infantry"]').click(); await page.locator('#deploy').click();
+  assert.ok((await snapshot()).allies.every(actor => actor.targetKind === 'person'));
+  await page.keyboard.down('w');
+  await page.waitForFunction(() => window.__battle.position.z < 42, null, { timeout: 25000 });
+  await page.keyboard.up('w');
+  await page.waitForFunction(() => window.__battle.combatStats.aiRifleShots > 0, null, { timeout: 90000 });
+  assert.equal((await snapshot()).combatStats.aiRifleShotsAtArmor, 0);
+  assert.deepEqual(errors, []);
+  console.log('PASS: observed tank threats receive no rifle fire/damage; riflemen cover or evade, explosions still damage armor, and infantry combat still fires normally.');
+} finally {
+  await browser.close();
+}

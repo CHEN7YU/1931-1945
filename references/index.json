@@ -1,0 +1,102 @@
+{
+  "purpose": "Development-only visual references and current-game captures. Do not include in game assets or distribution.",
+  "captureDate": "2026-10-25",
+  "todoSection": "TODO.md section 13, C01-C11",
+  "referenceLicense": "CC0 permission has not been established for the video screenshots. They are analysis references, not reusable game assets.",
+  "videosIncluded": false,
+  "videoScreenshotsLocalOnly": true,
+  "referenceSets": [
+    {
+      "videoId": "HgKchp9VBSY",
+      "title": "FIVE Mistakes That New Enlisted Players Make",
+      "url": "https://www.youtube.com/watch?v=HgKchp9VBSY",
+      "files": [
+        {
+          "path": "enlisted\\HgKchp9VBSY_00m15s_step60s_contact.jpg",
+          "startSeconds": 15,
+          "stepSeconds": 60,
+          "frameCount": 10
+        }
+      ]
+    },
+    {
+      "videoId": "jrAHUvgtyzc",
+      "title": "TOP TEN TIPS FOR TANKERS | Enlisted Tank Guide",
+      "url": "https://www.youtube.com/watch?v=jrAHUvgtyzc",
+      "files": [
+        {
+          "path": "enlisted\\jrAHUvgtyzc_00m00s_step60s_contact.jpg",
+          "startSeconds": 0,
+          "stepSeconds": 60,
+          "frameCount": 11
+        },
+        {
+          "path": "enlisted\\jrAHUvgtyzc_00m15s_step60s_contact.jpg",
+          "startSeconds": 15,
+          "stepSeconds": 60,
+          "frameCount": 11
+        },
+        {
+          "path": "enlisted\\jrAHUvgtyzc_07m55s_step1s_contact.jpg",
+          "startSeconds": 475,
+          "stepSeconds": 1,
+          "frameCount": 9
+        }
+      ]
+    },
+    {
+      "videoId": "wTHgDEKAYZo",
+      "title": "Enlisted - Heilongjiang Airport",
+      "url": "https://www.youtube.com/watch?v=wTHgDEKAYZo",
+      "files": [
+        {
+          "path": "enlisted\\wTHgDEKAYZo_00m00s_step60s_contact.jpg",
+          "startSeconds": 0,
+          "stepSeconds": 60,
+          "frameCount": 23
+        },
+        {
+          "path": "enlisted\\wTHgDEKAYZo_00m30s_step60s_contact.jpg",
+          "startSeconds": 30,
+          "stepSeconds": 60,
+          "frameCount": 23
+        },
+        {
+          "path": "enlisted\\wTHgDEKAYZo_19m00s.jpg",
+          "timeSeconds": 1140
+        },
+        {
+          "path": "enlisted\\wTHgDEKAYZo_21m00s.jpg",
+          "timeSeconds": 1260
+        }
+      ]
+    }
+  ],
+  "currentGame": {
+    "directory": "current\\2026-10-25",
+    "screenshotCount": 17,
+    "source": "Local gameplay captured through keyboard and mouse input; no hidden teleport.",
+    "viewportSizes": [[1440, 900], [1920, 1080]],
+    "positionRecord": "current\\2026-10-25\\comparison-observations.json",
+    "recommendedScreenshots": [
+      "scene-street.png",
+      "rifle-hip.png",
+      "rifle-ads.png",
+      "rifle-reload.png",
+      "comparison-squad.png",
+      "comparison-interior-back.png",
+      "comparison-interior-side.png",
+      "comparison-interior-front.png"
+    ],
+    "captureCaveats": {
+      "street-ai-room.png": "Mainly shows the floor, not a useful close-up of AI soldiers.",
+      "street-courtyard.png": "Mainly shows a door, not a complete courtyard overview."
+    }
+  },
+  "comparisonLimits": [
+    "Blank unused contact-sheet cells are not video frames.",
+    "For labels containing a start offset plus a relative timestamp, add both to obtain the source video time.",
+    "Samples are not continuous viewing and do not verify audio, input bindings, AI behavior or frame rate.",
+    "Reference and current-game resolutions, fields of view, lighting and locations differ; do not infer precise dimensions or compare pixel sharpness directly."
+  ]
+}

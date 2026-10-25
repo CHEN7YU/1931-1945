@@ -1,0 +1,61 @@
+{
+  "observations": [
+    {
+      "name": "comparison-squad.png",
+      "state": "playing",
+      "position": {
+        "x": -1.6,
+        "y": 0,
+        "z": 78
+      },
+      "look": {
+        "yaw": 3.14028,
+        "pitch": -0.1188
+      },
+      "inside": null
+    },
+    {
+      "name": "comparison-interior-back.png",
+      "state": "playing",
+      "position": {
+        "x": -8.3586732411789,
+        "y": 0,
+        "z": 64.0031290617625
+      },
+      "look": {
+        "yaw": 6.283199999999999,
+        "pitch": -0.1188
+      },
+      "inside": "west-0"
+    },
+    {
+      "name": "comparison-interior-side.png",
+      "state": "playing",
+      "position": {
+        "x": -8.3586732411789,
+        "y": 0,
+        "z": 64.0031290617625
+      },
+      "look": {
+        "yaw": 7.852679999999999,
+        "pitch": -0.10032
+      },
+      "inside": "west-0"
+    },
+    {
+      "name": "comparison-interior-front.png",
+      "state": "playing",
+      "position": {
+        "x": -8.3586732411789,
+        "y": 0,
+        "z": 64.0031290617625
+      },
+      "look": {
+        "yaw": 9.42348,
+        "pitch": -0.1188
+      },
+      "inside": "west-0"
+    }
+  ],
+  "errors": []
+}

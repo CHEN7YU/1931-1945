@@ -1,0 +1,526 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeTownLayout } from './town-layout.js';
+import { BRIDGE, groundHeight } from './ground.js';
+import { createDoorWorld } from './door-world.js';
+
+export function makeWorld(scene, surface) {
+  const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
+  const town = makeTownLayout();
+  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  let seed = 1938;
+  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const plain = (color, roughness = 1) => new THREE.MeshStandardMaterial({ color, roughness });
+  const brick = surface('brick', 0xb3aaa0, 2.4);
+  const plaster = [surface('plaster', 0xd9d1bb), surface('plaster', 0xb8b7a9), surface('plaster', 0xe2d8c3)];
+  const roofMat = surface('tiles', 0xb7bec0, 2.5);
+  roofMat.side = THREE.DoubleSide;
+  const timber = surface('timber', 0x82705b, 2);
+  const charred = surface('timber', 0x302e2a, 2);
+  const stone = surface('paving', 0xa6a49b, 2.5);
+  const earth = surface('earth', 0xb8a88c, 4);
+  const paving = surface('paving', 0xb8b0a0, 3);
+  const sand = surface('plaster', 0x9e8e66, .8);
+  const iron = new THREE.MeshStandardMaterial({ color: 0x4d514e, roughness: .76, metalness: .65 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x202925, roughness: .35, metalness: .3 });
+  const canvasMat = plain(0x665d47);
+  const fadedCanvas = plain(0x9c9784);
+
+  function mesh(geometry, mat, x, y, z, solid = false, parent = scene) {
+    const object = new THREE.Mesh(geometry, mat);
+    object.position.set(x, y, z);
+    object.castShadow = object.receiveShadow = true;
+    parent.add(object);
+    staticMeshes.push(object);
+    if (solid) solids.push(object);
+    return object;
+  }
+  function box(x, y, z, w, h, d, mat, solid = false, parent = scene) {
+    const object = mesh(boxGeometry, mat, x, y, z, solid, parent);
+    object.scale.set(w, h, d);
+    return object;
+  }
+  const obstacle = (x, z, w, d, height) => obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, height });
+  const cylinderGeometry = new THREE.CylinderGeometry(1, 1, 1, 10);
+  function cylinder(x, y, z, radius, height, mat, parent = scene) {
+    const object = mesh(cylinderGeometry, mat, x, y, z, false, parent);
+    object.scale.set(radius, height, radius);
+    return object;
+  }
+  function beam(a, b, radius, mat, parent = scene) {
+    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
+    const object = cylinder(...start.clone().add(end).multiplyScalar(.5).toArray(), radius, start.distanceTo(end), mat, parent);
+    object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.sub(start).normalize());
+    return object;
+  }
+
+  const groundGeometry = new THREE.PlaneGeometry(800, 800, 1, 1);
+  groundGeometry.rotateX(-Math.PI / 2);
+  mesh(groundGeometry, earth, 0, -.035, 0, true);
+  const pavedAreas = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61], [4, -4, 17, 12], [-10, 52.5, 34, 5], [-16, 62, 7, 14], [8, -16, 16, 13]];
+  for (const [x, z, w, d] of pavedAreas.slice(0, -1)) {
+    box(x, -.005, z, w, .035, d, paving);
+  }
+  for (const x of [-4.65, 4.65]) {
+    for (let z = 4; z < 74; z += 2) {
+      if (z > 22 && z < 38) continue;
+      if (town.buildings.some(building => Math.abs(z - building.doorZ) < 1.8)) continue;
+      box(x, .065, z, .32, .13, 1.94, stone);
+    }
+  }
+
+  // The canal retains its existing impassable banks and bridge crossing.
+  const waterGeometry = new THREE.PlaneGeometry(214, 10, 100, 10);
+  waterGeometry.rotateX(-Math.PI / 2);
+  const water = new THREE.Mesh(waterGeometry, new THREE.MeshStandardMaterial({
+    color: 0x536c66, roughness: .24, metalness: .35,
+    normalMap: earth.normalMap, normalScale: new THREE.Vector2(.13, .13),
+  }));
+  for (let i = 0; i < waterGeometry.attributes.position.count; i++) {
+    const p = waterGeometry.attributes.position;
+    p.setY(i, Math.sin(p.getX(i) * 1.7 + p.getZ(i) * 3.4) * .018);
+  }
+  waterGeometry.computeVertexNormals();
+  water.position.set(0, .012, -16);
+  water.receiveShadow = true;
+  scene.add(water);
+  for (const z of [-10.7, -21.3]) {
+    box(-51, .2, z, 102, .65, .7, stone, true);
+    box(65, .2, z, 98, .65, .7, stone, true);
+    for (let x = -100; x <= 108; x += 2) {
+      if (x > -1 && x < 17) continue;
+      box(x, .57, z, 1.97, .12, .9, stone);
+    }
+  }
+  obstacle(-54, -16, 108, 10, 1);
+  obstacle(62, -16, 92, 10, 1);
+  box(8, (BRIDGE.height - .05) / 2, -16, BRIDGE.maxX - BRIDGE.minX, BRIDGE.height + .05, BRIDGE.maxZ - BRIDGE.minZ, stone, true);
+  for (const [startZ, descending] of [[BRIDGE.minZ - BRIDGE.rampLength, false], [BRIDGE.maxZ, true]]) {
+    const geometry = new THREE.BoxGeometry(16, 1, BRIDGE.rampLength);
+    const positions = geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      const t = (positions.getZ(i) + BRIDGE.rampLength / 2) / BRIDGE.rampLength;
+      positions.setY(i, positions.getY(i) > 0 ? BRIDGE.height * (descending ? 1 - t : t) : -.05);
+    }
+    geometry.computeVertexNormals();
+    mesh(geometry, stone, 8, 0, startZ + BRIDGE.rampLength / 2, true);
+  }
+  for (const x of [.3, 15.7]) {
+    box(x, .95, -16, .45, 1.4, 13, stone, true);
+    box(x, 1.68, -16, .65, .15, 13.3, stone);
+    obstacle(x, -16, .45, 13, 1.65);
+    for (const z of [-22, -19, -16, -13, -10]) {
+      box(x, 1.1, z, .65, 1.8, .65, stone);
+      box(x, 2.04, z, .82, .12, .82, stone);
+    }
+  }
+
+  const shopNames = ['同德糧行', '永安布莊', '濟民藥舖', '運河茶館', '瑞和商號', '魯南客棧'];
+  const signs = new Map();
+  const grimeCanvas = document.createElement('canvas');
+  grimeCanvas.width = grimeCanvas.height = 512;
+  const grimeContext = grimeCanvas.getContext('2d');
+  const damp = grimeContext.createLinearGradient(0, 0, 0, 512);
+  damp.addColorStop(0, 'rgba(48,39,26,.01)');
+  damp.addColorStop(.65, 'rgba(48,39,26,.04)');
+  damp.addColorStop(1, 'rgba(48,39,26,.48)');
+  grimeContext.fillStyle = damp; grimeContext.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 75; i++) {
+    const x = random() * 512, y = random() * 440, length = 20 + random() * 160;
+    const streak = grimeContext.createLinearGradient(x, y, x, y + length);
+    streak.addColorStop(0, `rgba(43,37,26,${.05 + random() * .17})`);
+    streak.addColorStop(1, 'rgba(43,37,26,0)');
+    grimeContext.fillStyle = streak;
+    grimeContext.fillRect(x, y, 2 + random() * 10, length);
+  }
+  grimeContext.strokeStyle = 'rgba(37,33,26,.22)';
+  grimeContext.lineWidth = 1;
+  for (let i = 0; i < 15; i++) {
+    let x = random() * 512, y = random() * 512;
+    grimeContext.beginPath(); grimeContext.moveTo(x, y);
+    for (let k = 0; k < 8; k++) {
+      x += (random() - .5) * 16; y += 3 + random() * 10;
+      grimeContext.lineTo(x, y);
+    }
+    grimeContext.stroke();
+  }
+  const grimeMap = new THREE.CanvasTexture(grimeCanvas);
+  grimeMap.colorSpace = THREE.SRGBColorSpace;
+  const grime = new THREE.MeshStandardMaterial({ map: grimeMap, transparent: true, depthWrite: false, roughness: 1 });
+  function sign(text, x, y, z, width, parent = scene) {
+    if (!signs.has(text)) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024; canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#2d2b24'; ctx.fillRect(0, 0, 1024, 256);
+      for (let i = 0; i < 10000; i++) {
+        ctx.fillStyle = `rgba(172,155,113,${random() * .11})`;
+        ctx.fillRect(random() * 1024, random() * 256, random() * 15 + 1, 1);
+      }
+      ctx.strokeStyle = '#9a8861'; ctx.lineWidth = 5; ctx.strokeRect(16, 16, 992, 224);
+      ctx.fillStyle = '#c9b58b'; ctx.font = 'bold 150px KaiTi, STKaiti, SimSun, serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 512, 138);
+      const map = new THREE.CanvasTexture(canvas);
+      map.colorSpace = THREE.SRGBColorSpace;
+      signs.set(text, new THREE.MeshStandardMaterial({ map, roughness: .92 }));
+    }
+    box(x, y, z - .04, width + .15, width / 4 + .15, .14, timber, false, parent);
+    mesh(new THREE.PlaneGeometry(width, width / 4), signs.get(text), x, y, z + .04, false, parent);
+  }
+
+  const eaveTile = new THREE.CylinderGeometry(.095, .095, .8, 6, 1, true, 0, Math.PI);
+  eaveTile.rotateZ(Math.PI / 2);
+  function roof(x, y, z, w, d, rise) {
+    const vertices = [], uv = [];
+    const segments = 16;
+    const height = u => rise * Math.pow(1 - Math.abs(u), .84) + Math.pow(Math.abs(u), 7) * .27;
+    for (let i = 0; i < segments; i++) {
+      const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
+      for (const [u, v] of [[a, -1], [a, 1], [b, -1], [b, -1], [a, 1], [b, 1]]) {
+        vertices.push(u * w / 2, height(u), v * d / 2);
+        uv.push(u * w / 2.5, v * d / 2.5);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geometry.computeVertexNormals();
+    const object = mesh(geometry, roofMat, x, y, z, true);
+    object.userData.keepUV = true;
+    box(x, y + rise + .06, z, .35, .23, d + .5, roofMat);
+    for (const side of [-1, 1]) {
+      box(x + side * w / 2, y + .13, z, .13, .21, d, charred);
+      for (let p = -d / 2; p <= d / 2; p += .5) {
+        beam([x + side * (w / 2 - .9), y + .06, z + p], [x + side * (w / 2 + .02), y + .14, z + p], .055, timber);
+      }
+      for (let p = -d / 2; p <= d / 2; p += .28) {
+        mesh(eaveTile, roofMat, x + side * (w / 2 - .3), y + .27, z + p);
+      }
+      const gable = new THREE.BufferGeometry();
+      gable.setAttribute('position', new THREE.Float32BufferAttribute([-w/2 + .8,0,0, w/2 - .8,0,0, 0,rise - .05,0], 3));
+      gable.setAttribute('uv', new THREE.Float32BufferAttribute([0,0,w/3,0,w/6,rise/3], 2));
+      gable.computeVertexNormals();
+      if (side === -1) {
+        gable.scale(-1, 1, 1);
+        gable.computeVertexNormals();
+      }
+      mesh(gable, brick, x, y, z + side * (d / 2 - .8), true).userData.keepUV = true;
+      beam([x - w / 2 + .7, y, z + side * (d / 2 - .7)], [x, y + rise, z + side * (d / 2 - .7)], .09, timber);
+      beam([x, y + rise, z + side * (d / 2 - .7)], [x + w / 2 - .7, y, z + side * (d / 2 - .7)], .09, timber);
+    }
+  }
+
+  function facade(x, z, width, depth, height, rotation, name, ruined) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = rotation;
+    scene.add(group);
+    const face = depth / 2 + .035;
+    mesh(new THREE.PlaneGeometry(width, height), grime, 0, height / 2, face + .012, false, group);
+    box(0, .31, face, width, .62, .12, brick, false, group);
+    box(0, height - .3, face, width + .12, .15, .19, timber, false, group);
+    const floors = Math.max(1, Math.floor(height / 3.2));
+    for (let level = 0; level < floors; level++) {
+      const y = 1.9 + level * 3.2;
+      if (y + 1 > height) continue;
+      for (let wx = -width / 2 + 2; wx < width / 2 - 1; wx += 3.2) {
+        if (level === 0 && Math.abs(wx) < 1.6) continue;
+        box(wx, y, face + .018, 1.25, 1.6, .09, dark, false, group);
+        for (const side of [-1, 1]) {
+          box(wx + side * .67, y, face + .08, .11, 1.78, .13, timber, false, group);
+          box(wx, y + side * .83, face + .12, 1.45, .1, .17, timber, false, group);
+          box(wx + side * .29, y, face + .12, .045, 1.6, .07, timber, false, group);
+        }
+        for (const offset of [-.38, .12, .58]) box(wx, y + offset, face + .13, 1.23, .045, .08, timber, false, group);
+        box(wx, y - .94, face + .14, 1.61, .16, .4, stone, false, group);
+        if (random() < .28 || ruined) {
+          const board = box(wx, y + .08, face + .2, 1.65, .15, .12, ruined ? charred : timber, false, group);
+          board.rotation.z = .15 + random() * .35;
+        }
+      }
+    }
+    if (floors > 1) box(0, 3.4, face + .07, width, .13, .17, timber, false, group);
+    box(0, 1.4, face, 1.85, 2.8, .1, dark, false, group);
+    for (let i = 0; i < 8; i++) box(-.77 + i * .22, 1.3, face + .08, .2, 2.5, .1, ruined ? charred : timber, false, group);
+    for (const side of [-1, 1]) {
+      box(side * 1.03, 1.5, face + .18, .17, 3, .22, timber, false, group);
+      cylinder(side * .15, 1.3, face + .23, .035, .12, iron, group).rotation.x = Math.PI / 2;
+    }
+    box(0, .11, face + .3, 2.35, .22, .75, stone, false, group);
+    if (name) {
+      sign(name, 0, 3.2, face + .21, Math.min(4.8, width - 2), group);
+      if (!ruined) {
+        const awning = box(0, 2.8, face + .72, Math.min(5.4, width - 1), .08, 1.4, random() > .5 ? canvasMat : fadedCanvas, false, group);
+        awning.rotation.x = .16;
+        beam([-2.35, 2.15, face + .12], [-2.35, 2.7, face + 1.25], .035, timber, group);
+        beam([2.35, 2.15, face + .12], [2.35, 2.7, face + 1.25], .035, timber, group);
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      const shape = new THREE.Shape();
+      const rx = .3 + random() * .8, ry = .12 + random() * .3;
+      for (let k = 0; k < 13; k++) {
+        const a = k / 12 * Math.PI * 2, r = .7 + random() * .3;
+        const px = Math.cos(a) * rx * r, py = Math.sin(a) * ry * r;
+        if (k === 0) shape.moveTo(px, py); else shape.lineTo(px, py);
+      }
+      shape.closePath();
+      mesh(new THREE.ShapeGeometry(shape), brick, (random() - .5) * (width - 1), .48 + random() * .2, face + .018, false, group);
+    }
+  }
+
+  let buildingIndex = 0;
+  function building(x, z, w, d, height, ruined = false) {
+    const mat = plaster[Math.floor(random() * plaster.length)];
+    const wallHeight = ruined ? Math.min(3.8, height) : height;
+    box(x, wallHeight / 2, z, w, wallHeight, d, mat, true);
+    obstacle(x, z, w, d, height + (ruined ? .5 : 3));
+    box(x, .34, z, w + .14, .68, d + .14, brick, true);
+    if (!ruined) roof(x, height, z, w + 1.6, d + 1.8, 2.6);
+    else {
+      for (const side of [-1, 1]) {
+        for (let p = -d / 2; p < d / 2; p += 1.1) {
+          const h = 1 + random() * (height - wallHeight);
+          box(x + side * (w / 2 - .25), wallHeight + h / 2, z + p + .5, .5, h, 1.08, brick, true);
+        }
+        beam([x - w / 2, wallHeight + .2, z + side * (d / 2 - .4)], [x + w / 2, wallHeight + 1 + random(), z + side * (d / 2 - .4)], .12, charred);
+      }
+      for (let k = 0; k < 24; k++) {
+        const block = box(x + (random() - .5) * (w + 1), .15 + random() * .25, z + d / 2 + random() * 2, .3 + random() * .8, .25 + random() * .5, .3 + random() * .8, k % 3 ? brick : roofMat, true);
+        block.rotation.set(random() * .5, random() * Math.PI, random() * .3);
+      }
+    }
+    const name = shopNames[buildingIndex++ % shopNames.length];
+    facade(x, z, w, d, wallHeight, 0, name, ruined);
+    facade(x, z, w, d, wallHeight, Math.PI, null, ruined);
+    facade(x, z, d, w, wallHeight, Math.PI / 2, x < 0 ? name : null, ruined);
+    facade(x, z, d, w, wallHeight, -Math.PI / 2, x > 0 ? name : null, ruined);
+    box(x - w / 2 + 1.3, height + .8, z - d / 2 + 1.5, .85, 1.6, .85, brick);
+    box(x - w / 2 + 1.3, height + 1.66, z - d / 2 + 1.5, 1.02, .12, 1.02, stone);
+  }
+  const townMaterials = { plaster: plaster[0], timber, charred, stone, floor: timber };
+  for (const piece of town.pieces) {
+    const mat = piece.material === 'plaster' ? plaster[town.buildings.findIndex(item => piece.id.startsWith(`${item.id}-`)) % plaster.length] || plaster[0] : townMaterials[piece.material];
+    box(piece.x, piece.y, piece.z, piece.w, piece.h, piece.d, mat, true);
+  }
+  obstacles.push(...town.obstacles);
+  for (const shop of town.buildings) {
+    roof(shop.x, shop.height, shop.z, shop.w + .8, shop.d + .8, 1.65);
+    const group = new THREE.Group();
+    group.position.set(shop.x + shop.facing * shop.w / 2, 0, shop.doorZ);
+    group.rotation.y = shop.facing * Math.PI / 2;
+    scene.add(group);
+    sign(shop.name, 0, 2.98, .18, 2.85, group);
+    box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
+    for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05], [side * 1.22, 2.58, 1.05], .025, timber, group);
+  }
+  for (const z of [69, 44, 12, -38, -69]) {
+    building(-61, z, 17, 15, 6 + random() * 3, random() < .3);
+    building(65, z, 16, 14, 6 + random() * 3, random() < .25);
+  }
+  building(-7, -90, 24, 11, 8);
+  building(-9, 92, 21, 10, 7);
+  sign('臺 兒 莊', -7, 6.8, -84.3, 10);
+
+  const bagGeometry = new THREE.SphereGeometry(1, 10, 6);
+  function sandbags(x, z, count, rotate = false) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = rotate ? Math.PI / 2 : 0;
+    scene.add(group);
+    for (let row = 0; row < 3; row++) for (let i = 0; i < count; i++) {
+      const bag = mesh(bagGeometry, sand, (i - (count - 1) / 2) * 1.05 + (row % 2) * .3, .21 + row * .36, (random() - .5) * .1, true, group);
+      bag.scale.set(.59, .23, .44);
+      bag.rotation.y = (random() - .5) * .15;
+    }
+    obstacle(x, z, rotate ? .8 : count * 1.05 + .5, rotate ? count * 1.05 + .5 : .8, 1.2);
+  }
+  sandbags(-12, 21, 5); sandbags(19, 29, 5, true);
+  sandbags(-9, -43, 6); sandbags(18, -33, 4);
+  sandbags(-13, 70, 4, true); sandbags(12, 2, 4, true);
+
+  function crate(x, z, size = 1) {
+    box(x, size * .45, z, size, size * .9, size * .8, timber, true);
+    for (const side of [-1, 1]) {
+      box(x + side * size * .37, size * .45, z + size * .42, .08, size * .9, .09, charred);
+      box(x, size * .45 + side * size * .32, z + size * .42, size, .08, .09, charred);
+    }
+    obstacle(x, z, size, size * .8, size * .9);
+  }
+  function barrel(x, z) {
+    const object = mesh(new THREE.CylinderGeometry(.33, .29, 1, 14, 2), timber, x, .5, z, true);
+    for (const y of [.16, .51, .85]) {
+      const hoop = mesh(new THREE.TorusGeometry(.334, .024, 4, 14), iron, x, y, z);
+      hoop.rotation.x = Math.PI / 2;
+    }
+    obstacle(x, z, .65, .65, 1);
+    return object;
+  }
+  for (const [x, z] of [[-14, 58], [15, 47], [-14, 6], [15, -39], [-53, 40], [55, 66]]) {
+    crate(x, z, .9); crate(x - 1, z + .1, .7); barrel(x + .2, z + 1.2);
+    beam([x - 1.6, .05, z + .1], [x - 1.6, 2.6, z - .9], .055, timber);
+  }
+  // Small loose debris is visual dressing; large cover has matching collision.
+  for (let i = 0; i < 560; i++) {
+    const x = (random() - .5) * 170, z = (random() - .5) * 174;
+    if (Math.abs(z + 16) < 7 || (Math.abs(x + 4) < 3 && random() < .7)) continue;
+    const object = box(x, .04 + random() * .06, z, .12 + random() * .45, .06 + random() * .15, .1 + random() * .4, i % 4 ? brick : roofMat);
+    object.rotation.set(random() * .5, random() * 6.28, random() * .3);
+  }
+  function cart(x, z, rotation) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z); group.rotation.y = rotation;
+    scene.add(group);
+    box(0, .8, 0, 1.25, .16, 1.8, timber, true, group);
+    for (const side of [-1, 1]) {
+      beam([side * .6, .83, .8], [side * .6, 1, -2.7], .05, timber, group);
+      const wheel = mesh(new THREE.TorusGeometry(.6, .055, 5, 18), timber, side * .81, .61, .2, true, group);
+      wheel.rotation.y = Math.PI / 2;
+      cylinder(side * .8, .61, .2, .12, .25, iron, group).rotation.z = Math.PI / 2;
+      for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4;
+        beam([side * .8, .61, .2], [side * .8, .61 + Math.sin(a) * .58, .2 + Math.cos(a) * .58], .022, timber, group);
+      }
+      box(side * .63, 1.02, .2, .06, .4, 1.45, timber, false, group);
+    }
+    group.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(group);
+    obstacle((bounds.min.x + bounds.max.x) / 2, (bounds.min.z + bounds.max.z) / 2, bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z, 1.2);
+  }
+  cart(16.5, 59, -.4);
+  cart(-15, -32, 1.1);
+  const scorchCanvas = document.createElement('canvas');
+  scorchCanvas.width = scorchCanvas.height = 128;
+  const scorchContext = scorchCanvas.getContext('2d');
+  const scorchGradient = scorchContext.createRadialGradient(64, 64, 5, 64, 64, 62);
+  scorchGradient.addColorStop(0, 'rgba(28,24,20,.64)');
+  scorchGradient.addColorStop(.45, 'rgba(43,35,26,.48)');
+  scorchGradient.addColorStop(1, 'rgba(43,35,26,0)');
+  scorchContext.fillStyle = scorchGradient; scorchContext.fillRect(0, 0, 128, 128);
+  const scorch = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(scorchCanvas), transparent: true, depthWrite: false, roughness: 1 });
+  for (const [x, z] of [[-4, 61], [5, 39], [-8, 15], [8, -30], [-2, -55], [31, -36]]) {
+    const object = mesh(new THREE.PlaneGeometry(3 + random() * 3, 3 + random() * 3), scorch, x, .025, z);
+    object.rotation.x = -Math.PI / 2;
+    object.castShadow = false;
+  }
+  for (const z of [68, 40, 8, -36, -66]) {
+    const poleX = z < -20 ? 11.8 : 3.9;
+    const pole = cylinder(poleX, 5, z, .12, 10, timber);
+    solids.push(pole); obstacle(poleX, z, .24, .24, 10);
+    box(poleX, 8.9, z, 2.1, .15, .15, timber);
+    for (const x of [poleX - .8, poleX + .8]) {
+      cylinder(x, 9.14, z, .085, .22, stone);
+      if (z !== -66) {
+        const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(x, 9.2, z), new THREE.Vector3(x, 7.5, z - 14), new THREE.Vector3(x, 9.2, z - 28));
+        mesh(new THREE.TubeGeometry(curve, 12, .018, 3, false), iron, 0, 0, 0);
+      }
+    }
+  }
+
+  const leafCanvas = document.createElement('canvas');
+  leafCanvas.width = leafCanvas.height = 128;
+  const leafContext = leafCanvas.getContext('2d');
+  for (let i = 0; i < 100; i++) {
+    leafContext.fillStyle = ['#59634a', '#727457', '#8b8764', '#414c36'][i % 4];
+    leafContext.beginPath();
+    leafContext.ellipse(20 + random() * 88, 15 + random() * 100, 4 + random() * 8, 2 + random() * 5, random() * Math.PI, 0, Math.PI * 2);
+    leafContext.fill();
+  }
+  const leafTexture = new THREE.CanvasTexture(leafCanvas);
+  leafTexture.colorSpace = THREE.SRGBColorSpace;
+  const leaves = new THREE.MeshStandardMaterial({ map: leafTexture, alphaTest: .5, side: THREE.DoubleSide, roughness: 1 });
+  for (let i = 0; i < 34; i++) {
+    const x = (i % 2 ? -1 : 1) * (83 + random() * 24), z = (random() - .5) * 230;
+    cylinder(x, 3, z, .18 + random() * .1, 6, timber);
+    for (let b = 0; b < 5; b++) {
+      const a = random() * 6.28, bx = x + Math.cos(a) * 2, bz = z + Math.sin(a) * 2, y = 5 + random() * 2;
+      beam([x, 3.7, z], [bx, y, bz], .055, timber);
+      for (let k = 0; k < 3; k++) {
+        const leaf = mesh(new THREE.PlaneGeometry(4, 3.6), leaves, bx, y + .5, bz);
+        leaf.rotation.set(.2 + random(), a + k * Math.PI / 3, 0);
+      }
+    }
+  }
+  const smokeCanvas = document.createElement('canvas');
+  smokeCanvas.width = smokeCanvas.height = 128;
+  const ctx = smokeCanvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(64, 64, 1, 64, 64, 63);
+  gradient.addColorStop(0, 'rgba(45,42,36,.55)');
+  gradient.addColorStop(.4, 'rgba(54,49,41,.32)');
+  gradient.addColorStop(1, 'rgba(62,57,47,0)');
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, 128, 128);
+  const smokeMaterial = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(smokeCanvas), transparent: true, opacity: .55, depthWrite: false, color: 0xa7a49c });
+  for (const [x, z] of [[-30, 11], [32, -38], [-60, -70]]) {
+    for (let i = 0; i < 10; i++) {
+      const puff = new THREE.Sprite(smokeMaterial);
+      puff.userData = { originX: x, originZ: z, phase: i / 10 };
+      scene.add(puff); smoke.push(puff);
+    }
+  }
+  for (const point of [{ x: -12, z: 30 }, { x: 8, z: -7 }, { x: -10, z: -51 }]) {
+    cylinder(point.x, 3, point.z, .04, 6, timber);
+    const flagMat = new THREE.MeshStandardMaterial({ color: 0xa19469, side: THREE.DoubleSide, roughness: 1 });
+    const flagGeometry = new THREE.PlaneGeometry(1.8, 1, 10, 4);
+    const flag = new THREE.Mesh(flagGeometry, flagMat);
+    flag.position.set(point.x + .9, 5.3, point.z);
+    flag.castShadow = true;
+    scene.add(flag); flags.push(flag);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(12.9, 13, 64), new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(point.x, .055, point.z); scene.add(ring);
+  }
+  for (let i = 0; i < 40; i++) {
+    const x = (i % 2 ? -1 : 1) * (126 + random() * 75), z = (random() - .5) * 350;
+    const h = 3 + random() * 5;
+    box(x, h / 2, z, 10 + random() * 12, h, 10, plaster[i % plaster.length]);
+    roof(x, h, z, 14, 13, 2);
+  }
+
+  scene.updateMatrixWorld(true);
+  const batches = new Map();
+  const normal = new THREE.Vector3();
+  for (const object of staticMeshes) {
+    const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
+    const scale = object.material.userData.metersPerTile;
+    if (scale && !object.userData.keepUV) {
+      const positions = geometry.attributes.position, normals = geometry.attributes.normal, uv = geometry.attributes.uv;
+      for (let i = 0; i < positions.count; i++) {
+        normal.fromBufferAttribute(normals, i);
+        const ax = Math.abs(normal.x), ay = Math.abs(normal.y), az = Math.abs(normal.z);
+        if (ay >= ax && ay >= az) uv.setXY(i, positions.getX(i) / scale, positions.getZ(i) / scale);
+        else if (ax >= az) uv.setXY(i, positions.getZ(i) / scale, positions.getY(i) / scale);
+        else uv.setXY(i, positions.getX(i) / scale, positions.getY(i) / scale);
+      }
+    }
+    if (!batches.has(object.material)) batches.set(object.material, []);
+    batches.get(object.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
+    if (geometry.index) geometry.dispose();
+    object.parent.remove(object);
+  }
+  for (const [mat, geometries] of batches) {
+    const combined = new THREE.Mesh(mergeGeometries(geometries), mat);
+    combined.castShadow = !mat.transparent;
+    combined.receiveShadow = true;
+    scene.add(combined);
+    geometries.forEach(geometry => geometry.dispose());
+  }
+  const groundSurface = (x, z) => {
+    if (town.buildings.some(building => Math.abs(x - building.x) < building.w / 2 - .12 && Math.abs(z - building.z) < building.d / 2 - .12)) return 'wood';
+    if (groundHeight(x, z) > 0) return 'stone';
+    return pavedAreas.some(([cx, cz, w, d]) => Math.abs(x - cx) <= w / 2 && Math.abs(z - cz) <= d / 2) ? 'stone' : 'earth';
+  };
+  const visibility = {};
+  const probe = new THREE.Raycaster();
+  for (const [name, z, y] of [['doorOpening', 64, 1.3], ['wall', 66, 1.3], ['window', 58.6, 1.3], ['sill', 58.6, .6], ['lintel', 64, 2.8]]) {
+    probe.set(new THREE.Vector3(-2.5, y, z), new THREE.Vector3(-1, 0, 0));
+    probe.far = 8;
+    visibility[name] = probe.intersectObjects(solids, false).length === 0;
+  }
+  const bridgeSurfaces = {};
+  for (const [name, z] of [['deck', -16], ['northRamp', -24.5], ['southRamp', -7.5]]) {
+    probe.set(new THREE.Vector3(8, 2, z), new THREE.Vector3(0, -1, 0));
+    probe.far = 4;
+    bridgeSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
+  }
+  const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron);
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, visibility, doorSystem };
+}
