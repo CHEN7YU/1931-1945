@@ -17,7 +17,10 @@
     "test:bridge": "node scripts/bridge-smoke.mjs",
     "test:doors": "node scripts/door-smoke.mjs",
     "test:quality": "node scripts/quality-smoke.mjs",
-    "test:armor": "node scripts/armor-smoke.mjs"
+    "test:armor": "node scripts/armor-smoke.mjs",
+    "test:rifle-textures": "node scripts/rifle-textures-smoke.mjs",
+    "test:combat-effects": "node scripts/combat-effects-smoke.mjs",
+    "test:population": "node scripts/population-smoke.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

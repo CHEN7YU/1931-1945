@@ -19,7 +19,7 @@ export function doorCollider(door, angle = door.angle) {
   const cx = hingeX + (door.axis === 'x' ? along * c : along * s);
   const cz = hingeZ + (door.axis === 'x' ? -along * s : along * c);
   const ex = Math.abs(c) * hx + Math.abs(s) * hz, ez = Math.abs(s) * hx + Math.abs(c) * hz;
-  return { id: door.id, door: true, angle, cx, cz, hx, hz, height: door.height,
+  return { id: door.id, door: true, angle, cos: c, sin: s, cx, cz, hx, hz, height: door.height,
     minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez };
 }
 

@@ -134,7 +134,9 @@ try {
   assert.equal(data.current, 0);
   await controls.keyboard.press('y');
   assert.equal((await controls.evaluate(() => window.__battle)).locomotion.stamina, 1);
-  for (let i = 0; i < 3; i++) await controls.keyboard.press('y');
+  await controls.evaluate(() => {
+    for (let i = 1; i < 10; i++) for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'KeyY' }));
+  });
   data = await controls.evaluate(() => window.__battle);
   assert.equal(data.current, 0);
   assert.ok(data.locomotion.stamina < .15, 'switching back does not refill the exhausted member');

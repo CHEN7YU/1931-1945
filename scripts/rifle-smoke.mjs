@@ -82,7 +82,7 @@ try {
   assert.equal(data.current, 1);
   assert.equal(data.allies[0].rifle.elapsed, held, 'uncontrolled member cannot silently complete loading');
   assert.equal(data.ammo, 5, 'each member has an independent magazine');
-  await press('y'); await press('y'); await press('y');
+  for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await press('y');
   data = await snapshot();
   assert.equal(data.current, 0);
   assert.equal(data.ammo, 4);

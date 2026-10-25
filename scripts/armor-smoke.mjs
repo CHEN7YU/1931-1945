@@ -22,8 +22,11 @@ try {
   data = await snapshot();
   assert.equal(data.health, health, 'observed sealed armor takes no rifle damage during live enemy contact');
   assert.equal(data.combatStats.aiRifleShotsAtArmor, 0);
-  assert.equal(data.combatStats.aiRifleShots, 0, 'riflemen do not merely keep firing while hull damage is disabled');
+  assert.ok(data.enemyPositions.filter(actor => actor.targetKind === 'closed-armor').every(actor => !['engage', 'peek'].includes(actor.mode)), 'observed armor targets do not provoke rifle engagement; other infantry can still be fought');
   assert.ok(data.enemyPositions.some(actor => ['armor-alert', 'evade-armor', 'cover-from-armor', 'open-door'].includes(actor.mode)), 'riflemen react to armor through alert, cover or evasion');
+  await page.keyboard.press('Escape');
+  await page.locator('#quality-damageVignette').uncheck();
+  await page.locator('#resume').click();
   await page.mouse.down({ button: 'right' });
   await page.evaluate(() => document.dispatchEvent(new MouseEvent('mousemove', { movementY: 758 })));
   await page.waitForTimeout(150);
@@ -31,6 +34,7 @@ try {
   await page.waitForFunction(health => window.__battle.health < health, health);
   await page.mouse.up(); await page.mouse.up({ button: 'right' });
   assert.ok((await snapshot()).health > 0, 'blast damage remains effective; sealed armor is not globally invulnerable');
+  assert.equal(await page.locator('#damage-vignette').evaluate(element => element.style.opacity), '0', 'disabling damage vignette changes rendering, not actual damage');
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
   await page.locator('#squad-choices [data-type="infantry"]').click(); await page.locator('#deploy').click();
   assert.ok((await snapshot()).allies.every(actor => actor.targetKind === 'person'));

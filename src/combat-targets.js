@@ -1,3 +1,5 @@
+import { RIFLE } from './rifle-action.js';
+
 const kinds = new Set(['person', 'exposed-crew', 'closed-armor', 'aircraft']);
 const weapons = new Set(['rifle', 'explosion', 'cannon', 'aircraft-gun', 'collision']);
 
@@ -8,9 +10,20 @@ export function canWeaponDamageTarget(weapon, kind) {
 
 export function damageForTarget(weapon, kind, damage) {
   if (!Number.isFinite(damage) || damage < 0) throw new RangeError('Damage must be non-negative and finite');
-  return canWeaponDamageTarget(weapon, kind) ? damage : 0;
+  if (!canWeaponDamageTarget(weapon, kind)) return 0;
+  return weapon === 'rifle' && ['person', 'exposed-crew'].includes(kind) ? Math.min(damage, RIFLE.personDamage) : damage;
 }
 
+export function rifleAIFireDelay(distance, suppressed, random) {
+  if (!Number.isFinite(distance) || distance < 0 || !Number.isFinite(random) || random < 0 || random > 1) throw new RangeError('Invalid AI firing inputs');
+  return RIFLE.cycleSeconds + (distance <= 10 ? .15 + random * .25 : .4 + random * .7) + (suppressed ? .35 : 0);
+}
+
+export function rifleAIHitChance(distance, suppressed) {
+  if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid AI target distance');
+  if (distance <= 10) return 1;
+  return .45 * Math.max(.25, 1 - distance / 100) * (suppressed ? .55 : 1);
+}
 export function rifleArmorResponse(position, threat, blocked) {
   const dx = position.x - threat.x, dz = position.z - threat.z, distance = Math.hypot(dx, dz);
   if (distance >= 28) return null;
@@ -21,3 +34,4 @@ export function rifleArmorResponse(position, threat, blocked) {
   }
   return null;
 }
+// ---模块结束---

@@ -1,10 +1,11 @@
 import { RIFLE } from './rifle-action.js';
+import { obstacleLookup } from './spatial.js';
 
 export const MAP_LIMIT = 108;
 export const MATCH_SECONDS = 600;
 export const CAPTURE_SECONDS = 12;
 export const TYPES = Object.freeze({
-  infantry: { name: '步兵小队', weapon: '中正式风格步枪 · 比例样枪', members: 4, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
+  infantry: { name: '步兵班', weapon: '中正式风格步枪 · 比例样枪', members: 10, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
   tank: { name: '装甲小队', weapon: '坦克主炮', members: 3, magazine: 1, reload: 3.8, interval: .5, speed: 8, health: 360, damage: 160 },
   mortar: { name: '迫击炮组', weapon: '轻型迫击炮', members: 3, magazine: 1, reload: 3.2, interval: .5, speed: 2.45, health: 100, damage: 160 },
   plane: { name: '航空小队', weapon: '对地机炮', members: 1, magazine: 60, reload: 3, interval: .1, speed: 24, health: 180, damage: 65 },
@@ -35,7 +36,7 @@ export function circleBlocked(x, z, radius, obstacles) {
   if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
   return obstacles.some(b => {
     if (b.door) {
-      const c = Math.cos(b.angle), s = Math.sin(b.angle);
+      const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;
       const lx = c * dx - s * dz, lz = s * dx + c * dz;
       const nx = Math.max(-b.hx, Math.min(b.hx, lx)), nz = Math.max(-b.hz, Math.min(b.hz, lz));
@@ -73,11 +74,21 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   const width = half * 2 + 1;
   const count = width * width;
   const blocked = new Uint8Array(count);
+  const lookup = obstacleLookup(obstacles, Math.max(radius, .6));
+  const blockedAt = (x, z, clearance = radius) => circleBlocked(x, z, clearance, lookup.at(x, z));
+  const clear = (start, end, clearance = radius) => {
+    const distance = Math.hypot(end.x - start.x, end.z - start.z);
+    const steps = Math.max(1, Math.ceil(distance / .2));
+    for (let i = 0; i <= steps; i++) if (blockedAt(start.x + (end.x - start.x) * i / steps, start.z + (end.z - start.z) * i / steps, clearance)) return false;
+    return true;
+  };
+  const parents = new Int32Array(count), costs = new Float32Array(count), closed = new Uint8Array(count);
   const point = index => ({ x: (index % width - half) * step, z: (Math.floor(index / width) - half) * step });
   const rebuild = () => {
+    lookup.rebuild();
     for (let index = 0; index < count; index++) {
       const p = point(index);
-      blocked[index] = Number(circleBlocked(p.x, p.z, radius, obstacles));
+      blocked[index] = Number(blockedAt(p.x, p.z));
     }
   };
   rebuild();
@@ -86,32 +97,30 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     let distance = Infinity;
     const tx = Math.max(0, Math.min(width - 1, Math.round(target.x / step) + half));
     const tz = Math.max(0, Math.min(width - 1, Math.round(target.z / step) + half));
-    const targetClear = !circleBlocked(target.x, target.z, radius, obstacles);
+    const targetClear = !blockedAt(target.x, target.z);
     const connectionRadius = targetClear ? radius : .42;
-    const physicalClear = !circleBlocked(target.x, target.z, connectionRadius, obstacles);
+    const physicalClear = !blockedAt(target.x, target.z, connectionRadius);
     for (let z = Math.max(0, tz - 8); z <= Math.min(width - 1, tz + 8); z++) for (let x = Math.max(0, tx - 8); x <= Math.min(width - 1, tx + 8); x++) {
       const index = z * width + x;
       if (blocked[index]) continue;
       const p = point(index);
       const d = (target.x - p.x) ** 2 + (target.z - p.z) ** 2;
-      if (d < distance && (!physicalClear || segmentClear(target, p, connectionRadius, obstacles))) { best = index; distance = d; }
+      if (d < distance && (!physicalClear || clear(target, p, connectionRadius))) { best = index; distance = d; }
     }
     return best;
   };
   const stats = { resolution: step, radius, expanded: 0, reason: 'ready' };
   const findPath = (start, goal) => {
     stats.expanded = 0;
-    if (circleBlocked(start.x, start.z, Math.min(radius, .42), obstacles)) { stats.reason = 'blocked-start'; return []; }
-    if (segmentClear(start, goal, radius, obstacles)) {
+    if (blockedAt(start.x, start.z, Math.min(radius, .42))) { stats.reason = 'blocked-start'; return []; }
+    if (clear(start, goal)) {
       stats.reason = 'direct';
       return [{ x: goal.x, z: goal.z }];
     }
     const from = nearest(start);
     const to = nearest(goal);
     if (from < 0 || to < 0) { stats.reason = 'no-clear-cell'; return []; }
-    const parents = new Int32Array(count).fill(-1);
-    const costs = new Float32Array(count).fill(Infinity);
-    const closed = new Uint8Array(count);
+    parents.fill(-1); costs.fill(Infinity); closed.fill(0);
     const heap = [];
     const targetX = to % width, targetZ = Math.floor(to / width);
     const heuristic = index => Math.abs(index % width - targetX) + Math.abs(Math.floor(index / width) - targetZ);
@@ -152,7 +161,7 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
         if (Math.abs(index % width - neighbor % width) > 1) continue;
         const a = point(index);
         const b = point(neighbor);
-        if (costs[index] + 1 >= costs[neighbor] || !segmentClear(a, b, radius, obstacles)) continue;
+        if (costs[index] + 1 >= costs[neighbor] || !clear(a, b)) continue;
         parents[neighbor] = index;
         costs[neighbor] = costs[index] + 1;
         push(neighbor, costs[neighbor] + heuristic(neighbor));
@@ -167,12 +176,12 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     }
     path.push(point(from));
     path.reverse();
-    if (!circleBlocked(goal.x, goal.z, radius, obstacles) && segmentClear(path.at(-1), goal, radius, obstacles)) path.push({ x: goal.x, z: goal.z });
+    if (!blockedAt(goal.x, goal.z) && clear(path.at(-1), goal)) path.push({ x: goal.x, z: goal.z });
     const smooth = [];
     let anchor = point(from);
     if (Math.hypot(start.x - anchor.x, start.z - anchor.z) > .05) smooth.push(anchor);
     for (let i = 0; i < path.length; i++) {
-      if (i > 0 && !segmentClear(anchor, path[i], radius, obstacles)) {
+      if (i > 0 && !clear(anchor, path[i])) {
         smooth.push(path[i - 1]); anchor = path[i - 1];
       }
     }
@@ -182,13 +191,14 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   };
   findPath.rebuild = rebuild;
   findPath.refresh = bounds => {
+    lookup.rebuild();
     const minX = Math.max(0, Math.floor((bounds.minX - radius) / step) + half);
     const maxX = Math.min(width - 1, Math.ceil((bounds.maxX + radius) / step) + half);
     const minZ = Math.max(0, Math.floor((bounds.minZ - radius) / step) + half);
     const maxZ = Math.min(width - 1, Math.ceil((bounds.maxZ + radius) / step) + half);
     for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
       const index = z * width + x, p = point(index);
-      blocked[index] = Number(circleBlocked(p.x, p.z, radius, obstacles));
+      blocked[index] = Number(blockedAt(p.x, p.z));
     }
   };
   Object.defineProperty(findPath, 'stats', { get: () => ({ ...stats }) });

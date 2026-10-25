@@ -1,7 +1,7 @@
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export function createTactics(id, squad, slot) {
-  return { id, squad, slot: slot % 4, mode: 'advance', lastSeen: null, threatKind: 'person', forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
+  return { id, squad, slot: slot % 10, mode: 'advance', lastSeen: null, threatKind: 'person', forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
 }
 
 export function rememberThreat(state, position, now, kind = 'person') {

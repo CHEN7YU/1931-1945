@@ -34,6 +34,7 @@ export async function loadSceneMaterials(renderer, scene) {
       normalScale: new THREE.Vector2(.65, .65), aoMapIntensity: .8,
     });
     material.userData.metersPerTile = metersPerTile;
+    material.userData.surface = name;
     return material;
   };
 }

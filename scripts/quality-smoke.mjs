@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { QUALITY_EFFECTS } from '../src/quality.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
@@ -53,7 +54,7 @@ try {
   }
   await settled();
   assert.equal((await snapshot()).graphics.textureCount, textureCount, 'shadow render targets are disposed, not leaked on repeated switching');
-  for (const effect of ['shadows', 'fog', 'smoke', 'grain']) await page.locator(`#quality-${effect}`).uncheck();
+  for (const effect of QUALITY_EFFECTS) await page.locator(`#quality-${effect}`).uncheck();
   await settled();
   data = await snapshot();
   assert.equal(data.graphics.shadowMapWidth, 0);
@@ -66,7 +67,7 @@ try {
   await page.setViewportSize({ width: 1200, height: 800 });
   await page.waitForFunction(() => window.__battle.graphics.canvasWidth === 1200 && window.__battle.graphics.canvasHeight === 800);
   assert.deepEqual(matchState(await snapshot()), battle, 'graphics changes and viewport resize never reset or advance a paused battle');
-  for (const effect of ['shadows', 'fog', 'smoke', 'grain']) await page.locator(`#quality-${effect}`).check();
+  for (const effect of QUALITY_EFFECTS) await page.locator(`#quality-${effect}`).check();
   await page.waitForFunction(() => window.__battle.graphics.shadowMapWidth === 1024);
   await page.locator('#qualityToggle').selectOption('high');
   await page.waitForFunction(() => window.__battle.graphics.canvasWidth === 1920 && window.__battle.graphics.canvasHeight === 1280);

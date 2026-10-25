@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canWeaponDamageTarget, damageForTarget, rifleArmorResponse } from '../src/combat-targets.js';
+import { canWeaponDamageTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from '../src/combat-targets.js';
 import { createTactics, rememberThreat, expireThreat } from '../src/tactics.js';
 
 test('ordinary rifles neither select sealed armor for firing nor damage its hull', () => {
@@ -34,4 +34,22 @@ test('invalid classifications or damage values fail explicitly', () => {
   assert.throws(() => canWeaponDamageTarget('unknown', 'person'), RangeError);
   assert.throws(() => canWeaponDamageTarget('rifle', 'unknown'), RangeError);
   assert.throws(() => damageForTarget('rifle', 'person', -1), RangeError);
+});
+test('standard rifle body hits kill a 100HP soldier in two effective hits for both sides', () => {
+  for (const target of ['person', 'exposed-crew']) {
+    let health = 100;
+    health -= damageForTarget('rifle', target, 100);
+    assert.equal(health, 50);
+    health -= damageForTarget('rifle', target, 50);
+    assert.equal(health, 0);
+  }
+  assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);
+});
+test('close visible rifle fire does not reroll misses and respects the bolt cycle', () => {
+  assert.equal(rifleAIHitChance(5, false), 1);
+  assert.equal(rifleAIHitChance(5, true), 1);
+  assert.ok(rifleAIFireDelay(5, false, 0) >= .65);
+  assert.ok(rifleAIFireDelay(5, false, 1) <= 1.05);
+  assert.ok(rifleAIFireDelay(5, true, .5) > rifleAIFireDelay(5, false, .5));
+  assert.ok(rifleAIHitChance(50, true) < rifleAIHitChance(50, false));
 });

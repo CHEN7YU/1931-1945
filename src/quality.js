@@ -2,7 +2,7 @@ export const QUALITY_PRESETS = Object.freeze({
   high: Object.freeze({ pixelRatioCap: 1.6, shadowSize: 4096, smokeBudget: 30 }),
   low: Object.freeze({ pixelRatioCap: 1, shadowSize: 1024, smokeBudget: 10 }),
 });
-export const QUALITY_EFFECTS = Object.freeze(['shadows', 'fog', 'smoke', 'grain']);
+export const QUALITY_EFFECTS = Object.freeze(['shadows', 'fog', 'smoke', 'grain', 'overcast', 'muzzle', 'muzzleLight', 'hitParticles', 'damageVignette']);
 
 export function qualityProfile(preset, deviceRatio, maxTextureSize) {
   if (!Object.hasOwn(QUALITY_PRESETS, preset)) throw new RangeError(`Unknown quality preset: ${preset}`);
@@ -12,7 +12,7 @@ export function qualityProfile(preset, deviceRatio, maxTextureSize) {
 }
 
 export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio }) {
-  const state = { preset: 'high', effects: { shadows: true, fog: true, smoke: true, grain: true } };
+  const state = { preset: 'high', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) };
   const fog = scene.fog;
   const invalidateMaterials = () => scene.traverse(object => {
     if (!object.material) return;
@@ -64,3 +64,4 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     },
   };
 }
+// ---模块结束---

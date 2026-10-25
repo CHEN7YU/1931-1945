@@ -6,6 +6,11 @@ const actorBox = new THREE.BoxGeometry(1, 1, 1);
 const actorSphere = new THREE.SphereGeometry(1, 12, 8);
 const actorCylinder = new THREE.CylinderGeometry(1, 1, 1, 12);
 const actorCapsule = new THREE.CapsuleGeometry(1, 1, 3, 8);
+const distantGeometry = new Map([
+  [actorSphere, new THREE.SphereGeometry(1, 6, 4)],
+  [actorCylinder, new THREE.CylinderGeometry(1, 1, 1, 6)],
+  [actorCapsule, new THREE.CapsuleGeometry(1, 1, 2, 4)],
+]);
 const actorMaterials = {
   friendly: new THREE.MeshStandardMaterial({ color: 0x6c7775, roughness: .95 }),
   enemy: new THREE.MeshStandardMaterial({ color: 0x8b8260, roughness: .95 }),
@@ -16,8 +21,8 @@ const actorMaterials = {
   leather: new THREE.MeshStandardMaterial({ color: 0x44372b, roughness: .88 }),
 };
 
-export function setModelSurfaces(surface) {
-  configureRifleMaterials();
+export async function setModelSurfaces(surface, maxAnisotropy) {
+  await configureRifleMaterials(maxAnisotropy);
   const timber = surface('timber');
   Object.assign(actorMaterials.wood, {
     map: timber.map, normalMap: timber.normalMap,
@@ -27,6 +32,7 @@ export function setModelSurfaces(surface) {
 }
 
 function shaped(parent, geometry, x, y, z, w, h, d, mat) {
+  if (parent.userData.detail === 'far' && distantGeometry.has(geometry)) geometry = distantGeometry.get(geometry);
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.position.set(x, y, z);
   mesh.scale.set(w, h, d);
@@ -47,9 +53,10 @@ function limb(parent, from, to, radius, mat) {
 }
 
 const soldierBodies = new Map();
-function batchSoldier(group, legs, friendly) {
+function batchSoldier(group, legs, friendly, detail) {
+  const key = `${friendly}-${detail}`;
   // Only the two leg meshes animate independently; cache the rigid body per side.
-  if (!soldierBodies.has(friendly)) {
+  if (!soldierBodies.has(key)) {
     group.updateMatrixWorld(true);
     const byMaterial = new Map();
     group.traverse(child => {
@@ -59,23 +66,35 @@ function batchSoldier(group, legs, friendly) {
       byMaterial.get(child.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
       if (geometry.index) geometry.dispose();
     });
-    soldierBodies.set(friendly, [...byMaterial].map(([material, geometries]) => {
+    soldierBodies.set(key, [...byMaterial].map(([material, geometries]) => {
       const geometry = mergeGeometries(geometries);
       geometries.forEach(item => item.dispose());
       return { geometry, material };
     }));
   }
   for (const child of [...group.children]) if (!legs.includes(child)) group.remove(child);
-  for (const { geometry, material } of soldierBodies.get(friendly)) {
+  for (const { geometry, material } of soldierBodies.get(key)) {
     const body = new THREE.Mesh(geometry, material);
     body.castShadow = body.receiveShadow = true;
     group.add(body);
   }
 }
 
-export function soldierModel(friendly = false) {
+export function soldierModel(friendly = false, detail = 'near') {
   const group = new THREE.Group();
+  group.userData.detail = detail;
   const uniform = friendly ? actorMaterials.friendly : actorMaterials.enemy;
+  const key = `${friendly}-${detail}`;
+  if (soldierBodies.has(key)) {
+    const left = shaped(group, actorCapsule, -.135, .43, 0, .095, .25, .105, uniform);
+    const right = shaped(group, actorCapsule, .135, .43, 0, .095, .25, .105, uniform);
+    group.userData.legs = [left, right];
+    for (const { geometry, material } of soldierBodies.get(key)) {
+      const body = new THREE.Mesh(geometry, material);
+      body.castShadow = body.receiveShadow = true; group.add(body);
+    }
+    return group;
+  }
   shaped(group, actorCapsule, 0, 1.11, 0, .24, .23, .15, uniform);
   sphere(group, 0, 1.63, -.015, .135, .17, .12, actorMaterials.skin);
   cylinder(group, 0, 1.46, 0, .07, .16, actorMaterials.skin);
@@ -96,7 +115,7 @@ export function soldierModel(friendly = false) {
   sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
   sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
   if (friendly) {
-    const rifle = rifleWorldModel();
+    const rifle = rifleWorldModel(detail);
     rifle.position.set(.13, 1.39, .02);
     group.add(rifle);
   } else {
@@ -111,7 +130,7 @@ export function soldierModel(friendly = false) {
   limb(group, [.18, 1.39, .12], [.17, .98, -.19], .025, actorMaterials.leather);
   cylinder(group, .29, .99, .07, .08, .2, actorMaterials.steel);
   group.userData.legs = [leftLeg, rightLeg];
-  batchSoldier(group, group.userData.legs, friendly);
+  batchSoldier(group, group.userData.legs, friendly, detail);
   return group;
 }
 

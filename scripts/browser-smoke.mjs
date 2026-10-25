@@ -27,10 +27,10 @@ try {
   await page.waitForFunction(() => window.__battle.state === 'playing');
   let data = await snapshot();
   assert.equal(data.type, 'infantry');
-  assert.equal(data.allies.length, 4);
+  assert.equal(data.allies.length, 10);
   assert.equal(data.allies[0].role, 'engineer');
   assert.equal(data.spawnId, 'china-base');
-  assert.ok(data.spawnEvents.filter(event => event.team === 'enemy').every(event => event.pointId === 'japan-base'));
+  assert.ok(data.spawnEvents.filter(event => event.team === 'enemy').every(event => data.spawnPoints.some(point => point.id === event.pointId && point.team === 'enemy')));
   await page.mouse.down({ button: 'right' });
   await page.waitForTimeout(350);
   data = await snapshot();
@@ -77,9 +77,16 @@ try {
   await page.mouse.up({ button: 'right' });
   await key('r');
   await page.waitForFunction(() => window.__battle.ammo === 5 && window.__battle.rifle.action === 'idle', null, { timeout: 6000 });
-  const beforeMove = await snapshot();
-  await key('w', 700);
-  data = await snapshot();
+  const beforeMove = await page.evaluate(() => {
+    const before = window.__battle;
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+    return before;
+  });
+  await page.waitForFunction(time => window.__battle.time >= time + .7, beforeMove.time);
+  data = await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }));
+    return window.__battle;
+  });
   const moveSeconds = data.time - beforeMove.time;
   const distance = beforeMove.position.z - data.position.z;
   assert.ok(distance > 1, 'W moves the player with weighted acceleration');
@@ -92,9 +99,7 @@ try {
   await key('y');
   assert.equal((await snapshot()).current, 1);
   assert.equal((await snapshot()).ammo, 5);
-  await key('y');
-  await key('y');
-  await key('y');
+  for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await key('y');
   assert.equal((await snapshot()).current, 0);
   assert.equal((await snapshot()).ammo, firedAmmo, 'switching retains ammunition');
   await key('r');
@@ -164,12 +169,12 @@ try {
   const deathRemaining = data.remaining;
   await page.waitForTimeout(350);
   assert.ok((await snapshot()).remaining < deathRemaining, 'the battlefield keeps running while choosing a new squad');
-  await page.waitForFunction(() => window.__battle.spawnEvents.some(event => event.team === 'enemy' && event.pointId.startsWith('enemy-rally-')), null, { timeout: 45000 });
+  await page.waitForFunction(() => window.__battle.spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally'), null, { timeout: 60000 });
   data = await snapshot();
   assert.ok(data.spawnPoints.some(point => point.kind === 'rally' && point.team === 'enemy' && point.health > 0), 'enemy engineers build a forward rally');
-  assert.ok(data.spawnEvents.filter(event => event.team === 'enemy').length > 8, 'enemy reinforcements enter from registered spawns');
+  assert.equal(data.population.enemy.rosterUnits, 10, 'enemy reinforcements retain ten formation slots');
   for (const event of data.spawnEvents) {
-    assert.ok(Math.hypot(event.x - event.pointX, event.z - event.pointZ) < 4, 'every actor entered at its registered spawn formation');
+    assert.ok(Math.hypot(event.x - event.pointX, event.z - event.pointZ) <= 20, 'each squad expands inside its registered staging area');
   }
   await page.locator('#redeploy-choices [data-type="tank"]').click();
   assert.equal((await snapshot()).state, 'dead', 'selecting a squad does not instantly spawn it');

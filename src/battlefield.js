@@ -3,6 +3,28 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
 import { BRIDGE, groundHeight } from './ground.js';
 import { createDoorWorld } from './door-world.js';
+import { bakeSurfaceGeometry } from './surface-uv.js';
+
+export function createRoofGeometry(w, d, rise, meters) {
+  const vertices = [], uv = [], distances = [0], segments = 16;
+  const height = u => rise * Math.pow(1 - Math.abs(u), .84) + Math.pow(Math.abs(u), 7) * .27;
+  for (let i = 0; i < segments; i++) {
+    const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
+    distances.push(distances[i] + Math.hypot((b - a) * w / 2, height(b) - height(a)));
+  }
+  for (let i = 0; i < segments; i++) {
+    const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
+    for (const [u, v] of [[a, -1], [a, 1], [b, -1], [b, -1], [a, 1], [b, 1]]) {
+      vertices.push(u * w / 2, height(u), v * d / 2);
+      uv.push(distances[u === a ? i : i + 1] / meters, v * d / 2 / meters);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 export function makeWorld(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
@@ -59,7 +81,7 @@ export function makeWorld(scene, surface) {
   mesh(groundGeometry, earth, 0, -.035, 0, true);
   const pavedAreas = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61], [4, -4, 17, 12], [-10, 52.5, 34, 5], [-16, 62, 7, 14], [8, -16, 16, 13]];
   for (const [x, z, w, d] of pavedAreas.slice(0, -1)) {
-    box(x, -.005, z, w, .035, d, paving);
+    box(x, -.005, z, w, .035, d, paving, true);
   }
   for (const x of [-4.65, 4.65]) {
     for (let z = 4; z < 74; z += 2) {
@@ -171,20 +193,7 @@ export function makeWorld(scene, surface) {
   const eaveTile = new THREE.CylinderGeometry(.095, .095, .8, 6, 1, true, 0, Math.PI);
   eaveTile.rotateZ(Math.PI / 2);
   function roof(x, y, z, w, d, rise) {
-    const vertices = [], uv = [];
-    const segments = 16;
-    const height = u => rise * Math.pow(1 - Math.abs(u), .84) + Math.pow(Math.abs(u), 7) * .27;
-    for (let i = 0; i < segments; i++) {
-      const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
-      for (const [u, v] of [[a, -1], [a, 1], [b, -1], [b, -1], [a, 1], [b, 1]]) {
-        vertices.push(u * w / 2, height(u), v * d / 2);
-        uv.push(u * w / 2.5, v * d / 2.5);
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geometry.computeVertexNormals();
+    const geometry = createRoofGeometry(w, d, rise, roofMat.userData.metersPerTile);
     const object = mesh(geometry, roofMat, x, y, z, true);
     object.userData.keepUV = true;
     box(x, y + rise + .06, z, .35, .23, d + .5, roofMat);
@@ -204,7 +213,7 @@ export function makeWorld(scene, surface) {
         gable.scale(-1, 1, 1);
         gable.computeVertexNormals();
       }
-      mesh(gable, brick, x, y, z + side * (d / 2 - .8), true).userData.keepUV = true;
+      mesh(gable, brick, x, y, z + side * (d / 2 - .8), true);
       beam([x - w / 2 + .7, y, z + side * (d / 2 - .7)], [x, y + rise, z + side * (d / 2 - .7)], .09, timber);
       beam([x, y + rise, z + side * (d / 2 - .7)], [x + w / 2 - .7, y, z + side * (d / 2 - .7)], .09, timber);
     }
@@ -477,20 +486,8 @@ export function makeWorld(scene, surface) {
 
   scene.updateMatrixWorld(true);
   const batches = new Map();
-  const normal = new THREE.Vector3();
   for (const object of staticMeshes) {
-    const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
-    const scale = object.material.userData.metersPerTile;
-    if (scale && !object.userData.keepUV) {
-      const positions = geometry.attributes.position, normals = geometry.attributes.normal, uv = geometry.attributes.uv;
-      for (let i = 0; i < positions.count; i++) {
-        normal.fromBufferAttribute(normals, i);
-        const ax = Math.abs(normal.x), ay = Math.abs(normal.y), az = Math.abs(normal.z);
-        if (ay >= ax && ay >= az) uv.setXY(i, positions.getX(i) / scale, positions.getZ(i) / scale);
-        else if (ax >= az) uv.setXY(i, positions.getZ(i) / scale, positions.getY(i) / scale);
-        else uv.setXY(i, positions.getX(i) / scale, positions.getY(i) / scale);
-      }
-    }
+    const geometry = bakeSurfaceGeometry(object);
     if (!batches.has(object.material)) batches.set(object.material, []);
     batches.get(object.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
     if (geometry.index) geometry.dispose();

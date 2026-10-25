@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RIFLE, riflePose } from './rifle-action.js';
+import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
+import { applyRifleTextures } from './optional-rifle-textures.js';
 
 let template;
+let distantTemplate;
 const materials = {};
 function texture(canvas, color = false) {
   const map = new THREE.CanvasTexture(canvas);
@@ -13,7 +16,7 @@ function texture(canvas, color = false) {
   return map;
 }
 
-export function configureRifleMaterials() {
+export async function configureRifleMaterials(maxAnisotropy = 8) {
   let seed = 1936;
   const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   const wood = document.createElement('canvas'), steel = document.createElement('canvas'), weave = document.createElement('canvas');
@@ -56,6 +59,16 @@ export function configureRifleMaterials() {
   materials.cloth = new THREE.MeshStandardMaterial({ map: texture(weave, true), color: 0x7d8a7e, roughness: .98 });
   materials.cloth.map.repeat.set(6, 8);
   materials.leather = new THREE.MeshStandardMaterial({ color: 0x443124, roughness: .8 });
+  await applyRifleTextures(materials, RIFLE_PBR_ASSETS, maxAnisotropy);
+}
+
+export function rifleTextureSnapshot() {
+  return Object.fromEntries(['wood', 'steel'].map(name => {
+    const material = materials[name];
+    return [name, { roughness: material.roughness, metalness: material.metalness,
+      textures: Object.fromEntries(['map', 'normalMap', 'roughnessMap', 'metalnessMap'].map(channel => [channel,
+        material[channel] ? { url: material[channel].userData.assetUrl || 'generated', colorSpace: material[channel].colorSpace } : null])) }];
+  }));
 }
 
 function add(parent, geometry, mat, x = 0, y = 0, z = 0, name = '') {
@@ -91,9 +104,8 @@ function tube(parent, points, radius, mat, segments = 24) {
   const path = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
   return add(parent, new THREE.TubeGeometry(path, segments, radius, 10, false), mat);
 }
-function loft(sections) {
+function loft(sections, rings = 97, sides = 32) {
   const positions = [], uv = [], indices = [];
-  const rings = 97, sides = 32;
   const channels = [1, 2, 3].map(channel => new THREE.SplineCurve(sections.map(section => new THREE.Vector2(section[0], section[channel]))));
   for (let i = 0; i < rings; i++) {
     const t = i / (rings - 1), [center, width, height] = channels.map(curve => curve.getPoint(t));
@@ -152,7 +164,7 @@ function makeHand(parent, side) {
   return hand;
 }
 
-function buildTemplate() {
+function buildTemplate(detail = 'near') {
   const root = new THREE.Group();
   const body = new THREE.Group(); body.name = 'rifleBody'; root.add(body);
   const { wood, steel, edge, black, brass, leather } = materials;
@@ -160,7 +172,7 @@ function buildTemplate() {
     [.22,-.095,.025,.068], [.19,-.094,.027,.071], [.08,-.076,.025,.061],
     [-.025,-.052,.018,.027], [-.09,-.049,.019,.026], [-.16,-.045,.028,.037],
     [-.3,-.038,.026,.031], [-.44,-.034,.024,.028], [-.6,-.031,.021,.023], [-.73,-.026,.018,.019],
-  ]), wood);
+  ], detail === 'far' ? 17 : 97, detail === 'far' ? 12 : 32), wood);
   sphere(body, 0, -.026, -.73, .018, .019, .003, wood);
   rounded(body, 0, -.095, .216, .053, .14, .008, steel, .003);
   axial(body, 0, 0, -.595, .0084, .59, steel, '', .0145);
@@ -240,6 +252,7 @@ function buildTemplate() {
   const rearSight = new THREE.Object3D(); rearSight.name = 'rearSight'; rearSight.position.set(0, RIFLE.sightHeight, -.36); root.add(rearSight);
   const frontSight = new THREE.Object3D(); frontSight.name = 'frontSight'; frontSight.position.set(0, RIFLE.sightHeight, -.857); root.add(frontSight);
   const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffe1a3, transparent: true, opacity: .8, depthWrite: false });
+  flashMaterial.blending = THREE.AdditiveBlending;
   const flash = add(root, new THREE.ConeGeometry(.026, .1, 12), flashMaterial, 0, 0, -.936, 'flash');
   flash.rotation.x = -Math.PI / 2;
   const casing = axial(root, 0, 0, 0, .0046, .05, brass, 'casing');
@@ -259,10 +272,12 @@ export function rifleModel() {
   return model;
 }
 
-export function rifleWorldModel() {
+export function rifleWorldModel(detail = 'near') {
   if (!template) template = buildTemplate();
+  if (detail === 'far' && !distantTemplate) distantTemplate = buildTemplate('far');
+  const source = detail === 'far' ? distantTemplate : template;
   const model = new THREE.Group();
-  model.add(template.getObjectByName('rifleBody').clone(true), template.getObjectByName('bolt').clone(true));
+  model.add(source.getObjectByName('rifleBody').clone(true), source.getObjectByName('bolt').clone(true));
   model.userData.referenceLength = RIFLE.length;
   return model;
 }
