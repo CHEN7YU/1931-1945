@@ -37,6 +37,8 @@ try {
   await wait(() => window.__battle?.state === 'menu');
   await page.locator('#deploy').click();
   await wait(() => window.__battle.fov > 71.9);
+  assert.equal((await snapshot()).combatEffects.shaderLights, 2, 'high quality keeps two zero-intensity pooled lights in the shader before any shot');
+  assert.equal((await snapshot()).combatEffects.visibleLights, 0, 'idle pooled lights do not illuminate the scene');
   await capture('daylight-cool.png');
   await page.keyboard.press('Escape');
   await page.locator('#quality-overcast').uncheck();
@@ -58,6 +60,7 @@ try {
   const lit = await pulse.jsonValue(); await pulse.dispose(); await page.mouse.up();
   assert.equal(lit.rifle.ammo, 4);
   assert.ok(lit.combatEffects.visibleLights > 0 && !lit.combatEffects.pointLightShadows);
+  assert.equal(lit.combatEffects.shaderLights, 2, 'a shot does not change the shader light-count variant');
   assert.equal(lit.combatEffects.renderedFragments, lit.combatEffects.fragments);
   assert.ok(lit.combatEffects.lastImpact.normal[1] > .95);
   const before = await luminance(), pausedTime = (await snapshot()).time;
@@ -75,7 +78,8 @@ try {
   await page.locator('#resume').click();
   await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
   await wait(() => window.__battle.rifle.action === 'idle');
-  await look(Math.PI / 2, -.4);
+  // From the current centred base, clear the 4.5m half-width of the paved street.
+  await look(Math.PI / 2, -.22);
   await page.mouse.down(); await wait(() => window.__battle.rifle.shots === 2); await page.mouse.up();
   data = await snapshot();
   assert.equal(data.combatEffects.lastImpact.kind, 'soil', 'real earth-plane hits differ from paving/stone hits');

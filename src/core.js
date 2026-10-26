@@ -35,7 +35,7 @@ export function advanceCapture(point, dt, friendly, hostile) {
 export function circleBlocked(x, z, radius, obstacles) {
   if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
   return obstacles.some(b => {
-    if (b.door) {
+    if (b.door || b.oriented) {
       const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;
       const lx = c * dx - s * dz, lz = s * dx + c * dz;
@@ -74,6 +74,7 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   const width = half * 2 + 1;
   const count = width * width;
   const blocked = new Uint8Array(count);
+  const links = new Uint8Array(count);
   const lookup = obstacleLookup(obstacles, Math.max(radius, .6));
   const blockedAt = (x, z, clearance = radius) => circleBlocked(x, z, clearance, lookup.at(x, z));
   const clear = (start, end, clearance = radius) => {
@@ -83,13 +84,31 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     return true;
   };
   const parents = new Int32Array(count), costs = new Float32Array(count), closed = new Uint8Array(count);
+  const heapNodes = [], heapScores = [];
   const point = index => ({ x: (index % width - half) * step, z: (Math.floor(index / width) - half) * step });
+  const linkPairs = (minX = 0, maxX = width - 1, minZ = 0, maxZ = width - 1) => {
+    for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
+      const index = z * width + x, a = point(index);
+      if (x + 1 < width) {
+        const other = index + 1;
+        links[index] &= ~2; links[other] &= ~1;
+        if (!blocked[index] && !blocked[other] && clear(a, point(other))) { links[index] |= 2; links[other] |= 1; }
+      }
+      if (z + 1 < width) {
+        const other = index + width;
+        links[index] &= ~8; links[other] &= ~4;
+        if (!blocked[index] && !blocked[other] && clear(a, point(other))) { links[index] |= 8; links[other] |= 4; }
+      }
+    }
+  };
   const rebuild = () => {
     lookup.rebuild();
     for (let index = 0; index < count; index++) {
       const p = point(index);
       blocked[index] = Number(blockedAt(p.x, p.z));
     }
+    links.fill(0);
+    linkPairs();
   };
   rebuild();
   const nearest = target => {
@@ -121,47 +140,46 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     const to = nearest(goal);
     if (from < 0 || to < 0) { stats.reason = 'no-clear-cell'; return []; }
     parents.fill(-1); costs.fill(Infinity); closed.fill(0);
-    const heap = [];
+    heapNodes.length = heapScores.length = 0;
     const targetX = to % width, targetZ = Math.floor(to / width);
     const heuristic = index => Math.abs(index % width - targetX) + Math.abs(Math.floor(index / width) - targetZ);
     const push = (index, score) => {
-      let i = heap.length;
-      heap.push({ index, score });
+      let i = heapNodes.length;
+      heapNodes.push(index); heapScores.push(score);
       while (i) {
         const p = (i - 1) >> 1;
-        if (heap[p].score <= score) break;
-        [heap[p], heap[i]] = [heap[i], heap[p]]; i = p;
+        if (heapScores[p] <= score) break;
+        heapNodes[i] = heapNodes[p]; heapScores[i] = heapScores[p]; i = p;
       }
+      heapNodes[i] = index; heapScores[i] = score;
     };
     const pop = () => {
-      const first = heap[0], last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
+      const first = heapNodes[0], lastNode = heapNodes.pop(), lastScore = heapScores.pop();
+      if (heapNodes.length) {
         let i = 0;
-        while (i * 2 + 1 < heap.length) {
+        while (i * 2 + 1 < heapNodes.length) {
           let child = i * 2 + 1;
-          if (child + 1 < heap.length && heap[child + 1].score < heap[child].score) child++;
-          if (heap[i].score <= heap[child].score) break;
-          [heap[i], heap[child]] = [heap[child], heap[i]]; i = child;
+          if (child + 1 < heapNodes.length && heapScores[child + 1] < heapScores[child]) child++;
+          if (lastScore <= heapScores[child]) break;
+          heapNodes[i] = heapNodes[child]; heapScores[i] = heapScores[child]; i = child;
         }
+        heapNodes[i] = lastNode; heapScores[i] = lastScore;
       }
-      return first.index;
+      return first;
     };
     parents[from] = from;
     costs[from] = 0;
     push(from, heuristic(from));
-    while (heap.length) {
+    while (heapNodes.length) {
       const index = pop();
       if (closed[index]) continue;
       closed[index] = 1;
       stats.expanded++;
       if (index === to) break;
-      for (const neighbor of [index - 1, index + 1, index - width, index + width]) {
-        if (neighbor < 0 || neighbor >= count || blocked[neighbor] || closed[neighbor]) continue;
-        if (Math.abs(index % width - neighbor % width) > 1) continue;
-        const a = point(index);
-        const b = point(neighbor);
-        if (costs[index] + 1 >= costs[neighbor] || !clear(a, b)) continue;
+      for (let side = 0; side < 4; side++) {
+        if (!(links[index] & (1 << side))) continue;
+        const neighbor = index + (side === 0 ? -1 : side === 1 ? 1 : side === 2 ? -width : width);
+        if (closed[neighbor] || costs[index] + 1 >= costs[neighbor]) continue;
         parents[neighbor] = index;
         costs[neighbor] = costs[index] + 1;
         push(neighbor, costs[neighbor] + heuristic(neighbor));
@@ -180,12 +198,23 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     const smooth = [];
     let anchor = point(from);
     if (Math.hypot(start.x - anchor.x, start.z - anchor.z) > .05) smooth.push(anchor);
-    for (let i = 0; i < path.length; i++) {
-      if (i > 0 && !clear(anchor, path[i])) {
-        smooth.push(path[i - 1]); anchor = path[i - 1];
+    // Probe longer clear segments geometrically instead of rechecking every prefix.
+    let begin = 0;
+    while (begin < path.length) {
+      let last = begin, reach = 1, fail = path.length;
+      while (begin + reach < path.length) {
+        const candidate = begin + reach;
+        if (!clear(anchor, path[candidate])) { fail = candidate; break; }
+        last = candidate; reach *= 2;
       }
+      if (fail === path.length && last < path.length - 1 && clear(anchor, path.at(-1))) last = path.length - 1;
+      else while (fail - last > 1) {
+        const candidate = (last + fail) >> 1;
+        if (clear(anchor, path[candidate])) last = candidate;
+        else fail = candidate;
+      }
+      smooth.push(path[last]); anchor = path[last]; begin = last + 1;
     }
-    smooth.push(path.at(-1));
     stats.reason = 'path';
     return smooth;
   };
@@ -200,6 +229,7 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
       const index = z * width + x, p = point(index);
       blocked[index] = Number(blockedAt(p.x, p.z));
     }
+    linkPairs(Math.max(0, minX - 1), Math.min(width - 1, maxX + 1), Math.max(0, minZ - 1), Math.min(width - 1, maxZ + 1));
   };
   Object.defineProperty(findPath, 'stats', { get: () => ({ ...stats }) });
   return findPath;

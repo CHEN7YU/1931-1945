@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceCapture, makeObjectives, CAPTURE_SECONDS, circleBlocked, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
+import { advanceCapture, makeObjectives, CAPTURE_SECONDS, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
 
 test('objectives require a full uncontested twelve seconds and do not share mutable state', () => {
   const [point] = makeObjectives();
@@ -71,6 +71,21 @@ test('navigation finds the bridge corridor and never crosses solid cells', () =>
 test('squad switching skips casualties and reports a wiped squad', () => {
   assert.equal(nextAlive([{ health: 100 }, { health: 0 }, { health: 70 }], 0), 2);
   assert.equal(nextAlive([{ health: 0 }, { health: 0 }], 0), -1);
+});
+
+test('cached navigation edges still detect thin walls between clear grid endpoints', () => {
+  const walls = [{ minX: .36, maxX: .39, minZ: -1.2, maxZ: 1.2 }];
+  const navigate = createNavigator(walls, .75, .1);
+  const start = { x: 0, z: 0 }, goal = { x: .75, z: 0 };
+  assert.equal(circleBlocked(start.x, start.z, .1, walls), false);
+  assert.equal(circleBlocked(goal.x, goal.z, .1, walls), false);
+  const path = navigate(start, goal);
+  assert.ok(path.length > 1);
+  let previous = start;
+  for (const point of path) { assert.equal(segmentClear(previous, point, .1, walls), true); previous = point; }
+  walls[0].minZ = 4; walls[0].maxZ = 5;
+  navigate.refresh({ minX: -1, maxX: 2, minZ: -2, maxZ: 6 });
+  assert.deepEqual(navigate(start, goal), [goal], 'local edge cache invalidates when an obstacle moves');
 });
 
 test('a new squad is available only at match start or after every member has died', () => {

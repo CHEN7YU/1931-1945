@@ -59,7 +59,9 @@ export function createCombatEffects(scene, camera, groundHeight) {
       sprite.material.rotation = cloud.rotation;
     });
     lights.forEach((light, index) => {
-      const pulse = state.lights[index]; light.visible = Boolean(pulse);
+      const pulse = state.lights[index];
+      // Keep a fixed shader light count during high-quality combat; inactive lights emit zero.
+      light.visible = Boolean(settings && settings.preset !== 'low' && settings.effects.muzzle && settings.effects.muzzleLight);
       light.intensity = pulse ? 9 * (1 - pulse.age / pulse.life) : 0;
       if (pulse) light.position.set(pulse.x, pulse.y, pulse.z);
     });
@@ -106,7 +108,8 @@ export function createCombatEffects(scene, camera, groundHeight) {
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length,
-        visibleLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
+        visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
+        shaderLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
         limits: { ...PARTICLE_LIMITS }, emitted: state.emitted,
         muzzleLightIntensity: lights.reduce((sum, light) => sum + light.intensity, 0),
         lastImpact: lastImpact ? { ...lastImpact, position: [...lastImpact.position], normal: [...lastImpact.normal] } : null };

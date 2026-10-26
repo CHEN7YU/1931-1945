@@ -102,7 +102,7 @@ try {
   data = await controls.evaluate(() => window.__battle);
   assert.equal(data.locomotion.motionStrength, 0);
   assert.equal(data.locomotion.cameraHeight, data.locomotion.eyeHeight);
-  assert.equal(data.locomotion.cameraRoll, 0);
+  assert.equal(Math.abs(data.locomotion.cameraRoll), 0);
   assert.ok(data.locomotion.speed > 3);
   await controls.keyboard.up('w');
   await controls.keyboard.press('b');

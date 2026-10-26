@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { makeTownLayout } from '../src/town-layout.js';
 import { makeDoors, doorCollider, requestDoor, advanceDoor, resetDoors } from '../src/doors.js';
 import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
+import * as THREE from 'three';
+import { createDoorWorld } from '../src/door-world.js';
 
 const makeDoor = () => makeDoors(makeTownLayout()).find(door => door.id === 'west-0-east-door');
 test('closed door blocks the actual opening and opens with an oriented collider', () => {
@@ -62,4 +64,45 @@ test('local navigation refresh sees moved obstacles without rebuilding the whole
   const path = nav({ x: -3, z: 64 }, { x: -6, z: 64 });
   assert.ok(path.length > 0);
   assert.equal(segmentClear({ x: -3, z: 64 }, path[0], .46, obstacles), true);
+});
+test('cached edges are invalidated across repeated closed/open door changes without wall shortcuts', () => {
+  const door = makeDoor(), obstacle = doorCollider(door), layout = makeTownLayout();
+  const obstacles = [...layout.obstacles, obstacle], navigator = createNavigator(obstacles);
+  const start = { x: -2, z: 64 }, goal = { x: -8.5, z: 64 };
+  const bounds = { minX: -8, maxX: -1, minZ: 60, maxZ: 68 };
+  for (const angle of [0, Math.PI / 2, 0, -Math.PI / 2]) {
+    Object.assign(obstacle, doorCollider(door, angle));
+    navigator.refresh(bounds);
+    const path = navigator(start, goal);
+    assert.ok(path.length, 'a longer route through other real doors is still available');
+    let previous = start;
+    for (const point of path) {
+      assert.equal(segmentClear(previous, point, .46, obstacles), true, `door angle ${angle}`);
+      previous = point;
+    }
+    assert.deepEqual(path.at(-1), goal);
+  }
+});
+test('AI blocking the final degrees of opening has a safe non-teleport escape route', () => {
+  const town = { buildings: [{ id: 'west-0', x: -8.5 }], passages: [{ id: 'west-0-east-door', axis: 'z', width: 1.9, x: -4.5, z: 64 }] };
+  const obstacles = [], material = new THREE.MeshBasicMaterial(), scene = new THREE.Scene();
+  const world = createDoorWorld(scene, town, obstacles, [], material, material), door = world.doors[0];
+  world.interact(door, { x: -7, z: 64 });
+  world.update(1.485 / 1.8, []);
+  let blocker;
+  for (let x = -4; x < -1.5 && !blocker; x += .025) for (let z = 62; z < 65; z += .025) {
+    if (!circleBlocked(x, z, .42, obstacles) && circleBlocked(x, z, .42, [doorCollider(door, door.angle + .025)])) {
+      blocker = { x, z, radius: .42 }; break;
+    }
+  }
+  assert.ok(blocker);
+  world.update(.04, [blocker]);
+  assert.equal(door.state, 'blocked');
+  assert.ok(door.angle > 1.48 && door.angle < Math.PI / 2);
+  const escape = world.swingEscape(blocker);
+  assert.ok(escape, 'nearly-open doors still ask an obstructing AI to yield');
+  assert.equal(segmentClear(blocker, escape, .42, obstacles), true);
+  world.update(1, [escape]);
+  assert.equal(door.state, 'open');
+  assert.equal(world.swingEscape(escape), null);
 });

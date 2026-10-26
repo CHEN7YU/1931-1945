@@ -30,6 +30,8 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       for (const group of groups.values()) group.count = 0;
       summary = { visible: 0, near: 0, far: 0, batches: 0 };
       for (const actor of actors) {
+        if (actor.position) actor.model.position.copy(actor.position);
+        if (actor.heading !== undefined) actor.model.rotation.y = actor.heading;
         if (!actor.model.visible || (actor.health <= 0 && now - actor.deathTime > 12)) continue;
         const distance = camera.position.distanceTo(actor.model.position);
         sphere.center.copy(actor.model.position); sphere.center.y += .85;

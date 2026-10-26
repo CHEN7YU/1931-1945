@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { TYPES, circleBlocked, canDeploySquad } from '../src/core.js';
 import { makeBaseSpawns } from '../src/spawns.js';
 import { makeTownLayout } from '../src/town-layout.js';
-import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn } from '../src/battle-roster.js';
+import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination } from '../src/battle-roster.js';
 
 test('default armies contain ten actual ten-person infantry units on each side', () => {
   const roster = battleRoster();
@@ -70,4 +70,10 @@ test('autonomous reinforcement waits for a full wipe and cooldown, then uses a s
   assert.equal(battleSpawn(unit, points, [{ x: -48, z: -53, health: 100 }], []).id, 'japan-base');
   unit.player = true;
   assert.equal(reinforcementDue(unit, 20), false, 'player deployment never silently respawns');
+});
+test('a dismounted member holds their actual exit point rather than applying a squad offset into the hull', () => {
+  const actor = { index: 0, orderPoint: { x: 3.1, z: 82.3 }, personalHold: true };
+  assert.deepEqual(holdDestination(actor), actor.orderPoint);
+  actor.personalHold = false;
+  assert.notDeepEqual(holdDestination(actor), actor.orderPoint);
 });

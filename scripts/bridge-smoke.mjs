@@ -22,11 +22,11 @@ async function walkTo(x, z) {
   await page.keyboard.down('w');
   for (let i = 0; i < 300; i++) {
     const data = await snapshot();
-    assert.equal(data.state, 'playing', 'ordinary live movement reaches the bridge');
+    assert.equal(data.state, 'playing', 'normal movement in the labelled geometry fixture reaches the bridge');
     const dx = x - data.position.x, dz = z - data.position.z, distance = Math.hypot(dx, dz);
     if (distance < .65) break;
     await turnTo(Math.atan2(-dx, -dz));
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(Math.min(120, Math.max(20, distance / 3.15 * 300)));
   }
   await page.keyboard.up('w');
   await page.waitForTimeout(500);
@@ -34,16 +34,24 @@ async function walkTo(x, z) {
   assert.ok(Math.hypot(data.position.x - x, data.position.z - z) < 1.1, `reached (${x}, ${z}) without teleportation`);
 }
 try {
-  await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  url.searchParams.set('benchmark', 'bridge'); url.searchParams.set('seed', '1938');
+  await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
+  const fixture = await snapshot();
+  assert.equal(fixture.benchmark?.scenario, 'bridge', 'bridge geometry checks require the explicit development fixture; do not silently test the full battlefield');
+  assert.equal(fixture.population.friendly.alive, 5);
+  assert.equal(fixture.population.enemy.alive, 0, 'this fixture is for support geometry, not evidence of live combat performance');
   const probes = (await snapshot()).bridgeSurfaces;
   assert.ok(Math.abs(probes.deck - .45) < 1e-6, 'actual 3D bridge ray hit matches its support height');
   assert.ok(Math.abs(probes.northRamp - .225) < 1e-6 && Math.abs(probes.southRamp - .225) < 1e-6, 'visible ramp geometry and the height sampler agree');
-  await walkTo(0, 0);
-  await walkTo(8, 0);
-  await walkTo(8, -16);
+  await walkTo(8, -3);
+  await walkTo(8, -7.5);
   let data = await snapshot();
+  assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'walking onto the south ramp follows the shared support');
+  await walkTo(8, -16);
+  data = await snapshot();
   assert.equal(data.position.y, .45);
   await page.keyboard.press('Control');
   await page.waitForFunction(() => Math.abs(window.__battle.locomotion.cameraHeight - window.__battle.position.y - 1.05) < .03);
@@ -65,13 +73,19 @@ try {
   await page.keyboard.press('Space');
   await page.waitForFunction(() => window.__battle.locomotion.cameraHeight > 2.3);
   await page.waitForFunction(() => Math.abs(window.__battle.locomotion.cameraHeight - 2.12) < .03);
+  await walkTo(8, -24.5);
+  data = await snapshot();
+  assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'walking down the north ramp keeps continuous support');
+  await walkTo(8, -27);
+  assert.equal((await snapshot()).position.y, 0, 'leaving the north ramp returns to ordinary ground');
+  await walkTo(8, -16);
   await page.keyboard.press('z');
   await page.keyboard.press('y');
   data = await snapshot();
   assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'Y changes support height to the newly controlled member immediately');
   assert.ok(data.locomotion.cameraHeight - data.position.y > .37, 'swapping prone members never drops the eyes into the support surface');
   assert.deepEqual(errors, []);
-  console.log('PASS: real bridge/ramp ray heights, normal approach, raised character support, crouch/prone near-plane clearance, jumping and Y transfer.');
+  console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, normal two-way walking, crouch/prone clearance, landing and Y transfer. Full 200-person combat is measured separately.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ current: data?.current, health: data?.health, position: data?.position, stance: data?.stance, locomotion: data?.locomotion }));

@@ -21,6 +21,7 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron) {
   obstacles.push(...colliders);
   let onNavigationChanged = () => {};
   let onRequested = () => {};
+  let blockedDoors = [];
   const activate = (door, actor, openOnly = false) => {
     const changed = requestDoor(door, actor, openOnly);
     if (changed) onRequested(door);
@@ -73,10 +74,12 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron) {
         if (advanceDoor(door, dt, occupants)) draw(index);
         if (door.revision !== revision) syncNavigation(index);
       }
+      blockedDoors = doors.filter(door => door.blocked);
       leaf.computeBoundingSphere();
     },
     reset() {
       resetDoors(doors);
+      blockedDoors = [];
       doors.forEach((door, index) => { draw(index); syncNavigation(index); });
     },
     focus(camera) {
@@ -97,9 +100,28 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron) {
       return selected;
     },
     interact(door, actor) { return activate(door, actor); },
+    swingEscape(position, radius = .42) {
+      for (const door of blockedDoors) {
+        if (Math.hypot(position.x - door.x, position.z - door.z) > door.width + 1) continue;
+        const travel = Math.sign(door.targetAngle - door.angle) * Math.min(.025, Math.abs(door.targetAngle - door.angle));
+        if (!travel || !circleBlocked(position.x, position.z, radius, [doorCollider(door, door.angle + travel)])) continue;
+        const hx = door.x - (door.axis === 'x' ? door.width / 2 : 0);
+        const hz = door.z - (door.axis === 'z' ? door.width / 2 : 0);
+        const dx = position.x - hx, dz = position.z - hz, length = Math.max(.01, Math.hypot(dx, dz));
+        const candidates = [
+          { x: position.x + dx / length * .9, z: position.z + dz / length * .9 },
+          { x: position.x - dz / length * .9, z: position.z + dx / length * .9 },
+          { x: position.x + dz / length * .9, z: position.z - dx / length * .9 },
+        ];
+        return candidates.find(point => !circleBlocked(point.x, point.z, radius, obstacles) &&
+          !circleBlocked(point.x, point.z, radius, [doorCollider(door, door.angle + travel)]) &&
+          [0.25, .5, .75].every(t => !circleBlocked(position.x + (point.x - position.x) * t, position.z + (point.z - position.z) * t, radius, obstacles))) || null;
+      }
+      return null;
+    },
     openAhead(position, target) {
       for (const door of doors) {
-        if (Math.abs(door.angle) > 1.48 || Math.hypot(position.x - door.x, position.z - door.z) > 2) continue;
+        if (door.state === 'open' || Math.hypot(position.x - door.x, position.z - door.z) > 2) continue;
         const dx = target.x - position.x, dz = target.z - position.z, length = Math.hypot(dx, dz);
         for (let distance = 0; distance <= Math.min(2.3, length); distance += .2) {
           const point = { x: position.x + dx / Math.max(length, .001) * distance, z: position.z + dz / Math.max(length, .001) * distance };

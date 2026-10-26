@@ -58,6 +58,11 @@ export function sectionOffset(index) {
   return { x: (index % 5 - 2) * 1.15, z: Math.floor(index % 10 / 5) * 1.4 - .7 + (Math.floor(index / 10) - (sections - 1) / 2) * 3.2 };
 }
 
+export function holdDestination(actor) {
+  const offset = actor.personalHold ? { x: 0, z: 0 } : sectionOffset(actor.index);
+  return { x: actor.orderPoint.x + offset.x, z: actor.orderPoint.z + offset.z };
+}
+
 export function reinforcementDue(formation, now) {
   return !formation.player && formation.respawnAt !== null && now >= formation.respawnAt && !formation.members.some(actor => actor.health > 0);
 }

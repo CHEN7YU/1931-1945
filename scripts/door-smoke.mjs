@@ -25,10 +25,17 @@ async function walkTo(x, z) {
   await page.keyboard.down('c'); await page.keyboard.down('w');
   for (let i = 0; i < 180; i++) {
     const data = await snapshot(), dx = x - data.position.x, dz = z - data.position.z;
-    if (Math.hypot(dx, dz) < .17) break;
+    const distance = Math.hypot(dx, dz);
+    if (distance < .17) break;
     assert.equal(data.state, 'playing');
+    if (distance < .75) await page.keyboard.up('w');
     await look(Math.atan2(-dx, -dz));
-    await page.waitForTimeout(120);
+    await page.keyboard.down('w');
+    await page.waitForTimeout(Math.min(100, Math.max(10, distance / 1.5 * 180)));
+    if (distance < .75) {
+      await page.keyboard.up('w');
+      await page.waitForTimeout(130);
+    }
   }
   await page.keyboard.up('w'); await page.keyboard.up('c');
   await page.waitForTimeout(150);
@@ -87,16 +94,17 @@ try {
   assert.equal((await door()).state, 'closed', 'starting a fresh battle restores authored door state');
   await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
   await walkTo(0, 58.6); await walkTo(-2, 58.6);
-  await look(Math.PI / 2, -.28); await page.keyboard.press('x');
+  await look(Math.PI / 2, -.23); await page.keyboard.press('x');
   const orderPoint = (await snapshot()).allies[1].orderPoint;
-  assert.ok(orderPoint.x < -6 && orderPoint.x > -10 && Math.abs(orderPoint.z - 58.6) < .4, 'a command through the window points into this room');
+  assert.ok(orderPoint.x < -6 && orderPoint.x > -10 && Math.abs(orderPoint.z - 58.6) < .4, `a command above the window sill points into this room: ${JSON.stringify(orderPoint)}`);
   await page.waitForFunction(id => window.__battle.doors.find(item => item.id === id).state === 'open', doorId, { timeout: 20000 });
   await page.waitForFunction(() => window.__battle.allies.some((actor, index) => index !== window.__battle.current && actor.x < -4.8 && actor.x > -12 && actor.z > 55 && actor.z < 69), null, { timeout: 20000 });
   assert.deepEqual(errors, []);
   console.log('PASS: contextual F, closed-door bullet hit, opening/pause, actual passage, safe sweep, opposite-side opening, battle reset and AI opening a closed door to obey a window-issued indoor order.');
 } catch (error) {
   const state = await snapshot();
-  console.error(JSON.stringify({ position: state?.position, state: state?.state, door: state?.doors?.find(item => item.id === doorId) }));
+  console.error(JSON.stringify({ position: state?.position, state: state?.state, door: state?.doors?.find(item => item.id === doorId),
+    nearby: state?.population.units.flatMap(unit => unit.members).filter(actor => actor.health > 0 && Math.hypot(actor.x + 4.5, actor.z - 64) < 3) }));
   throw error;
 } finally {
   await browser.close();

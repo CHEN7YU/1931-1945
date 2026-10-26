@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 export function createSolidIndex(solids, size = 8) {
+  if (!Number.isFinite(size) || size <= 0) throw new RangeError('Solid index cell size must be positive and finite');
   const cells = new Map(), global = [], dynamic = [], ray = new THREE.Ray(), point = new THREE.Vector3();
   for (const object of solids) {
     if (object.isInstancedMesh) { dynamic.push(object); continue; }
@@ -19,6 +20,7 @@ export function createSolidIndex(solids, size = 8) {
   return {
     candidates(origin, direction, distance) {
       if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Solid query requires a finite segment');
+      if (![origin.x, origin.y, origin.z, direction.x, direction.y, direction.z].every(Number.isFinite)) throw new RangeError('Solid query requires finite position and direction');
       ray.set(origin, direction);
       const endX = origin.x + direction.x * distance, endZ = origin.z + direction.z * distance;
       const minY = Math.min(origin.y, origin.y + direction.y * distance), maxY = Math.max(origin.y, origin.y + direction.y * distance);
@@ -30,15 +32,19 @@ export function createSolidIndex(solids, size = 8) {
       let nextZ = sz ? ((z + (sz > 0 ? 1 : 0)) * size - origin.z) / dz : Infinity;
       const stepX = sx ? size / Math.abs(dx) : Infinity, stepZ = sz ? size / Math.abs(dz) : Infinity;
       const collect = (x, z) => { for (const entry of cells.get(`${x},${z}`) || []) entries.add(entry); };
-      while (true) {
-        collect(x, z);
-        if (x === tx && z === tz) break;
+      const maximumCrossings = Math.abs(tx - x) + Math.abs(tz - z) + 4;
+      if (!Number.isSafeInteger(maximumCrossings)) throw new RangeError('Solid query segment exceeds the grid traversal range');
+      collect(x, z);
+      // End by segment time, not exact endpoint-cell equality: a rounded corner can skip that cell.
+      for (let crossed = 0; crossed < maximumCrossings && Math.min(nextX, nextZ) <= 1 + 1e-10; crossed++) {
         if (Math.abs(nextX - nextZ) < 1e-10) {
           collect(x + sx, z); collect(x, z + sz);
           x += sx; z += sz; nextX += stepX; nextZ += stepZ;
         } else if (nextX < nextZ) { x += sx; nextX += stepX; }
         else { z += sz; nextZ += stepZ; }
+        collect(x, z);
       }
+      collect(tx, tz);
       for (const { object, bounds } of entries) {
         if (bounds.max.y < minY || bounds.min.y > maxY) continue;
         if (bounds.containsPoint(origin) || (ray.intersectBox(bounds, point) && point.distanceToSquared(origin) <= distance * distance + .001)) result.push(object);

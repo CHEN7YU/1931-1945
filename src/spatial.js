@@ -3,14 +3,16 @@ export class SpatialGrid {
     this.size = size;
     this.cells = new Map();
   }
-  key(x, z) { return `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`; }
   clear() { this.cells.clear(); }
   insert(item, x, z) {
-    const key = this.key(x, z);
-    if (!this.cells.has(key)) this.cells.set(key, []);
-    this.cells.get(key).push(item);
+    const ix = Math.floor(x / this.size), iz = Math.floor(z / this.size);
+    let row = this.cells.get(iz);
+    if (!row) { row = new Map(); this.cells.set(iz, row); }
+    let cell = row.get(ix);
+    if (!cell) { cell = []; row.set(ix, cell); }
+    cell.push(item);
   }
-  rebuild(items, position = item => item.model.position) {
+  rebuild(items, position = item => item.position || item.model.position) {
     this.clear();
     for (const item of items) if (item.health > 0) {
       const p = position(item);
@@ -21,9 +23,13 @@ export class SpatialGrid {
     const result = [];
     const minX = Math.floor((x - radius) / this.size), maxX = Math.floor((x + radius) / this.size);
     const minZ = Math.floor((z - radius) / this.size), maxZ = Math.floor((z + radius) / this.size);
-    for (let iz = minZ; iz <= maxZ; iz++) for (let ix = minX; ix <= maxX; ix++) {
-      const cell = this.cells.get(`${ix},${iz}`);
-      if (cell) result.push(...cell);
+    for (let iz = minZ; iz <= maxZ; iz++) {
+      const row = this.cells.get(iz);
+      if (!row) continue;
+      for (let ix = minX; ix <= maxX; ix++) {
+        const cell = row.get(ix);
+        if (cell) result.push(...cell);
+      }
     }
     return result;
   }
@@ -36,14 +42,18 @@ export function obstacleLookup(obstacles, radius = .46, size = 8) {
     for (const obstacle of obstacles) {
       const minX = Math.floor((obstacle.minX - radius) / size), maxX = Math.floor((obstacle.maxX + radius) / size);
       const minZ = Math.floor((obstacle.minZ - radius) / size), maxZ = Math.floor((obstacle.maxZ + radius) / size);
-      for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
-        const key = `${x},${z}`;
-        if (!cells.has(key)) cells.set(key, []);
-        cells.get(key).push(obstacle);
+      for (let z = minZ; z <= maxZ; z++) {
+        let row = cells.get(z);
+        if (!row) { row = new Map(); cells.set(z, row); }
+        for (let x = minX; x <= maxX; x++) {
+          let cell = row.get(x);
+          if (!cell) { cell = []; row.set(x, cell); }
+          cell.push(obstacle);
+        }
       }
     }
   };
   rebuild();
-  return { rebuild, at: (x, z) => cells.get(`${Math.floor(x / size)},${Math.floor(z / size)}`) || empty };
+  return { rebuild, at: (x, z) => cells.get(Math.floor(z / size))?.get(Math.floor(x / size)) || empty };
 }
 // ---模块结束---
