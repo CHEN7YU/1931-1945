@@ -4,7 +4,7 @@ import { soldierModel, tankModel, planeModel, weaponModel, rallyPointModel, base
 import { makeWorld } from './battlefield.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, makeObjectives, advanceCapture, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
-import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason } from './spawns.js';
+import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, createRallyPoint, replaceTeamRally, damageRallyPoint } from './spawns.js';
 import { createLocomotion, advanceLocomotion, stopLocomotion, recoverLocomotion, landLocomotion } from './locomotion.js';
 import { RIFLE, createRifleState, reloadRifle, shootRifle } from './rifle-action.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
@@ -28,6 +28,8 @@ import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './project
 import { advanceOwnedWeapons } from './weapon-simulation.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
+import { createConstructionState, resetConstructionState, selectConstructionBlueprint, constructionCandidate, advanceConstruction } from './construction.js';
+import { createRallyRenderer } from './rally-renderer.js';
 
 const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
 const telemetry = createFrameTelemetry(Boolean(benchmark));
@@ -88,6 +90,7 @@ try {
 const world = makeWorld(scene, surface);
 const solidIndex = createSolidIndex(world.solids);
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
+const rallyRenderer = createRallyRenderer(scene);
 const actorGrid = new SpatialGrid();
 const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
@@ -166,7 +169,7 @@ let pendingSquad = null;
 let pendingSpawn = null;
 let deploymentRefreshAt = 0;
 let toolEquipped = false;
-const construction = { blueprint: false, site: null, anchor: null, progress: 0 };
+const construction = createConstructionState();
 let fatal = false;
 const mortarTarget = new THREE.Vector3();
 const rallyPreview = rallyPointModel('friendly', true);
@@ -410,8 +413,13 @@ function presentCombatEvents() {
 }
 
 function presentControlEvents() {
-  controlEvents.drain(event => {
+  const count = controlEvents.drain(event => {
     if (event.type === 'door.requested') { playDoorSound(event); return; }
+    if (event.type === 'rally.destroyed') {
+      toast(event.team === 'friendly' ? '我方工兵集结点已被摧毁，无法再从此重生！' : '敌军前线集结点已被摧毁', 6);
+      if (state === 'dead') refreshDeployment();
+      return;
+    }
     if (event.soldierId !== entities.control.soldierId) return;
     if (event.type === 'movement.footstep') {
       if (state === 'playing' && !controlledSoldier(entities)?.vehicleId) playFootstep(event);
@@ -431,8 +439,13 @@ function presentControlEvents() {
       toast(event.queued ? '拉栓后装填 · 动作与成员状态保留' : '正在装填…', event.duration);
     } else if (event.type === 'weapon.mechanical') {
       if (state === 'playing' && !toolEquipped && event.weaponId === controlOwner(entities)?.weaponId) mechanicalSound(event.cue);
+    } else if (event.type === 'construction.notice') {
+      const messages = { completed: '集结点建成 · 整队阵亡后，可让其他地面小队从此出击',
+        moved: '位置变化，建造进度重新计算', 'owner-changed': '控制者已改变，旧建造已取消', unavailable: '当前成员不能继续建造' };
+      toast(messages[event.reason], event.reason === 'completed' ? 6 : 3);
     } else if (event.type === 'equipment.changed') renderEquippedTool(event.equipped);
   });
+  if (count) renderConstruction();
 }
 
 function refreshControlSurface() {
@@ -504,7 +517,7 @@ function interactVehicle() {
 }
 
 function resetSpawns() {
-  for (const point of spawnPoints) if (point.model) scene.remove(point.model);
+  rallyRenderer.clear();
   spawnPoints = benchmark?.diagnostic ? diagnosticSpawns(benchmark.scenario) : [...makeBaseSpawns(), ...stagingSpawns()];
   spawnEvents = [];
   rallySerial = 0;
@@ -723,6 +736,7 @@ function deploy(squadId, spawnId = null) {
   initAudio();
   lockMouse();
   updateCamera(0);
+  renderConstruction();
   toast(type === 'plane' ? '从南侧空中入场点进入战场 · 飞机损失后可换其他小队' : `${TYPES[type].name}从${spawn.name}出击`, 5);
   updateHUD();
 }
@@ -736,6 +750,7 @@ function showOverlay(kind = 'pause') {
   const ended = kind === 'victory' || kind === 'defeat';
   const dead = kind === 'dead';
   resetConstruction();
+  renderConstruction();
   $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战结束 / TIME EXPIRED' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
   $('overlay-title').textContent = kind === 'victory' ? '阵地已夺，山河犹在。' : kind === 'defeat' ? '时间耗尽，战线未竟。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
   $('overlay-description').textContent = ended ? '这是原创灰盒玩法演示，不代表真实历史战斗过程。' : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。' : '当前小队仍在作战。可切换本队存活队员；整队阵亡后才能选择其他小队。';
@@ -790,11 +805,7 @@ function refreshDeployment() {
 }
 
 function resetConstruction() {
-  construction.blueprint = false;
-  construction.site = construction.anchor = null;
-  construction.progress = 0;
-  rallyPreview.visible = false;
-  $('construction-panel').hidden = true;
+  resetConstructionState(construction);
 }
 
 function equipTool(equipped) {
@@ -820,71 +831,58 @@ function renderEquippedTool(equipped) {
   $('weapon-name').textContent = equipped ? '工兵建造工具' : TYPES[unit.type].weapon;
 }
 
-function completeRally(team, position) {
-  for (const old of spawnPoints.filter(point => point.team === team && point.kind === 'rally')) scene.remove(old.model);
-  spawnPoints = spawnPoints.filter(point => point.team !== team || point.kind !== 'rally');
-  const point = { id: `${team}-rally-${++rallySerial}`, name: team === 'friendly' ? '工兵前线集结点' : '日军前线集结点', team, kind: 'rally', x: position.x, z: position.z, altitude: world.groundHeight(position.x, position.z), health: SPAWN_RULES.rallyHealth };
-  point.model = rallyPointModel(team);
-  point.model.position.set(point.x, point.altitude, point.z);
-  point.model.traverse(mesh => { if (mesh.isMesh) mesh.userData.spawnPoint = point; });
-  scene.add(point.model);
-  spawnPoints.push(point);
-  if (team === 'friendly') toast('集结点建成 · 整队阵亡后，可让其他地面小队从此出击', 6);
+function completeRally(team, position, builderId) {
+  const builder = entities.soldiers.get(builderId);
+  if (!builder || builder.team !== team || builder.role !== 'engineer' || builder.health <= 0) throw new Error('A completed rally requires its original living engineer');
+  const point = createRallyPoint({ id: `${team}-rally-${++rallySerial}`, team, builderId,
+    position: { x: position.x, y: world.groundHeight(position.x, position.z), z: position.z } });
+  spawnPoints = replaceTeamRally(spawnPoints, point);
   return point;
 }
 
 function damageRally(point, damage, source) {
-  if (point.kind !== 'rally' || point.health <= 0) return;
-  point.health = Math.max(0, point.health - damage);
-  if (point.health === 0) {
-    scene.remove(point.model);
+  const result = damageRallyPoint(point, damage);
+  if (result.destroyed) {
     combatEvents.publish('explosion', { position: { x: point.x, y: .7, z: point.z }, source, sound: false }, time);
-    toast(point.team === 'friendly' ? '我方工兵集结点已被摧毁，无法再从此重生！' : '敌军前线集结点已被摧毁', 6);
-    if (state === 'dead') refreshDeployment();
+    controlEvents.publish('rally.destroyed', { rallyId: point.id, builderId: point.builderId, team: point.team,
+      position: { x: point.x, y: point.altitude, z: point.z } }, time);
   }
 }
 
+function rallyFromHit(hit) {
+  const id = hit?.object.userData.rallyId;
+  if (!id) return null;
+  const point = spawnPoints.find(point => point.id === id && point.kind === 'rally');
+  if (!point) throw new Error(`Rally ray hit has no simulation owner: ${id}`);
+  return point;
+}
+
 function updateConstruction(dt) {
-  $('construction-panel').hidden = !toolEquipped;
-  if (!toolEquipped) { rallyPreview.visible = false; return; }
-  if (!construction.blueprint) {
-    $('construction-status').textContent = '右键选择集结点蓝图';
-    $('construction-fill').style.width = '0';
-    return;
+  if (!construction.blueprint) return;
+  const actor = controlledSoldier(entities);
+  const result = advanceConstruction(construction, { builderId: actor.id, position: actor.position,
+    candidate: constructionCandidate(actor.position, controlPose.yaw, world.groundHeight), holding: held.primary,
+    allowed: state === 'playing' && actor.health > 0 && !actor.vehicleId && actor.role === 'engineer' && toolEquipped }, dt,
+  position => rallyBuildBlockReason(position, objectives, hostilePositions('friendly'), deploymentObstacles()));
+  if (result.completed) {
+    const point = completeRally('friendly', result.completed.position, result.completed.builderId);
+    held.primary = false;
+    emitControlEvent('construction.notice', { reason: 'completed', rallyId: point.id, position: result.completed.position });
+  } else if (result.notice) emitControlEvent('construction.notice', { reason: result.notice });
+}
+
+function renderConstruction() {
+  const visible = toolEquipped && state === 'playing';
+  $('construction-panel').hidden = !visible;
+  rallyPreview.visible = visible && Boolean(construction.preview);
+  if (!visible) return;
+  if (construction.preview) {
+    rallyPreview.position.copy(construction.preview);
+    rallyPreview.traverse(mesh => { if (mesh.isMesh) mesh.material.color.setHex(construction.blockedReason ? 0xd46550 : 0x93c285); });
   }
-  const actorPosition = allies[current].position;
-  camera.getWorldDirection(direction);
-  const candidate = new THREE.Vector3(actorPosition.x, 0, actorPosition.z);
-  const horizontal = new THREE.Vector3(direction.x, 0, direction.z).normalize();
-  candidate.addScaledVector(horizontal, SPAWN_RULES.buildRange);
-  candidate.y = world.groundHeight(candidate.x, candidate.z);
-  if (construction.site && actorPosition.distanceTo(construction.anchor) > .7) {
-    construction.site = construction.anchor = null;
-    construction.progress = 0;
-    toast('移动中止了建造，请重新选择位置');
-  }
-  const position = construction.site || candidate;
-  const reason = rallyBuildBlockReason(position, objectives, hostilePositions('friendly'), deploymentObstacles());
-  rallyPreview.visible = true;
-  rallyPreview.position.copy(position);
-  rallyPreview.traverse(mesh => { if (mesh.isMesh) mesh.material.color.setHex(reason ? 0xd46550 : 0x93c285); });
-  if (held.primary && !reason) {
-    if (!construction.site) {
-      construction.site = candidate.clone();
-      construction.anchor = actorPosition.clone();
-    }
-    construction.progress += dt;
-    $('construction-status').textContent = `正在建造集结点 · ${Math.floor(construction.progress / SPAWN_RULES.buildSeconds * 100)}%`;
-    if (construction.progress >= SPAWN_RULES.buildSeconds) {
-      completeRally('friendly', construction.site);
-      resetConstruction();
-      held.primary = false;
-    }
-  } else {
-    construction.progress = 0;
-    construction.site = construction.anchor = null;
-    $('construction-status').textContent = reason || '位置可用 · 按住左键建造';
-  }
+  $('construction-status').textContent = !construction.blueprint ? '右键选择集结点蓝图'
+    : construction.mode === 'building' ? `正在建造集结点 · ${Math.floor(construction.progress / SPAWN_RULES.buildSeconds * 100)}%`
+    : construction.blockedReason || '位置可用 · 按住左键建造';
   $('construction-fill').style.width = `${construction.progress / SPAWN_RULES.buildSeconds * 100}%`;
 }
 
@@ -1142,7 +1140,8 @@ function fire() {
     const endOfRay = start.clone().addScaledVector(direction, ray.far);
     const enemyTargets = actorGrid.near(start.x, start.z, ray.far).filter(actor => !actor.friendly && !actor.vehicleId && actor.health > 0 && pointSegmentDistance(actor.position, start, endOfRay).distance < 2);
     for (const actor of enemyTargets) { actor.model.position.copy(actor.position); actor.model.updateMatrixWorld(true); }
-    const targets = [...solidIndex.candidates(start, direction, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(e => e.model), ...spawnPoints.filter(point => point.kind === 'rally' && point.health > 0).map(point => point.model)];
+    const rallyTargets = rallyRenderer.targets(spawnPoints);
+    const targets = [...solidIndex.candidates(start, direction, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(e => e.model), ...rallyTargets];
     let hit = ray.intersectObjects(targets, true)[0];
     const end = hit ? hit.point : start.clone().addScaledVector(direction, ray.far);
     const muzzle = unit.type === 'infantry' ? weapon.userData.rifle.muzzle.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(.28, -.25, -1.25).applyMatrix4(camera.matrixWorld);
@@ -1151,12 +1150,14 @@ function fire() {
       const travel = end.clone().sub(muzzle);
       if (travel.dot(direction) <= 0) travel.copy(direction);
       ray.set(muzzle, travel.normalize()); ray.far = 180;
-      hit = ray.intersectObjects([...solidIndex.candidates(muzzle, travel, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(actor => actor.model), ...spawnPoints.filter(point => point.kind === 'rally' && point.health > 0).map(point => point.model)], true)[0];
+      hit = ray.intersectObjects([...solidIndex.candidates(muzzle, travel, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(actor => actor.model), ...rallyTargets], true)[0];
       end.copy(hit ? hit.point : muzzle.clone().addScaledVector(travel, ray.far));
-      lastRifleTrace = { start: muzzle.toArray(), end: end.toArray(), time, hit: Boolean(hit), doorId: hit?.object.userData.doorIds?.[hit.instanceId] || null };
+      lastRifleTrace = { start: muzzle.toArray(), end: end.toArray(), time, hit: Boolean(hit), doorId: hit?.object.userData.doorIds?.[hit.instanceId] || null,
+        rallyId: hit?.object.userData.rallyId || null };
     }
     combatEvents.publish('shot', { source, weaponType: unit.type, start: muzzle, end, muzzle: unit.type === 'infantry',
       sound: unit.type === 'tank' ? 'blast' : 'shot', recoil: unit.type === 'tank' ? .12 : .05 }, time);
+    const hitRally = rallyFromHit(hit);
     for (const enemy of enemies) {
       if (enemy.health > 0 && pointSegmentDistance(enemy.position, muzzle, end).distance < 2.2) {
         enemy.tactics.suppressedUntil = time + 3;
@@ -1165,7 +1166,7 @@ function fire() {
     }
     if (unit.type === 'tank') {
       if (hit?.object.userData.actor) hurt(hit.object.userData.actor, TYPES.tank.damage, source, 'cannon');
-      if (hit?.object.userData.spawnPoint) damageRally(hit.object.userData.spawnPoint, TYPES.tank.damage, source);
+      if (hitRally) damageRally(hitRally, TYPES.tank.damage, source);
       explode(end, TYPES.tank.damage, 11, source);
     } else if (hit) {
       const impact = hit.object.userData.actor ? { position: end, kind: null } : captureImpact(hit, end.clone().sub(muzzle).normalize());
@@ -1179,7 +1180,7 @@ function fire() {
       if (hit.object.userData.actor) {
         hurt(hit.object.userData.actor, TYPES[unit.type].damage, source, unit.type === 'plane' ? 'aircraft-gun' : 'rifle');
       }
-      if (hit.object.userData.spawnPoint) damageRally(hit.object.userData.spawnPoint, TYPES[unit.type].damage, source);
+      if (hitRally) damageRally(hitRally, TYPES[unit.type].damage, source);
     }
     ray.far = Infinity;
   }
@@ -1682,7 +1683,7 @@ function updateAI(dt) {
         const reason = rallyBuildBlockReason(buildSite, objectives, hostilePositions('enemy'), deploymentObstacles());
         actor.buildProgress = reason ? 0 : actor.buildProgress + dt;
         if (actor.buildProgress >= SPAWN_RULES.buildSeconds) {
-          completeRally('enemy', buildSite);
+          completeRally('enemy', buildSite, actor.id);
           actor.buildProgress = 0;
         }
       }
@@ -1944,6 +1945,8 @@ function tick(now) {
   for (const flag of world.flags) flag.rotation.y = Math.sin(now * .0015) * .08;
   updateDoorPrompt();
   renderDeathFeedback();
+  renderConstruction();
+  rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
   soldierRenderer.update(allForces, graphics.snapshot.preset, time);
   const renderStarted = benchmark ? performance.now() : 0;
@@ -2098,7 +2101,7 @@ function performControlCommand(command) {
   } else if (action === 'pressFire') held.primary = true;
   else if (action === 'pressAim') {
     held.secondary = true;
-    if (toolEquipped) construction.blueprint = true;
+    if (toolEquipped) selectConstructionBlueprint(construction, entities.control.soldierId);
     else held.aiming = true;
   } else if (action === 'look') {
     controlPose.yaw -= payload.x * .0022 * (held.aiming ? .6 : 1);
@@ -2254,8 +2257,11 @@ Object.defineProperty(window, '__battle', { get: () => ({
     x: actor.position.x, y: actor.position.y, z: actor.position.z, stance: actor.stance, lookPitch: actor.lookPitch, order: actor.order,
     orderPoint: actor.orderPoint ? { ...actor.orderPoint } : null, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     role: actor.role, targetKind: actor.targetKind, spawnId: actor.spawnId, stamina: actor.locomotion.stamina, rifle: { ...actor.rifle } })),
-  construction: { tool: toolEquipped, blueprint: construction.blueprint, progress: construction.progress, site: construction.site ? { x: construction.site.x, z: construction.site.z } : null },
-  spawnPoints: spawnPoints.map(({ id, team, kind, name, x, z, health }) => ({ id, team, kind, name, x, z, health })),
+  construction: { tool: toolEquipped, builderId: construction.builderId, blueprint: construction.blueprint, mode: construction.mode,
+    progress: construction.progress, blockedReason: construction.blockedReason, preview: construction.preview ? { ...construction.preview } : null,
+    site: construction.site ? { x: construction.site.x, z: construction.site.z } : null },
+  spawnPoints: spawnPoints.map(({ id, team, kind, name, x, z, health, builderId }) => ({ id, team, kind, name, x, z, health, builderId: builderId ?? null })),
+  rallyViews: rallyRenderer.snapshot,
   spawnEvents: spawnEvents.map(event => ({ ...event })),
   enemies: enemies.filter(actor => actor.health > 0).length,
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,

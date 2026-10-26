@@ -28,6 +28,33 @@ export function makeBaseSpawns() {
   ];
 }
 
+function requireRally(point) {
+  if (!point || point.kind !== 'rally' || !['id', 'builderId'].every(field => typeof point[field] === 'string' && point[field]) ||
+    !['friendly', 'enemy'].includes(point.team) || !['x', 'z', 'altitude', 'health'].every(field => Number.isFinite(point[field])) ||
+    point.health < 0) throw new Error('Invalid rally simulation state');
+}
+
+export function createRallyPoint({ id, team, builderId, position }) {
+  const point = { id, team, builderId, kind: 'rally', name: team === 'friendly' ? '工兵前线集结点' : '日军前线集结点',
+    x: position?.x, z: position?.z, altitude: position?.y, health: SPAWN_RULES.rallyHealth };
+  requireRally(point);
+  return point;
+}
+
+export function replaceTeamRally(points, point) {
+  requireRally(point);
+  if (point.health <= 0 || points.some(existing => existing.id === point.id)) throw new Error('A replacement rally requires a new live identity');
+  return [...points.filter(existing => existing.kind !== 'rally' || existing.team !== point.team), point];
+}
+
+export function damageRallyPoint(point, amount) {
+  requireRally(point);
+  if (!Number.isFinite(amount) || amount < 0) throw new RangeError('Rally damage must be non-negative and finite');
+  const previous = point.health;
+  point.health = Math.max(0, previous - amount);
+  return { damage: previous - point.health, destroyed: previous > 0 && point.health === 0 };
+}
+
 export function deploymentBlockReason(state, members, squadId, previousSquadId) {
   if (!Object.hasOwn(SQUADS, squadId)) return '未知的小队';
   if (!canDeploySquad(state, members)) return '当前小队尚有存活队员，整队阵亡后才能更换小队';

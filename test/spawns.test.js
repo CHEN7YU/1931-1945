@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SQUADS, SPAWN_RULES, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, spawnPositions } from '../src/spawns.js';
+import { SQUADS, SPAWN_RULES, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, spawnPositions,
+  createRallyPoint, replaceTeamRally, damageRallyPoint } from '../src/spawns.js';
 import { makeObjectives, circleBlocked } from '../src/core.js';
 
 const wiped = [{ health: 0 }, { health: 0 }];
@@ -58,4 +59,42 @@ test('squad members enter as a formation at the selected point, not at the curre
       assert.equal(circleBlocked(position.x, position.z, .4, []), false);
     }
   }
+});
+const createRally = (id, team = 'friendly') => createRallyPoint({ id, team, builderId: `${team}-engineer`,
+  position: { x: 0, y: .45, z: 68 } });
+test('rallies store only simulation data and replace only the same team while preserving registered bases', () => {
+  const old = createRally('old'), enemy = createRally('enemy', 'enemy');
+  const original = [...makeBaseSpawns(), old, enemy], next = createRally('new');
+  const points = replaceTeamRally(original, next);
+  assert.equal('model' in next, false);
+  assert.equal(next.builderId, 'friendly-engineer');
+  assert.equal(next.altitude, .45);
+  assert.equal(next.health, 120);
+  assert.equal(points.includes(old), false);
+  assert.equal(original.includes(old), true);
+  assert.ok(points.includes(enemy));
+  assert.deepEqual(points.filter(point => point.kind !== 'rally'), makeBaseSpawns());
+  assert.equal(points.filter(point => point.team === 'friendly' && point.kind === 'rally').length, 1);
+  assert.equal(spawnBlockReason(next, 'mortar', [], []), null);
+  assert.doesNotThrow(() => JSON.stringify(points));
+});
+test('rally destruction is a single simulation transition and immediately blocks deployment without a renderer', () => {
+  const point = createRally('rally');
+  assert.deepEqual(damageRallyPoint(point, 100), { damage: 100, destroyed: false });
+  assert.equal(point.health, 20);
+  assert.deepEqual(damageRallyPoint(point, 100), { damage: 20, destroyed: true });
+  assert.equal(point.health, 0);
+  assert.match(spawnBlockReason(point, 'infantry', [], []), /已被摧毁/);
+  assert.deepEqual(damageRallyPoint(point, 100), { damage: 0, destroyed: false });
+  assert.equal(point.builderId, 'friendly-engineer');
+});
+test('invalid or reused rally identities and damage fail explicitly', () => {
+  const point = createRally('rally');
+  for (const amount of [-1, NaN, Infinity]) assert.throws(() => damageRallyPoint(point, amount), RangeError);
+  assert.equal(point.health, 120);
+  assert.throws(() => damageRallyPoint(makeBaseSpawns()[0], 1), /simulation state/);
+  assert.throws(() => replaceTeamRally([point], createRally(point.id)), /new live identity/);
+  assert.throws(() => createRallyPoint({ id: 'r', team: 'friendly', builderId: '', position: { x: 0, y: 0, z: 0 } }), /simulation state/);
+  assert.throws(() => createRallyPoint({ id: 'r', team: 'missing', builderId: 'e', position: { x: 0, y: 0, z: 0 } }), /simulation state/);
+  assert.throws(() => createRallyPoint({ id: 'r', team: 'friendly', builderId: 'e', position: { x: NaN, y: 0, z: 0 } }), /simulation state/);
 });

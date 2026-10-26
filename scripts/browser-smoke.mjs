@@ -1,12 +1,14 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MATCH_SECONDS } from '../src/core.js';
+import { SPAWN_RULES } from '../src/spawns.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const errors = [];
+const constructionObservations = [];
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
 const key = async (code, ms = 0) => {
@@ -29,6 +31,7 @@ try {
   assert.equal(data.type, 'infantry');
   assert.equal(data.allies.length, 10);
   assert.equal(data.allies[0].role, 'engineer');
+  const engineerId = data.allies[0].id;
   assert.equal(data.spawnId, 'china-base');
   assert.ok(data.spawnEvents.filter(event => event.team === 'enemy').every(event => data.spawnPoints.some(point => point.id === event.pointId && point.team === 'enemy')));
   await page.mouse.down({ button: 'right' });
@@ -52,15 +55,61 @@ try {
   await page.mouse.down({ button: 'right' });
   await page.mouse.up({ button: 'right' });
   assert.equal((await snapshot()).construction.blueprint, true);
+  assert.equal((await snapshot()).construction.builderId, engineerId);
   await page.mouse.down();
   await page.waitForTimeout(600);
   await page.mouse.up();
+  await page.waitForFunction(() => window.__battle.construction.progress === 0 && window.__battle.construction.site === null);
+  constructionObservations.push({ stage: 'released', construction: (await snapshot()).construction });
   assert.equal((await snapshot()).spawnPoints.filter(point => point.kind === 'rally' && point.team === 'friendly').length, 0, 'interrupted construction does not create a spawn point');
+  await page.mouse.down();
+  await page.waitForFunction(() => window.__battle.construction.progress > .25);
+  await key('y'); await page.mouse.up();
+  data = await snapshot();
+  assert.equal(data.current, 1);
+  assert.equal(data.construction.tool, false);
+  assert.equal(data.construction.builderId, null);
+  assert.equal(data.construction.progress, 0);
+  assert.equal(data.construction.blueprint, false);
+  constructionObservations.push({ stage: 'changed-member', control: data.control, construction: data.construction });
+  await key('2');
+  assert.equal((await snapshot()).construction.tool, false, 'a rifleman cannot inherit the engineer tool or unfinished construction');
+  for (let i = 1; i < data.allies.length; i++) await key('y');
+  assert.equal((await snapshot()).control.soldierId, engineerId);
+  await key('2');
+  await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' });
+  await page.mouse.down();
+  await page.waitForFunction(() => window.__battle.construction.progress > .25);
+  await key('Escape'); await page.mouse.up();
+  data = await snapshot();
+  assert.equal(data.construction.builderId, null);
+  assert.equal(data.construction.progress, 0);
+  assert.equal(data.construction.blueprint, false, 'pause preserves the existing cancel-current-blueprint policy');
+  constructionObservations.push({ stage: 'paused-cancelled', construction: data.construction });
+  assert.equal(await page.locator('#construction-panel').isVisible(), false);
+  await page.waitForTimeout(150);
+  assert.equal((await snapshot()).construction.progress, 0);
+  await page.locator('#resume').click();
+  await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' });
+  const buildStarted = (await snapshot()).time;
   await page.mouse.down();
   await page.waitForFunction(() => window.__battle.spawnPoints.some(point => point.kind === 'rally' && point.team === 'friendly'), null, { timeout: 12000 });
   await page.mouse.up();
   const builtRally = (await snapshot()).spawnPoints.find(point => point.kind === 'rally' && point.team === 'friendly');
   assert.equal(builtRally.health, 120, 'engineer builds a functional rally point');
+  assert.equal(builtRally.builderId, engineerId);
+  data = await snapshot();
+  assert.ok(data.rallyViews.ids.includes(builtRally.id));
+  assert.equal(data.rallyViews.count, data.spawnPoints.filter(point => point.kind === 'rally' && point.health > 0).length);
+  assert.equal(data.construction.builderId, null);
+  assert.equal(data.construction.blueprint, false);
+  assert.equal(data.construction.progress, 0);
+  assert.ok(data.controlEvents.history.some(event => event.type === 'construction.notice' &&
+    event.reason === 'completed' && event.rallyId === builtRally.id && event.soldierId === engineerId));
+  const completed = data.controlEvents.history.find(event => event.type === 'construction.notice' && event.rallyId === builtRally.id);
+  assert.ok(completed.time - buildStarted >= SPAWN_RULES.buildSeconds - 1e-6, 'actual build completion cannot bypass the six-second simulation threshold');
+  constructionObservations.push({ stage: 'completed', buildStarted, event: completed, rally: builtRally,
+    construction: data.construction, views: data.rallyViews });
   if (artifacts) await page.screenshot({ path: join(artifacts, 'battle-engineer.png') });
   await key('1');
   await page.mouse.down({ button: 'right' });
@@ -73,6 +122,16 @@ try {
     await page.waitForTimeout(700);
   }
   assert.equal((await snapshot()).spawnPoints.find(point => point.id === builtRally.id).health, 0, 'rally point is destructible');
+  data = await snapshot();
+  assert.equal(data.rifle.trace.rallyId, builtRally.id, 'actual weapon ray resolves its hit to the registered rally identity');
+  assert.equal(data.rallyViews.ids.includes(builtRally.id), false);
+  const destroyed = data.controlEvents.history.find(event => event.type === 'rally.destroyed' && event.rallyId === builtRally.id);
+  assert.ok(destroyed);
+  assert.equal(destroyed.builderId, engineerId);
+  assert.equal('soldierId' in destroyed, false);
+  constructionObservations.push({ stage: 'destroyed', event: destroyed,
+    rally: data.spawnPoints.find(point => point.id === builtRally.id), views: data.rallyViews, trace: data.rifle.trace });
+  if (artifacts) await writeFile(join(artifacts, 'construction-observations.json'), JSON.stringify(constructionObservations, null, 2));
   await page.evaluate(() => document.dispatchEvent(new MouseEvent('mousemove', { movementY: -132 })));
   await page.mouse.up({ button: 'right' });
   await key('r');
@@ -206,9 +265,13 @@ try {
   await key('Escape');
   await page.locator('#back-menu').click();
   assert.equal((await snapshot()).state, 'menu');
+  assert.deepEqual((await snapshot()).rallyViews, { count: 0, ids: [] });
   await page.locator('#deploy').click();
   assert.ok((await snapshot()).remaining > 599, 'new match resets timer');
   assert.equal((await snapshot()).deployments, 1);
+  assert.deepEqual((await snapshot()).rallyViews, { count: 0, ids: [] }, 'new match cannot inherit a rally view or ray target');
+  constructionObservations.push({ stage: 'new-match', views: (await snapshot()).rallyViews });
+  if (artifacts) await writeFile(join(artifacts, 'construction-observations.json'), JSON.stringify(constructionObservations, null, 2));
   assert.equal(await page.locator('#fatal').isVisible(), false);
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('PASS: registered team spawns, engineer tools/build/cancel/destruction, RMB sights, Y crews, X orders, pause, live post-wipe selection, other-squad restriction, deployment confirmation, vehicles and match restart.');

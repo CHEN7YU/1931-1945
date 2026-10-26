@@ -118,3 +118,29 @@ test('door requests have their own world identity, not the current player identi
   assert.deepEqual(events.snapshot.history, []);
   assert.equal(events.drain(() => assert.fail('old door replayed')), 0);
 });
+test('construction completion feedback retains the builder and registered rally without live model references', () => {
+  const events = createControlEvents(), position = { x: 0, y: .45, z: 73 };
+  const event = events.publish('construction.notice', { unitId: 'alpha', soldierId: 'engineer-1',
+    reason: 'completed', rallyId: 'friendly-rally-1', position, model: {} }, 6);
+  position.x = 999;
+  assert.equal(event.position.x, 0);
+  assert.equal(event.rallyId, 'friendly-rally-1');
+  assert.equal(event.soldierId, 'engineer-1');
+  assert.equal('model' in event, false);
+  assert.throws(() => { event.position.y = 0; }, TypeError);
+  assert.throws(() => events.publish('construction.notice', { unitId: 'alpha', soldierId: 's1', reason: 'completed', position }, 6), /construction feedback/);
+  assert.throws(() => events.publish('construction.notice', { unitId: 'alpha', soldierId: 's1', reason: 'unknown' }, 6), /construction feedback/);
+});
+test('rally loss is a world notification without a fake current-player owner', () => {
+  const events = createControlEvents(), point = { x: 0, y: .45, z: 73 };
+  const event = events.publish('rally.destroyed', { rallyId: 'friendly-rally', builderId: 'original-engineer', team: 'friendly',
+    position: point, soldierId: 'wrong-current-player', model: {} }, 8);
+  point.x = 999;
+  assert.equal(event.position.x, 0);
+  assert.equal(event.builderId, 'original-engineer');
+  assert.equal('soldierId' in event, false);
+  assert.equal('model' in event, false);
+  assert.throws(() => events.publish('rally.destroyed', { ...event, team: 'missing' }, 8), /world identity/);
+  events.clear();
+  assert.equal(events.drain(() => assert.fail('old rally loss replayed')), 0);
+});
