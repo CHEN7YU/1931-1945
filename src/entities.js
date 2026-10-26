@@ -1,10 +1,11 @@
 import { TYPES } from './core.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
+const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
 export const TANK_SEATS = Object.freeze([
-  Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true }),
-  Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: 1.9, canFire: true }),
-  Object.freeze({ role: 'driver', label: '驾驶员', eyeHeight: 1.3, canFire: false }),
+  Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
+  Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: 1.9, canFire: true, controlsTurret: true }),
+  Object.freeze({ role: 'driver', label: '驾驶员', eyeHeight: 1.3, canFire: false, controlsTurret: false }),
 ]);
 
 export function createEntityRegistry() {
@@ -25,9 +26,18 @@ export function registerWeapon(registry, weapon, id, ownerId, type) {
   return weapon;
 }
 
+export function releaseSupportWeapon(registry, unit) {
+  const weapon = unit.supportWeapon;
+  if (!weapon) return;
+  if (registry.units.get(unit.id) !== unit || weapon.ownerId !== unit.id || registry.weapons.get(weapon.id) !== weapon) throw new Error(`Broken support weapon ownership: ${unit.id}`);
+  registry.weapons.delete(weapon.id);
+  unit.supportWeapon = null;
+}
+
 export function registerSoldier(registry, actor) {
   if (!actor.id || registry.soldiers.has(actor.id) || !registry.units.has(actor.unitId)) throw new Error(`Invalid soldier ownership: ${actor.id}`);
   actor.vehicleId = actor.seatId = null;
+  actor.stance = 'standing'; actor.lookPitch = 0;
   registry.soldiers.set(actor.id, actor);
   return actor;
 }
@@ -37,8 +47,8 @@ export function createVehicleEntity(registry, { id, unitId, type, position, team
   const settings = TYPES[type];
   const seats = type === 'tank' ? TANK_SEATS : [{ role: 'pilot', label: '飞行员', eyeHeight: 1.67, canFire: true }];
   const vehicle = { id, unitId, team, type, position: copyPosition(position), health: settings.health, heading: 0, pitch: 0,
-    turretYaw: 0, throttle: 1, outsideTime: 0, speed: 0, crewLossLevel: 0, crewIds: [],
-    seats: seats.map((seat, index) => ({ ...seat, id: `${id}:seat-${index}`, occupantId: null })),
+    turretYaw: 0, turretPitch: 0, throttle: 1, outsideTime: 0, speed: 0, crewLossLevel: 0, crewIds: [],
+    seats: seats.map((seat, index) => ({ ...seat, id: `${id}:seat-${index}`, occupantId: null, viewYaw: 0, viewPitch: 0 })),
     weapon: registerWeapon(registry, { ammo: settings.magazine, nextShot: 0, reloadUntil: 0 }, `${id}:primary`, id, type) };
   registry.vehicles.set(id, vehicle);
   return vehicle;
@@ -51,6 +61,10 @@ export function occupiedVehicle(registry, actor) {
   return vehicle;
 }
 
+export function occupiedSeat(registry, actor = controlledSoldier(registry)) {
+  return occupiedVehicle(registry, actor)?.seats.find(seat => seat.id === actor.seatId) || null;
+}
+
 export function seatSoldier(registry, actor, vehicle, seatId) {
   const seat = vehicle.seats.find(item => item.id === seatId);
   if (actor.health <= 0 || vehicle.health <= 0) return '人员或载具已失去作战能力';
@@ -59,6 +73,7 @@ export function seatSoldier(registry, actor, vehicle, seatId) {
   if (actor.vehicleId) return '先离开当前席位';
   if (!seat || seat.occupantId) return '席位已被占用';
   seat.occupantId = actor.id; actor.vehicleId = vehicle.id; actor.seatId = seat.id;
+  actor.stance = 'standing';
   if (!vehicle.crewIds.includes(actor.id)) vehicle.crewIds.push(actor.id);
   Object.assign(actor.position, { x: vehicle.position.x, y: vehicle.position.y, z: vehicle.position.z });
   actor.targetKind = vehicle.type === 'tank' ? 'closed-armor' : 'aircraft';
@@ -96,9 +111,21 @@ export function controlledType(registry) {
 }
 
 export function controlledWeapon(registry) {
-  const actor = controlledSoldier(registry);
+  return soldierWeapon(registry, controlledSoldier(registry));
+}
+
+function soldierWeapon(registry, actor) {
   if (!actor) return null;
   return occupiedVehicle(registry, actor)?.weapon || (actor.groundType === 'mortar' ? registry.units.get(actor.unitId).supportWeapon : actor.rifle);
+}
+
+export function captureAttackSource(registry, actor, weapon = soldierWeapon(registry, actor)) {
+  if (!actor || registry.soldiers.get(actor.id) !== actor || actor.health <= 0) throw new Error('Attack source requires a living registered soldier');
+  if (!weapon?.ownerId || registry.weapons.get(weapon.id) !== weapon ||
+    ![actor.id, actor.unitId, actor.vehicleId].includes(weapon.ownerId)) throw new Error('Attack source requires an owned registered weapon');
+  return Object.freeze({ credit: actor === controlledSoldier(registry) ? 'player' : actor.team === 'friendly' ? 'ally' : 'enemy',
+    team: actor.team, unitId: actor.unitId, soldierId: actor.id, weaponId: weapon.id,
+    vehicleId: actor.vehicleId, seatId: actor.seatId });
 }
 
 export function controlOwner(registry) {
@@ -106,6 +133,68 @@ export function controlOwner(registry) {
   if (!actor) return null;
   return { unitId: actor.unitId, soldierId: actor.id, vehicleId: actor.vehicleId, seatId: actor.seatId,
     weaponId: controlledWeapon(registry).id };
+}
+
+export function createControlPoseView(registry) {
+  const selected = () => {
+    const actor = controlledSoldier(registry);
+    if (!actor || actor.health <= 0) throw new Error('Pose input requires a living controlled soldier');
+    return actor;
+  };
+  return {
+    get yaw() {
+      const actor = controlledSoldier(registry), vehicle = occupiedVehicle(registry, actor);
+      if (!vehicle) return actor?.heading ?? 0;
+      if (vehicle.type === 'plane') return vehicle.heading;
+      const seat = vehicle.seats.find(seat => seat.id === actor.seatId);
+      return seat.controlsTurret ? vehicle.turretYaw : vehicle.heading + seat.viewYaw;
+    },
+    set yaw(value) {
+      if (!Number.isFinite(value)) throw new RangeError('Look yaw must be finite');
+      const actor = selected(), vehicle = occupiedVehicle(registry, actor);
+      if (!vehicle) actor.heading = value;
+      else if (vehicle.type === 'plane') vehicle.heading = value;
+      else {
+        const seat = vehicle.seats.find(seat => seat.id === actor.seatId);
+        if (seat.controlsTurret) vehicle.turretYaw = value;
+        else seat.viewYaw = value - vehicle.heading;
+      }
+    },
+    get pitch() {
+      const actor = controlledSoldier(registry), vehicle = occupiedVehicle(registry, actor);
+      if (!vehicle) return actor?.lookPitch ?? 0;
+      if (vehicle.type === 'plane') return vehicle.pitch;
+      const seat = vehicle.seats.find(seat => seat.id === actor.seatId);
+      return seat.controlsTurret ? vehicle.turretPitch : seat.viewPitch;
+    },
+    set pitch(value) {
+      if (!Number.isFinite(value)) throw new RangeError('Look pitch must be finite');
+      const actor = selected(), vehicle = occupiedVehicle(registry, actor);
+      const min = vehicle?.type === 'plane' ? -.7 : -1.25, max = vehicle?.type === 'plane' ? .65 : 1.25;
+      const pitch = Math.max(min, Math.min(max, value));
+      if (!vehicle) actor.lookPitch = pitch;
+      else if (vehicle.type === 'plane') vehicle.pitch = pitch;
+      else {
+        const seat = vehicle.seats.find(seat => seat.id === actor.seatId);
+        if (seat.controlsTurret) vehicle.turretPitch = pitch;
+        else seat.viewPitch = pitch;
+      }
+    },
+    get stance() {
+      const actor = controlledSoldier(registry);
+      return occupiedVehicle(registry, actor) ? 'standing' : actor?.stance ?? 'standing';
+    },
+    set stance(value) {
+      if (!Object.hasOwn(stanceHeights, value)) throw new RangeError('Unknown personal stance');
+      const actor = selected();
+      if (occupiedVehicle(registry, actor)) throw new Error('Seated members cannot change foot stance');
+      actor.stance = value;
+    },
+    get eyeHeight() {
+      const actor = controlledSoldier(registry), vehicle = occupiedVehicle(registry, actor);
+      return vehicle ? vehicle.seats.find(seat => seat.id === actor.seatId).eyeHeight : stanceHeights[actor?.stance ?? 'standing'];
+    },
+  };
 }
 
 export function createControlView(registry) {

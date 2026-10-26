@@ -29,7 +29,8 @@ export function diagnosticRoster(scenario = 'duel') {
 
 export function diagnosticSpawns(scenario = 'duel') {
   if (scenario === 'control') return [
-    { id: 'diagnostic-tank', name: 'G2坦克集结点', team: 'friendly', kind: 'garage', x: 0, z: 83, altitude: 0 },
+    // The existing east shop covers the exit during extended crew-control checks.
+    { id: 'diagnostic-tank', name: 'G2坦克集结点', team: 'friendly', kind: 'garage', x: 10, z: 83, altitude: 0 },
     { id: 'diagnostic-friendly-1', name: 'G2独立友军一', team: 'friendly', kind: 'base', x: -20, z: 78, altitude: 0, aiOnly: true },
     { id: 'diagnostic-friendly-2', name: 'G2独立友军二', team: 'friendly', kind: 'base', x: 20, z: 78, altitude: 0, aiOnly: true },
     { id: 'diagnostic-enemy', name: 'G2敌军集结点', team: 'enemy', kind: 'base', x: 0, z: 16, altitude: 0 },

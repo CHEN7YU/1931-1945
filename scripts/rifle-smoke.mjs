@@ -76,24 +76,32 @@ try {
   assert.equal((await snapshot()).rifle.elapsed, paused.rifle.elapsed, 'pause freezes action and ammo');
   await page.locator('#resume').click();
   await press('y');
-  const held = (await snapshot()).allies[0].rifle.elapsed;
+  const switched = await snapshot(), held = switched.allies[0].rifle.elapsed;
+  const switchEvent = switched.controlEvents.history.at(-1).id;
   await page.waitForTimeout(600);
   data = await snapshot();
   assert.equal(data.current, 1);
   assert.equal(data.allies[0].rifle.elapsed, held, 'uncontrolled member cannot silently complete loading');
   assert.equal(data.ammo, 5, 'each member has an independent magazine');
+  assert.ok(!data.controlEvents.history.some(event => event.id > switchEvent && event.type === 'weapon.mechanical' &&
+    event.soldierId === switched.allies[0].id), 'the inactive member cannot emit mechanical cues into the new member view');
   for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await press('y');
   data = await snapshot();
   assert.equal(data.current, 0);
   assert.equal(data.ammo, 4);
   assert.ok(data.rifle.elapsed - held < .15, 'returning resumes the same action rather than restarting it');
   await press('2');
-  const toolPause = (await snapshot()).rifle.elapsed;
+  const stowed = await snapshot(), toolPause = stowed.rifle.elapsed;
+  const toolEvent = stowed.controlEvents.history.at(-1).id;
   await page.waitForTimeout(450);
   assert.equal((await snapshot()).rifle.elapsed, toolPause, 'hammer pauses the rifle action');
+  assert.ok(!(await snapshot()).controlEvents.history.some(event => event.id > toolEvent && event.type === 'weapon.mechanical'),
+    'stowed rifle actions cannot produce mechanical cues');
   await press('1');
   await wait(() => window.__battle.rifle.action === 'idle');
   assert.equal((await snapshot()).ammo, 5);
+  assert.ok((await snapshot()).controlEvents.history.some(event => event.type === 'weapon.mechanical' &&
+    event.soldierId === stowed.control.soldierId && event.weaponId === stowed.allies[0].rifle.id && event.cue === 'load'));
   await page.mouse.down();
   await wait(() => window.__battle.rifle.shots === 6 && window.__battle.ammo === 0, 10000);
   await page.mouse.up();

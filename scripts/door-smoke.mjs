@@ -1,11 +1,11 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-const errors = [], doorId = 'west-0-east-door';
+const errors = [], observations = [], doorId = 'west-0-east-door';
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
 const door = async () => (await snapshot()).doors.find(item => item.id === doorId);
@@ -60,17 +60,27 @@ try {
   await page.mouse.up();
   assert.equal((await snapshot()).rifle.trace.doorId, doorId, 'actual gun ray hits the closed door leaf, not the room behind it');
   await page.keyboard.press('f');
+  let requested = (await snapshot()).controlEvents.history.findLast(event => event.type === 'door.requested' && event.doorId === doorId);
+  assert.ok(requested?.opening, 'F emits a door-identified request in the accepted input turn');
+  assert.equal('soldierId' in requested, false, 'world door sound is not falsely attributed to the selected player');
+  assert.equal((await snapshot()).controlEvents.pending, 0);
+  observations.push({ stage: 'player-request', event: requested });
   await page.waitForFunction(id => Math.abs(window.__battle.doors.find(item => item.id === id).angle) > .25, doorId);
   await page.keyboard.press('Escape');
   const paused = await door();
+  const pausedFeedback = (await snapshot()).controlEvents;
   await page.waitForTimeout(250);
   assert.equal((await door()).angle, paused.angle, 'pause freezes the door animation');
+  assert.deepEqual((await snapshot()).controlEvents, pausedFeedback);
   await page.locator('#resume').click();
   await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
   await page.waitForFunction(id => window.__battle.doors.find(item => item.id === id).state === 'open', doorId);
   await capture('door-open.png');
   await walkTo(-8.5, 64);
   assert.equal((await snapshot()).town.inside, 'west-0', 'open door can actually be crossed');
+  const indoorSteps = (await snapshot()).controlEvents.history.filter(event => event.type === 'movement.footstep' && event.surface === 'wood');
+  assert.ok(indoorSteps.length > 0, 'actual indoor walking captures the wood floor rather than the earlier street surface');
+  observations.push({ stage: 'indoor-footsteps', events: indoorSteps });
   await walkTo(-6.1, 64);
   await look(-Math.PI / 2);
   await page.waitForFunction(() => !document.querySelector('#interaction-prompt').hidden);
@@ -92,6 +102,7 @@ try {
   await walkTo(-2.5, 64);
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click(); await page.locator('#deploy').click();
   assert.equal((await door()).state, 'closed', 'starting a fresh battle restores authored door state');
+  assert.deepEqual((await snapshot()).controlEvents.history, [], 'resetting the authored doors does not replay old request sounds');
   await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
   await walkTo(0, 58.6); await walkTo(-2, 58.6);
   await look(Math.PI / 2, -.23); await page.keyboard.press('x');
@@ -99,6 +110,14 @@ try {
   assert.ok(orderPoint.x < -6 && orderPoint.x > -10 && Math.abs(orderPoint.z - 58.6) < .4, `a command above the window sill points into this room: ${JSON.stringify(orderPoint)}`);
   await page.waitForFunction(id => window.__battle.doors.find(item => item.id === id).state === 'open', doorId, { timeout: 20000 });
   await page.waitForFunction(() => window.__battle.allies.some((actor, index) => index !== window.__battle.current && actor.x < -4.8 && actor.x > -12 && actor.z > 55 && actor.z < 69), null, { timeout: 20000 });
+  requested = (await snapshot()).controlEvents.history.findLast(event => event.type === 'door.requested' && event.doorId === doorId);
+  assert.ok(requested?.opening);
+  assert.equal('soldierId' in requested, false, 'AI door requests retain the door identity rather than borrowing player identity');
+  observations.push({ stage: 'ai-request', event: requested });
+  if (process.env.ARTIFACT_DIR) {
+    await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
+    await writeFile(join(process.env.ARTIFACT_DIR, 'door-feedback-observations.json'), JSON.stringify(observations, null, 2));
+  }
   assert.deepEqual(errors, []);
   console.log('PASS: contextual F, closed-door bullet hit, opening/pause, actual passage, safe sweep, opposite-side opening, battle reset and AI opening a closed door to obey a window-issued indoor order.');
 } catch (error) {

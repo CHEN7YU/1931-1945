@@ -11,6 +11,18 @@ export function impactKind(object) {
   return 'generic';
 }
 
+export function captureImpact(hit, incoming) {
+  if (!hit.face) throw new Error('Mesh impact is missing its face normal');
+  const matrix = hit.object.matrixWorld.clone();
+  if (hit.instanceId !== undefined) {
+    const instance = new THREE.Matrix4(); hit.object.getMatrixAt(hit.instanceId, instance); matrix.multiply(instance);
+  }
+  const normal = hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix)).normalize();
+  if (normal.dot(incoming) > 0) normal.negate();
+  return { kind: impactKind(hit.object), position: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+    normal: { x: normal.x, y: normal.y, z: normal.z } };
+}
+
 export function createCombatEffects(scene, camera, groundHeight) {
   const state = createParticleState(), transform = new THREE.Object3D();
   const fragments = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0),
@@ -90,18 +102,12 @@ export function createCombatEffects(scene, camera, groundHeight) {
       if (!settings.effects.muzzle || camera.position.distanceTo(position) > 35) return;
       emit(position, direction, 'muzzle', time);
     },
-    hit(hit, incoming, time) {
-      if (!settings.effects.hitParticles || camera.position.distanceTo(hit.point) > 100) return;
-      if (!hit.face) throw new Error('Mesh impact is missing its face normal');
-      const matrix = hit.object.matrixWorld.clone();
-      if (hit.instanceId !== undefined) {
-        const instance = new THREE.Matrix4(); hit.object.getMatrixAt(hit.instanceId, instance); matrix.multiply(instance);
-      }
-      const normal = hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix)).normalize();
-      if (normal.dot(incoming) > 0) normal.negate();
-      const kind = impactKind(hit.object);
-      lastImpact = { kind, position: hit.point.toArray(), normal: normal.toArray() };
-      emit(hit.point, normal, kind, time);
+    hit(impact, time) {
+      const position = new THREE.Vector3(impact.position.x, impact.position.y, impact.position.z);
+      if (!settings.effects.hitParticles || camera.position.distanceTo(position) > 100) return;
+      const normal = new THREE.Vector3(impact.normal.x, impact.normal.y, impact.normal.z);
+      lastImpact = { kind: impact.kind, position: position.toArray(), normal: normal.toArray() };
+      emit(position, normal, impact.kind, time);
     },
     update(dt, time) { advanceCombatParticles(state, dt, groundHeight, time); display(); },
     clear() { clearCombatParticles(state); lastImpact = null; display(); },

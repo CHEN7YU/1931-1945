@@ -51,6 +51,13 @@ try {
   await page.mouse.down({ button: 'right' });
   await page.waitForTimeout(1000);
   await page.mouse.up({ button: 'right' });
+  const moved = await page.evaluate(() => window.__battle);
+  const footsteps = moved.controlEvents.history.filter(event => event.type === 'movement.footstep');
+  assert.ok(footsteps.length > 0);
+  assert.ok(footsteps.some(event => event.speed > 3 && event.stance === 'standing'), 'actual jogging/sprinting emits captured movement feedback');
+  assert.ok(footsteps.every(event => moved.allies.some(actor => actor.id === event.soldierId && actor.unitId === event.unitId)));
+  assert.ok(footsteps.every(event => ['stone', 'earth', 'wood'].includes(event.surface)));
+  assert.ok(footsteps.some(event => event.surface === moved.locomotion.surface));
   if (artifacts) await page.screenshot({ path: join(artifacts, 'movement-after.png') });
   const video = page.video();
   if (video) {
@@ -95,6 +102,7 @@ try {
   const paused = await controls.evaluate(() => window.__battle);
   await controls.waitForTimeout(250);
   assert.equal((await controls.evaluate(() => window.__battle)).time, paused.time);
+  assert.deepEqual((await controls.evaluate(() => window.__battle)).controlEvents, paused.controlEvents, 'pause cannot replay movement or door requests');
   await controls.locator('#motion-strength').selectOption('0');
   await controls.locator('#resume').click();
   await controls.keyboard.down('w');
@@ -148,6 +156,7 @@ try {
     note: 'Prototype metre/second tuning, not Enlisted measurements. Lanes are isolated deterministic physics runs, not historical map distances.',
     lanes: ['walk', 'jog', 'sprint'].flatMap(mode => [20, 50].flatMap(distance => [30, 60, 144].map(fps => lane(distance, mode, fps)))),
     realBrowser: { joggingPeak: Math.max(...jogging.map(frame => frame.speed)), sprintingPeak: Math.max(...sprinting.map(frame => frame.speed)), staminaAfterSprint: sprinting.at(-1).stamina, cameraMin: Math.min(...sprinting.map(frame => frame.cameraHeight)), cameraMax: Math.max(...sprinting.map(frame => frame.cameraHeight)) },
+    retainedFootstepEvents: footsteps,
   };
   if (artifacts) await writeFile(join(artifacts, 'movement-measurements.json'), `${JSON.stringify(report, null, 2)}\n`);
   console.log('PASS: weighted movement, actual gait, stamina exhaustion, per-member retention, sprint-to-aim, wall stop, pause, comfort controls and 20m/50m timing.');

@@ -71,6 +71,50 @@ test('control feedback is a bounded ordered stream, consumed separately without 
   events.clear();
   assert.deepEqual(events.snapshot, { pending: 0, history: [] });
   assert.throws(() => events.publish('unknown', { soldierId: 's1' }, 0), RangeError);
+  assert.throws(() => events.publish('weapon.mechanical', { soldierId: 's1', cue: 'load' }, 0), /weapon identity/);
+  assert.throws(() => events.publish('weapon.mechanical', { soldierId: 's1', weaponId: 'w1', cue: 'wrong' }, 0), /valid cue/);
+  events.publish('weapon.mechanical', { soldierId: 's1', weaponId: 'w1', cue: 'load' }, 0);
+  assert.equal(events.drain(event => assert.equal(event.weaponId, 'w1')), 1);
   for (let i = 0; i < 64; i++) events.publish('death.started', { soldierId: 's1' }, i);
   assert.throws(() => events.publish('death.started', { soldierId: 's1' }, 65), /capacity/);
+});
+test('footstep feedback captures actual owner, ground and stance rather than future controller state', () => {
+  const events = createControlEvents();
+  const data = { unitId: 'alpha', soldierId: 's1', position: { x: 1, y: .45, z: -16 },
+    surface: 'stone', stance: 'prone', speed: .75, landing: false, model: { mutable: true } };
+  const event = events.publish('movement.footstep', data, 1);
+  data.position.x = 999; data.surface = 'earth'; data.stance = 'standing'; data.soldierId = 's2';
+  assert.equal(event.soldierId, 's1');
+  assert.equal(event.position.x, 1);
+  assert.equal(event.surface, 'stone');
+  assert.equal(event.stance, 'prone');
+  assert.equal('model' in event, false);
+  assert.throws(() => { event.position.y = 0; }, TypeError);
+  const rendered = [];
+  assert.equal(events.drain(value => rendered.push(value)), 1);
+  assert.deepEqual(rendered[0], event);
+  assert.equal(events.drain(() => assert.fail('step replayed')), 0);
+  const fresh = { ...data, position: { x: 0, y: 0, z: 0 } };
+  for (const surface of ['stone', 'wood', 'earth']) assert.equal(events.publish('movement.footstep', { ...fresh, surface }, 1).surface, surface);
+  for (const invalid of [{ speed: NaN }, { speed: -1 }, { surface: 'unknown' }, { stance: 'unknown' },
+    { unitId: '' }, { landing: 'yes' }, { position: { x: 0, y: Infinity, z: 0 } }]) {
+    assert.throws(() => events.publish('movement.footstep', { ...fresh, ...invalid }, 1));
+  }
+});
+test('door requests have their own world identity, not the current player identity or a live door reference', () => {
+  const events = createControlEvents();
+  const door = { id: 'west-door', position: { x: -4.5, y: 1.2, z: 64 }, targetAngle: 1.5 };
+  const event = events.publish('door.requested', { doorId: door.id, position: door.position, opening: true,
+    soldierId: 'wrong-player', door }, 2);
+  door.position.x = 100; door.targetAngle = 0;
+  assert.equal(event.doorId, 'west-door');
+  assert.equal(event.position.x, -4.5);
+  assert.equal(event.opening, true);
+  assert.equal('soldierId' in event, false);
+  assert.equal('door' in event, false);
+  assert.throws(() => events.publish('door.requested', { doorId: '', position: event.position, opening: true }, 2));
+  assert.throws(() => events.publish('door.requested', { doorId: 'door', position: event.position }, 2));
+  events.clear();
+  assert.deepEqual(events.snapshot.history, []);
+  assert.equal(events.drain(() => assert.fail('old door replayed')), 0);
 });

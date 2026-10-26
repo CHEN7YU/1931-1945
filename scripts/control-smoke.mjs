@@ -75,12 +75,15 @@ try {
   await lookAt(exited.x + 20, exited.z, -.35);
   await shoot();
   checkpoint('ground rifle fired');
-  assert.equal((await snapshot()).ammo, 4, 'ground crew use their own independent rifle');
+  const footFired = await snapshot();
+  assert.equal(footFired.ammo, 4, 'ground crew use their own independent rifle');
   await page.keyboard.down('w');
   await page.mouse.down();
   await page.keyboard.press('y');
   data = await snapshot();
   assert.equal(data.type, 'tank'); assert.equal(data.current, 1);
+  assert.equal(data.look.pitch, initial.vehicles[0].turretPitch, 'ground rifle look cannot overwrite the original cannon aim');
+  assert.equal(data.locomotion.eyeHeight, 1.9);
   assert.equal(data.ammo, 0, 'Y returns to shared primary ammo rather than the dismounted rifle');
   assert.equal(data.vehicles[0].seats[1].occupantId, data.control.soldierId);
   assert.equal(data.controlInput.held.primary, false);
@@ -94,14 +97,58 @@ try {
   assert.deepEqual(data.vehicles[0].position, parked, 'W held by the dismounted soldier does not drive a different member tank');
   await page.keyboard.up('w'); await page.mouse.up(); await page.mouse.up({ button: 'right' });
   await page.keyboard.press('y');
+  checkpoint('driver observation without cannon authority');
+  data = await snapshot();
+  assert.equal(data.current, 2);
+  assert.equal(data.locomotion.eyeHeight, 1.3);
+  assert.equal(data.weaponVisible, false);
+  assert.equal(await page.locator('#crosshair').isVisible(), false);
+  assert.match(await page.locator('#weapon-name').textContent(), /驾驶员.*主炮不可操作/);
+  const cannon = { yaw: data.vehicles[0].turretYaw, pitch: data.vehicles[0].turretPitch };
+  await lookAt(data.position.x + 10, data.position.z - 10, -.25);
+  const lookStarted = (await snapshot()).time;
+  await page.waitForFunction(time => window.__battle.time > time + .3, lookStarted);
+  data = await snapshot();
+  const driverSeat = data.vehicles[0].seats[2];
+  assert.ok(data.fov > 70, 'driver RMB observation does not enter the gunner magnified sight');
+  assert.equal(data.vehicles[0].turretYaw, cannon.yaw);
+  assert.equal(data.vehicles[0].turretPitch, cannon.pitch);
+  const beforeTurn = data.vehicles[0].heading;
+  await page.keyboard.down('d');
+  const turnStarted = data.time;
+  await page.waitForFunction(time => window.__battle.time > time + .25, turnStarted);
+  await page.keyboard.up('d');
+  data = await snapshot();
+  assert.ok(Math.abs(data.vehicles[0].heading - beforeTurn) > .1);
+  assert.ok(Math.abs(data.look.yaw - data.vehicles[0].heading - driverSeat.viewYaw) < 1e-9);
+  assert.equal(data.look.pitch, driverSeat.viewPitch);
+  assert.equal(data.vehicles[0].turretYaw, cannon.yaw);
+  assert.equal(data.vehicles[0].turretPitch, cannon.pitch);
+  const driverLook = { ...data.look };
+  await page.keyboard.press('r');
+  assert.equal((await snapshot()).vehicles[0].weapon.reloadUntil, 0);
+  assert.match(await page.locator('#toast').textContent(), /驾驶员.*不能装填/);
   await page.mouse.down(); await page.waitForTimeout(100); await page.mouse.up();
   assert.match(await page.locator('#toast').textContent(), /驾驶员.*不能/);
   assert.equal((await snapshot()).vehicles[0].weapon.ammo, 0);
+  await capture('g2-driver-observation.png');
+  observations.push({ stage: 'driver-observation', look: data.look, vehicles: data.vehicles, weaponVisible: data.weaponVisible });
   await page.keyboard.press('y');
   checkpoint('returned to dismounted member');
   data = await snapshot();
   assert.equal(data.type, 'infantry'); assert.equal(data.control.soldierId, personId); assert.equal(data.ammo, 4);
+  assert.equal(data.look.pitch, footFired.look.pitch, 'the dismounted member retains their own foot look');
   assert.ok(Math.hypot(data.position.x - exited.x, data.position.z - exited.z) < 1);
+  await page.keyboard.press('y');
+  data = await snapshot();
+  assert.equal(data.look.yaw, cannon.yaw); assert.equal(data.look.pitch, cannon.pitch);
+  assert.equal(data.weaponVisible, true);
+  await page.keyboard.press('y');
+  data = await snapshot();
+  assert.deepEqual(data.look, driverLook, 'returning to the driver seat restores its observation, not cannon aim');
+  assert.equal(data.weaponVisible, false);
+  await page.keyboard.press('y');
+  data = await snapshot();
   await lookAt(data.vehicles[0].position.x, data.vehicles[0].position.z);
   await page.keyboard.press('f');
   checkpoint('reboarded same vehicle');
@@ -113,8 +160,18 @@ try {
   assert.deepEqual(data.allies.map(actor => actor.id), ownIds);
   await capture('g2-seat-return.png');
   observations.push({ stage: 'reboarded', control: data.control, vehicles: data.vehicles, own: data.allies });
-  await page.keyboard.press('r'); await wait(() => window.__battle.ammo === 1);
-  checkpoint('primary reloaded');
+  await page.keyboard.press('r');
+  await page.keyboard.press('f');
+  assert.equal((await snapshot()).type, 'infantry');
+  await wait(() => window.__battle.vehicles[0].weapon.ammo === 1);
+  data = await snapshot();
+  assert.equal(data.ammo, 4);
+  assert.equal(data.vehicles[0].weapon.reloadUntil, 0, 'vehicle-owned reload completes while its crew member is on foot');
+  await lookAt(data.vehicles[0].position.x, data.vehicles[0].position.z);
+  await page.keyboard.press('f');
+  assert.equal((await snapshot()).type, 'tank');
+  assert.equal((await snapshot()).ammo, 1);
+  checkpoint('primary reloaded independently during ground exit');
   await lookAt(data.position.x, data.position.z - 10, -1.24);
   await page.mouse.down();
   checkpoint('observe real blast casualty');
@@ -122,7 +179,8 @@ try {
     const data = window.__battle;
     if (data.state !== 'transferring' || data.deathTransfer.handedOff) return false;
     const observed = { state: data.state, transfer: data.deathTransfer, current: data.current, control: data.control,
-      time: data.time, health: data.health, vehicles: data.vehicles, own: data.allies };
+      time: data.time, health: data.health, vehicles: data.vehicles, own: data.allies, weaponVisible: data.weaponVisible,
+      combatEvents: data.combatEvents, combatFeedback: data.combatFeedback };
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
     document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape' }));
     return observed;
@@ -130,6 +188,15 @@ try {
   const firstDeath = await dying.jsonValue(); await dying.dispose(); await page.mouse.up();
   assert.equal(firstDeath.control.soldierId, personId, 'death is visible before control moves to another soldier');
   assert.equal(firstDeath.own[0].health, 0);
+  assert.equal(firstDeath.weaponVisible, false);
+  assert.equal(firstDeath.combatEvents.pending, 0);
+  assert.deepEqual(firstDeath.combatEvents.published, firstDeath.combatEvents.presented);
+  assert.ok(firstDeath.combatEvents.history.some(event => event.type === 'explosion' && event.source.soldierId === personId));
+  assert.ok(firstDeath.combatEvents.history.some(event => event.type === 'damage' && event.target.kind === 'vehicle' &&
+    event.observerId === personId && event.amount > 0));
+  assert.ok(firstDeath.combatEvents.history.some(event => event.type === 'casualty' && event.target.id === personId && event.health === 0));
+  assert.ok(firstDeath.combatFeedback.flash > 0);
+  assert.equal(firstDeath.combatFeedback.markerVisible, false, 'self/friendly blast damage is not a hostile hit confirmation');
   assert.ok(firstDeath.transfer.elapsed < .6 && !firstDeath.transfer.handedOff);
   const paused = await snapshot();
   assert.equal(paused.state, 'pause');
@@ -146,16 +213,27 @@ try {
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY' }));
     document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyY' }));
   });
+  const handoff = await page.waitForFunction(() => {
+    const data = window.__battle;
+    return data.state === 'transferring' && data.deathTransfer.handedOff
+      ? { current: data.current, weaponVisible: data.weaponVisible, elapsed: data.deathTransfer.elapsed } : false;
+  });
+  assert.equal((await handoff.jsonValue()).weaponVisible, false, 'the new weapon stays hidden until death transfer completes');
+  await handoff.dispose();
   await capture('g2-death-feedback.png');
   await wait(() => window.__battle.state === 'playing');
   data = await snapshot();
   assert.equal(data.current, 1);
+  assert.equal(data.weaponVisible, true);
   assert.equal(data.control.soldierId, ownIds[1]);
   assert.equal(data.vehicles[0].id, id); assert.equal(data.vehicles[0].weapon.id, weaponId);
   assert.equal(data.vehicles[0].health, firstDeath.health);
+  assert.equal(data.look.pitch, firstDeath.vehicles[0].turretPitch, 'death takeover reads the surviving vehicle aim, not an old personal view');
   assert.equal(data.ammo, 0, 'holding a button during death feedback does not shoot or start an empty-mag reload on the new member');
   assert.equal(data.allies[1].health, 100);
   assert.equal(data.deathTransfer.active, false);
+  assert.equal(data.combatFeedback.flash, 0);
+  assert.equal(data.combatFeedback.markerVisible, false);
   assert.equal(await page.locator('#death-transfer').isVisible(), false);
   assert.equal(await page.locator('#damage-vignette').evaluate(element => element.style.opacity), '0', 'new crew do not inherit the dead member red damage overlay');
   observations.push({ stage: 'death-before-handoff', ...firstDeath }, { stage: 'survivor-controlled', time: data.time, control: data.control, vehicles: data.vehicles });
@@ -167,22 +245,41 @@ try {
       return Math.hypot(actor.x - before.x, actor.z - before.z) > .5;
     }));
   }
+  checkpoint('second casualty transfers to the surviving driver without a cannon view');
+  await page.keyboard.press('r'); await wait(() => window.__battle.ammo === 1);
+  await lookAt(data.position.x, data.position.z - 10, -1.24);
+  await page.mouse.down();
+  await wait(() => window.__battle.state === 'playing' && window.__battle.current === 2);
+  await page.mouse.up();
+  data = await snapshot();
+  assert.equal(data.allies[1].health, 0);
+  assert.equal(data.allies[2].health, 100);
+  assert.ok(data.vehicles[0].health > 0 && data.vehicles[0].health < firstDeath.health);
+  assert.equal(data.weaponVisible, false, 'death.completed cannot re-enable the cannon model in a driver seat');
+  assert.equal(await page.locator('#crosshair').isVisible(), false);
+  assert.deepEqual(data.look, driverLook);
+  assert.equal(data.vehicles[0].weapon.reloadUntil, 0);
+  assert.ok(data.combatEvents.history.some(event => event.type === 'explosion' && event.source.soldierId === ownIds[1]),
+    'explosion feedback retains the dead firing gunner rather than the current surviving driver');
+  observations.push({ stage: 'driver-after-two-casualties', control: data.control, look: data.look, vehicles: data.vehicles, weaponVisible: data.weaponVisible });
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
   assert.equal((await snapshot()).entityCounts.vehicles, 0);
   assert.equal((await snapshot()).entityCounts.soldiers, 0);
   assert.equal((await snapshot()).deathTransfer.active, false);
   assert.equal((await snapshot()).controlInput.owner, null);
   assert.equal((await snapshot()).controlEvents.pending, 0);
+  assert.deepEqual((await snapshot()).combatEvents.history, []);
+  assert.deepEqual((await snapshot()).combatFeedback.feed, []);
   if (process.env.ARTIFACT_DIR) {
     await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
     await writeFile(join(process.env.ARTIFACT_DIR, 'g2-control-observations.json'), JSON.stringify(observations, null, 2));
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: two autonomous units, stable vehicle/person/weapon/seat identities, F exit/reboard, Y seat/ground transfer, driver weapon restriction, independent ammo, real blast death feedback, pause/input isolation and survivor takeover.');
+  console.log('PASS: stable identities/resources, F/Y continuity, hull-relative driver observation without cannon input or sight, independent reload, consecutive real casualties, hidden transition weapons, pause/input isolation and surviving driver takeover.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ stage, state: data?.state, current: data?.current, control: data?.control,
-    position: data?.position, vehicles: data?.vehicles, death: data?.deathTransfer, errors }));
+    position: data?.position, vehicles: data?.vehicles, own: data?.allies, death: data?.deathTransfer, errors }));
   throw error;
 } finally {
   clearTimeout(watchdog);

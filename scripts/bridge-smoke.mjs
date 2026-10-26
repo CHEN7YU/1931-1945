@@ -1,12 +1,16 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { groundHeight } from '../src/ground.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
+const poseObservations = [];
+const observePose = (stage, data) => poseObservations.push({ stage, control: data.control, stance: data.stance,
+  look: data.look, position: data.position, eyeHeight: data.locomotion.eyeHeight, cameraHeight: data.locomotion.cameraHeight,
+  members: data.allies.map(actor => ({ id: actor.id, stance: actor.stance, lookPitch: actor.lookPitch })) });
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
 async function turnTo(yaw, pitch = 0) {
@@ -73,6 +77,9 @@ try {
   await page.keyboard.press('Space');
   await page.waitForFunction(() => window.__battle.locomotion.cameraHeight > 2.3);
   await page.waitForFunction(() => Math.abs(window.__battle.locomotion.cameraHeight - 2.12) < .03);
+  data = await snapshot();
+  assert.ok(data.controlEvents.history.some(event => event.type === 'movement.footstep' &&
+    event.landing && event.surface === 'stone' && event.soldierId === data.control.soldierId), 'actual landing captures its original soldier and bridge surface');
   await walkTo(8, -24.5);
   data = await snapshot();
   assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'walking down the north ramp keeps continuous support');
@@ -80,12 +87,50 @@ try {
   assert.equal((await snapshot()).position.y, 0, 'leaving the north ramp returns to ordinary ground');
   await walkTo(8, -16);
   await page.keyboard.press('z');
+  await turnTo(.3, -.6);
+  const original = await snapshot();
+  observePose('original-prone', original);
+  assert.ok(Math.abs(original.look.pitch + .6) < .002);
   await page.keyboard.press('y');
   data = await snapshot();
+  assert.equal(data.stance, 'standing', 'new member does not inherit the old prone selection');
+  assert.equal(data.look.pitch, 0, 'new member does not inherit the old look pitch');
+  assert.equal(data.locomotion.eyeHeight, 1.67);
+  assert.equal(data.allies[0].stance, 'prone');
+  assert.equal(data.allies[0].lookPitch, original.look.pitch);
+  observePose('next-member-standing', data);
   assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'Y changes support height to the newly controlled member immediately');
   assert.ok(data.locomotion.cameraHeight - data.position.y > .37, 'swapping prone members never drops the eyes into the support surface');
+  await page.keyboard.press('Control');
+  await turnTo(-.4, .2);
+  const second = await snapshot();
+  assert.ok(Math.abs(second.look.pitch - .2) < .002);
+  for (let i = 1; i < original.allies.length; i++) await page.keyboard.press('y');
+  data = await snapshot();
+  assert.equal(data.current, 0);
+  assert.equal(data.stance, 'prone');
+  assert.equal(data.look.pitch, original.look.pitch);
+  assert.equal(data.locomotion.eyeHeight, .45);
+  assert.ok(data.locomotion.cameraHeight - .07 > data.position.y, 'restored prone camera retains clipping clearance above its current support');
+  observePose('original-prone-restored', data);
+  await page.keyboard.press('y');
+  data = await snapshot();
+  assert.equal(data.stance, 'crouched');
+  assert.equal(data.look.pitch, second.look.pitch);
+  observePose('second-crouched-restored', data);
+  await page.keyboard.press('Escape');
+  const paused = await snapshot();
+  await page.waitForTimeout(150);
+  assert.deepEqual((await snapshot()).look, paused.look);
+  assert.equal((await snapshot()).stance, paused.stance);
+  await page.locator('#back-menu').click();
+  await page.locator('#deploy').click();
+  data = await snapshot();
+  assert.ok(data.allies.every(actor => actor.stance === 'standing' && actor.lookPitch === 0), 'new battle cannot inherit old personal pose state');
+  observePose('new-battle-defaults', data);
+  if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'control-pose-observations.json'), JSON.stringify(poseObservations, null, 2));
   assert.deepEqual(errors, []);
-  console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, normal two-way walking, crouch/prone clearance, landing and Y transfer. Full 200-person combat is measured separately.');
+  console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, two-way walking, crouch/prone clearance, landing, independent member pose restoration and new-battle reset. Full 200-person combat is measured separately.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ current: data?.current, health: data?.health, position: data?.position, stance: data?.stance, locomotion: data?.locomotion }));
