@@ -2,6 +2,7 @@ import { TYPES } from './core.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
+export const SOLDIER_FIRE_HEIGHT = 1.39;
 export const TANK_SEATS = Object.freeze([
   Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
   Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: 1.9, canFire: true, controlsTurret: true }),
@@ -43,10 +44,11 @@ export function registerSoldier(registry, actor) {
 }
 
 export function createVehicleEntity(registry, { id, unitId, type, position, team }) {
-  if (!['tank', 'plane'].includes(type) || registry.vehicles.has(id) || !registry.units.has(unitId)) throw new Error(`Invalid vehicle: ${id}`);
+  if (typeof id !== 'string' || !id || !position || !['x', 'y', 'z'].every(axis => Number.isFinite(position[axis])) ||
+    !['tank', 'plane'].includes(type) || registry.vehicles.has(id) || !registry.units.has(unitId)) throw new Error(`Invalid vehicle: ${id}`);
   const settings = TYPES[type];
   const seats = type === 'tank' ? TANK_SEATS : [{ role: 'pilot', label: '飞行员', eyeHeight: 1.67, canFire: true }];
-  const vehicle = { id, unitId, team, type, position: copyPosition(position), health: settings.health, heading: 0, pitch: 0,
+  const vehicle = { id, unitId, team, type, position: copyPosition(position), health: settings.health, heading: 0, pitch: 0, roll: 0,
     turretYaw: 0, turretPitch: 0, throttle: 1, outsideTime: 0, speed: 0, crewLossLevel: 0, crewIds: [],
     seats: seats.map((seat, index) => ({ ...seat, id: `${id}:seat-${index}`, occupantId: null, viewYaw: 0, viewPitch: 0 })),
     weapon: registerWeapon(registry, { ammo: settings.magazine, nextShot: 0, reloadUntil: 0 }, `${id}:primary`, id, type) };
@@ -105,6 +107,14 @@ export function selectControlledSoldier(registry, actor) {
 }
 
 export function controlledSoldier(registry) { return registry.soldiers.get(registry.control.soldierId) || null; }
+export function soldierRifleMuzzle(actor) {
+  if (!actor || !['friendly', 'enemy'].includes(actor.team) || !Number.isFinite(actor.heading) ||
+    !actor.position || !['x', 'y', 'z'].every(axis => Number.isFinite(actor.position[axis]))) throw new RangeError('Soldier muzzle requires a finite owned position, heading and team');
+  const c = Math.cos(actor.heading), s = Math.sin(actor.heading), z = actor.team === 'friendly' ? -.871 : -1.07;
+  return { x: .13 * c + z * s + actor.position.x, y: SOLDIER_FIRE_HEIGHT + actor.position.y,
+    z: -.13 * s + z * c + actor.position.z };
+}
+
 export function controlledType(registry) {
   const actor = controlledSoldier(registry);
   return occupiedVehicle(registry, actor)?.type || actor?.groundType || 'infantry';

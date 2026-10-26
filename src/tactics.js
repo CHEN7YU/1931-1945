@@ -1,4 +1,5 @@
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.z);
 
 export function createTactics(id, squad, slot) {
   return { id, squad, slot: slot % 10, mode: 'advance', lastSeen: null, threatKind: 'person', forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
@@ -19,6 +20,19 @@ export function expireThreat(state, now) {
     return true;
   }
   return false;
+}
+
+export function friendlyCoverAction(state, position, now) {
+  if (!validPoint(state.cover) || !validPoint(state.cover.peek) || !validPoint(position) || !Number.isFinite(now) || now < 0) {
+    throw new RangeError('Cover movement requires an assigned cover, finite position and simulation time');
+  }
+  const exposed = state.enteredCover && now >= state.suppressedUntil && peekTurn(state, now);
+  const goal = exposed ? state.cover.peek : state.cover;
+  const travel = distance(position, goal), moving = travel > .15;
+  return { goal, moving, sprint: moving && (!state.enteredCover ? travel > 1.2 : !exposed && travel > .4),
+    mayFire: exposed && !moving,
+    mode: !state.enteredCover ? 'rush-to-cover' :
+      moving ? exposed ? 'move-to-peek' : 'withdraw-to-cover' : exposed ? 'peek' : 'cover' };
 }
 
 export function peekTurn(state, now) {

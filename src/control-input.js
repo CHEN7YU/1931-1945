@@ -21,8 +21,11 @@ export function createControlInput() {
     keys, held, clearHeld,
     bind(nextOwner, allowInput = true) {
       if (!nextOwner?.unitId || !nextOwner.soldierId || !nextOwner.weaponId) throw new Error('Controlled input requires unit, soldier and weapon identities');
-      owner = Object.freeze(Object.fromEntries(ownerFields.map(field => [field, nextOwner[field] ?? null])));
+      const next = Object.freeze(Object.fromEntries(ownerFields.map(field => [field, nextOwner[field] ?? null])));
+      const changed = !sameOwner(owner, next);
+      owner = next;
       enabled = allowInput; revision++; clearHeld();
+      return changed;
     },
     block() { enabled = false; revision++; clearHeld(); },
     reset() { owner = null; enabled = false; revision++; clearHeld(); decisions.length = 0; },

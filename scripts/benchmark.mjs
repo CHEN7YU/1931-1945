@@ -111,7 +111,7 @@ async function main() {
           events.push({ input: 'KeyW up', observed: await page.evaluate(() => ({ time: window.__battle.time, position: window.__battle.position, state: window.__battle.state })) });
         } else events.push({ input: 'hold registered 5v5 position; autonomous combat', wall: Date.now() });
         await page.waitForFunction(() => window.__battle.combatStats.aiRifleShots > 0, null, { timeout: 90000 });
-        const sampleStart = await page.evaluate(() => ({ now: performance.now(), time: window.__battle.time, shots: window.__battle.combatStats.aiRifleShots,
+        const sampleStart = await page.evaluate(() => ({ now: performance.now(), time: window.__battle.time, clock: window.__battle.simulationClock, shots: window.__battle.combatStats.aiRifleShots,
           serial: window.__battleTelemetry.totalFrames }));
         await cdp.send('Profiler.enable');
         await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
@@ -120,7 +120,7 @@ async function main() {
         const { profile } = await cdp.send('Profiler.stop'); profileStarted = false;
         const result = await page.evaluate(() => ({ now: performance.now(), frames: window.__battleTelemetry.frames,
           final: { time: window.__battle.time, state: window.__battle.state, combat: window.__battle.combatStats, population: window.__battle.population,
-            position: window.__battle.position, graphics: window.__battle.graphics } }));
+            position: window.__battle.position, graphics: window.__battle.graphics, simulationClock: window.__battle.simulationClock } }));
         const frames = result.frames.filter(frame => frame.serial > sampleStart.serial && frame.now <= result.now);
         assert.ok(frames.length >= 60, 'raw sample needs enough active/deployment frames, not a menu/paused scene');
         assert.equal(result.frames.some(frame => frame.serial === sampleStart.serial + 1), true, 'raw frame buffer did not overwrite the sample');
@@ -135,6 +135,11 @@ async function main() {
           initialGenerations: initial.population.units.map(unit => unit.generation),
           finalGenerations: result.final.population.units.map(unit => unit.generation),
           peakDrawCalls: Math.max(...frames.map(frame => frame.drawCalls)), peakTriangles: Math.max(...frames.map(frame => frame.triangles)),
+          clock: { start: sampleStart.clock, end: result.final.simulationClock,
+            maxBacklogSeconds: Math.max(...frames.map(frame => frame.simulationBacklogSeconds)),
+            maxStepsPerFrame: Math.max(...frames.map(frame => frame.simulationSteps)),
+            maxConservationErrorSeconds: Math.max(...frames.map(frame =>
+              Math.abs(frame.activeSeconds - frame.simulationTime - frame.simulationBacklogSeconds))) },
           finalState: result.final.state, errors, cpu: summarizeProfile(profile) };
         await writeFile(join(directory, `${name}.cpuprofile`), JSON.stringify(profile));
         await writeFile(join(directory, `${name}-frames.json`), JSON.stringify({ seed, initial, sampleStart, events, frames, final: result.final }, null, 2));
@@ -142,6 +147,8 @@ async function main() {
         await page.screenshot({ path: join(directory, `${name}.png`) });
         summaries.push(summary);
         assert.equal(errors.length, 0, errors.join('\n'));
+        assert.ok(summary.clock.maxStepsPerFrame <= result.final.simulationClock.limits.maxStepsPerFrame);
+        assert.ok(summary.clock.maxConservationErrorSeconds < 1e-7, 'active world time must be simulated or retained as debt');
         assert.ok(summary.shotsAfter > summary.shotsBefore, 'the sampled interval must contain actual autonomous firing');
         console.log(`${name}: frames=${frames.length}, P50/P95/P99=${metrics.intervalMs.p50.toFixed(1)}/${metrics.intervalMs.p95.toFixed(1)}/${metrics.intervalMs.p99.toFixed(1)}ms, >50ms=${metrics.intervalMs.over50ms}, AI mean=${metrics.aiMs.mean.toFixed(2)}ms, sim/wall=${summary.simulatedWallRatio.toFixed(3)}, shots=${summary.shotsAfter - summary.shotsBefore}`);
       } catch (error) {

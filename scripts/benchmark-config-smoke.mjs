@@ -24,15 +24,18 @@ try {
   const address = production.httpServer.address();
   assert.ok(address && typeof address !== 'string');
   const built = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  await built.goto(`http://127.0.0.1:${address.port}/?benchmark=duel&seed=1938`);
-  await built.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  assert.equal(await built.evaluate(() => window.__battle.benchmark), null);
-  assert.equal(await built.evaluate(() => typeof window.__battleTelemetry), 'undefined');
-  await built.locator('#deploy').click();
-  const state = await built.evaluate(() => window.__battle.population);
-  assert.equal(state.friendly.alive, 100);
-  assert.equal(state.enemy.alive, 100);
-  assert.equal(state.units.length, 20, 'a production URL cannot silently lower the real roster to 5v5');
+  built.on('pageerror', error => errors.push(error.message));
+  for (const scenario of ['duel', 'interior']) {
+    await built.goto(`http://127.0.0.1:${address.port}/?benchmark=${scenario}&seed=1938`);
+    await built.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
+    assert.equal(await built.evaluate(() => window.__battle.benchmark), null);
+    assert.equal(await built.evaluate(() => typeof window.__battleTelemetry), 'undefined');
+    await built.locator('#deploy').click();
+    const state = await built.evaluate(() => window.__battle.population);
+    assert.equal(state.friendly.alive, 100);
+    assert.equal(state.enemy.alive, 100);
+    assert.equal(state.units.length, 20, 'a production URL cannot silently lower the real roster to a diagnostic fixture');
+  }
   await built.close();
   assert.deepEqual(errors, []);
   console.log('PASS: repeatable development 5v5 spawn records and labelled raw telemetry; production ignores diagnostic overrides and deploys the full 200-person roster.');

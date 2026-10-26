@@ -43,9 +43,15 @@ async function walkTo(x, z) {
   assert.ok(Math.hypot(data.position.x - x, data.position.z - z) < .3, `ordinary movement reaches (${x}, ${z})`);
 }
 try {
-  await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  url.searchParams.set('benchmark', 'interior'); url.searchParams.set('seed', '1938');
+  await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
+  const fixture = await snapshot();
+  assert.equal(fixture.benchmark?.scenario, 'interior', 'physical door checks require the explicitly labelled geometry fixture');
+  assert.equal(fixture.population.friendly.alive, 5);
+  assert.equal(fixture.population.enemy.alive, 0, 'isolated geometry is not full-army combat evidence');
   await page.mouse.down({ button: 'right' });
   assert.equal((await door()).state, 'closed');
   await walkTo(0, 64);
@@ -119,7 +125,7 @@ try {
     await writeFile(join(process.env.ARTIFACT_DIR, 'door-feedback-observations.json'), JSON.stringify(observations, null, 2));
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: contextual F, closed-door bullet hit, opening/pause, actual passage, safe sweep, opposite-side opening, battle reset and AI opening a closed door to obey a window-issued indoor order.');
+  console.log('PASS: labelled geometry fixture, contextual F, closed-door bullet hit, pause, passage, safe sweep, opposite-side opening, reset and AI opening for an indoor order. Full-army combat is measured separately.');
 } catch (error) {
   const state = await snapshot();
   console.error(JSON.stringify({ position: state?.position, state: state?.state, door: state?.doors?.find(item => item.id === doorId),

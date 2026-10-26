@@ -150,16 +150,26 @@ try {
   await page.keyboard.press('y');
   data = await snapshot();
   await lookAt(data.vehicles[0].position.x, data.vehicles[0].position.z);
+  await page.keyboard.press('Space');
+  await wait(() => window.__battle.controlSimulation.jumpHeight > .2);
   await page.keyboard.press('f');
   checkpoint('reboarded same vehicle');
   data = await snapshot();
   assert.equal(data.type, 'tank'); assert.equal(data.control.soldierId, personId);
+  assert.equal(data.controlBinding.changed, true);
+  assert.ok(data.controlBinding.previousJumpHeight > .2);
+  assert.equal(data.controlBinding.jumpHeight, 0);
+  assert.equal(data.controlBinding.jumpVelocity, 0);
+  assert.equal(data.controlBinding.viewHasRifle, true, 'F clears jump simulation before replacing the old rifle view with the tank view');
+  assert.equal(data.controlBinding.ammo, 0);
+  assert.equal(data.controlSimulation.jumpHeight, 0);
   assert.equal(data.vehicles[0].health, initial.vehicles[0].health);
   assert.equal(data.allies[0].rifle.ammo, 4);
   assert.equal(data.vehicles[0].weapon.ammo, 0);
   assert.deepEqual(data.allies.map(actor => actor.id), ownIds);
   await capture('g2-seat-return.png');
-  observations.push({ stage: 'reboarded', control: data.control, vehicles: data.vehicles, own: data.allies });
+  observations.push({ stage: 'reboarded', control: data.control, vehicles: data.vehicles, own: data.allies,
+    binding: data.controlBinding, simulation: data.controlSimulation });
   await page.keyboard.press('r');
   await page.keyboard.press('f');
   assert.equal((await snapshot()).type, 'infantry');
@@ -267,6 +277,7 @@ try {
   assert.equal((await snapshot()).entityCounts.soldiers, 0);
   assert.equal((await snapshot()).deathTransfer.active, false);
   assert.equal((await snapshot()).controlInput.owner, null);
+  assert.equal((await snapshot()).controlBinding, null);
   assert.equal((await snapshot()).controlEvents.pending, 0);
   assert.deepEqual((await snapshot()).combatEvents.history, []);
   assert.deepEqual((await snapshot()).combatFeedback.feed, []);

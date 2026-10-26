@@ -25,7 +25,9 @@
     "test:benchmark-config": "node scripts/benchmark-config-smoke.mjs",
     "test:control": "node scripts/control-smoke.mjs",
     "test:projectiles": "node scripts/projectile-smoke.mjs",
-    "test:damage-feedback": "node scripts/damage-feedback-smoke.mjs"
+    "test:damage-feedback": "node scripts/damage-feedback-smoke.mjs",
+    "test:clock": "node scripts/clock-smoke.mjs",
+    "test:friendly-tactics": "node scripts/friendly-tactics-smoke.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

@@ -1,6 +1,22 @@
 import * as THREE from 'three';
 import { soldierModel } from './world.js';
 
+export function syncSoldierModelPose(actor) {
+  if (!actor?.model || !actor.position || !Number.isFinite(actor.position.x) || !Number.isFinite(actor.position.y) ||
+    !Number.isFinite(actor.position.z) || !Number.isFinite(actor.heading) || !Number.isFinite(actor.walkPhase) ||
+    typeof actor.walkPoseReady !== 'boolean') throw new Error('Soldier projection requires its owned position, heading and gait state');
+  const model = actor.model, swing = actor.walkPoseReady ? Math.sin(actor.walkPhase) * .35 : 0;
+  const legs = model.userData.legs;
+  if (!Array.isArray(legs) || legs.length !== 2) throw new Error('Soldier model requires its procedural leg bindings');
+  model.position.copy(actor.position);
+  if (model.rotation.y !== actor.heading) model.rotation.y = actor.heading;
+  if (legs[0].rotation.x !== swing) legs[0].rotation.x = swing;
+  if (legs[1].rotation.x !== -swing) legs[1].rotation.x = -swing;
+  const roll = actor.health <= 0 ? Math.PI / 2 : 0;
+  if (model.rotation.z !== roll) model.rotation.z = roll;
+  return model;
+}
+
 export function createSoldierRenderer(scene, camera, capacity = 330) {
   const groups = new Map(), matrix = new THREE.Matrix4(), root = new THREE.Matrix4(), projection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
@@ -23,18 +39,15 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
     return groups.get(key);
   };
   return {
-    update(actors, preset, now) {
+    update(actors, preset, now, controlledId = null) {
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(projection);
       for (const group of groups.values()) group.count = 0;
       summary = { visible: 0, near: 0, far: 0, batches: 0 };
       for (const actor of actors) {
-        if (actor.position) actor.model.position.copy(actor.position);
-        if (actor.heading !== undefined) actor.model.rotation.y = actor.heading;
-        const roll = actor.health <= 0 ? Math.PI / 2 : 0;
-        if (actor.model.rotation.z !== roll) actor.model.rotation.z = roll;
-        if (actor.health <= 0) actor.model.visible = !actor.vehicleId && now - actor.deathTime <= 12;
+        syncSoldierModelPose(actor);
+        actor.model.visible = !actor.vehicleId && (actor.health <= 0 ? now - actor.deathTime <= 12 : actor.id !== controlledId);
         if (!actor.model.visible || (actor.health <= 0 && now - actor.deathTime > 12)) continue;
         const distance = camera.position.distanceTo(actor.model.position);
         sphere.center.copy(actor.model.position); sphere.center.y += .85;

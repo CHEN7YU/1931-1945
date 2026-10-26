@@ -10,6 +10,7 @@ const errors = [];
 const poseObservations = [];
 const observePose = (stage, data) => poseObservations.push({ stage, control: data.control, stance: data.stance,
   look: data.look, position: data.position, eyeHeight: data.locomotion.eyeHeight, cameraHeight: data.locomotion.cameraHeight,
+  binding: data.controlBinding, simulation: data.controlSimulation,
   members: data.allies.map(actor => ({ id: actor.id, stance: actor.stance, lookPitch: actor.lookPitch })) });
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
@@ -76,10 +77,33 @@ try {
   await page.waitForTimeout(600);
   await page.keyboard.press('Space');
   await page.waitForFunction(() => window.__battle.locomotion.cameraHeight > 2.3);
+  await page.keyboard.press('Escape');
+  const pausedJump = await snapshot();
+  assert.ok(pausedJump.controlSimulation.jumpHeight > 0);
+  await page.waitForTimeout(150);
+  assert.deepEqual((await snapshot()).controlSimulation, pausedJump.controlSimulation);
+  const resumedJump = await page.evaluate(() => {
+    document.querySelector('#resume').click();
+    return window.__battle;
+  });
+  assert.equal(resumedJump.controlBinding.changed, false);
+  assert.deepEqual(resumedJump.controlSimulation, pausedJump.controlSimulation, 'same-owner resume preserves the frozen mid-air simulation state');
+  observePose('jump-resumed-without-owner-change', resumedJump);
   await page.waitForFunction(() => Math.abs(window.__battle.locomotion.cameraHeight - 2.12) < .03);
   data = await snapshot();
   assert.ok(data.controlEvents.history.some(event => event.type === 'movement.footstep' &&
     event.landing && event.surface === 'stone' && event.soldierId === data.control.soldierId), 'actual landing captures its original soldier and bridge surface');
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => window.__battle.controlSimulation.jumpHeight > .2);
+  await page.keyboard.press('y');
+  data = await snapshot();
+  assert.equal(data.controlBinding.changed, true);
+  assert.ok(data.controlBinding.previousJumpHeight > .2);
+  assert.equal(data.controlBinding.jumpHeight, 0);
+  assert.equal(data.controlBinding.jumpVelocity, 0);
+  assert.equal(data.controlSimulation.jumpHeight, 0);
+  observePose('airborne-member-takeover', data);
+  for (let i = 1; i < data.allies.length; i++) await page.keyboard.press('y');
   await walkTo(8, -24.5);
   data = await snapshot();
   assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'walking down the north ramp keeps continuous support');

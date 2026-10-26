@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { createEntityRegistry, registerUnit, registerWeapon, registerSoldier, createVehicleEntity, seatSoldier, occupiedVehicle,
-  leaveGroundVehicle, selectControlledSoldier, controlledWeapon, createControlView, groundExit, vehicleCollider, damageVehicleEntity, resetEntities, captureAttackSource, createControlPoseView, occupiedSeat } from '../src/entities.js';
+  leaveGroundVehicle, selectControlledSoldier, controlledWeapon, createControlView, groundExit, vehicleCollider, damageVehicleEntity, resetEntities, captureAttackSource, createControlPoseView, occupiedSeat,
+  soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT } from '../src/entities.js';
 import { circleBlocked, segmentClear } from '../src/core.js';
 import { createRifleState } from '../src/rifle-action.js';
 
@@ -268,4 +270,27 @@ test('driver takeover after crew casualties retains observation without inheriti
   assert.equal(occupiedSeat(world).canFire, false);
   assert.equal(vehicle.turretYaw, -.6); assert.equal(vehicle.turretPitch, -.8);
   assert.equal(vehicle.health, 110);
+});
+test('AI rifle origins preserve both original local offsets across headings and bridge support', () => {
+  for (const team of ['friendly', 'enemy']) for (const heading of [-Math.PI, -.8, 0, Math.PI / 2, 2.1]) {
+    for (const position of [{ x: 0, y: 0, z: 0 }, { x: 13, y: .45, z: -16 }]) {
+      const model = new THREE.Object3D();
+      model.position.set(position.x, position.y, position.z); model.rotation.y = heading;
+      model.updateMatrixWorld(true);
+      const expected = new THREE.Vector3(.13, 1.39, team === 'friendly' ? -.871 : -1.07).applyMatrix4(model.matrixWorld);
+      const origin = soldierRifleMuzzle({ position, heading, team });
+      assert.ok(new THREE.Vector3(origin.x, origin.y, origin.z).distanceTo(expected) < 1e-10);
+      assert.equal(origin.y, position.y + SOLDIER_FIRE_HEIGHT);
+    }
+  }
+});
+test('AI muzzle calculation needs no model, scale, matrices or renderer side effects', () => {
+  const actor = { position: { x: 2, y: .45, z: 8 }, heading: .3, team: 'friendly' };
+  Object.defineProperty(actor, 'model', { get() { throw new Error('render model must not be consulted'); } });
+  const before = { ...actor.position };
+  const origin = soldierRifleMuzzle(actor);
+  assert.ok(['x', 'y', 'z'].every(axis => Number.isFinite(origin[axis])));
+  assert.deepEqual(actor.position, before);
+  for (const invalid of [{ ...actor, team: 'unknown' }, { ...actor, heading: Infinity },
+    { ...actor, position: { x: 0, y: NaN, z: 0 } }]) assert.throws(() => soldierRifleMuzzle(invalid), RangeError);
 });

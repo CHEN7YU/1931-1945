@@ -71,7 +71,14 @@ try {
   assert.equal(data.construction.builderId, null);
   assert.equal(data.construction.progress, 0);
   assert.equal(data.construction.blueprint, false);
-  constructionObservations.push({ stage: 'changed-member', control: data.control, construction: data.construction });
+  assert.equal(data.controlBinding.changed, true);
+  assert.equal(data.controlBinding.previousToolEquipped, true);
+  assert.equal(data.controlBinding.toolEquipped, false);
+  assert.equal(data.controlBinding.viewHasRifle, false, 'simulation has already left the hammer context while the previous view is still present');
+  assert.equal(data.controlBinding.soldierId, data.control.soldierId);
+  assert.equal(data.controlSimulation.toolEquipped, false);
+  constructionObservations.push({ stage: 'changed-member', control: data.control, construction: data.construction,
+    binding: data.controlBinding, simulation: data.controlSimulation });
   await key('2');
   assert.equal((await snapshot()).construction.tool, false, 'a rifleman cannot inherit the engineer tool or unfinished construction');
   for (let i = 1; i < data.allies.length; i++) await key('y');
@@ -90,6 +97,11 @@ try {
   await page.waitForTimeout(150);
   assert.equal((await snapshot()).construction.progress, 0);
   await page.locator('#resume').click();
+  data = await snapshot();
+  assert.equal(data.controlBinding.changed, false, 'same-owner resume does not reset tool selection');
+  assert.equal(data.controlBinding.toolEquipped, true);
+  assert.equal(data.construction.tool, true);
+  constructionObservations.push({ stage: 'resumed-same-owner', binding: data.controlBinding, simulation: data.controlSimulation });
   await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' });
   const buildStarted = (await snapshot()).time;
   await page.mouse.down();

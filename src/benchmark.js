@@ -3,7 +3,7 @@ export function benchmarkConfig(search, development) {
   const params = new URLSearchParams(search);
   if (!params.has('benchmark')) return null;
   const scenario = params.get('benchmark');
-  if (!['duel', 'full', 'bridge', 'control'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
+  if (!['duel', 'full', 'bridge', 'interior', 'control'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
   const value = params.get('seed') ?? '1938';
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > 0xffffffff) throw new RangeError('Benchmark seed must be an unsigned 32-bit integer');
   return Object.freeze({ scenario, seed: Number(value), diagnostic: scenario !== 'full' });
@@ -15,19 +15,22 @@ export function seededRandom(seed) {
 }
 
 export function diagnosticRoster(scenario = 'duel') {
-  if (!['duel', 'bridge', 'control'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
+  if (!['duel', 'bridge', 'interior', 'control'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
   if (scenario === 'control') return [
     { id: 'friendly-0', team: 'friendly', index: 0, type: 'tank', player: true, members: [], memberCount: 3, generation: 0, respawnAt: null, spawnId: 'diagnostic-tank' },
     ...[1, 2].map(index => ({ id: `friendly-${index}`, team: 'friendly', index, type: 'infantry', player: false, members: [], memberCount: 2, generation: 0, respawnAt: null, spawnId: `diagnostic-friendly-${index}` })),
     { id: 'enemy-0', team: 'enemy', index: 0, type: 'infantry', player: false, members: [], memberCount: 3, generation: 0, respawnAt: null, spawnId: 'diagnostic-enemy' },
   ];
-  const teams = scenario === 'bridge' ? ['friendly'] : ['friendly', 'enemy'];
+  const teams = ['bridge', 'interior'].includes(scenario) ? ['friendly'] : ['friendly', 'enemy'];
   return teams.map(team => ({ id: `${team}-0`, team, index: 0, type: 'infantry',
     player: team === 'friendly', members: [], memberCount: 5, generation: 0, respawnAt: null,
     spawnId: `diagnostic-${team}` }));
 }
 
 export function diagnosticSpawns(scenario = 'duel') {
+  if (scenario === 'interior') return [
+    { id: 'diagnostic-friendly', name: '门与室内几何诊断点', team: 'friendly', kind: 'base', x: 0, z: 78, altitude: 0 },
+  ];
   if (scenario === 'control') return [
     // The existing east shop covers the exit during extended crew-control checks.
     { id: 'diagnostic-tank', name: 'G2坦克集结点', team: 'friendly', kind: 'garage', x: 10, z: 83, altitude: 0 },

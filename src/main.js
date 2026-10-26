@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import './style.css';
-import { soldierModel, tankModel, planeModel, weaponModel, rallyPointModel, baseSpawnModel, setModelSurfaces } from './world.js';
+import { soldierModel, weaponModel, rallyPointModel, baseSpawnModel, setModelSurfaces } from './world.js';
 import { makeWorld } from './battlefield.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, makeObjectives, advanceCapture, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
 import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, createRallyPoint, replaceTeamRally, damageRallyPoint } from './spawns.js';
-import { createLocomotion, advanceLocomotion, stopLocomotion, recoverLocomotion, landLocomotion } from './locomotion.js';
+import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopLocomotion, landLocomotion } from './locomotion.js';
 import { RIFLE, createRifleState, reloadRifle, shootRifle } from './rifle-action.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
-import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance } from './tactics.js';
+import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
+  friendlyCoverAction } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight } from './lighting.js';
@@ -16,20 +17,23 @@ import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn } from './battle-roster.js';
 import { SpatialGrid, obstacleLookup } from './spatial.js';
 import { createSolidIndex } from './solid-index.js';
-import { createSoldierRenderer } from './soldier-renderer.js';
+import { createSoldierRenderer, syncSoldierModelPose } from './soldier-renderer.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
-  damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat } from './entities.js';
+  damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat,
+  soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT } from './entities.js';
 import { createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer } from './control-transition.js';
 import { createControlInput } from './control-input.js';
 import { createControlEvents } from './control-events.js';
 import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './projectiles.js';
-import { advanceOwnedWeapons } from './weapon-simulation.js';
+import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
 import { createConstructionState, resetConstructionState, selectConstructionBlueprint, constructionCandidate, advanceConstruction } from './construction.js';
 import { createRallyRenderer } from './rally-renderer.js';
+import { createVehicleRenderer } from './vehicle-renderer.js';
+import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 
 const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
 const telemetry = createFrameTelemetry(Boolean(benchmark));
@@ -41,6 +45,9 @@ const held = playerInput.held;
 const controlEvents = createControlEvents();
 const combatEvents = createCombatEvents();
 const combatFeedback = createCombatFeedback();
+const simulationClock = createSimulationClock(performance.now());
+const activeStates = new Set(['playing', 'transferring', 'dead']);
+const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', 'victory', 'defeat']);
 let pausedFrom = 'playing';
 let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
@@ -91,6 +98,7 @@ const world = makeWorld(scene, surface);
 const solidIndex = createSolidIndex(world.solids);
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
 const rallyRenderer = createRallyRenderer(scene);
+const vehicleRenderer = createVehicleRenderer(scene);
 const actorGrid = new SpatialGrid();
 const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
@@ -137,7 +145,6 @@ let populationRefreshAt = 0;
 let current = 0;
 let unit = null;
 let weapon = null;
-let vehicle = null;
 let time = 0;
 let remaining = MATCH_SECONDS;
 let kills = 0;
@@ -169,6 +176,7 @@ let pendingSquad = null;
 let pendingSpawn = null;
 let deploymentRefreshAt = 0;
 let toolEquipped = false;
+let controlBinding = null;
 const construction = createConstructionState();
 let fatal = false;
 const mortarTarget = new THREE.Vector3();
@@ -185,6 +193,13 @@ function toast(message, duration = 3) {
   $('toast').textContent = message;
   $('toast').style.opacity = '1';
   toastUntil = time + duration;
+}
+
+function setGameState(next) {
+  if (!gameStates.has(next)) throw new RangeError(`Unknown game state: ${next}`);
+  const active = activeStates.has(next);
+  if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
+  state = next;
 }
 
 function sound(kind) {
@@ -305,7 +320,8 @@ function releaseMouse() {
 function actorAt(friendly, x, z, index, spawn, formation) {
   const model = soldierModel(friendly);
   const position = new THREE.Vector3(x, world.groundHeight(x, z), z);
-  const actor = { model, health: 100, friendly, index, spawnId: spawn.id, role: index % 10 === 0 ? 'engineer' : 'rifleman', nextFire: time + 1 + battleRandom() * 2, nextThink: 0, target: null, walkPhase: battleRandom() * 6, deathTime: 0, buildProgress: 0, locomotion: createLocomotion(), rifle: createRifleState() };
+  // Apply the seeded gait phase only after a walk update; idle spawns retain neutral legs.
+  const actor = { model, health: 100, friendly, index, spawnId: spawn.id, role: index % 10 === 0 ? 'engineer' : 'rifleman', nextFire: time + 1 + battleRandom() * 2, nextThink: 0, target: null, walkPhase: battleRandom() * 6, walkPoseReady: false, deathTime: 0, buildProgress: 0, locomotion: createLocomotion(), rifle: createRifleState() };
   actor.targetKind = 'person';
   actor.spawnPosition = { x, z };
   actor.spawnClear = !circleBlocked(x, z, .42, world.obstacles);
@@ -346,8 +362,9 @@ function deploymentObstacles() {
   return entities.vehicles.size ? [...world.obstacles, ...[...entities.vehicles.values()].filter(item => item.type === 'tank').map(vehicleCollider)] : world.obstacles;
 }
 
-function vehicleSolids(ignoreVehicleId = null) {
-  return [...entities.vehicles.values()].filter(item => item.id !== ignoreVehicleId && item.model).map(item => item.model);
+function vehicleSolids(ignoreVehicleId = null, from = null) {
+  return [...entities.vehicles.values()].filter(item => item.id !== ignoreVehicleId &&
+    (!from || from.distanceTo(item.position) > 3.2)).map(item => vehicleRenderer.model(item.id));
 }
 
 function battleSummary(team) {
@@ -359,8 +376,21 @@ function clearControlInputs() {
   resetConstruction();
 }
 
+function resetControlledSimulation() {
+  toolEquipped = false;
+  jumpHeight = jumpVelocity = 0;
+  resetConstruction();
+}
+
 function bindControlInput() {
-  playerInput.bind(controlOwner(entities), state === 'playing' && allies[current]?.health > 0);
+  const owner = controlOwner(entities);
+  const previousToolEquipped = toolEquipped, previousJumpHeight = jumpHeight, previousJumpVelocity = jumpVelocity;
+  const changed = playerInput.bind(owner, state === 'playing' && allies[current]?.health > 0);
+  if (changed) resetControlledSimulation();
+  syncRifleUnit();
+  controlBinding = { ...owner, time, changed, previousToolEquipped, previousJumpHeight, previousJumpVelocity,
+    toolEquipped, jumpHeight, jumpVelocity, ammo: unit?.ammo, reloadUntil: unit?.reloadUntil,
+    viewHasRifle: Boolean(weapon?.userData.rifle) };
 }
 
 function emitControlEvent(type, data = {}) {
@@ -380,7 +410,7 @@ function resetPersonalCombatFeedback() {
   $('hit-marker').style.opacity = $('damage-vignette').style.opacity = '0';
 }
 
-function presentCombatEvents() {
+function presentCombatEvents(bornAt = time) {
   const position = point => new THREE.Vector3(point.x, point.y, point.z);
   combatEvents.drain(event => {
     if (event.type === 'shot') {
@@ -388,8 +418,8 @@ function presentCombatEvents() {
       const start = position(event.start);
       if (event.end) {
         const end = position(event.end);
-        tracer(start, end, event.color);
-        if (event.muzzle) combatEffects.muzzle(start, end.clone().sub(start).normalize(), event.time);
+        tracer(start, end, event.color, .08, bornAt);
+        if (event.muzzle) combatEffects.muzzle(start, end.clone().sub(start).normalize(), bornAt);
       }
       if (state === 'playing' && event.source.soldierId === entities.control.soldierId &&
         event.source.weaponId === controlOwner(entities)?.weaponId) {
@@ -400,10 +430,10 @@ function presentCombatEvents() {
         }
       }
     } else if (event.type === 'impact') {
-      if (event.kind) combatEffects.hit(event, event.time);
-      else renderImpact(position(event.position));
+      if (event.kind) combatEffects.hit(event, bornAt);
+      else renderImpact(position(event.position), false, bornAt);
     } else if (event.type === 'explosion') {
-      renderImpact(position(event.position), true);
+      renderImpact(position(event.position), true, bornAt);
       if (event.sound) sound('blast');
     } else {
       combatFeedback.consume(event, { soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
@@ -443,34 +473,31 @@ function presentControlEvents() {
       const messages = { completed: '集结点建成 · 整队阵亡后，可让其他地面小队从此出击',
         moved: '位置变化，建造进度重新计算', 'owner-changed': '控制者已改变，旧建造已取消', unavailable: '当前成员不能继续建造' };
       toast(messages[event.reason], event.reason === 'completed' ? 6 : 3);
-    } else if (event.type === 'equipment.changed') renderEquippedTool(event.equipped);
+    } else if (event.type === 'equipment.changed') renderEquippedTool();
   });
   if (count) renderConstruction();
 }
 
 function refreshControlSurface() {
   const actor = controlledSoldier(entities), transport = occupiedVehicle(entities, actor);
-  vehicle = transport?.model || null;
-  for (const member of allies) member.model.visible = !member.vehicleId && member !== actor && (member.health > 0 || time - member.deathTime <= 12);
   if (weapon) camera.remove(weapon);
-  toolEquipped = false;
-  weapon = weaponModel(unit.type);
+  weapon = weaponModel(toolEquipped ? 'hammer' : unit.type);
   weapon.traverse(mesh => { if (mesh.isMesh) { mesh.castShadow = false; mesh.frustumCulled = false; } });
   camera.add(weapon);
   refreshWeaponVisibility();
-  if (unit.type === 'infantry') weapon.position.set(.18, -.22, -.14);
-  $('weapon-name').textContent = primaryViewAvailable() ? TYPES[unit.type].weapon : `${occupiedSeat(entities).label}观察 · 主炮不可操作`;
+  if (unit.type === 'infantry' && !toolEquipped) weapon.position.set(.18, -.22, -.14);
+  $('weapon-name').textContent = toolEquipped ? '工兵建造工具'
+    : primaryViewAvailable() ? TYPES[unit.type].weapon : `${occupiedSeat(entities).label}观察 · 主炮不可操作`;
   $('ammo-max').textContent = `/ ${TYPES[unit.type].magazine}`;
   $('aim-label').hidden = unit.type !== 'mortar';
   $('battle-controls').textContent = transport ? primaryViewAvailable()
     ? 'WASD 载具 · 左键 武器 · Y 换人 · F 地面离车 · Esc 暂停'
     : 'WASD 驾驶 · 鼠标 观察（不转炮塔） · 主炮不可操作 · Y 换人 · F 下车'
     : 'WASD 移动 · 右键 瞄准 · 左键 射击 · Y 换人 · F 开关门 / 返回原车';
-  lean = jumpHeight = jumpVelocity = recoil = 0;
+  lean = recoil = 0;
   resetPersonalCombatFeedback();
   weaponObstruction = obstructionBlend = 0;
   eyeHeight = controlPose.eyeHeight;
-  syncRifleUnit();
   updateCamera(0);
 }
 
@@ -574,7 +601,9 @@ function clearTransient() {
 }
 
 function beginMatch() {
+  simulationClock.reset(performance.now());
   playerInput.reset(); controlEvents.clear();
+  controlBinding = null;
   resetDeathTransfer(deathTransfer);
   if (benchmark) {
     battleRandom = seededRandom(benchmark.seed);
@@ -588,7 +617,7 @@ function beginMatch() {
   clearActors(allies);
   clearActors(enemies);
   clearActors(friendlyAI);
-  for (const transport of entities.vehicles.values()) if (transport.model) scene.remove(transport.model);
+  vehicleRenderer.clear();
   resetEntities(entities);
   clearTransient();
   enemies = [];
@@ -650,7 +679,6 @@ function deploy(squadId, spawnId = null) {
     $('deployment-error').textContent = error.message; toast(error.message); return;
   }
   clearActors(allies);
-  vehicle = null;
   if (weapon) {
     camera.remove(weapon);
     // View models own only their hierarchy; their geometry/materials are shared.
@@ -672,12 +700,10 @@ function deploy(squadId, spawnId = null) {
     actor.health = type === 'tank' ? 100 : TYPES[type].health;
     if (type !== 'infantry') actor.role = type === 'mortar' ? 'mortarman' : type === 'tank' ? 'tanker' : 'pilot';
     actor.targetKind = type === 'tank' ? 'closed-armor' : type === 'plane' ? 'aircraft' : 'person';
-    if (type === 'tank') actor.model.visible = false;
     allies.push(actor);
   }
   formation.type = type; formation.members = allies; formation.spawnId = spawn.id; formation.generation++;
   rebuildForces();
-  allies[0].model.visible = false;
   entities.control.unitId = formation.id;
   selectControlledSoldier(entities, allies[0]);
   unit = createControlView(entities);
@@ -692,17 +718,13 @@ function deploy(squadId, spawnId = null) {
   if (type === 'tank' || type === 'plane') {
     const transport = createVehicleEntity(entities, { id: `${formation.id}:vehicle-${deployments}`, unitId: formation.id, type,
       team: 'friendly', position: new THREE.Vector3(spawn.x, type === 'plane' ? spawn.altitude : world.groundHeight(spawn.x, spawn.z), spawn.z) });
-    transport.model = type === 'tank' ? tankModel() : planeModel();
-    transport.model.traverse(mesh => { if (mesh.isMesh) mesh.userData.vehicleId = transport.id; });
-    transport.model.position.copy(transport.position);
     transport.pitch = controlPose.pitch;
     formation.vehicleId = transport.id;
     for (let i = 0; i < allies.length; i++) {
       const reason = seatSoldier(entities, allies[i], transport, transport.seats[i].id);
       if (reason) throw new Error(reason);
-      allies[i].model.visible = false;
     }
-    vehicle = transport.model; scene.add(vehicle);
+    vehicleRenderer.update(entities.vehicles.values());
   }
   weapon = weaponModel(type);
   weapon.traverse(mesh => {
@@ -729,7 +751,7 @@ function deploy(squadId, spawnId = null) {
   allies.forEach(actor => { actor.order = type === 'infantry' && actor.index >= 10 ? 'advance' : 'follow'; });
   $('overlay').hidden = true;
   pendingSquad = pendingSpawn = null;
-  state = 'playing';
+  setGameState('playing');
   refreshWeaponVisibility();
   bindControlInput();
   hudAt = 0;
@@ -744,7 +766,7 @@ function deploy(squadId, spawnId = null) {
 function showOverlay(kind = 'pause') {
   if (kind === 'pause') pausedFrom = state === 'transferring' ? 'transferring' : 'playing';
   else resetDeathTransfer(deathTransfer);
-  state = kind;
+  setGameState(kind);
   releaseMouse();
   $('overlay').hidden = false;
   const ended = kind === 'victory' || kind === 'defeat';
@@ -821,7 +843,8 @@ function equipTool(equipped) {
   emitControlEvent('equipment.changed', { equipped });
 }
 
-function renderEquippedTool(equipped) {
+function renderEquippedTool() {
+  const equipped = toolEquipped;
   if (weapon) camera.remove(weapon);
   weapon = weaponModel(equipped ? 'hammer' : unit.type);
   weapon.traverse(mesh => { if (mesh.isMesh) mesh.castShadow = false; });
@@ -896,15 +919,10 @@ function switchMember(index) {
   if (allies[current].tactics.cover) coverClaims.delete(allies[current].tactics.cover.id);
   allies[current].tactics.cover = null;
   stopLocomotion(allies[current].locomotion);
-  if (unit.type === 'infantry') {
-    syncRifleUnit();
-  }
+  bindControlInput();
   unit.nextShot = Math.max(unit.nextShot, time + .35);
   recoil = 0;
-  jumpHeight = jumpVelocity = 0;
   eyeHeight = controlPose.eyeHeight;
-  resetConstruction();
-  bindControlInput();
   emitControlEvent('control.changed', { index, reason: state === 'transferring' ? 'death' : 'manual' });
 }
 
@@ -913,10 +931,7 @@ function changeMember(index) {
 }
 
 function syncRifleUnit() {
-  if (unit.type !== 'infantry') return;
-  const rifle = allies[current].rifle;
-  unit.ammo = rifle.ammo;
-  unit.reloadUntil = !toolEquipped && rifle.action === 'reload' ? time + RIFLE.reloadSeconds - rifle.elapsed : 0;
+  syncControlledRifleTiming(entities, time, toolEquipped);
 }
 
 function reload() {
@@ -942,26 +957,26 @@ function hasLine(from, to, maxDistance = 120, ignoreVehicleId = null) {
   if (distance > maxDistance) return false;
   ray.set(from, vector.normalize());
   ray.far = Math.max(0, distance - .04);
-  const transports = [...entities.vehicles.values()].filter(item => item.id !== ignoreVehicleId && item.model &&
-    from.distanceTo(item.position) > 3.2).map(item => item.model);
+  const transports = vehicleSolids(ignoreVehicleId, from);
   const blocked = ray.intersectObjects([...solidIndex.candidates(from, ray.ray.direction, distance), ...transports], true).length > 0;
   ray.far = Infinity;
   return !blocked;
 }
 
-function tracer(start, end, color = 0xffd49a, life = .08) {
+function tracer(start, end, color = 0xffd49a, life = .08, bornAt = time) {
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([start.clone(), end.clone()]), new THREE.LineBasicMaterial({ color, transparent: true, opacity: .8 }));
   scene.add(line);
-  effects.push({ object: line, end: time + life, life, kind: 'line' });
+  effects.push({ object: line, end: bornAt + life, bornAt, lastAt: bornAt, life, kind: 'line' });
 }
 
-function renderImpact(position, large = false) {
+function renderImpact(position, large = false, bornAt = time) {
   if (!large && !graphics.snapshot.effects.hitParticles) return;
   const mesh = new THREE.Mesh(explosionGeometry, new THREE.MeshBasicMaterial({ color: large ? 0xffb85c : 0xd0ba86, transparent: true, opacity: .85, depthWrite: false }));
   mesh.position.copy(position);
   mesh.scale.setScalar(large ? 1.5 : .12);
   scene.add(mesh);
-  effects.push({ object: mesh, end: time + (large ? .65 : .18), life: large ? .65 : .18, kind: large ? 'blast' : 'spark' });
+  effects.push({ object: mesh, end: bornAt + (large ? .65 : .18), bornAt, lastAt: bornAt,
+    life: large ? .65 : .18, kind: large ? 'blast' : 'spark' });
 }
 
 function removeEffect(effect) {
@@ -987,6 +1002,7 @@ function hurt(actor, damage, source, weaponKind = 'rifle') {
   const previous = actor.health;
   actor.health = Math.max(0, previous - damage);
   actor.tactics.suppressedUntil = time + 4;
+  if (actor.friendly) actor.tactics.decisionAt = Math.min(actor.tactics.decisionAt, time + .1);
   const selected = actor === controlledSoldier(entities);
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null }, time);
@@ -1036,7 +1052,7 @@ function beginDeathFeedback(actor, reason) {
   startDeathTransfer(deathTransfer, actor.id, reason);
   clearControlInputs();
   stopLocomotion(actor.locomotion);
-  state = 'transferring';
+  setGameState('transferring');
   emitControlEvent('death.started', { reason });
 }
 
@@ -1057,7 +1073,7 @@ function updateDeathFeedback(dt) {
       if (next < 0) { showOverlay('dead'); return; }
       changeMember(next);
     }
-    state = 'playing';
+    setGameState('playing');
     clearControlInputs();
     bindControlInput();
     emitControlEvent('death.completed');
@@ -1139,9 +1155,13 @@ function fire() {
     ray.far = unit.type === 'plane' ? 260 : 180;
     const endOfRay = start.clone().addScaledVector(direction, ray.far);
     const enemyTargets = actorGrid.near(start.x, start.z, ray.far).filter(actor => !actor.friendly && !actor.vehicleId && actor.health > 0 && pointSegmentDistance(actor.position, start, endOfRay).distance < 2);
-    for (const actor of enemyTargets) { actor.model.position.copy(actor.position); actor.model.updateMatrixWorld(true); }
+    const enemyModels = enemyTargets.map(actor => {
+      const model = syncSoldierModelPose(actor);
+      model.updateMatrixWorld(true);
+      return model;
+    });
     const rallyTargets = rallyRenderer.targets(spawnPoints);
-    const targets = [...solidIndex.candidates(start, direction, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(e => e.model), ...rallyTargets];
+    const targets = [...solidIndex.candidates(start, direction, ray.far), ...vehicleSolids(transport?.id), ...enemyModels, ...rallyTargets];
     let hit = ray.intersectObjects(targets, true)[0];
     const end = hit ? hit.point : start.clone().addScaledVector(direction, ray.far);
     const muzzle = unit.type === 'infantry' ? weapon.userData.rifle.muzzle.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(.28, -.25, -1.25).applyMatrix4(camera.matrixWorld);
@@ -1150,7 +1170,7 @@ function fire() {
       const travel = end.clone().sub(muzzle);
       if (travel.dot(direction) <= 0) travel.copy(direction);
       ray.set(muzzle, travel.normalize()); ray.far = 180;
-      hit = ray.intersectObjects([...solidIndex.candidates(muzzle, travel, ray.far), ...vehicleSolids(transport?.id), ...enemyTargets.map(actor => actor.model), ...rallyTargets], true)[0];
+      hit = ray.intersectObjects([...solidIndex.candidates(muzzle, travel, ray.far), ...vehicleSolids(transport?.id), ...enemyModels, ...rallyTargets], true)[0];
       end.copy(hit ? hit.point : muzzle.clone().addScaledVector(travel, ray.far));
       lastRifleTrace = { start: muzzle.toArray(), end: end.toArray(), time, hit: Boolean(hit), doorId: hit?.object.userData.doorIds?.[hit.instanceId] || null,
         rallyId: hit?.object.userData.rallyId || null };
@@ -1211,7 +1231,7 @@ function updateVehicles(dt) {
   for (const transport of entities.vehicles.values()) {
     if (transport.health <= 0) {
       if (time - transport.destroyedAt > 30 && !transport.seats.some(seat => entities.soldiers.has(seat.occupantId))) {
-        scene.remove(transport.model); entities.vehicles.delete(transport.id); entities.weapons.delete(transport.weapon.id);
+        entities.vehicles.delete(transport.id); entities.weapons.delete(transport.weapon.id);
       }
       continue;
     }
@@ -1219,6 +1239,7 @@ function updateVehicles(dt) {
     const controlled = state === 'playing' && actor?.health > 0 && actor.vehicleId === transport.id;
     const forward = controlled ? Number(keys.has('KeyW')) - Number(keys.has('KeyS')) : 0;
     const sideways = controlled ? Number(keys.has('KeyD')) - Number(keys.has('KeyA')) : 0;
+    transport.roll = transport.type === 'plane' ? -sideways * .2 : 0;
     const position = transport.position;
     if (transport.type === 'plane') {
       if (controlled) {
@@ -1246,15 +1267,10 @@ function updateVehicles(dt) {
         movementObstacles(position.x, position.z, transport.id));
       position.y = world.groundHeight(position.x, position.z);
     }
-    transport.model.position.copy(position);
-    transport.model.rotation.y = transport.heading;
-    if (transport.type === 'tank') transport.model.userData.turret.rotation.y = transport.turretYaw - transport.heading;
-    else { transport.model.rotation.x = transport.pitch; transport.model.rotation.z = -sideways * .2; }
-    transport.model.updateMatrixWorld(true);
     for (const seat of transport.seats) {
       const occupant = entities.soldiers.get(seat.occupantId);
       if (!occupant) continue;
-      occupant.position.copy(position); occupant.model.visible = false;
+      occupant.position.copy(position);
     }
   }
 }
@@ -1296,7 +1312,7 @@ function updatePlayer(dt) {
     }
   }
   if (!actor.vehicleId) position.y = world.groundHeight(position.x, position.z);
-  actor.heading = yaw; actor.model.rotation.y = actor.heading;
+  actor.heading = yaw;
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
   updateCamera(dt);
   if (toolEquipped) updateConstruction(dt);
@@ -1399,7 +1415,12 @@ function squadCommand(follow) {
   }
   toast(follow ? '小队命令：取消命令，跟随我' : attack ? '小队命令：进攻当前据点' : '小队命令：移动并守住标记位置');
 }
-function walkActor(actor, target, speed, dt) {
+function walkActor(actor, target, speed, dt, sprint = false) {
+  const profile = FOOT_SPEEDS[actor.groundType];
+  if (actor.friendly && sprint) {
+    sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > .15;
+    speed = sprint ? profile.sprint : profile.jog;
+  }
   const pos = actor.position;
   if ((!actor.path || !actor.path.length) && time >= (actor.nextPath || 0) ||
       !actor.pathGoal || Math.hypot(actor.pathGoal.x - target.x, actor.pathGoal.z - target.z) > .75 ||
@@ -1445,12 +1466,15 @@ function walkActor(actor, target, speed, dt) {
     const side = actor.index % 2 ? -1 : 1;
     moveGround(pos, -dz / distance * step * side, dx / distance * step * side, .42, movementObstacles(pos.x, pos.z));
   } else actor.stuckTime = 0;
-  actor.heading = Math.atan2(-dx, -dz); actor.model.rotation.y = actor.heading;
+  actor.heading = Math.atan2(-dx, -dz);
   pos.y = world.groundHeight(pos.x, pos.z);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
-  const [left, right] = actor.model.userData.legs;
-  left.rotation.x = Math.sin(actor.walkPhase) * .35;
-  right.rotation.x = -left.rotation.x;
+  actor.walkPoseReady = true;
+  if (actor.friendly) {
+    actor.locomotion.speed = Math.hypot(pos.x - beforeX, pos.z - beforeZ) / dt;
+    actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog + .1;
+    actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : 'jog';
+  }
 }
 
 function fightFromCover(actor, target, dt) {
@@ -1458,11 +1482,12 @@ function fightFromCover(actor, target, dt) {
   const armorThreat = (target?.targetKind || t.threatKind) === 'closed-armor';
   const threat = target ? target.position.clone() : new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
   if (target) threat.y = target.position.y + 1.1;
-  if (time >= t.decisionAt && coverBudget > 0) {
+  const committedMove = actor.friendly && t.cover && !t.enteredCover && time < (t.coverMoveUntil || 0) && time >= t.suppressedUntil;
+  if (time >= t.decisionAt && coverBudget > 0 && !committedMove) {
     const coverStarted = benchmark ? performance.now() : 0;
     coverBudget--;
     t.decisionAt = time + 2.3 + t.slot * .17;
-    const chosen = selectCover({
+    const context = {
       state: t, position, threat,
       slots: actor.friendly && actor.order === 'hold' ? world.town.covers.filter(slot => Math.hypot(slot.x - actor.orderPoint.x, slot.z - actor.orderPoint.z) < 7) : world.town.covers,
       claims: coverClaims, now: time,
@@ -1470,12 +1495,18 @@ function fightFromCover(actor, target, dt) {
       protectedAt: point => !hasLine(threat, new THREE.Vector3(point.x, 1.1, point.z), 90),
       seesTarget: point => hasLine(new THREE.Vector3(point.x, 1.3, point.z), threat, 90),
       pathTo: point => navigate(position, point),
-    });
+    };
+    const currentProtected = t.cover && context.protectedAt(t.cover) && (!actor.friendly || !context.blocked(t.cover));
+    const chosen = actor.friendly && currentProtected ? null : selectCover(context);
     if (chosen) {
       const changed = t.cover?.id !== chosen.cover.id;
+      if (changed && actor.friendly) {
+        t.coverMoveUntil = time + 4;
+        pathRequests.delete(t.id);
+      }
       t.cover = chosen.cover;
       if (changed) { t.enteredCover = false; actor.path = chosen.path; actor.pathGoal = { x: chosen.cover.x, z: chosen.cover.z }; actor.nextPath = time + 1.8; }
-    } else if (t.cover && !hasLine(threat, new THREE.Vector3(t.cover.x, 1.1, t.cover.z), 90)) {
+    } else if (currentProtected) {
       coverClaims.set(t.cover.id, { owner: t.id, until: time + 7 });
     } else {
       if (t.cover) coverClaims.delete(t.cover.id);
@@ -1489,12 +1520,19 @@ function fightFromCover(actor, target, dt) {
     if (!t.enteredCover && Math.hypot(t.cover.x - position.x, t.cover.z - position.z) < .28) {
       t.enteredCover = true; t.arrivedAt = time;
     }
-    const exposed = !armorThreat && t.enteredCover && peekTurn(t, time);
-    const goal = exposed ? t.cover.peek : t.cover;
-    const distance = Math.hypot(goal.x - position.x, goal.z - position.z);
-    t.mode = armorThreat ? distance > .25 ? 'evade-armor' : 'cover-from-armor' : distance > .25 ? 'take-cover' : exposed ? 'peek' : 'cover';
-    mayFire = exposed && distance < .35;
-    if (distance > .15) walkActor(actor, goal, 1.8, dt);
+    if (actor.friendly && !armorThreat) {
+      const action = friendlyCoverAction(t, position, time);
+      t.mode = action.mode;
+      mayFire = action.mayFire;
+      if (action.moving) walkActor(actor, action.goal, 2.4, dt, action.sprint);
+    } else {
+      const exposed = !armorThreat && t.enteredCover && peekTurn(t, time);
+      const goal = exposed ? t.cover.peek : t.cover;
+      const distance = Math.hypot(goal.x - position.x, goal.z - position.z);
+      t.mode = armorThreat ? distance > .25 ? 'evade-armor' : 'cover-from-armor' : distance > .25 ? 'take-cover' : exposed ? 'peek' : 'cover';
+      mayFire = exposed && distance < .35;
+      if (distance > .15) walkActor(actor, goal, 1.8, dt);
+    }
   } else {
     const distance = position.distanceTo(threat);
     t.mode = distance > 24 ? 'advance-under-cover' : 'engage';
@@ -1518,8 +1556,9 @@ function fightFromCover(actor, target, dt) {
       walkActor(actor, flank, 2.2, dt);
     }
   }
-  actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z); actor.model.rotation.y = actor.heading;
-  const from = position.clone().add(new THREE.Vector3(0, 1.39 * actor.model.scale.y, 0));
+  if (actor.friendly && (actor.locomotion.speed > .1 || actor.locomotion.aimRecovery > 0)) return;
+  actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
+  const from = position.clone().add(new THREE.Vector3(0, SOLDIER_FIRE_HEIGHT, 0));
   if (!target || !mayFire || !canWeaponDamageTarget('rifle', target.targetKind) || time < actor.nextFire || !hasLine(from, threat, 75)) return;
   const nearbyFriend = actorGrid.near(position.x, position.z, from.distanceTo(threat)).some(other => {
     if (other.friendly !== actor.friendly) return false;
@@ -1528,11 +1567,15 @@ function fightFromCover(actor, target, dt) {
     return segment.fraction > .03 && segment.fraction < .97 && segment.distance < .55;
   });
   if (nearbyFriend) return;
-  actor.model.position.copy(actor.position); actor.model.updateMatrixWorld(true);
-  const muzzle = new THREE.Vector3(.13, 1.39, actor.friendly ? -.871 : -1.07).applyMatrix4(actor.model.matrixWorld);
+  const origin = soldierRifleMuzzle(actor);
+  const muzzle = new THREE.Vector3(origin.x, origin.y, origin.z);
   if (!hasLine(from, muzzle, 2) || !hasLine(muzzle, threat, 75)) return;
   const distance = from.distanceTo(threat), suppressed = time < t.suppressedUntil;
   actor.nextFire = time + rifleAIFireDelay(distance, suppressed, battleRandom());
+  if (actor.friendly) {
+    t.lastShot = { time, mode: t.mode, speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
+      position: { x: position.x, z: position.z } };
+  }
   combatStats.aiRifleShots++;
   if (target.targetKind === 'closed-armor') combatStats.aiRifleShotsAtArmor++;
   const source = captureAttackSource(entities, actor, actor.rifle);
@@ -1585,7 +1628,9 @@ function updateAI(dt) {
   for (let index = 0; index < allForces.length; index++) {
     const actor = allForces[(index + aiCursor) % allForces.length];
     if (actor.health <= 0 || actor === player) continue;
-    if (actor.friendly) recoverLocomotion(actor.locomotion, dt);
+    if (actor.friendly) {
+      actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
+    }
     if (actor.vehicleId) continue;
     const position = actor.position;
     position.y = world.groundHeight(position.x, position.z);
@@ -1656,7 +1701,7 @@ function updateAI(dt) {
       }
     } else if (hostileRally) {
       const targetPosition = new THREE.Vector3(hostileRally.x, .8, hostileRally.z);
-      actor.heading = Math.atan2(position.x - hostileRally.x, position.z - hostileRally.z); actor.model.rotation.y = actor.heading;
+      actor.heading = Math.atan2(position.x - hostileRally.x, position.z - hostileRally.z);
       if (time >= actor.nextFire) {
         actor.nextFire = time + 1.4;
         const source = captureAttackSource(entities, actor, actor.rifle);
@@ -1706,6 +1751,10 @@ function updateAI(dt) {
     }
     position.y = world.groundHeight(position.x, position.z);
     if (!['playing', 'transferring', 'dead'].includes(state)) break;
+  }
+  for (const actor of friendlyForces) {
+    if (actor === player || actor.health <= 0) continue;
+    advanceStamina(actor.locomotion, dt, actor.locomotion.sprinting, FOOT_SPEEDS[actor.groundType].load);
   }
   aiCursor = (aiCursor + 12) % Math.max(1, allForces.length);
   if (time >= populationRefreshAt) {
@@ -1773,12 +1822,14 @@ function updateEffects(dt) {
       removeEffect(effect);
       continue;
     }
-    const t = 1 - (effect.end - time) / effect.life;
+    const t = Math.max(0, (time - effect.bornAt) / effect.life);
+    const elapsed = Math.max(0, time - effect.lastAt);
+    effect.lastAt = Math.max(time, effect.bornAt);
     effect.object.material.opacity = (1 - t) * .8;
     if (effect.kind === 'blast') {
       effect.object.scale.setScalar(1 + t * 8);
-      effect.object.position.y += dt * 2;
-      effect.object.material.color.lerp(new THREE.Color(0x53574a), dt * 5);
+      effect.object.position.y += elapsed * 2;
+      effect.object.material.color.lerp(new THREE.Color(0x53574a), elapsed * 5);
     }
   }
   combatFeedback.update(dt);
@@ -1868,7 +1919,7 @@ function updateHUD() {
   $('members').classList.toggle('platoon-members', deployedType === 'infantry');
   $('members').innerHTML = allies.map((actor, index) => `<span title="${Math.floor(index / 10) + 1}班 ${index + 1}号 ${actor.role === 'engineer' ? '工兵' : '步枪手'}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`}${actor.health <= 0 ? '×' : ''}</span>`).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
-  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
+  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   $('force-status').textContent = `${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
@@ -1897,13 +1948,44 @@ function menuCamera(now) {
   camera.updateProjectionMatrix();
 }
 
+function advanceBattleStep(dt, presentationTime) {
+  time += dt;
+  remaining = Math.max(0, remaining - dt);
+  let started = benchmark ? performance.now() : 0;
+  world.doorSystem.update(dt, allForces.filter(actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane').map(actor => ({
+    x: actor.position.x, z: actor.position.z, radius: actor.vehicleId && occupiedVehicle(entities, actor).type === 'tank' ? 1.9 : .42,
+  })));
+  if (benchmark) { telemetry.add('doorsMs', performance.now() - started); started = performance.now(); }
+  updateVehicles(dt);
+  vehicleRenderer.update(entities.vehicles.values());
+  updateWeaponSimulation(dt);
+  if (state === 'playing') updatePlayer(dt);
+  if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
+  if (activeStates.has(state)) updateAI(dt);
+  if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
+  if (activeStates.has(state)) updateObjectives(dt);
+  if (activeStates.has(state)) updateProjectiles(dt);
+  presentCombatEvents(presentationTime);
+  if (activeStates.has(state)) updateEffects(dt);
+  updateDeathFeedback(dt);
+  presentControlEvents();
+  if (benchmark) telemetry.add('effectsMs', performance.now() - started);
+  if (!remaining && activeStates.has(state)) showOverlay('defeat');
+}
+
+function renderSimulationStatus() {
+  const status = simulationClock.snapshot, element = $('simulation-status');
+  element.hidden = !status.active || status.pendingSeconds < SIMULATION_CLOCK.lagWarningSeconds;
+  if (!element.hidden) element.textContent = `模拟正在追赶 · 积压 ${status.pendingSeconds.toFixed(2)} 秒`;
+}
+
 function tick(now) {
   if (fatal) return;
   const cpuStarted = benchmark ? performance.now() : 0;
   const frameInterval = now - lastFrame;
-  const activeFrame = ['playing', 'transferring', 'dead'].includes(state);
-  const dt = Math.min((now - lastFrame) / 1000, .05);
-  if (benchmark && activeFrame) telemetry.begin(now, frameInterval, dt);
+  const activeFrame = activeStates.has(state);
+  const presentationTime = time + simulationClock.beginFrame(performance.now());
+  if (benchmark && activeFrame) telemetry.begin(now, frameInterval, 0);
   if (state === 'playing') {
     frameTimes.push(now - lastFrame);
     if (frameTimes.length > 180) frameTimes.shift();
@@ -1911,29 +1993,13 @@ function tick(now) {
   lastFrame = now;
   if (state === 'menu') menuCamera(now);
   if (activeFrame) {
-    time += dt;
-    remaining = Math.max(0, remaining - dt);
-    let started = benchmark ? performance.now() : 0;
-    world.doorSystem.update(dt, allForces.filter(actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane').map(actor => ({
-      x: actor.position.x, z: actor.position.z, radius: actor.vehicleId && occupiedVehicle(entities, actor).type === 'tank' ? 1.9 : .42,
-    })));
-    if (benchmark) { telemetry.add('doorsMs', performance.now() - started); started = performance.now(); }
-    updateVehicles(dt);
-    updateWeaponSimulation(dt);
-    if (state === 'playing') updatePlayer(dt);
-    if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
-    if (['playing', 'transferring', 'dead'].includes(state)) updateAI(dt);
-    if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
-    if (['playing', 'transferring', 'dead'].includes(state)) updateObjectives(dt);
-    if (['playing', 'transferring', 'dead'].includes(state)) updateProjectiles(dt);
-    presentCombatEvents();
-    if (['playing', 'transferring', 'dead'].includes(state)) updateEffects(dt);
-    updateDeathFeedback(dt);
-    presentControlEvents();
-    if (benchmark) { telemetry.add('effectsMs', performance.now() - started); started = performance.now(); }
+    for (let dt; activeStates.has(state) && (dt = simulationClock.takeStep()) > 0;) {
+      if (benchmark) telemetry.add('simulatedDt', dt);
+      advanceBattleStep(dt, presentationTime);
+    }
+    const started = benchmark ? performance.now() : 0;
     if (time >= hudAt) { updateHUD(); hudAt = time + .12; }
     if (state === 'dead' && time >= deploymentRefreshAt) { refreshDeployment(); deploymentRefreshAt = time + .25; }
-    if (!remaining && ['playing', 'transferring', 'dead'].includes(state)) showOverlay('defeat');
     if (benchmark) telemetry.add('hudMs', performance.now() - started);
   }
   for (const puff of world.smoke) {
@@ -1946,9 +2012,10 @@ function tick(now) {
   updateDoorPrompt();
   renderDeathFeedback();
   renderConstruction();
+  renderSimulationStatus();
   rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
-  soldierRenderer.update(allForces, graphics.snapshot.preset, time);
+  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId);
   const renderStarted = benchmark ? performance.now() : 0;
   if (benchmark) telemetry.add('instancesMs', renderStarted - instancesStarted);
   renderer.render(scene, camera);
@@ -1956,6 +2023,8 @@ function tick(now) {
     telemetry.add('renderMs', performance.now() - renderStarted);
     telemetry.add('cpuMs', performance.now() - cpuStarted);
     telemetry.end({ simulationTime: time, state, current, shots: combatStats.aiRifleShots, kills, queuedPaths: pathRequests.size,
+      simulationSteps: simulationClock.snapshot.stepsThisFrame, simulationBacklogSeconds: simulationClock.snapshot.pendingSeconds,
+      activeSeconds: simulationClock.snapshot.activeSeconds,
       oldestPathWaitSeconds: pathRequests.size ? Math.max(...[...pathRequests.values()].map(request => time - request.requestedAt)) : 0,
       friendlyAlive: friendlyForces.filter(actor => actor.health > 0).length,
       enemyAlive: enemies.filter(actor => actor.health > 0).length, drawCalls: renderer.info.render.calls,
@@ -2007,29 +2076,29 @@ $('resume').addEventListener('click', () => {
     $('deployment-error').textContent = '整队阵亡后必须选择其他小队出击';
     return;
   }
-  state = pausedFrom;
+  setGameState(pausedFrom);
   bindControlInput();
   $('overlay').hidden = true;
   lockMouse();
 });
 $('back-menu').addEventListener('click', () => {
-  state = 'menu';
+  setGameState('menu');
+  simulationClock.reset(performance.now());
   releaseMouse();
   clearActors(allies);
   clearActors(enemies);
   clearActors(friendlyAI);
-  for (const transport of entities.vehicles.values()) if (transport.model) scene.remove(transport.model);
+  vehicleRenderer.clear();
   resetEntities(entities); resetDeathTransfer(deathTransfer);
   playerInput.reset(); controlEvents.clear();
+  controlBinding = null;
   clearTransient();
   allies = [];
   enemies = [];
   friendlyAI = []; formations = []; pathRequests.clear(); rebuildForces();
   if (weapon) { camera.remove(weapon); weapon = null; }
-  vehicle = null;
   unit = null;
-  toolEquipped = false;
-  resetConstruction();
+  resetControlledSimulation();
   resetSpawns();
   mortarMarker.visible = false;
   $('overlay').hidden = true;
@@ -2195,7 +2264,11 @@ canvas.addEventListener('webglcontextlost', event => {
 Object.defineProperty(window, '__battle', { get: () => ({
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
   control: { ...entities.control },
+  controlBinding: controlBinding ? { ...controlBinding } : null,
+  controlSimulation: { toolEquipped, jumpHeight, jumpVelocity },
+  simulationClock: simulationClock.snapshot,
   entityCounts: { units: entities.units.size, soldiers: entities.soldiers.size, weapons: entities.weapons.size, vehicles: entities.vehicles.size },
+  vehicleViews: vehicleRenderer.snapshot,
   deathTransfer: { ...deathTransfer, mask: deathTransferMask(deathTransfer) },
   vehicles: [...entities.vehicles.values()].map(transport => ({ id: transport.id, type: transport.type, unitId: transport.unitId,
     health: transport.health, position: { x: transport.position.x, y: transport.position.y, z: transport.position.z },
@@ -2264,6 +2337,16 @@ Object.defineProperty(window, '__battle', { get: () => ({
   rallyViews: rallyRenderer.snapshot,
   spawnEvents: spawnEvents.map(event => ({ ...event })),
   enemies: enemies.filter(actor => actor.health > 0).length,
+  friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
+    id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
+    x: actor.position.x, z: actor.position.z, health: actor.health, order: actor.order, mode: actor.tactics.mode,
+    cover: actor.tactics.cover ? { id: actor.tactics.cover.id, x: actor.tactics.cover.x, z: actor.tactics.cover.z,
+      peek: { ...actor.tactics.cover.peek } } : null, enteredCover: actor.tactics.enteredCover,
+    suppressedUntil: actor.tactics.suppressedUntil,
+    movement: { speed: actor.locomotion.speed, sprinting: actor.locomotion.sprinting, stamina: actor.locomotion.stamina,
+      exhausted: actor.locomotion.exhausted, aimRecovery: actor.locomotion.aimRecovery },
+    lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
+    blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,
     id: actor.tactics.id, squad: actor.tactics.squad, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     targetKind: actor.target?.targetKind || null, threatKind: actor.tactics.threatKind,

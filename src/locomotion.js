@@ -37,6 +37,20 @@ export function recoverLocomotion(motion, dt, rate = .1) {
   motion.aimRecovery = Math.max(0, motion.aimRecovery - dt);
 }
 
+export function advanceStamina(motion, dt, sprinting, load = 1, recoveryRate = .1) {
+  if (!Number.isFinite(dt) || dt < 0 || typeof sprinting !== 'boolean' ||
+      !Number.isFinite(load) || load <= 0 || !Number.isFinite(recoveryRate) || recoveryRate < 0) {
+    throw new RangeError('Stamina requires finite non-negative time/rate and a positive load');
+  }
+  if (dt === 0) return;
+  if (sprinting) {
+    motion.stamina = Math.max(0, motion.stamina - dt * .14 * load);
+    motion.regenDelay = 1.4;
+    motion.aimRecovery = .45;
+    if (motion.stamina === 0) motion.exhausted = true;
+  } else recoverLocomotion(motion, dt, recoveryRate);
+}
+
 export function landLocomotion(motion, impactSpeed) {
   motion.landingVelocity -= Math.min(.6, Math.abs(impactSpeed) * .065);
 }
@@ -83,13 +97,8 @@ export function advanceLocomotion(motion, position, input, obstacles, dt) {
     motion.sprinting = Boolean(effort);
     if (effort) {
       sprintDistance += travelled;
-      motion.stamina = Math.max(0, motion.stamina - h * .14 * profile.load);
-      motion.regenDelay = 1.4;
-      motion.aimRecovery = .45;
-      if (motion.stamina === 0) motion.exhausted = true;
-    } else {
-      recoverLocomotion(motion, h, mode === 'idle' ? .2 : mode === 'walk' || mode === 'crouch' ? .14 : .065);
     }
+    advanceStamina(motion, h, Boolean(effort), profile.load, mode === 'idle' ? .2 : mode === 'walk' || mode === 'crouch' ? .14 : .065);
     motion.sprintBlend = approach(motion.sprintBlend, effort ? 1 : 0, effort ? 7 : 12, h);
     if (grounded) {
       const strideLength = mode === 'prone' ? .85 : mode === 'crouch' ? 1.3 : effort ? 2.7 : mode === 'walk' || mode === 'aim' ? 1.55 : 2.1;

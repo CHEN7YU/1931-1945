@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance } from '../src/tactics.js';
+import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
+  friendlyCoverAction } from '../src/tactics.js';
 
 test('threat memory copies only observed position and expires without tracking an unseen actor', () => {
   const state = createTactics(1, 1, 0), target = { x: 4, y: 1.2, z: 8 };
@@ -47,4 +48,32 @@ test('squad approach lanes diverge but all cross the actual bridge corridor', ()
 test('near-miss distance is bounded by the actual shot segment', () => {
   assert.equal(pointSegmentDistance({ x: 5, z: 1 }, { x: 0, z: 0 }, { x: 10, z: 0 }).distance, 1);
   assert.ok(pointSegmentDistance({ x: 20, z: 0 }, { x: 0, z: 0 }, { x: 10, z: 0 }).distance === 10);
+});
+test('friendly cover approach and withdrawal have distinct urgent movement without firing on the move', () => {
+  const state = createTactics(1, 1, 0);
+  state.cover = { id: 'wall', x: 0, z: 0, peek: { x: 1, z: 0 } };
+  let action = friendlyCoverAction(state, { x: 8, z: 0 }, 10.4);
+  assert.equal(action.mode, 'rush-to-cover');
+  assert.equal(action.sprint, true);
+  assert.equal(action.mayFire, false);
+  state.enteredCover = true;
+  action = friendlyCoverAction(state, state.cover, 10.4);
+  assert.equal(action.mode, 'move-to-peek');
+  assert.equal(action.sprint, false);
+  assert.equal(action.mayFire, false);
+  action = friendlyCoverAction(state, state.cover.peek, 10.4);
+  assert.equal(action.mode, 'peek');
+  assert.equal(action.mayFire, true);
+  state.suppressedUntil = 20;
+  action = friendlyCoverAction(state, state.cover.peek, 10.4);
+  assert.equal(action.mode, 'withdraw-to-cover');
+  assert.equal(action.sprint, true);
+  assert.equal(action.mayFire, false, 'pressure still forces cover long after the initial arrival grace period');
+});
+test('invalid cover action inputs fail explicitly rather than inventing a safe position', () => {
+  assert.throws(() => friendlyCoverAction(createTactics(2, 1, 1), { x: 0, z: 0 }, 1), RangeError);
+  const state = createTactics(1, 1, 0);
+  state.cover = { x: 0, z: 0, peek: { x: 1, z: 0 } };
+  assert.throws(() => friendlyCoverAction(state, { x: NaN, z: 0 }, 1), RangeError);
+  assert.throws(() => friendlyCoverAction(state, { x: 0, z: 0 }, -1), RangeError);
 });

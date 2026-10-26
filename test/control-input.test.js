@@ -14,6 +14,21 @@ test('immediate commands are owned by the actual soldier and cannot be applied t
   assert.equal(input.execute(command, source, true, () => reloads++).reason, 'duplicate');
   assert.equal(reloads, 1);
 });
+test('binding reports real ownership changes separately from pause/resume input invalidation', () => {
+  const input = createControlInput(), foot = { unitId: 'u1', soldierId: 's1', weaponId: 's1:rifle' };
+  assert.equal(input.bind(foot), true);
+  const command = input.capture('reload'), revision = input.snapshot.revision;
+  input.block();
+  assert.equal(input.bind({ ...foot, vehicleId: null, seatId: null }), false, 'normalised missing/null fields are the same physical owner');
+  assert.ok(input.snapshot.revision > revision);
+  assert.equal(input.execute(command, owner(), true, () => assert.fail('pre-pause input replayed')).reason, 'stale-owner');
+  assert.equal(input.bind(owner('s1', 'tank')), true);
+  assert.equal(input.bind({ ...owner('s1', 'tank'), seatId: 'tank:seat-1' }), true);
+  assert.equal(input.bind(owner('s1')), true);
+  assert.equal(input.bind(owner('s2')), true);
+  input.reset();
+  assert.equal(input.bind(owner('s2')), true, 'a new session must reinitialise even if its IDs happen to match');
+});
 test('Y, seat changes and returning to the same soldier invalidate old operations and held input', () => {
   const input = createControlInput(), first = owner(), second = owner('s2');
   input.bind(first);

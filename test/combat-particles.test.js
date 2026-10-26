@@ -40,6 +40,19 @@ test('world fragments stay above the shared bridge support and fully reset betwe
   assert.equal(state.emitted, 0);
   for (const [name, limit] of Object.entries(PARTICLE_LIMITS)) assert.equal(state.free[name].length, limit);
 });
+test('catch-up substeps retain short flashes until the actual render birth time', () => {
+  const state = createParticleState();
+  emitCombatParticles(state, position, normal, 'muzzle', { ...options, fragmentCount: 0, time: .25 });
+  for (const now of [.05, .1, .15, .2, .25]) {
+    advanceCombatParticles(state, .05, () => 0, now);
+    assert.equal(state.lights.length, 1);
+    assert.equal(state.lights[0].age, 0);
+  }
+  advanceCombatParticles(state, .025, () => 0, .275);
+  assert.ok(Math.abs(state.lights[0].age - .025) < 1e-9);
+  advanceCombatParticles(state, .026, () => 0, .301);
+  assert.equal(state.lights.length, 0);
+});
 test('lower quality and independent disable immediately recycle effects without allocating replacements', () => {
   const state = createParticleState();
   for (let i = 0; i < 20; i++) emitCombatParticles(state, position, normal, 'muzzle', options);

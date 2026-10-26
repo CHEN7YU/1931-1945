@@ -1,9 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TYPES } from '../src/core.js';
-import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, stopLocomotion, recoverLocomotion, landLocomotion } from '../src/locomotion.js';
+import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopLocomotion, recoverLocomotion, landLocomotion } from '../src/locomotion.js';
 
 const input = changes => ({ type: 'infantry', forward: 1, sideways: 0, yaw: 0, stance: 'standing', grounded: true, ...changes });
+test('AI and player sprint effort share depletion, delayed recovery and exhaustion without free zero-time changes', () => {
+  for (const fps of [30, 60, 144]) {
+    const motion = createLocomotion();
+    for (let i = 0; i < fps * 2; i++) advanceStamina(motion, 1 / fps, true, 1);
+    assert.ok(Math.abs(motion.stamina - .72) < 1e-9);
+    const before = { ...motion };
+    advanceStamina(motion, 0, true);
+    assert.deepEqual(motion, before);
+    advanceStamina(motion, 1, false);
+    assert.ok(Math.abs(motion.stamina - .72) < 1e-9);
+    for (let i = 0; i < fps * 6; i++) advanceStamina(motion, 1 / fps, true, 1);
+    assert.equal(motion.stamina, 0);
+    assert.equal(motion.exhausted, true);
+    advanceStamina(motion, 1.4, false);
+    advanceStamina(motion, 3.4, false);
+    assert.equal(motion.exhausted, true);
+    advanceStamina(motion, .2, false);
+    assert.equal(motion.exhausted, false);
+  }
+  assert.throws(() => advanceStamina(createLocomotion(), -1, true), RangeError);
+});
 function run(seconds, changes = {}, fps = 60, obstacles = []) {
   const motion = createLocomotion(), position = { x: 0, z: 0 };
   const frames = Math.round(seconds * fps);

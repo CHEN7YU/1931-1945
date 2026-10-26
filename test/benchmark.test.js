@@ -39,6 +39,18 @@ test('G2 diagnostic has two independent friendly infantry units and one tank cre
   assert.ok(roster.every(unit => points.some(point => point.id === unit.spawnId && point.team === unit.team)));
   assert.equal(benchmarkConfig('?benchmark=control', false), null);
 });
+test('interior geometry fixture retains real squad AI but is isolated from autonomous battlefield traffic', () => {
+  assert.equal(benchmarkConfig('?benchmark=interior', true).diagnostic, true);
+  assert.equal(benchmarkConfig('?benchmark=interior', false), null);
+  const roster = diagnosticRoster('interior'), points = diagnosticSpawns('interior');
+  assert.equal(roster.length, 1);
+  assert.equal(roster[0].memberCount, 5);
+  assert.equal(roster[0].team, 'friendly');
+  assert.ok(roster[0].player);
+  assert.equal(points[0].x, 0);
+  assert.equal(points[0].z, 78);
+  assert.equal(roster[0].spawnId, points[0].id);
+});
 test('bounded raw timing ring retains exact frame intervals, simulation time and independent snapshots', () => {
   const telemetry = createFrameTelemetry(true, 2);
   for (let i = 1; i <= 3; i++) {

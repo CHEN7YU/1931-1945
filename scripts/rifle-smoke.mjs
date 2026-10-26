@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -90,6 +90,11 @@ try {
   assert.equal(data.current, 0);
   assert.equal(data.ammo, 4);
   assert.ok(data.rifle.elapsed - held < .15, 'returning resumes the same action rather than restarting it');
+  assert.equal(data.controlBinding.weaponId, data.allies[0].rifle.id);
+  assert.equal(data.controlBinding.ammo, 4);
+  assert.ok(data.controlBinding.reloadUntil > data.controlBinding.time, 'reload compatibility state is synchronised before the control-surface event is presented');
+  if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'rifle-control-binding.json'),
+    JSON.stringify({ control: data.control, binding: data.controlBinding, rifle: data.rifle }, null, 2));
   await press('2');
   const stowed = await snapshot(), toolPause = stowed.rifle.elapsed;
   const toolEvent = stowed.controlEvents.history.at(-1).id;

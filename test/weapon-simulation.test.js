@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, seatSoldier, releaseSeat,
   selectControlledSoldier, releaseSupportWeapon } from '../src/entities.js';
-import { createRifleState, shootRifle, reloadRifle } from '../src/rifle-action.js';
-import { advanceOwnedWeapons } from '../src/weapon-simulation.js';
+import { createRifleState, shootRifle, reloadRifle, advanceRifle, RIFLE } from '../src/rifle-action.js';
+import { advanceOwnedWeapons, syncControlledRifleTiming } from '../src/weapon-simulation.js';
 import { TYPES } from '../src/core.js';
 
 function fixture() {
@@ -120,4 +120,26 @@ test('invalid time, policy and broken weapon ownership fail explicitly', () => {
   registry.weapons.set(support.supportWeapon.id, support.supportWeapon);
   registry.weapons.delete(actors[0].rifle.id);
   assert.throws(() => advanceOwnedWeapons(registry, .1, 1, true), /ownership/);
+});
+test('incoming personal reload timing is ready before presentation, without advancing action or refilling ammo', () => {
+  const { registry, actors, tank } = fixture();
+  reloadRifle(actors[1].rifle);
+  advanceRifle(actors[1].rifle, 1.65);
+  selectControlledSoldier(registry, actors[1]);
+  const before = { action: actors[1].rifle.action, elapsed: actors[1].rifle.elapsed, ammo: actors[1].rifle.ammo };
+  assert.equal(before.action, 'reload');
+  assert.equal(syncControlledRifleTiming(registry, 5, false), true);
+  assert.ok(Math.abs(actors[1].rifle.reloadUntil - (5 + RIFLE.reloadSeconds - before.elapsed)) < 1e-10);
+  syncControlledRifleTiming(registry, 6, true);
+  assert.equal(actors[1].rifle.reloadUntil, 0);
+  syncControlledRifleTiming(registry, 7, false);
+  assert.deepEqual({ action: actors[1].rifle.action, elapsed: actors[1].rifle.elapsed, ammo: actors[1].rifle.ammo }, before);
+  assert.equal(seatSoldier(registry, actors[1], tank, tank.seats[1].id), null);
+  tank.weapon.reloadUntil = 9;
+  const personal = structuredClone(actors[1].rifle);
+  assert.equal(syncControlledRifleTiming(registry, 8, false), false);
+  assert.deepEqual(actors[1].rifle, personal);
+  assert.equal(tank.weapon.reloadUntil, 9);
+  assert.throws(() => syncControlledRifleTiming(registry, -1, false), RangeError);
+  assert.throws(() => syncControlledRifleTiming(registry, 8, 'yes'), RangeError);
 });
