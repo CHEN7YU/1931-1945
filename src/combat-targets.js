@@ -5,7 +5,12 @@ const weapons = new Set(['rifle', 'explosion', 'cannon', 'aircraft-gun', 'collis
 
 export function canWeaponDamageTarget(weapon, kind) {
   if (!weapons.has(weapon) || !kinds.has(kind)) throw new RangeError(`Unknown weapon/target classification: ${weapon}/${kind}`);
-  return weapon !== 'rifle' || kind !== 'closed-armor';
+  return weapon !== 'rifle' || (kind !== 'closed-armor' && kind !== 'aircraft');
+}
+
+export function canRiflemanTrackTarget(kind) {
+  if (!kinds.has(kind)) throw new RangeError(`Unknown target classification: ${kind}`);
+  return kind !== 'aircraft';
 }
 
 export function damageForTarget(weapon, kind, damage) {

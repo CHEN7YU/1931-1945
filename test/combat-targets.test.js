@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canWeaponDamageTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from '../src/combat-targets.js';
+import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from '../src/combat-targets.js';
 import { createTactics, rememberThreat, expireThreat } from '../src/tactics.js';
 
 test('ordinary rifles neither select sealed armor for firing nor damage its hull', () => {
@@ -8,11 +8,23 @@ test('ordinary rifles neither select sealed armor for firing nor damage its hull
   assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);
   assert.equal(damageForTarget('rifle', 'person', 17), 17);
   assert.equal(damageForTarget('rifle', 'exposed-crew', 17), 17);
-  assert.equal(damageForTarget('rifle', 'aircraft', 17), 17);
+  assert.equal(damageForTarget('rifle', 'aircraft', 17), 0);
+});
+test('riflemen ignore aircraft before ranking candidates without losing ground targets or armor warning', () => {
+  assert.equal(canRiflemanTrackTarget('aircraft'), false);
+  assert.equal(canWeaponDamageTarget('rifle', 'aircraft'), false);
+  for (const kind of ['person', 'exposed-crew', 'closed-armor']) assert.equal(canRiflemanTrackTarget(kind), true);
+  const candidates = [...Array.from({ length: 9 }, () => ({ kind: 'aircraft', distance: 1 })),
+    { kind: 'person', distance: 10 }, { kind: 'closed-armor', distance: 12 }];
+  const eligible = candidates.filter(target => canRiflemanTrackTarget(target.kind))
+    .sort((a, b) => a.distance - b.distance).slice(0, 8);
+  assert.deepEqual(eligible.map(target => target.kind), ['person', 'closed-armor']);
+  assert.throws(() => canRiflemanTrackTarget('unknown'), RangeError);
 });
 test('blast and cannon damage remain separate from the rifle restriction', () => {
   for (const weapon of ['explosion', 'cannon', 'aircraft-gun', 'collision']) {
     assert.equal(damageForTarget(weapon, 'closed-armor', 160), 160);
+    assert.equal(damageForTarget(weapon, 'aircraft', 160), 160);
   }
 });
 test('armor threats remain armor in copied visual memory and expire normally', () => {

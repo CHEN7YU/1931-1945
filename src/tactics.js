@@ -2,18 +2,48 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.z);
 
 export function createTactics(id, squad, slot) {
-  return { id, squad, slot: slot % 10, mode: 'advance', lastSeen: null, threatKind: 'person', forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
+  return { id, squad, slot: slot % 10, mode: 'advance', lastSeen: null, threatKind: 'person', threatSense: null, threatId: null,
+    observedAt: null, engagementPoint: null, lastSightCheck: null, forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
 }
 
-export function rememberThreat(state, position, now, kind = 'person') {
+export function rememberThreat(state, position, now, kind = 'person', sense = 'vision', targetId = null) {
+  if (!validPoint(position) || !Number.isFinite(position.y) || !Number.isFinite(now) || now < 0 ||
+      !['vision', 'sound'].includes(sense) || (targetId !== null && (typeof targetId !== 'string' || !targetId))) {
+    throw new RangeError('Threat observations require finite coordinates/time and an explicit sense/identity');
+  }
   state.lastSeen = { x: position.x, y: position.y, z: position.z };
   state.threatKind = kind;
-  state.forgetAt = now + 5;
+  state.threatSense = sense;
+  state.threatId = sense === 'vision' ? targetId : null;
+  state.observedAt = now;
+  state.engagementPoint = null;
+  if (sense === 'vision' && targetId) state.lastSightCheck = { time: now, targetId, visible: true };
+  state.forgetAt = now + (sense === 'sound' ? 3 : 5);
+}
+
+export function targetAimPoint(target) {
+  if (!target || !validPoint(target.position) || !Number.isFinite(target.position.y)) throw new RangeError('Target position must be finite');
+  return { x: target.position.x, y: target.position.y + 1.1, z: target.position.z };
+}
+
+export function observeVisualThreat(state, target, now, canSee) {
+  if (!Number.isFinite(now) || now < 0 || typeof canSee !== 'function' ||
+      !target || typeof target.id !== 'string' || !target.id) throw new RangeError('Visual observation requires simulation time, target identity and a visibility query');
+  const point = targetAimPoint(target);
+  const visible = canSee(point);
+  if (typeof visible !== 'boolean') throw new TypeError('Visibility query must return a boolean');
+  state.lastSightCheck = { time: now, targetId: target.id, visible };
+  if (!visible) return null;
+  rememberThreat(state, point, now, target.targetKind, 'vision', target.id);
+  return point;
 }
 
 export function expireThreat(state, now) {
+  if (!Number.isFinite(now) || now < 0) throw new RangeError('Threat expiry requires finite non-negative simulation time');
   if (state.lastSeen && now > state.forgetAt) {
     state.lastSeen = null;
+    state.threatSense = state.threatId = state.observedAt = state.engagementPoint = null;
+    state.lastSightCheck = null;
     state.threatKind = 'person';
     state.cover = null;
     state.mode = 'advance';

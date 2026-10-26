@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction } from '../src/tactics.js';
+  friendlyCoverAction, targetAimPoint, observeVisualThreat } from '../src/tactics.js';
 
 test('threat memory copies only observed position and expires without tracking an unseen actor', () => {
   const state = createTactics(1, 1, 0), target = { x: 4, y: 1.2, z: 8 };
@@ -76,4 +76,51 @@ test('invalid cover action inputs fail explicitly rather than inventing a safe p
   state.cover = { x: 0, z: 0, peek: { x: 1, z: 0 } };
   assert.throws(() => friendlyCoverAction(state, { x: NaN, z: 0 }, 1), RangeError);
   assert.throws(() => friendlyCoverAction(state, { x: 0, z: 0 }, -1), RangeError);
+});
+test('a moving hidden target cannot refresh position, identity or memory lifetime without a successful visibility query', () => {
+  const state = createTactics(1, 1, 0);
+  const target = { id: 'soldier-2', targetKind: 'person', position: { x: 4, y: .45, z: 8 } };
+  const seen = observeVisualThreat(state, target, 1, () => true);
+  assert.deepEqual(seen, { x: 4, y: 1.55, z: 8 });
+  assert.equal(state.threatId, target.id);
+  assert.equal(state.threatSense, 'vision');
+  const before = structuredClone(state);
+  target.position.x = 50;
+  target.targetKind = 'closed-armor';
+  for (const now of [1.1, 2, 5.9]) assert.equal(observeVisualThreat(state, target, now, () => false), null);
+  assert.deepEqual({ ...state, lastSightCheck: null }, { ...before, lastSightCheck: null },
+    'hidden movement and type changes do not leak into tactical memory');
+  assert.equal(state.lastSightCheck.visible, false);
+  seen.z = -100;
+  assert.equal(state.lastSeen.z, 8);
+  assert.equal(expireThreat(state, 6.001), true, 'failed attempts do not extend memory even if sensing is delayed');
+  assert.equal(state.threatId, null);
+  assert.equal(state.observedAt, null);
+  const reacquired = observeVisualThreat(state, target, 7, point => point.x === 50);
+  assert.equal(reacquired.x, 50);
+  assert.equal(state.threatKind, 'closed-armor');
+  assert.equal(state.observedAt, 7);
+});
+test('sound remembers an imprecise event position without borrowing a live target identity or the visual lifetime', () => {
+  const state = createTactics(1, 1, 0);
+  rememberThreat(state, { x: 1, y: 1, z: 2 }, 1, 'closed-armor', 'vision', 'soldier-2');
+  const heard = { x: 8, y: 1, z: 20 };
+  rememberThreat(state, heard, 2, 'person', 'sound');
+  heard.x = 100;
+  assert.equal(state.lastSeen.x, 8);
+  assert.equal(state.threatId, null);
+  assert.equal(state.threatSense, 'sound');
+  assert.equal(state.forgetAt, 5);
+  assert.equal(expireThreat(state, 5.001), true);
+});
+test('perception rejects invalid observations and propagates visibility errors instead of inventing a successful sighting', () => {
+  const state = createTactics(1, 1, 0);
+  const target = { id: 'soldier-2', targetKind: 'person', position: { x: 0, y: 0, z: 0 } };
+  assert.throws(() => observeVisualThreat(state, target, NaN, () => false), RangeError);
+  assert.throws(() => observeVisualThreat(state, target, 1, () => { throw new Error('trace failed'); }), /trace failed/);
+  assert.equal(state.lastSeen, null);
+  assert.throws(() => rememberThreat(state, { x: 1, z: 2 }, 1), RangeError);
+  assert.throws(() => rememberThreat(state, target.position, 1, 'person', 'unknown'), RangeError);
+  assert.throws(() => targetAimPoint({ position: { x: NaN, y: 0, z: 0 } }), RangeError);
+  assert.throws(() => expireThreat(state, Infinity), RangeError);
 });

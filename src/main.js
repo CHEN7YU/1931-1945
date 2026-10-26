@@ -9,9 +9,9 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle } from './rifle-action.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction } from './tactics.js';
+  friendlyCoverAction, targetAimPoint, observeVisualThreat } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
-import { canWeaponDamageTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
+import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight } from './lighting.js';
 import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn } from './battle-roster.js';
@@ -125,7 +125,8 @@ const projectileImpacts = [];
 let projectileSerial = 0;
 const coverClaims = new Map();
 const combatSounds = [];
-const combatStats = { aiRifleShots: 0, aiRifleShotsAtArmor: 0, armorThreatsObserved: 0, rejectedRifleArmorDamage: 0 };
+const combatStats = { aiRifleShots: 0, aiRifleShotsAtArmor: 0, aiRifleShotsAtAircraft: 0, armorThreatsObserved: 0,
+  rifleAircraftCandidatesIgnored: 0, rejectedRifleArmorDamage: 0, rejectedRifleAircraftDamage: 0 };
 let actorSerial = 0;
 let soundSerial = 0;
 let state = 'menu';
@@ -986,17 +987,22 @@ function removeEffect(effect) {
   effects.splice(effects.indexOf(effect), 1);
 }
 
+function acceptedWeaponDamage(weaponKind, targetKind, amount) {
+  const damage = damageForTarget(weaponKind, targetKind, amount);
+  if (amount > 0 && damage === 0 && weaponKind === 'rifle') {
+    if (targetKind === 'closed-armor') combatStats.rejectedRifleArmorDamage++;
+    if (targetKind === 'aircraft') combatStats.rejectedRifleAircraftDamage++;
+  }
+  return damage;
+}
+
 function hurt(actor, damage, source, weaponKind = 'rifle') {
   if (actor.health <= 0 || !['playing', 'transferring', 'dead'].includes(state)) return;
-  const effectiveDamage = damageForTarget(weaponKind, actor.targetKind, damage);
-  if (effectiveDamage === 0) {
-    if (damage > 0 && weaponKind === 'rifle' && actor.targetKind === 'closed-armor') combatStats.rejectedRifleArmorDamage++;
-    return;
-  }
-  damage = effectiveDamage;
+  damage = acceptedWeaponDamage(weaponKind, actor.targetKind, damage);
+  if (damage === 0) return;
   const transport = occupiedVehicle(entities, actor);
   if (transport) {
-    damageVehicle(transport, damage, source);
+    damageVehicle(transport, damage, source, weaponKind);
     return;
   }
   const previous = actor.health;
@@ -1028,7 +1034,9 @@ function finishActorDeath(actor, source) {
   }
 }
 
-function damageVehicle(transport, damage, source) {
+function damageVehicle(transport, damage, source, weaponKind) {
+  damage = acceptedWeaponDamage(weaponKind, transport.type === 'tank' ? 'closed-armor' : 'aircraft', damage);
+  if (damage === 0) return;
   if (source === 'crash') source = Object.freeze({ credit: 'environment', cause: 'crash', vehicleId: transport.id });
   const observer = controlledSoldier(entities);
   const observerId = observer?.health > 0 && occupiedVehicle(entities, observer)?.id === transport.id ? observer.id : null;
@@ -1096,7 +1104,7 @@ function explode(position, damage, radius, source) {
     const target = transport.position.clone().add(new THREE.Vector3(0, 1, 0));
     const distance = target.distanceTo(position), origin = position.clone();
     origin.y = Math.max(origin.y, .5);
-    if (distance < radius && hasLine(origin, target, radius + 1, transport.id)) damageVehicle(transport, blastDamage(distance, radius, damage), source);
+    if (distance < radius && hasLine(origin, target, radius + 1, transport.id)) damageVehicle(transport, blastDamage(distance, radius, damage), source, 'explosion');
   }
   for (const actor of allForces) {
     if (actor.health <= 0) continue;
@@ -1173,7 +1181,7 @@ function fire() {
       hit = ray.intersectObjects([...solidIndex.candidates(muzzle, travel, ray.far), ...vehicleSolids(transport?.id), ...enemyModels, ...rallyTargets], true)[0];
       end.copy(hit ? hit.point : muzzle.clone().addScaledVector(travel, ray.far));
       lastRifleTrace = { start: muzzle.toArray(), end: end.toArray(), time, hit: Boolean(hit), doorId: hit?.object.userData.doorIds?.[hit.instanceId] || null,
-        rallyId: hit?.object.userData.rallyId || null };
+        rallyId: hit?.object.userData.rallyId || null, vehicleId: hit?.object.userData.vehicleId || null };
     }
     combatEvents.publish('shot', { source, weaponType: unit.type, start: muzzle, end, muzzle: unit.type === 'infantry',
       sound: unit.type === 'tank' ? 'blast' : 'shot', recoil: unit.type === 'tank' ? .12 : .05 }, time);
@@ -1193,9 +1201,7 @@ function fire() {
       combatEvents.publish('impact', { ...impact, source }, time);
       if (hit.object.userData.vehicleId) {
         const hitVehicle = entities.vehicles.get(hit.object.userData.vehicleId);
-        if (canWeaponDamageTarget(unit.type === 'plane' ? 'aircraft-gun' : 'rifle', hitVehicle.type === 'tank' ? 'closed-armor' : 'aircraft')) {
-          damageVehicle(hitVehicle, TYPES[unit.type].damage, source);
-        }
+        damageVehicle(hitVehicle, TYPES[unit.type].damage, source, unit.type === 'plane' ? 'aircraft-gun' : 'rifle');
       }
       if (hit.object.userData.actor) {
         hurt(hit.object.userData.actor, TYPES[unit.type].damage, source, unit.type === 'plane' ? 'aircraft-gun' : 'rifle');
@@ -1254,11 +1260,11 @@ function updateVehicles(dt) {
       if (controlled && keys.has('ControlLeft')) position.y -= dt * 9;
       position.y = Math.min(position.y, 90);
       const colliding = world.obstacles.some(b => position.x > b.minX - 1 && position.x < b.maxX + 1 && position.z > b.minZ - 1 && position.z < b.maxZ + 1 && position.y < b.height + 1);
-      if (position.y < 1.8 || colliding) { damageVehicle(transport, transport.health, 'crash'); continue; }
+      if (position.y < 1.8 || colliding) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
       if (Math.abs(position.x) > 170 || Math.abs(position.z) > 170) {
         transport.outsideTime += dt;
         if (controlled) toast(`请返回作战区域 · ${Math.max(0, Math.ceil(10 - transport.outsideTime))} 秒后失去飞机`, 1);
-        if (transport.outsideTime >= 10) { damageVehicle(transport, transport.health, 'crash'); continue; }
+        if (transport.outsideTime >= 10) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
       } else transport.outsideTime = 0;
     } else {
       transport.heading -= sideways * dt * .8;
@@ -1479,9 +1485,10 @@ function walkActor(actor, target, speed, dt, sprint = false) {
 
 function fightFromCover(actor, target, dt) {
   const t = actor.tactics, position = actor.position;
-  const armorThreat = (target?.targetKind || t.threatKind) === 'closed-armor';
-  const threat = target ? target.position.clone() : new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
-  if (target) threat.y = target.position.y + 1.1;
+  const armorThreat = t.threatKind === 'closed-armor';
+  const threat = new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
+  t.engagementPoint ??= {};
+  Object.assign(t.engagementPoint, t.lastSeen);
   const committedMove = actor.friendly && t.cover && !t.enteredCover && time < (t.coverMoveUntil || 0) && time >= t.suppressedUntil;
   if (time >= t.decisionAt && coverBudget > 0 && !committedMove) {
     const coverStarted = benchmark ? performance.now() : 0;
@@ -1559,10 +1566,19 @@ function fightFromCover(actor, target, dt) {
   if (actor.friendly && (actor.locomotion.speed > .1 || actor.locomotion.aimRecovery > 0)) return;
   actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
   const from = position.clone().add(new THREE.Vector3(0, SOLDIER_FIRE_HEIGHT, 0));
-  if (!target || !mayFire || !canWeaponDamageTarget('rifle', target.targetKind) || time < actor.nextFire || !hasLine(from, threat, 75)) return;
+  if (!target || t.threatSense !== 'vision' || t.threatId !== target.id || !mayFire ||
+      !canWeaponDamageTarget('rifle', t.threatKind) || time < actor.nextFire) return;
+  const observed = observeVisualThreat(t, target, time, point => hasLine(from, point, 75, target.vehicleId));
+  if (!observed) { actor.target = null; return; }
+  if (!canRiflemanTrackTarget(t.threatKind)) { actor.target = null; return; }
+  if (!canWeaponDamageTarget('rifle', t.threatKind)) return;
+  threat.copy(observed);
+  t.engagementPoint = { ...observed };
+  actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
   const nearbyFriend = actorGrid.near(position.x, position.z, from.distanceTo(threat)).some(other => {
     if (other.friendly !== actor.friendly) return false;
     if (other === actor || other.health <= 0) return false;
+    if (other.targetKind === 'aircraft') return false;
     const segment = pointSegmentDistance(other.position, position, threat);
     return segment.fraction > .03 && segment.fraction < .97 && segment.distance < .55;
   });
@@ -1578,12 +1594,13 @@ function fightFromCover(actor, target, dt) {
   }
   combatStats.aiRifleShots++;
   if (target.targetKind === 'closed-armor') combatStats.aiRifleShotsAtArmor++;
+  if (target.targetKind === 'aircraft') combatStats.aiRifleShotsAtAircraft++;
   const source = captureAttackSource(entities, actor, actor.rifle);
   combatEvents.publish('shot', { source, weaponType: 'infantry', start: muzzle, end: threat,
     muzzle: true, color: actor.friendly ? 0xf6d399 : 0xdfb17a }, time);
   combatSounds.push({ id: ++soundSerial, friendly: actor.friendly, x: muzzle.x, y: muzzle.y, z: muzzle.z, time, radius: 40 });
   if (combatSounds.length > 32) combatSounds.shift();
-  if (battleRandom() < rifleAIHitChance(distance, suppressed)) hurt(target, target.targetKind === 'aircraft' ? 17 : RIFLE.personDamage, source, 'rifle');
+  if (battleRandom() < rifleAIHitChance(distance, suppressed)) hurt(target, RIFLE.personDamage, source, 'rifle');
 }
 
 function formationDestination(actor, active) {
@@ -1631,10 +1648,17 @@ function updateAI(dt) {
     if (actor.friendly) {
       actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
     }
+    const tactics = actor.tactics, previousCover = tactics.cover;
+    if (expireThreat(tactics, time)) {
+      actor.target = null;
+      actor.path = actor.pathGoal = null;
+      pathRequests.delete(tactics.id);
+      tactics.coverMoveUntil = 0;
+      if (previousCover) coverClaims.delete(previousCover.id);
+    }
     if (actor.vehicleId) continue;
     const position = actor.position;
     position.y = world.groundHeight(position.x, position.z);
-    const tactics = actor.tactics;
     const escape = world.doorSystem.swingEscape(position);
     if (escape) {
       const dx = escape.x - position.x, dz = escape.z - position.z, distance = Math.max(.01, Math.hypot(dx, dz));
@@ -1649,26 +1673,34 @@ function updateAI(dt) {
       sensorBudget--;
       actor.nextThink = time + .6 + battleRandom() * .2;
       const candidates = actorGrid.near(position.x, position.z, 75)
-        .filter(candidate => candidate.friendly !== actor.friendly && candidate.health > 0)
+        .filter(candidate => {
+          if (candidate.friendly === actor.friendly || candidate.health <= 0) return false;
+          if (!canRiflemanTrackTarget(candidate.targetKind)) {
+            combatStats.rifleAircraftCandidatesIgnored++;
+            return false;
+          }
+          return true;
+        })
         .sort((a, b) => position.distanceToSquared(a.position) - position.distanceToSquared(b.position)).slice(0, 8);
       let closest = 75;
       actor.target = null;
       for (const candidate of candidates) {
         if (candidate.health <= 0) continue;
-        const to = candidate.position.clone();
-        to.y = candidate.position.y + 1.1;
+        const to = targetAimPoint(candidate);
         const distance = from.distanceTo(to);
         const angle = Math.atan2(position.x - to.x, position.z - to.z);
         const inView = distance < 9 || Math.cos(angle - actor.heading) > .25 || time < tactics.suppressedUntil;
-        if (inView && distance < closest && hasLine(from, to, 75, candidate.vehicleId)) {
-          closest = distance;
-          actor.target = candidate;
+        if (inView && distance < closest) {
+          const visible = hasLine(from, to, 75, candidate.vehicleId);
+          if (candidate.id === tactics.threatId) tactics.lastSightCheck = { time, targetId: candidate.id, visible };
+          if (visible) {
+            closest = distance;
+            actor.target = candidate;
+          }
         }
       }
       if (actor.target) {
-        const seen = actor.target.position.clone();
-        seen.y = actor.target.position.y + 1.1;
-        rememberThreat(tactics, seen, time, actor.target.targetKind);
+        rememberThreat(tactics, targetAimPoint(actor.target), time, actor.target.targetKind, 'vision', actor.target.id);
         if (actor.target.targetKind === 'closed-armor') combatStats.armorThreatsObserved++;
       } else {
         for (const heard of [...combatSounds].reverse()) {
@@ -1676,14 +1708,11 @@ function updateAI(dt) {
           const audible = hasLine(from, new THREE.Vector3(heard.x, heard.y, heard.z), 90) ? heard.radius : heard.radius * .45;
           if (Math.hypot(heard.x - position.x, heard.z - position.z) < audible) {
             tactics.lastSound = heard.id;
-            rememberThreat(tactics, { x: heard.x + Math.sin(tactics.id) * 2, y: heard.y, z: heard.z + Math.cos(tactics.id) * 2 }, time);
-            tactics.forgetAt = time + 3;
+            rememberThreat(tactics, { x: heard.x + Math.sin(tactics.id) * 2, y: heard.y, z: heard.z + Math.cos(tactics.id) * 2 }, time, 'person', 'sound');
             break;
           }
         }
       }
-      const previousCover = tactics.cover;
-      if (expireThreat(tactics, time) && previousCover) coverClaims.delete(previousCover.id);
       if (benchmark) telemetry.add('sensingMs', performance.now() - sensingStarted);
     }
     const target = actor.target?.health > 0 ? actor.target : null;
@@ -1691,7 +1720,7 @@ function updateAI(dt) {
     if (target) {
       actor.buildProgress = 0;
       fightFromCover(actor, target, dt);
-    } else if (tactics.lastSeen) {
+    } else if (tactics.lastSeen && canRiflemanTrackTarget(tactics.threatKind)) {
       if (tactics.cover || tactics.threatKind === 'closed-armor') fightFromCover(actor, null, dt);
       else {
         tactics.mode = 'search';
@@ -2343,13 +2372,22 @@ Object.defineProperty(window, '__battle', { get: () => ({
     cover: actor.tactics.cover ? { id: actor.tactics.cover.id, x: actor.tactics.cover.x, z: actor.tactics.cover.z,
       peek: { ...actor.tactics.cover.peek } } : null, enteredCover: actor.tactics.enteredCover,
     suppressedUntil: actor.tactics.suppressedUntil,
+    observation: { sense: actor.tactics.threatSense, targetId: actor.tactics.threatId, time: actor.tactics.observedAt,
+      forgetAt: actor.tactics.forgetAt, point: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null },
+    engagementPoint: actor.tactics.engagementPoint ? { ...actor.tactics.engagementPoint } : null,
+    sightCheck: actor.tactics.lastSightCheck ? { ...actor.tactics.lastSightCheck } : null,
     movement: { speed: actor.locomotion.speed, sprinting: actor.locomotion.sprinting, stamina: actor.locomotion.stamina,
       exhausted: actor.locomotion.exhausted, aimRecovery: actor.locomotion.aimRecovery },
     lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
     blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,
     id: actor.tactics.id, squad: actor.tactics.squad, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
+    heading: actor.heading, selectedTargetId: actor.target?.id ?? null, nextSenseAt: actor.nextThink,
+    sightCheck: actor.tactics.lastSightCheck ? { ...actor.tactics.lastSightCheck } : null,
     targetKind: actor.target?.targetKind || null, threatKind: actor.tactics.threatKind,
+    observation: { sense: actor.tactics.threatSense, targetId: actor.tactics.threatId, time: actor.tactics.observedAt,
+      forgetAt: actor.tactics.forgetAt, point: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null },
+    engagementPoint: actor.tactics.engagementPoint ? { ...actor.tactics.engagementPoint } : null,
     lastSeen: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null, blockedBy: actor.tactics.blockedBy })),
   coverClaims: [...coverClaims].filter(([, claim]) => claim.until > time).map(([id, claim]) => ({ id, ...claim })),
   objectives: objectives.map(({ id, progress, captured }) => ({ id, progress, captured })),

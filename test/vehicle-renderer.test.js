@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createEntityRegistry, registerUnit, createVehicleEntity } from '../src/entities.js';
+import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier, releaseSeat, damageVehicleEntity } from '../src/entities.js';
 import { createVehicleRenderer } from '../src/vehicle-renderer.js';
+import { canRiflemanTrackTarget, damageForTarget } from '../src/combat-targets.js';
 
 function fixture() {
   const registry = createEntityRegistry(), scene = new THREE.Scene();
@@ -63,6 +64,35 @@ test('wreck views remain until registry retirement and cleanup never disposes sh
   assert.equal(scene.children.length, 0);
   assert.equal(disposed, 0);
   for (const resource of resources) resource.removeEventListener('dispose', listener);
+});
+test('an actual aircraft hull contact rejects rifle damage and its seated pilot shares aircraft classification', () => {
+  const { registry, plane, renderer } = fixture();
+  const pilot = registerSoldier(registry, { id: 'pilot-1', unitId: 'air', team: 'friendly', health: 100,
+    groundType: 'infantry', position: new THREE.Vector3(), rifle: {} });
+  assert.equal(seatSoldier(registry, pilot, plane, plane.seats[0].id), null);
+  renderer.update(registry.vehicles.values());
+  const ray = new THREE.Raycaster(plane.position.clone().add(new THREE.Vector3(0, 0, 15)), new THREE.Vector3(0, 0, -1), 0, 30);
+  const hit = ray.intersectObject(renderer.model(plane.id), true)[0];
+  assert.ok(hit, 'the real aircraft mesh is a physical hit, not an empty sky miss');
+  assert.equal(hit.object.userData.vehicleId, plane.id);
+  const health = plane.health;
+  assert.equal(pilot.targetKind, 'aircraft');
+  assert.equal(canRiflemanTrackTarget(pilot.targetKind), false);
+  for (const targetKind of ['aircraft', pilot.targetKind]) {
+    const result = damageVehicleEntity(registry, plane, damageForTarget('rifle', targetKind, 100));
+    assert.equal(result.damage, 0);
+    assert.equal(plane.health, health);
+    assert.equal(pilot.health, 100);
+  }
+  releaseSeat(registry, pilot);
+  assert.equal(pilot.targetKind, 'person');
+  assert.equal(canRiflemanTrackTarget(pilot.targetKind), true);
+  assert.equal(damageForTarget('rifle', pilot.targetKind, 50), 50);
+  assert.equal(seatSoldier(registry, pilot, plane, plane.seats[0].id), null);
+  const collision = damageVehicleEntity(registry, plane, damageForTarget('collision', 'aircraft', plane.health));
+  assert.equal(collision.destroyed, true);
+  assert.equal(pilot.health, 0, 'rifle rejection does not turn the plane or its pilot globally invulnerable');
+  renderer.clear();
 });
 test('invalid vehicle identities and poses fail before becoming silent missing geometry', () => {
   const { registry, tank, renderer } = fixture();
