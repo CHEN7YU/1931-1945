@@ -15,6 +15,34 @@ npm.cmd run dev -- --port 5173
 
 `references` 为离线对照资料，不参与Vite热更新监听，避免Windows下收集/查看参考图片时的文件锁导致预览进程退出；游戏源代码仍正常热更新。
 
+## Cloudflare 部署
+
+项目使用 Cloudflare Workers 静态资源托管。根目录的 `wrangler.toml` 明确指定上传 `dist`，无需 Worker 入口代码或 `@cloudflare/vite-plugin`，也不改变本地 Vite 启动和预览方式。只发布构建产物，不上传 `src`、测试或 `references`；`public\assets` 会由 Vite 复制到 `dist\assets`。
+
+在 Cloudflare 的 Workers Git 集成中连接本仓库，根目录使用仓库根目录，并配置：
+
+| 设置 | 值 |
+| --- | --- |
+| 构建命令 | `npm run build` |
+| 部署命令 | `npx wrangler deploy` |
+| Worker 名称 | `1931-1945`，与 `wrangler.toml` 一致 |
+| 生产分支 | `main` |
+
+确保 Cloudflare 构建的分支已包含 `wrangler.toml`。如果使用其他 Worker 名称，同时修改该配置中的 `name`。不要在构建时自动接入 Vite 插件：缺少明确的 Wrangler 配置时，自动接入可能因现有 Vite 配置没有 `plugins` 数组而失败。
+
+也可以在本机完成 Cloudflare 登录后发布：
+
+```powershell
+npm.cmd ci
+npm.cmd run build
+npx.cmd wrangler login
+npx.cmd wrangler deploy
+```
+
+仅检查打包和部署配置、不上传资源时，使用 `npx.cmd wrangler deploy --dry-run`（先运行构建）。部署在域名根目录，以保持 `/assets/...` 路径有效；未配置 SPA 回退，缺失资源返回404。发布后仍是桌面 WebGL 单人游戏，不会新增后端、多人联机或跨刷新存档。
+
+## 本地检查
+
 ```powershell
 npm.cmd test
 npm.cmd run test:browser
