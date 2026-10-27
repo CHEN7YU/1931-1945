@@ -12,12 +12,12 @@
   },
   "sourcePermissionRecord": "/assets/game/nra-88/PERMISSION.txt",
   "sourceModelSha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898",
-  "modelSha256": "805c889582d8de7e92ee04bc03c475ef6f64d83bb8243d8311c91a3c67c76a00",
+  "modelSha256": "a946651a211737dab5b32909ed18ebb72781277c42a582b165d5a9fe0f59d37c",
   "files": [
     {
       "file": "character.glb",
-      "bytes": 7104060,
-      "sha256": "805c889582d8de7e92ee04bc03c475ef6f64d83bb8243d8311c91a3c67c76a00"
+      "bytes": 7182608,
+      "sha256": "a946651a211737dab5b32909ed18ebb72781277c42a582b165d5a9fe0f59d37c"
     }
   ],
   "runtimeMotion": {
@@ -61,11 +61,11 @@
   },
   "levels": {
     "near": {
-      "triangles": 57504,
+      "triangles": 60282,
       "batches": 14
     },
     "far": {
-      "triangles": 22812,
+      "triangles": 23594,
       "batches": 11
     }
   },

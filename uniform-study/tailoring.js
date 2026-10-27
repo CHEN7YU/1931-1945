@@ -1,8 +1,48 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const SEGMENTS = 72;
 const ROWS = 88;
+
+function drapeSleeves(source) {
+  const positions = [], normals = [], uvs = [];
+  const attributes = source.attributes;
+  for (let triangle = 0; triangle < attributes.position.count; triangle += 3) {
+    const corners = [0, 1, 2].map(corner => ({
+      point: new THREE.Vector3().fromBufferAttribute(attributes.position, triangle + corner),
+      normal: new THREE.Vector3().fromBufferAttribute(attributes.normal, triangle + corner),
+      uv: new THREE.Vector2().fromBufferAttribute(attributes.uv, triangle + corner),
+    }));
+    const midpoints = corners.map((corner, index) => {
+      const next = corners[(index + 1) % 3];
+      return { point: corner.point.clone().lerp(next.point, .5),
+        normal: corner.normal.clone().lerp(next.normal, .5).normalize(), uv: corner.uv.clone().lerp(next.uv, .5) };
+    });
+    for (const face of [[corners[0], midpoints[0], midpoints[2]], [midpoints[0], corners[1], midpoints[1]],
+      [midpoints[2], midpoints[1], corners[2]], midpoints]) {
+      for (const vertex of face) {
+        const point = vertex.point.clone(), side = Math.sign(point.x), y = point.y;
+        const forearm = THREE.MathUtils.clamp((y - .875) / .265, 0, 1);
+        const upper = THREE.MathUtils.clamp((y - 1.14) / .25, 0, 1);
+        const centerX = side * (y < 1.14 ? THREE.MathUtils.lerp(.248, .2116, forearm) : THREE.MathUtils.lerp(.2116, .165, upper));
+        const centerZ = y < 1.14 ? THREE.MathUtils.lerp(.035, -.0448, forearm) : -.0448;
+        const radial = new THREE.Vector3(point.x - centerX, 0, point.z - centerZ).normalize();
+        const angle = Math.atan2(radial.z, radial.x * side);
+        const bell = (center, width) => Math.exp(-(((y - center) / width) ** 2));
+        const elbow = .0055 * Math.sin((y - 1.14) * 70 + radial.z * 1.2) * bell(1.14, .052);
+        const cuff = .0038 * Math.sin((y - .955) * 85 + Math.sin(angle)) * bell(.955, .038);
+        const envelope = THREE.MathUtils.smoothstep(y, .90, .925) * (1 - THREE.MathUtils.smoothstep(y, 1.23, 1.27));
+        point.addScaledVector(radial, (elbow + cuff) * envelope);
+        positions.push(...point.toArray()); normals.push(...vertex.normal.toArray()); uvs.push(...vertex.uv.toArray());
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  return toCreasedNormals(geometry);
+}
 
 function attachSleeves(body, sleeves) {
   const positions = sleeves.getAttribute('position'), normals = sleeves.getAttribute('normal');
@@ -171,9 +211,21 @@ export function tailorStudyGarment(reference, sleeves) {
   for (let row = 0; row < profile.length; row++) for (let column = 0; column <= SEGMENTS; column++) {
     const at = column % SEGMENTS, direction = directions[at], ring = profile[row], neckY = 1.465 - .025 * direction.z;
     const y = ring.collar ? neckY + ring.height : ring.t ? THREE.MathUtils.lerp(1.415, neckY, ring.t) : ring.y;
-    const creaseY = 1.18 - .07 * Math.abs(direction.x);
-    const tension = Math.max(0, direction.z) ** 3 * .0025 *
-      (bell(y, creaseY, .016) - .5 * bell(y, creaseY + .025, .02));
+    const angle = at / SEGMENTS * Math.PI * 2, side = Math.abs(direction.x);
+    const front = Math.max(0, direction.z), back = Math.max(0, -direction.z);
+    const envelope = THREE.MathUtils.smoothstep(y, 1.085, 1.105) * (1 - THREE.MathUtils.smoothstep(y, 1.37, 1.415));
+    const waistLine = 1.115 + .043 * side + .007 * Math.sin(angle * 3);
+    const waistFold = .007 * (.35 + .65 * side) *
+      (bell(y, waistLine, .013) - .48 * bell(y, waistLine + .023, .017));
+    const underarmLine = 1.245 + .085 * side;
+    const underarm = .0045 * front * side *
+      (bell(y, underarmLine, .018) - .55 * bell(y, underarmLine + .025, .02));
+    const backFold = .0035 * back * (bell(y, 1.29 + .03 * side, .026) - .45 * bell(y, 1.34, .03));
+    const x = direction.x * (ring.radii[at] + (ring.widthEase ?? 0));
+    const diagonalStrapX = y > 1.22 ? .07 - (y - 1.22) * .21 / .206 : .07 + (1.22 - y) * .15 / .28;
+    const canteenStrapX = -.18 + (y - 1.18) * .04 / .245;
+    const pressure = -.0018 * front * (bell(x, diagonalStrapX, .017) + bell(x, canteenStrapX, .012));
+    const tension = (waistFold + underarm + backFold + pressure) * envelope;
     positions.push(direction.x * (ring.radii[at] + (ring.widthEase ?? 0) + tension), y,
       centerZ + direction.z * (ring.radii[at] + (ring.depthEase ?? 0) + tension));
     uvs.push(column / SEGMENTS, (y - .86) / .64);
@@ -192,8 +244,9 @@ export function tailorStudyGarment(reference, sleeves) {
     normal.fromBufferAttribute(normals, start).add(other.fromBufferAttribute(normals, end)).normalize();
     normals.setXYZ(start, normal.x, normal.y, normal.z); normals.setXYZ(end, normal.x, normal.y, normal.z);
   }
-  const armholes = attachSleeves(body, sleeves), expanded = body.toNonIndexed(), result = mergeGeometries([expanded, sleeves, armholes]);
-  body.dispose(); expanded.dispose(); armholes.dispose();
+  const draped = drapeSleeves(sleeves), armholes = attachSleeves(body, draped), expanded = body.toNonIndexed();
+  const result = mergeGeometries([expanded, draped, armholes]);
+  body.dispose(); expanded.dispose(); armholes.dispose(); draped.dispose();
   if (!result) throw new Error('Refitted garment body and source sleeves could not be combined');
   result.userData = {
     hasGeometricFolds: true, rebuiltStandingCollar: true, waistJoined: true,
@@ -201,7 +254,9 @@ export function tailorStudyGarment(reference, sleeves) {
     bodyTriangleCount: indices.length / 3,
     attachedArmholeEdges: armholes.userData.attachedArmholeEdges,
     chestBackEase: true, smoothedTorsoPanels: true,
-    construction: 'Measured torso with smoothed panels and chest/back ease, reconstructed cutouts, redrafted standing collar and fitted source sleeves; artistic fit, not anthropometric evidence.',
+    localizedLoadFolds: true, sleeveSubdivision: 1,
+    foldZones: ['above-belt', 'underarm', 'upper-back', 'elbow', 'above-cuff', 'shoulder-strap-contact'],
+    construction: 'Measured torso with localized belt/underarm/strap tension, chest/back ease, redrafted standing collar and subdivided draped source sleeves; artistic fit, not cloth simulation or anthropometric evidence.',
   };
   return result;
 }

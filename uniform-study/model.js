@@ -96,6 +96,57 @@ function pouchFlapGeometry(width, height = .092, depth = .066) {
   return geometry;
 }
 
+function haversackGeometry() {
+  const rings = [
+    [-.096, 0, 0], [-.086, .065, .024], [-.060, .084, .035],
+    [0, .091, .037], [.055, .087, .033], [.086, .077, .026], [.090, 0, 0],
+  ];
+  const geometry = profileGeometry(rings, 32), positions = geometry.attributes.position;
+  for (let row = 0; row < rings.length; row++) for (let column = 0; column <= 32; column++) {
+    const angle = column / 32 * Math.PI * 2, sine = Math.sin(angle), cosine = Math.cos(angle);
+    const [y, rx, rz] = rings[row], x = Math.sign(sine) * Math.abs(sine) ** .38 * rx;
+    const face = Math.abs(cosine) ** 6, gathering = Math.exp(-(((y - .055) / .05) ** 2));
+    const folds = .0025 * Math.cos(x * 95) * face * gathering * Math.min(1, rx / .065);
+    positions.setXYZ(row * 33 + column, x, y,
+      Math.sign(cosine) * (Math.abs(cosine) ** .38 * rz + folds));
+  }
+  geometry.computeVertexNormals();
+  geometry.userData.softCanvas = true;
+  geometry.userData.foldZones = ['rounded-loaded-bottom', 'gathered-top'];
+  return geometry;
+}
+
+function haversackFlapGeometry() {
+  const positions = [], uvs = [], indices = [], columns = 12, rows = 4;
+  const count = (columns + 1) * (rows + 1);
+  for (const layer of [1, -1]) for (let row = 0; row <= rows; row++) for (let column = 0; column <= columns; column++) {
+    const across = column / columns * 2 - 1, down = row / rows;
+    positions.push(across * .095, .0405 - down * .081 - .007 * (1 - across ** 2) * down,
+      .008 * Math.sin(Math.PI * down) + layer * .002);
+    uvs.push(column / columns, down);
+  }
+  for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+    const a = row * (columns + 1) + column, b = a + columns + 1;
+    indices.push(a, b, a + 1, a + 1, b, b + 1,
+      a + count, a + count + 1, b + count, a + count + 1, b + count + 1, b + count);
+  }
+  const boundary = [];
+  for (let column = 0; column <= columns; column++) boundary.push(column);
+  for (let row = 1; row <= rows; row++) boundary.push(row * (columns + 1) + columns);
+  for (let column = columns - 1; column >= 0; column--) boundary.push(rows * (columns + 1) + column);
+  for (let row = rows - 1; row > 0; row--) boundary.push(row * (columns + 1));
+  boundary.forEach((a, index) => {
+    const b = boundary[(index + 1) % boundary.length];
+    indices.push(a, b, a + count, b, b + count, a + count);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals();
+  geometry.userData.drapedFlap = true; geometry.userData.thicknessMetres = .004;
+  return geometry;
+}
+
 export function createUniformStudy({ textures = {}, upperBody } = {}) {
   if (!upperBody?.isMesh || !upperBody.userData.adaptedSourceGarment) throw new Error('Uniform study requires the inspected static garment; no geometric-person fallback is used');
   const root = new THREE.Group();
@@ -413,11 +464,16 @@ export function createUniformStudy({ textures = {}, upperBody } = {}) {
   const bag = new THREE.Group();
   bag.name = 'type-30-haversack'; bag.position.set(.235, .86, -.035); bag.rotation.y = -.32;
   equipment.add(bag);
-  box(bag, [.182, .174, .068], [0, 0, 0], materials.canvas, 'haversack-body');
-  box(bag, [.19, .081, .012], [0, .062, .037], materials.puttee, 'haversack-flap');
+  add(bag, haversackGeometry(), materials.canvas, [0, 0, 0], 'haversack-body');
+  add(bag, haversackFlapGeometry(), materials.puttee, [0, .062, .044], 'haversack-flap');
   for (const x of [-.055, .055]) {
-    box(bag, [.014, .065, .004], [x, .017, .047], materials.lining, 'haversack-tab');
-    oval(bag, [.004, .004, .002], [x, -.004, .05], materials.buckle);
+    const tab = box(bag, [.014, .065, .004], [x, .017, .047], materials.lining, 'haversack-tab');
+    const positions = tab.geometry.attributes.position;
+    for (let index = 0; index < positions.count; index++) {
+      positions.setZ(index, positions.getZ(index) - .006 + .010 * THREE.MathUtils.smoothstep(.017 + positions.getY(index), -.012, .045));
+    }
+    tab.geometry.computeVertexNormals();
+    oval(bag, [.004, .004, .002], [x, -.004, .044], materials.buckle);
   }
   strap(equipment, [[.30, .94, -.035], [.215, 1.11, -.12], [-.13, 1.40, -.105],
     [-.14, 1.426, .016], [.07, 1.22, .132], [.22, .94, .03]], .025, materials.canvas, 'haversack-shoulder-strap');
@@ -425,6 +481,7 @@ export function createUniformStudy({ textures = {}, upperBody } = {}) {
     studyOnly: true, rigged: false, historicalAcceptance: false,
     adaptedGarment: true, sourceClothingTextureIncluded: false,
     balancedSilhouette: true,
+    localizedClothConstruction: true,
     referenceHeightMetres: 1.75, frontAxis: '+Z', wearerRightAxis: '-X',
     references: { helmet: [.230, .156, .266], canteen: [.177, .215, .075] },
   };

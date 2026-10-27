@@ -143,6 +143,36 @@ test('art-directed silhouette preserves chest depth and narrows thighs without s
   disposeUniformStudy(root);
 });
 
+test('cloth folds stay localized above the belt and canvas equipment has actual sag rather than box-shaped shading', () => {
+  const { root, materials } = createUniformStudy();
+  const garment = root.getObjectByName('standing-collar-tunic'), details = garment.geometry.userData;
+  assert.equal(details.localizedLoadFolds, true);
+  assert.equal(details.sleeveSubdivision, 1);
+  assert.deepEqual(details.foldZones, ['above-belt', 'underarm', 'upper-back', 'elbow', 'above-cuff', 'shoulder-strap-contact']);
+  assert.equal(materials.cloth.color.getHex(), 0x927c42);
+  const direction = new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2);
+  const radius = y => {
+    const center = new THREE.Vector3(0, y, -.026);
+    const ray = new THREE.Raycaster(center.clone().addScaledVector(direction, .45), direction.clone().negate(), 0, .9);
+    const hit = ray.intersectObject(garment, false).find(item => item.faceIndex < details.bodyTriangleCount);
+    assert.ok(hit, `Missing waist cloth at ${y}`);
+    return .45 - hit.distance;
+  };
+  assert.ok(2 * radius(1.15) - radius(1.138) - radius(1.162) > .001, 'belt tension needs a localized raised fold, not uniform noise');
+  const bag = root.getObjectByName('haversack-body'), flap = root.getObjectByName('haversack-flap');
+  assert.equal(bag.geometry.userData.softCanvas, true);
+  const middle = sectionBounds(bag, .86).getSize(new THREE.Vector3());
+  const lower = sectionBounds(bag, .78).getSize(new THREE.Vector3());
+  assert.ok(middle.x > lower.x * 1.1, 'loaded canvas must round into a narrower lower seam');
+  const positions = flap.geometry.attributes.position, lastRow = 4 * 13;
+  assert.ok(positions.getY(lastRow + 6) < positions.getY(lastRow) - .006, 'flap center must sag below its corners');
+  assert.ok(positions.getZ(2 * 13 + 6) > positions.getZ(6) + .007, 'flap must bend away from its upper seam');
+  assert.equal(flap.geometry.userData.thicknessMetres, .004);
+  assert.equal(materials.steel.color.getHex(), 0x4e533e);
+  assert.equal(materials.puttee.color.getHex(), 0x716b52);
+  disposeUniformStudy(root);
+});
+
 test('puttees contain the underlying trousers and pouch loops stay below the belt edge', () => {
   const { root, groups } = createUniformStudy();
   for (const leg of groups.uniform.children.filter(mesh => mesh.name === 'trouser-leg')) {
