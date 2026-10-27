@@ -55,9 +55,13 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const phases = 6, runModes = profile.gaitBanks ? ['runA', 'runB'] : ['run'];
   const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
-  for (let bank = 0; bank < movingBanks + postures.length; bank++) {
-    const posture = bank >= movingBanks ? postures[bank - movingBanks] : null;
-    const mode = bank === 0 || posture ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+  const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
+  for (let bank = 0; bank < baseBanks + readyBanks; bank++) {
+    const ready = bank >= baseBanks;
+    const posture = ready ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const mode = bank === 0 || posture || ready ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    sampleActor.rifleReady = ready;
+    if (profile.lowReadyCarry) sampleActor.nativeMotion.lowReady = ready ? 0 : 1;
     sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
     sampleActor.nativeMotion.speed = mode.startsWith('run') ? 3.15 : mode === 'walk' ? 1.75 : 0;
@@ -151,8 +155,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
           const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.gaitBanks && pose.legLift > .7 ? phases : 0);
           const posture = postures.find(name => pose[name] > .5);
-          const index = posture && postures.includes(posture) ? movingBanks + postures.indexOf(posture) :
-            pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : 0;
+          const raised = profile.lowReadyCarry && pose.lowReady < .5;
+          const index = posture && postures.includes(posture)
+            ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
+            : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
           const bank = banks[index];
           if (bank.count >= capacity) throw new Error('Distant uniform instance capacity exceeded');
           orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2));
@@ -185,6 +191,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
+    },
+    sampleAnatomy(actor, now) {
+      if (typeof template.sampleAnatomy !== 'function') throw new Error('Character factory lacks an anatomical pose sampler');
+      return template.sampleAnatomy(actor, now);
     },
     get issue() { return slots.find(slot => slot.actorId && slot.view.issue)?.view.issue ?? null; },
     get counts() { return { ...summary, poolSize: slots.length, poseBanks: banks.length }; },

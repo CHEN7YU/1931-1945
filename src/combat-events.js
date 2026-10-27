@@ -52,6 +52,10 @@ export function createCombatEvents() {
         if (!Number.isFinite(data.amount) || data.amount <= 0 || !Number.isFinite(data.health) || data.health < 0 ||
           (data.observerId != null && (typeof data.observerId !== 'string' || !data.observerId))) throw new RangeError('Invalid applied damage feedback');
         payload = { source, target: copyTarget(data.target), amount: data.amount, health: data.health, observerId: data.observerId ?? null };
+        if (data.hitZone != null) {
+          if (payload.target.kind !== 'soldier' || !['head', 'torso', 'limb'].includes(data.hitZone)) throw new RangeError('Invalid anatomical damage feedback');
+          payload.hitZone = data.hitZone;
+        }
       } else {
         const target = copyTarget(data.target);
         if (target.kind !== 'soldier' || data.health !== 0) throw new Error('Casualty feedback requires a confirmed dead soldier');

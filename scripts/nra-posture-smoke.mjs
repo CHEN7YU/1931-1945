@@ -42,7 +42,7 @@ try {
         }
       }
     }
-    assert.equal(data.poseBanks, 24);
+    assert.equal(data.poseBanks, 30);
     assert.ok(data.friends.every(actor => actor.bodyScaleY === 1));
     if (['victory', 'defeat', 'dead'].includes(data.state)) break;
     await page.waitForTimeout(200);

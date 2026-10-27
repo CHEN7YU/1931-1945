@@ -90,7 +90,8 @@ export function createNraRiflePose(root, bones, gun) {
     },
     get snapshot() {
       return { right: right ? { ...right } : null, left: left ? { ...left } : null,
-        rightTarget: rightTarget.toArray(), leftTarget: position(grip).toArray(), muzzle: position(muzzle).toArray() };
+        rightTarget: rightTarget.toArray(), leftTarget: position(grip).toArray(), muzzle: position(muzzle).toArray(),
+        direction: new THREE.Vector3(0, 0, -1).transformDirection(gun.matrixWorld).toArray() };
     },
   };
 }

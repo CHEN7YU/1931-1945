@@ -11,6 +11,7 @@ import { createNraForceRenderer } from './nra-force-renderer.js';
 import { FIRING_POSES } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeBodyLean } from './nra-gait.js';
 import { groundHeight } from './ground.js';
+import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 
 export async function loadIjaCharacter() {
   const base = '/assets/game/ija-1938/';
@@ -35,6 +36,7 @@ export async function loadIjaCharacter() {
     ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, value.carry])) };
   const clips = new Map(asset.animations.map(clip => [clip.name, clip]));
   if (!clips.get('idle')?.validate()) throw new Error('Japanese character lacks valid native idle');
+  const sampleAnatomy = createHitPoseSampler(() => createView());
 
   function createView(level = 'near') {
     const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
@@ -91,12 +93,15 @@ export async function loadIjaCharacter() {
         const weapon = rifleActionPose(actor.rifle);
         bolt.rotation.z = weapon.boltLift; bolt.position.z = weapon.boltTravel;
       },
+      sampleAnatomy,
+      get anatomy() { return readAnatomicalBones(bones); },
       get snapshot() {
         const point = name => bones.get(name).getWorldPosition(new THREE.Vector3()).toArray();
         return { actorId, uniform: 'ija1938', level, active, visible: root.visible, stance: actor?.stance ?? 'standing',
           animationSources: Object.values(actions).map(action => action.getClip().name),
           gait: motion ? { source: 'native-foot-cycle', weight: motion.weight, speed: motion.speed, bodyLean: motion.bodyLean, legPose } : null,
-          position: root.position.toArray(), head: point('Head'), hips: point('Hips'),
+          position: root.position.toArray(), head: point('Head'), headTop: point('HeadTop_End'), hips: point('Hips'),
+          leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
           leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
           riflePose: pose.snapshot, issue: pose.issue, logicalMuzzle: actor ? soldierRifleMuzzle(actor) : null,
           soldier: actor ? { id: actor.id, health: actor.health, ammo: actor.rifle.ammo, shots: actor.rifle.shots } : null,

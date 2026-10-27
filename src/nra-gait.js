@@ -20,7 +20,7 @@ export function createNativeGaitProfile(idle) {
     positions: [...idle.positions.slice(0, 3), ...idle.positions.slice(0, 3)],
     quaternions: [...idle.quaternions.slice(0, 4), ...idle.quaternions.slice(0, 4)] });
   return { idle, walk: carry(), run: carry(), strideMeters: 2.4, walkStrideMeters: 1.25,
-    muzzle: [0, 0, -.891], footCycleGait: true, gaitBanks: [.55, .85], runContact: .27 };
+    muzzle: [0, 0, -.891], footCycleGait: true, lowReadyCarry: true, gaitBanks: [.55, .85], runContact: .27 };
 }
 
 export function lowStepTarget(phase, stride, duty, clearance) {

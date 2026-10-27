@@ -1,4 +1,4 @@
-export const RIFLE = Object.freeze({ magazine: 5, personDamage: 50, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
+export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
 const clamp = value => Math.max(0, Math.min(1, value));
 const smooth = (time, from, to) => { const t = clamp((time - from) / (to - from)); return t * t * (3 - 2 * t); };
 

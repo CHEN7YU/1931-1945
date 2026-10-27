@@ -6,8 +6,8 @@ import { createTactics, rememberThreat, expireThreat } from '../src/tactics.js';
 test('ordinary rifles neither select sealed armor for firing nor damage its hull', () => {
   assert.equal(canWeaponDamageTarget('rifle', 'closed-armor'), false);
   assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);
-  assert.equal(damageForTarget('rifle', 'person', 17), 17);
-  assert.equal(damageForTarget('rifle', 'exposed-crew', 17), 17);
+  assert.equal(damageForTarget('rifle', 'person', 17, 'limb'), 17);
+  assert.equal(damageForTarget('rifle', 'exposed-crew', 17, 'torso'), 17);
   assert.equal(damageForTarget('rifle', 'aircraft', 17), 0);
 });
 test('riflemen ignore aircraft before ranking candidates without losing ground targets or armor warning', () => {
@@ -47,13 +47,13 @@ test('invalid classifications or damage values fail explicitly', () => {
   assert.throws(() => canWeaponDamageTarget('rifle', 'unknown'), RangeError);
   assert.throws(() => damageForTarget('rifle', 'person', -1), RangeError);
 });
-test('standard rifle body hits kill a 100HP soldier in two effective hits for both sides', () => {
+test('confirmed rifle head/torso hits incapacitate while first limb hits are survivable for both sides', () => {
   for (const target of ['person', 'exposed-crew']) {
-    let health = 100;
-    health -= damageForTarget('rifle', target, 100);
-    assert.equal(health, 50);
-    health -= damageForTarget('rifle', target, 50);
-    assert.equal(health, 0);
+    for (const zone of ['head', 'torso']) assert.equal(damageForTarget('rifle', target, 100, zone), 100);
+    assert.equal(damageForTarget('rifle', target, 100, 'limb'), 40);
+    assert.equal(100 - 2 * damageForTarget('rifle', target, 100, 'limb'), 20);
+    assert.throws(() => damageForTarget('rifle', target, 100), /confirmed anatomical/);
+    for (const gear of ['helmet', 'rifle', 'backpack']) assert.throws(() => damageForTarget('rifle', target, 100, gear), /confirmed anatomical/);
   }
   assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);
 });

@@ -1,5 +1,6 @@
 import { RIFLE } from './rifle-action.js';
 
+export const RIFLE_HIT_DAMAGE = Object.freeze({ head: 100, torso: 100, limb: 40 });
 const kinds = new Set(['person', 'exposed-crew', 'closed-armor', 'aircraft']);
 const weapons = new Set(['rifle', 'explosion', 'cannon', 'aircraft-gun', 'collision']);
 
@@ -13,10 +14,12 @@ export function canRiflemanTrackTarget(kind) {
   return kind !== 'aircraft';
 }
 
-export function damageForTarget(weapon, kind, damage) {
+export function damageForTarget(weapon, kind, damage, hitZone = null) {
   if (!Number.isFinite(damage) || damage < 0) throw new RangeError('Damage must be non-negative and finite');
   if (!canWeaponDamageTarget(weapon, kind)) return 0;
-  return weapon === 'rifle' && ['person', 'exposed-crew'].includes(kind) ? Math.min(damage, RIFLE.personDamage) : damage;
+  if (weapon !== 'rifle') return damage;
+  if (!Object.hasOwn(RIFLE_HIT_DAMAGE, hitZone)) throw new RangeError('Rifle person damage requires a confirmed anatomical hit zone');
+  return Math.min(damage, RIFLE_HIT_DAMAGE[hitZone]);
 }
 
 export function rifleAIFireDelay(distance, suppressed, random) {

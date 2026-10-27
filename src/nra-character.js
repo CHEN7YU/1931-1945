@@ -12,6 +12,7 @@ import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeBodyLean } from './nra-gait.js';
 import { groundHeight } from './ground.js';
+import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -78,7 +79,8 @@ export async function loadNraCharacter() {
     leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   const appearanceCache = { geometries: new Map(), materials: new Map() };
-  function createView() {
+  const sampleAnatomy = createHitPoseSampler(() => createView(true));
+  function createView(collision = false) {
   const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
   root.add(avatar);
   avatar.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
@@ -128,7 +130,7 @@ export async function loadNraCharacter() {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && (actor.health > 0 ? actor.id !== controlledId : now - actor.deathTime <= 12));
       if (!actor) return;
-      appearance.apply(actor.avatarAppearance ?? null);
+      if (!collision) appearance.apply(actor.avatarAppearance ?? null);
       motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime;
       const upright = motion.upright;
@@ -150,6 +152,8 @@ export async function loadNraCharacter() {
       const weaponPose = rifleActionPose(actor.rifle);
       bolt.rotation.z = weaponPose.boltLift; bolt.position.z = weaponPose.boltTravel;
     },
+    sampleAnatomy,
+    get anatomy() { return readAnatomicalBones(canonical); },
     get snapshot() {
       const point = name => canonical.get(name).getWorldPosition(new THREE.Vector3()).toArray();
       return { actorId, visible: root.visible, active, stance: observedActor?.stance ?? 'standing', speed, position: root.position.toArray(),
@@ -157,7 +161,7 @@ export async function loadNraCharacter() {
         firingPose: observedActor ? ownedFiringPose(observedActor) : null,
         gait: motion ? { source: 'native-foot-cycle', legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
           bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose } : null,
-        hips: point('Hips'), head: point('Head'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
+        hips: point('Hips'), head: point('Head'), headTop: point('HeadTop_End'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,

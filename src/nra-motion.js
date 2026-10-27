@@ -55,7 +55,8 @@ export function createNraMotion(profile, actor) {
     }
   }
   const seed = actor.walkPhase;
-  return { profile, aim: 0, bodyLean: 0, runLean: .11 + .12 * Math.sin(seed * 7.7) ** 2,
+  return { profile, aim: 0, lowReady: profile.lowReadyCarry && actor.rifleReady !== true ? 1 : 0,
+    bodyLean: 0, runLean: .11 + .12 * Math.sin(seed * 7.7) ** 2,
     fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
     legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
@@ -84,6 +85,11 @@ export function advanceNraMotion(actor, dt) {
   }
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
+  if (motion.profile.lowReadyCarry) {
+    motion.lowReady += ((actor.rifleReady === true ? 0 : 1) - motion.lowReady) * (1 - Math.exp(-dt / .1));
+    if (motion.lowReady < .001) motion.lowReady = 0;
+    if (motion.lowReady > .999) motion.lowReady = 1;
+  }
   const pace = actor.locomotion.mode;
   const leanTarget = !motion.profile.leanPivot ? 0 : actor.locomotion.speed > .2
     ? motion.runLean * (actor.aimWalking ? .2 : pace === 'sprint' ? 1.25 : pace === 'walk' ? .3 : Math.min(1, actor.locomotion.speed / 3.15))
@@ -131,11 +137,18 @@ export function sampleNraMotion(actor) {
     blendedPosition.sub(pivot).applyQuaternion(lean).add(pivot);
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
+  const lowReady = profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
+  if (lowReady) {
+    const angle = .45 + .25 * jog + (actor.locomotion.mode === 'sprint' ? .10 : 0);
+    blendedPosition.y -= .06 * lowReady;
+    blendedPosition.z += .16 * lowReady;
+    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady));
+  }
   return { idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: profile.strideMeters * motion.strideScale, walkStride: (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
     runContact: profile.runContact,
-    bodyLean, hipDrop, strideScale: motion.strideScale, legLift: motion.legLift,
+    bodyLean, hipDrop, lowReady, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
 }

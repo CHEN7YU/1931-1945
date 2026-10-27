@@ -38,7 +38,7 @@ try {
     assert.equal(initial.historicalForce.assigned, 100);
     assert.ok(initial.historicalForce.near <= initial.historicalForce.detailBudget);
     assert.ok(initial.historicalForce.poolSize <= 6, 'native rigs are pooled, not allocated once per soldier');
-    assert.ok(initial.historicalForce.poseBanks <= 24, 'distant locomotion and posture poses are shared');
+    assert.equal(initial.historicalForce.poseBanks, 30, 'shared travel/low-ready/firing banks remain bounded, not one skeleton per soldier');
   }
   await page.waitForFunction(time => window.__battle.time > time + 8, initial.time, { timeout: 60000 });
   const advanced = await snapshot();

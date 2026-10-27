@@ -87,7 +87,7 @@ test('an actual aircraft hull contact rejects rifle damage and its seated pilot 
   releaseSeat(registry, pilot);
   assert.equal(pilot.targetKind, 'person');
   assert.equal(canRiflemanTrackTarget(pilot.targetKind), true);
-  assert.equal(damageForTarget('rifle', pilot.targetKind, 50), 50);
+  assert.equal(damageForTarget('rifle', pilot.targetKind, 50, 'torso'), 50);
   assert.equal(seatSoldier(registry, pilot, plane, plane.seats[0].id), null);
   const collision = damageVehicleEntity(registry, plane, damageForTarget('collision', 'aircraft', plane.health));
   assert.equal(collision.destroyed, true);

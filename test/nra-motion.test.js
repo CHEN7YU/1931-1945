@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Quaternion, Vector3 } from 'three';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeMuzzleLocal } from '../src/nra-motion.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
+import { createNativeGaitProfile } from '../src/nra-gait.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
 function actor() {
@@ -89,4 +90,25 @@ test('real walking and running clips blend by measured speed and soldiers do not
   other.nativeMotion = createNraMotion(data.motion, other);
   assert.notEqual(other.nativeMotion.strideScale, person.nativeMotion.strideScale);
   assert.notEqual(sampleNraMotion(other).walkTime, walking.walkTime);
+});
+
+test('current native carry lowers the real muzzle during travel and raises smoothly only for firing intent', () => {
+  const person = actor();
+  person.rifleReady = false; person.locomotion = { speed: 3.15, mode: 'jog' };
+  person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+  for (let i = 0; i < 50; i++) advanceNraMotion(person, .02);
+  const carried = sampleNraMotion(person);
+  const direction = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...carried.weaponQuaternion));
+  assert.ok(direction.y < -.5, 'running barrel is visibly down, not just translated lower');
+  assert.ok(nativeMuzzleLocal(person).y < carried.weaponPosition[1] - .4);
+  const before = JSON.stringify(person.nativeMotion);
+  advanceNraMotion(person, 0); sampleNraMotion(person);
+  assert.equal(JSON.stringify(person.nativeMotion), before);
+  person.locomotion.speed = 0; person.rifleReady = true;
+  advanceNraMotion(person, .02);
+  assert.ok(person.nativeMotion.lowReady > .5, 'weapon cannot snap instantly to a firing pose');
+  for (let i = 0; i < 40; i++) advanceNraMotion(person, .02);
+  assert.ok(person.nativeMotion.lowReady < .001);
+  const raised = sampleNraMotion(person);
+  assert.ok(Math.abs(new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...raised.weaponQuaternion)).y) < .05);
 });
