@@ -36,7 +36,7 @@ try {
     const sample = await page.evaluate(() => ({ ...window.__battle.historicalCharacter,
       simulationTime: window.__battle.time, playerPosition: window.__battle.position }));
     samples.push(sample);
-    if (!running && sample.active === 'run') {
+    if (!running && ['walk', 'run'].includes(sample.active)) {
       await page.screenshot({ path: join(directory, 'moving.png') }); running = true;
     }
     if (running && sample.simulationTime >= movementStarted + 6) break;

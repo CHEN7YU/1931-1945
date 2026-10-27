@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 
 export function prepareNraRig(model) {
+  return connectSharedSkinRig(model, 14, 65);
+}
+
+export function connectSharedSkinRig(model, expectedMeshes, expectedBones) {
   model.updateMatrixWorld(true);
   const meshes = [];
   model.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
-  if (meshes.length !== 14) throw new Error(`Expected the inspected 14-part NRA model, got ${meshes.length}`);
+  if (meshes.length !== expectedMeshes) throw new Error(`Expected ${expectedMeshes} inspected skins, got ${meshes.length}`);
   const canonical = new Map(meshes[0].skeleton.bones.map(bone => [bone.name, bone]));
-  if (canonical.size !== 65) throw new Error('NRA skeleton differs from the inspected asset');
+  if (canonical.size !== expectedBones) throw new Error('Humanoid skeleton differs from the inspected asset');
   const rest = new Map([...canonical.values()].map(bone => [bone, bone.matrixWorld.clone()]));
   const parents = new Map([...canonical.values()].map(bone => {
     let ancestor = bone.parent;

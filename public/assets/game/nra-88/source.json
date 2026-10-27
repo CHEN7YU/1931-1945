@@ -1,5 +1,5 @@
 {
-  "asset": "88th Division NRA - one-soldier battle prototype",
+  "asset": "88th Division NRA - shared friendly uniform prototype",
   "author": "中興コンビニ",
   "source": "https://booth.pm/ja/items/5625369",
   "permission": {
@@ -25,9 +25,21 @@
     ],
     "clips": {
       "idle": "Project-authored native reference stance with 6-second subtle chest breathing, no cyclic knee/hip bob",
-      "run": "Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance"
+      "run": "Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance",
+      "walk": "KayKit Character Animations 1.1 Rig_Medium_MovementBasic.glb Walking_C, CC0; calibrated reference poses and hip scale; FBX rotation-key truncation avoided"
     },
-    "carry": "Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile"
+    "carry": "Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile",
+    "walkLibrary": {
+      "author": "Kay Lousberg",
+      "source": "https://kaylousberg.itch.io/kaykit-character-animations",
+      "version": "1.1 free tier",
+      "license": "CC0-1.0",
+      "licenseFile": "KayKit-CC0.txt",
+      "archiveSha256": "65882f31f905ad2e953819648a59287cdeab8f623908d5ef701971d3758be20f",
+      "original": "Animations/gltf/Rig_Medium/Rig_Medium_MovementBasic.glb",
+      "clip": "Walking_C",
+      "originalFileSha256": "11422afd50abf7e8c92ea107e2e0bc94abd38023d6d15f55ad580347efbfa29e"
+    }
   },
   "helmet": {
     "file": "helmet.fbx",
@@ -220,7 +232,7 @@
     "No authored aim-transition, reload-hand, crouch or death clips; analytic hand alignment is interim, not final animation quality.",
     "FBXLoader emits five more-than-four-skinning-weight warnings and drops excess influences; affected vertex count has not been enumerated. No lossless-import claim.",
     "Existing collision and hit proxy retained; not bone-accurate damage zones.",
-    "One character only; no 200-skinned-character performance claim."
+    "The selected KayKit walking clip remains adapted from a stylized source; final military movement quality is unverified."
   ],
   "files": [
     {
@@ -235,8 +247,8 @@
     },
     {
       "file": "animations.json",
-      "bytes": 130013,
-      "sha256": "2ab09cb74fd308127074ec9bd1ce84aed543c1992fc2419ca7cc5cc2bb731e33"
+      "bytes": 224268,
+      "sha256": "fbd6568877de2fd8fe50b58299984a6ab1cfb12e365619d3355b21e241e0b04c"
     },
     {
       "file": "badge.png",
@@ -300,8 +312,8 @@
     },
     {
       "file": "PERMISSION.txt",
-      "bytes": 1316,
-      "sha256": "9c4abf8c034c38f25c31a37bbe8da9c0ae774ab8e3ba4ede6b46633e941ac82d"
+      "bytes": 1452,
+      "sha256": "c5b7198666eca8b26ccfcdfc1db84a6c2ac40e0bf37c51bae35a022f2e91d6e4"
     },
     {
       "file": "pidai.jpg",
@@ -332,16 +344,24 @@
       "file": "strap.jpg",
       "bytes": 340027,
       "sha256": "bad510f32d82ee0e6f3fafa06295516cf2fc2f6343136773af2fc3eb8c2d51a3"
+    },
+    {
+      "file": "KayKit-CC0.txt",
+      "bytes": 1548,
+      "sha256": "373b159044d1a886ed15f57ca5a7673ba14e2623c460283452705f2056912ed9"
     }
   ],
   "evaluation": {
-    "status": "prototype-one-character",
+    "status": "prototype-friendly-force",
     "hypothesis": "reference-pose-and-hip-calibration",
     "scale": 0.8769257405799571,
     "mappedBones": 32,
     "evidence": "Initial integration before motion feedback: normal 100v100 Y control and resources preserved; original soldier-192 AI shot recorded at simulation time 55.5293.",
     "notApproved": "Final historical accuracy, full military animation quality, full skinned-army performance and user quality acceptance remain unverified.",
     "feedbackRevision": "Native idle and distance-driven run/carry verified in normal 100v100 movement observation: hips steady while idle, gun moves with body, action reset only on bind, muzzle alignment remains within 0.0001m.",
-    "feedbackCombat": "Two new full-battle observations did not capture this soldier firing (one never engaged; one was killed). Existing explicit 5v5 functional diagnostic recorded actual native soldier-7 AI fire at t=2.548 with the moving authoritative muzzle. This is not a new full-scale AI/performance pass."
+    "feedbackCombat": "Two new full-battle observations did not capture this soldier firing (one never engaged; one was killed). Existing explicit 5v5 functional diagnostic recorded actual native soldier-7 AI fire at t=2.548 with the moving authoritative muzzle. This is not a new full-scale AI/performance pass.",
+    "scope": "All friendly ground soldiers share uniform and helmet; only nearest bounded pool uses full skeletons, distant soldiers use shared baked pose instances. This is not a full-asset performance pass.",
+    "uniformRendering": "All friendly ground identities receive this appearance at creation, including reinforcements. Up to 6 high-quality or 3 low-quality independent rigs; farther agents use 13 shared standing/walking/running pose banks with a single padded 2560px atlas material. No actor is deleted to satisfy rendering limits.",
+    "walking": "Official KayKit 1.1 Walking_C GLB retained full rotation curves; A/B judged too exaggerated. Remains stylized and subject to user review."
   }
 }

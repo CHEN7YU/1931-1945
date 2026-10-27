@@ -33,7 +33,13 @@ try {
   }
   assert.equal(await page.locator('#members .member').count(), 10);
   assert.match(await page.locator('#force-status').textContent(), /100人/);
-  assert.ok(initial.population.renderer.batches <= 40, 'soldier rendering uses shared instance batches, not hundreds of per-soldier draws');
+  assert.ok(initial.population.renderer.procedural.batches <= 40, 'procedural opponents retain their shared instance batches');
+  if (initial.historicalForce) {
+    assert.equal(initial.historicalForce.assigned, 100);
+    assert.ok(initial.historicalForce.near <= initial.historicalForce.detailBudget);
+    assert.ok(initial.historicalForce.poolSize <= 6, 'native rigs are pooled, not allocated once per soldier');
+    assert.ok(initial.historicalForce.poseBanks <= 13, 'distant walking/running poses are shared');
+  }
   await page.waitForFunction(time => window.__battle.time > time + 8, initial.time, { timeout: 60000 });
   const advanced = await snapshot();
   let movedUnits = 0;

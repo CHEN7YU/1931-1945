@@ -19,8 +19,8 @@ test('promoted NRA subset retains explicit permission basis and matches every pu
   const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
   assert.equal(source.permission.basis, 'user-reported-author-phone-consent');
   assert.equal(source.permission.isCC0, false);
-  assert.equal(source.evaluation.status, 'prototype-one-character');
-  assert.equal(source.files.length, 22);
+  assert.equal(source.evaluation.status, 'prototype-friendly-force');
+  assert.equal(source.files.length, 23);
   assert.deepEqual(readdirSync(base).sort(), ['source.json', ...source.files.map(file => file.file)].sort());
   for (const file of source.files) {
     assert.match(file.file, /^[\w-]+\.(?:fbx|json|jpg|png|txt)$/);

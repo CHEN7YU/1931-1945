@@ -20,7 +20,8 @@ export function createNraMotion(profile, actor) {
     !Array.isArray(profile.muzzle) || profile.muzzle.length !== 3 || !profile.muzzle.every(Number.isFinite)) {
     throw new Error('Invalid native motion profile');
   }
-  for (const track of [profile.idle, profile.run]) {
+  if (profile.walk && (!Number.isFinite(profile.walkStrideMeters) || profile.walkStrideMeters <= 0)) throw new Error('Invalid walking stride');
+  for (const track of [profile.idle, profile.run, ...(profile.walk ? [profile.walk] : [])]) {
     if (!track || !Number.isFinite(track.duration) || track.duration <= 0 || !Array.isArray(track.times) || track.times.length < 2 ||
       track.positions?.length !== track.times.length * 3 || track.quaternions?.length !== track.times.length * 4 ||
       ![...track.times, ...track.positions, ...track.quaternions].every(Number.isFinite) ||
@@ -32,7 +33,8 @@ export function createNraMotion(profile, actor) {
       if (Math.abs(Math.hypot(...track.quaternions.slice(index, index + 4)) - 1) > 1e-4) throw new Error('Native carry rotations must be normalized');
     }
   }
-  return { profile, idleTime: 0, speed: 0, weight: 0, distance: actor.walkPhase / 2.5,
+  const seed = actor.walkPhase;
+  return { profile, idleTime: seed * .7, strideScale: 1 + .035 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z } };
 }
 
@@ -59,11 +61,15 @@ export function sampleNraMotion(actor) {
   const { profile } = motion;
   const idleTime = motion.idleTime % profile.idle.duration;
   const distance = motion.distance + Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
-  const runTime = ((distance / profile.strideMeters) % 1) * profile.run.duration;
+  const runTime = ((distance / (profile.strideMeters * motion.strideScale)) % 1) * profile.run.duration;
+  const walkTime = profile.walk ? ((distance / (profile.walkStrideMeters * motion.strideScale)) % 1) * profile.walk.duration : runTime;
+  const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
+  const jog = profile.walk ? transition * transition * (3 - 2 * transition) : 1;
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
-  return { idleTime, runTime, weight: motion.weight, speed: motion.speed,
-    weaponPosition: idle.position.lerp(run.position, motion.weight).toArray(),
-    weaponQuaternion: idle.quaternion.slerp(run.quaternion, motion.weight).toArray() };
+  const walk = profile.walk ? sample(profile.walk, walkTime) : run;
+  return { idleTime, runTime, walkTime, jog, weight: motion.weight, speed: motion.speed,
+    weaponPosition: idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight).toArray(),
+    weaponQuaternion: idle.quaternion.slerp(walk.quaternion.slerp(run.quaternion, jog), motion.weight).toArray() };
 }
 
 export function nativeMuzzleLocal(actor) {

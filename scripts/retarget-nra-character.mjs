@@ -3,7 +3,8 @@ import { resolve, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { prepareNraRig } from '../src/nra-rig.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { prepareNraRig, connectSharedSkinRig } from '../src/nra-rig.js';
 
 const original = resolve('public', 'assets', 'game', 'nra-88');
 const directory = process.argv[2] ? resolve(process.argv[2]) : resolve('asset-research', 'nra-88', 'calibrated');
@@ -65,10 +66,11 @@ const sourceBones = new Map(sourceMesh.skeleton.bones.map(bone => [bone.name, bo
 auxiliaryPose(sourceBones); auxiliaryPose(rig.canonical);
 const sourceRest = new Map([...sourceBones].map(([name, bone]) => [name, worldRotation(bone)]));
 const targetRest = new Map([...rig.canonical].map(([name, bone]) => [name, worldRotation(bone)]));
+const targetAuxiliary = new Map([...rig.canonical].map(([name, bone]) => [name, bone.quaternion.clone()]));
 const sourceHip = worldPosition(sourceBones.get('Hips')), targetHip = worldPosition(rig.canonical.get('Hips'));
 const legHeight = bones => worldPosition(bones.get('Hips')).y -
   (worldPosition(bones.get('LeftFoot')).y + worldPosition(bones.get('RightFoot')).y) / 2;
-const scale = legHeight(rig.canonical) / legHeight(sourceBones);
+const targetLegLength = legHeight(rig.canonical), scale = targetLegLength / legHeight(sourceBones);
 if (!Number.isFinite(scale) || scale <= 0) throw new Error('Invalid calibrated leg/hip scale');
 const aliases = { Spine1: 'Chest', Spine2: 'UpperChest', LeftToeBase: 'LeftToes', RightToeBase: 'RightToes' };
 const mapped = [...rig.canonical].filter(([name]) => sourceBones.has(aliases[name] ?? name));
@@ -135,12 +137,61 @@ for (const mode of ['run']) {
   mixer.stopAllAction(); mixer.uncacheRoot(source);
   console.log(`${mode}: ${mapped.length} mapped bones, ${tracks.length} tracks`);
 }
-output.motion = { ...carry, strideMeters: 2.1, muzzle: [0, 0, -.891] };
+const walkBytes = readFileSync(resolve('asset-research', 'walk-candidates', 'movement-basic.glb'));
+const walkLoader = new GLTFLoader();
+const walkAsset = await walkLoader.parseAsync(walkBytes.buffer.slice(walkBytes.byteOffset, walkBytes.byteOffset + walkBytes.byteLength), '');
+const walking = walkAsset.scene;
+const walkRig = connectSharedSkinRig(walking, 6, 23);
+const walkNames = { Hips: 'hips', Spine: 'spine', Spine2: 'chest', Head: 'head',
+  LeftArm: 'upperarml', LeftForeArm: 'lowerarml', LeftHand: 'wristl',
+  RightArm: 'upperarmr', RightForeArm: 'lowerarmr', RightHand: 'wristr',
+  LeftUpLeg: 'upperlegl', LeftLeg: 'lowerlegl', LeftFoot: 'footl', LeftToeBase: 'toesl',
+  RightUpLeg: 'upperlegr', RightLeg: 'lowerlegr', RightFoot: 'footr', RightToeBase: 'toesr' };
+const walkBones = new Map(Object.entries(walkNames).map(([name, alias]) => [name, walkRig.canonical.get(alias)]));
+auxiliaryPose(walkBones);
+const walkRest = new Map([...walkBones].map(([name, bone]) => [name, worldRotation(bone)]));
+const walkHip = worldPosition(walkBones.get('Hips')), walkScale = targetLegLength / legHeight(walkBones);
+const walkName = process.env.NRA_WALK_CLIP ?? 'Walking_C';
+if (!['Walking_A', 'Walking_B', 'Walking_C'].includes(walkName)) throw new Error('Uninspected walking clip selection');
+const walkClip = walkAsset.animations.find(clip => clip.name === walkName);
+if (!walkClip || !Number.isFinite(walkScale) || walkScale <= 0) throw new Error('Inspected CC0 walking source is not usable');
+for (const [name, bone] of rig.canonical) bone.quaternion.copy(targetAuxiliary.get(name));
+const walkMixer = new THREE.AnimationMixer(walking); walkMixer.clipAction(walkClip).play();
+const walkFrames = Math.ceil(walkClip.duration * 30), walkTimes = [], walkPositions = [];
+const walkRotations = new Map([...walkBones.keys()].map(name => [name, []]));
+carry.walk = { duration: walkClip.duration, times: walkTimes, positions: [], quaternions: [] };
+for (let frame = 0; frame <= walkFrames; frame++) {
+  const time = Math.min(frame / 30, walkClip.duration - 1e-6);
+  walkMixer.setTime(time); walking.updateMatrixWorld(true); walkTimes.push(frame === walkFrames ? walkClip.duration : time);
+  for (const bone of ordered) {
+    if (!walkBones.has(bone.name)) continue;
+    const rotation = worldRotation(walkBones.get(bone.name)).multiply(walkRest.get(bone.name).clone().invert()).multiply(targetRest.get(bone.name));
+    setWorldRotation(bone, rotation);
+    bone.quaternion.toArray(walkRotations.get(bone.name), walkRotations.get(bone.name).length);
+  }
+  const hip = rig.canonical.get('Hips'), position = targetHip.clone();
+  position.y += (worldPosition(walkBones.get('Hips')).y - walkHip.y) * walkScale;
+  hip.position.copy(hip.parent.worldToLocal(position)); target.updateMatrixWorld(true);
+  const penetration = floor - new THREE.Box3().setFromObject(shoes, true).min.y;
+  if (penetration > 0) {
+    const corrected = worldPosition(hip); corrected.y += penetration;
+    hip.position.copy(hip.parent.worldToLocal(corrected)); target.updateMatrixWorld(true);
+  }
+  hip.position.toArray(walkPositions, walkPositions.length); appendCarry(carry.walk);
+}
+for (const values of walkRotations.values()) closeCycle(values, 4);
+closeCycle(walkPositions, 3); closeCycle(carry.walk.positions, 3); closeCycle(carry.walk.quaternions, 4);
+const walkTracks = [...walkRotations].map(([name, values]) => new THREE.QuaternionKeyframeTrack(`.bones[${name}].quaternion`, walkTimes, values));
+walkTracks.push(new THREE.VectorKeyframeTrack('.bones[Hips].position', walkTimes, walkPositions));
+output.walk = THREE.AnimationClip.toJSON(new THREE.AnimationClip(`NRA88_walk_KayKit_${walkName}`, walkClip.duration, walkTracks));
+console.log(`walk: KayKit ${walkName}, ${walkBones.size} mapped bones, scale=${walkScale}`);
+output.motion = { ...carry, strideMeters: 2.1, walkStrideMeters: 1.65, muzzle: [0, 0, -.891] };
 writeFileSync(join(directory, 'animations.json'), JSON.stringify(output));
 const manifest = JSON.parse(readFileSync(join(directory, 'source.json'), 'utf8'));
 manifest.motionSource.method = 'Matched auxiliary T poses; world-space rest rotation differences; hip/leg reference-height scale; preserve target hip baseline; disable root XZ movement; bake shoe-sole nonpenetration';
 manifest.motionSource.clips = { idle: 'Project-authored native reference stance with 6-second subtle chest breathing, no cyclic knee/hip bob',
-  run: 'Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance' };
+  run: 'Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance',
+  walk: `KayKit Character Animations 1.1 Rig_Medium_MovementBasic.glb ${walkName}, CC0; calibrated reference poses and hip scale; FBX rotation-key truncation avoided` };
 manifest.motionSource.carry = 'Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile';
 manifest.motionSource.references = [
   'https://github.com/upf-gti/retargeting-threejs/blob/main/docs/Algorithm.md',

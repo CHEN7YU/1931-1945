@@ -21,4 +21,6 @@ are used. Historical uniform and unit/battle applicability remain unverified.
 Run motion derives from Kenney Animated Characters Survivors 1.1,
 under the separately preserved CC0 license in Kenney-CC0.txt. The native
 idle/reference breathing and carry profile are project-authored.
+Walking_C derives from KayKit Character Animations 1.1 by Kay Lousberg,
+under the separately preserved CC0 license in KayKit-CC0.txt.
 This does not change the license of the character model or its textures.

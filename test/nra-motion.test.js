@@ -52,7 +52,7 @@ test('idle settles without repeated animation resets and paused sampling never a
 });
 
 test('body-relative carry moves the gun and defines the same authoritative muzzle under actor rotation', () => {
-  const person = actor(); person.nativeMotion.weight = 1;
+  const person = actor(); person.nativeMotion.weight = 1; person.nativeMotion.speed = 3.15;
   const heights = [];
   for (let index = 0; index < 20; index++) {
     person.position.z = -5 - index * data.motion.strideMeters / 20;
@@ -68,7 +68,7 @@ test('body-relative carry moves the gun and defines the same authoritative muzzl
 });
 
 test('loop endpoints match and invalid motion data fails explicitly', () => {
-  for (const track of [data.motion.idle, data.motion.run]) {
+  for (const track of [data.motion.idle, data.motion.walk, data.motion.run]) {
     assert.deepEqual(track.positions.slice(-3), track.positions.slice(0, 3));
     assert.deepEqual(track.quaternions.slice(-4), track.quaternions.slice(0, 4));
   }
@@ -76,4 +76,17 @@ test('loop endpoints match and invalid motion data fails explicitly', () => {
   assert.throws(() => advanceNraMotion(person, -1), /owned finite/);
   assert.throws(() => createNraMotion({ ...data.motion, strideMeters: 0 }, person), /profile/);
   assert.throws(() => createNraMotion(data.motion, { ...person, position: { x: NaN, y: 0, z: 0 } }), /profile/);
+});
+
+test('real walking and running clips blend by measured speed and soldiers do not share identical phases', () => {
+  assert.match(data.walk.name, /KayKit_Walking_C/);
+  assert.ok(data.walk.tracks.some(track => track.name === '.bones[LeftLeg].quaternion' && track.times.length > 10));
+  const person = actor(); person.nativeMotion.weight = 1; person.nativeMotion.speed = 1.75;
+  const walking = sampleNraMotion(person); assert.equal(walking.jog, 0);
+  person.nativeMotion.speed = 3.15;
+  const running = sampleNraMotion(person); assert.equal(running.jog, 1);
+  const other = { ...person, walkPhase: 2.8 };
+  other.nativeMotion = createNraMotion(data.motion, other);
+  assert.notEqual(other.nativeMotion.strideScale, person.nativeMotion.strideScale);
+  assert.notEqual(sampleNraMotion(other).walkTime, walking.walkTime);
 });

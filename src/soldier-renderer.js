@@ -48,7 +48,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       for (const actor of actors) {
         syncSoldierModelPose(actor);
         actor.model.visible = !actor.vehicleId && (actor.health <= 0 ? now - actor.deathTime <= 12 : actor.id !== controlledId);
-        if (actor.id === separateViewId) continue;
+        if (actor.id === separateViewId || separateViewId instanceof Set && separateViewId.has(actor.id)) continue;
         if (!actor.model.visible || (actor.health <= 0 && now - actor.deathTime > 12)) continue;
         const distance = camera.position.distanceTo(actor.model.position);
         sphere.center.copy(actor.model.position); sphere.center.y += .85;

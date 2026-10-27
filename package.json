@@ -32,7 +32,9 @@
     "test:aircraft-rifle": "node scripts/aircraft-rifle-smoke.mjs",
     "test:asset-probe": "node scripts/asset-probe-smoke.mjs",
     "test:rifle-audio": "node scripts/rifle-audio-smoke.mjs",
-    "test:nra-motion": "node scripts/nra-motion-smoke.mjs"
+    "test:nra-motion": "node scripts/nra-motion-smoke.mjs",
+    "test:nra-force": "node scripts/nra-force-smoke.mjs",
+    "test:nra-atlas": "node scripts/nra-atlas-smoke.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"
