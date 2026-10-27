@@ -39,6 +39,15 @@ export function createNraAtlas(root) {
   }
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.MeshStandardMaterial({ map: texture, roughness: .9, metalness: 0, side: THREE.DoubleSide });
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>',
+      '#include <common>\nattribute vec3 nraSkinTint;\nattribute float nraSkinRegion;\nvarying vec3 vNraSkinTint;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvNraSkinTint = mix(vec3(1.0), nraSkinTint, nraSkinRegion);');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
+      '#include <common>\nvarying vec3 vNraSkinTint;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vNraSkinTint;');
+  };
+  material.customProgramCacheKey = () => 'nra-atlas-skin-v1';
   const point = new THREE.Vector2();
   return {
     material,
@@ -63,11 +72,13 @@ export function createNraAtlas(root) {
 
 export function mergeNraPose(parts, atlas) {
   const geometries = [];
-  for (const { geometry, material } of parts) {
+  for (const { geometry, material, skin = false } of parts) {
     const expanded = geometry.index ? geometry.toNonIndexed() : geometry.clone();
     atlas.mapGeometry(expanded, material);
+    expanded.setAttribute('nraSkinRegion', new THREE.Float32BufferAttribute(
+      new Float32Array(expanded.attributes.position.count).fill(skin ? 1 : 0), 1));
     expanded.clearGroups();
-    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv'].includes(name)) expanded.deleteAttribute(name);
+    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion'].includes(name)) expanded.deleteAttribute(name);
     geometries.push(expanded);
   }
   const merged = mergeGeometries(geometries, false);

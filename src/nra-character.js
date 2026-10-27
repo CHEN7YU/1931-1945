@@ -7,6 +7,7 @@ import { soldierRifleMuzzle } from './entities.js';
 import { riflePose as rifleActionPose } from './rifle-action.js';
 import { sampleNraMotion } from './nra-motion.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
+import { createNraAppearanceApplicator } from './nra-appearance.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -68,11 +69,13 @@ export async function loadNraCharacter() {
   normalized.scale.setScalar(1.78 / height); normalized.rotation.y = Math.PI;
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
+  const appearanceCache = { geometries: new Map(), materials: new Map() };
   function createView() {
   const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
   root.add(avatar);
   avatar.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
   const canonical = new Map(meshes[0].skeleton.bones.map(bone => [bone.name, bone]));
+  const appearance = createNraAppearanceApplicator(meshes, appearanceCache);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
     if (mesh.skeleton.bones.every((bone, index) => bone === sharedSkeleton.bones[index]) &&
@@ -99,6 +102,7 @@ export async function loadNraCharacter() {
       mixer.stopAllAction();
       for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
       actions.idle.setEffectiveWeight(1); actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0); root.visible = false;
+      appearance.apply(null);
     },
     get actorId() { return actorId; },
     get motionProfile() { return clips.motion; },
@@ -107,6 +111,7 @@ export async function loadNraCharacter() {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && (actor.health > 0 ? actor.id !== controlledId : now - actor.deathTime <= 12));
       if (!actor) return;
+      appearance.apply(actor.avatarAppearance ?? null);
       motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime; actions.run.time = motion.runTime;
       actions.idle.setEffectiveWeight(1 - motion.weight); actions.run.setEffectiveWeight(motion.weight * motion.jog);
@@ -125,6 +130,7 @@ export async function loadNraCharacter() {
         hips: point('Hips'), head: point('Head'), leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
+        appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
         motion: motion ? { weight: motion.weight, jog: motion.jog, idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
         logicalMuzzle: observedActor ? soldierRifleMuzzle(observedActor) : null,
         soldier: observedActor ? { id: observedActor.id, health: observedActor.health, ammo: observedActor.rifle.ammo,

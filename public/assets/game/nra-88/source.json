@@ -351,6 +351,12 @@
       "sha256": "373b159044d1a886ed15f57ca5a7673ba14e2623c460283452705f2056912ed9"
     }
   ],
+  "appearance": {
+    "basis": "Project-authored runtime derivatives of the permission-recorded source character; no additional face downloads.",
+    "traits": "8 mild jaw/cheek/nose/brow geometry families, 5 face-and-hand complexion tints, 3 mild torso volume variants.",
+    "ownership": "Deterministic per original unit/soldier identity; restored on pooled view rebind. Shared source geometry is not mutated.",
+    "limits": "Original base mesh, face texture and hairstyle remain shared. Distant LOD retains complexion/approximate build but simplifies facial geometry. Not 100 independently scanned faces."
+  },
   "evaluation": {
     "status": "prototype-friendly-force",
     "hypothesis": "reference-pose-and-hip-calibration",

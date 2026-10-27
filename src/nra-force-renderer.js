@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createNraMotion, sampleNraMotion } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
+import { isNraSkin } from './nra-appearance.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -60,9 +61,11 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
     const baked = [];
     template.root.traverse(mesh => {
       if (!mesh.isMesh) return;
-      baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material });
+      baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) });
     });
     const instance = new THREE.InstancedMesh(mergeNraPose(baked, atlas), atlas.material, capacity);
+    instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
+      .setUsage(THREE.DynamicDrawUsage));
     for (const part of baked) part.geometry.dispose();
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
@@ -142,8 +145,13 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
           const bank = banks[index];
           if (bank.count >= capacity) throw new Error('Distant uniform instance capacity exceeded');
           orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2));
+          scale.set(1 + (actor.avatarAppearance?.build ?? 0) * .025, 1, 1);
           matrix.compose(actor.position, orientation, scale);
-          for (const mesh of bank.parts) mesh.setMatrixAt(bank.count, matrix);
+          const tint = new THREE.Color(actor.avatarAppearance?.skin ?? '#ffffff');
+          for (const mesh of bank.parts) {
+            mesh.setMatrixAt(bank.count, matrix);
+            mesh.geometry.attributes.nraSkinTint.setXYZ(bank.count, tint.r, tint.g, tint.b);
+          }
           bank.count++; tiers.set(actor.id, 'instanced'); summary.far++;
         }
       }
@@ -151,6 +159,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
         mesh.count = bank.count;
         if (bank.count) {
           mesh.instanceMatrix.needsUpdate = true;
+          mesh.geometry.attributes.nraSkinTint.needsUpdate = true;
           summary.batches += Array.isArray(mesh.material) ? mesh.geometry.groups.length : 1;
         }
       }
@@ -161,7 +170,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
-        health: actor.health, uniform: 'nra88', helmet: true, tier: tiers.get(actor.id) }));
+        health: actor.health, uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
+        appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
     },
     get issue() { return slots.find(slot => slot.actorId && slot.view.issue)?.view.issue ?? null; },

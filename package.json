@@ -34,7 +34,8 @@
     "test:rifle-audio": "node scripts/rifle-audio-smoke.mjs",
     "test:nra-motion": "node scripts/nra-motion-smoke.mjs",
     "test:nra-force": "node scripts/nra-force-smoke.mjs",
-    "test:nra-atlas": "node scripts/nra-atlas-smoke.mjs"
+    "test:nra-atlas": "node scripts/nra-atlas-smoke.mjs",
+    "test:nra-appearance": "node scripts/nra-appearance-smoke.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

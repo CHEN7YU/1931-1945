@@ -20,6 +20,7 @@ import { createSolidIndex } from './solid-index.js';
 import { createSoldierRenderer, syncSoldierModelPose } from './soldier-renderer.js';
 import { loadRifleAudio } from './rifle-audio.js';
 import { createNraMotion, advanceNraMotion } from './nra-motion.js';
+import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
@@ -356,7 +357,10 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   actor.tactics = createTactics(++actorSerial, (friendly ? 100 : 0) + (formation?.index || 0) * Math.ceil(TYPES.infantry.members / 10) + actor.section, index % 10);
   Object.assign(actor, { id: `soldier-${actor.tactics.id}`, unitId: formation.id, team: friendly ? 'friendly' : 'enemy',
     position, heading: friendly ? 0 : Math.PI, groundType: formation.type === 'mortar' ? 'mortar' : 'infantry' });
-  if (friendly && nraCharacter) actor.nativeMotion = createNraMotion(nraCharacter.motionProfile, actor);
+  if (friendly && nraCharacter) {
+    actor.nativeMotion = createNraMotion(nraCharacter.motionProfile, actor);
+    actor.avatarAppearance = createNraAppearance(actor);
+  }
   registerSoldier(entities, actor);
   registerWeapon(entities, Object.assign(actor.rifle, { nextShot: 0, reloadUntil: 0 }), `${actor.id}:rifle`, actor.id, 'infantry');
   model.position.copy(position);
