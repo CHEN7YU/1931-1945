@@ -12,13 +12,15 @@
   },
   "use": "Development-only audition; not loaded by the game or included in its production entry.",
   "feedback": {
-    "preferredReference": "current.wav",
+    "status": "paused",
+    "currentReference": "current.wav",
     "rejectedCandidates": [
       "arisaka-near.wav",
-      "mosin-near.wav"
+      "mosin-near.wav",
+      "current-clear.wav"
     ],
-    "requestedChange": "A is too muffled and lacks a crisp attack; D is an unaccepted equalized audition only.",
-    "basis": "User found B and C worse than current A. Keep the existing game sound; this is not acceptance of A tone or historical authenticity."
+    "requestedChange": "A is too muffled and lacks a crisp attack. All audition options remain unsatisfactory.",
+    "basis": "User requested no further changes now. Keep the existing game sound, record the feedback and find better free sounds later. A is temporary, not accepted."
   },
   "processing": [
     "FFmpeg mono 24kHz decode; fixed 0.6s excerpts",

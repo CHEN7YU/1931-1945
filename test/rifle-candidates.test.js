@@ -12,8 +12,9 @@ test('free rifle candidates retain source identity and do not claim historical c
   assert.match(metadata.files[1].note, /\.30-06/);
   assert.match(metadata.files[2].note, /7.62×54/);
   assert.match(metadata.use, /not loaded by the game/);
-  assert.equal(metadata.feedback.preferredReference, 'current.wav');
-  assert.deepEqual(metadata.feedback.rejectedCandidates, ['arisaka-near.wav', 'mosin-near.wav']);
+  assert.equal(metadata.feedback.status, 'paused');
+  assert.equal(metadata.feedback.currentReference, 'current.wav');
+  assert.deepEqual(metadata.feedback.rejectedCandidates, ['arisaka-near.wav', 'mosin-near.wav', 'current-clear.wav']);
   assert.match(metadata.feedback.requestedChange, /too muffled/);
   assert.ok(metadata.limitations.some(item => item.includes('full-scale')));
   const license = await readFile(new URL('LICENSE.txt', root), 'utf8');
