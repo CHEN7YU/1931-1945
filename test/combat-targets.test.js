@@ -57,11 +57,23 @@ test('standard rifle body hits kill a 100HP soldier in two effective hits for bo
   }
   assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);
 });
-test('close visible rifle fire does not reroll misses and respects the bolt cycle', () => {
-  assert.equal(rifleAIHitChance(5, false), 1);
-  assert.equal(rifleAIHitChance(5, true), 1);
+test('AI fire is not guaranteed at close range and respects the bolt cycle', () => {
+  assert.ok(rifleAIHitChance(5, false) >= .4 && rifleAIHitChance(5, false) <= .55);
+  assert.ok(rifleAIHitChance(5, true) < rifleAIHitChance(5, false));
   assert.ok(rifleAIFireDelay(5, false, 0) >= .65);
   assert.ok(rifleAIFireDelay(5, false, 1) <= 1.05);
   assert.ok(rifleAIFireDelay(5, true, .5) > rifleAIFireDelay(5, false, .5));
   assert.ok(rifleAIHitChance(50, true) < rifleAIHitChance(50, false));
+});
+test('the approved distance anchors are continuous, monotone and have no far-distance hit floor', () => {
+  for (const [distance, expected] of [[10, .5], [20, .25], [40, .1], [60, .03], [75, .01]]) {
+    assert.ok(Math.abs(rifleAIHitChance(distance, false) - expected) < 1e-12);
+    assert.ok(Math.abs(rifleAIHitChance(distance, true) - expected * .55) < 1e-12);
+  }
+  for (let distance = .25; distance <= 75; distance += .25) {
+    assert.ok(rifleAIHitChance(distance, false) <= rifleAIHitChance(distance - .25, false));
+  }
+  assert.equal(rifleAIHitChance(75.01, false), 0);
+  assert.equal(rifleAIHitChance(180, false), 0);
+  assert.throws(() => rifleAIHitChance(20, 'yes'), RangeError);
 });

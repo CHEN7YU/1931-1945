@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { advanceRifle } from '../src/rifle-action.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -77,38 +78,51 @@ try {
   await page.locator('#resume').click();
   await press('y');
   const switched = await snapshot(), held = switched.allies[0].rifle.elapsed;
-  const switchEvent = switched.controlEvents.history.at(-1).id;
-  await page.waitForTimeout(600);
-  data = await snapshot();
+  await page.waitForFunction(held => window.__battle.allies[0].rifle.elapsed > held + .2, held);
+  const background = await snapshot();
+  data = background;
   assert.equal(data.current, 1);
-  assert.equal(data.allies[0].rifle.elapsed, held, 'uncontrolled member cannot silently complete loading');
+  assert.ok(data.allies[0].rifle.elapsed > held, 'the former controller now advances its real AI-owned loading action');
   assert.equal(data.ammo, 5, 'each member has an independent magazine');
-  assert.ok(!data.controlEvents.history.some(event => event.id > switchEvent && event.type === 'weapon.mechanical' &&
-    event.soldierId === switched.allies[0].id), 'the inactive member cannot emit mechanical cues into the new member view');
+  assert.equal(data.rifle.action, 'idle', 'another soldier loading does not animate the new controller rifle');
   for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await press('y');
   data = await snapshot();
   assert.equal(data.current, 0);
-  assert.equal(data.ammo, 4);
-  assert.ok(data.rifle.elapsed - held < .15, 'returning resumes the same action rather than restarting it');
+  const expected = structuredClone(background.allies[0].rifle);
+  advanceRifle(expected, data.time - background.time);
+  assert.equal(data.ammo, expected.ammo, 'Y preserves precisely the ammo allowed by elapsed simulation time, including a naturally finished reload');
+  assert.equal(data.rifle.action, expected.action);
+  assert.ok(Math.abs(data.rifle.elapsed - expected.elapsed) < 1e-7, 'Y neither freezes nor restarts the ongoing owned action');
   assert.equal(data.controlBinding.weaponId, data.allies[0].rifle.id);
-  assert.equal(data.controlBinding.ammo, 4);
-  assert.ok(data.controlBinding.reloadUntil > data.controlBinding.time, 'reload compatibility state is synchronised before the control-surface event is presented');
+  const atBinding = structuredClone(background.allies[0].rifle);
+  advanceRifle(atBinding, data.controlBinding.time - background.time);
+  assert.equal(data.controlBinding.ammo, atBinding.ammo);
+  if (atBinding.action === 'reload') assert.ok(data.controlBinding.reloadUntil > data.controlBinding.time,
+    'remaining reload timing is synchronised before the control-surface event is presented');
+  else assert.equal(data.controlBinding.reloadUntil, 0);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'rifle-control-binding.json'),
     JSON.stringify({ control: data.control, binding: data.controlBinding, rifle: data.rifle }, null, 2));
+  await wait(() => window.__battle.rifle.action === 'idle');
+  await shoot();
+  await wait(() => window.__battle.rifle.action === 'idle');
+  await press('r');
+  await wait(() => window.__battle.rifle.action === 'reload' && window.__battle.rifle.elapsed > .3);
   await press('2');
   const stowed = await snapshot(), toolPause = stowed.rifle.elapsed;
   const toolEvent = stowed.controlEvents.history.at(-1).id;
   await page.waitForTimeout(450);
   assert.equal((await snapshot()).rifle.elapsed, toolPause, 'hammer pauses the rifle action');
-  assert.ok(!(await snapshot()).controlEvents.history.some(event => event.id > toolEvent && event.type === 'weapon.mechanical'),
-    'stowed rifle actions cannot produce mechanical cues');
+  assert.ok(!(await snapshot()).controlEvents.history.some(event => event.id > toolEvent && event.type === 'weapon.mechanical' &&
+    event.soldierId === stowed.control.soldierId), 'the stowed personal rifle cannot produce mechanical cues while other AI continue');
   await press('1');
   await wait(() => window.__battle.rifle.action === 'idle');
   assert.equal((await snapshot()).ammo, 5);
   assert.ok((await snapshot()).controlEvents.history.some(event => event.type === 'weapon.mechanical' &&
     event.soldierId === stowed.control.soldierId && event.weaponId === stowed.allies[0].rifle.id && event.cue === 'load'));
+  const shotsBeforeMagazine = (await snapshot()).rifle.shots;
   await page.mouse.down();
-  await wait(() => window.__battle.rifle.shots === 6 && window.__battle.ammo === 0, 10000);
+  await page.waitForFunction(before => window.__battle.rifle.shots === before + 5 && window.__battle.ammo === 0,
+    shotsBeforeMagazine, { timeout: 10000 });
   await page.mouse.up();
   await wait(() => window.__battle.rifle.action === 'idle');
   await press('r');

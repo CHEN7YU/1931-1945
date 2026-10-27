@@ -20,14 +20,20 @@ export function damageForTarget(weapon, kind, damage) {
 }
 
 export function rifleAIFireDelay(distance, suppressed, random) {
-  if (!Number.isFinite(distance) || distance < 0 || !Number.isFinite(random) || random < 0 || random > 1) throw new RangeError('Invalid AI firing inputs');
+  if (!Number.isFinite(distance) || distance < 0 || typeof suppressed !== 'boolean' || !Number.isFinite(random) || random < 0 || random > 1) throw new RangeError('Invalid AI firing inputs');
   return RIFLE.cycleSeconds + (distance <= 10 ? .15 + random * .25 : .4 + random * .7) + (suppressed ? .35 : 0);
 }
 
 export function rifleAIHitChance(distance, suppressed) {
-  if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid AI target distance');
-  if (distance <= 10) return 1;
-  return .45 * Math.max(.25, 1 - distance / 100) * (suppressed ? .55 : 1);
+  if (!Number.isFinite(distance) || distance < 0 || typeof suppressed !== 'boolean') throw new RangeError('Invalid AI target distance or suppression');
+  if (distance > 75) return 0;
+  const points = [[0, .55], [10, .5], [20, .25], [40, .1], [60, .03], [75, .01]];
+  for (let i = 1; i < points.length; i++) {
+    if (distance > points[i][0]) continue;
+    const [from, a] = points[i - 1], [to, b] = points[i];
+    return (a + (b - a) * (distance - from) / (to - from)) * (suppressed ? .55 : 1);
+  }
+  throw new Error('AI hit chance curve does not cover its sight range');
 }
 export function rifleArmorResponse(position, threat, blocked) {
   const dx = position.x - threat.x, dz = position.z - threat.z, distance = Math.hypot(dx, dz);

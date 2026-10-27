@@ -34,6 +34,7 @@ import { createControlInput } from './control-input.js';
 import { createControlEvents } from './control-events.js';
 import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './projectiles.js';
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
+import { createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
 import { createConstructionState, resetConstructionState, selectConstructionBlueprint, constructionCandidate, advanceConstruction } from './construction.js';
@@ -378,6 +379,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   // Apply the seeded gait phase only after a walk update; idle spawns retain neutral legs.
   const actor = { model, health: 100, friendly, index, spawnId: spawn.id, role: index % 10 === 0 ? 'engineer' : 'rifleman', nextFire: time + 1 + battleRandom() * 2, nextThink: 0, target: null, walkPhase: battleRandom() * 6, walkPoseReady: false, deathTime: 0, buildProgress: 0, locomotion: createLocomotion(), rifle: createRifleState() };
   actor.targetKind = 'person';
+  actor.aiRifle = createAIRifleControl();
   actor.spawnPosition = { x, z };
   actor.spawnClear = !circleBlocked(x, z, .42, world.obstacles);
   actor.playerUnit = Boolean(formation?.player);
@@ -447,7 +449,11 @@ function bindControlInput() {
   const owner = controlOwner(entities);
   const previousToolEquipped = toolEquipped, previousJumpHeight = jumpHeight, previousJumpVelocity = jumpVelocity;
   const changed = playerInput.bind(owner, state === 'playing' && allies[current]?.health > 0);
-  if (changed) resetControlledSimulation();
+  if (changed) {
+    resetControlledSimulation();
+    const incoming = controlledSoldier(entities);
+    if (incoming) resetAIRifleAim(incoming.aiRifle, 'controlled');
+  }
   syncRifleUnit();
   controlBinding = { ...owner, time, changed, previousToolEquipped, previousJumpHeight, previousJumpVelocity,
     toolEquipped, jumpHeight, jumpVelocity, ammo: unit?.ammo, reloadUntil: unit?.reloadUntil,
@@ -1362,7 +1368,7 @@ function updateVehicles(dt) {
 }
 
 function updateWeaponSimulation(dt) {
-  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped);
+  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped, true);
   for (const cue of cues) emitControlEvent('weapon.mechanical', cue);
   if (state === 'playing') syncRifleUnit();
 }
@@ -1601,6 +1607,18 @@ function proneSpaceClear(actor, heading) {
   return true;
 }
 
+function clearAIRifleLine(actor, from, threat) {
+  const origin = soldierRifleMuzzle(actor), muzzle = new THREE.Vector3(origin.x, origin.y, origin.z);
+  const nearbyFriend = actorGrid.near(actor.position.x, actor.position.z, muzzle.distanceTo(threat)).some(other => {
+    if (other.friendly !== actor.friendly || other === actor || other.health <= 0 || other.targetKind === 'aircraft') return false;
+    const segment = pointSegmentDistance(other.position, muzzle, threat);
+    const lineY = muzzle.y + (threat.y - muzzle.y) * segment.fraction;
+    return segment.fraction > .03 && segment.fraction < .97 && segment.distance < .55 &&
+      lineY > other.position.y - .1 && lineY < other.position.y + soldierPostureHeight(other, 'body');
+  });
+  return !nearbyFriend && hasLine(from, muzzle, 2) && hasLine(muzzle, threat, 75) ? muzzle : null;
+}
+
 function fightFromCover(actor, target, dt) {
   const t = actor.tactics, position = actor.position;
   const armorThreat = t.threatKind === 'closed-armor';
@@ -1698,8 +1716,9 @@ function fightFromCover(actor, target, dt) {
             actorGrid.near(point.x, point.z, 1).some(other => other !== actor && other.health > 0 &&
               Math.hypot(other.position.x - point.x, other.position.z - point.z) < .8),
           heightAt: point => world.groundHeight(point.x, point.z),
-          canFinish: point => ['standing', 'kneeling', 'crouched'].some(pose =>
-            pose !== t.previousFiringPose && postureFireLine(actor, point, pose, threat)) });
+          canFinish: point => actor.nativeMotion ? ['standing', 'kneeling', 'crouched'].some(pose =>
+            pose !== t.previousFiringPose && postureFireLine(actor, point, pose, threat))
+            : hasLine(new THREE.Vector3(point.x, world.groundHeight(point.x, point.z) + SOLDIER_FIRE_HEIGHT, point.z), threat, 75) });
         if (t.shotMoveGoal) { actor.path = actor.pathGoal = null; pathRequests.delete(t.id); }
       }
       t.mode = t.shotMoveGoal ? 'relocate-after-shot' : 'seek-clear-relocation';
@@ -1757,52 +1776,45 @@ function fightFromCover(actor, target, dt) {
       }
     }
   }
-  if (actor.friendly && (actor.locomotion.speed > .1 || actor.locomotion.aimRecovery > 0 || !postureReady(actor))) return;
-  actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
+  if (actor.locomotion.speed <= .1) actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
   const from = position.clone().add(new THREE.Vector3(0, actor.nativeMotion ? soldierPostureHeight(actor) : SOLDIER_FIRE_HEIGHT, 0));
-  if (!target || t.threatSense !== 'vision' || t.threatId !== target.id || !mayFire ||
-      !canWeaponDamageTarget('rifle', t.threatKind) || time < actor.nextFire) return;
-  const observed = observeVisualThreat(t, target, time, point => hasLine(from, point, 75, target.vehicleId));
-  if (!observed) { actor.target = null; return; }
-  if (!canRiflemanTrackTarget(t.threatKind)) { actor.target = null; return; }
-  if (!canWeaponDamageTarget('rifle', t.threatKind)) return;
-  threat.copy(observed);
-  t.engagementPoint = { ...observed };
-  actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
-  const origin = soldierRifleMuzzle(actor);
-  const muzzle = new THREE.Vector3(origin.x, origin.y, origin.z);
-  const nearbyFriend = actorGrid.near(position.x, position.z, muzzle.distanceTo(threat)).some(other => {
-    if (other.friendly !== actor.friendly) return false;
-    if (other === actor || other.health <= 0) return false;
-    if (other.targetKind === 'aircraft') return false;
-    const segment = pointSegmentDistance(other.position, muzzle, threat);
-    const lineY = muzzle.y + (threat.y - muzzle.y) * segment.fraction;
-    return segment.fraction > .03 && segment.fraction < .97 && segment.distance < .55 &&
-      lineY > other.position.y - .1 && lineY < other.position.y + soldierPostureHeight(other, 'body');
-  });
-  if (nearbyFriend) return;
-  if (!hasLine(from, muzzle, 2) || !hasLine(muzzle, threat, 75)) return;
-  const firingOptions = actor.friendly && actor.nativeMotion ? (t.eligiblePoses ?? []).filter(pose =>
-    postureFireLine(actor, position, pose, threat)) : [];
-  if (actor.friendly && !t.cover && !t.wallContact && t.lastShot && !t.lastShot.coverId) {
-    if (Math.hypot(position.x - t.lastShot.position.x, position.z - t.lastShot.position.z) < 2) {
-      t.shotMovePending = true; t.shotMoveGoal = null; t.shotMoveStartsAt = time;
-      t.shotMoveRetryAt = 0; t.mode = 'seek-clear-relocation';
-      return;
-    }
-    if (ownedFiringPose(actor) === t.lastShot.firingPose && firingOptions.some(pose => pose !== t.lastShot.firingPose)) {
-      t.postureNeedsChoice = true; t.postureUntil = 0;
-      return;
-    }
-  }
-  const distance = from.distanceTo(threat), suppressed = time < t.suppressedUntil;
+  const suppressed = time < t.suppressedUntil;
+  let muzzle = null, firingOptions = [];
+  if (!attemptAIRifleShot(actor, { now: time, targetId: target?.id ?? null, suppressed,
+    postureSettled: postureReady(actor),
+    mayFire: Boolean(target && t.threatSense === 'vision' && t.threatId === target.id && mayFire &&
+      canWeaponDamageTarget('rifle', t.threatKind) && canRiflemanTrackTarget(t.threatKind)),
+    confirmShot: () => {
+      const observed = observeVisualThreat(t, target, time, point => hasLine(from, point, 75, target.vehicleId));
+      if (!observed) { actor.target = null; return null; }
+      threat.copy(observed);
+      t.engagementPoint = { ...observed };
+      actor.heading = Math.atan2(position.x - threat.x, position.z - threat.z);
+      muzzle = clearAIRifleLine(actor, from, threat);
+      if (!muzzle) return null;
+      firingOptions = actor.friendly && actor.nativeMotion ? (t.eligiblePoses ?? []).filter(pose =>
+        postureFireLine(actor, position, pose, threat)) : [];
+      if (actor.friendly && !t.cover && !t.wallContact && t.lastShot && !t.lastShot.coverId) {
+        if (Math.hypot(position.x - t.lastShot.position.x, position.z - t.lastShot.position.z) < 2) {
+          t.shotMovePending = true; t.shotMoveGoal = null; t.shotMoveStartsAt = time;
+          t.shotMoveRetryAt = 0; t.mode = 'seek-clear-relocation';
+          return null;
+        }
+        if (ownedFiringPose(actor) === t.lastShot.firingPose && firingOptions.some(pose => pose !== t.lastShot.firingPose)) {
+          t.postureNeedsChoice = true; t.postureUntil = 0;
+          return null;
+        }
+      }
+      return from.distanceTo(threat);
+    } })) return;
+  const distance = actor.aiRifle.lastShot.distance;
   actor.nextFire = time + rifleAIFireDelay(distance, suppressed, battleRandom());
-  if (actor.friendly) {
-    t.lastShot = { time, previousTime: t.lastShot?.time ?? null, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
+  t.lastShot = { time, previousTime: t.lastShot?.time ?? null, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
       coverId: t.cover?.id ?? t.wallContact?.wallId ?? null, completedShotMoves: t.completedShotMoves ?? 0,
       eligiblePoses: firingOptions,
       speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
       position: { x: position.x, z: position.z } };
+  if (actor.friendly) {
     if (!t.cover && !t.wallContact) {
       t.shotMovePending = true; t.shotMoveGoal = null;
       t.shotMoveStartsAt = time + .45;
@@ -1861,7 +1873,8 @@ function updateAI(dt) {
   const builder = enemies.find(actor => actor.health > 0 && actor.role === 'engineer');
   for (let index = 0; index < allForces.length; index++) {
     const actor = allForces[(index + aiCursor) % allForces.length];
-    if (actor.health <= 0 || actor === player) continue;
+    if (actor.health <= 0) continue;
+    if (actor === player) { resetAIRifleAim(actor.aiRifle, 'controlled'); continue; }
     actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
     actor.aimWalking = false;
     const tactics = actor.tactics, previousCover = tactics.cover;
@@ -1873,7 +1886,7 @@ function updateAI(dt) {
       tactics.shotMoveGoal = null; tactics.shotMovePending = false; tactics.wallContact = null;
       if (previousCover) coverClaims.delete(previousCover.id);
     }
-    if (actor.vehicleId) continue;
+    if (actor.vehicleId) { resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
     if (actor.friendly && actor.nativeMotion && !tactics.lastSeen && actor.firingPose) { actor.stance = 'standing'; actor.firingPose = null; }
     const position = actor.position;
     position.y = world.groundHeight(position.x, position.z);
@@ -1883,6 +1896,7 @@ function updateAI(dt) {
       moveGround(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
       position.y = world.groundHeight(position.x, position.z);
       tactics.mode = 'yield-door'; tactics.blockedBy = 'door';
+      resetAIRifleAim(actor.aiRifle, 'moving');
       continue;
     }
     const from = position.clone().add(new THREE.Vector3(0, actor.nativeMotion ? soldierPostureHeight(actor) : 1.45, 0));
@@ -1936,6 +1950,7 @@ function updateAI(dt) {
     }
     const target = actor.target?.health > 0 ? actor.target : null;
     const hostileRally = !actor.friendly && !target ? spawnPoints.find(point => point.team === 'friendly' && point.kind === 'rally' && point.health > 0 && Math.hypot(point.x - position.x, point.z - position.z) < 40 && hasLine(from, new THREE.Vector3(point.x, .8, point.z), 40)) : null;
+    if (!target && !hostileRally) resetAIRifleAim(actor.aiRifle, 'no-target');
     if (target) {
       actor.buildProgress = 0;
       fightFromCover(actor, target, dt);
@@ -1951,10 +1966,17 @@ function updateAI(dt) {
     } else if (hostileRally) {
       const targetPosition = new THREE.Vector3(hostileRally.x, .8, hostileRally.z);
       actor.heading = Math.atan2(position.x - hostileRally.x, position.z - hostileRally.z);
-      if (time >= actor.nextFire) {
+      let muzzle = null;
+      if (attemptAIRifleShot(actor, { now: time, targetId: hostileRally.id, mayFire: true,
+        postureSettled: postureReady(actor), suppressed: time < tactics.suppressedUntil,
+        confirmShot: () => {
+          muzzle = clearAIRifleLine(actor, from, targetPosition);
+          return muzzle ? from.distanceTo(targetPosition) : null;
+        } })) {
         actor.nextFire = time + 1.4;
         const source = captureAttackSource(entities, actor, actor.rifle);
-        combatEvents.publish('shot', { source, weaponType: 'infantry', start: from, end: targetPosition, color: 0xdfb17a }, time);
+        combatStats.aiRifleShots++;
+        combatEvents.publish('shot', { source, weaponType: 'infantry', start: muzzle, end: targetPosition, muzzle: true, color: 0xdfb17a }, time);
         damageRally(hostileRally, 15, source);
       }
     } else if (actor.friendly) {
@@ -2618,6 +2640,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   enemies: enemies.filter(actor => actor.health > 0).length,
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
+    rifle: { ...actor.rifle }, aiRifle: { ...actor.aiRifle, lastShot: actor.aiRifle.lastShot ? { ...actor.aiRifle.lastShot } : null },
     stance: actor.stance, firingPose: ownedFiringPose(actor), aimWalking: Boolean(actor.aimWalking),
     postureReady: postureReady(actor), posture: actor.nativeMotion ? { ...actor.nativeMotion.posture } : null,
     completedShotMoves: actor.tactics.completedShotMoves ?? 0, shotMovePending: Boolean(actor.tactics.shotMovePending),
@@ -2635,7 +2658,10 @@ Object.defineProperty(window, '__battle', { get: () => ({
     lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
     blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,
-    speed: actor.locomotion.speed,
+    soldierId: actor.id, speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
+    postureReady: postureReady(actor), rifle: { ...actor.rifle },
+    aiRifle: { ...actor.aiRifle, lastShot: actor.aiRifle.lastShot ? { ...actor.aiRifle.lastShot } : null },
+    lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
     id: actor.tactics.id, squad: actor.tactics.squad, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     heading: actor.heading, selectedTargetId: actor.target?.id ?? null, nextSenseAt: actor.nextThink,
     sightCheck: actor.tactics.lastSightCheck ? { ...actor.tactics.lastSightCheck } : null,

@@ -1,6 +1,6 @@
 import { shotState } from './core.js';
 import { controlledSoldier, occupiedVehicle } from './entities.js';
-import { advanceRifle, RIFLE } from './rifle-action.js';
+import { advanceRifle, reloadRifle, RIFLE } from './rifle-action.js';
 
 function requireWeapon(registry, weapon, ownerId, type) {
   if (!weapon || weapon.ownerId !== ownerId || weapon.type !== type || registry.weapons.get(weapon.id) !== weapon) throw new Error(`Broken weapon ownership: ${ownerId}`);
@@ -15,9 +15,9 @@ export function syncControlledRifleTiming(registry, now, stowed) {
   return true;
 }
 
-export function advanceOwnedWeapons(registry, dt, now, personalActive = false) {
+export function advanceOwnedWeapons(registry, dt, now, personalActive = false, aiActive = false) {
   if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(now) || now < 0 ||
-    typeof personalActive !== 'boolean') throw new RangeError('Weapon simulation requires finite simulation time and an explicit personal-action policy');
+    typeof personalActive !== 'boolean' || typeof aiActive !== 'boolean') throw new RangeError('Weapon simulation requires finite simulation time and explicit personal/AI action policies');
   const events = [];
   if (dt === 0) return events;
   for (const vehicle of registry.vehicles.values()) {
@@ -30,9 +30,13 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false) {
     requireWeapon(registry, unit.supportWeapon, unit.id, 'mortar');
     shotState(unit.supportWeapon, now, false);
   }
-  const actor = controlledSoldier(registry);
-  if (personalActive && actor?.health > 0 && !actor.vehicleId && actor.groundType === 'infantry') {
+  const selected = controlledSoldier(registry);
+  for (const actor of registry.soldiers.values()) {
+    const autonomous = actor !== selected && aiActive;
+    const active = autonomous || actor === selected && personalActive && actor.groundType === 'infantry';
+    if (!active || actor.health <= 0 || actor.vehicleId) continue;
     requireWeapon(registry, actor.rifle, actor.id, 'infantry');
+    if (autonomous && actor.rifle.ammo === 0) reloadRifle(actor.rifle);
     for (const cue of advanceRifle(actor.rifle, dt)) {
       if (cue !== 'ready') events.push({ unitId: actor.unitId, soldierId: actor.id, weaponId: actor.rifle.id, cue });
     }

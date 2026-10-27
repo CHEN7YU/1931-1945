@@ -143,3 +143,56 @@ test('incoming personal reload timing is ready before presentation, without adva
   assert.throws(() => syncControlledRifleTiming(registry, -1, false), RangeError);
   assert.throws(() => syncControlledRifleTiming(registry, 8, 'yes'), RangeError);
 });
+
+test('explicit AI policy advances both factions, not a stowed selected rifle, and retains cue identity', () => {
+  const { registry, actors } = fixture();
+  const unit = registerUnit(registry, { id: 'enemy-unit', type: 'infantry', team: 'enemy' });
+  const enemy = registerSoldier(registry, { id: 'enemy', unitId: unit.id, team: 'enemy', groundType: 'infantry',
+    health: 100, rifle: createRifleState() });
+  registerWeapon(registry, enemy.rifle, 'enemy:rifle', enemy.id, 'infantry');
+  shootRifle(enemy.rifle);
+  const events = advanceOwnedWeapons(registry, .15, .15, false, true);
+  assert.equal(actors[0].rifle.elapsed, 0);
+  assert.equal(actors[1].rifle.elapsed, .15);
+  assert.equal(enemy.rifle.elapsed, .15);
+  assert.deepEqual(events.map(event => [event.soldierId, event.weaponId, event.cue]),
+    [['s1', 's1:rifle', 'unlock'], ['enemy', 'enemy:rifle', 'unlock']]);
+  const before = structuredClone([...registry.weapons.values()]);
+  assert.deepEqual(advanceOwnedWeapons(registry, 0, 100, true, true), []);
+  assert.deepEqual([...registry.weapons.values()], before);
+});
+
+test('autonomous empty rifles load on their own action clock; Y neither refills nor restarts it', () => {
+  const { registry, actors } = fixture();
+  actors[1].rifle.ammo = 0;
+  advanceOwnedWeapons(registry, .65, .65, false, true);
+  assert.equal(actors[1].rifle.action, 'reload');
+  assert.equal(actors[1].rifle.ammo, 0);
+  advanceOwnedWeapons(registry, 1, 1.65, false, true);
+  const before = structuredClone(actors[1].rifle);
+  selectControlledSoldier(registry, actors[1]);
+  assert.deepEqual(actors[1].rifle, before);
+  advanceOwnedWeapons(registry, .1, 1.75, true, true);
+  assert.ok(Math.abs(actors[1].rifle.elapsed - 1.1) < 1e-9);
+  assert.equal(actors[1].rifle.ammo, 0);
+  selectControlledSoldier(registry, actors[0]);
+  advanceOwnedWeapons(registry, 1.59, 3.34, false, true);
+  assert.equal(actors[1].rifle.ammo, 0);
+  advanceOwnedWeapons(registry, .02, 3.36, false, true);
+  assert.equal(actors[1].rifle.ammo, 5);
+});
+
+test('AI policy still rejects broken ownership and does not advance dead or seated personal rifles', () => {
+  const { registry, actors, tank } = fixture();
+  assert.equal(seatSoldier(registry, actors[1], tank, tank.seats[0].id), null);
+  advanceOwnedWeapons(registry, .2, .2, false, true);
+  assert.equal(actors[1].rifle.elapsed, 0);
+  releaseSeat(registry, actors[1]);
+  actors[1].health = 0;
+  advanceOwnedWeapons(registry, .2, .4, false, true);
+  assert.equal(actors[1].rifle.elapsed, 0);
+  actors[1].health = 100;
+  registry.weapons.delete(actors[1].rifle.id);
+  assert.throws(() => advanceOwnedWeapons(registry, .1, .5, false, true), /ownership/);
+  assert.throws(() => advanceOwnedWeapons(registry, .1, .5, false, 'yes'), RangeError);
+});
