@@ -1,5 +1,6 @@
 import { TYPES } from './core.js';
 import { nativeMuzzleLocal } from './nra-motion.js';
+import { FIRING_POSES } from './combat-posture.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -10,9 +11,12 @@ export function soldierPostureHeight(actor, kind = 'eye') {
   if (actor.stance != null && !Object.hasOwn(stanceHeights, actor.stance)) throw new RangeError('Unknown personal stance');
   if (actor.vehicleId) return heights[0];
   const posture = actor.nativeMotion?.posture ?? { crouched: actor.stance === 'crouched' ? 1 : 0, prone: actor.stance === 'prone' ? 1 : 0 };
-  if (![posture.crouched, posture.prone].every(value => Number.isFinite(value) && value >= 0 && value <= 1) ||
-    posture.crouched + posture.prone > 1.00001) throw new RangeError('Invalid owned posture blend');
-  return heights[0] * (1 - posture.crouched - posture.prone) + heights[1] * posture.crouched + heights[2] * posture.prone;
+  const entries = Object.entries(posture), total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+  if (entries.some(([pose, weight]) => !FIRING_POSES[pose] || !Number.isFinite(weight) || weight < 0 || weight > 1) ||
+    total > 1.00001) throw new RangeError('Invalid owned posture blend');
+  const height = heights[0] * Math.max(0, 1 - total) + entries.reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose][kind] * weight, 0);
+  const pivot = actor.nativeMotion?.profile?.leanPivot?.[1], lean = (actor.nativeMotion?.bodyLean ?? 0) * Math.max(0, 1 - total);
+  return Number.isFinite(pivot) && height > pivot ? pivot + (height - pivot) * Math.cos(lean) : height;
 }
 export const TANK_SEATS = Object.freeze([
   Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
@@ -49,7 +53,7 @@ export function releaseSupportWeapon(registry, unit) {
 export function registerSoldier(registry, actor) {
   if (!actor.id || registry.soldiers.has(actor.id) || !registry.units.has(actor.unitId)) throw new Error(`Invalid soldier ownership: ${actor.id}`);
   actor.vehicleId = actor.seatId = null;
-  actor.stance = 'standing'; actor.lookPitch = 0;
+  actor.stance = 'standing'; actor.manualStance = null; actor.lookPitch = 0;
   registry.soldiers.set(actor.id, actor);
   return actor;
 }
@@ -86,7 +90,7 @@ export function seatSoldier(registry, actor, vehicle, seatId) {
   if (actor.vehicleId) return '先离开当前席位';
   if (!seat || seat.occupantId) return '席位已被占用';
   seat.occupantId = actor.id; actor.vehicleId = vehicle.id; actor.seatId = seat.id;
-  actor.stance = 'standing';
+  actor.stance = 'standing'; actor.manualStance = null; actor.firingPose = null;
   if (!vehicle.crewIds.includes(actor.id)) vehicle.crewIds.push(actor.id);
   Object.assign(actor.position, { x: vehicle.position.x, y: vehicle.position.y, z: vehicle.position.z });
   actor.targetKind = vehicle.type === 'tank' ? 'closed-armor' : 'aircraft';
@@ -113,6 +117,12 @@ export function leaveGroundVehicle(registry, actor, exit) {
 
 export function selectControlledSoldier(registry, actor) {
   if (!actor || actor.health <= 0 || actor.unitId !== registry.control.unitId) return false;
+  if (!actor.vehicleId && actor.manualStance != null) {
+    actor.stance = actor.manualStance; actor.firingPose = null;
+    if (actor.nativeMotion) for (const pose of Object.keys(actor.nativeMotion.posture)) {
+      actor.nativeMotion.posture[pose] = pose === actor.stance && actor.nativeMotion.profile[pose] ? 1 : 0;
+    }
+  }
   registry.control.soldierId = actor.id;
   return true;
 }
@@ -211,6 +221,8 @@ export function createControlPoseView(registry) {
       const actor = selected();
       if (occupiedVehicle(registry, actor)) throw new Error('Seated members cannot change foot stance');
       actor.stance = value;
+      actor.manualStance = value;
+      actor.firingPose = null;
     },
     get eyeHeight() {
       const actor = controlledSoldier(registry), vehicle = occupiedVehicle(registry, actor);

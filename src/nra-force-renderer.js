@@ -3,6 +3,7 @@ import { createNraMotion, sampleNraMotion } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
+import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -49,14 +50,17 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
   template.bind(sampleActor.id);
   template.update(sampleActor, 0, null);
   const atlas = createNraAtlas(template.root);
-  const phases = 6, movingModes = profile.walk ? ['walk', 'run'] : ['run'];
-  const movingBanks = 1 + phases * movingModes.length, postures = ['crouched', 'prone'].filter(stance => profile[stance]);
+  const phases = 6, runModes = profile.runLiftBanks ? ['runLow', 'runHigh'] : ['run'];
+  const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
+  const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   for (let bank = 0; bank < movingBanks + postures.length; bank++) {
     const posture = bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = bank === 0 || posture ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
-    sampleActor.nativeMotion.posture = { crouched: posture === 'crouched' ? 1 : 0, prone: posture === 'prone' ? 1 : 0 };
+    sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
-    sampleActor.nativeMotion.speed = mode === 'run' ? 3.15 : mode === 'walk' ? 1.75 : 0;
+    sampleActor.nativeMotion.speed = mode.startsWith('run') ? 3.15 : mode === 'walk' ? 1.75 : 0;
+    sampleActor.nativeMotion.legLift = mode === 'runHigh' ? .85 : .55;
+    sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runHigh' ? .26 : .14 : mode === 'walk' ? .035 : 0;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
     template.update(sampleActor, 0, null);
@@ -143,8 +147,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
           const pose = sampleNraMotion(actor);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
-          const offset = profile.walk && !walking ? phases : 0;
-          const posture = pose.prone > .5 ? 'prone' : pose.crouched > .5 ? 'crouched' : null;
+          const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.runLiftBanks && pose.legLift > .7 ? phases : 0);
+          const posture = postures.find(name => pose[name] > .5);
           const index = posture && postures.includes(posture) ? movingBanks + postures.indexOf(posture) :
             pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : 0;
           const bank = banks[index];
@@ -175,7 +179,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
-        health: actor.health, stance: actor.stance ?? 'standing', uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
+        health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
     },

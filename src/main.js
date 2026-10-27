@@ -26,7 +26,8 @@ import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, cr
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
   damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat,
   soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT, soldierPostureHeight } from './entities.js';
-import { chooseCombatPosture, postureReady } from './combat-posture.js';
+import { FIRING_POSES, chooseCombatPosture, postureReady, ownedFiringPose, wallFiringContact,
+  chooseAdvancePace, chooseShotRelocation } from './combat-posture.js';
 import { createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer } from './control-transition.js';
 import { createControlInput } from './control-input.js';
 import { createControlEvents } from './control-events.js';
@@ -1337,6 +1338,8 @@ function updatePlayer(dt) {
   const position = actor.position;
   const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
   const sideways = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
+  actor.aimWalking = false;
+  if (forward || sideways) actor.firingPose = null;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = actor.locomotion;
   const holdingBreath = unit.type === 'infantry' && held.aiming && motion.aimRecovery === 0 && keys.has('ShiftLeft') && breath > .05;
@@ -1467,6 +1470,15 @@ function squadCommand(follow) {
 }
 function walkActor(actor, target, speed, dt, sprint = false) {
   const profile = FOOT_SPEEDS[actor.groundType];
+  let pace = 'jog';
+  if (actor.friendly) {
+    const distance = Math.hypot(target.x - actor.position.x, target.z - actor.position.z);
+    pace = chooseAdvancePace({ preference: (actor.tactics.id * .61803398875) % 1, urgent: sprint,
+      threat: Boolean(actor.tactics.lastSeen), distance, exhausted: actor.locomotion.exhausted, stamina: actor.locomotion.stamina,
+      catchUp: actor.playerUnit && actor.order === 'follow' });
+    sprint = pace === 'sprint';
+    if (distance > 1.3) speed = profile[pace];
+  }
   if (actor.friendly && sprint) {
     sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > .15;
     speed = sprint ? profile.sprint : profile.jog;
@@ -1517,13 +1529,20 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     moveGround(pos, -dz / distance * step * side, dx / distance * step * side, .42, movementObstacles(pos.x, pos.z));
   } else actor.stuckTime = 0;
   actor.heading = Math.atan2(-dx, -dz);
+  if (actor.friendly && pace === 'aim' && actor.tactics.lastSeen) {
+    const observed = actor.tactics.lastSeen;
+    const aimingHeading = Math.atan2(pos.x - observed.x, pos.z - observed.z);
+    if (Math.cos(aimingHeading - actor.heading) > .7) actor.heading = aimingHeading;
+    else pace = 'walk';
+  }
   pos.y = world.groundHeight(pos.x, pos.z);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
   actor.walkPoseReady = true;
   if (actor.friendly) {
     actor.locomotion.speed = Math.hypot(pos.x - beforeX, pos.z - beforeZ) / dt;
     actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog + .1;
-    actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : 'jog';
+    actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : pace;
+    actor.aimWalking = pace === 'aim' && actor.locomotion.speed > .06;
   }
 }
 
@@ -1535,7 +1554,7 @@ function postureFireLine(actor, point, stance, threat) {
     .add(new THREE.Vector3(...track.positions.slice(0, 3)));
   const y = world.groundHeight(point.x, point.z);
   const muzzle = new THREE.Vector3(point.x + local.x * c + local.z * s, y + local.y, point.z - local.x * s + local.z * c);
-  const eye = new THREE.Vector3(point.x, y + (stance === 'standing' ? 1.67 : stance === 'crouched' ? 1.05 : .45), point.z);
+  const eye = new THREE.Vector3(point.x, y + (stance === 'standing' ? 1.67 : FIRING_POSES[stance].eye), point.z);
   return hasLine(eye, muzzle, 2) && hasLine(muzzle, threat, 90);
 }
 
@@ -1571,12 +1590,19 @@ function fightFromCover(actor, target, dt) {
         const shielded = height => !hasLine(threat, new THREE.Vector3(point.x, base + height, point.z), 90);
         return shielded(.65) ? shielded(1.0) || shielded(.35) : shielded(1.0) && shielded(.35);
       },
+      supportedAt: point => {
+        if (!actor.nativeMotion) return false;
+        const base = { ...point, y: world.groundHeight(point.x, point.z) };
+        const heading = Math.atan2(point.x - threat.x, point.z - threat.z);
+        const contact = wallFiringContact(base, heading, world.town.pieces);
+        return Boolean(contact && postureFireLine(actor, point, contact.pose, threat));
+      },
       seesTarget: point => actor.nativeMotion
         ? postureFireLine(actor, point, 'crouched', threat) || postureFireLine(actor, point, 'standing', threat)
         : hasLine(new THREE.Vector3(point.x, world.groundHeight(point.x, point.z) + 1.3, point.z), threat, 90),
       pathTo: point => navigate(position, point),
     };
-    const currentProtected = t.cover && context.protectedAt(t.cover) && (!actor.friendly ||
+    const currentProtected = t.cover && (t.cover.kind === 'wall-support' ? context.supportedAt(t.cover) : context.protectedAt(t.cover)) && (!actor.friendly ||
       !context.blocked(t.cover) && !context.blocked(t.cover.peek) && context.seesTarget(t.cover.peek));
     const chosen = actor.friendly && currentProtected ? null : selectCover(context);
     if (chosen) {
@@ -1597,6 +1623,7 @@ function fightFromCover(actor, target, dt) {
   }
   let mayFire = true;
   if (t.cover) {
+    t.shotMovePending = false; t.shotMoveGoal = null;
     coverClaims.set(t.cover.id, { owner: t.id, until: time + 7 });
     if (!t.enteredCover && Math.hypot(t.cover.x - position.x, t.cover.z - position.z) < .28) {
       t.enteredCover = true; t.arrivedAt = time;
@@ -1628,10 +1655,36 @@ function fightFromCover(actor, target, dt) {
         walkActor(actor, t.retreatPoint, 2.6, dt);
       }
       mayFire = false;
+    } else if (actor.friendly && t.shotMovePending) {
+      mayFire = false;
+      if (!t.shotMoveGoal && time >= (t.shotMoveRetryAt ?? 0) && time >= t.shotMoveStartsAt) {
+        t.shotMoveRetryAt = time + .8;
+        t.shotMoveGoal = chooseShotRelocation({ position, threat, preference: (t.id * .61803398875) % 1,
+          blocked: point => actor.order === 'hold' && Math.hypot(point.x - actor.orderPoint.x, point.z - actor.orderPoint.z) > 7 ||
+            circleBlocked(point.x, point.z, .44, movementObstacles(point.x, point.z)) ||
+            actorGrid.near(point.x, point.z, 1).some(other => other !== actor && other.health > 0 &&
+              Math.hypot(other.position.x - point.x, other.position.z - point.z) < .8),
+          heightAt: point => world.groundHeight(point.x, point.z),
+          canFinish: point => ['standing', 'kneeling', 'kneelingBoth', 'crouched'].some(pose =>
+            pose !== t.previousFiringPose && postureFireLine(actor, point, pose, threat)) });
+        if (t.shotMoveGoal) { actor.path = actor.pathGoal = null; pathRequests.delete(t.id); }
+      }
+      t.mode = t.shotMoveGoal ? 'relocate-after-shot' : 'seek-clear-relocation';
+      if (t.shotMoveGoal) {
+        if (Math.hypot(position.x - t.shotMoveGoal.x, position.z - t.shotMoveGoal.z) > .25) walkActor(actor, t.shotMoveGoal, 2.8, dt);
+        else {
+          t.shotMovePending = false; t.shotMoveGoal = null;
+          t.poseSequence = (t.poseSequence ?? 0) + 1;
+          t.completedShotMoves = (t.completedShotMoves ?? 0) + 1;
+          t.relocatedFireUntil = time + 3;
+          t.postureDecisionAt = t.postureUntil = 0;
+        }
+      }
     } else if (actor.friendly && actor.order === 'hold') {
       const goal = holdDestination(actor);
-      if (Math.hypot(goal.x - position.x, goal.z - position.z) > .4) walkActor(actor, goal, 2.4, dt);
-    } else if (distance > 24 && t.slot % 2 === Math.floor(time / 2.6) % 2) {
+      if (time >= (t.relocatedFireUntil ?? 0) && Math.hypot(goal.x - position.x, goal.z - position.z) > .4) walkActor(actor, goal, 2.4, dt);
+    } else if (distance > 24 && time >= (t.relocatedFireUntil ?? 0) &&
+      !(actor.firingPose === 'prone' && distance < 45) && t.slot % 2 === Math.floor(time / 2.6) % 2) {
       const angle = Math.atan2(threat.z - position.z, threat.x - position.x);
       const flank = { x: threat.x - Math.cos(angle) * 18 + Math.sin(angle) * (t.slot % 2 ? 5 : -5), z: threat.z - Math.sin(angle) * 18 - Math.cos(angle) * (t.slot % 2 ? 5 : -5) };
       walkActor(actor, flank, 2.2, dt);
@@ -1639,16 +1692,35 @@ function fightFromCover(actor, target, dt) {
   }
   if (actor.friendly && actor.nativeMotion) {
     const moving = actor.locomotion.speed > .1;
-    if (moving || time >= (t.postureDecisionAt ?? 0)) {
+    if (moving || t.postureNeedsChoice || time >= (t.postureDecisionAt ?? 0)) {
       t.postureDecisionAt = time + .35;
       const heading = Math.atan2(position.x - threat.x, position.z - threat.z);
       const suppressed = time < t.suppressedUntil, distance = position.distanceTo(threat);
+      const wall = !moving ? wallFiringContact(position, heading, world.town.pieces) : null;
+      const proneClear = !moving && distance >= 14 && !t.cover && proneSpaceClear(actor, heading);
+      const eligiblePoses = [];
       const next = chooseCombatPosture({ distance, moving, covered: Boolean(t.cover),
-        exposed: mayFire && t.mode === 'peek', suppressed,
-        proneClear: !moving && suppressed && distance >= 22 && !t.cover && proneSpaceClear(actor, heading),
-        canFire: stance => postureFireLine(actor, position, stance, threat) });
-      if (moving || time >= (t.postureUntil ?? 0)) {
-        if (actor.stance !== next) { actor.stance = next; t.postureChangedAt = time; t.postureUntil = time + .85; }
+        exposed: mayFire && ['peek', 'wall-supported-fire'].includes(t.mode), suppressed,
+        proneClear, wall, previousPose: !t.cover && !t.shotMovePending ? t.previousFiringPose : null,
+        preference: (t.id * .61803398875 + (t.poseSequence ?? 0) * .38196601125) % 1,
+        canFire: stance => {
+          const clear = postureFireLine(actor, position, stance, threat);
+          if (clear) eligiblePoses.push(stance);
+          return clear;
+        } });
+      t.wallContact = wall;
+      const invalid = actor.firingPose === 'prone' && !proneClear ||
+        actor.firingPose?.startsWith('wall') && wall?.pose !== actor.firingPose ||
+        mayFire && !moving && eligiblePoses.length > 0 && !eligiblePoses.includes(ownedFiringPose(actor));
+      if (moving || invalid || t.postureNeedsChoice || time >= (t.postureUntil ?? 0)) {
+        if (ownedFiringPose(actor) !== next) {
+          actor.firingPose = next === 'standing' ? null : next;
+          actor.stance = FIRING_POSES[next]?.stance ?? 'standing';
+          t.postureChangedAt = time; t.postureUntil = time + 2.6;
+        }
+        t.eligiblePoses = eligiblePoses;
+        t.postureNeedsChoice = moving;
+        if (moving) t.postureUntil = time;
       }
     }
   }
@@ -1677,11 +1749,32 @@ function fightFromCover(actor, target, dt) {
   });
   if (nearbyFriend) return;
   if (!hasLine(from, muzzle, 2) || !hasLine(muzzle, threat, 75)) return;
+  const firingOptions = actor.friendly && actor.nativeMotion ? (t.eligiblePoses ?? []).filter(pose =>
+    postureFireLine(actor, position, pose, threat)) : [];
+  if (actor.friendly && !t.cover && !t.wallContact && t.lastShot && !t.lastShot.coverId) {
+    if (Math.hypot(position.x - t.lastShot.position.x, position.z - t.lastShot.position.z) < 2) {
+      t.shotMovePending = true; t.shotMoveGoal = null; t.shotMoveStartsAt = time;
+      t.shotMoveRetryAt = 0; t.mode = 'seek-clear-relocation';
+      return;
+    }
+    if (ownedFiringPose(actor) === t.lastShot.firingPose && firingOptions.some(pose => pose !== t.lastShot.firingPose)) {
+      t.postureNeedsChoice = true; t.postureUntil = 0;
+      return;
+    }
+  }
   const distance = from.distanceTo(threat), suppressed = time < t.suppressedUntil;
   actor.nextFire = time + rifleAIFireDelay(distance, suppressed, battleRandom());
   if (actor.friendly) {
-    t.lastShot = { time, mode: t.mode, stance: actor.stance, speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
+    t.lastShot = { time, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
+      coverId: t.cover?.id ?? t.wallContact?.wallId ?? null, completedShotMoves: t.completedShotMoves ?? 0,
+      eligiblePoses: firingOptions,
+      speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
       position: { x: position.x, z: position.z } };
+    if (!t.cover && !t.wallContact) {
+      t.shotMovePending = true; t.shotMoveGoal = null;
+      t.shotMoveStartsAt = time + .45;
+      t.previousFiringPose = ownedFiringPose(actor);
+    }
   }
   combatStats.aiRifleShots++;
   if (target.targetKind === 'closed-armor') combatStats.aiRifleShotsAtArmor++;
@@ -1738,6 +1831,7 @@ function updateAI(dt) {
     if (actor.health <= 0 || actor === player) continue;
     if (actor.friendly) {
       actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
+      actor.aimWalking = false;
     }
     const tactics = actor.tactics, previousCover = tactics.cover;
     if (expireThreat(tactics, time)) {
@@ -1745,10 +1839,11 @@ function updateAI(dt) {
       actor.path = actor.pathGoal = null;
       pathRequests.delete(tactics.id);
       tactics.coverMoveUntil = 0;
+      tactics.shotMoveGoal = null; tactics.shotMovePending = false; tactics.wallContact = null;
       if (previousCover) coverClaims.delete(previousCover.id);
     }
     if (actor.vehicleId) continue;
-    if (actor.friendly && actor.nativeMotion && !tactics.lastSeen) actor.stance = 'standing';
+    if (actor.friendly && actor.nativeMotion && !tactics.lastSeen && actor.firingPose) { actor.stance = 'standing'; actor.firingPose = null; }
     const position = actor.position;
     position.y = world.groundHeight(position.x, position.z);
     const escape = world.doorSystem.swingEscape(position);
@@ -1814,7 +1909,8 @@ function updateAI(dt) {
       actor.buildProgress = 0;
       fightFromCover(actor, target, dt);
     } else if (tactics.lastSeen && canRiflemanTrackTarget(tactics.threatKind)) {
-      if (tactics.cover || tactics.threatKind === 'closed-armor') fightFromCover(actor, null, dt);
+      if (tactics.cover || tactics.shotMovePending || time < (tactics.relocatedFireUntil ?? 0) ||
+        tactics.threatKind === 'closed-armor') fightFromCover(actor, null, dt);
       else {
         tactics.mode = 'search';
         if (actor.playerUnit && actor.order === 'hold') {
@@ -1858,6 +1954,9 @@ function updateAI(dt) {
       tactics.mode = 'advance';
       const goal = formationDestination(actor, objective);
       if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7) walkActor(actor, goal, 3, dt);
+    }
+    if (actor.friendly && actor.locomotion.speed > .1) {
+      actor.stance = 'standing'; actor.firingPose = null; tactics.postureNeedsChoice = true; tactics.postureUntil = time;
     }
     for (const other of actorGrid.near(position.x, position.z, 2)) {
       if (other === actor || other.health <= 0 || other.vehicleId) continue;
@@ -2437,6 +2536,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
   daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity },
   look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
   bridgeSurfaces: { ...world.bridgeSurfaces },
+  staticDamage: { craters: world.staticDamage.craters.map(crater => ({ ...crater })),
+    ruinedShops: [...world.staticDamage.ruinedShops], wrecks: world.staticDamage.wrecks.map(wreck => ({ ...wreck })) },
   doors: world.doorSystem.doors.map(({ id, x, z, angle, targetAngle, state, blocked }) => ({ id, x, z, angle, targetAngle, state, blocked })),
   town: { streetWidth: world.town.streetWidth, buildings: world.town.buildings.map(building => ({ ...building })), visibility: { ...world.visibility },
     navigation: navigate.stats, inside: allies[current] ? world.town.buildings.find(building => {
@@ -2461,7 +2562,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     cameraHeight: camera.position.y, cameraRoll: camera.rotation.z,
     weaponOffset: weapon ? { x: weapon.position.x, y: weapon.position.y, z: weapon.position.z, pitch: weapon.rotation.x } : null } : null,
   allies: allies.map(actor => ({ id: actor.id, unitId: actor.unitId, vehicleId: actor.vehicleId, seatId: actor.seatId,
-    weaponId: actor.rifle.id, health: actor.health, deathSource: actor.deathSource ? { ...actor.deathSource } : null,
+    weaponId: actor.rifle.id, health: actor.health, eyeHeight: soldierPostureHeight(actor),
+    deathSource: actor.deathSource ? { ...actor.deathSource } : null,
     x: actor.position.x, y: actor.position.y, z: actor.position.z, stance: actor.stance, lookPitch: actor.lookPitch, order: actor.order,
     orderPoint: actor.orderPoint ? { ...actor.orderPoint } : null, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     role: actor.role, targetKind: actor.targetKind, spawnId: actor.spawnId, stamina: actor.locomotion.stamina, rifle: { ...actor.rifle } })),
@@ -2474,16 +2576,19 @@ Object.defineProperty(window, '__battle', { get: () => ({
   enemies: enemies.filter(actor => actor.health > 0).length,
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
-    stance: actor.stance, postureReady: postureReady(actor), posture: actor.nativeMotion ? { ...actor.nativeMotion.posture } : null,
+    stance: actor.stance, firingPose: ownedFiringPose(actor), aimWalking: Boolean(actor.aimWalking),
+    postureReady: postureReady(actor), posture: actor.nativeMotion ? { ...actor.nativeMotion.posture } : null,
+    completedShotMoves: actor.tactics.completedShotMoves ?? 0, shotMovePending: Boolean(actor.tactics.shotMovePending),
+    wallContact: actor.tactics.wallContact ? { ...actor.tactics.wallContact } : null,
     x: actor.position.x, z: actor.position.z, health: actor.health, order: actor.order, mode: actor.tactics.mode,
     cover: actor.tactics.cover ? { id: actor.tactics.cover.id, x: actor.tactics.cover.x, z: actor.tactics.cover.z,
-      peek: { ...actor.tactics.cover.peek } } : null, enteredCover: actor.tactics.enteredCover,
+      kind: actor.tactics.cover.kind, peek: { ...actor.tactics.cover.peek } } : null, enteredCover: actor.tactics.enteredCover,
     suppressedUntil: actor.tactics.suppressedUntil,
     observation: { sense: actor.tactics.threatSense, targetId: actor.tactics.threatId, time: actor.tactics.observedAt,
       forgetAt: actor.tactics.forgetAt, point: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null },
     engagementPoint: actor.tactics.engagementPoint ? { ...actor.tactics.engagementPoint } : null,
     sightCheck: actor.tactics.lastSightCheck ? { ...actor.tactics.lastSightCheck } : null,
-    movement: { speed: actor.locomotion.speed, sprinting: actor.locomotion.sprinting, stamina: actor.locomotion.stamina,
+    movement: { speed: actor.locomotion.speed, mode: actor.locomotion.mode, sprinting: actor.locomotion.sprinting, stamina: actor.locomotion.stamina,
       exhausted: actor.locomotion.exhausted, aimRecovery: actor.locomotion.aimRecovery },
     lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
     blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),

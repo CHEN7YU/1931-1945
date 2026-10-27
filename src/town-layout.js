@@ -1,3 +1,5 @@
+import { damagedTownPieces } from './war-damage-layout.js';
+
 export const STREET_BLOCK = Object.freeze({
   streetWidth: 8.76,
   doorWidth: 1.9,
@@ -69,10 +71,10 @@ export function makeTownLayout() {
     add(`${id}-bench`, x - facing * 1.5, .23, z + 5.8, 2.4, .46, .55, 'timber', { collision: true });
     for (const side of [-1, 1]) {
       const face = x + side * w / 2;
-      for (const dz of [-1.55, 1.55]) covers.push({ id: `${id}-door-${side}-${dz}`, x: face - side * .72, z: z + 2 + dz,
-        peek: { x: face - side * .72, z: z + 2 + Math.sign(dz) * .55 }, kind: 'door', buildingId: id });
-      covers.push({ id: `${id}-window-${side}`, x: face - side * .7, z: z - 3.4, kind: 'window', buildingId: id });
-      for (const dz of [-d / 2 - .8, d / 2 + .8]) covers.push({ id: `${id}-corner-${side}-${dz}`, x: face + side * .7, z: z + dz, kind: 'corner', buildingId: id });
+      for (const dz of [-1.55, 1.55]) covers.push({ id: `${id}-door-${side}-${dz}`, x: face - side * .64, z: z + 2 + dz,
+        peek: { x: face - side * .64, z: z + 2 + Math.sign(dz) * .72 }, kind: 'door', buildingId: id });
+      covers.push({ id: `${id}-window-${side}`, x: face - side * .64, z: z - 3.4, kind: 'window', buildingId: id });
+      for (const dz of [-d / 2 - .55, d / 2 + .55]) covers.push({ id: `${id}-corner-${side}-${dz}`, x: face + side * .64, z: z + dz, kind: 'corner', buildingId: id });
     }
   }
   for (const [index, z] of STREET_BLOCK.rows.entries()) {
@@ -84,8 +86,17 @@ export function makeTownLayout() {
   for (const z of [55, 69]) wall(`courtyard-${z}`, 'x', z, -19.5, -12.5, 1.55,
     [{ center: -16, width: 1.9, sill: 0, top: 1.55 }]);
   add('courtyard-well-base', -17.8, .35, 59, 1.1, .7, 1.1, 'stone', { collision: true });
-  const obstacles = pieces.filter(p => p.collision).map(p => ({
+  for (const piece of pieces.filter(piece => piece.wall && piece.y - piece.h / 2 < 1.1 && piece.y + piece.h / 2 > 1.6)) {
+    const alongZ = piece.w < piece.d, length = alongZ ? piece.d : piece.w;
+    for (const side of [-1, 1]) for (const fraction of length > 3 ? [.2, .5, .8] : [.5]) {
+      const x = piece.x + (alongZ ? side * (piece.w / 2 + .52) : (fraction - .5) * length);
+      const z = piece.z + (alongZ ? (fraction - .5) * length : side * (piece.d / 2 + .52));
+      covers.push({ id: `support-${piece.id}-${side}-${fraction}`, x, z, peek: { x, z }, kind: 'wall-support', wallId: piece.id });
+    }
+  }
+  const damagedPieces = damagedTownPieces(pieces, buildings);
+  const obstacles = damagedPieces.filter(p => p.collision).map(p => ({
     id: p.id, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2, height: p.y + p.h / 2,
   }));
-  return { streetWidth: STREET_BLOCK.streetWidth, buildings, pieces, obstacles, covers, passages, courtyard: { minX: -19.5, maxX: -12.5, minZ: 55, maxZ: 69 } };
+  return { streetWidth: STREET_BLOCK.streetWidth, buildings, pieces: damagedPieces, obstacles, covers, passages, courtyard: { minX: -19.5, maxX: -12.5, minZ: 55, maxZ: 69 } };
 }

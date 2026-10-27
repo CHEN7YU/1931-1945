@@ -1,4 +1,5 @@
 import { Quaternion, Vector3 } from 'three';
+import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 
 function sample(track, time) {
   const local = ((time % track.duration) + track.duration) % track.duration;
@@ -21,7 +22,9 @@ export function createNraMotion(profile, actor) {
     throw new Error('Invalid native motion profile');
   }
   if (profile.walk && (!Number.isFinite(profile.walkStrideMeters) || profile.walkStrideMeters <= 0)) throw new Error('Invalid walking stride');
-  for (const track of [profile.idle, profile.run, ...[profile.walk, profile.crouched, profile.prone].filter(Boolean)]) {
+  if (profile.leanPivot && (!Array.isArray(profile.leanPivot) || profile.leanPivot.length !== 3 ||
+    !profile.leanPivot.every(Number.isFinite))) throw new Error('Invalid owned torso pivot');
+  for (const track of [profile.idle, profile.run, ...[profile.walk, ...Object.keys(FIRING_POSES).map(pose => profile[pose])].filter(Boolean)]) {
     if (!track || !Number.isFinite(track.duration) || track.duration <= 0 || !Array.isArray(track.times) || track.times.length < 2 ||
       track.positions?.length !== track.times.length * 3 || track.quaternions?.length !== track.times.length * 4 ||
       ![...track.times, ...track.positions, ...track.quaternions].every(Number.isFinite) ||
@@ -34,7 +37,11 @@ export function createNraMotion(profile, actor) {
     }
   }
   const seed = actor.walkPhase;
-  return { profile, posture: { crouched: 0, prone: 0 }, idleTime: seed * .7, strideScale: 1 + .035 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
+  return { profile, aim: 0, bodyLean: 0, runLean: .11 + .12 * Math.sin(seed * 7.7) ** 2,
+    fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
+    legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
+    posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
+    idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z } };
 }
 
@@ -50,13 +57,20 @@ export function advanceNraMotion(actor, dt) {
   motion.idleTime += dt;
   const stance = actor.stance ?? 'standing';
   if (!['standing', 'crouched', 'prone'].includes(stance)) throw new Error('Unknown owned soldier stance');
-  for (const posture of ['crouched', 'prone']) {
-    const target = stance === posture && motion.profile[posture] ? 1 : 0;
+  const pose = ownedFiringPose(actor);
+  for (const posture of Object.keys(FIRING_POSES)) {
+    const target = pose === posture && motion.profile[posture] ? 1 : 0;
     motion.posture[posture] += (target - motion.posture[posture]) * (1 - Math.exp(-dt / .10));
     if (motion.posture[posture] < .001) motion.posture[posture] = 0;
     if (motion.posture[posture] > .999) motion.posture[posture] = 1;
   }
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
+  motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
+  const pace = actor.locomotion.mode;
+  const leanTarget = !motion.profile.leanPivot ? 0 : actor.locomotion.speed > .2
+    ? motion.runLean * (actor.aimWalking ? .2 : pace === 'sprint' ? 1.25 : pace === 'walk' ? .3 : Math.min(1, actor.locomotion.speed / 3.15))
+    : actor.tactics?.lastSeen ? motion.fireLean : 0;
+  motion.bodyLean += (leanTarget - motion.bodyLean) * (1 - Math.exp(-dt / .18));
   const target = motion.speed > .15 ? 1 : 0;
   motion.weight += (target - motion.weight) * (1 - Math.exp(-dt / .12));
   if (motion.weight < .001) motion.weight = 0;
@@ -77,17 +91,26 @@ export function sampleNraMotion(actor) {
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
   const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
   const quaternion = idle.quaternion.slerp(walk.quaternion.slerp(run.quaternion, jog), motion.weight);
-  const crouched = motion.posture.crouched, prone = motion.posture.prone, upright = 1 - crouched - prone;
+  const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
   const blendedPosition = position.clone().multiplyScalar(upright);
   let quaternionWeight = upright;
-  for (const [stance, weight] of [['crouched', crouched], ['prone', prone]]) {
+  for (const [stance, weight] of Object.entries(motion.posture)) {
     if (!weight) continue;
     const pose = sample(profile[stance], 0);
     blendedPosition.addScaledVector(pose.position, weight);
     quaternion.slerp(pose.quaternion, weight / (quaternionWeight + weight));
     quaternionWeight += weight;
   }
-  return { idleTime, runTime, walkTime, jog, crouched, prone, weight: motion.weight, speed: motion.speed,
+  blendedPosition.lerp(new Vector3(.13, 1.54, .04), motion.aim * upright);
+  quaternion.slerp(new Quaternion(), motion.aim * upright);
+  const bodyLean = motion.bodyLean * upright;
+  if (bodyLean && profile.leanPivot) {
+    const lean = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -bodyLean);
+    const pivot = new Vector3().fromArray(profile.leanPivot);
+    blendedPosition.sub(pivot).applyQuaternion(lean).add(pivot);
+    quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
+  }
+  return { idleTime, runTime, walkTime, jog, bodyLean, legLift: motion.legLift, ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
 }
 

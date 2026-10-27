@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseCombatPosture, postureReady } from '../src/combat-posture.js';
+import { chooseCombatPosture, postureReady, wallFiringContact, chooseAdvancePace, chooseShotRelocation } from '../src/combat-posture.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeMuzzleLocal } from '../src/nra-motion.js';
 import { soldierPostureHeight } from '../src/entities.js';
 import { targetAimPoint, createTactics, observeVisualThreat } from '../src/tactics.js';
@@ -9,21 +9,54 @@ import { readFileSync } from 'node:fs';
 const facts = overrides => ({ distance: 12, moving: false, covered: false, exposed: true, suppressed: false,
   proneClear: false, canFire: () => true, ...overrides });
 
-test('close combat prefers a usable crouched line, not indiscriminate prone or standing fire', () => {
-  assert.equal(chooseCombatPosture(facts()), 'crouched');
-  assert.equal(chooseCombatPosture(facts({ suppressed: true, proneClear: true })), 'crouched');
+test('stable personal draws produce varied eligible poses without prone in close quarters', () => {
+  const poses = new Set(Array.from({ length: 100 }, (_, index) => chooseCombatPosture(facts({ preference: index / 100 }))));
+  assert.deepEqual(poses, new Set(['standing', 'kneeling', 'kneelingBoth', 'crouched']));
+  assert.notEqual(chooseCombatPosture(facts({ suppressed: true, proneClear: true })), 'prone');
   assert.equal(chooseCombatPosture(facts({ moving: true })), 'standing');
   assert.equal(chooseCombatPosture(facts({ covered: true, exposed: false, canFire: () => false })), 'crouched');
 });
 
-test('standing exposure is allowed when low fire is obstructed, and prone needs distance, pressure, space and an actual firing line', () => {
+test('poses require actual firing lines; prone does not require waiting until already under fire', () => {
   assert.equal(chooseCombatPosture(facts({ canFire: stance => stance === 'standing' })), 'standing');
-  assert.equal(chooseCombatPosture(facts({ distance: 35, suppressed: true, proneClear: true })), 'prone');
-  for (const change of [{ proneClear: false }, { suppressed: false }, { covered: true }]) {
-    assert.notEqual(chooseCombatPosture(facts({ distance: 35, suppressed: true, proneClear: true, ...change })), 'prone');
+  assert.equal(chooseCombatPosture(facts({ distance: 35, preference: .99, proneClear: true })), 'prone');
+  for (const change of [{ proneClear: false }, { covered: true }]) {
+    assert.notEqual(chooseCombatPosture(facts({ distance: 35, preference: .99, proneClear: true, ...change })), 'prone');
   }
   assert.equal(chooseCombatPosture(facts({ distance: 35, suppressed: true, proneClear: true, canFire: stance => stance === 'crouched' })), 'crouched');
   assert.throws(() => chooseCombatPosture(facts({ distance: NaN })), /finite tactical/);
+});
+
+test('real side-wall contact is required, not just a cover label or a wall in front of the muzzle', () => {
+  const wall = { id: 'wall', wall: true, x: .6, z: 0, w: .24, d: 4, y: 1.8, h: 3.6 };
+  const contact = wallFiringContact({ x: 0, y: 0, z: 0 }, 0, [wall]);
+  assert.equal(contact.pose, 'wallRight');
+  assert.equal(wallFiringContact({ x: 0, y: 0, z: 0 }, Math.PI / 2, [wall]), null);
+  assert.equal(wallFiringContact({ x: -3, y: 0, z: 0 }, 0, [wall]), null);
+  assert.equal(chooseCombatPosture(facts({ wall: contact })), 'wallRight');
+  assert.notEqual(chooseCombatPosture(facts({ wall: contact, canFire: pose => pose !== 'wallRight' })), 'wallRight');
+});
+
+test('shot relocation chooses metres of reachable ground and a different eligible firing pose', () => {
+  const origin = { x: 0, z: 0 }, threat = { x: 0, z: -30 };
+  const query = { position: origin, threat, preference: .2, blocked: () => false, heightAt: () => 0 };
+  const goal = chooseShotRelocation(query);
+  assert.ok(Math.hypot(goal.x, goal.z) >= 2.6);
+  assert.equal(chooseShotRelocation({ ...query, blocked: () => true }), null);
+  assert.equal(chooseShotRelocation({ ...query, canFinish: () => false }), null);
+  assert.equal(chooseShotRelocation({ ...query, heightAt: point => point === origin ? 0 : 1 }), null);
+  const first = chooseCombatPosture(facts({ preference: .2 }));
+  assert.notEqual(chooseCombatPosture(facts({ preference: .2, previousPose: first })), first);
+});
+
+test('advance pace varies by person, with aimed walking and tactical catch-up rather than per-frame rerolls', () => {
+  const base = { urgent: false, threat: true, distance: 30, exhausted: false, stamina: 1 };
+  assert.equal(chooseAdvancePace({ ...base, preference: .1 }), 'aim');
+  assert.equal(chooseAdvancePace({ ...base, preference: .5 }), 'jog');
+  assert.equal(chooseAdvancePace({ ...base, preference: .9 }), 'sprint');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, threat: false }), 'walk');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, catchUp: true }), 'sprint');
+  assert.equal(chooseAdvancePace({ ...base, preference: .9, exhausted: true }), 'jog');
 });
 
 test('owned posture blends lower actual eye, aim and gun height and delay firing until settled', () => {

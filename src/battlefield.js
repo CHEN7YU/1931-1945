@@ -4,6 +4,11 @@ import { makeTownLayout } from './town-layout.js';
 import { BRIDGE, groundHeight } from './ground.js';
 import { createDoorWorld } from './door-world.js';
 import { bakeSurfaceGeometry } from './surface-uv.js';
+import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
+import { damagedSurfaceGeometry, craterGeometry, addStaticWrecks } from './war-damage.js';
+
+export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
+  [4, -4, 17, 12], [-10, 52.5, 34, 5], [-16, 62, 7, 14], [8, -16, 16, 13]];
 
 export function createRoofGeometry(w, d, rise, meters) {
   const vertices = [], uv = [], distances = [0], segments = 16;
@@ -76,12 +81,22 @@ export function makeWorld(scene, surface) {
     return object;
   }
 
-  const groundGeometry = new THREE.PlaneGeometry(800, 800, 1, 1);
-  groundGeometry.rotateX(-Math.PI / 2);
+  const groundGeometry = damagedSurfaceGeometry(0, 0, 800, 800);
   mesh(groundGeometry, earth, 0, -.035, 0, true);
-  const pavedAreas = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61], [4, -4, 17, 12], [-10, 52.5, 34, 5], [-16, 62, 7, 14], [8, -16, 16, 13]];
+  const pavedAreas = PAVED_AREAS;
   for (const [x, z, w, d] of pavedAreas.slice(0, -1)) {
-    box(x, -.005, z, w, .035, d, paving, true);
+    mesh(damagedSurfaceGeometry(x, z, w, d), paving, 0, .0125, 0, true);
+  }
+  const craterMat = earth.clone(); craterMat.vertexColors = true;
+  for (const crater of SHELL_CRATERS) {
+    const paved = pavedAreas.some(([x, z, w, d]) => Math.abs(crater.x - x) < w / 2 && Math.abs(crater.z - z) < d / 2);
+    mesh(craterGeometry(crater, paved ? .0125 : -.035), craterMat, 0, 0, 0, true);
+    if (paved) for (let i = 0; i < 17; i++) {
+      const angle = i / 17 * Math.PI * 2 + random() * .15, radius = crater.radius * (1.03 + random() * .2);
+      const x = crater.x + Math.cos(angle) * radius, z = crater.z + Math.sin(angle) * radius;
+      const fragment = box(x, groundHeight(x, z) + .075, z, .17 + random() * .2, .1, .17 + random() * .2, stone);
+      fragment.rotation.y = random() * Math.PI;
+    }
   }
   for (const x of [-4.65, 4.65]) {
     for (let z = 4; z < 74; z += 2) {
@@ -307,22 +322,50 @@ export function makeWorld(scene, surface) {
     box(x - w / 2 + 1.3, height + .8, z - d / 2 + 1.5, .85, 1.6, .85, brick);
     box(x - w / 2 + 1.3, height + 1.66, z - d / 2 + 1.5, 1.02, .12, 1.02, stone);
   }
-  const townMaterials = { plaster: plaster[0], timber, charred, stone, floor: timber };
+  const townMaterials = { plaster: plaster[0], brick, timber, charred, stone, floor: timber };
   for (const piece of town.pieces) {
     const mat = piece.material === 'plaster' ? plaster[town.buildings.findIndex(item => piece.id.startsWith(`${item.id}-`)) % plaster.length] || plaster[0] : townMaterials[piece.material];
     box(piece.x, piece.y, piece.z, piece.w, piece.h, piece.d, mat, true);
   }
   obstacles.push(...town.obstacles);
   for (const shop of town.buildings) {
-    roof(shop.x, shop.height, shop.z, shop.w + .8, shop.d + .8, 1.65);
+    if (!shop.ruined) roof(shop.x, shop.height, shop.z, shop.w + .8, shop.d + .8, 1.65);
+    else {
+      const partial = mesh(createRoofGeometry(shop.w + .8, (shop.d + .8) * .44, 1.65, roofMat.userData.metersPerTile),
+        roofMat, shop.x, shop.height, shop.z - shop.d * .28, true);
+      partial.userData.keepUV = true;
+      for (const side of [-1, 1]) {
+        const x = shop.x + side * 3.2, z = shop.z - 4.9;
+        const post = beam([x, 0, z], [x, shop.height, z], .075, charred);
+        solids.push(post); obstacle(x, z, .15, .15, shop.height);
+        const rafter = beam([x, shop.height, z], [shop.x, shop.height + 1.65, z], .085, charred);
+        solids.push(rafter);
+      }
+      for (const dz of [0, 2.4, 5.3]) {
+        beam([shop.x - 3.8, shop.height, shop.z + dz], [shop.x, shop.height + 1.5, shop.z + dz], .1, charred);
+        const broken = beam([shop.x, shop.height + 1.5, shop.z + dz], [shop.x + 3.5, 2.1 + (dz % 2) * .2, shop.z + dz + .5], .11, charred);
+        solids.push(broken);
+      }
+      for (let i = 0; i < 24; i++) {
+        const x = shop.x + (random() - .5) * 6.6, z = shop.z - 4.9 + random() * 1.4;
+        const w = .3 + random() * .55, h = .15 + random() * .28, d = .3 + random() * .5;
+        const rubble = box(x, h / 2, z, w, h, d, i % 3 ? brick : roofMat, true);
+        rubble.rotation.y = random() * Math.PI;
+        if (h > .33) obstacle(x, z, Math.abs(Math.cos(rubble.rotation.y)) * w + Math.abs(Math.sin(rubble.rotation.y)) * d,
+          Math.abs(Math.sin(rubble.rotation.y)) * w + Math.abs(Math.cos(rubble.rotation.y)) * d, h);
+      }
+    }
     const group = new THREE.Group();
     group.position.set(shop.x + shop.facing * shop.w / 2, 0, shop.doorZ);
     group.rotation.y = shop.facing * Math.PI / 2;
     scene.add(group);
     sign(shop.name, 0, 2.98, .18, 2.85, group);
-    box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
-    for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05], [side * 1.22, 2.58, 1.05], .025, timber, group);
+    if (!shop.ruined) {
+      box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
+      for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05], [side * 1.22, 2.58, 1.05], .025, timber, group);
+    }
   }
+  const wrecks = addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber: charred });
   for (const z of [69, 44, 12, -38, -69]) {
     building(-61, z, 17, 15, 6 + random() * 3, random() < .3);
     building(65, z, 16, 14, 6 + random() * 3, random() < .25);
@@ -407,7 +450,7 @@ export function makeWorld(scene, surface) {
   scorchGradient.addColorStop(1, 'rgba(43,35,26,0)');
   scorchContext.fillStyle = scorchGradient; scorchContext.fillRect(0, 0, 128, 128);
   const scorch = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(scorchCanvas), transparent: true, depthWrite: false, roughness: 1 });
-  for (const [x, z] of [[-4, 61], [5, 39], [-8, 15], [8, -30], [-2, -55], [31, -36]]) {
+  for (const [x, z] of [[-4, 61], [5, 39], [-8, 15], [8, -30], [-2, -55], [31, -36], [-2.7, 31], [10.6, -41]]) {
     const object = mesh(new THREE.PlaneGeometry(3 + random() * 3, 3 + random() * 3), scorch, x, .025, z);
     object.rotation.x = -Math.PI / 2;
     object.castShadow = false;
@@ -501,6 +544,7 @@ export function makeWorld(scene, surface) {
     geometries.forEach(geometry => geometry.dispose());
   }
   const groundSurface = (x, z) => {
+    if (SHELL_CRATERS.some(crater => Math.hypot(x - crater.x, z - crater.z) < crater.radius * CRATER_EDGE)) return 'earth';
     if (town.buildings.some(building => Math.abs(x - building.x) < building.w / 2 - .12 && Math.abs(z - building.z) < building.d / 2 - .12)) return 'wood';
     if (groundHeight(x, z) > 0) return 'stone';
     return pavedAreas.some(([cx, cz, w, d]) => Math.abs(x - cx) <= w / 2 && Math.abs(z - cz) <= d / 2) ? 'stone' : 'earth';
@@ -519,5 +563,6 @@ export function makeWorld(scene, surface) {
     bridgeSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
   }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron);
-  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, visibility, doorSystem };
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, visibility, doorSystem,
+    staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

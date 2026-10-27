@@ -37,8 +37,7 @@ export function visibleTargetPoint(target, canSee) {
     return result;
   };
   let visible = query(point);
-  if (!visible && !target.vehicleId && target.nativeMotion &&
-    target.nativeMotion.posture.crouched + target.nativeMotion.posture.prone > .1) {
+  if (!visible && !target.vehicleId && target.nativeMotion && soldierPostureHeight(target) < 1.55) {
     const head = { ...point, y: target.position.y + soldierPostureHeight(target) };
     if (query(head)) { point = head; visible = true; }
   }
@@ -76,6 +75,8 @@ export function friendlyCoverAction(state, position, now) {
   const exposed = state.enteredCover && now >= state.suppressedUntil && peekTurn(state, now);
   const goal = exposed ? state.cover.peek : state.cover;
   const travel = distance(position, goal), moving = travel > .15;
+  if (state.cover.kind === 'wall-support') return { goal: state.cover, moving, sprint: moving && travel > 1.2,
+    mayFire: !moving && now >= state.suppressedUntil, mode: moving ? 'rush-to-cover' : 'wall-supported-fire' };
   return { goal, moving, sprint: moving && (!state.enteredCover ? travel > 1.2 : !exposed && travel > .4),
     mayFire: exposed && !moving,
     mode: !state.enteredCover ? 'rush-to-cover' :
@@ -88,21 +89,22 @@ export function peekTurn(state, now) {
 }
 
 export function coverPeeks(slot) {
-  if (slot.kind === 'window') return [{ x: slot.x, z: slot.z }];
+  if (slot.kind === 'window' || slot.kind === 'wall-support') return [{ x: slot.x, z: slot.z }];
   if (slot.kind === 'door') return [{ ...slot.peek }];
   return [[.85, 0], [-.85, 0], [0, .85], [0, -.85]].map(([x, z]) => ({ x: slot.x + x, z: slot.z + z }));
 }
 
-export function selectCover({ state, position, threat, slots, claims, now, blocked, protectedAt, seesTarget, pathTo }) {
+export function selectCover({ state, position, threat, slots, claims, now, blocked, protectedAt, supportedAt = () => false, seesTarget, pathTo }) {
   const choices = [];
   for (const slot of slots) {
     const claim = claims.get(slot.id);
     if (claim && claim.until > now && claim.owner !== state.id) continue;
     const travel = distance(position, slot);
-    if (travel > 23 || blocked(slot) || !protectedAt(slot, threat)) continue;
+    const support = slot.kind === 'wall-support';
+    if (travel > (support ? 7 : 23) || blocked(slot) || !(support ? supportedAt(slot, threat) : protectedAt(slot, threat))) continue;
     const peek = coverPeeks(slot).find(point => !blocked(point) && seesTarget(point, threat));
     if (!peek) continue;
-    choices.push({ ...slot, peek, score: travel + distance(peek, threat) * .06 + (slot.id === state.cover?.id ? -2 : 0) });
+    choices.push({ ...slot, peek, score: travel + distance(peek, threat) * .06 + (support ? 6 : 0) + (slot.id === state.cover?.id ? -2 : 0) });
   }
   choices.sort((a, b) => a.score - b.score);
   for (const choice of choices.slice(0, 5)) {

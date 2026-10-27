@@ -32,7 +32,7 @@ try {
     await page.keyboard.up('s');
     await page.screenshot({ path: join(directory, `${stage}.png`) });
   }
-  const standing = samples.filter(sample => sample.view.motion.weight === 0 && sample.view.speed < .03);
+  const standing = samples.filter(sample => sample.view.firingPose === 'standing' && sample.view.motion.weight === 0 && sample.view.speed < .03);
   assert.ok(standing.length >= 5, 'Observe genuinely stationary native poses, not just an idle label');
   const hipY = standing.map(sample => sample.view.hips[1] - sample.view.position[1]);
   assert.ok(Math.max(...hipY) - Math.min(...hipY) < .002, 'Stationary hips must not cycle up and down');
@@ -47,9 +47,14 @@ try {
     assert.ok(Math.hypot(muzzle[0] - logical.x, muzzle[1] - logical.y, muzzle[2] - logical.z) < 1e-4);
   }
   await page.keyboard.press('Escape');
-  const paused = (await snapshot()).view.motion;
+  const paused = (await snapshot()).view;
   await page.waitForTimeout(250);
-  assert.deepEqual((await snapshot()).view.motion, paused);
+  const stillPaused = (await snapshot()).view;
+  assert.deepEqual(stillPaused.motion, paused.motion);
+  for (const key of ['leftKnee', 'rightKnee', 'leftFoot', 'rightFoot', 'head', 'hips']) {
+    assert.ok(Math.hypot(...stillPaused[key].map((value, index) => value - paused[key][index])) < 1e-5,
+      'Paused rendering cannot repeatedly lower the already-adjusted legs');
+  }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, directory, standing: standing.length, moving: moving.length,
     hipVariation: Math.max(...hipY) - Math.min(...hipY), gunVariation: Math.max(...gunY) - Math.min(...gunY), resets }));

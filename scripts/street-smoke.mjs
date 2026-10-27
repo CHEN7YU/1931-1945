@@ -23,28 +23,30 @@ async function look(yaw, pitch = 0) {
 async function walkTo(x, z) {
   await page.keyboard.down('c');
   await page.keyboard.down('w');
-  let previousDistance = Infinity, stuck = 0;
-  for (let i = 0; i < 200; i++) {
-    const data = await snapshot();
-    assert.equal(data.state, 'playing', 'route remains ordinary live gameplay');
-    const dx = x - data.position.x, dz = z - data.position.z, distance = Math.hypot(dx, dz);
-    if (distance < .16) break;
-    stuck = Math.abs(previousDistance - distance) < .01 ? stuck + 1 : 0;
-    assert.ok(stuck < 15, `route is blocked before (${x}, ${z}): ${JSON.stringify(data.position)}`);
-    previousDistance = distance;
-    await look(Math.atan2(-dx, -dz));
-    const door = await page.evaluate(() => {
-      const data = window.__battle;
-      return data.doors.find(item => item.state === 'closed' && Math.hypot(item.x - data.position.x, item.z - data.position.z) < 2.2);
-    });
-    if (door && await page.locator('#interaction-prompt').isVisible()) {
-      await page.keyboard.up('w');
-      await page.keyboard.press('f');
-      await page.waitForFunction(id => window.__battle.doors.find(door => door.id === id)?.state === 'open', door.id);
-      await page.keyboard.down('w');
+  const result = await page.evaluate(({ x, z }) => new Promise(resolve => {
+    const deadline = performance.now() + 45000;
+    let walking = true, opening = null;
+    const key = (type, code) => document.dispatchEvent(new KeyboardEvent(type, { code }));
+    function frame() {
+      const data = window.__battle, dx = x - data.position.x, dz = z - data.position.z;
+      if (data.state !== 'playing' || performance.now() > deadline || Math.hypot(dx, dz) < .16) {
+        key('keyup', 'KeyW'); resolve({ state: data.state, position: data.position }); return;
+      }
+      const yaw = Math.atan2(-dx, -dz), delta = Math.atan2(Math.sin(yaw - data.look.yaw), Math.cos(yaw - data.look.yaw));
+      document.dispatchEvent(new MouseEvent('mousemove', { movementX: -delta / .00132, movementY: data.look.pitch / .00132 }));
+      if (opening && data.doors.find(door => door.id === opening)?.state === 'open') opening = null;
+      const prompt = document.querySelector('#interaction-prompt');
+      const door = data.doors.find(door => door.state === 'closed' && Math.hypot(door.x - data.position.x, door.z - data.position.z) < 2.2);
+      if (!opening && door && prompt.getClientRects().length > 0) {
+        opening = door.id; key('keydown', 'KeyF'); key('keyup', 'KeyF');
+      }
+      if (opening && walking) { key('keyup', 'KeyW'); walking = false; }
+      if (!opening && !walking) { key('keydown', 'KeyW'); walking = true; }
+      requestAnimationFrame(frame);
     }
-    await page.waitForTimeout(Math.min(200, Math.max(35, distance / 1.5 * 500)));
-  }
+    requestAnimationFrame(frame);
+  }), { x, z });
+  assert.equal(result.state, 'playing', 'route remains ordinary live gameplay');
   await page.keyboard.up('w'); await page.keyboard.up('c');
   await page.waitForTimeout(160);
   const data = await snapshot();

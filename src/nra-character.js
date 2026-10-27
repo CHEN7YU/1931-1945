@@ -9,6 +9,8 @@ import { sampleNraMotion } from './nra-motion.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
+import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
+import { applyNativeLegLift, applyNativeBodyLean } from './nra-gait.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -71,13 +73,17 @@ export async function loadNraCharacter() {
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
   const postures = createNativePosturePoses(normalized, inspected.canonical);
-  const motionProfile = { ...clips.motion, crouched: postures.crouched.carry, prone: postures.prone.carry };
+  const motionProfile = { ...clips.motion, runLiftBanks: [.55, .85],
+    leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
+    ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   const appearanceCache = { geometries: new Map(), materials: new Map() };
   function createView() {
   const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
   root.add(avatar);
   avatar.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
   const canonical = new Map(meshes[0].skeleton.bones.map(bone => [bone.name, bone]));
+  const animatedLegs = ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Head']
+    .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone() }));
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
@@ -90,14 +96,15 @@ export async function loadNraCharacter() {
   const riflePose = createNraRiflePose(root, canonical, gun);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle), run: mixer.clipAction(run), ...(walk ? { walk: mixer.clipAction(walk) } : {}),
-    crouched: mixer.clipAction(postures.crouched.clip), prone: mixer.clipAction(postures.prone.clip) };
+    ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
   let drawBatches = 0;
   root.traverse(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
   let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
-  let observedActor = null, initialized = false;
+  let observedActor = null, initialized = false, legPose = null;
   for (const action of Object.values(actions)) { action.play(); action.paused = true; }
   actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0);
-  actions.crouched.setEffectiveWeight(0); actions.prone.setEffectiveWeight(0); root.visible = false;
+  for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
+  root.visible = false;
   return {
     root,
     drawBatches,
@@ -105,9 +112,10 @@ export async function loadNraCharacter() {
     bind(id) {
       actorId = id; observedActor = null; initialized = false; speed = 0; active = 'idle'; motion = null; resets++;
       mixer.stopAllAction();
+      for (const leg of animatedLegs) leg.rotation.copy(leg.bone.quaternion);
       for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
       actions.idle.setEffectiveWeight(1); actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0); root.visible = false;
-      actions.crouched.setEffectiveWeight(0); actions.prone.setEffectiveWeight(0);
+      for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
       appearance.apply(null);
     },
     get actorId() { return actorId; },
@@ -120,14 +128,21 @@ export async function loadNraCharacter() {
       appearance.apply(actor.avatarAppearance ?? null);
       motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime; actions.run.time = motion.runTime;
-      const upright = 1 - motion.crouched - motion.prone;
+      const upright = motion.upright;
       actions.idle.setEffectiveWeight((1 - motion.weight) * upright); actions.run.setEffectiveWeight(motion.weight * motion.jog * upright);
       if (actions.walk) { actions.walk.time = motion.walkTime; actions.walk.setEffectiveWeight(motion.weight * (1 - motion.jog) * upright); }
-      actions.crouched.time = actions.prone.time = 0;
-      actions.crouched.setEffectiveWeight(motion.crouched); actions.prone.setEffectiveWeight(motion.prone);
-      if (actor.health > 0 || !initialized) mixer.update(0);
+      for (const pose of Object.keys(FIRING_POSES)) { actions[pose].time = 0; actions[pose].setEffectiveWeight(motion[pose]); }
+      if (actor.health > 0 || !initialized) {
+        for (const leg of animatedLegs) leg.bone.quaternion.copy(leg.rotation);
+        mixer.update(0);
+        for (const leg of animatedLegs) leg.rotation.copy(leg.bone.quaternion);
+      }
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2);
       root.updateMatrixWorld(true);
+      if (actor.health > 0) {
+        applyNativeBodyLean(root, canonical, motion);
+        legPose = applyNativeLegLift(root, canonical, motion, actor.position.y);
+      }
       if (actor.health > 0 || !initialized) riflePose.update(motion);
       initialized = true;
       const weaponPose = rifleActionPose(actor.rifle);
@@ -136,11 +151,15 @@ export async function loadNraCharacter() {
     get snapshot() {
       const point = name => canonical.get(name).getWorldPosition(new THREE.Vector3()).toArray();
       return { actorId, visible: root.visible, active, stance: observedActor?.stance ?? 'standing', speed, position: root.position.toArray(),
-        hips: point('Hips'), head: point('Head'), leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
+        firingPose: observedActor ? ownedFiringPose(observedActor) : null,
+        gait: motion ? { legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
+          bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose } : null,
+        hips: point('Hips'), head: point('Head'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
+        leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
-        motion: motion ? { weight: motion.weight, jog: motion.jog, crouched: motion.crouched, prone: motion.prone,
+        motion: motion ? { weight: motion.weight, jog: motion.jog, ...motion.postures,
           idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
         logicalMuzzle: observedActor ? soldierRifleMuzzle(observedActor) : null,
         soldier: observedActor ? { id: observedActor.id, health: observedActor.health, ammo: observedActor.rifle.ammo,

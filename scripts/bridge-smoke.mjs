@@ -89,7 +89,8 @@ try {
   assert.equal(resumedJump.controlBinding.changed, false);
   assert.deepEqual(resumedJump.controlSimulation, pausedJump.controlSimulation, 'same-owner resume preserves the frozen mid-air simulation state');
   observePose('jump-resumed-without-owner-change', resumedJump);
-  await page.waitForFunction(() => Math.abs(window.__battle.locomotion.cameraHeight - 2.12) < .03);
+  await page.waitForFunction(() => window.__battle.controlSimulation.jumpHeight === 0 &&
+    window.__battle.controlSimulation.jumpVelocity === 0 && Math.abs(window.__battle.locomotion.cameraHeight - 2.12) < .03);
   data = await snapshot();
   assert.ok(data.controlEvents.history.some(event => event.type === 'movement.footstep' &&
     event.landing && event.surface === 'stone' && event.soldierId === data.control.soldierId), 'actual landing captures its original soldier and bridge surface');
@@ -119,7 +120,9 @@ try {
   data = await snapshot();
   assert.equal(data.stance, 'standing', 'new member does not inherit the old prone selection');
   assert.equal(data.look.pitch, 0, 'new member does not inherit the old look pitch');
-  assert.equal(data.locomotion.eyeHeight, 1.67);
+  assert.ok(data.allies[data.current].eyeHeight > 1.6);
+  assert.ok(Math.abs(data.locomotion.eyeHeight - data.allies[data.current].eyeHeight) < .03,
+    'takeover follows the new member standing/leaning height, not the old prone view');
   assert.equal(data.allies[0].stance, 'prone');
   assert.equal(data.allies[0].lookPitch, original.look.pitch);
   observePose('next-member-standing', data);
