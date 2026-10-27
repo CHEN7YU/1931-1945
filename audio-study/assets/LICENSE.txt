@@ -1,0 +1,11 @@
+CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+New recordings: Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney
+https://opengameart.org/content/the-free-firearm-sound-library
+Source statement: "CC0 NO RIGHTS RESERVED" and use "for any application, personal or professional".
+
+Current-game reference: kurt
+https://opengameart.org/content/gunshots
+CC0; "None needed" attribution notice.
+See source.json for original hashes, selections, processing and authenticity limitations.

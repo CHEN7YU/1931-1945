@@ -1,0 +1,103 @@
+{
+  "asset": "Free rifle report listening comparison",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/the-free-firearm-sound-library",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "verified": "2026-10-27",
+  "licenseEvidence": "The source page quotes the team: CC0 NO RIGHTS RESERVED; any application, personal or professional, without royalty or credit.",
+  "archive": {
+    "url": "https://opengameart.org/sites/default/files/Prepared%20SFX%20Library.7z",
+    "bytes": 193954738,
+    "sha256": "cc1ab5a99a0a365105c7c5dd783f4b0b1fe90938114d3ceec53856bfe005f7d6"
+  },
+  "use": "Development-only audition; not loaded by the game or included in its production entry.",
+  "feedback": {
+    "preferredReference": "current.wav",
+    "rejectedCandidates": [
+      "arisaka-near.wav",
+      "mosin-near.wav"
+    ],
+    "basis": "User found B and C worse than current A. Keep the existing game sound; this is not acceptance of A tone or historical authenticity."
+  },
+  "processing": [
+    "FFmpeg mono 24kHz decode; fixed 0.6s excerpts",
+    "New candidates: DC removal, 0.5ms attack and 25ms tail fades",
+    "All three excerpts matched to common whole-window RMS using constant gain; no added compression or pitch shift",
+    "16-bit PCM WAV"
+  ],
+  "targetRms": 0.043509567875534595,
+  "files": [
+    {
+      "file": "current.wav",
+      "title": "A · 当前游戏音源",
+      "note": "枪型未知的现有片段，仅作为对照；原素材已有削波记录。",
+      "bytes": 28844,
+      "sha256": "dd4326c46db9f87fced7e64369eff6536c42feb17b5c4d3f9c6cc80b7f2a89bb",
+      "original": {
+        "file": "public/assets/audio/recorded-rifle/report.wav",
+        "author": "kurt",
+        "source": "https://opengameart.org/content/gunshots",
+        "bytes": 28844,
+        "sha256": "e414ff77b2fc14bc39205997629375351450d154cd83638c900b78b8d64a2349"
+      },
+      "selection": {
+        "startSeconds": 0,
+        "duration": 0.6,
+        "gain": 0.9651384711818414,
+        "sourceExcerptRms": 0.04508116625198435,
+        "sourceExcerptPeak": 0.707916259765625
+      }
+    },
+    {
+      "file": "arisaka-near.wav",
+      "title": "B · Arisaka 近距录音",
+      "note": "源库标注 Arisaka、栓动、.30-06、枪手前方近距；不是已确认的原装三八式或射手耳位录音。",
+      "bytes": 28844,
+      "sha256": "f9a3ccaabb60005dbbff31520af21b720f8963a249dca38d7c240e64bbd84251",
+      "original": {
+        "file": "Prepared SFX Library/Arisaka/E_25P.wav",
+        "author": "Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney",
+        "source": "https://opengameart.org/content/the-free-firearm-sound-library",
+        "bytes": 3862686,
+        "sha256": "0f0190fb6826fb167b4eb5f1d2df25372b0c220d64633446d9e4ab48c018630d"
+      },
+      "selection": {
+        "startSeconds": 0.5179166666666667,
+        "duration": 0.6,
+        "gain": 0.5852497681137904,
+        "sourceExcerptRms": 0.07434358840630076,
+        "sourceExcerptPeak": 0.9539061339535676
+      }
+    },
+    {
+      "file": "mosin-near.wav",
+      "title": "C · 莫辛步枪近距录音",
+      "note": "源库标注 Mosin Nagant、栓动、7.62×54、枪手前方近距；是音色候选，不冒充中正式录音。",
+      "bytes": 28844,
+      "sha256": "1d5d2c4667ff76b9b683913704ef0d5199d61e425416adcabb84e7fa12ea482f",
+      "original": {
+        "file": "Prepared SFX Library/Mosin Nagant/M_21P.wav",
+        "author": "Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney",
+        "source": "https://opengameart.org/content/the-free-firearm-sound-library",
+        "bytes": 9864044,
+        "sha256": "970ed2322ba61579dc8afaefb4f25e6ae791a3acb1e6e23372ea948cfe2a97b3"
+      },
+      "selection": {
+        "startSeconds": 1.0277916666666667,
+        "duration": 0.6,
+        "gain": 0.8843327862229525,
+        "sourceExcerptRms": 0.049200446430768464,
+        "sourceExcerptPeak": 0.7915572179447843
+      }
+    }
+  ],
+  "limitations": [
+    "RMS matching is an electrical-level comparison, not proof of equal perceived loudness.",
+    "Library recordings are prepared effects, contain full-scale source samples, and are not certified unclipped or unprocessed masters.",
+    "Gun and cartridge labels are the library metadata, not an independent firearm identification.",
+    "Arisaka is labelled .30-06; no original Type 38 cartridge or exact model is verified.",
+    "Both new candidates were recorded in front of the shooter, not at the shooter ear.",
+    "A 0.6s excerpt truncates the original environmental tail and may not represent the full report.",
+    "No independent listening, historical-authenticity or in-game sound acceptance is claimed."
+  ]
+}
