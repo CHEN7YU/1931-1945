@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "audit:assets": "node scripts/audit-assets.mjs",
+    "audit:build": "node scripts/audit-assets.mjs --build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test",
     "test:browser": "node scripts/browser-smoke.mjs",
@@ -32,6 +34,7 @@
     "test:aircraft-rifle": "node scripts/aircraft-rifle-smoke.mjs",
     "test:asset-probe": "node scripts/asset-probe-smoke.mjs",
     "test:rifle-audio": "node scripts/rifle-audio-smoke.mjs",
+    "test:footstep-audio": "node scripts/footstep-audio-smoke.mjs",
     "test:nra-motion": "node scripts/nra-motion-smoke.mjs",
     "test:nra-force": "node scripts/nra-force-smoke.mjs",
     "test:nra-atlas": "node scripts/nra-atlas-smoke.mjs",
