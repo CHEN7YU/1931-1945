@@ -81,16 +81,22 @@ try {
   await controls.locator('#deploy').click();
   await controls.keyboard.down('w'); await controls.keyboard.down('Shift');
   await controls.waitForFunction(() => window.__battle.locomotion.speed > 4.6);
-  await controls.mouse.down({ button: 'right' });
-  await controls.waitForTimeout(80);
-  let data = await controls.evaluate(() => window.__battle);
-  assert.ok(data.locomotion.aimRecovery > 0, 'sprint to ADS has a weapon-ready delay');
-  assert.ok(data.fov > 55, 'sprint cannot jump straight to fully aligned sights');
-  const ammo = data.ammo;
-  await controls.mouse.down();
-  await controls.waitForTimeout(70);
-  assert.equal((await controls.evaluate(() => window.__battle)).ammo, ammo, 'firing is blocked while recovering from sprint');
-  await controls.mouse.up();
+  const attempt = await controls.evaluate(() => new Promise(resolve => {
+    const before = window.__battle, canvas = document.querySelector('#world');
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    requestAnimationFrame(() => {
+      const after = window.__battle;
+      document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+      resolve({ ammo: before.ammo, afterAmmo: after.ammo, recovery: after.locomotion.aimRecovery, fov: after.fov,
+        beforeTime: before.time, afterTime: after.time });
+    });
+  }));
+  assert.ok(attempt.recovery > 0, 'inspect an actual recovery frame, not a delayed browser round-trip');
+  assert.ok(attempt.fov > 55, 'sprint cannot jump straight to fully aligned sights');
+  assert.equal(attempt.afterAmmo, attempt.ammo, 'firing is blocked while recovering from sprint');
+  const ammo = attempt.ammo;
+  let data;
   await controls.waitForFunction(() => window.__battle.locomotion.aimRecovery === 0 && window.__battle.fov < 50);
   data = await controls.evaluate(() => window.__battle);
   assert.ok(data.locomotion.speed <= 1.51);

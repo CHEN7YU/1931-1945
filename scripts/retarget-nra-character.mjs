@@ -137,7 +137,14 @@ for (const mode of ['run']) {
   mixer.stopAllAction(); mixer.uncacheRoot(source);
   console.log(`${mode}: ${mapped.length} mapped bones, ${tracks.length} tracks`);
 }
-const walkBytes = readFileSync(resolve('asset-research', 'walk-candidates', 'movement-basic.glb'));
+const walkName = process.argv[3] ?? process.env.NRA_WALK_CLIP ?? 'Walking_C';
+const evaluatedSources = {
+  Walking_A: 'movement-basic.glb', Walking_B: 'movement-basic.glb', Walking_C: 'movement-basic.glb',
+  Crouching: 'movement-advanced.glb', Crawling: 'movement-advanced.glb', Running_HoldingRifle: 'movement-advanced.glb',
+  Death_A: 'general.glb', Death_B: 'general.glb',
+};
+if (!Object.hasOwn(evaluatedSources, walkName)) throw new Error('Uninspected source clip selection');
+const walkBytes = readFileSync(resolve('asset-research', 'walk-candidates', evaluatedSources[walkName]));
 const walkLoader = new GLTFLoader();
 const walkAsset = await walkLoader.parseAsync(walkBytes.buffer.slice(walkBytes.byteOffset, walkBytes.byteOffset + walkBytes.byteLength), '');
 const walking = walkAsset.scene;
@@ -151,8 +158,6 @@ const walkBones = new Map(Object.entries(walkNames).map(([name, alias]) => [name
 auxiliaryPose(walkBones);
 const walkRest = new Map([...walkBones].map(([name, bone]) => [name, worldRotation(bone)]));
 const walkHip = worldPosition(walkBones.get('Hips')), walkScale = targetLegLength / legHeight(walkBones);
-const walkName = process.env.NRA_WALK_CLIP ?? 'Walking_C';
-if (!['Walking_A', 'Walking_B', 'Walking_C'].includes(walkName)) throw new Error('Uninspected walking clip selection');
 const walkClip = walkAsset.animations.find(clip => clip.name === walkName);
 if (!walkClip || !Number.isFinite(walkScale) || walkScale <= 0) throw new Error('Inspected CC0 walking source is not usable');
 for (const [name, bone] of rig.canonical) bone.quaternion.copy(targetAuxiliary.get(name));
@@ -191,7 +196,7 @@ const manifest = JSON.parse(readFileSync(join(directory, 'source.json'), 'utf8')
 manifest.motionSource.method = 'Matched auxiliary T poses; world-space rest rotation differences; hip/leg reference-height scale; preserve target hip baseline; disable root XZ movement; bake shoe-sole nonpenetration';
 manifest.motionSource.clips = { idle: 'Project-authored native reference stance with 6-second subtle chest breathing, no cyclic knee/hip bob',
   run: 'Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance',
-  walk: `KayKit Character Animations 1.1 Rig_Medium_MovementBasic.glb ${walkName}, CC0; calibrated reference poses and hip scale; FBX rotation-key truncation avoided` };
+  walk: `KayKit Character Animations 1.1 ${evaluatedSources[walkName]} ${walkName}, CC0; calibrated reference poses and hip scale; FBX rotation-key truncation avoided` };
 manifest.motionSource.carry = 'Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile';
 manifest.motionSource.references = [
   'https://github.com/upf-gti/retargeting-threejs/blob/main/docs/Algorithm.md',

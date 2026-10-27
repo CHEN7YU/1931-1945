@@ -1,3 +1,5 @@
+import { soldierPostureHeight } from './entities.js';
+
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.z);
 
@@ -23,17 +25,32 @@ export function rememberThreat(state, position, now, kind = 'person', sense = 'v
 
 export function targetAimPoint(target) {
   if (!target || !validPoint(target.position) || !Number.isFinite(target.position.y)) throw new RangeError('Target position must be finite');
-  return { x: target.position.x, y: target.position.y + 1.1, z: target.position.z };
+  return { x: target.position.x, y: target.position.y + soldierPostureHeight(target, 'aim'), z: target.position.z };
+}
+
+export function visibleTargetPoint(target, canSee) {
+  if (typeof canSee !== 'function') throw new TypeError('Target visibility requires a query');
+  let point = targetAimPoint(target);
+  const query = candidate => {
+    const result = canSee(candidate);
+    if (typeof result !== 'boolean') throw new TypeError('Visibility query must return a boolean');
+    return result;
+  };
+  let visible = query(point);
+  if (!visible && !target.vehicleId && target.nativeMotion &&
+    target.nativeMotion.posture.crouched + target.nativeMotion.posture.prone > .1) {
+    const head = { ...point, y: target.position.y + soldierPostureHeight(target) };
+    if (query(head)) { point = head; visible = true; }
+  }
+  return visible ? point : null;
 }
 
 export function observeVisualThreat(state, target, now, canSee) {
   if (!Number.isFinite(now) || now < 0 || typeof canSee !== 'function' ||
       !target || typeof target.id !== 'string' || !target.id) throw new RangeError('Visual observation requires simulation time, target identity and a visibility query');
-  const point = targetAimPoint(target);
-  const visible = canSee(point);
-  if (typeof visible !== 'boolean') throw new TypeError('Visibility query must return a boolean');
-  state.lastSightCheck = { time: now, targetId: target.id, visible };
-  if (!visible) return null;
+  const point = visibleTargetPoint(target, canSee);
+  state.lastSightCheck = { time: now, targetId: target.id, visible: Boolean(point) };
+  if (!point) return null;
   rememberThreat(state, point, now, target.targetKind, 'vision', target.id);
   return point;
 }

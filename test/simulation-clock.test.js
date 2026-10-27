@@ -33,7 +33,7 @@ test('a 200ms long frame advances the full world time through bounded substeps',
   assert.ok(Math.abs(clock.snapshot.simulatedSeconds - .2) < 1e-10);
   balanced(clock);
 });
-test('per-render catch-up is bounded and retains debt until later frames recover it', () => {
+test('catch-up retains debt without turning a recovered render frame into a fast-forward burst', () => {
   const clock = createSimulationClock();
   clock.setActive(true, 0);
   const result = frame(clock, 1000);
@@ -42,13 +42,30 @@ test('per-render catch-up is bounded and retains debt until later frames recover
   assert.equal(clock.snapshot.limited, true);
   assert.ok(Math.abs(clock.snapshot.pendingSeconds - .75) < 1e-10);
   let now = 1000;
-  for (let i = 0; i < 10 && clock.snapshot.pendingSeconds > 1e-8; i++) {
+  for (let i = 0; i < 600 && clock.snapshot.pendingSeconds > 1e-8; i++) {
     now += 1000 / 60;
-    assert.ok(frame(clock, now).values.length <= 5);
+    const recovery = frame(clock, now);
+    assert.ok(recovery.values.length <= 5);
+    assert.ok(clock.snapshot.frameSeconds <= SIMULATION_CLOCK.maxRecoveryRate / 60 + 1e-10);
     balanced(clock);
   }
   assert.ok(clock.snapshot.pendingSeconds < 1e-8);
   assert.ok(Math.abs(clock.snapshot.simulatedSeconds - now / 1000) < 1e-8);
+});
+test('recovery rate is bounded at 30, 60 and 144Hz, including repeated foreground stalls', () => {
+  for (const fps of [30, 60, 144]) {
+    const clock = createSimulationClock();
+    clock.setActive(true, 0);
+    let now = 0;
+    for (let index = 0; index < fps * 5; index++) {
+      const elapsed = index === 1 || index === fps ? 650 : 1000 / fps;
+      now += elapsed;
+      frame(clock, now);
+      assert.ok(clock.snapshot.frameSeconds <= elapsed / 1000 * SIMULATION_CLOCK.maxRecoveryRate + 1e-10);
+      balanced(clock);
+    }
+    assert.ok(clock.snapshot.simulatedSeconds > 4);
+  }
 });
 test('pause accounts the active boundary, freezes debt, and never charges inactive wall time', () => {
   const clock = createSimulationClock();

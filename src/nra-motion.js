@@ -21,7 +21,7 @@ export function createNraMotion(profile, actor) {
     throw new Error('Invalid native motion profile');
   }
   if (profile.walk && (!Number.isFinite(profile.walkStrideMeters) || profile.walkStrideMeters <= 0)) throw new Error('Invalid walking stride');
-  for (const track of [profile.idle, profile.run, ...(profile.walk ? [profile.walk] : [])]) {
+  for (const track of [profile.idle, profile.run, ...[profile.walk, profile.crouched, profile.prone].filter(Boolean)]) {
     if (!track || !Number.isFinite(track.duration) || track.duration <= 0 || !Array.isArray(track.times) || track.times.length < 2 ||
       track.positions?.length !== track.times.length * 3 || track.quaternions?.length !== track.times.length * 4 ||
       ![...track.times, ...track.positions, ...track.quaternions].every(Number.isFinite) ||
@@ -34,7 +34,7 @@ export function createNraMotion(profile, actor) {
     }
   }
   const seed = actor.walkPhase;
-  return { profile, idleTime: seed * .7, strideScale: 1 + .035 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
+  return { profile, posture: { crouched: 0, prone: 0 }, idleTime: seed * .7, strideScale: 1 + .035 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z } };
 }
 
@@ -48,6 +48,14 @@ export function advanceNraMotion(actor, dt) {
   motion.distance += Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
   motion.position = { x: actor.position.x, z: actor.position.z };
   motion.idleTime += dt;
+  const stance = actor.stance ?? 'standing';
+  if (!['standing', 'crouched', 'prone'].includes(stance)) throw new Error('Unknown owned soldier stance');
+  for (const posture of ['crouched', 'prone']) {
+    const target = stance === posture && motion.profile[posture] ? 1 : 0;
+    motion.posture[posture] += (target - motion.posture[posture]) * (1 - Math.exp(-dt / .10));
+    if (motion.posture[posture] < .001) motion.posture[posture] = 0;
+    if (motion.posture[posture] > .999) motion.posture[posture] = 1;
+  }
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
   const target = motion.speed > .15 ? 1 : 0;
   motion.weight += (target - motion.weight) * (1 - Math.exp(-dt / .12));
@@ -67,9 +75,20 @@ export function sampleNraMotion(actor) {
   const jog = profile.walk ? transition * transition * (3 - 2 * transition) : 1;
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
-  return { idleTime, runTime, walkTime, jog, weight: motion.weight, speed: motion.speed,
-    weaponPosition: idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight).toArray(),
-    weaponQuaternion: idle.quaternion.slerp(walk.quaternion.slerp(run.quaternion, jog), motion.weight).toArray() };
+  const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
+  const quaternion = idle.quaternion.slerp(walk.quaternion.slerp(run.quaternion, jog), motion.weight);
+  const crouched = motion.posture.crouched, prone = motion.posture.prone, upright = 1 - crouched - prone;
+  const blendedPosition = position.clone().multiplyScalar(upright);
+  let quaternionWeight = upright;
+  for (const [stance, weight] of [['crouched', crouched], ['prone', prone]]) {
+    if (!weight) continue;
+    const pose = sample(profile[stance], 0);
+    blendedPosition.addScaledVector(pose.position, weight);
+    quaternion.slerp(pose.quaternion, weight / (quaternionWeight + weight));
+    quaternionWeight += weight;
+  }
+  return { idleTime, runTime, walkTime, jog, crouched, prone, weight: motion.weight, speed: motion.speed,
+    weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
 }
 
 export function nativeMuzzleLocal(actor) {

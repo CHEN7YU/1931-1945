@@ -4,6 +4,16 @@ import { nativeMuzzleLocal } from './nra-motion.js';
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
 export const SOLDIER_FIRE_HEIGHT = 1.39;
+export function soldierPostureHeight(actor, kind = 'eye') {
+  const heights = kind === 'eye' ? [1.67, 1.05, .45] : kind === 'aim' ? [1.1, .7, .3] : kind === 'body' ? [1.82, 1.2, .65] : null;
+  if (!heights) throw new RangeError('Unknown soldier posture height');
+  if (actor.stance != null && !Object.hasOwn(stanceHeights, actor.stance)) throw new RangeError('Unknown personal stance');
+  if (actor.vehicleId) return heights[0];
+  const posture = actor.nativeMotion?.posture ?? { crouched: actor.stance === 'crouched' ? 1 : 0, prone: actor.stance === 'prone' ? 1 : 0 };
+  if (![posture.crouched, posture.prone].every(value => Number.isFinite(value) && value >= 0 && value <= 1) ||
+    posture.crouched + posture.prone > 1.00001) throw new RangeError('Invalid owned posture blend');
+  return heights[0] * (1 - posture.crouched - posture.prone) + heights[1] * posture.crouched + heights[2] * posture.prone;
+}
 export const TANK_SEATS = Object.freeze([
   Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
   Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: 1.9, canFire: true, controlsTurret: true }),
@@ -204,7 +214,7 @@ export function createControlPoseView(registry) {
     },
     get eyeHeight() {
       const actor = controlledSoldier(registry), vehicle = occupiedVehicle(registry, actor);
-      return vehicle ? vehicle.seats.find(seat => seat.id === actor.seatId).eyeHeight : stanceHeights[actor?.stance ?? 'standing'];
+      return vehicle ? vehicle.seats.find(seat => seat.id === actor.seatId).eyeHeight : actor ? soldierPostureHeight(actor) : stanceHeights.standing;
     },
   };
 }

@@ -8,6 +8,7 @@ import { riflePose as rifleActionPose } from './rifle-action.js';
 import { sampleNraMotion } from './nra-motion.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
+import { createNativePosturePoses } from './nra-posture-pose.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -69,6 +70,8 @@ export async function loadNraCharacter() {
   normalized.scale.setScalar(1.78 / height); normalized.rotation.y = Math.PI;
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
+  const postures = createNativePosturePoses(normalized, inspected.canonical);
+  const motionProfile = { ...clips.motion, crouched: postures.crouched.carry, prone: postures.prone.carry };
   const appearanceCache = { geometries: new Map(), materials: new Map() };
   function createView() {
   const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
@@ -86,13 +89,15 @@ export async function loadNraCharacter() {
   const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt');
   const riflePose = createNraRiflePose(root, canonical, gun);
   const mixer = new THREE.AnimationMixer(meshes[0]);
-  const actions = { idle: mixer.clipAction(idle), run: mixer.clipAction(run), ...(walk ? { walk: mixer.clipAction(walk) } : {}) };
+  const actions = { idle: mixer.clipAction(idle), run: mixer.clipAction(run), ...(walk ? { walk: mixer.clipAction(walk) } : {}),
+    crouched: mixer.clipAction(postures.crouched.clip), prone: mixer.clipAction(postures.prone.clip) };
   let drawBatches = 0;
   root.traverse(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
   let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
   let observedActor = null, initialized = false;
   for (const action of Object.values(actions)) { action.play(); action.paused = true; }
-  actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0); root.visible = false;
+  actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0);
+  actions.crouched.setEffectiveWeight(0); actions.prone.setEffectiveWeight(0); root.visible = false;
   return {
     root,
     drawBatches,
@@ -102,10 +107,11 @@ export async function loadNraCharacter() {
       mixer.stopAllAction();
       for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
       actions.idle.setEffectiveWeight(1); actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0); root.visible = false;
+      actions.crouched.setEffectiveWeight(0); actions.prone.setEffectiveWeight(0);
       appearance.apply(null);
     },
     get actorId() { return actorId; },
-    get motionProfile() { return clips.motion; },
+    get motionProfile() { return motionProfile; },
     get issue() { return riflePose.issue; },
     update(actor, now, controlledId) {
       observedActor = actor ?? null;
@@ -114,8 +120,11 @@ export async function loadNraCharacter() {
       appearance.apply(actor.avatarAppearance ?? null);
       motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime; actions.run.time = motion.runTime;
-      actions.idle.setEffectiveWeight(1 - motion.weight); actions.run.setEffectiveWeight(motion.weight * motion.jog);
-      if (actions.walk) { actions.walk.time = motion.walkTime; actions.walk.setEffectiveWeight(motion.weight * (1 - motion.jog)); }
+      const upright = 1 - motion.crouched - motion.prone;
+      actions.idle.setEffectiveWeight((1 - motion.weight) * upright); actions.run.setEffectiveWeight(motion.weight * motion.jog * upright);
+      if (actions.walk) { actions.walk.time = motion.walkTime; actions.walk.setEffectiveWeight(motion.weight * (1 - motion.jog) * upright); }
+      actions.crouched.time = actions.prone.time = 0;
+      actions.crouched.setEffectiveWeight(motion.crouched); actions.prone.setEffectiveWeight(motion.prone);
       if (actor.health > 0 || !initialized) mixer.update(0);
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2);
       root.updateMatrixWorld(true);
@@ -126,12 +135,13 @@ export async function loadNraCharacter() {
     },
     get snapshot() {
       const point = name => canonical.get(name).getWorldPosition(new THREE.Vector3()).toArray();
-      return { actorId, visible: root.visible, active, speed, position: root.position.toArray(),
+      return { actorId, visible: root.visible, active, stance: observedActor?.stance ?? 'standing', speed, position: root.position.toArray(),
         hips: point('Hips'), head: point('Head'), leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
-        motion: motion ? { weight: motion.weight, jog: motion.jog, idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
+        motion: motion ? { weight: motion.weight, jog: motion.jog, crouched: motion.crouched, prone: motion.prone,
+          idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
         logicalMuzzle: observedActor ? soldierRifleMuzzle(observedActor) : null,
         soldier: observedActor ? { id: observedActor.id, health: observedActor.health, ammo: observedActor.rifle.ammo,
           shots: observedActor.rifle.shots, action: observedActor.rifle.action, weaponId: observedActor.rifle.id } : null,

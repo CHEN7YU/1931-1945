@@ -50,11 +50,14 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
   template.update(sampleActor, 0, null);
   const atlas = createNraAtlas(template.root);
   const phases = 6, movingModes = profile.walk ? ['walk', 'run'] : ['run'];
-  for (let bank = 0; bank <= phases * movingModes.length; bank++) {
-    const mode = bank === 0 ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
-    sampleActor.nativeMotion.weight = bank === 0 ? 0 : 1;
+  const movingBanks = 1 + phases * movingModes.length, postures = ['crouched', 'prone'].filter(stance => profile[stance]);
+  for (let bank = 0; bank < movingBanks + postures.length; bank++) {
+    const posture = bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const mode = bank === 0 || posture ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    sampleActor.nativeMotion.posture = { crouched: posture === 'crouched' ? 1 : 0, prone: posture === 'prone' ? 1 : 0 };
+    sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
     sampleActor.nativeMotion.speed = mode === 'run' ? 3.15 : mode === 'walk' ? 1.75 : 0;
-    sampleActor.nativeMotion.distance = bank === 0 ? 0 : ((bank - 1) % phases) / phases *
+    sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
     template.update(sampleActor, 0, null);
     if (template.issue) throw new Error(`Distant uniform pose is unreachable: ${template.issue}`);
@@ -141,7 +144,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
           const offset = profile.walk && !walking ? phases : 0;
-          const index = pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : 0;
+          const posture = pose.prone > .5 ? 'prone' : pose.crouched > .5 ? 'crouched' : null;
+          const index = posture && postures.includes(posture) ? movingBanks + postures.indexOf(posture) :
+            pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : 0;
           const bank = banks[index];
           if (bank.count >= capacity) throw new Error('Distant uniform instance capacity exceeded');
           orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2));
@@ -170,7 +175,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
-        health: actor.health, uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
+        health: actor.health, stance: actor.stance ?? 'standing', uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
     },
