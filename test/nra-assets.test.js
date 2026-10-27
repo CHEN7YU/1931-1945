@@ -1,24 +1,46 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { prepareNraRig } from '../src/nra-rig.js';
+import { configureNraTexture, attachNraHelmet } from '../src/nra-character.js';
 
 const base = new URL('../public/assets/game/nra-88/', import.meta.url);
+test('eye textures repeat outside the first UV tile instead of clamping the iris to white', () => {
+  const texture = configureNraTexture(new THREE.Texture(), 'eye');
+  assert.equal(texture.wrapS, THREE.RepeatWrapping);
+  assert.equal(texture.wrapT, THREE.RepeatWrapping);
+  const uv = texture.transformUv(new THREE.Vector2(1.5, .5));
+  assert.ok(Math.abs(uv.x - .5) < 1e-8 && Math.abs(uv.y - .5) < 1e-8);
+});
 test('promoted NRA subset retains explicit permission basis and matches every published file hash', () => {
   const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
   assert.equal(source.permission.basis, 'user-reported-author-phone-consent');
   assert.equal(source.permission.isCC0, false);
   assert.equal(source.evaluation.status, 'prototype-one-character');
-  assert.equal(source.files.length, 20);
+  assert.equal(source.files.length, 22);
+  assert.deepEqual(readdirSync(base).sort(), ['source.json', ...source.files.map(file => file.file)].sort());
   for (const file of source.files) {
     assert.match(file.file, /^[\w-]+\.(?:fbx|json|jpg|png|txt)$/);
     const bytes = readFileSync(new URL(file.file, base));
     assert.equal(bytes.length, file.bytes, file.file);
     assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256, file.file);
   }
+});
+
+test('helmet follows the real head joint using recorded source-prefab transforms', () => {
+  const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
+  const head = new THREE.Bone(), helmet = new THREE.Group(), mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+  helmet.add(mesh);
+  attachNraHelmet(head, helmet, new THREE.Texture(), source.helmet);
+  assert.equal(helmet.parent, head);
+  assert.deepEqual(helmet.position.toArray(), source.helmet.position);
+  const before = helmet.getWorldPosition(new THREE.Vector3());
+  head.position.x += 3; head.updateMatrixWorld(true);
+  assert.ok(Math.abs(helmet.getWorldPosition(new THREE.Vector3()).x - before.x - 3) < 1e-8);
+  assert.equal(mesh.castShadow, true);
 });
 
 test('actual NRA cleanup preserves all original rest vertices and inverse bind matrices across 14 skins', () => {

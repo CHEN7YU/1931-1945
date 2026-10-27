@@ -54,6 +54,10 @@ try {
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state !== 'playing', null, { timeout: 40000 });
   await page.keyboard.up('w');
+  await page.keyboard.press('x');
+  data = await snapshot();
+  assert.ok(['advance', 'hold'].includes(data.allies.find(actor => actor.id === id).order), 'Use the normal squad order to send the observed member into the firefight');
+  stages.push({ stage: 'normal-frontline-squad-order', data });
   const started = Date.now();
   let observedShot = null;
   while (Date.now() - started < 60000) {

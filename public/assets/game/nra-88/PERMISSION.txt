@@ -18,6 +18,7 @@ The original downloaded archive and Unity package are not published here.
 Only selected runtime files and project-derived animation/texture data
 are used. Historical uniform and unit/battle applicability remain unverified.
 
-Idle/run motion derives from Kenney Animated Characters Survivors 1.1,
-under the separately preserved CC0 license in Kenney-CC0.txt. This does
-not change the license of the character model or its textures.
+Run motion derives from Kenney Animated Characters Survivors 1.1,
+under the separately preserved CC0 license in Kenney-CC0.txt. The native
+idle/reference breathing and carry profile are project-authored.
+This does not change the license of the character model or its textures.

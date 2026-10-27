@@ -1,0 +1,39 @@
+{
+  "asset": "Recorded gunshot prototype",
+  "author": "kurt",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/gunshots",
+  "original": {
+    "url": "https://opengameart.org/sites/default/files/Unkown.wav",
+    "file": "Unkown.wav",
+    "bytes": 2200476,
+    "sha256": "65e22601c25186ca30aac6bf5d6f4220b84d0c7b45e0113cad3e15d36a75f0c1"
+  },
+  "licenseEvidence": "Source page explicitly lists Creative Commons 0 and attribution notice: None needed.",
+  "changes": [
+    "Fourth transient selected",
+    "Stereo averaged to mono",
+    "Browser offline resampling to 24kHz",
+    "DC offset removed",
+    "Peak normalized to -3dBFS",
+    "0.5ms attack and 25ms tail fades",
+    "0.6s runtime excerpt"
+  ],
+  "selection": {
+    "startSeconds": 4.861791666666667,
+    "duration": 0.6,
+    "decodedWindowPeak": 1.0859466950086043
+  },
+  "files": [
+    {
+      "file": "report.wav",
+      "bytes": 28844,
+      "sha256": "e414ff77b2fc14bc39205997629375351450d154cd83638c900b78b8d64a2349"
+    }
+  ],
+  "limitations": [
+    "Original firearm is unspecified; not a verified Type24/Chinese or Japanese historical rifle recording.",
+    "Source master has some digital clipping; normalization does not restore clipped source information.",
+    "No independent listening/weapon-authenticity acceptance is claimed."
+  ]
+}

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, cpSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, cpSync } from 'node:fs';
 import { resolve, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
@@ -10,7 +10,7 @@ const directory = process.argv[2] ? resolve(process.argv[2]) : resolve('asset-re
 for (const root of [resolve('public'), resolve('dist')]) {
   if (directory === root || directory.startsWith(root + sep)) throw new Error('Generate privately, validate, then promote; do not overwrite production assets');
 }
-if (!existsSync(join(directory, 'character.fbx'))) cpSync(original, directory, { recursive: true, errorOnExist: true });
+cpSync(original, directory, { recursive: true });
 function load(file) {
   const manager = new THREE.LoadingManager();
   manager.addHandler(/.*/, { setPath() { return this; }, load() { return new THREE.Texture(); } });
@@ -38,7 +38,24 @@ function auxiliaryPose(bones) {
   }
 }
 const target = load(join(directory, 'character.fbx')), rig = prepareNraRig(target);
-const floor = new THREE.Box3().setFromObject(target, true).min.y;
+const bindBounds = new THREE.Box3().setFromObject(target, true), floor = bindBounds.min.y;
+const actorSpace = new THREE.Matrix4().makeRotationY(Math.PI)
+  .multiply(new THREE.Matrix4().makeScale(...Array(3).fill(1.78 / bindBounds.getSize(new THREE.Vector3()).y)))
+  .multiply(new THREE.Matrix4().makeTranslation(0, -floor, 0));
+const chest = rig.canonical.get('Spine2');
+const chestReferenceInverse = actorSpace.clone().multiply(chest.matrixWorld).invert();
+const baseGun = new THREE.Matrix4().makeTranslation(.13, 1.39, .02);
+const nativeRotations = new Map([...rig.canonical].map(([name, bone]) => [name, bone.quaternion.clone()]));
+function appendCarry(track) {
+  const matrix = actorSpace.clone().multiply(chest.matrixWorld).multiply(chestReferenceInverse).multiply(baseGun);
+  const position = new THREE.Vector3(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3();
+  matrix.decompose(position, quaternion, scale);
+  if ([scale.x, scale.y, scale.z].some(value => Math.abs(value - 1) > 1e-4)) throw new Error('Native rifle carry must remain rigid');
+  track.positions.push(...position.toArray()); track.quaternions.push(...quaternion.normalize().toArray());
+}
+function closeCycle(values, size) {
+  for (let index = 0; index < size; index++) values[values.length - size + index] = values[index];
+}
 const shoes = rig.meshes.find(mesh => mesh.name === '\u978b\u5b50');
 if (!shoes) throw new Error('Inspected shoe skin is missing');
 const source = load(resolve('public', 'assets', 'characters', 'kenney-survivor', 'character.fbx'));
@@ -57,14 +74,33 @@ const aliases = { Spine1: 'Chest', Spine2: 'UpperChest', LeftToeBase: 'LeftToes'
 const mapped = [...rig.canonical].filter(([name]) => sourceBones.has(aliases[name] ?? name));
 const ordered = [];
 target.traverse(bone => { if (rig.canonical.get(bone.name) === bone) ordered.push(bone); });
-const output = {};
-for (const mode of ['idle', 'run']) {
+const output = {}, carry = {};
+const idleTimes = Array.from({ length: 9 }, (_, index) => index * .75);
+const idleRotations = new Map([...rig.canonical.keys()].map(name => [name, []])), idlePositions = [];
+carry.idle = { duration: 6, times: idleTimes, positions: [], quaternions: [] };
+for (const time of idleTimes) {
+  rig.meshes[0].skeleton.pose();
+  chest.quaternion.copy(nativeRotations.get('Spine2'))
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.sin(time / 6 * Math.PI * 2) * .003));
+  target.updateMatrixWorld(true);
+  for (const [name, bone] of rig.canonical) bone.quaternion.toArray(idleRotations.get(name), idleRotations.get(name).length);
+  rig.canonical.get('Hips').position.toArray(idlePositions, idlePositions.length);
+  appendCarry(carry.idle);
+}
+for (const values of idleRotations.values()) closeCycle(values, 4);
+closeCycle(idlePositions, 3); closeCycle(carry.idle.positions, 3); closeCycle(carry.idle.quaternions, 4);
+const nativeIdleTracks = [...idleRotations].map(([name, values]) => new THREE.QuaternionKeyframeTrack(`.bones[${name}].quaternion`, idleTimes, values));
+nativeIdleTracks.push(new THREE.VectorKeyframeTrack('.bones[Hips].position', idleTimes, idlePositions));
+output.idle = THREE.AnimationClip.toJSON(new THREE.AnimationClip('NRA88_idle_native_breath', 6, nativeIdleTracks));
+console.log('idle: native reference stance, stationary hips/knees, 6s subtle chest breathing');
+for (const mode of ['run']) {
   const animation = load(resolve('public', 'assets', 'characters', 'kenney-survivor', `${mode}.fbx`))
     .animations.find(clip => clip.name === (mode === 'idle' ? 'Root|Idle' : 'Root|Run'));
   if (!animation) throw new Error(`Missing approved ${mode} source animation`);
   const mixer = new THREE.AnimationMixer(source);
   mixer.clipAction(animation).play();
   const frames = Math.ceil(animation.duration * 30), times = [], rotations = new Map(mapped.map(([name]) => [name, []])), positions = [];
+  carry[mode] = { duration: animation.duration, times, positions: [], quaternions: [] };
   for (let frame = 0; frame <= frames; frame++) {
     const time = Math.min(frame / 30, animation.duration - 1e-6);
     mixer.setTime(time); source.updateMatrixWorld(true); times.push(frame === frames ? animation.duration : time);
@@ -87,7 +123,10 @@ for (const mode of ['idle', 'run']) {
       hip.position.copy(hip.parent.worldToLocal(corrected)); target.updateMatrixWorld(true);
     }
     hip.position.toArray(positions, positions.length);
+    appendCarry(carry[mode]);
   }
+  for (const values of rotations.values()) closeCycle(values, 4);
+  closeCycle(positions, 3); closeCycle(carry[mode].positions, 3); closeCycle(carry[mode].quaternions, 4);
   const tracks = [...rotations].map(([name, values]) => new THREE.QuaternionKeyframeTrack(`.bones[${name}].quaternion`, times, values));
   tracks.push(new THREE.VectorKeyframeTrack('.bones[Hips].position', times, positions));
   const clip = new THREE.AnimationClip(`NRA88_${mode}_rest_calibrated`, animation.duration, tracks);
@@ -96,9 +135,13 @@ for (const mode of ['idle', 'run']) {
   mixer.stopAllAction(); mixer.uncacheRoot(source);
   console.log(`${mode}: ${mapped.length} mapped bones, ${tracks.length} tracks`);
 }
+output.motion = { ...carry, strideMeters: 2.1, muzzle: [0, 0, -.891] };
 writeFileSync(join(directory, 'animations.json'), JSON.stringify(output));
 const manifest = JSON.parse(readFileSync(join(directory, 'source.json'), 'utf8'));
 manifest.motionSource.method = 'Matched auxiliary T poses; world-space rest rotation differences; hip/leg reference-height scale; preserve target hip baseline; disable root XZ movement; bake shoe-sole nonpenetration';
+manifest.motionSource.clips = { idle: 'Project-authored native reference stance with 6-second subtle chest breathing, no cyclic knee/hip bob',
+  run: 'Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance' };
+manifest.motionSource.carry = 'Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile';
 manifest.motionSource.references = [
   'https://github.com/upf-gti/retargeting-threejs/blob/main/docs/Algorithm.md',
   'https://github.com/pixiv/three-vrm/blob/dev/packages/three-vrm/examples/humanoidAnimation/loadMixamoAnimation.js',

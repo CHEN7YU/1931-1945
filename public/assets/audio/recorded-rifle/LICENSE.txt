@@ -1,0 +1,16 @@
+Recorded gunshot prototype
+
+Source: https://opengameart.org/content/gunshots
+Author/uploader: kurt
+Original file: Unkown.wav (original spelling)
+
+The source page lists Creative Commons 0 and states "None needed" under
+Copyright/Attribution Notice.
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+Legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+This file records the source's license statement; it is not a new grant
+of rights. The runtime excerpt is trimmed, mono, resampled, faded and
+peak-normalized. See source.json for original and processed file hashes.
+No specific historical firearm identity or original recording fidelity
+is asserted.

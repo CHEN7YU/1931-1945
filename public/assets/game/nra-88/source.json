@@ -18,13 +18,41 @@
     "source": "https://kenney.nl/assets/animated-characters-survivors",
     "license": "CC0-1.0",
     "licenseFile": "Kenney-CC0.txt",
-    "method": "Matched auxiliary T poses; world-space rest rotation differences; hip/leg reference-height scale; preserve target hip baseline; disable root XZ movement; bake shoe-sole nonpenetration",
+    "method": "Native stationary reference idle with 6-second subtle breathing; calibrated CC0 run; shared chest-relative carry sampled by simulation and renderer",
     "references": [
       "https://github.com/upf-gti/retargeting-threejs/blob/main/docs/Algorithm.md",
       "https://github.com/pixiv/three-vrm/blob/dev/packages/three-vrm/examples/humanoidAnimation/loadMixamoAnimation.js"
-    ]
+    ],
+    "clips": {
+      "idle": "Project-authored native reference stance with 6-second subtle chest breathing, no cyclic knee/hip bob",
+      "run": "Calibrated Kenney CC0 run; closed loop; playback phase tied to actual travelled distance"
+    },
+    "carry": "Chest-relative rifle carry sampled offline into plain transform tracks; simulation and rendering share the same profile"
+  },
+  "helmet": {
+    "file": "helmet.fbx",
+    "sourcePath": "Assets/中興コンビニ/88th Division NRA/FBX/NRA M1935 Helmet/M1935 Helmet.fbx",
+    "textureSourcePath": "Assets/中興コンビニ/88th Division NRA/Texture/NRA M1935 Helmet/M1935H_D.png",
+    "position": [
+      -0.6,
+      7.5109676,
+      2.8023146
+    ],
+    "meshQuaternion": [
+      -0.737933,
+      0,
+      0,
+      0.6748741
+    ],
+    "meshScale": [
+      100,
+      100.000015,
+      100.000015
+    ],
+    "basis": "Original Unity prefab head-relative placement; metre offsets converted to the FBX centimetre coordinate system. No historical unit-equipment acceptance."
   },
   "textures": {
+    "helmet": "helmet.png",
     "gear": "gear.jpg",
     "pouch": "pouch.jpg",
     "face": "face.jpg",
@@ -178,11 +206,13 @@
     "Preserve original FBX bytes; validate and share matching duplicate skin bind poses at runtime.",
     "Use prefab material assignments instead of stale embedded FBX texture links.",
     "Downsample selected base colors to a maximum 1024 pixels; use JPEG quality 90 for opaque maps.",
-    "Retarget existing CC0 idle/run; Unity .anim controllers are not executed or claimed as imported.",
+    "Retarget the approved CC0 run; use project-authored reference-stance idle instead of the borrowed short-period idle. Unity .anim controllers are not executed.",
     "Rebuild a coherent canonical bone parent chain while preserving every bind matrix, then share it across the 14 parts.",
     "Calibrate auxiliary reference poses and hip/leg scale; bake shoe-sole nonpenetration offline.",
     "Mask borrowed arm/finger tracks; apply a native static rifle pose, analytic elbow hints, right-hand attachment and weapon-relative left wrist target.",
-    "Retain the authoritative friendly muzzle at actor-local (0.13, 1.39, -0.871), independent of rendering."
+    "Keep the procedural rest muzzle at (0.13, 1.39, -0.871); native simulation-owned carry transforms move both displayed and authoritative muzzle together without renderer readback.",
+    "Restore Repeat wrapping for the eye texture: the actual eye UVs occupy U=1.0017..1.9998 and include negative V coordinates.",
+    "Attach the supplied M1935 helmet to the canonical Head bone using the actual prefab transforms, original FBX and base-color bytes."
   ],
   "limitations": [
     "Candidate historical appearance; exact Taierzhuang unit issue not verified.",
@@ -194,9 +224,19 @@
   ],
   "files": [
     {
+      "file": "helmet.fbx",
+      "bytes": 470140,
+      "sha256": "1056b6e7cf0e28e52068554d48ba577f35cdc5a9ec4a67e0ac4cef48cbfba390"
+    },
+    {
+      "file": "helmet.png",
+      "bytes": 208623,
+      "sha256": "50f8d1469ee48d68052c8348d90901912676003c2853baa8d149c84da58ada25"
+    },
+    {
       "file": "animations.json",
-      "bytes": 186268,
-      "sha256": "5d1f4c22b7927e218b8c7960aaf70c371696cf059db09df60000a4fc51f8d34c"
+      "bytes": 130013,
+      "sha256": "2ab09cb74fd308127074ec9bd1ce84aed543c1992fc2419ca7cc5cc2bb731e33"
     },
     {
       "file": "badge.png",
@@ -260,8 +300,8 @@
     },
     {
       "file": "PERMISSION.txt",
-      "bytes": 1244,
-      "sha256": "dc807ddd6946720f7b5e30c76c85a95fc3ac9793cf1af4e6824deebe6fd6259a"
+      "bytes": 1316,
+      "sha256": "9c4abf8c034c38f25c31a37bbe8da9c0ae774ab8e3ba4ede6b46633e941ac82d"
     },
     {
       "file": "pidai.jpg",
@@ -299,7 +339,9 @@
     "hypothesis": "reference-pose-and-hip-calibration",
     "scale": 0.8769257405799571,
     "mappedBones": 32,
-    "evidence": "Normal 100v100 battlefield: Y control hides own third-person view; personal rifle fires; Y return preserves weapon/ammo; original soldier-192 AI shot recorded at simulation time 55.5293; displayed and authoritative muzzles align within 0.0001m.",
-    "notApproved": "Final historical accuracy, full military animation quality, full skinned-army performance and user quality acceptance remain unverified."
+    "evidence": "Initial integration before motion feedback: normal 100v100 Y control and resources preserved; original soldier-192 AI shot recorded at simulation time 55.5293.",
+    "notApproved": "Final historical accuracy, full military animation quality, full skinned-army performance and user quality acceptance remain unverified.",
+    "feedbackRevision": "Native idle and distance-driven run/carry verified in normal 100v100 movement observation: hips steady while idle, gun moves with body, action reset only on bind, muzzle alignment remains within 0.0001m.",
+    "feedbackCombat": "Two new full-battle observations did not capture this soldier firing (one never engaged; one was killed). Existing explicit 5v5 functional diagnostic recorded actual native soldier-7 AI fire at t=2.548 with the moving authoritative muzzle. This is not a new full-scale AI/performance pass."
   }
 }

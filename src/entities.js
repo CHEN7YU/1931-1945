@@ -1,4 +1,5 @@
 import { TYPES } from './core.js';
+import { nativeMuzzleLocal } from './nra-motion.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -110,9 +111,10 @@ export function controlledSoldier(registry) { return registry.soldiers.get(regis
 export function soldierRifleMuzzle(actor) {
   if (!actor || !['friendly', 'enemy'].includes(actor.team) || !Number.isFinite(actor.heading) ||
     !actor.position || !['x', 'y', 'z'].every(axis => Number.isFinite(actor.position[axis]))) throw new RangeError('Soldier muzzle requires a finite owned position, heading and team');
-  const c = Math.cos(actor.heading), s = Math.sin(actor.heading), z = actor.team === 'friendly' ? -.871 : -1.07;
-  return { x: .13 * c + z * s + actor.position.x, y: SOLDIER_FIRE_HEIGHT + actor.position.y,
-    z: -.13 * s + z * c + actor.position.z };
+  const c = Math.cos(actor.heading), s = Math.sin(actor.heading);
+  const local = actor.nativeMotion ? nativeMuzzleLocal(actor) : { x: .13, y: SOLDIER_FIRE_HEIGHT, z: actor.team === 'friendly' ? -.871 : -1.07 };
+  return { x: local.x * c + local.z * s + actor.position.x, y: local.y + actor.position.y,
+    z: -local.x * s + local.z * c + actor.position.z };
 }
 
 export function controlledType(registry) {

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { SOLDIER_FIRE_HEIGHT } from './entities.js';
 
 function position(bone) { return bone.getWorldPosition(new THREE.Vector3()); }
 function rotation(bone) { return bone.getWorldQuaternion(new THREE.Quaternion()); }
@@ -47,13 +46,13 @@ export function createNraRiflePose(root, bones, gun) {
   const grip = new THREE.Object3D(); grip.position.set(-.055, -.10, -.29); gun.add(grip);
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, -.891); gun.add(muzzle);
   let attached = false, right = null, left = null, rightTarget = new THREE.Vector3();
-  function orientHand(side, forward, across) {
+  function orientHand(side, forward, across, frameRotation) {
     const hand = bone(`${side}Hand`);
     const currentForward = position(bone(`${side}HandMiddle1`)).sub(position(hand));
     const currentAcross = position(bone(`${side}HandIndex1`)).sub(position(bone(`${side}HandPinky1`)));
     const delta = basis(forward, across).multiply(basis(currentForward, currentAcross).invert());
     setRotation(hand, delta.multiply(rotation(hand)));
-    const curlAxis = new THREE.Vector3(0, 0, side === 'Right' ? -1 : 1).applyQuaternion(rotation(root));
+    const curlAxis = new THREE.Vector3(0, 0, side === 'Right' ? -1 : 1).applyQuaternion(frameRotation);
     for (const finger of ['Index', 'Middle', 'Ring', 'Pinky']) {
       const amounts = side === 'Right' && finger === 'Index' ? [.15, .2, .15] : [.4, .75, .65];
       for (let index = 1; index <= 3; index++) {
@@ -63,22 +62,25 @@ export function createNraRiflePose(root, bones, gun) {
     }
   }
   return {
-    update() {
+    update(carry) {
       for (const [joint, rest] of fingers) joint.quaternion.copy(rest);
       root.updateMatrixWorld(true);
-      const facing = rotation(root);
-      rightTarget = root.localToWorld(new THREE.Vector3(.175, 1.37, -.065));
+      const localRotation = new THREE.Quaternion().fromArray(carry.weaponQuaternion);
+      const facing = rotation(root).multiply(localRotation);
+      rightTarget = root.localToWorld(new THREE.Vector3(.045, -.02, -.085).applyQuaternion(localRotation)
+        .add(new THREE.Vector3().fromArray(carry.weaponPosition)));
       right = solveArm(bone('RightArm'), bone('RightForeArm'), bone('RightHand'), rightTarget,
         new THREE.Vector3(.7, -1, .1).applyQuaternion(facing));
-      orientHand('Right', new THREE.Vector3(0, -1, 0).applyQuaternion(facing), new THREE.Vector3(0, 0, -1).applyQuaternion(facing));
+      orientHand('Right', new THREE.Vector3(0, -1, 0).applyQuaternion(facing), new THREE.Vector3(0, 0, -1).applyQuaternion(facing), facing);
       if (!attached) {
-        gun.position.set(.13, SOLDIER_FIRE_HEIGHT, .02); root.add(gun); root.updateMatrixWorld(true);
+        gun.position.fromArray(carry.weaponPosition); gun.quaternion.copy(localRotation);
+        root.add(gun); root.updateMatrixWorld(true);
         bone('RightHand').attach(gun); attached = true;
       }
       root.updateMatrixWorld(true);
       left = solveArm(bone('LeftArm'), bone('LeftForeArm'), bone('LeftHand'), position(grip),
         new THREE.Vector3(-.7, -1, .1).applyQuaternion(facing));
-      orientHand('Left', new THREE.Vector3(1, 0, 0).applyQuaternion(facing), new THREE.Vector3(0, 0, -1).applyQuaternion(facing));
+      orientHand('Left', new THREE.Vector3(1, 0, 0).applyQuaternion(facing), new THREE.Vector3(0, 0, -1).applyQuaternion(facing), facing);
       root.updateMatrixWorld(true);
     },
     get issue() {

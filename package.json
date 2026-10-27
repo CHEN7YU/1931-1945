@@ -30,7 +30,9 @@
     "test:friendly-tactics": "node scripts/friendly-tactics-smoke.mjs",
     "test:perception": "node scripts/perception-smoke.mjs",
     "test:aircraft-rifle": "node scripts/aircraft-rifle-smoke.mjs",
-    "test:asset-probe": "node scripts/asset-probe-smoke.mjs"
+    "test:asset-probe": "node scripts/asset-probe-smoke.mjs",
+    "test:rifle-audio": "node scripts/rifle-audio-smoke.mjs",
+    "test:nra-motion": "node scripts/nra-motion-smoke.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

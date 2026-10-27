@@ -5,6 +5,26 @@ import { rifleWorldModel } from './rifle-model.js';
 import { createNraRiflePose } from './nra-rifle-pose.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { riflePose as rifleActionPose } from './rifle-action.js';
+import { sampleNraMotion } from './nra-motion.js';
+
+export function configureNraTexture(texture, id) {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  if (id === 'eye') texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+export function attachNraHelmet(head, helmet, texture, settings) {
+  const meshes = [];
+  helmet.traverse(node => { if (node.isMesh) meshes.push(node); });
+  if (!head?.isBone || meshes.length !== 1 || meshes[0].isSkinnedMesh || !settings) throw new Error('Inspected helmet attachment differs from its source prefab');
+  helmet.position.fromArray(settings.position);
+  meshes[0].quaternion.fromArray(settings.meshQuaternion).normalize();
+  meshes[0].scale.fromArray(settings.meshScale);
+  meshes[0].material = new THREE.MeshStandardMaterial({ map: texture, roughness: .7, metalness: .2 });
+  meshes[0].castShadow = meshes[0].receiveShadow = true;
+  head.add(helmet);
+  return helmet;
+}
 
 export async function loadNraCharacter() {
   const base = '/assets/game/nra-88/';
@@ -15,14 +35,14 @@ export async function loadNraCharacter() {
   if (source.evaluation?.status !== 'prototype-one-character') throw new Error('Character has not passed the one-soldier prototype checks');
   const manager = new THREE.LoadingManager();
   manager.addHandler(/\.(png|jpe?g|dds)$/i, { setPath() { return this; }, load() { return new THREE.Texture(); } });
-  const [model, animationResponse, loadedTextures] = await Promise.all([
+  const [model, animationResponse, loadedTextures, helmet] = await Promise.all([
     new FBXLoader(manager).loadAsync(`${base}character.fbx`),
     fetch(`${base}animations.json`),
     Promise.all(Object.entries(source.textures).map(async ([id, file]) => {
       const texture = await new THREE.TextureLoader().loadAsync(`${base}${file}`);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      return [id, texture];
+      return [id, configureNraTexture(texture, id)];
     })),
+    new FBXLoader(manager).loadAsync(`${base}${source.helmet.file}`),
   ]);
   if (!animationResponse.ok) throw new Error(`Character animations: HTTP ${animationResponse.status}`);
   const textures = new Map(loadedTextures), inspected = prepareNraRig(model);
@@ -31,48 +51,51 @@ export async function loadNraCharacter() {
     if (!slots || slots.length !== (Array.isArray(mesh.material) ? mesh.material.length : 1)) throw new Error(`Unmapped character material: ${mesh.name}`);
     const materials = slots.map(id => {
       if (!textures.has(id)) throw new Error(`Missing character texture: ${id}`);
-      return new THREE.MeshStandardMaterial({ map: textures.get(id), roughness: .9, metalness: 0, side: THREE.DoubleSide });
+      return new THREE.MeshStandardMaterial({ map: textures.get(id), roughness: id === 'eye' ? .45 : .9, metalness: 0, side: THREE.DoubleSide });
     });
     mesh.material = materials.length === 1 ? materials[0] : materials;
     mesh.castShadow = mesh.receiveShadow = true;
   }
   const clips = await animationResponse.json(), idle = THREE.AnimationClip.parse(clips.idle), run = THREE.AnimationClip.parse(clips.run);
   if (!idle.validate() || !run.validate()) throw new Error('Invalid character animation');
+  if (!clips.motion) throw new Error('Native motion/carry profile missing');
   for (const clip of [idle, run]) clip.tracks = clip.tracks.filter(track => !/\.bones\[(?:Left|Right)(?:Arm|ForeArm|Hand)/.test(track.name));
   const root = new THREE.Group(), normalized = new THREE.Group();
   const bounds = new THREE.Box3().setFromObject(model), height = bounds.max.y - bounds.min.y;
   if (!Number.isFinite(height) || height <= 0) throw new Error('Invalid character dimensions');
   normalized.scale.setScalar(1.78 / height); normalized.rotation.y = Math.PI;
   model.position.y -= bounds.min.y; normalized.add(model); root.add(normalized);
+  attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
   const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt');
   const riflePose = createNraRiflePose(root, inspected.canonical, gun);
   const mixer = new THREE.AnimationMixer(inspected.meshes[0]);
   const actions = { idle: mixer.clipAction(idle), run: mixer.clipAction(run) };
-  let actorId = null, previousTime = null, previousPhase = null, active = 'idle', speed = 0;
+  let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
   let observedActor = null;
-  actions.idle.play(); root.visible = false;
+  for (const action of Object.values(actions)) { action.play(); action.paused = true; }
+  actions.run.setEffectiveWeight(0); root.visible = false;
   return {
     root,
     bind(id) {
-      actorId = id; observedActor = null; previousTime = previousPhase = null; speed = 0; active = 'idle';
-      mixer.stopAllAction(); actions.idle.reset().play(); root.visible = false;
+      actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; resets++;
+      mixer.stopAllAction();
+      for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
+      actions.idle.setEffectiveWeight(1); actions.run.setEffectiveWeight(0); root.visible = false;
     },
     get actorId() { return actorId; },
+    get motionProfile() { return clips.motion; },
     get issue() { return riflePose.issue; },
     update(actor, now, controlledId) {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && (actor.health > 0 ? actor.id !== controlledId : now - actor.deathTime <= 12));
       if (!actor) return;
-      const dt = previousTime === null ? 0 : Math.max(0, now - previousTime);
-      speed = dt > 0 && previousPhase !== null ? Math.max(0, actor.walkPhase - previousPhase) / 2.5 / dt : 0;
-      previousTime = now; previousPhase = actor.walkPhase;
-      const next = actor.health > 0 && speed > .1 ? 'run' : 'idle';
-      if (next !== active) { actions[next].reset().play().crossFadeFrom(actions[active], .15, false); active = next; }
-      actions.run.setEffectiveTimeScale(Math.min(2, speed / 3.15));
-      if (actor.health > 0) mixer.update(dt);
+      motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? 'run' : 'idle';
+      actions.idle.time = motion.idleTime; actions.run.time = motion.runTime;
+      actions.idle.setEffectiveWeight(1 - motion.weight); actions.run.setEffectiveWeight(motion.weight);
+      if (actor.health > 0) mixer.update(0);
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2);
       root.updateMatrixWorld(true);
-      if (actor.health > 0) riflePose.update();
+      if (actor.health > 0) riflePose.update(motion);
       const weaponPose = rifleActionPose(actor.rifle);
       bolt.rotation.z = weaponPose.boltLift; bolt.position.z = weaponPose.boltTravel;
     },
@@ -82,6 +105,7 @@ export async function loadNraCharacter() {
         hips: point('Hips'), head: point('Head'), leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
+        motion: motion ? { weight: motion.weight, idleTime: motion.idleTime, runTime: motion.runTime, resets } : null,
         logicalMuzzle: observedActor ? soldierRifleMuzzle(observedActor) : null,
         soldier: observedActor ? { id: observedActor.id, health: observedActor.health, ammo: observedActor.rifle.ammo,
           shots: observedActor.rifle.shots, action: observedActor.rifle.action, weaponId: observedActor.rifle.id } : null,
