@@ -1,5 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
+import { RIFLE_CONTACTS } from './rifle-contacts.js';
 
 function sample(track, time) {
   const local = ((time % track.duration) + track.duration) % track.duration;
@@ -42,6 +43,12 @@ export function createNraMotion(profile, actor) {
     profile.runContact >= .5)) throw new Error('Foot-cycle gait requires its own walking and running contact profiles');
   if (profile.leanPivot && (!Array.isArray(profile.leanPivot) || profile.leanPivot.length !== 3 ||
     !profile.leanPivot.every(Number.isFinite))) throw new Error('Invalid owned torso pivot');
+  if (profile.rifleContacts && ['standing', ...Object.keys(FIRING_POSES)].some(pose =>
+    !Array.isArray(profile.rifleContacts[pose]) || profile.rifleContacts[pose].length !== 3 ||
+    !profile.rifleContacts[pose].every(Number.isFinite))) throw new Error('Invalid rifle shoulder contact profile');
+  if (profile.riflePivots && ['standing', ...Object.keys(FIRING_POSES)].some(pose =>
+    !Array.isArray(profile.riflePivots[pose]) || profile.riflePivots[pose].length !== 3 ||
+    !profile.riflePivots[pose].every(Number.isFinite))) throw new Error('Invalid rifle torso pivot profile');
   for (const track of [profile.idle, profile.run, ...[profile.walk, ...Object.keys(FIRING_POSES).map(pose => profile[pose])].filter(Boolean)]) {
     if (!track || !Number.isFinite(track.duration) || track.duration <= 0 || !Array.isArray(track.times) || track.times.length < 2 ||
       track.positions?.length !== track.times.length * 3 || track.quaternions?.length !== track.times.length * 4 ||
@@ -138,17 +145,40 @@ export function sampleNraMotion(actor) {
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
   const lowReady = profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
+  const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
+    (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
   if (lowReady) {
     const angle = .45 + .25 * jog + (actor.locomotion.mode === 'sprint' ? .10 : 0);
-    blendedPosition.y -= .06 * lowReady;
-    blendedPosition.z += .16 * lowReady;
-    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady));
+    if (!profile.rifleContacts) {
+      blendedPosition.y -= .06 * lowReady;
+      blendedPosition.z += .16 * lowReady;
+    }
+    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), .25 * lowReady))
+      .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady));
+  }
+  let stockContact = null;
+  if (profile.rifleContacts) {
+    const contact = new Vector3(...profile.rifleContacts.standing).multiplyScalar(upright);
+    for (const [stance, weight] of Object.entries(motion.posture)) contact.addScaledVector(new Vector3(...profile.rifleContacts[stance]), weight);
+    contact.add(new Vector3(...RIFLE_CONTACTS.shoulder).lerp(new Vector3(...RIFLE_CONTACTS.armpit), lowReady));
+    contact.y -= hipDrop;
+    if ((torsoYaw || bodyLean) && profile.leanPivot) {
+      const pivot = new Vector3(...(profile.riflePivots?.standing ?? profile.leanPivot)).multiplyScalar(upright);
+      for (const [stance, weight] of Object.entries(motion.posture)) {
+        pivot.addScaledVector(new Vector3(...(profile.riflePivots?.[stance] ?? profile.leanPivot)), weight);
+      }
+      pivot.y -= hipDrop;
+      contact.sub(pivot).applyAxisAngle(new Vector3(0, 1, 0), torsoYaw)
+        .applyAxisAngle(new Vector3(1, 0, 0), -bodyLean).add(pivot);
+    }
+    stockContact = contact.toArray();
+    blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }
   return { idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: profile.strideMeters * motion.strideScale, walkStride: (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
     runContact: profile.runContact,
-    bodyLean, hipDrop, lowReady, strideScale: motion.strideScale, legLift: motion.legLift,
+    bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
 }

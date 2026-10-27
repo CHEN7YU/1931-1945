@@ -21,7 +21,7 @@ import { createSoldierRenderer } from './soldier-renderer.js';
 import { createSoldierHitSystem } from './soldier-hit-zones.js';
 import { loadRifleAudio } from './rifle-audio.js';
 import { loadFootstepAudio } from './footstep-audio.js';
-import { createNraMotion, advanceNraMotion } from './nra-motion.js';
+import { createNraMotion, advanceNraMotion, sampleNraMotion } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
@@ -1610,8 +1610,12 @@ function postureFireLine(actor, point, stance, threat) {
   const profile = actor.nativeMotion?.profile, track = profile && (stance === 'standing' ? profile.idle : profile[stance]);
   if (!track) throw new Error('Native combat posture is missing its carry profile');
   const heading = Math.atan2(point.x - threat.x, point.z - threat.z), c = Math.cos(heading), s = Math.sin(heading);
-  const local = new THREE.Vector3(...profile.muzzle).applyQuaternion(new THREE.Quaternion(...track.quaternions.slice(0, 4)))
-    .add(new THREE.Vector3(...track.positions.slice(0, 3)));
+  const preview = profile.rifleContacts ? sampleNraMotion({ ...actor, position: new THREE.Vector3(point.x, 0, point.z),
+    nativeMotion: { ...actor.nativeMotion, speed: 0, weight: 0, lowReady: 0, bodyLean: actor.nativeMotion.fireLean, aim: 0,
+      posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === stance ? 1 : 0])) } }) : null;
+  const local = new THREE.Vector3(...profile.muzzle)
+    .applyQuaternion(new THREE.Quaternion(...(preview?.weaponQuaternion ?? track.quaternions.slice(0, 4))))
+    .add(new THREE.Vector3(...(preview?.weaponPosition ?? track.positions.slice(0, 3))));
   const y = world.groundHeight(point.x, point.z);
   const muzzle = new THREE.Vector3(point.x + local.x * c + local.z * s, y + local.y, point.z - local.x * s + local.z * c);
   const eye = new THREE.Vector3(point.x, y + (stance === 'standing' ? 1.67 : FIRING_POSES[stance].eye), point.z);

@@ -75,7 +75,11 @@ export async function loadNraCharacter() {
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
   const postures = createNativePosturePoses(normalized, inspected.canonical);
-  const motionProfile = { ...createNativeGaitProfile(clips.motion.idle),
+  const motionProfile = { ...createNativeGaitProfile(clips.motion.idle, inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray()),
+    rifleContacts: { standing: inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
+    riflePivots: { standing: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pivot])) },
     leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   const appearanceCache = { geometries: new Map(), materials: new Map() };

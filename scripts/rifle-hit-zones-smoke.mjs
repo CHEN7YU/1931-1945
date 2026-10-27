@@ -18,7 +18,12 @@ try {
       await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
         null, { timeout: 90000 });
       await page.locator('#deploy').click();
-      await page.waitForFunction(() => window.__battle.state === 'playing' && window.__battle.enemyHistoricalForce.views.some(view => view.visible));
+      await page.waitForFunction(() => window.__battle.state === 'playing');
+      const startZ = await page.evaluate(() => window.__battle.position.z);
+      await page.keyboard.down('w');
+      await page.waitForFunction(z => window.__battle.position.z < z - 2.2, startZ, { timeout: 10000 });
+      await page.keyboard.up('w');
+      await page.waitForFunction(() => window.__battle.enemyHistoricalForce.views.some(view => view.visible));
       await page.mouse.down({ button: 'right' });
       await page.waitForFunction(() => window.__battle.fov < 49);
       const result = await page.evaluate(zone => new Promise((resolve, reject) => {

@@ -31,7 +31,11 @@ export async function loadIjaCharacter() {
   }
   const canonical = new Map(skins[0].skeleton.bones.map(bone => [bone.name, bone]));
   const postures = createNativePosturePoses(normalized, canonical);
-  const motionProfile = { ...createNativeGaitProfile(source.motion.idle),
+  const motionProfile = { ...createNativeGaitProfile(source.motion.idle, canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray()),
+    rifleContacts: { standing: canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
+    riflePivots: { standing: canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pivot])) },
     leanPivot: canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, value.carry])) };
   const clips = new Map(asset.animations.map(clip => [clip.name, clip]));
@@ -56,7 +60,7 @@ export async function loadIjaCharacter() {
       ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, mixer.clipAction(value.clip)])) };
     for (const action of Object.values(actions)) { action.play(); action.paused = true; }
     let actorId = null, actor = null, initialized = false, active = 'idle', motion = null, legPose = null, drawBatches = 0;
-    for (const object of [root, gun]) object.traverseVisible(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+    root.traverseVisible(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
     root.visible = false;
     return {
       root, motionProfile, drawBatches, createView,

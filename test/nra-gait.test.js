@@ -74,3 +74,16 @@ test('torso lean follows the actor-facing direction and counter-rotates the head
   assert.ok(point.x < -.09 && point.z < 0 && point.y < 1.5);
   assert.ok(spine.getWorldPosition(new Vector3()).distanceTo(before) < 1e-10);
 });
+
+test('firing can blade the shoulders while keeping head and feet facing the actual shot direction', () => {
+  const root = new Group(), spine = new Bone(), head = new Bone(), left = new Bone(), right = new Bone();
+  spine.position.y = 1.1; head.position.y = .45;
+  left.position.set(-.2, .3, 0); right.position.set(.2, .3, 0);
+  root.add(spine); spine.add(head, left, right); root.rotation.y = .8; root.updateMatrixWorld(true);
+  applyNativeBodyLean(root, new Map([['Spine', spine], ['Head', head]]), { bodyLean: 0, torsoYaw: -.55 });
+  const a = root.worldToLocal(left.getWorldPosition(new Vector3())), b = root.worldToLocal(right.getWorldPosition(new Vector3()));
+  assert.ok(a.z < b.z - .15, 'left shoulder comes forward instead of stretching the support arm');
+  const facing = head.getWorldDirection(new Vector3()), expected = root.getWorldDirection(new Vector3());
+  assert.ok(facing.distanceTo(expected) < 1e-8);
+  assert.equal(root.rotation.y, .8);
+});
