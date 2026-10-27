@@ -1,8 +1,9 @@
-# Independent rifle mechanical audio candidate
+# Rifle mechanical audio integration
 
-This batch does not change `main.js`, rifle actions, simulation, characters,
-damage, dependencies or game controls. It does not yet change the game's sound.
-The existing synthetic mechanical feedback remains in place until integration.
+The four recordings now replace synthetic mechanical feedback for the controlled
+personal rifle in `main.js`. Rifle actions, simulation, characters, damage,
+dependencies and game controls are unchanged. Synthetic mechanical feedback
+remains an explicitly reported load/decode-failure fallback only.
 
 ## Sources and limits
 
@@ -28,7 +29,7 @@ listening quality or battlefield mixing.
 reload and **does not establish that a case exists or has hit the ground**.
 There is deliberately no case-impact sound or independent audio timer.
 
-## Integration contract
+## Active integration contract
 
 `loadRifleMechanicalAudio()` loads and decodes once at startup. Its rejection
 must be logged and shown using the existing audio warning/fallback pattern,
@@ -76,11 +77,10 @@ At most three starts occur per batch, four voices coexist, and the diagnostic
 history holds 32 entries. Excess cues are discarded rather than queued for
 later replay. The module does not alter ammo, action timing or simulation.
 
-The asset audit explicitly classifies this directory as `diagnostic` while
-integration is pending. Vite still copies the small candidate files into
-`dist`; they are not requested by the current main game. When integrated,
-change that one classification to `runtime` and update the shared README/TODO
-in the integration branch, not by overwriting another branch's documents.
+The asset audit explicitly classifies this directory as `runtime`. Vite copies
+the four excerpts and source evidence into `dist`, and the main game loads the
+recordings at startup. The former diagnostic-only classification no longer
+describes their actual use.
 
 ## Reproduction and checks
 
@@ -91,6 +91,8 @@ directory, not the public assets directory. With FFmpeg on PATH:
 node scripts\prepare-rifle-mechanical-audio.mjs C:\path\to\downloads
 node --test test\rifle-mechanical-audio.test.js test\rifle-action.test.js test\weapon-simulation.test.js test\asset-audit.test.js
 node scripts\rifle-mechanical-audio-smoke.mjs
+$env:GAME_URL = 'http://127.0.0.1:5189'
+node scripts\rifle-mechanical-game-smoke.mjs
 ```
 
 The preparation script rejects altered originals before processing and writes
@@ -101,5 +103,11 @@ accepting another original.
 The browser smoke uses intercepted local URLs, no running dev server and no
 external runtime requests. It exercises actual browser WAV decoding, an offline
 audio graph, and ownership/pause stop behavior. It is not a battlefield test or
-a listening acceptance test. Main-game integration and an actual listening
-comparison remain explicitly pending.
+a listening acceptance test.
+
+The separate game smoke requires a development server. It verifies the native
+character game path, original action event identity, recorded-only cycle/reload,
+pause/resume, Y transfer, tool stowing, crew switching, new-match serial reset,
+100v100 startup and personal fire, and explicit HTTP/decode-error fallback with
+actual synthetic playback. `ARTIFACT_DIR` preserves the observations. These are
+functional checks, not a population performance or human listening acceptance.

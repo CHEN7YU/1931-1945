@@ -21,6 +21,7 @@ import { createSoldierRenderer } from './soldier-renderer.js';
 import { createSoldierHitSystem } from './soldier-hit-zones.js';
 import { loadRifleAudio } from './rifle-audio.js';
 import { loadFootstepAudio } from './footstep-audio.js';
+import { loadRifleMechanicalAudio } from './rifle-mechanical-audio.js';
 import { createNraMotion, advanceNraMotion } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
@@ -201,6 +202,7 @@ let audioContext;
 let noiseBuffer;
 let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audioUnsupported = false;
 let footstepAudio = null, footstepAudioFailure = null;
+let mechanicalAudio = null, mechanicalAudioFailure = null;
 try {
   rifleAudio = await loadRifleAudio();
 } catch (error) {
@@ -212,6 +214,12 @@ try {
 } catch (error) {
   footstepAudioFailure = error.message;
   console.error('脚步录音未加载，将保留原合成声：', error);
+}
+try {
+  mechanicalAudio = await loadRifleMechanicalAudio();
+} catch (error) {
+  mechanicalAudioFailure = error.message;
+  console.error('步枪机械录音未加载，将保留原合成声：', error);
 }
 let pointerHintShown = false;
 let breath = 1;
@@ -257,6 +265,19 @@ function setGameState(next) {
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
+  syncMechanicalAudio();
+}
+
+function mechanicalPlayback() {
+  const actor = controlledSoldier(entities);
+  const owner = controlOwner(entities);
+  return { owner, playing: Boolean(state === 'playing' && actor?.health > 0 &&
+    !actor.vehicleId && actor.groundType === 'infantry' && !toolEquipped && owner.weaponId === actor.rifle?.id) };
+}
+
+function syncMechanicalAudio() {
+  const { owner, playing } = mechanicalPlayback();
+  mechanicalAudio?.sync(owner, playing);
 }
 
 function sound(kind) {
@@ -275,8 +296,15 @@ function sound(kind) {
   source.stop(t + .7);
 }
 
-function mechanicalSound(cue) {
+function mechanicalSound(event) {
+  if (mechanicalAudio) {
+    mechanicalAudio.play(audioContext, event);
+    return;
+  }
+  const { owner, playing } = mechanicalPlayback();
+  if (!playing || event.soldierId !== owner.soldierId || event.weaponId !== owner.weaponId) return;
   if (!audioContext || audioContext.state !== 'running') return;
+  const { cue } = event;
   const source = audioContext.createBufferSource(), gain = audioContext.createGain(), filter = audioContext.createBiquadFilter();
   const now = audioContext.currentTime, length = cue === 'extract' ? .1 : .045;
   source.buffer = noiseBuffer;
@@ -464,6 +492,7 @@ function bindControlInput() {
     if (incoming) resetAIRifleAim(incoming.aiRifle, 'controlled');
   }
   syncRifleUnit();
+  syncMechanicalAudio();
   controlBinding = { ...owner, time, changed, previousToolEquipped, previousJumpHeight, previousJumpVelocity,
     toolEquipped, jumpHeight, jumpVelocity, ammo: unit?.ammo, reloadUntil: unit?.reloadUntil,
     viewHasRifle: Boolean(weapon?.userData.rifle) };
@@ -479,6 +508,7 @@ function primaryViewAvailable() {
 
 function refreshWeaponVisibility() {
   if (weapon) weapon.visible = state === 'playing' && controlledSoldier(entities)?.health > 0 && primaryViewAvailable();
+  syncMechanicalAudio();
 }
 
 function resetPersonalCombatFeedback() {
@@ -529,6 +559,7 @@ function presentCombatEvents(bornAt = time) {
 
 function presentControlEvents() {
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
+  syncMechanicalAudio();
   const count = controlEvents.drain(event => {
     if (event.type === 'door.requested') { playDoorSound(event); return; }
     if (event.type === 'rally.destroyed') {
@@ -554,7 +585,7 @@ function presentControlEvents() {
     } else if (event.type === 'weapon.reload-requested') {
       toast(event.queued ? '拉栓后装填 · 动作与成员状态保留' : '正在装填…', event.duration);
     } else if (event.type === 'weapon.mechanical') {
-      if (state === 'playing' && !toolEquipped && event.weaponId === controlOwner(entities)?.weaponId) mechanicalSound(event.cue);
+      mechanicalSound(event);
     } else if (event.type === 'construction.notice') {
       const messages = { completed: '集结点建成 · 整队阵亡后，可让其他地面小队从此出击',
         moved: '位置变化，建造进度重新计算', 'owner-changed': '控制者已改变，旧建造已取消', unavailable: '当前成员不能继续建造' };
@@ -690,6 +721,7 @@ function clearTransient() {
 
 function beginMatch() {
   footstepAudio?.sync(null, false);
+  mechanicalAudio?.reset();
   simulationClock.reset(performance.now());
   playerInput.reset(); controlEvents.clear();
   controlBinding = null;
@@ -849,10 +881,11 @@ function deploy(squadId, spawnId = null) {
   updateCamera(0);
   renderConstruction();
   toast(type === 'plane' ? '从南侧空中入场点进入战场 · 飞机损失后可换其他小队' : `${TYPES[type].name}从${spawn.name}出击`, 5);
-  if ((audioUnsupported || rifleAudioFailure || footstepAudioFailure) && !audioWarningShown) {
+  if ((audioUnsupported || rifleAudioFailure || footstepAudioFailure || mechanicalAudioFailure) && !audioWarningShown) {
     const warnings = [];
     if (rifleAudioFailure) warnings.push('步枪录音未加载，暂用原合成声；友军／敌军空间枪声暂不可用');
     if (footstepAudioFailure) warnings.push('脚步录音未加载，暂用原合成声');
+    if (mechanicalAudioFailure) warnings.push('步枪机械录音未加载，暂用原合成声');
     toast(audioUnsupported ? '浏览器不支持Web Audio，当前无音效' : warnings.join('；'), 8);
     audioWarningShown = true;
   }
@@ -2229,7 +2262,7 @@ function updateHUD() {
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
-    : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}`;
+    : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军统一军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
@@ -2293,6 +2326,8 @@ function renderSimulationStatus() {
 function tick(now) {
   if (fatal) return;
   footstepAudio?.beginBatch(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
+  const mechanical = mechanicalPlayback();
+  mechanicalAudio?.beginBatch(mechanical.owner, mechanical.playing);
   const cpuStarted = benchmark ? performance.now() : 0;
   const frameInterval = now - lastFrame;
   const activeFrame = activeStates.has(state);
@@ -2407,6 +2442,7 @@ $('back-menu').addEventListener('click', () => {
   vehicleRenderer.clear();
   resetEntities(entities); resetDeathTransfer(deathTransfer);
   playerInput.reset(); controlEvents.clear();
+  mechanicalAudio?.reset();
   controlBinding = null;
   clearTransient();
   allies = [];
@@ -2593,6 +2629,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   footstepAudio: audioUnsupported ? { status: 'unavailable' } : footstepAudio
     ? { ...footstepAudio.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'fallback', error: footstepAudioFailure },
+  mechanicalAudio: audioUnsupported ? { status: 'unavailable' } : mechanicalAudio
+    ? { ...mechanicalAudio.snapshot, contextState: audioContext?.state ?? 'not-started' }
+    : { status: 'fallback', error: mechanicalAudioFailure },
   simulationClock: simulationClock.snapshot,
   entityCounts: { units: entities.units.size, soldiers: entities.soldiers.size, weapons: entities.weapons.size, vehicles: entities.vehicles.size },
   vehicleViews: vehicleRenderer.snapshot,

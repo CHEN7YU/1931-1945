@@ -18,6 +18,9 @@ test('all public resources have exact size/hash evidence and permission is not r
   const report = await auditAssets();
   assert.ok(report.bytes > 15000000);
   assert.ok(report.files.some(file => file.use === 'diagnostic'));
+  const mechanical = report.files.filter(file => file.file.startsWith('audio/rifle-mechanical/'));
+  assert.equal(mechanical.length, 6);
+  assert.ok(mechanical.every(file => file.use === 'runtime'), 'main-game mechanical recordings must not remain diagnostic-only');
   assert.match(report.permissions[0].limitation, /not CC0/);
 });
 

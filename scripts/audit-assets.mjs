@@ -7,7 +7,7 @@ const groups = [
   { manifest: 'sources.json', directory: '', use: 'runtime', evidence: [] },
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
-  { manifest: 'audio/rifle-mechanical/source.json', directory: 'audio/rifle-mechanical', use: 'diagnostic', evidence: ['LICENSE.txt'] },
+  { manifest: 'audio/rifle-mechanical/source.json', directory: 'audio/rifle-mechanical', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
