@@ -96,9 +96,12 @@ npm.cmd run test:benchmark-config
 npm.cmd run test:control
 npm.cmd run test:projectiles
 npm.cmd run test:damage-feedback
+node scripts\hud-readability-smoke.mjs
 npm.cmd run build
 npm.cmd run preview -- --port 5173
 ```
+
+HUD主要状态文字与队员编号已增大至至少12px，并在原有信息组后增加局部半透明深色底衬；小地图上移，为底部信息留出间距。保留中文信息、中央瞄准区域、Y换人、M展开地图及原有操作，不改变人物、枪械、地图或战斗规则；这不是战场画质提升。`node scripts\hud-readability-smoke.mjs`要求开发服务器（默认5173，可用`GAME_URL`指定），核对1440×900和1920×1080下的天空／墙面／室内、四类单位HUD、文字边界与局部底衬对比度；`ARTIFACT_DIR`可保存截图和测量。几何诊断没有敌人，不作为交火性能证据；局部对比度按白色场景保守合成，不代表整局所有动态反馈的无障碍验收。
 
 ## 已实现
 
