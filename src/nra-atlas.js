@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export function createNraAtlas(root) {
   const materials = new Map(), keys = new Map();
-  root.traverse(node => {
+  root.traverseVisible(node => {
     if (!node.isMesh) return;
     for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
       const key = `${material.map?.uuid ?? 'solid'}:${material.color.getHex()}`;

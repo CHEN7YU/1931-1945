@@ -1,0 +1,147 @@
+{
+  "title": "1938 · 日军步枪兵外观研究",
+  "scope": "台儿庄方向／普通陆军步枪兵候选，不是具体部队的已证实复原",
+  "status": "adapted-static-study",
+  "limitations": [
+    "昭五式旧制军服为暂定研究方向，未核实具体参战单位、换装批次、季节面料和实际色值。",
+    "钢盔、弹药盒、水壶等按馆藏文字和尺寸分别研究，不能据此认定整套配置曾由同一名台儿庄士兵使用。",
+    "领部兵科色仅作旧制位置示意；肩章军衔、部队数字未制作，不编造身份。",
+    "上衣形体基底与头手复用已记录授权的仓库人物资源；上衣重建立领、胸片、肩袖接合与腰部。原国军上衣不是日军剪裁证据，改制仍需历史形制验收。",
+    "裤装、鞋型、装具仍含程序近似；没有新做布料仿真或完整高模烘焙，不代表照片级人物或特定历史人物。",
+    "胸背余量、裤腿与裆部连接、膝后及绑腿处褶皱为视觉拟合，不是1938年士兵体测数据或已核实的日军纸样；鞋面接缝和薄皮革翻盖仍是结构近似。",
+    "本页样件仍为静态模型；离线生成的65骨蒙皮模型在本分支接入全部日军外观，近景蒙皮、远景姿态实例共享生产资源，保留原逻辑人物和碰撞代理，不改变伤害规则。尚未整合主分支，不代表最终历史或性能验收。"
+  ],
+  "sources": [
+    {
+      "id": "uniform",
+      "title": "军服制式",
+      "item": "昭五式／M1930候选",
+      "finding": "1944年美军手册区分M1930立领与M1938翻领，记载两者都有冬季毛料与夏季棉料。",
+      "application": "采用旧式立领研究方向；用已有授权上衣作形体基底，移除原翻领、胸袋及扣件，重建立领和胸片。颜色仅为研究色。",
+      "uncertainty": "手册晚于台儿庄战役；原国军上衣也不是日军剪裁证据。改制不等于已确认1938年具体部队的配发或服装形制。",
+      "url": "https://www.ibiblio.org/hyperwar/Japan/IJA/HB/HB-11.html"
+    },
+    {
+      "id": "insignia",
+      "title": "领章与军衔",
+      "item": "旧制位置示意",
+      "finding": "IWM记载1938年新军服制度将军衔标识由肩部移至领部。",
+      "application": "不把九八式领部军衔拼到旧制军衣；暂不绘制军衔和部队数字。",
+      "uncertainty": "未核实具体单位、军衔与旧制领章图案，红色领片仅是位置示意。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30096090"
+    },
+    {
+      "id": "helmet",
+      "title": "陆军钢盔",
+      "item": "九〇式方向／IWM编目M1932",
+      "finding": "IWM UNI 151：高圆顶、星徽、布带系固；藏品深266、高156、宽230毫米。",
+      "application": "原创外壳使用266 × 230 × 156毫米包围尺寸，研究短盔缘、圆顶和低调星徽。",
+      "uncertainty": "博物馆编目与常用型号命名不同；外壳曲率、内衬和系带路线仍为近似。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30090802"
+    },
+    {
+      "id": "pouches",
+      "title": "皮革弹药盒",
+      "item": "三〇式装具候选",
+      "finding": "IWM EQU 1680：棕色硬皮革翻盖盒；两前盒各30发，后方备用盒60发；1943年起出现胶化帆布替代品。",
+      "application": "前方两盒、后方一盒；皮革腰带与独立翻盖，不使用后期帆布盒。",
+      "uncertainty": "形状、佩戴高度与左右间距为示意；不修改游戏携弹量。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30013380"
+    },
+    {
+      "id": "canteen",
+      "title": "水壶与携行带",
+      "item": "九四式／1934",
+      "finding": "IWM EQU 4522：绿色金属壶、金属顶软木塞、织物携行带；深75、高215、宽177毫米。",
+      "application": "右髋放置独立金属水壶与交叉束带，壶体按藏品包围尺寸近似。",
+      "uncertainty": "馆藏颜色不是1938年全军统一色标；束带细部未逐项复原。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30106654"
+    },
+    {
+      "id": "haversack",
+      "title": "杂物袋",
+      "item": "三〇式／M1897",
+      "finding": "IWM EQU 4521描述为带肩带的橄榄色帆布挎包。",
+      "application": "左髋帆布小挎包与独立斜肩带；不使用九十九式背包。",
+      "uncertainty": "缝线、闭合方式与袋内物品未复原；暂不决定完整行军背负配置。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30106542"
+    },
+    {
+      "id": "boots",
+      "title": "绑腿与短靴",
+      "item": "徒步兵基础轮廓",
+      "finding": "IWM UNI 10057：系带短靴，猪皮粗面向外；说明记载短靴配绑腿的野战穿着。",
+      "application": "螺旋绕腿的绑腿带、系带短靴；不采用军官高筒马靴。",
+      "uncertainty": "鞋楦、鞋钉和具体绑扎方法仅为近似。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30098737"
+    }
+  ],
+  "excluded": [
+    {
+      "item": "九十九式步枪",
+      "reason": "1939年型号，不作为1938年默认装备。",
+      "url": "https://www.ibiblio.org/hyperwar/Japan/IJA/HB/HB-9.html"
+    },
+    {
+      "item": "九十九式帆布背包",
+      "reason": "IWM明确编为M1939；本样件不使用。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30015066"
+    },
+    {
+      "item": "1943年胶化帆布弹药包",
+      "reason": "不混入早期皮革装具方案。",
+      "url": "https://www.iwm.org.uk/collections/item/object/30013380"
+    }
+  ],
+  "nextEquipment": {
+    "item": "三八式长步枪与三〇式刺刀",
+    "status": "研究候选，本页不制作枪械或握持动作",
+    "sources": [
+      "https://www.iwm.org.uk/collections/item/object/30034223",
+      "https://www.iwm.org.uk/collections/item/object/30003266"
+    ]
+  },
+  "candidate": {
+    "title": "Imperial Infantry",
+    "author": "Chernov-Egor",
+    "url": "https://sketchfab.com/3d-models/imperial-infantry-918ebf563585401a93ee0f248a8fdda1",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "checkedAt": "2026-10-27",
+    "triangles": 8163,
+    "materials": 5,
+    "animations": 0,
+    "downloadApiStatus": 401,
+    "decision": "not-imported",
+    "reason": "下载接口要求登录；公开说明不足以核实原始创作来源、骨架与1938年服装适用性。0动画不等于无骨架。",
+    "assetsCopied": false
+  },
+  "authorship": {
+    "geometry": "上衣与头手基于已记录授权的仓库人物资源；上衣按源UV岛去掉翻领、胸袋及硬件，用实测表面重建胸背、立领、腰部并连接源袖片，增加胸背余量并平滑胸腹布面。裤装、绑腿、鞋面及装具为原创程序近似；裤腿连接到同一裆缝，褶皱集中在受束和弯折区域，弹药盒使用薄皮革弯折翻盖。",
+    "textures": "服装、皮革、涂漆钢为原创程序表面；不使用原国军上衣贴图、徽章或军衔贴图。头手使用仓库现有face.jpg、eye.png、hand.jpg，不复制博物馆图像。",
+    "externalMediaCopied": false,
+    "runtimeExternalRequests": false,
+    "adaptedGarment": {
+      "source": "/assets/game/nra-88/source.json",
+      "permissionRecord": "/assets/game/nra-88/PERMISSION.txt",
+      "basis": "user-reported-author-phone-consent",
+      "isCC0": false,
+      "sourceClothingTextureIncluded": false,
+      "sourceBadgesIncluded": false,
+      "sourceAnimationsIncluded": false,
+      "sourceTurnedCollarIncluded": false,
+      "sourceBreastPocketsIncluded": false,
+      "clothSimulation": false,
+      "historicalAcceptance": false
+    },
+    "reusedSkin": {
+      "source": "/assets/game/nra-88/source.json",
+      "permissionRecord": "/assets/game/nra-88/PERMISSION.txt",
+      "basis": "user-reported-author-phone-consent",
+      "isCC0": false,
+      "historicalPortrait": false,
+      "importedClothing": false,
+      "importedAnimations": false
+    }
+  }
+}
