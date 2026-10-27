@@ -56,6 +56,26 @@ test('remote rifle voices and per-batch work are capped while owned fire is prio
   assert.equal(audio.snapshot.active, 0);
 });
 
+test('personal rifle gains exactly 3 dB without changing remote levels or the shared bus', () => {
+  const ears = listener(), audio = createRifleAudio(buffer), context = fakeContext();
+  const personal = rifleMix({ x: 0, y: 1.6, z: 0 }, ears, true);
+  assert.ok(Math.abs(20 * Math.log10(personal.gain / .65) - 3) < 1e-12);
+  for (const distance of [0, 10, 40, 80]) {
+    const remote = rifleMix({ x: distance, y: 1.6, z: 0 }, ears);
+    assert.equal(remote.gain, .12 / (1 + (distance / 14) ** 2));
+  }
+  audio.play(context, event(1, 0, 'player'), ears, true);
+  const gains = context.nodes.filter(node => node.kind === 'gain');
+  assert.equal(gains[0].gain.value, .7, 'remote channels must not be boosted via the shared bus');
+  assert.equal(gains[1].gain.value, personal.gain);
+  audio.update(ears);
+  assert.equal(gains[1].gain.value, personal.gain, 'per-frame mixing retains the boost');
+  ears.soldierId = 'other'; ears.weaponId = 'other:rifle';
+  audio.update(ears);
+  assert.equal(gains[1].gain.value, rifleMix(event(1, 0, 'player').start, ears).gain,
+    'Y transfer removes the old personal boost');
+});
+
 test('active shot tails pan with listener turns and a Y transfer removes old personal centering', () => {
   const audio = createRifleAudio(buffer), context = fakeContext(), ears = listener();
   audio.play(context, event(1, 4, 'player'), ears, true);

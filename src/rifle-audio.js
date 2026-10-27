@@ -13,7 +13,7 @@ export function rifleMix(start, listener, owned = false) {
   const pan = owned ? 0 : Math.max(-.95, Math.min(.95,
     (delta.x * listener.right.x + delta.y * listener.right.y + delta.z * listener.right.z) / Math.max(1, distance) / rightLength));
   return { distance, audible: owned || distance <= 100, pan,
-    gain: owned ? .65 : .12 / (1 + (distance / 14) ** 2),
+    gain: owned ? .65 * 10 ** (3 / 20) : .12 / (1 + (distance / 14) ** 2),
     cutoff: owned ? 14000 : Math.max(1800, 14000 / (1 + distance / 18)) };
 }
 
