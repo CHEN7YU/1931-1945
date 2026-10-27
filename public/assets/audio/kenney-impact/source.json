@@ -6,7 +6,17 @@
   "source": "https://kenney.nl/assets/impact-sounds",
   "download": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
   "verified": "2026-10-26",
-  "purpose": "Raw footstep audition only; not integrated battle mixing or verified rifle audio.",
+  "purpose": "Shared CC0 source recordings for controlled-soldier surface contacts and the frozen diagnostic audition. Not rifle audio.",
+  "runtimeProcessing": {
+    "module": "src/footstep-audio.js",
+    "method": "Decode locally at 24kHz, average channels, trim from the original contact onset, remove DC, peak bound to 0.7, apply 0.5ms attack and 25ms release fades.",
+    "windowsSeconds": { "concrete": 0.11, "wood": 0.14, "grass": 0.16 },
+    "limitations": [
+      "Earth temporarily uses the grass recording; not a verified dirt or period military boot recording.",
+      "One original recording per surface with subtle pitch variation; not a multi-take Foley library.",
+      "Crawling retains the original synthetic friction. Only the controlled soldier's contact events use these recordings."
+    ]
+  },
   "files": [
     { "file": "concrete.ogg", "original": "Audio/footstep_concrete_000.ogg", "bytes": 5808, "sha256": "d7267e183067757c92c169de2a379abea592cfca6b39bb2e8feea15221ad79fe" },
     { "file": "wood.ogg", "original": "Audio/footstep_wood_000.ogg", "bytes": 5949, "sha256": "5f1c252942a220d658121bd9417448cd19649ded9fff2ff15f6e50899373ce8e" },
