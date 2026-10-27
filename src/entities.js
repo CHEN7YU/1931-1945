@@ -1,5 +1,5 @@
 import { TYPES } from './core.js';
-import { nativeMuzzleLocal } from './nra-motion.js';
+import { nativeMuzzleLocal, nativeGaitDrop } from './nra-motion.js';
 import { FIRING_POSES } from './combat-posture.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
@@ -14,8 +14,9 @@ export function soldierPostureHeight(actor, kind = 'eye') {
   const entries = Object.entries(posture), total = entries.reduce((sum, [, weight]) => sum + weight, 0);
   if (entries.some(([pose, weight]) => !FIRING_POSES[pose] || !Number.isFinite(weight) || weight < 0 || weight > 1) ||
     total > 1.00001) throw new RangeError('Invalid owned posture blend');
-  const height = heights[0] * Math.max(0, 1 - total) + entries.reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose][kind] * weight, 0);
-  const pivot = actor.nativeMotion?.profile?.leanPivot?.[1], lean = (actor.nativeMotion?.bodyLean ?? 0) * Math.max(0, 1 - total);
+  const drop = nativeGaitDrop(actor);
+  const height = heights[0] * Math.max(0, 1 - total) + entries.reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose][kind] * weight, 0) - drop;
+  const pivot = actor.nativeMotion?.profile?.leanPivot?.[1] - drop, lean = (actor.nativeMotion?.bodyLean ?? 0) * Math.max(0, 1 - total);
   return Number.isFinite(pivot) && height > pivot ? pivot + (height - pivot) * Math.cos(lean) : height;
 }
 export const TANK_SEATS = Object.freeze([

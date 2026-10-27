@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseCombatPosture, postureReady, wallFiringContact, chooseAdvancePace, chooseShotRelocation } from '../src/combat-posture.js';
+import { FIRING_POSES, ownedFiringPose, chooseCombatPosture, postureReady, wallFiringContact, chooseAdvancePace, chooseShotRelocation } from '../src/combat-posture.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeMuzzleLocal } from '../src/nra-motion.js';
 import { soldierPostureHeight } from '../src/entities.js';
 import { targetAimPoint, createTactics, observeVisualThreat } from '../src/tactics.js';
@@ -10,8 +10,10 @@ const facts = overrides => ({ distance: 12, moving: false, covered: false, expos
   proneClear: false, canFire: () => true, ...overrides });
 
 test('stable personal draws produce varied eligible poses without prone in close quarters', () => {
+  assert.equal(Object.hasOwn(FIRING_POSES, 'kneelingBoth'), false);
+  assert.throws(() => ownedFiringPose({ stance: 'crouched', firingPose: 'kneelingBoth' }), /Unknown owned firing pose/);
   const poses = new Set(Array.from({ length: 100 }, (_, index) => chooseCombatPosture(facts({ preference: index / 100 }))));
-  assert.deepEqual(poses, new Set(['standing', 'kneeling', 'kneelingBoth', 'crouched']));
+  assert.deepEqual(poses, new Set(['standing', 'kneeling', 'crouched']));
   assert.notEqual(chooseCombatPosture(facts({ suppressed: true, proneClear: true })), 'prone');
   assert.equal(chooseCombatPosture(facts({ moving: true })), 'standing');
   assert.equal(chooseCombatPosture(facts({ covered: true, exposed: false, canFire: () => false })), 'crouched');

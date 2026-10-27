@@ -1665,7 +1665,7 @@ function fightFromCover(actor, target, dt) {
             actorGrid.near(point.x, point.z, 1).some(other => other !== actor && other.health > 0 &&
               Math.hypot(other.position.x - point.x, other.position.z - point.z) < .8),
           heightAt: point => world.groundHeight(point.x, point.z),
-          canFinish: point => ['standing', 'kneeling', 'kneelingBoth', 'crouched'].some(pose =>
+          canFinish: point => ['standing', 'kneeling', 'crouched'].some(pose =>
             pose !== t.previousFiringPose && postureFireLine(actor, point, pose, threat)) });
         if (t.shotMoveGoal) { actor.path = actor.pathGoal = null; pathRequests.delete(t.id); }
       }

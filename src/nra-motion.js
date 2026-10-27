@@ -15,6 +15,18 @@ function sample(track, time) {
 
 const validPosition = position => position && ['x', 'y', 'z'].every(axis => Number.isFinite(position[axis]));
 
+export function nativeGaitDrop(actor) {
+  const motion = actor.nativeMotion;
+  if (!motion?.profile?.lowStepGait) return 0;
+  const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
+  const distance = motion.distance + Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
+  const runPhase = distance / (motion.profile.strideMeters * motion.strideScale);
+  const walkPhase = distance / (motion.profile.walkStrideMeters * motion.strideScale);
+  const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9)), jog = transition * transition * (3 - 2 * transition);
+  const bob = Math.sin(walkPhase * Math.PI * 4) * (1 - jog) + Math.sin(runPhase * Math.PI * 4) * jog;
+  return (.09 + .005 * bob) * motion.weight * upright;
+}
+
 export function createNraMotion(profile, actor) {
   if (!Number.isFinite(actor?.walkPhase) || actor.walkPhase < 0 || !validPosition(actor.position) ||
     !Number.isFinite(profile?.strideMeters) || profile.strideMeters <= 0 ||
@@ -22,6 +34,7 @@ export function createNraMotion(profile, actor) {
     throw new Error('Invalid native motion profile');
   }
   if (profile.walk && (!Number.isFinite(profile.walkStrideMeters) || profile.walkStrideMeters <= 0)) throw new Error('Invalid walking stride');
+  if (profile.lowStepGait && !profile.walk) throw new Error('Low-step gait requires its own walking profile');
   if (profile.leanPivot && (!Array.isArray(profile.leanPivot) || profile.leanPivot.length !== 3 ||
     !profile.leanPivot.every(Number.isFinite))) throw new Error('Invalid owned torso pivot');
   for (const track of [profile.idle, profile.run, ...[profile.walk, ...Object.keys(FIRING_POSES).map(pose => profile[pose])].filter(Boolean)]) {
@@ -104,13 +117,20 @@ export function sampleNraMotion(actor) {
   blendedPosition.lerp(new Vector3(.13, 1.54, .04), motion.aim * upright);
   quaternion.slerp(new Quaternion(), motion.aim * upright);
   const bodyLean = motion.bodyLean * upright;
+  const hipDrop = nativeGaitDrop(actor);
+  blendedPosition.y -= hipDrop;
   if (bodyLean && profile.leanPivot) {
     const lean = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -bodyLean);
     const pivot = new Vector3().fromArray(profile.leanPivot);
+    pivot.y -= hipDrop;
     blendedPosition.sub(pivot).applyQuaternion(lean).add(pivot);
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
-  return { idleTime, runTime, walkTime, jog, bodyLean, legLift: motion.legLift, ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
+  return { idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+    walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
+    runStride: profile.strideMeters * motion.strideScale, walkStride: (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
+    bodyLean, hipDrop, strideScale: motion.strideScale, legLift: motion.legLift,
+    ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
 }
 

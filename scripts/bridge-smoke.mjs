@@ -120,7 +120,7 @@ try {
   data = await snapshot();
   assert.equal(data.stance, 'standing', 'new member does not inherit the old prone selection');
   assert.equal(data.look.pitch, 0, 'new member does not inherit the old look pitch');
-  assert.ok(data.allies[data.current].eyeHeight > 1.6);
+  assert.ok(data.allies[data.current].eyeHeight > 1.5);
   assert.ok(Math.abs(data.locomotion.eyeHeight - data.allies[data.current].eyeHeight) < .03,
     'takeover follows the new member standing/leaning height, not the old prone view');
   assert.equal(data.allies[0].stance, 'prone');

@@ -1,7 +1,6 @@
 export const FIRING_POSES = Object.freeze({
   crouched: { stance: 'crouched', eye: 1.05, aim: .7, body: 1.2 },
   kneeling: { stance: 'crouched', eye: 1.12, aim: .8, body: 1.3 },
-  kneelingBoth: { stance: 'crouched', eye: 1.06, aim: .74, body: 1.24 },
   prone: { stance: 'prone', eye: .45, aim: .3, body: .65 },
   wallLeft: { stance: 'standing', eye: 1.59, aim: 1.15, body: 1.76 },
   wallRight: { stance: 'standing', eye: 1.59, aim: 1.15, body: 1.76 },
@@ -40,7 +39,7 @@ export function chooseCombatPosture({ distance, moving, covered, exposed, suppre
   if (covered && !exposed) return 'crouched';
   if (wall && canFire(wall.pose)) return wall.pose;
   let choices = [
-    ['standing', suppressed ? 8 : 25], ['kneeling', 30], ['kneelingBoth', 20], ['crouched', 15],
+    ['standing', suppressed ? 8 : 25], ['kneeling', 45], ['crouched', 15],
     ...(!covered && distance >= 14 && proneClear ? [['prone', suppressed ? 40 : 25]] : []),
   ].filter(([pose]) => canFire(pose));
   if (choices.some(([pose]) => pose !== previousPose)) choices = choices.filter(([pose]) => pose !== previousPose);

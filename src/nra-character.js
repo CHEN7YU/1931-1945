@@ -10,7 +10,8 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { applyNativeLegLift, applyNativeBodyLean } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeLowStep, applyNativeBodyLean } from './nra-gait.js';
+import { groundHeight } from './ground.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -61,11 +62,11 @@ export async function loadNraCharacter() {
     mesh.material = materials.length === 1 ? materials[0] : materials;
     mesh.castShadow = mesh.receiveShadow = true;
   }
-  const clips = await animationResponse.json(), idle = THREE.AnimationClip.parse(clips.idle), run = THREE.AnimationClip.parse(clips.run);
-  const walk = clips.walk ? THREE.AnimationClip.parse(clips.walk) : null;
-  if (!idle.validate() || !run.validate() || walk && !walk.validate()) throw new Error('Invalid character animation');
-  if (!clips.motion) throw new Error('Native motion/carry profile missing');
-  for (const clip of [idle, run, ...(walk ? [walk] : [])]) clip.tracks = clip.tracks.filter(track => !/\.bones\[(?:Left|Right)(?:Arm|ForeArm|Hand)/.test(track.name));
+  // Locomotion is generated from foot targets; the rejected walk/run clips never enter the mixer.
+  const clips = await animationResponse.json(), idle = THREE.AnimationClip.parse(clips.idle);
+  if (!idle.validate()) throw new Error('Invalid native idle animation');
+  if (!clips.motion?.idle) throw new Error('Native idle/carry profile missing');
+  idle.tracks = idle.tracks.filter(track => !/\.bones\[(?:Left|Right)(?:Arm|ForeArm|Hand)/.test(track.name));
   const normalized = new THREE.Group();
   const bounds = new THREE.Box3().setFromObject(model), height = bounds.max.y - bounds.min.y;
   if (!Number.isFinite(height) || height <= 0) throw new Error('Invalid character dimensions');
@@ -73,7 +74,7 @@ export async function loadNraCharacter() {
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
   const postures = createNativePosturePoses(normalized, inspected.canonical);
-  const motionProfile = { ...clips.motion, runLiftBanks: [.55, .85],
+  const motionProfile = { ...createNativeGaitProfile(clips.motion.idle),
     leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   const appearanceCache = { geometries: new Map(), materials: new Map() };
@@ -82,8 +83,11 @@ export async function loadNraCharacter() {
   root.add(avatar);
   avatar.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
   const canonical = new Map(meshes[0].skeleton.bones.map(bone => [bone.name, bone]));
-  const animatedLegs = ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Head']
-    .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone() }));
+  root.updateMatrixWorld(true);
+  const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
+    [side, root.worldToLocal(canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
+  const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Head']
+    .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone(), position: canonical.get(name).position.clone() }));
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
@@ -95,14 +99,13 @@ export async function loadNraCharacter() {
   const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt');
   const riflePose = createNraRiflePose(root, canonical, gun);
   const mixer = new THREE.AnimationMixer(meshes[0]);
-  const actions = { idle: mixer.clipAction(idle), run: mixer.clipAction(run), ...(walk ? { walk: mixer.clipAction(walk) } : {}),
+  const actions = { idle: mixer.clipAction(idle),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
   let drawBatches = 0;
   root.traverse(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
   let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
   let observedActor = null, initialized = false, legPose = null;
   for (const action of Object.values(actions)) { action.play(); action.paused = true; }
-  actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0);
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
   return {
@@ -112,9 +115,9 @@ export async function loadNraCharacter() {
     bind(id) {
       actorId = id; observedActor = null; initialized = false; speed = 0; active = 'idle'; motion = null; resets++;
       mixer.stopAllAction();
-      for (const leg of animatedLegs) leg.rotation.copy(leg.bone.quaternion);
+      for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
       for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
-      actions.idle.setEffectiveWeight(1); actions.run.setEffectiveWeight(0); actions.walk?.setEffectiveWeight(0); root.visible = false;
+      actions.idle.setEffectiveWeight(1); root.visible = false;
       for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
       appearance.apply(null);
     },
@@ -127,21 +130,20 @@ export async function loadNraCharacter() {
       if (!actor) return;
       appearance.apply(actor.avatarAppearance ?? null);
       motion = sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
-      actions.idle.time = motion.idleTime; actions.run.time = motion.runTime;
+      actions.idle.time = motion.idleTime;
       const upright = motion.upright;
-      actions.idle.setEffectiveWeight((1 - motion.weight) * upright); actions.run.setEffectiveWeight(motion.weight * motion.jog * upright);
-      if (actions.walk) { actions.walk.time = motion.walkTime; actions.walk.setEffectiveWeight(motion.weight * (1 - motion.jog) * upright); }
+      actions.idle.setEffectiveWeight(upright);
       for (const pose of Object.keys(FIRING_POSES)) { actions[pose].time = 0; actions[pose].setEffectiveWeight(motion[pose]); }
       if (actor.health > 0 || !initialized) {
-        for (const leg of animatedLegs) leg.bone.quaternion.copy(leg.rotation);
+        for (const leg of animatedLegs) { leg.bone.quaternion.copy(leg.rotation); leg.bone.position.copy(leg.position); }
         mixer.update(0);
-        for (const leg of animatedLegs) leg.rotation.copy(leg.bone.quaternion);
+        for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
       }
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2);
       root.updateMatrixWorld(true);
       if (actor.health > 0) {
+        legPose = applyNativeLowStep(root, canonical, motion, restFeet, groundHeight);
         applyNativeBodyLean(root, canonical, motion);
-        legPose = applyNativeLegLift(root, canonical, motion, actor.position.y);
       }
       if (actor.health > 0 || !initialized) riflePose.update(motion);
       initialized = true;
@@ -151,11 +153,12 @@ export async function loadNraCharacter() {
     get snapshot() {
       const point = name => canonical.get(name).getWorldPosition(new THREE.Vector3()).toArray();
       return { actorId, visible: root.visible, active, stance: observedActor?.stance ?? 'standing', speed, position: root.position.toArray(),
+        animationSources: Object.values(actions).map(action => action.getClip().name),
         firingPose: observedActor ? ownedFiringPose(observedActor) : null,
-        gait: motion ? { legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
+        gait: motion ? { source: 'native-low-step', legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
           bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose } : null,
         hips: point('Hips'), head: point('Head'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
-        leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
+        leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
