@@ -1,0 +1,7 @@
+# Keep audited upstream assets and license bytes intact on Windows checkouts.
+public/assets/characters/kenney-survivor/* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+public/assets/audio/kenney-impact/* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+public/assets/characters/kenney-survivor/License.txt -whitespace
+public/assets/audio/kenney-impact/License.txt -whitespace
+public/assets/game/nra-88/* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+public/assets/game/nra-88/Kenney-CC0.txt -whitespace

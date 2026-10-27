@@ -1,0 +1,16 @@
+{
+  "asset": "Kenney Impact Sounds 1.0",
+  "author": "Kenney",
+  "license": "CC0-1.0",
+  "licenseFile": "License.txt",
+  "source": "https://kenney.nl/assets/impact-sounds",
+  "download": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+  "verified": "2026-10-26",
+  "purpose": "Raw footstep audition only; not integrated battle mixing or verified rifle audio.",
+  "files": [
+    { "file": "concrete.ogg", "original": "Audio/footstep_concrete_000.ogg", "bytes": 5808, "sha256": "d7267e183067757c92c169de2a379abea592cfca6b39bb2e8feea15221ad79fe" },
+    { "file": "wood.ogg", "original": "Audio/footstep_wood_000.ogg", "bytes": 5949, "sha256": "5f1c252942a220d658121bd9417448cd19649ded9fff2ff15f6e50899373ce8e" },
+    { "file": "grass.ogg", "original": "Audio/footstep_grass_000.ogg", "bytes": 8290, "sha256": "9d49497777405d78d7cf7f2888e28277f3a23192300cfd1d79d54876b20f479f" },
+    { "file": "License.txt", "original": "License.txt", "bytes": 608, "sha256": "b49aa9c56b04528b95913de13e506a0f7c5e807b9925db9bfef86af1f91120db" }
+  ]
+}

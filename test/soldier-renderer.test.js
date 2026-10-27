@@ -100,3 +100,18 @@ test('seated and controlled-body visibility derives from ownership rather than s
   assert.equal(actor.health, 100);
   for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
 });
+test('a separate skinned view excludes only its procedural batch while retaining the owned physical hit proxy', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  const renderer = createSoldierRenderer(scene, camera, 16);
+  const actor = { id: 'native-view', health: 100, friendly: false, position: new THREE.Vector3(0, 0, -5), heading: .4,
+    walkPhase: .3, walkPoseReady: true, deathTime: 0, model: soldierModel(false), vehicleId: null };
+  renderer.update([actor], 'high', 1, null, actor.id);
+  assert.equal(renderer.snapshot.visible, 0);
+  assert.equal(actor.model.visible, true, 'exclusion must not remove the physical proxy');
+  assert.deepEqual(actor.model.position, actor.position);
+  assert.equal(actor.model.rotation.y, actor.heading);
+  assert.equal(actor.health, 100);
+  renderer.update([actor], 'high', 1, null);
+  assert.equal(renderer.snapshot.visible, 1, 'the baseline procedural route remains available');
+  for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
+});

@@ -99,6 +99,17 @@ const solidIndex = createSolidIndex(world.solids);
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
 const rallyRenderer = createRallyRenderer(scene);
 const vehicleRenderer = createVehicleRenderer(scene);
+let nraCharacter = null;
+if (new URLSearchParams(location.search).get('character') !== 'procedural') {
+  try {
+    const { loadNraCharacter } = await import('./nra-character.js');
+    nraCharacter = await loadNraCharacter(); scene.add(nraCharacter.root);
+  } catch (error) {
+    $('loading').hidden = true; $('fatal').hidden = false;
+    $('fatal-message').textContent = `人物适配试验加载失败：${error.message}。未静默回退。`;
+    throw error;
+  }
+}
 const actorGrid = new SpatialGrid();
 const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
@@ -576,6 +587,7 @@ function spawnFormation(formation, initial = false) {
 }
 
 function clearActors(list) {
+  if (nraCharacter && list.some(actor => actor.id === nraCharacter.actorId)) nraCharacter.bind(null);
   for (const actor of list) {
     scene.remove(actor.model);
     const transport = occupiedVehicle(entities, actor);
@@ -750,6 +762,7 @@ function deploy(squadId, spawnId = null) {
     plane: 'W S 调节速度 · A D 转向 · 鼠标 控制机头<br>Space 爬升 · Ctrl 下降 · 左键 机炮 · 无法空中占点',
   }[type];
   allies.forEach(actor => { actor.order = type === 'infantry' && actor.index >= 10 ? 'advance' : 'follow'; });
+  nraCharacter?.bind(type === 'infantry' ? allies[1]?.id ?? null : null);
   $('overlay').hidden = true;
   pendingSquad = pendingSpawn = null;
   setGameState('playing');
@@ -1949,7 +1962,7 @@ function updateHUD() {
   $('members').innerHTML = allies.map((actor, index) => `<span title="${Math.floor(index / 10) + 1}班 ${index + 1}号 ${actor.role === 'engineer' ? '工兵' : '步枪手'}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`}${actor.health <= 0 ? '×' : ''}</span>`).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
-  $('force-status').textContent = `${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
+  $('force-status').textContent = `${nraCharacter ? `人物适配试验 · ${nraCharacter.issue ?? '非完整动作验收'}　` : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
   $('section-status').textContent = deployedType === 'infantry' ? `本班 ${allies.filter(actor => actor.health > 0).length}/${allies.length}` : '';
@@ -2044,7 +2057,8 @@ function tick(now) {
   renderSimulationStatus();
   rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
-  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId);
+  nraCharacter?.update(entities.soldiers.get(nraCharacter.actorId), time, entities.control.soldierId);
+  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId, nraCharacter?.actorId ?? null);
   const renderStarted = benchmark ? performance.now() : 0;
   if (benchmark) telemetry.add('instancesMs', renderStarted - instancesStarted);
   renderer.render(scene, camera);
@@ -2295,6 +2309,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
   controlSimulation: { toolEquipped, jumpHeight, jumpVelocity },
+  historicalCharacter: nraCharacter?.snapshot ?? null,
   simulationClock: simulationClock.snapshot,
   entityCounts: { units: entities.units.size, soldiers: entities.soldiers.size, weapons: entities.weapons.size, vehicles: entities.vehicles.size },
   vehicleViews: vehicleRenderer.snapshot,

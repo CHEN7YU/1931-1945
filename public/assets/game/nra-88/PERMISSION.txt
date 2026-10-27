@@ -1,0 +1,23 @@
+NRA 88th Division character - project permission record
+
+Author/store: 中興コンビニ, https://pixivtw.booth.pm/
+Source: https://booth.pm/ja/items/5625369
+
+On 2026-10-26 at 20:19 (UTC+01), the project owner reported that they
+had spoken to the author by telephone and the author agreed to the
+previously described project use. That request described modification,
+browser game distribution, possible commercial use, and including the
+required original or converted runtime files in the public GitHub project.
+
+Basis: user-reported author phone consent. This file is a record of that
+report, not a statement signed by the author, not independent legal
+verification, and not a CC0 or general-purpose public-domain dedication.
+It does not override independent third-party rights or terms.
+
+The original downloaded archive and Unity package are not published here.
+Only selected runtime files and project-derived animation/texture data
+are used. Historical uniform and unit/battle applicability remain unverified.
+
+Idle/run motion derives from Kenney Animated Characters Survivors 1.1,
+under the separately preserved CC0 license in Kenney-CC0.txt. This does
+not change the license of the character model or its textures.

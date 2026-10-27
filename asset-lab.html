@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23252d29' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%23cfb278' stroke-width='2' d='M6 24 12 10 17 20 22 6 27 24Z'/%3E%3C/svg%3E">
+  <title>浏览器人物管线验证 · 非正式战斗</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#18201f;color:#e6e8dd;font:14px "Microsoft YaHei",sans-serif}
+    #stage{display:block;width:100vw;height:100vh}aside{position:absolute;top:16px;left:16px;width:340px;max-height:94vh;overflow:auto;padding:18px;background:#17211fec;border:1px solid #6e7867}
+    h1{font-size:20px;margin:0 0 12px}h2{font-size:14px;color:#d6c58c}p{line-height:1.8}button,a{color:inherit}button{background:#34443a;border:1px solid #7e8b73;padding:8px;margin:0 8px 8px 0;cursor:pointer}button:disabled{opacity:.4}
+    .warning{color:#ebcb84}#error{color:#ffb5a5;white-space:pre-wrap}pre{font-size:11px;line-height:1.6;white-space:pre-wrap}audio{width:100%;height:30px}
+    @media(max-width:800px){aside{top:8px;left:8px;width:calc(100vw - 16px);max-height:36vh;padding:12px}h1{font-size:16px}aside p{font-size:12px;line-height:1.5}}
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <aside>
+    <h1>人物／动作管线验证</h1>
+    <p class="warning">非正式士兵、非战斗切片。Kenney通用角色只验证蒙皮和绑定，不代表中国军服或最终人物品质。</p>
+    <p>WASD移动，Shift冲刺，C慢走；鼠标拖动检查。碰墙后应停止奔跑动作。Space或按钮暂停。</p>
+    <button id="toggle" disabled>开始样例</button><button id="reset" disabled>重置位置</button><a href="/">返回原战场</a>
+    <p id="status" role="status">加载本地模型与动作…</p>
+    <p id="error" role="alert" hidden></p>
+    <pre id="metrics"></pre>
+    <h2>明确缺口</h2>
+    <p>只有idle/run；缺历史军服、walk、瞄准、双手握持、装填、死亡。挂枪仅验证右手骨骼附着，未调成合格持枪动作。脚部贴地与滑步待人工判断。</p>
+    <h2>CC0原始脚步试听</h2>
+    <p>仅试听，未接入战斗混音；没有合格步枪音源。</p>
+    <label>混凝土地面<audio controls preload="metadata" src="/assets/audio/kenney-impact/concrete.ogg"></audio></label>
+    <label>木地面<audio controls preload="metadata" src="/assets/audio/kenney-impact/wood.ogg"></audio></label>
+    <label>草地<audio controls preload="metadata" src="/assets/audio/kenney-impact/grass.ogg"></audio></label>
+    <p>模型、动作、纹理及声音：Kenney，CC0。包内许可证与来源保存在各资源目录，非Kenney背书。</p>
+  </aside>
+  <script type="module" src="/src/asset-lab.js"></script>
+</body>
+</html>

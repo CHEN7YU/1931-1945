@@ -1,0 +1,305 @@
+{
+  "asset": "88th Division NRA - one-soldier battle prototype",
+  "author": "中興コンビニ",
+  "source": "https://booth.pm/ja/items/5625369",
+  "permission": {
+    "basis": "user-reported-author-phone-consent",
+    "reportedAt": "2026-10-26T20:19:21+01:00",
+    "record": "PERMISSION.txt",
+    "isCC0": false
+  },
+  "originalArchive": {
+    "file": "88th_Division_NRA.zip",
+    "bytes": 312097999,
+    "sha256": "905d8398b4e10a8a49414835c9bf93010536e4b2bc02f9ca1387febd25f7db13"
+  },
+  "modelOriginalSha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898",
+  "motionSource": {
+    "source": "https://kenney.nl/assets/animated-characters-survivors",
+    "license": "CC0-1.0",
+    "licenseFile": "Kenney-CC0.txt",
+    "method": "Matched auxiliary T poses; world-space rest rotation differences; hip/leg reference-height scale; preserve target hip baseline; disable root XZ movement; bake shoe-sole nonpenetration",
+    "references": [
+      "https://github.com/upf-gti/retargeting-threejs/blob/main/docs/Algorithm.md",
+      "https://github.com/pixiv/three-vrm/blob/dev/packages/three-vrm/examples/humanoidAnimation/loadMixamoAnimation.js"
+    ]
+  },
+  "textures": {
+    "gear": "gear.jpg",
+    "pouch": "pouch.jpg",
+    "face": "face.jpg",
+    "body": "body.jpg",
+    "metal": "metal.jpg",
+    "pidai": "pidai.jpg",
+    "strap": "strap.jpg",
+    "badge": "badge.png",
+    "patch": "patch.png",
+    "pants": "pants.jpg",
+    "puttee": "puttee.jpg",
+    "eye": "eye.png",
+    "hand": "hand.jpg",
+    "metalR": "metalR.jpg",
+    "shoes": "shoes.jpg",
+    "ranks": "ranks.png"
+  },
+  "meshMaterials": {
+    "帶子": [
+      "gear",
+      "gear"
+    ],
+    "彈夾收納包": [
+      "pouch"
+    ],
+    "臉部": [
+      "face"
+    ],
+    "衣服": [
+      "body"
+    ],
+    "腰帶": [
+      "metal",
+      "pidai"
+    ],
+    "衣服帶子": [
+      "pouch"
+    ],
+    "胸章": [
+      "badge"
+    ],
+    "臂章": [
+      "patch"
+    ],
+    "褲子": [
+      "puttee",
+      "pants",
+      "puttee"
+    ],
+    "胸繩": [
+      "strap"
+    ],
+    "眼睛": [
+      "eye"
+    ],
+    "手部": [
+      "hand",
+      "hand"
+    ],
+    "鞋子": [
+      "shoes",
+      "metalR"
+    ],
+    "領章": [
+      "ranks"
+    ]
+  },
+  "originalTextureSources": {
+    "gear": {
+      "guid": "0baea15f9e5c1934ba00d9947c498b72",
+      "bytes": 4600445,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Gear_D.png"
+    },
+    "pouch": {
+      "guid": "7d0dfbf56922cf347820c32685c1560b",
+      "bytes": 6274921,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Pouch_D.png"
+    },
+    "face": {
+      "guid": "5e24d601ab989424abe516e0ee303b00",
+      "bytes": 3920668,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Face_D.png"
+    },
+    "body": {
+      "guid": "ca0dc08233baa874bb2fde187336dc33",
+      "bytes": 25259010,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Body_D.png"
+    },
+    "metal": {
+      "guid": "11dd068d8f621fc479642149a2fe267e",
+      "bytes": 335163,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Metal_D.png"
+    },
+    "pidai": {
+      "guid": "25d77cf9db889fc4c9e6c74e90412828",
+      "bytes": 625140,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Pidai_G.png"
+    },
+    "strap": {
+      "guid": "4a7999ba7e62f004a94c99f7825be533",
+      "bytes": 7826676,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Strap_D.png"
+    },
+    "badge": {
+      "guid": "df5d8c8e25577d34495a83fb487a686d",
+      "bytes": 42874,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Badge_D.png"
+    },
+    "patch": {
+      "guid": "1db7a6bc34d640641b861d1d74127183",
+      "bytes": 39513,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Arm Patch_D.png"
+    },
+    "pants": {
+      "guid": "7d4f49629f71e1f4687b7c5a5f6062b0",
+      "bytes": 7194970,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Pants_D.png"
+    },
+    "puttee": {
+      "guid": "791a735a05725454385f41b2deab4fad",
+      "bytes": 151599,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Puttee_D.png"
+    },
+    "eye": {
+      "guid": "519b2699f2b074d469f0c54f9f90e0c9",
+      "bytes": 79239,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Eye_D.png"
+    },
+    "hand": {
+      "guid": "1deb23fc68b37f2498078b2344b1b8b0",
+      "bytes": 1068478,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Hand_D.png"
+    },
+    "metalR": {
+      "guid": "5cf187107a0e0dd45b83a2f9fe26fddd",
+      "bytes": 301172,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Metal_R.png"
+    },
+    "shoes": {
+      "guid": "973ec9219e1465944b06007b78e04dce",
+      "bytes": 263357,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Shoes_D.png"
+    },
+    "ranks": {
+      "guid": "3e4f359157720ce4fbb93b0d4cf27e19",
+      "bytes": 1584174,
+      "path": "Assets/中興コンビニ/88th Division NRA/Texture/Ranks_Inf_D.png"
+    }
+  },
+  "transformations": [
+    "Preserve original FBX bytes; validate and share matching duplicate skin bind poses at runtime.",
+    "Use prefab material assignments instead of stale embedded FBX texture links.",
+    "Downsample selected base colors to a maximum 1024 pixels; use JPEG quality 90 for opaque maps.",
+    "Retarget existing CC0 idle/run; Unity .anim controllers are not executed or claimed as imported.",
+    "Rebuild a coherent canonical bone parent chain while preserving every bind matrix, then share it across the 14 parts.",
+    "Calibrate auxiliary reference poses and hip/leg scale; bake shoe-sole nonpenetration offline.",
+    "Mask borrowed arm/finger tracks; apply a native static rifle pose, analytic elbow hints, right-hand attachment and weapon-relative left wrist target.",
+    "Retain the authoritative friendly muzzle at actor-local (0.13, 1.39, -0.871), independent of rendering."
+  ],
+  "limitations": [
+    "Candidate historical appearance; exact Taierzhuang unit issue not verified.",
+    "Static rifle hold and finger curl are project-authored poses, not a complete military animation library.",
+    "No authored aim-transition, reload-hand, crouch or death clips; analytic hand alignment is interim, not final animation quality.",
+    "FBXLoader emits five more-than-four-skinning-weight warnings and drops excess influences; affected vertex count has not been enumerated. No lossless-import claim.",
+    "Existing collision and hit proxy retained; not bone-accurate damage zones.",
+    "One character only; no 200-skinned-character performance claim."
+  ],
+  "files": [
+    {
+      "file": "animations.json",
+      "bytes": 186268,
+      "sha256": "5d1f4c22b7927e218b8c7960aaf70c371696cf059db09df60000a4fc51f8d34c"
+    },
+    {
+      "file": "badge.png",
+      "bytes": 38424,
+      "sha256": "87e33d64934f7d96a2477192a39c63b65df4b192c9ef96e252f07b95fb907f64"
+    },
+    {
+      "file": "body.jpg",
+      "bytes": 241111,
+      "sha256": "b2395cbd3a84d5ebd11eae526b5765658d1a4613f569ad1d36389617fac9621e"
+    },
+    {
+      "file": "character.fbx",
+      "bytes": 2864044,
+      "sha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898"
+    },
+    {
+      "file": "eye.png",
+      "bytes": 121617,
+      "sha256": "4fb3a4de6fc07cc9b5d8da947558516f0df49c9a3277c80c5246995e98aaa7b0"
+    },
+    {
+      "file": "face.jpg",
+      "bytes": 91105,
+      "sha256": "40d44bdefa7eda0c1b17dd089ab8eaf41409b9fe5c927a1d24683889394f78b7"
+    },
+    {
+      "file": "gear.jpg",
+      "bytes": 269797,
+      "sha256": "7008f9296629b782f848905972c52a41b4e51c76374d4428f78b24fa67ab0f3b"
+    },
+    {
+      "file": "hand.jpg",
+      "bytes": 133833,
+      "sha256": "c69e100edc17e08277de290e9697557c38d82cdd16bb713763923c29fe5f9e26"
+    },
+    {
+      "file": "Kenney-CC0.txt",
+      "bytes": 696,
+      "sha256": "8eab20a1fa97308ae50443f6b8a0fabc4dd1fc37062988cd635fc74c8f1be21c"
+    },
+    {
+      "file": "metal.jpg",
+      "bytes": 45942,
+      "sha256": "75d9bb4256aa013dc14d64988f0ac66b5b3738f11b90d51582a2f6b7f184bd69"
+    },
+    {
+      "file": "metalR.jpg",
+      "bytes": 61095,
+      "sha256": "05cf1aa496325db81b1b71e72370d773a86dfbfa8a60742fe53132bae0eb5b25"
+    },
+    {
+      "file": "pants.jpg",
+      "bytes": 283681,
+      "sha256": "648db454a29b89043b7abc3a026d96c86201c3d6e5e2da2a4c9287a2d0f5b98e"
+    },
+    {
+      "file": "patch.png",
+      "bytes": 44600,
+      "sha256": "a89c24253bff5e7e8b28fc5b052e6fdab50b60ffa1666afb004730c4ef1b87d7"
+    },
+    {
+      "file": "PERMISSION.txt",
+      "bytes": 1244,
+      "sha256": "dc807ddd6946720f7b5e30c76c85a95fc3ac9793cf1af4e6824deebe6fd6259a"
+    },
+    {
+      "file": "pidai.jpg",
+      "bytes": 73939,
+      "sha256": "a3c2a50ee6837d3e34984dca260d56317e8cd58a85216b4e8bf9ad8221a8b63b"
+    },
+    {
+      "file": "pouch.jpg",
+      "bytes": 148229,
+      "sha256": "9140f3fd347d1d4694d0011ee24fb00a5be8de512fe90468fa17913eabc597a6"
+    },
+    {
+      "file": "puttee.jpg",
+      "bytes": 24917,
+      "sha256": "36b09d8d3d6a36483c3bf0b406146d4b2493f0d50f16aed4579c0c6e11f7a62d"
+    },
+    {
+      "file": "ranks.png",
+      "bytes": 1355141,
+      "sha256": "c37bb28d587a9f6ff46e29a34f74e211709a0ac50ec38652a0315f1df2e2c858"
+    },
+    {
+      "file": "shoes.jpg",
+      "bytes": 53983,
+      "sha256": "38521e09f72d6f9f62c7bf5cb183efebcfe2769cbcdc792b5f1657fffa48ed45"
+    },
+    {
+      "file": "strap.jpg",
+      "bytes": 340027,
+      "sha256": "bad510f32d82ee0e6f3fafa06295516cf2fc2f6343136773af2fc3eb8c2d51a3"
+    }
+  ],
+  "evaluation": {
+    "status": "prototype-one-character",
+    "hypothesis": "reference-pose-and-hip-calibration",
+    "scale": 0.8769257405799571,
+    "mappedBones": 32,
+    "evidence": "Normal 100v100 battlefield: Y control hides own third-person view; personal rifle fires; Y return preserves weapon/ammo; original soldier-192 AI shot recorded at simulation time 55.5293; displayed and authoritative muzzles align within 0.0001m.",
+    "notApproved": "Final historical accuracy, full military animation quality, full skinned-army performance and user quality acceptance remain unverified."
+  }
+}
