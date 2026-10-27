@@ -50,7 +50,9 @@ try {
 
   const failurePage = await browser.newPage();
   await failurePage.route('**/assets/audio/recorded-rifle/report.wav', route => route.abort());
-  await failurePage.goto('http://127.0.0.1:5173/?character=procedural');
+  const failureUrl = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5173');
+  failureUrl.search = '?character=procedural';
+  await failurePage.goto(failureUrl.href);
   await failurePage.waitForFunction(() => window.__battle?.state === 'menu');
   assert.equal(await failurePage.evaluate(() => window.__battle.rifleAudio.status), 'fallback');
   await failurePage.locator('#deploy').click();

@@ -2,6 +2,13 @@ function finitePoint(point) {
   return point && ['x', 'y', 'z'].every(axis => Number.isFinite(point[axis]));
 }
 
+function requireShot(event) {
+  if (!Number.isInteger(event?.id) || event.id < 1 ||
+    !['soldierId', 'weaponId'].every(key => typeof event.source?.[key] === 'string' && event.source[key])) {
+    throw new RangeError('Rifle audio requires an original shot event identity');
+  }
+}
+
 export function rifleMix(start, listener, owned = false) {
   if (!finitePoint(start) || !finitePoint(listener?.position) || !finitePoint(listener?.right) || typeof owned !== 'boolean') {
     throw new RangeError('Rifle audio requires finite source/listener positions and orientation');
@@ -12,9 +19,20 @@ export function rifleMix(start, listener, owned = false) {
   if (rightLength < 1e-6) throw new RangeError('Rifle audio listener right vector is degenerate');
   const pan = owned ? 0 : Math.max(-.95, Math.min(.95,
     (delta.x * listener.right.x + delta.y * listener.right.y + delta.z * listener.right.z) / Math.max(1, distance) / rightLength));
-  return { distance, audible: owned || distance <= 100, pan,
-    gain: owned ? .65 : .12 / (1 + (distance / 14) ** 2),
-    cutoff: owned ? 14000 : Math.max(1800, 14000 / (1 + distance / 18)) };
+  const beyondNear = Math.max(0, distance - 3);
+  const fade = Math.max(0, Math.min(1, (240 - distance) / 60));
+  return { distance, audible: owned || distance < 240, pan,
+    gain: owned ? .65 * 10 ** (5 / 20) : .72 * 3 / (3 + .25 * beyondNear) * fade * fade * (3 - 2 * fade),
+    cutoff: owned ? 14000 : Math.max(1400, 14000 / (1 + beyondNear / 18)) };
+}
+
+function peakSafetyCurve() {
+  const curve = new Float32Array(2049);
+  for (let i = 0; i < curve.length; i++) {
+    const value = i * 2 / (curve.length - 1) - 1, magnitude = Math.abs(value);
+    curve[i] = Math.sign(value) * (magnitude <= .85 ? magnitude : .85 + .1 * Math.tanh((magnitude - .85) / .1));
+  }
+  return curve;
 }
 
 export function createRifleAudio(buffer) {
@@ -22,33 +40,63 @@ export function createRifleAudio(buffer) {
     throw new RangeError('Rifle report must be a decoded short audio buffer');
   }
   const voices = new Set(), history = [];
-  const counts = { played: 0, owned: 0, remote: 0, range: 0, budget: 0, polyphony: 0, suspended: 0 };
-  let context = null, bus = null, ownVoice = null, batchRemote = 0, peakVoices = 0;
-  return {
+  const counts = { played: 0, owned: 0, remote: 0, range: 0, budget: 0, polyphony: 0, suspended: 0, replaced: 0 };
+  let context = null, bus = null, safety = null, ownVoice = null, batchRemote = 0, peakVoices = 0;
+  const audioMixer = {
     beginBatch() { batchRemote = 0; },
     update(listener) {
       if (!context || context.state !== 'running') return;
+      ownVoice = null;
       for (const voice of voices) {
         const owned = voice.soldierId === listener.soldierId && voice.weaponId === listener.weaponId;
         const mix = rifleMix(voice.start, listener, owned);
+        voice.owned = owned;
+        voice.priority = mix.gain;
+        if (owned) ownVoice = voice;
         voice.gain.gain.setTargetAtTime(mix.audible ? mix.gain : 0, context.currentTime, .015);
         voice.panner.pan.setTargetAtTime(mix.pan, context.currentTime, .015);
         voice.filter.frequency.setTargetAtTime(mix.cutoff, context.currentTime, .015);
       }
+      const remote = [...voices].filter(voice => !voice.owned);
+      if (remote.length > 8) {
+        const weakest = remote.reduce((selected, voice) => voice.priority < selected.priority ? voice : selected);
+        weakest.source.stop(); weakest.release(); counts.replaced++;
+      }
+    },
+    playBatch(audio, events, listener) {
+      if (!Array.isArray(events) || events.length > 5120) throw new RangeError('Rifle audio requires a bounded shot batch');
+      const ranked = events.map(event => {
+        requireShot(event);
+        const owned = event.source.soldierId === listener.soldierId && event.source.weaponId === listener.weaponId;
+        return { event, owned, mix: rifleMix(event.start, listener, owned) };
+      });
+      ranked.sort((a, b) => Number(b.owned) - Number(a.owned) || b.mix.gain - a.mix.gain ||
+        a.mix.distance - b.mix.distance || a.event.id - b.event.id);
+      audioMixer.beginBatch();
+      audioMixer.update(listener);
+      let played = 0;
+      for (const item of ranked) if (audioMixer.play(audio, item.event, listener, item.owned)) played++;
+      return played;
     },
     play(audio, event, listener, owned) {
-      if (!Number.isInteger(event?.id) || event.id < 1 || !event.source?.soldierId || !event.source?.weaponId) {
-        throw new RangeError('Rifle audio requires an original shot event identity');
-      }
+      requireShot(event);
       const mix = rifleMix(event.start, listener, owned);
       if (!audio || audio.state !== 'running') { counts.suspended++; return false; }
       if (!mix.audible) { counts.range++; return false; }
       if (!owned && batchRemote >= 3) { counts.budget++; return false; }
-      if (!owned && [...voices].filter(voice => !voice.owned).length >= 8) { counts.polyphony++; return false; }
+      if (audio !== context && voices.size) throw new Error('Cannot replace rifle audio context with active voices');
+      const remote = [...voices].filter(voice => !voice.owned);
+      if (!owned && remote.length >= 8) {
+        const weakest = remote.reduce((selected, voice) => voice.priority < selected.priority ? voice : selected);
+        if (mix.gain < weakest.priority) { counts.polyphony++; return false; }
+        weakest.source.stop(); weakest.release(); counts.replaced++;
+      }
       if (audio !== context) {
-        if (voices.size) throw new Error('Cannot replace rifle audio context with active voices');
-        bus?.disconnect();
-        context = audio; bus = audio.createGain(); bus.gain.value = .7; bus.connect(audio.destination);
+        bus?.disconnect(); safety?.disconnect();
+        context = audio; bus = audio.createGain(); bus.gain.value = .7;
+        safety = audio.createWaveShaper(); safety.curve = peakSafetyCurve();
+        safety.oversample = 'none';
+        bus.connect(safety).connect(audio.destination);
       }
       if (owned && ownVoice) {
         const replaced = ownVoice;
@@ -59,7 +107,7 @@ export function createRifleAudio(buffer) {
       filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
       gain.gain.value = mix.gain; panner.pan.value = mix.pan;
       source.connect(filter).connect(gain).connect(panner).connect(bus);
-      const voice = { source, owned, gain, filter, panner, start: { ...event.start }, release: null,
+      const voice = { source, owned, gain, filter, panner, priority: mix.gain, start: { ...event.start }, release: null,
         soldierId: event.source.soldierId, weaponId: event.source.weaponId };
       let ended = false;
       voice.release = () => {
@@ -81,12 +129,19 @@ export function createRifleAudio(buffer) {
       source.start(audio.currentTime);
       return true;
     },
+    reset() {
+      for (const voice of [...voices]) { voice.source.stop(); voice.release(); }
+      batchRemote = 0; peakVoices = 0; history.length = 0;
+      for (const key of Object.keys(counts)) counts[key] = 0;
+    },
     get snapshot() {
       return { status: 'recorded', contextState: context?.state ?? 'not-started', duration: buffer.duration, sampleRate: buffer.sampleRate,
         active: voices.size, peakVoices, counts: { ...counts }, history: history.map(item => ({ ...item })),
-        limits: { remoteVoices: 8, remotePerBatch: 3, maxDistance: 100 } };
+        dynamics: { linearBelow: .85, safetyCeiling: .95 },
+        limits: { remoteVoices: 8, remotePerBatch: 3, maxDistance: 240, fadeFrom: 180 } };
     },
   };
+  return audioMixer;
 }
 
 export async function loadRifleAudio() {
