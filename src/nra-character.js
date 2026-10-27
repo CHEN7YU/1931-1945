@@ -10,7 +10,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeLowStep, applyNativeBodyLean } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeFootCycle, applyNativeBodyLean } from './nra-gait.js';
 import { groundHeight } from './ground.js';
 
 export function configureNraTexture(texture, id) {
@@ -142,7 +142,7 @@ export async function loadNraCharacter() {
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2);
       root.updateMatrixWorld(true);
       if (actor.health > 0) {
-        legPose = applyNativeLowStep(root, canonical, motion, restFeet, groundHeight);
+        legPose = applyNativeFootCycle(root, canonical, motion, restFeet, groundHeight);
         applyNativeBodyLean(root, canonical, motion);
       }
       if (actor.health > 0 || !initialized) riflePose.update(motion);
@@ -155,7 +155,7 @@ export async function loadNraCharacter() {
       return { actorId, visible: root.visible, active, stance: observedActor?.stance ?? 'standing', speed, position: root.position.toArray(),
         animationSources: Object.values(actions).map(action => action.getClip().name),
         firingPose: observedActor ? ownedFiringPose(observedActor) : null,
-        gait: motion ? { source: 'native-low-step', legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
+        gait: motion ? { source: 'native-foot-cycle', legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
           bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose } : null,
         hips: point('Hips'), head: point('Head'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),

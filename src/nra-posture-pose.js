@@ -22,9 +22,9 @@ export function createNativePosturePoses(normalized, bones) {
   const result = {};
   for (const stance of Object.keys(FIRING_POSES)) {
     restore();
-    const prone = stance === 'prone', wall = stance.startsWith('wall'), kneeling = stance === 'kneeling';
+    const prone = stance === 'prone', wall = stance.startsWith('wall'), kneeling = stance === 'kneeling' || stance === 'crouched';
     const lowered = originalHips.clone();
-    lowered.y -= prone ? .77 : wall ? .08 : kneeling ? .53 : .60;
+    lowered.y -= prone ? .77 : wall ? .08 : stance === 'kneeling' ? .53 : .60;
     hips.position.copy(hips.parent.worldToLocal(lowered));
     setRotation(hips, originalHipsRotation.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), prone ? Math.PI / 2 : .12)));
     if (wall) setRotation(bones.get('Spine'), rotation(bones.get('Spine')).premultiply(new THREE.Quaternion()

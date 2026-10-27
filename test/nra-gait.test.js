@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Group, Bone, Vector3 } from 'three';
-import { lowStepTarget, applyNativeLowStep, applyNativeBodyLean } from '../src/nra-gait.js';
+import { lowStepTarget, runningStepTarget, applyNativeFootCycle, applyNativeBodyLean } from '../src/nra-gait.js';
 
 function legs() {
   const root = new Group(), bones = new Map(), hips = new Bone();
@@ -23,10 +23,10 @@ test('low steps use bounded foot trajectories without stretching legs or changin
   for (const legLift of [.55, .85]) {
     const { root, bones, restFeet } = legs(), motion = { legLift, weight: 1, jog: 1, upright: 1,
       hipDrop: .09, walkPhase: .6, runPhase: .6, walkStride: 1.25, runStride: 2.4 };
-    const before = structuredClone(motion), result = applyNativeLowStep(root, bones, motion, restFeet, () => 0);
+    const before = structuredClone(motion), result = applyNativeFootCycle(root, bones, motion, restFeet, () => 0);
     assert.deepEqual(motion, before);
     assert.ok(result.left.error < 1e-5 && result.right.error < 1e-5);
-    assert.ok(result.left.requestedLift >= 0 && result.left.requestedLift < .08);
+    assert.ok(result.left.requestedLift > .1 && result.left.requestedLift < .3);
     assert.equal(bones.get('LeftLeg').position.y, -.4);
     assert.equal(bones.get('LeftFoot').position.y, -.35);
     results.push(result.left.requestedLift);
@@ -37,9 +37,18 @@ test('low steps use bounded foot trajectories without stretching legs or changin
 test('low-step gait leaves stationary and static combat postures unchanged', () => {
   for (const changes of [{ upright: 0 }, { weight: 0 }]) {
     const { root, bones, restFeet } = legs();
-    assert.deepEqual(applyNativeLowStep(root, bones, { legLift: .55, weight: 1, jog: 1, upright: 1, ...changes },
-      restFeet, () => 0), { kind: 'native-low-step', weight: 0 });
+    assert.deepEqual(applyNativeFootCycle(root, bones, { legLift: .55, weight: 1, jog: 1, upright: 1, ...changes },
+      restFeet, () => 0), { kind: 'native-foot-cycle', weight: 0 });
   }
+});
+
+test('running has rear-heel recovery distinct from low walking without high forward foot lifts', () => {
+  const samples = Array.from({ length: 100 }, (_, index) => runningStepTarget(index / 100, 2.4, .24));
+  assert.ok(samples.some(point => point.stage === 'rear-recovery' && point.z > .1 && point.lift > .18));
+  assert.ok(samples.filter(point => point.z < -.2).every(point => point.lift < .08));
+  assert.ok(samples.every(point => point.lift >= 0 && point.lift <= .24));
+  assert.ok(Math.abs((runningStepTarget(.1, 2.4, .24).z - runningStepTarget(.05, 2.4, .24).z) - .12) < 1e-10);
+  assert.ok(lowStepTarget(.6, 1.25, .52, .04).lift < .05);
 });
 
 test('ground-contact travel matches actual stride while swing clearance stays below eight centimetres', () => {

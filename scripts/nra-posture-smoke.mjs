@@ -57,7 +57,7 @@ try {
   assert.ok(actors.every(actor => actor.firingPose !== 'kneelingBoth' && !Object.hasOwn(actor.posture, 'kneelingBoth')));
   for (const sample of samples) for (const view of sample.views.filter(view => view.visible && view.soldier.health > 0)) {
     const base = view.position[1];
-    if (view.motion.kneeling > .99) {
+    if (view.motion.kneeling > .99 || view.motion.crouched > .99) {
       assert.ok(Math.abs(view.rightKnee[1] - base - .08) < .035, 'One-knee pose actually puts its right knee near ground');
       assert.ok(view.leftKnee[1] > base + .23, 'Its other knee is visibly raised, not another two-knee pose');
       assert.ok(view.rightFoot[1] - view.rightToes[1] > .07, 'Rear ankle flexes down toward the planted toes');
@@ -71,23 +71,29 @@ try {
     }
   }
   const lastShots = new Map();
+  let consecutiveOpenShots = 0;
   for (const sample of samples) for (const actor of sample.friends) {
     const shot = actor.lastShot, previous = lastShots.get(actor.id);
     if (!shot || previous?.time === shot.time) continue;
-    if (previous && !previous.coverId && !shot.coverId) {
+    if (previous && shot.previousTime === previous.time && !previous.coverId && !shot.coverId) {
+      consecutiveOpenShots++;
       assert.ok(Math.hypot(shot.position.x - previous.position.x, shot.position.z - previous.position.z) > 1.8);
       if (shot.eligiblePoses.some(pose => pose !== previous.firingPose)) assert.notEqual(shot.firingPose, previous.firingPose);
     }
     assert.ok(shot.speed <= .1 && shot.aimRecovery <= 0);
     lastShots.set(actor.id, shot);
   }
+  assert.ok(consecutiveOpenShots >= 5, 'Check actual consecutive shots, not snapshots with an unseen intervening shot');
   assert.ok(actors.some(actor => actor.completedShotMoves > 0), 'Observed actual post-shot displacement');
   for (const pace of ['sprint', 'jog', 'aim']) assert.ok(actors.some(actor => actor.movement.mode === pace && actor.movement.speed > .5),
     `Observe actual ${pace} movement, not an unused preference`);
   const runners = samples.flatMap(sample => sample.views).filter(view => view.soldier.health > 0 && view.active === 'run' && view.gait?.legPose.weight > .7);
   assert.ok(new Set(runners.map(view => view.gait.legLift.toFixed(3))).size >= 3, 'Actual near runners use distinct bounded leg lift');
   assert.ok(new Set(runners.map(view => view.gait.strideScale.toFixed(3))).size >= 3, 'Their displacement-driven cadence is not identical');
-  assert.ok(runners.every(view => view.gait.source === 'native-low-step' && view.gait.legPose.left.requestedLift < .08));
+  assert.ok(runners.every(view => view.gait.source === 'native-foot-cycle' && view.gait.legPose.left.requestedLift < .3));
+  assert.ok(runners.some(view => view.gait.legPose.left.phase === 'rear-recovery' &&
+    view.gait.legPose.left.localZ > .1 && view.gait.legPose.left.requestedLift > .15),
+    'Running visibly recovers the rear heel instead of merely accelerating a low walking cycle');
   for (const view of runners.filter(view => Math.abs(view.gait.legPose.left.floor - view.position[1]) < .02 &&
     Math.abs(view.gait.legPose.right.floor - view.position[1]) < .02)) {
     assert.ok(view.leftKnee[1] - view.position[1] < .65 && view.rightKnee[1] - view.position[1] < .65,

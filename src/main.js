@@ -1783,7 +1783,7 @@ function fightFromCover(actor, target, dt) {
   const distance = from.distanceTo(threat), suppressed = time < t.suppressedUntil;
   actor.nextFire = time + rifleAIFireDelay(distance, suppressed, battleRandom());
   if (actor.friendly) {
-    t.lastShot = { time, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
+    t.lastShot = { time, previousTime: t.lastShot?.time ?? null, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
       coverId: t.cover?.id ?? t.wallContact?.wallId ?? null, completedShotMoves: t.completedShotMoves ?? 0,
       eligiblePoses: firingOptions,
       speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,

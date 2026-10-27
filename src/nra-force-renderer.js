@@ -50,7 +50,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
   template.bind(sampleActor.id);
   template.update(sampleActor, 0, null);
   const atlas = createNraAtlas(template.root);
-  const phases = 6, runModes = profile.lowStepBanks ? ['runLowA', 'runLowB'] : ['run'];
+  const phases = 6, runModes = profile.gaitBanks ? ['runA', 'runB'] : ['run'];
   const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   for (let bank = 0; bank < movingBanks + postures.length; bank++) {
@@ -59,8 +59,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
     sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
     sampleActor.nativeMotion.speed = mode.startsWith('run') ? 3.15 : mode === 'walk' ? 1.75 : 0;
-    sampleActor.nativeMotion.legLift = mode === 'runLowB' ? .85 : .55;
-    sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runLowB' ? .26 : .14 : mode === 'walk' ? .035 : 0;
+    sampleActor.nativeMotion.legLift = mode === 'runB' ? .85 : .55;
+    sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runB' ? .26 : .14 : mode === 'walk' ? .035 : 0;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
     template.update(sampleActor, 0, null);
@@ -147,7 +147,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
           const pose = sampleNraMotion(actor);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
-          const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.lowStepBanks && pose.legLift > .7 ? phases : 0);
+          const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.gaitBanks && pose.legLift > .7 ? phases : 0);
           const posture = postures.find(name => pose[name] > .5);
           const index = posture && postures.includes(posture) ? movingBanks + postures.indexOf(posture) :
             pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : 0;
