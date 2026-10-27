@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 
 const directory = new URL('../public/assets/game/ija-1938/', import.meta.url);
+const previous = JSON.parse(await readFile(new URL('source.json', directory), 'utf8'));
+if (!Array.isArray(previous.files) || !previous.files.some(file => file.file === 'character.glb') || !previous.runtimeMotion) {
+  throw new Error('Japanese character rebuild requires its registered file and runtime motion provenance');
+}
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();
@@ -18,14 +22,17 @@ try {
     return { base64: btoa(encoded), levels, motion };
   });
   const bytes = Buffer.from(asset.base64, 'base64');
+  const modelSha256 = createHash('sha256').update(bytes).digest('hex');
   await mkdir(directory, { recursive: true });
   await writeFile(new URL('character.glb', directory), bytes);
   const permission = JSON.parse(await readFile(new URL('../public/assets/game/nra-88/source.json', import.meta.url), 'utf8'));
   await writeFile(new URL('source.json', directory), JSON.stringify({
+    ...previous,
     asset: 'Japanese infantry 1938 visual study adaptation', version: 1, sourceStudy: '/uniform-study/',
     source: permission.source, author: permission.author, permission: permission.permission,
     sourcePermissionRecord: '/assets/game/nra-88/PERMISSION.txt', sourceModelSha256: permission.modelOriginalSha256,
-    modelSha256: createHash('sha256').update(bytes).digest('hex'),
+    modelSha256,
+    files: previous.files.map(file => file.file === 'character.glb' ? { ...file, bytes: bytes.length, sha256: modelSha256 } : file),
     historicalAcceptance: false, geometry: 'Adapted licensed head/hands/sleeves and measured torso; original reconstructed tunic, trousers, helmet and equipment. Spatial skin-weight transfer and authored attachment weights on a refitted source skeleton.',
     sourceClothingTexturesIncluded: false, sourceInsigniaIncluded: false,
     motionSource: permission.motionSource, levels: asset.levels, motion: asset.motion,
