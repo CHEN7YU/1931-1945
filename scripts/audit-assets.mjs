@@ -10,6 +10,7 @@ const groups = [
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
+  { manifest: 'game/ija-1938/source.json', directory: 'game/ija-1938', use: 'runtime', evidence: [] },
 ];
 
 function assetPath(root, name) {
@@ -61,6 +62,16 @@ export async function auditAssets({ root, buildRoot } = {}) {
         metadata.permission.record !== 'PERMISSION.txt') throw new Error('NRA permission record requires explicit review');
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: 'User-reported consent; not CC0 or independently verified written permission.' });
+    } else if (group.directory === 'game/ija-1938') {
+      const original = JSON.parse(await readFile(assetPath(root, 'game/nra-88/source.json'), 'utf8'));
+      if (metadata.permission?.basis !== 'user-reported-author-phone-consent' || metadata.permission.isCC0 !== false ||
+        metadata.sourcePermissionRecord !== '/assets/game/nra-88/PERMISSION.txt' ||
+        metadata.sourceModelSha256 !== original.modelOriginalSha256 || metadata.historicalAcceptance !== false ||
+        metadata.sourceClothingTexturesIncluded !== false || metadata.sourceInsigniaIncluded !== false) {
+        throw new Error('Japanese adaptation provenance requires explicit review');
+      }
+      permissions.push({ directory: group.directory, basis: metadata.permission.basis,
+        limitation: 'Adapted from the user-authorized original; not CC0 or an independently accepted historical reconstruction.' });
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }

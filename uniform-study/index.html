@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#202720">
+    <link rel="icon" href="data:,">
+    <title>1938 · 日军服装装具研究</title>
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="#study">烽火山河 <span>／ 外观研究室</span></a>
+      <span class="edition">FIELD STUDY <b>001</b></span>
+    </header>
+    <main id="study">
+      <section class="intro">
+        <p class="eyebrow">CHINA THEATRE · 1938 · STATIC STUDY</p>
+        <h1>先看清衣装，<br>再让人物走上战场。</h1>
+        <p class="lead">日军陆军步枪兵 · 旧制军服候选</p>
+        <p class="boundary">本页是独立静态研究样件，不含骨架或动作。由它离线生成的蒙皮模型已在本分支用于全部日军外观，保留原战斗碰撞代理；<strong>尚未整合主分支，也不是具体部队的已证实复原。</strong></p>
+      </section>
+      <div class="workspace">
+        <section class="stage-panel" aria-label="可旋转的服装三维样件">
+          <div class="stage-heading"><span>01 ／ 衣装与装具</span><span class="study-tag">待考据确认</span></div>
+          <div id="viewport"><canvas id="stage" aria-label="旧制军服与皮革装具的静态人物研究样件"></canvas><div id="error" role="alert" hidden></div></div>
+          <div class="stage-caption"><span>拖动旋转 · 滚轮缩放</span><span>人台参考高 1.75 m · 非史实身高</span></div>
+          <nav class="views" aria-label="观察角度">
+            <button type="button" data-view="front" aria-pressed="false">正面</button>
+            <button type="button" data-view="side" aria-pressed="false">侧面</button>
+            <button type="button" data-view="back" aria-pressed="false">背面</button>
+            <button type="button" data-view="detail" aria-pressed="false">衣领细节</button>
+            <button type="button" data-view="three-quarter" aria-pressed="true">全貌</button>
+          </nav>
+          <div class="visibility">
+            <label><input id="helmet-toggle" type="checkbox" checked>钢盔</label>
+            <label><input id="equipment-toggle" type="checkbox" checked>携行装具</label>
+            <span id="metrics" role="status">正在构建原创样件…</span>
+          </div>
+        </section>
+        <aside class="dossier">
+          <p class="eyebrow">EVIDENCE, NOT ASSUMPTION</p>
+          <h2>每个部件，保留出处。</h2>
+          <p class="aside-intro">选择部件查看依据。实物存在、型号年代和战役配发，是三件不同的事。</p>
+          <div id="part-tabs" class="part-tabs" role="group" aria-label="部件资料"></div>
+          <article id="evidence" aria-live="polite">
+            <p id="item-label" class="item-label"></p>
+            <h3 id="item-title"></h3>
+            <dl><dt>资料记载</dt><dd id="finding"></dd><dt>本样件采用</dt><dd id="application"></dd><dt>仍待核实</dt><dd id="uncertainty"></dd></dl>
+            <a id="source-link" target="_blank" rel="noopener noreferrer">查看原始资料 ↗</a>
+          </article>
+          <div class="palette" aria-label="暂定材质研究色">
+            <span><i class="swatch cloth"></i>军服</span><span><i class="swatch leather"></i>皮革</span><span><i class="swatch steel"></i>涂漆钢</span><span><i class="swatch canvas"></i>帆布</span>
+          </div>
+          <p class="palette-note">上衣基底与头手复用已有授权资源；立领与胸片为静态改制。色彩不是馆藏测色，不代表特定历史人物。</p>
+        </aside>
+      </div>
+      <section class="notes">
+        <article><p class="eyebrow">WHAT WE DO NOT CLAIM</p><h2>先留白，不编造。</h2><ul id="limitations"></ul></article>
+        <article><p class="eyebrow">FREE ASSET AUDIT</p><h2>免费，不等于适用。</h2><p id="candidate-note"></p><a id="candidate-link" target="_blank" rel="noopener noreferrer">查看候选与许可 ↗</a><p class="small">上衣基底和头手复用仓库现有人物包；移除原翻领、胸袋及独立扣件，重建立领、胸片、腰部与肩袖接合，不使用原国军服装贴图、徽章或动作。原衣型不是日军剪裁证据，本次只是静态改制，不是布料仿真。授权依据为用户转述作者电话同意，不是CC0，详见<a href="/assets/game/nra-88/PERMISSION.txt" target="_blank" rel="noopener noreferrer">原始授权记录</a>。裤装、装具及衣料表面仍为程序制作；未复制外部候选模型或博物馆图像。</p><h3 class="excluded-heading">暂不纳入这套1938年配置</h3><ul id="excluded"></ul></article>
+      </section>
+      <footer>研究页仅供本地开发预览 · 不修改现有游戏入口或冻结的 asset-lab · 枪械及握持不在本样件范围内<br>启动：<code>npm.cmd run dev -- --port 5187 --strictPort</code> · 浏览器核查：<code>node scripts\uniform-study-smoke.mjs</code></footer>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

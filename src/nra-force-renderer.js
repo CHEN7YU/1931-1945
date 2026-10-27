@@ -36,20 +36,22 @@ export function bakeNraGeometry(mesh) {
   return geometry;
 }
 
-export function createNraForceRenderer(scene, camera, template, capacity = 330) {
+export function createNraForceRenderer(scene, camera, template, capacity = 330, { team = 'friendly', uniform = 'nra88' } = {}) {
+  if (!['friendly', 'enemy'].includes(team)) throw new Error('Uniform renderer requires an explicit combatant team');
   const root = new THREE.Group(), matrix = new THREE.Matrix4(), orientation = new THREE.Quaternion();
   const scale = new THREE.Vector3(1, 1, 1), euler = new THREE.Euler(), projection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
   const excludedIds = new Set(), slots = [], tiers = new Map(), banks = [];
   scene.add(root);
   const profile = template.motionProfile;
-  const sampleActor = { id: 'pose-bake', team: 'friendly', unitId: 'pose-bake-unit', heading: 0,
+  const sampleActor = { id: 'pose-bake', team, unitId: 'pose-bake-unit', heading: 0,
     position: new THREE.Vector3(), walkPhase: 0, health: 100, deathTime: 0, vehicleId: null,
     locomotion: { speed: 0 }, rifle: { ...createRifleState(), id: 'pose-bake:rifle' } };
   sampleActor.nativeMotion = createNraMotion(profile, sampleActor);
-  template.bind(sampleActor.id);
-  template.update(sampleActor, 0, null);
-  const atlas = createNraAtlas(template.root);
+  const bankTemplate = template.createFarView?.() ?? template;
+  bankTemplate.bind(sampleActor.id);
+  bankTemplate.update(sampleActor, 0, null);
+  const atlas = createNraAtlas(bankTemplate.root);
   const phases = 6, runModes = profile.gaitBanks ? ['runA', 'runB'] : ['run'];
   const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
@@ -63,12 +65,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
     sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runB' ? .26 : .14 : mode === 'walk' ? .035 : 0;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
-    template.update(sampleActor, 0, null);
-    if (template.issue) throw new Error(`Distant uniform pose is unreachable: ${template.issue}`);
+    bankTemplate.update(sampleActor, 0, null);
+    if (bankTemplate.issue) throw new Error(`Distant uniform pose is unreachable: ${bankTemplate.issue}`);
     const baked = [];
-    template.root.traverse(mesh => {
+    bankTemplate.root.traverseVisible(mesh => {
       if (!mesh.isMesh) return;
-      baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) });
+      baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
     });
     const instance = new THREE.InstancedMesh(mergeNraPose(baked, atlas), atlas.material, capacity);
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
@@ -80,7 +82,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
     const parts = [instance];
     banks.push({ parts, count: 0 });
   }
-  template.bind(null);
+  bankTemplate.bind(null);
   let summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
   let focused = null, members = [];
   function slotFor(actor, budget) {
@@ -121,7 +123,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
       const candidates = [], visible = [], budget = preset === 'low' ? 3 : 6, limit = preset === 'low' ? 18 : 28;
       for (const actor of actors) {
         if (!actor.nativeMotion) continue;
-        if (actor.team !== 'friendly') throw new Error('Enemy identity cannot use the friendly uniform renderer');
+        if (actor.team !== team) throw new Error(`A ${actor.team} identity cannot use the ${team} uniform renderer`);
         excludedIds.add(actor.id); summary.assigned++;
         if (actor.vehicleId || (actor.health > 0 && actor.id === controlledId) || (actor.health <= 0 && now - actor.deathTime > 12)) {
           tiers.set(actor.id, 'hidden'); summary.hidden++; continue;
@@ -179,7 +181,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330) 
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
-        health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform: 'nra88', helmet: true, tier: tiers.get(actor.id),
+        health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform, helmet: true, tier: tiers.get(actor.id),
+        motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
     },

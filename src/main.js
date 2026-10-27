@@ -106,11 +106,15 @@ const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsP
 const rallyRenderer = createRallyRenderer(scene);
 const vehicleRenderer = createVehicleRenderer(scene);
 let nraCharacter = null;
+let ijaCharacter = null;
+const uniformExcludedIds = new Set();
 if (new URLSearchParams(location.search).get('character') !== 'procedural') {
   try {
     const { loadNraCharacter } = await import('./nra-character.js');
     const { createNraForceRenderer } = await import('./nra-force-renderer.js');
     nraCharacter = createNraForceRenderer(scene, camera, await loadNraCharacter());
+    const { loadIjaCharacter, createIjaForceRenderer } = await import('./ija-character.js');
+    ijaCharacter = createIjaForceRenderer(scene, camera, await loadIjaCharacter());
   } catch (error) {
     $('loading').hidden = true; $('fatal').hidden = false;
     $('fatal-message').textContent = `人物适配试验加载失败：${error.message}。未静默回退。`;
@@ -375,6 +379,8 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   if (friendly && nraCharacter) {
     actor.nativeMotion = createNraMotion(nraCharacter.motionProfile, actor);
     actor.avatarAppearance = createNraAppearance(actor);
+  } else if (!friendly && ijaCharacter) {
+    actor.nativeMotion = createNraMotion(ijaCharacter.motionProfile, actor);
   }
   registerSoldier(entities, actor);
   registerWeapon(entities, Object.assign(actor.rifle, { nextShot: 0, reloadUntil: 0 }), `${actor.id}:rifle`, actor.id, 'infantry');
@@ -631,6 +637,7 @@ function spawnFormation(formation, initial = false) {
 
 function clearActors(list) {
   nraCharacter?.remove(list);
+  ijaCharacter?.remove(list);
   for (const actor of list) {
     scene.remove(actor.model);
     const transport = occupiedVehicle(entities, actor);
@@ -1556,12 +1563,10 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   pos.y = world.groundHeight(pos.x, pos.z);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
   actor.walkPoseReady = true;
-  if (actor.friendly) {
-    actor.locomotion.speed = Math.hypot(pos.x - beforeX, pos.z - beforeZ) / dt;
-    actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog + .1;
-    actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : pace;
-    actor.aimWalking = pace === 'aim' && actor.locomotion.speed > .06;
-  }
+  actor.locomotion.speed = Math.hypot(pos.x - beforeX, pos.z - beforeZ) / dt;
+  actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog + .1;
+  actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : pace;
+  actor.aimWalking = pace === 'aim' && actor.locomotion.speed > .06;
 }
 
 function postureFireLine(actor, point, stance, threat) {
@@ -1847,10 +1852,8 @@ function updateAI(dt) {
   for (let index = 0; index < allForces.length; index++) {
     const actor = allForces[(index + aiCursor) % allForces.length];
     if (actor.health <= 0 || actor === player) continue;
-    if (actor.friendly) {
-      actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
-      actor.aimWalking = false;
-    }
+    actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
+    actor.aimWalking = false;
     const tactics = actor.tactics, previousCover = tactics.cover;
     if (expireThreat(tactics, time)) {
       actor.target = null;
@@ -2161,7 +2164,7 @@ function updateHUD() {
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}`;
-  $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军统一军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
+  $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军统一军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
   $('section-status').textContent = deployedType === 'infantry' ? `本班 ${allies.filter(actor => actor.health > 0).length}/${allies.length}` : '';
@@ -2258,8 +2261,11 @@ function tick(now) {
   renderSimulationStatus();
   rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
-  nraCharacter?.update(allForces, time, entities.control.soldierId, graphics.snapshot.preset);
-  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId, nraCharacter?.excludedIds ?? null);
+  nraCharacter?.update(friendlyForces, time, entities.control.soldierId, graphics.snapshot.preset);
+  ijaCharacter?.update(enemies, time, entities.control.soldierId, graphics.snapshot.preset);
+  uniformExcludedIds.clear();
+  for (const force of [nraCharacter, ijaCharacter]) for (const id of force?.excludedIds ?? []) uniformExcludedIds.add(id);
+  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId, uniformExcludedIds);
   const renderStarted = benchmark ? performance.now() : 0;
   if (benchmark) telemetry.add('instancesMs', renderStarted - instancesStarted);
   renderer.render(scene, camera);
@@ -2512,6 +2518,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
   controlSimulation: { toolEquipped, jumpHeight, jumpVelocity },
   historicalCharacter: nraCharacter?.focusedSnapshot ?? null,
   historicalForce: nraCharacter?.snapshot ?? null,
+  enemyHistoricalCharacter: ijaCharacter?.focusedSnapshot ?? null,
+  enemyHistoricalForce: ijaCharacter?.snapshot ?? null,
   rifleAudio: audioUnsupported ? { status: 'unavailable' } : rifleAudio
     ? { ...rifleAudio.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'fallback', error: rifleAudioFailure },
@@ -2543,11 +2551,11 @@ Object.defineProperty(window, '__battle', { get: () => ({
   graphics: graphics.snapshot, combatStats: { ...combatStats },
   population: { rules: { ...BATTLE_RULES }, friendly: battleSummary('friendly'), enemy: battleSummary('enemy'),
     renderer: { ...soldierRenderer.snapshot,
-      visible: soldierRenderer.snapshot.visible + (nraCharacter?.counts.near ?? 0) + (nraCharacter?.counts.far ?? 0),
-      near: soldierRenderer.snapshot.near + (nraCharacter?.counts.near ?? 0),
-      far: soldierRenderer.snapshot.far + (nraCharacter?.counts.far ?? 0),
-      batches: soldierRenderer.snapshot.batches + (nraCharacter?.counts.batches ?? 0),
-      procedural: soldierRenderer.snapshot, historical: nraCharacter?.counts ?? null }, queuedPaths: pathRequests.size,
+      visible: soldierRenderer.snapshot.visible + (nraCharacter?.counts.near ?? 0) + (nraCharacter?.counts.far ?? 0) + (ijaCharacter?.counts.near ?? 0) + (ijaCharacter?.counts.far ?? 0),
+      near: soldierRenderer.snapshot.near + (nraCharacter?.counts.near ?? 0) + (ijaCharacter?.counts.near ?? 0),
+      far: soldierRenderer.snapshot.far + (nraCharacter?.counts.far ?? 0) + (ijaCharacter?.counts.far ?? 0),
+      batches: soldierRenderer.snapshot.batches + (nraCharacter?.counts.batches ?? 0) + (ijaCharacter?.counts.batches ?? 0),
+      procedural: soldierRenderer.snapshot, historical: nraCharacter?.counts ?? null, japanese: ijaCharacter?.counts ?? null }, queuedPaths: pathRequests.size,
     units: formations.map(formation => ({ id: formation.id, team: formation.team, type: formation.type, player: formation.player,
       memberCount: formation.members.length, alive: formation.members.filter(actor => actor.health > 0).length,
       generation: formation.generation, spawnId: formation.spawnId,
@@ -2616,6 +2624,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     lastShot: actor.tactics.lastShot ? { ...actor.tactics.lastShot, position: { ...actor.tactics.lastShot.position } } : null,
     blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,
+    speed: actor.locomotion.speed,
     id: actor.tactics.id, squad: actor.tactics.squad, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     heading: actor.heading, selectedTargetId: actor.target?.id ?? null, nextSenseAt: actor.nextThink,
     sightCheck: actor.tactics.lastSightCheck ? { ...actor.tactics.lastSightCheck } : null,
@@ -2633,9 +2642,10 @@ if (benchmark) Object.defineProperty(window, '__battleTelemetry', { get: () => t
 
 try {
   await nraCharacter?.prepare(renderer);
+  await ijaCharacter?.prepare(renderer);
 } catch (error) {
   $('loading').hidden = true; $('fatal').hidden = false;
-  $('fatal-message').textContent = `友军人物渲染初始化失败：${error.message}。未静默回退。`;
+  $('fatal-message').textContent = `人物渲染初始化失败：${error.message}。未静默回退。`;
   throw error;
 }
 $('loading').hidden = true;
