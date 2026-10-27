@@ -41,6 +41,16 @@ import { createRallyRenderer } from './rally-renderer.js';
 import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 
+const buildStamp = Object.freeze(__BUILD_STAMP__);
+const buildRevision = buildStamp.commit?.slice(0, 7);
+const buildLabel = import.meta.env.DEV
+  ? `开发预览 · ${buildRevision ? `基线 ${buildRevision}` : '版本未知'}`
+  : buildRevision ? `构建 ${buildRevision}${buildStamp.dirty ? ' · 含未提交改动' : ''}` : '构建版本未知';
+for (const element of document.querySelectorAll('[data-build-version]')) {
+  element.textContent = buildLabel;
+  element.title = `${import.meta.env.DEV ? '开发服务器启动基线，源码可热更新，非线上发布版本' : '此页面的实际构建版本'}\n提交：${buildStamp.commit ?? '未知'}\n构建时间（UTC）：${buildStamp.builtAt}`;
+}
+
 const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
 const telemetry = createFrameTelemetry(Boolean(benchmark));
 const entities = createEntityRegistry();
@@ -2512,6 +2522,7 @@ canvas.addEventListener('webglcontextlost', event => {
 
 // A read-only snapshot makes local smoke tests observable without exposing gameplay mutations.
 Object.defineProperty(window, '__battle', { get: () => ({
+  build: { ...buildStamp, development: import.meta.env.DEV },
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
