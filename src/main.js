@@ -167,6 +167,7 @@ const projectileImpacts = [];
 let projectileSerial = 0;
 const coverClaims = new Map();
 const combatSounds = [];
+const rifleReports = [];
 const combatStats = { aiRifleShots: 0, aiRifleShotsAtArmor: 0, aiRifleShotsAtAircraft: 0, armorThreatsObserved: 0,
   rifleAircraftCandidatesIgnored: 0, rejectedRifleArmorDamage: 0, rejectedRifleAircraftDamage: 0 };
 let actorSerial = 0;
@@ -518,17 +519,10 @@ function resetPersonalCombatFeedback() {
 
 function presentCombatEvents(bornAt = time) {
   const position = point => new THREE.Vector3(point.x, point.y, point.z);
-  rifleAudio?.beginBatch();
-  camera.updateMatrixWorld();
-  const elements = camera.matrixWorld.elements;
-  const listener = { position: camera.position, right: { x: elements[0], y: elements[1], z: elements[2] },
-    soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId };
-  rifleAudio?.update(listener);
   combatEvents.drain(event => {
     if (event.type === 'shot') {
       if (event.weaponType === 'infantry' && rifleAudio) {
-        rifleAudio.play(audioContext, event, listener, event.source.soldierId === entities.control.soldierId &&
-          event.source.weaponId === controlOwner(entities)?.weaponId);
+        rifleReports.push(event);
       } else if (event.sound) sound(event.sound);
       const start = position(event.start);
       if (event.end) {
@@ -554,6 +548,15 @@ function presentCombatEvents(bornAt = time) {
       combatFeedback.consume(event, { soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
         active: state === 'playing' || state === 'transferring' }, time);
     }
+  });
+}
+
+function presentRifleReports() {
+  camera.updateMatrixWorld();
+  const elements = camera.matrixWorld.elements;
+  rifleAudio?.playBatch(audioContext, rifleReports.splice(0), {
+    position: camera.position, right: { x: elements[0], y: elements[1], z: elements[2] },
+    soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
   });
 }
 
@@ -708,6 +711,8 @@ function clearActors(list) {
 
 function clearTransient() {
   combatEvents.clear();
+  rifleReports.length = 0;
+  rifleAudio?.reset();
   combatFeedback.clear(); recoil = 0;
   $('hit-marker').style.opacity = $('damage-vignette').style.opacity = '0';
   combatEffects.clear();
@@ -2349,6 +2354,7 @@ function tick(now) {
     if (state === 'dead' && time >= deploymentRefreshAt) { refreshDeployment(); deploymentRefreshAt = time + .25; }
     if (benchmark) telemetry.add('hudMs', performance.now() - started);
   }
+  presentRifleReports();
   for (const puff of world.smoke) {
     if (!puff.visible) continue;
     const phase = (now * .000025 + puff.userData.phase) % 1;
