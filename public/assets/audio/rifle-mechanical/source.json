@@ -1,0 +1,80 @@
+{
+  "asset": "Independent rifle mechanical Foley candidate",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/equipment-clicks-iii",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "verified": "2026-10-27",
+  "purpose": "Independent module; not connected to the main game yet.",
+  "originals": [
+    {
+      "file": "equipment_clicks3.wav",
+      "author": "LFA",
+      "source": "https://opengameart.org/content/equipment-clicks-iii",
+      "url": "https://opengameart.org/sites/default/files/equipment_clicks3.wav",
+      "bytes": 2021420,
+      "sha256": "1cd2612f226886a7c0badbe26e9732e097a448e97cbea72a3e3cd2c8aa91ace8",
+      "evidence": "Source page lists CC0. Author describes a mixture of bolt-action rifle, stapler and tape-measure recordings."
+    },
+    {
+      "file": "clipload1.wav",
+      "author": "BMacZero (Brian MacIntosh)",
+      "source": "https://opengameart.org/content/gun-reload-sound-effects",
+      "url": "https://opengameart.org/sites/default/files/clipload1.wav",
+      "bytes": 22572,
+      "sha256": "1cdc10c50a26834ce7562a5f2925b9aa1118e3bb58a86fea80f34558bf2c5101",
+      "evidence": "Source page lists CC0 and says credit to Brian MacIntosh is optional."
+    }
+  ],
+  "files": [
+    {
+      "file": "unlock.wav",
+      "original": "equipment_clicks3.wav",
+      "startSeconds": 0.18,
+      "seconds": 0.29,
+      "bytes": 13964,
+      "sha256": "a6306a94c8e48b8799bf4526f04fe9f0afaffa04019fcc3d014c9aef95a37964",
+      "duration": 0.29
+    },
+    {
+      "file": "extract.wav",
+      "original": "equipment_clicks3.wav",
+      "startSeconds": 0.85,
+      "seconds": 0.24,
+      "bytes": 11564,
+      "sha256": "86277e1f623c0a1af45595ef6bd2faa6fed56129dbdb2f556e407335f054fa57",
+      "duration": 0.24
+    },
+    {
+      "file": "close.wav",
+      "original": "equipment_clicks3.wav",
+      "startSeconds": 1.44,
+      "seconds": 0.29,
+      "bytes": 13964,
+      "sha256": "7c6b7ff054fc00b10d43a6cd71a1525c719626443020000d18bbe0752f39e0e0",
+      "duration": 0.29
+    },
+    {
+      "file": "load.wav",
+      "original": "clipload1.wav",
+      "startSeconds": 0,
+      "seconds": 0.255,
+      "bytes": 12284,
+      "sha256": "40538a199c0b3a279e6240844dda3daaae6ea6ffa580df5d36adf8a89ad3570e",
+      "duration": 0.255
+    }
+  ],
+  "processing": [
+    "FFmpeg mono 24kHz resampling and 40Hz high-pass",
+    "Fixed excerpts without time stretching",
+    "DC removal, peak bounded to 0.65, 1ms attack and 15ms tail fades",
+    "16-bit PCM WAV"
+  ],
+  "limitations": [
+    "The mixed LFA recording contains a rifle, stapler and tape measure; the object producing each excerpt is not verified.",
+    "Cue mappings are Foley choices, not verified Type 24 or Japanese rifle mechanisms.",
+    "extract means bolt extraction motion, not proof of an ejected case or a case striking the ground.",
+    "load is generic clip-loading audio, not a verified period five-round stripper-clip recording.",
+    "No independent listening acceptance, battlefield mix acceptance or main-game integration is claimed.",
+    "Regeneration requires FFmpeg; different FFmpeg versions may change hashes and require explicit review."
+  ]
+}
