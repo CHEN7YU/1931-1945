@@ -21,6 +21,10 @@ test('production Japanese character has verified provenance, normalized skinning
   assert.equal(binary.readUInt32LE(binStart + 4), 0x004e4942);
   const payload = binary.subarray(binStart + 8);
   assert.equal(manifest.modelSha256, createHash('sha256').update(binary).digest('hex'));
+  const registration = manifest.files.find(file => file.file === 'character.glb');
+  assert.equal(registration.bytes, binary.length);
+  assert.equal(registration.sha256, manifest.modelSha256);
+  assert.deepEqual(manifest.runtimeMotion.inactiveEmbeddedClips, ['walk', 'run']);
   assert.equal(manifest.sourceModelSha256, original.modelOriginalSha256);
   assert.deepEqual(manifest.permission, original.permission);
   assert.deepEqual(manifest.motionSource, original.motionSource);
@@ -30,6 +34,11 @@ test('production Japanese character has verified provenance, normalized skinning
   assert.ok(binary.length < 8 * 1024 * 1024);
   assert.ok(gltf.skins.length > 0);
   const joints = gltf.skins[0].joints;
+  const clothIndex = gltf.materials.findIndex(material => material.extensions?.KHR_materials_sheen);
+  assert.ok(clothIndex >= 0);
+  const linearToByte = value => Math.round(255 * (value <= .0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - .055));
+  assert.deepEqual(gltf.materials[clothIndex].pbrMetallicRoughness.baseColorFactor.slice(0, 3).map(linearToByte), [146, 124, 66],
+    'production cloth must retain dark mustard-brown rather than grey-beige or bright yellow');
   assert.equal(joints.length, 65);
   assert.equal(new Set(joints.map(index => gltf.nodes[index].name)).size, 65);
   for (const skin of gltf.skins) assert.deepEqual(skin.joints, joints);
@@ -54,10 +63,12 @@ test('production Japanese character has verified provenance, normalized skinning
     const group = gltf.nodes.find(node => node.name === level);
     assert.ok(group?.children.length > 0);
     let triangles = 0, batches = 0;
+    let hasCloth = false;
     for (const child of group.children) {
       const node = gltf.nodes[child];
       assert.ok(Number.isInteger(node.skin));
       for (const primitive of gltf.meshes[node.mesh].primitives) {
+        hasCloth ||= primitive.material === clothIndex;
         assert.equal(primitive.mode ?? 4, 4);
         const { POSITION, JOINTS_0, WEIGHTS_0 } = primitive.attributes;
         const vertices = gltf.accessors[POSITION].count;
@@ -79,6 +90,7 @@ test('production Japanese character has verified provenance, normalized skinning
       }
     }
     assert.deepEqual({ triangles, batches }, manifest.levels[level]);
+    assert.ok(hasCloth, `${level} LOD must use the same mustard cloth material`);
     assert.ok(triangles > 0 && triangles < (level === 'near' ? 65000 : 24000));
     assert.ok(batches <= (level === 'near' ? 16 : 12));
   }
