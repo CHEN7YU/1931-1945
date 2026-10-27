@@ -1,0 +1,26 @@
+Independent rifle mechanical Foley candidate
+
+LFA - equipment clicks III
+https://opengameart.org/content/equipment-clicks-iii
+https://opengameart.org/sites/default/files/equipment_clicks3.wav
+
+BMacZero (Brian MacIntosh) - Gun Reload Sound Effects
+https://opengameart.org/content/gun-reload-sound-effects
+https://opengameart.org/sites/default/files/clipload1.wav
+
+Both source pages explicitly label the recordings CC0.
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Verified on 2026-10-27. No endorsement by the authors is implied.
+
+CC0 permits copying, modification and redistribution, including commercial
+use. Attribution is not required; source credits are retained voluntarily.
+This includes distributing these excerpts in a public source repository
+and serving them as downloadable browser game assets.
+
+These are processed excerpts, not unmodified originals. See source.json
+for source hashes, excerpt windows, processing and limitations.
+The LFA source mixes a rifle, stapler and tape measure. The object behind
+each selected click is unverified. These sounds are not authenticated
+recordings of a Chinese or Japanese historical rifle, nor of falling cases.
