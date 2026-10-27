@@ -17,22 +17,24 @@
       "arisaka-near.wav",
       "mosin-near.wav"
     ],
+    "requestedChange": "A is too muffled and lacks a crisp attack; D is an unaccepted equalized audition only.",
     "basis": "User found B and C worse than current A. Keep the existing game sound; this is not acceptance of A tone or historical authenticity."
   },
   "processing": [
     "FFmpeg mono 24kHz decode; fixed 0.6s excerpts",
     "New candidates: DC removal, 0.5ms attack and 25ms tail fades",
-    "All three excerpts matched to common whole-window RMS using constant gain; no added compression or pitch shift",
+    "D only: 70Hz high-pass, 350Hz -3dB Q0.8, 3200Hz +3dB Q0.8, then DC removal and endpoint fades",
+    "All excerpts matched to common whole-window RMS using constant gain; no added compression or pitch shift",
     "16-bit PCM WAV"
   ],
-  "targetRms": 0.043509567875534595,
+  "targetRms": 0.034823453857435786,
   "files": [
     {
       "file": "current.wav",
       "title": "A · 当前游戏音源",
       "note": "枪型未知的现有片段，仅作为对照；原素材已有削波记录。",
       "bytes": 28844,
-      "sha256": "dd4326c46db9f87fced7e64369eff6536c42feb17b5c4d3f9c6cc80b7f2a89bb",
+      "sha256": "bf6412132ffe86235831b75cba2f77e93b4e7254c2691e542f38b4ab3044c76c",
       "original": {
         "file": "public/assets/audio/recorded-rifle/report.wav",
         "author": "kurt",
@@ -43,7 +45,7 @@
       "selection": {
         "startSeconds": 0,
         "duration": 0.6,
-        "gain": 0.9651384711818414,
+        "gain": 0.7724612460730861,
         "sourceExcerptRms": 0.04508116625198435,
         "sourceExcerptPeak": 0.707916259765625
       }
@@ -53,7 +55,7 @@
       "title": "B · Arisaka 近距录音",
       "note": "源库标注 Arisaka、栓动、.30-06、枪手前方近距；不是已确认的原装三八式或射手耳位录音。",
       "bytes": 28844,
-      "sha256": "f9a3ccaabb60005dbbff31520af21b720f8963a249dca38d7c240e64bbd84251",
+      "sha256": "27d09fe12f2ab47bf31e36ce4932d00ae4e643a24b015fdfd6563ab3c72bafa8",
       "original": {
         "file": "Prepared SFX Library/Arisaka/E_25P.wav",
         "author": "Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney",
@@ -64,7 +66,7 @@
       "selection": {
         "startSeconds": 0.5179166666666667,
         "duration": 0.6,
-        "gain": 0.5852497681137904,
+        "gain": 0.4684123352658134,
         "sourceExcerptRms": 0.07434358840630076,
         "sourceExcerptPeak": 0.9539061339535676
       }
@@ -74,7 +76,7 @@
       "title": "C · 莫辛步枪近距录音",
       "note": "源库标注 Mosin Nagant、栓动、7.62×54、枪手前方近距；是音色候选，不冒充中正式录音。",
       "bytes": 28844,
-      "sha256": "1d5d2c4667ff76b9b683913704ef0d5199d61e425416adcabb84e7fa12ea482f",
+      "sha256": "e44ab72ec59bc28f4979687337686cfa4081564231ee665029bdb215b416ea79",
       "original": {
         "file": "Prepared SFX Library/Mosin Nagant/M_21P.wav",
         "author": "Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney",
@@ -85,9 +87,31 @@
       "selection": {
         "startSeconds": 1.0277916666666667,
         "duration": 0.6,
-        "gain": 0.8843327862229525,
+        "gain": 0.7077873552720094,
         "sourceExcerptRms": 0.049200446430768464,
         "sourceExcerptPeak": 0.7915572179447843
+      }
+    },
+    {
+      "file": "current-clear.wav",
+      "title": "D · A 的清脆试听版",
+      "note": "基于 A：70Hz 高通、350Hz 减少 3dB、3.2kHz 提高 3dB，再匹配 RMS 电平。不额外压缩或变调，也不修复原录音的削波／未知枪型。",
+      "bytes": 28844,
+      "sha256": "f89ddb4f4c404d914e66aa0d909d7d0d5e37b015a80479fe2c965841eeb21e57",
+      "original": {
+        "file": "public/assets/audio/recorded-rifle/report.wav",
+        "author": "kurt",
+        "source": "https://opengameart.org/content/gunshots",
+        "bytes": 28844,
+        "sha256": "e414ff77b2fc14bc39205997629375351450d154cd83638c900b78b8d64a2349"
+      },
+      "selection": {
+        "startSeconds": 0,
+        "duration": 0.6,
+        "gain": 0.8500442082826216,
+        "sourceExcerptRms": 0.04096663857964635,
+        "sourceExcerptPeak": 0.8234865824381511,
+        "equalization": "highpass=f=70,equalizer=f=350:t=q:w=0.8:g=-3,equalizer=f=3200:t=q:w=0.8:g=3"
       }
     }
   ],

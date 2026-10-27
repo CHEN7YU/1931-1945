@@ -8,4 +8,5 @@ Source statement: "CC0 NO RIGHTS RESERVED" and use "for any application, persona
 Current-game reference: kurt
 https://opengameart.org/content/gunshots
 CC0; "None needed" attribution notice.
+D is an equalized derivative of the same CC0 kurt excerpt, not a new historical recording.
 See source.json for original hashes, selections, processing and authenticity limitations.

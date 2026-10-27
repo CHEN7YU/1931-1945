@@ -24,6 +24,12 @@ const selections = [
     path: join(input, 'Prepared SFX Library', 'Mosin Nagant', 'M_21P.wav'), source: library,
     bytes: 9864044, sha256: '970ed2322ba61579dc8afaefb4f25e6ae791a3acb1e6e23372ea948cfe2a97b3',
     note: '源库标注 Mosin Nagant、栓动、7.62×54、枪手前方近距；是音色候选，不冒充中正式录音。', search: [.95, 1.3] },
+  { file: 'current-clear.wav', title: 'D · A 的清脆试听版', author: 'kurt',
+    path: fileURLToPath(new URL('../public/assets/audio/recorded-rifle/report.wav', import.meta.url)),
+    source: 'https://opengameart.org/content/gunshots',
+    bytes: 28844, sha256: 'e414ff77b2fc14bc39205997629375351450d154cd83638c900b78b8d64a2349',
+    note: '基于 A：70Hz 高通、350Hz 减少 3dB、3.2kHz 提高 3dB，再匹配 RMS 电平。不额外压缩或变调，也不修复原录音的削波／未知枪型。',
+    filter: 'highpass=f=70,equalizer=f=350:t=q:w=0.8:g=-3,equalizer=f=3200:t=q:w=0.8:g=3', search: null },
 ];
 const clips = [];
 for (const selection of selections) {
@@ -32,6 +38,7 @@ for (const selection of selections) {
     throw new Error(`Source differs: ${selection.file}`);
   }
   const decoded = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-i', selection.path,
+    ...(selection.filter ? ['-af', selection.filter] : []),
     '-ac', '1', '-ar', '24000', '-f', 'f32le', 'pipe:1'], { maxBuffer: 8 * 1024 * 1024 });
   if (decoded.error) throw decoded.error;
   if (decoded.status !== 0) throw new Error(`FFmpeg failed: ${decoded.stderr.toString()}`);
@@ -48,7 +55,7 @@ for (const selection of selections) {
   }
   const values = samples.slice(start, start + 14400);
   if (values.length !== 14400) throw new Error(`Incomplete shot: ${selection.file}`);
-  if (selection.search) {
+  if (selection.search || selection.filter) {
     const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
     for (let i = 0; i < values.length; i++) {
       values[i] = (values[i] - mean) * Math.min(1, i / 12, (values.length - 1 - i) / 600);
@@ -74,10 +81,11 @@ for (const clip of clips) {
   await writeFile(join(output, clip.selection.file), wave);
   const { path, search, ...selection } = clip.selection;
   files.push({ file: selection.file, title: selection.title, note: selection.note, bytes: wave.length, sha256: hash(wave),
-    original: { file: selection.file === 'current.wav' ? 'public/assets/audio/recorded-rifle/report.wav' :
+    original: { file: selection.file.startsWith('current') ? 'public/assets/audio/recorded-rifle/report.wav' :
       selection.file === 'arisaka-near.wav' ? 'Prepared SFX Library/Arisaka/E_25P.wav' : 'Prepared SFX Library/Mosin Nagant/M_21P.wav',
     author: selection.author, source: selection.source, bytes: selection.bytes, sha256: selection.sha256 },
-    selection: { startSeconds: clip.start / 24000, duration: .6, gain, sourceExcerptRms: clip.rms, sourceExcerptPeak: clip.peak } });
+    selection: { startSeconds: clip.start / 24000, duration: .6, gain, sourceExcerptRms: clip.rms, sourceExcerptPeak: clip.peak,
+      ...(selection.filter ? { equalization: selection.filter } : {}) } });
 }
 const metadata = {
   asset: 'Free rifle report listening comparison', license: 'CC0-1.0',
@@ -87,9 +95,11 @@ const metadata = {
     sha256: 'cc1ab5a99a0a365105c7c5dd783f4b0b1fe90938114d3ceec53856bfe005f7d6' },
   use: 'Development-only audition; not loaded by the game or included in its production entry.',
   feedback: { preferredReference: 'current.wav', rejectedCandidates: ['arisaka-near.wav', 'mosin-near.wav'],
+    requestedChange: 'A is too muffled and lacks a crisp attack; D is an unaccepted equalized audition only.',
     basis: 'User found B and C worse than current A. Keep the existing game sound; this is not acceptance of A tone or historical authenticity.' },
   processing: ['FFmpeg mono 24kHz decode; fixed 0.6s excerpts', 'New candidates: DC removal, 0.5ms attack and 25ms tail fades',
-    'All three excerpts matched to common whole-window RMS using constant gain; no added compression or pitch shift', '16-bit PCM WAV'],
+    'D only: 70Hz high-pass, 350Hz -3dB Q0.8, 3200Hz +3dB Q0.8, then DC removal and endpoint fades',
+    'All excerpts matched to common whole-window RMS using constant gain; no added compression or pitch shift', '16-bit PCM WAV'],
   targetRms, files,
   limitations: ['RMS matching is an electrical-level comparison, not proof of equal perceived loudness.',
     'Library recordings are prepared effects, contain full-scale source samples, and are not certified unclipped or unprocessed masters.',
@@ -104,5 +114,6 @@ await writeFile(join(output, 'LICENSE.txt'), `CC0 1.0 Universal\nhttps://creativ
   `New recordings: ${authors}\n${library}\n` +
   `Source statement: "CC0 NO RIGHTS RESERVED" and use "for any application, personal or professional".\n\n` +
   `Current-game reference: kurt\nhttps://opengameart.org/content/gunshots\nCC0; "None needed" attribution notice.\n` +
+  `D is an equalized derivative of the same CC0 kurt excerpt, not a new historical recording.\n` +
   `See source.json for original hashes, selections, processing and authenticity limitations.\n`);
 console.log(JSON.stringify({ output, targetRms, files: files.map(file => ({ file: file.file, selection: file.selection })) }, null, 2));

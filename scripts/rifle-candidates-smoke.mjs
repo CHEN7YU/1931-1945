@@ -12,8 +12,8 @@ try {
   await page.goto(new URL('/audio-study/', base).href);
   const buttons = page.locator('article button');
   await buttons.first().waitFor();
-  assert.equal(await buttons.count(), 3);
-  for (let index = 0; index < 3; index++) {
+  assert.equal(await buttons.count(), 4);
+  for (let index = 0; index < 4; index++) {
     const title = await page.locator('article h2').nth(index).textContent();
     await buttons.nth(index).click();
     await page.waitForFunction(title => document.querySelector('#status').textContent === `播放完成：${title}`, title);
@@ -52,7 +52,7 @@ try {
     contentType: 'audio/wav', body: 'invalid audio data',
   }));
   await failed.goto(new URL('/audio-study/', base).href);
-  await failed.locator('article button').nth(1).click();
+  await failed.locator('article[data-candidate="arisaka-near.wav"] button').click();
   await failed.locator('#status[data-error]').waitFor();
   const failureText = await failed.locator('#status').textContent();
   assert.match(failureText, /试听失败/);

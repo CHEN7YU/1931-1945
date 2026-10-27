@@ -28,7 +28,8 @@
   <div class="tag">CC0 · 免费商用 · 仅供试听</div>
   <h1>先换音源，不靠“更响”取胜</h1>
   <p><strong>本轮试听结论：B、C 不如当前 A，未采纳。游戏暂保留 A，不代表 A 的音色已验收。</strong></p>
-  <p>当前声音与两份标注为栓动步枪的录音对比。三段均为 0.6 秒，使用恒定增益匹配 RMS 电平，不额外压缩或变调；这不保证主观听感完全等响。</p>
+  <p><strong>现在比较 A 与 D：</strong>D 根据“太闷、缺少利落爆裂感”的反馈，对 A 削减低中频、适度提升中高频。它不是新的历史枪型录音，仍待试听。</p>
+  <p>所有片段均为 0.6 秒，匹配 RMS 电平，不额外压缩或变调；这不保证主观听感完全等响。B/C 保留为未采纳记录。</p>
   <p class="muted">此页不包含游戏距离滤波、机械声或战场混音，也不会修改游戏默认音源。建议先用较低音量试听。</p>
   <label for="volume">统一试听音量 <input id="volume" type="range" min="0" max="100" value="25"><output id="volume-value" for="volume">25%</output></label>
   <p id="status" role="status" aria-live="polite">正在读取授权和候选信息…</p>
@@ -53,12 +54,17 @@
       const response = await fetch('./assets/source.json');
       if (!response.ok) throw new Error(`来源记录 HTTP ${response.status}`);
       const metadata = await response.json();
-      if (metadata.license !== 'CC0-1.0' || metadata.files.length !== 3) throw new Error('候选授权或清单不符合预期');
-      for (const entry of metadata.files) {
+      if (metadata.license !== 'CC0-1.0' || metadata.files.length !== 4) throw new Error('候选授权或清单不符合预期');
+      const entries = [...metadata.files].sort((a, b) =>
+        Number(metadata.feedback.rejectedCandidates.includes(a.file)) - Number(metadata.feedback.rejectedCandidates.includes(b.file)));
+      for (const entry of entries) {
         const card = document.createElement('article'), title = document.createElement('h2');
         const note = document.createElement('p'), button = document.createElement('button');
         const player = new Audio(new URL(`./assets/${entry.file}`, location.href).href);
-        title.textContent = entry.title; note.textContent = entry.note; button.textContent = '试听';
+        const rejected = metadata.feedback.rejectedCandidates.includes(entry.file);
+        title.textContent = entry.title; note.textContent = `${rejected ? '【未采纳】' : ''}${entry.note}`;
+        button.textContent = rejected ? '回听（未采纳）' : '试听';
+        card.id = entry.file.replace('.wav', ''); card.dataset.candidate = entry.file;
         player.preload = 'none'; player.volume = Number(volume.value) / 100;
         player.dataset.candidate = entry.file; players.push(player);
         player.addEventListener('error', () => failure(new Error(`${entry.title}：音频加载或解码失败`)));
@@ -75,7 +81,7 @@
         });
         card.append(title, note, button, player); document.querySelector('#candidates').append(card);
       }
-      status.textContent = '三份素材均为 CC0，无需付费。点击各项试听；同时只播放一段。';
+      status.textContent = 'A 与 D 均为 CC0，无需付费。请对比音色；同时只播放一段，游戏默认声音未变。';
     } catch (error) { failure(error); }
   </script>
 </body>
