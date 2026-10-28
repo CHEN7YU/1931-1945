@@ -7,6 +7,10 @@ import { groundHeight } from '../src/ground.js';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
+const navigations = [];
+page.on('framenavigated', frame => {
+  if (frame === page.mainFrame()) navigations.push({ url: frame.url(), time: Date.now() });
+});
 const poseObservations = [];
 const canalObservations = [];
 const observePose = (stage, data) => poseObservations.push({ stage, control: data.control, stance: data.stance,
@@ -16,6 +20,7 @@ const observePose = (stage, data) => poseObservations.push({ stage, control: dat
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
 async function turnTo(yaw, pitch = 0) {
+  await page.mouse.move(720, 450);
   await page.mouse.down({ button: 'right' });
   await page.evaluate(({ yaw, pitch }) => {
     const look = window.__battle.look;
@@ -28,6 +33,7 @@ async function walkTo(x, z) {
   await page.keyboard.down('w');
   for (let i = 0; i < 300; i++) {
     const data = await snapshot();
+    assert.ok(data, `Battle page was replaced: ${JSON.stringify(navigations)}`);
     assert.equal(data.state, 'playing', 'normal movement in the labelled geometry fixture reaches the bridge');
     const dx = x - data.position.x, dz = z - data.position.z, distance = Math.hypot(dx, dz);
     if (distance < .65) break;
@@ -157,6 +163,7 @@ try {
   data = await snapshot();
   assert.ok(data.allies.every(actor => actor.stance === 'standing' && actor.lookPitch === 0), 'new battle cannot inherit old personal pose state');
   observePose('new-battle-defaults', data);
+  console.log('PASS: bridge head clearance, paused jump, independent Y pose restoration and new-battle reset.');
   assert.equal(data.town.buildings.length, 25);
   assert.equal(data.doors.length, 93);
   const waterfront = data.town.buildings.filter(building => building.riverSide);
@@ -215,7 +222,8 @@ try {
   console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, two-way walking, crouch/prone clearance, landing, independent member pose restoration, new-battle reset, both quay streets, all eight waterfront buildings and breached ruin courtyard. Full 200-person combat is measured separately.');
 } catch (error) {
   const data = await snapshot();
-  console.error(JSON.stringify({ current: data?.current, health: data?.health, position: data?.position, stance: data?.stance, locomotion: data?.locomotion }));
+  console.error(JSON.stringify({ url: page.url(), navigations, errors, current: data?.current, health: data?.health,
+    position: data?.position, stance: data?.stance, locomotion: data?.locomotion }));
   throw error;
 } finally {
   await browser.close();
