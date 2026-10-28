@@ -1936,6 +1936,7 @@ function fightFromCover(actor, target, dt) {
   actor.nextFire = time + rifleAIFireDelay(distance, suppressed, battleRandom());
   t.lastShot = { time, previousTime: t.lastShot?.time ?? null, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
       heading: actor.heading, lowReady: actor.nativeMotion?.lowReady ?? null,
+      headAim: actor.nativeMotion ? sampleNraMotion(actor).headAim ?? null : null,
       facingError: Math.abs(headingError(actor.heading, Math.atan2(position.x - threat.x, position.z - threat.z))),
       coverId: t.cover?.id ?? t.wallContact?.wallId ?? null, completedShotMoves: t.completedShotMoves ?? 0,
       eligiblePoses: firingOptions,
@@ -2789,7 +2790,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
   allies: allies.map(actor => ({ id: actor.id, unitId: actor.unitId, vehicleId: actor.vehicleId, seatId: actor.seatId,
     weaponId: actor.rifle.id, health: actor.health, eyeHeight: soldierPostureHeight(actor),
     deathSource: actor.deathSource ? { ...actor.deathSource } : null,
-    x: actor.position.x, y: actor.position.y, z: actor.position.z, stance: actor.stance, lookPitch: actor.lookPitch, order: actor.order,
+    x: actor.position.x, y: actor.position.y, z: actor.position.z, stance: actor.stance, manualStance: actor.manualStance,
+    lookPitch: actor.lookPitch, order: actor.order,
     orderPoint: actor.orderPoint ? { ...actor.orderPoint } : null, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     role: actor.role, targetKind: actor.targetKind, spawnId: actor.spawnId, stamina: actor.locomotion.stamina, rifle: { ...actor.rifle } })),
   construction: { tool: toolEquipped, builderId: construction.builderId, blueprint: construction.blueprint, mode: construction.mode,

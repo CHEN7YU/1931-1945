@@ -288,7 +288,7 @@ export function applyHeadAim(root, bones, pose) {
 
 export function createHeadAimProbe(root, bones, meshes) {
   const surface = headSurfaces(root, bones, meshes);
-  return pose => {
+  return (pose, weapon) => {
     const eye = new Vector3(), p = new Vector3();
     for (const index of surface.indices[1]) {
       surface.eyeMesh.getVertexPosition(index, p).applyMatrix4(surface.eyeMesh.matrixWorld);
@@ -297,7 +297,11 @@ export function createHeadAimProbe(root, bones, meshes) {
     eye.divideScalar(surface.indices[1].length);
     const cheek = surface.cheekMesh.getVertexPosition(surface.cheekIndex, new Vector3()).applyMatrix4(surface.cheekMesh.matrixWorld);
     const facing = root.getWorldQuaternion(new Quaternion());
+    const inverse = quaternion(weapon.weaponQuaternion).invert(), origin = vector(weapon.weaponPosition);
+    const localEye = root.worldToLocal(eye.clone()).sub(origin).applyQuaternion(inverse);
+    const localCheek = root.worldToLocal(cheek.clone()).sub(origin).applyQuaternion(inverse);
     return { ...pose, actualEye: eye.toArray(), actualCheek: cheek.toArray(), actualHead: point(bones.get('Head')).toArray(),
+      actualSightError: Math.hypot(localEye.x, localEye.y - .05), actualCheekError: Math.abs(woodDistance(localCheek)),
       projectionError: eye.distanceTo(vector(pose.eye).applyQuaternion(facing).add(root.position)),
       cheekProjectionError: cheek.distanceTo(vector(pose.cheek).applyQuaternion(facing).add(root.position)) };
   };

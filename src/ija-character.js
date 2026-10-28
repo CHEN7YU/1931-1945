@@ -119,7 +119,7 @@ export async function loadIjaCharacter() {
           leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
           leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
           riflePose: pose.snapshot, issue: pose.issue, logicalMuzzle: actor ? soldierRifleMuzzle(actor) : null,
-          headAim: motion?.headAim ? headProbe(motion.headAim) : null,
+          headAim: motion?.headAim ? headProbe(motion.headAim, motion) : null,
           soldier: actor ? { id: actor.id, health: actor.health, ammo: actor.rifle.ammo, shots: actor.rifle.shots } : null,
           geometry: source.levels[level], historicalAcceptance: false };
       },

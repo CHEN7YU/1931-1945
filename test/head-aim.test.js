@@ -61,7 +61,7 @@ function fixture() {
       const length = bones.get('Neck').getWorldPosition(new T.Vector3()).distanceTo(bones.get('Head').getWorldPosition(new T.Vector3()));
       const headLocal = bones.get('Head').position.clone(), neckLocal = bones.get('Neck').position.clone();
       applyNativeUpperBody(root, bones, pose);
-      const actual = probe(pose.headAim);
+      const actual = probe(pose.headAim, pose);
       assert.deepEqual(bones.get('Head').position, headLocal);
       assert.deepEqual(bones.get('Neck').position, neckLocal);
       assert.ok(Math.abs(length - bones.get('Neck').getWorldPosition(new T.Vector3()).distanceTo(
@@ -79,6 +79,7 @@ test('real weighted eye geometry, camera/sensing projection and head bones share
       assert.ok(actual.projectionError < 1e-6, `${stance}: ${actual.projectionError}`);
       assert.ok(pose.headAim.sightError < .004, `${stance}: ${pose.headAim.sightError}`);
       assert.ok(pose.headAim.cheekError < .012 && pose.headAim.gazeError < .05);
+      assert.ok(actual.actualSightError < .004 && actual.actualCheekError < .012);
       const eye = soldierEyePosition(f.actor);
       assert.ok(new T.Vector3(eye.x, eye.y, eye.z).distanceTo(new T.Vector3(...actual.actualEye)) < 1e-6);
       assert.equal(soldierPostureHeight(f.actor), pose.headAim.eye[1]);
@@ -133,4 +134,16 @@ test('raising, releasing and reloading use a continuous owned head blend indepen
   advanceNraMotion(f.actor, 1 / 60);
   assert.ok(f.actor.nativeMotion.cheekWeight < weight && f.actor.nativeMotion.cheekWeight > .8);
   assert.equal(sampleNraMotion(f.actor).intent, 'reload');
+});
+
+test('constant single-key channels remain finite and an unreachable head target cannot authorize firing', () => {
+  const f = fixture();
+  const node = f.profile.headAim.chain.find(node => node.name === 'Head');
+  f.profile.headAim.channels.standing.Head.scale = { times: [0], values: [...node.scale] };
+  assert.ok(f.project('standing', true, 1.9).actual.projectionError < 1e-6);
+  f.profile.rifleShoulderContacts.standing[0] += .8;
+  const { pose } = f.project('standing', true, 2);
+  assert.ok(pose.headAim.sightError > .004);
+  assert.equal(nativeAimReady(f.actor), false);
+  assert.ok(pose.headAim.parameters.every(Number.isFinite));
 });

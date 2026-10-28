@@ -45,6 +45,9 @@ try {
         if (actor.lastShot?.lowReady !== null && actor.lastShot?.time > (old?.shotAt ?? -1)) {
           firing++;
           if (actor.lastShot.lowReady > .05 || actor.lastShot.facingError > .07 + 1e-8) failures.push({ shot: actor.lastShot });
+          const head = actor.lastShot.headAim;
+          if (!head || head.weight <= .98 || head.sightError >= .004 || head.cheekError >= .012 ||
+            head.gazeError >= .05 || head.eyeRelief <= .04) failures.push({ unalignedHead: actor.lastShot });
         }
         previous.set(actor.soldierId, { time: data.time, heading: actor.heading, shotAt: actor.lastShot?.time ?? -1 });
       }

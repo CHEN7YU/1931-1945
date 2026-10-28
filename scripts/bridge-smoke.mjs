@@ -124,7 +124,7 @@ try {
   assert.ok(data.allies[data.current].eyeHeight > 1.5);
   assert.ok(Math.abs(data.locomotion.eyeHeight - data.allies[data.current].eyeHeight) < .03,
     'takeover follows the new member standing/leaning height, not the old prone view');
-  assert.equal(data.allies[0].stance, 'prone');
+  assert.equal(data.allies[0].manualStance, 'prone', 'AI may stand to follow, but must retain the original manual selection');
   assert.equal(data.allies[0].lookPitch, original.look.pitch);
   observePose('next-member-standing', data);
   assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < 1e-6, 'Y changes support height to the newly controlled member immediately');
@@ -138,7 +138,8 @@ try {
   assert.equal(data.current, 0);
   assert.equal(data.stance, 'prone');
   assert.equal(data.look.pitch, original.look.pitch);
-  assert.equal(data.locomotion.eyeHeight, .45);
+  assert.equal(data.locomotion.eyeHeight, data.allies[data.current].eyeHeight);
+  assert.ok(data.locomotion.eyeHeight > .37 && data.locomotion.eyeHeight < .52, 'restored prone view uses the real head pose, not the old scalar .45m');
   assert.ok(data.locomotion.cameraHeight - .07 > data.position.y, 'restored prone camera retains clipping clearance above its current support');
   observePose('original-prone-restored', data);
   await page.keyboard.press('y');

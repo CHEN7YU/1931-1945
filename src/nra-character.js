@@ -179,7 +179,7 @@ export async function loadNraCharacter() {
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
-        headAim: motion?.headAim ? headProbe(motion.headAim) : null,
+        headAim: motion?.headAim ? headProbe(motion.headAim, motion) : null,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
         motion: motion ? { weight: motion.weight, jog: motion.jog, ...motion.postures,
           idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
