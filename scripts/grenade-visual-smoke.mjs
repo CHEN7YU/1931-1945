@@ -37,7 +37,24 @@ try {
       samples.push({ time, ...effects.snapshot });
       images.push({ name: `blast-${time}.png`, data: renderer.domElement.toDataURL() });
     }
-    effects.clear(); effects.explosion(new T.Vector3(0, .08, 0), 0); effects.update(.25, .25);
+    const heavy = [];
+    camera.position.set(7, 4, 12); camera.lookAt(0, 2, 0);
+    for (const style of ['explosive-pack', 'tank-destruction']) {
+      for (const preset of ['high', 'low']) {
+        effects.clear(); effects.configure({ ...settings, preset });
+        effects.explosion(new T.Vector3(0, style === 'tank-destruction' ? 1.5 : .08, 0), 0, 9, style);
+        const stages = [];
+        let last = 0;
+        for (const time of [0, .3, 1.2, 4, 6]) {
+          effects.update(time - last, time); last = time; renderer.render(scene, camera);
+          stages.push({ time, ...effects.snapshot });
+          images.push({ name: `${style}-${preset}-${time}.png`, data: renderer.domElement.toDataURL() });
+        }
+        heavy.push({ style, preset, stages });
+      }
+    }
+    effects.clear(); effects.configure(settings);
+    effects.explosion(new T.Vector3(0, .08, 0), 0, 9, 'explosive-pack'); effects.update(.25, .25);
     renderer.render(scene, camera);
     const before = renderer.domElement.toDataURL();
     effects.update(0, .25); renderer.render(scene, camera);
@@ -60,11 +77,22 @@ try {
       const reader = new FileReader(); reader.onload = () => resolve(reader.result);
       reader.readAsDataURL(new Blob(chunks, { type: 'video/webm' }));
     });
-    return { images, samples, frozen, low, cleared, recording };
+    return { images, samples, heavy, frozen, low, cleared, recording };
   });
   assert.ok(result.samples[0].visibleLights > 0 && result.samples[0].blastClouds > 0);
   assert.ok(result.samples.find(sample => sample.time === 1.2).blastClouds > 0, 'smoke outlasts the brief detonation flash');
   assert.equal(result.samples.at(-1).blastClouds, 0);
+  for (const { style, preset, stages } of result.heavy) {
+    assert.equal(stages[0].fireClouds, preset === 'low' ? 1 : 6);
+    assert.equal(stages[0].shockwaves, 1);
+    assert.ok(stages[1].fireClouds > 0);
+    assert.equal(stages[0].renderedClouds, stages[0].clouds);
+    if (style === 'tank-destruction') assert.ok(stages[3].sootClouds > 0);
+    assert.equal(stages.at(-1).clouds + stages.at(-1).fragments + stages.at(-1).lights, 0);
+    assert.ok(stages.every(stage => stage.clouds <= (preset === 'low' ? 6 : 18) &&
+      stage.fragments <= (preset === 'low' ? 32 : 96)));
+    if (preset === 'low') assert.ok(stages.every(stage => stage.visibleLights === 0));
+  }
   assert.ok(result.frozen); assert.equal(result.low.visibleLights, 0);
   assert.ok(result.low.clouds <= 6 && result.low.fragments <= 32);
   assert.equal(result.cleared.clouds + result.cleared.fragments + result.cleared.lights, 0);

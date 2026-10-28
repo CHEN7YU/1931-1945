@@ -37,6 +37,7 @@
     "test:historical-vehicles": "node scripts/historical-vehicles-smoke.mjs",
     "test:rifle-textures": "node scripts/rifle-textures-smoke.mjs",
     "test:combat-effects": "node scripts/combat-effects-smoke.mjs",
+    "test:tank-fire": "node scripts/tank-fire-smoke.mjs",
     "test:population": "node scripts/population-smoke.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "test:benchmark-config": "node scripts/benchmark-config-smoke.mjs",
