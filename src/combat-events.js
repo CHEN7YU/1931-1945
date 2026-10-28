@@ -38,11 +38,13 @@ export function createCombatEvents() {
       const source = copySource(data?.source);
       let payload;
       if (type === 'shot') {
-        const { weaponType, muzzle = false, color = 0xffd49a, sound = null, recoil = 0 } = data;
+        const { weaponType, muzzle = false, color = 0xffd49a, sound = null, recoil = 0, automatic = false } = data;
         if (source.credit === 'environment' || !['infantry', 'tank', 'mortar', 'plane'].includes(weaponType) ||
-          typeof muzzle !== 'boolean' || !Number.isInteger(color) || color < 0 || color > 0xffffff ||
+          typeof muzzle !== 'boolean' || typeof automatic !== 'boolean' || automatic && weaponType !== 'infantry' ||
+          !Number.isInteger(color) || color < 0 || color > 0xffffff ||
           ![null, 'shot', 'blast'].includes(sound) || !Number.isFinite(recoil) || recoil < 0) throw new RangeError('Invalid shot feedback');
         payload = { source, weaponType, start: point(data.start), end: data.end == null ? null : point(data.end), muzzle, color, sound, recoil };
+        if (automatic) payload.automatic = true;
         if (muzzle && !payload.end) throw new Error('Muzzle feedback requires a shot direction');
       } else if (type === 'impact') {
         const kind = data.kind ?? null;

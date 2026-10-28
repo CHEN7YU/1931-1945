@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { rifleMix, createRifleAudio } from '../src/rifle-audio.js';
+import { createRifleState, shootRifle, advanceRifle, infantryWeaponProfile } from '../src/rifle-action.js';
+import { createCombatEvents } from '../src/combat-events.js';
 
 const listener = () => ({ position: { x: 0, y: 1.6, z: 0 }, right: { x: 1, y: 0, z: 0 },
   soldierId: 'player', weaponId: 'player:rifle' });
@@ -193,4 +195,70 @@ test('recorded report file matches source hash, is short mono PCM, and has faded
   let peak = 0;
   for (let offset = 44; offset < data.length; offset += 2) peak = Math.max(peak, Math.abs(data.readInt16LE(offset)));
   assert.ok(peak > 15000 && peak <= 23200);
+});
+
+test('faction and automatic flags select the correct recording without changing cadence or pitch', () => {
+  const enemyBuffer = { duration: 3.074 }, machine = [0, 1, 2].map(take => ({ duration: .095, take }));
+  const audio = createRifleAudio(buffer, enemyBuffer, machine), context = fakeContext(), ears = listener();
+  const shots = [
+    { ...event(1), source: { ...event(1).source, team: 'friendly' } },
+    { ...event(2, 4, 'enemy'), source: { ...event(2, 4, 'enemy').source, team: 'enemy' } },
+    { ...event(3, 4, 'enemy'), weaponType: 'tank', source: { ...event(3, 4, 'enemy').source, team: 'enemy' } },
+    { ...event(4), automatic: true },
+    { ...event(5, 4, 'enemy'), automatic: true, source: { ...event(5, 4, 'enemy').source, team: 'enemy' } },
+  ];
+  for (const shot of shots) { audio.beginBatch(); audio.play(context, shot, ears, false); }
+  assert.deepEqual(context.sources.map(source => source.buffer), [buffer, enemyBuffer, buffer, machine[1], machine[2]]);
+  assert.deepEqual(audio.snapshot.history.map(item => item.report),
+    ['recorded-rifle', 'enemy-rifle', 'recorded-rifle', 'machine-gun', 'machine-gun']);
+  assert.equal(context.sources[1].playbackRate.value, 1);
+  assert.equal(context.sources[3].playbackRate.value, 1);
+  assert.equal(context.sources[4].playbackRate.value, 1);
+});
+
+test('both machine guns play exactly once per real shot at their weapon cycle, without a looping burst', () => {
+  for (const model of ['zb26', 'type11']) {
+    const gun = createRifleState(model), audio = createRifleAudio(buffer, buffer, [{ duration: .095 }]);
+    const context = fakeContext(), bus = createCombatEvents(), times = [];
+    for (let i = 0; i < 10; i++) {
+      const now = i * infantryWeaponProfile(gun).cycleSeconds;
+      assert.equal(shootRifle(gun), true);
+      bus.publish('shot', { source: { unitId: 'unit', soldierId: 'player', weaponId: 'player:rifle',
+        team: 'friendly', credit: 'player' }, weaponType: 'infantry', automatic: true, start: { x: 0, y: 1.6, z: 0 } }, now);
+      context.currentTime = now;
+      bus.drain(shot => { times.push(shot.time); audio.playBatch(context, [shot], listener()); });
+      advanceRifle(gun, infantryWeaponProfile(gun).cycleSeconds);
+    }
+    assert.equal(context.sources.length, 10); assert.equal(gun.shots, 10);
+    assert.ok(context.sources.every(source => source.buffer.duration < .12 && !source.loop));
+    assert.ok(times.every((time, i) => i === 0 || Math.abs(time - times[i - 1] - .12) < 1e-10));
+    assert.equal(audio.snapshot.counts.played, 10);
+    assert.equal(audio.playBatch(context, [], listener()), 0);
+  }
+});
+
+test('user-selected recordings have exact hashes, short isolated machine shots and separate licenses', () => {
+  for (const directory of ['enemy-rifle', 'machine-gun']) {
+    const base = new URL(`../public/assets/audio/${directory}/`, import.meta.url);
+    const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
+    assert.equal(source.license, directory === 'enemy-rifle' ? 'CC0-1.0' : 'Pixabay-Content-License');
+    for (const record of source.files) {
+      const bytes = readFileSync(new URL(record.file, base));
+      assert.equal(createHash('sha256').update(bytes).digest('hex'), record.sha256);
+      assert.equal(bytes.length, record.bytes);
+      assert.equal(bytes.readUInt16LE(22), 1); assert.equal(bytes.readUInt32LE(24), 24000);
+      const dataOffset = bytes.indexOf(Buffer.from('data')) + 8;
+      let peak = 0;
+      for (let offset = dataOffset; offset < bytes.length; offset += 2) peak = Math.max(peak, Math.abs(bytes.readInt16LE(offset)));
+      assert.ok(peak >= 15000 && peak <= 21400, 'new gunshots are normalized before integer PCM conversion');
+      if (directory === 'machine-gun') {
+        assert.equal(record.duration, .095);
+        assert.equal(bytes.length, 44 + 2280 * 2);
+        assert.equal(bytes.readInt16LE(44), 0); assert.equal(bytes.readInt16LE(bytes.length - 2), 0);
+        let onset = 0;
+        while (onset < 2280 && Math.abs(bytes.readInt16LE(44 + onset * 2)) < 2000) onset++;
+        assert.ok(onset < 240, 'each shot attacks within 10ms, with no imported burst pause');
+      }
+    }
+  }
 });

@@ -27,6 +27,7 @@ import { loadRifleAudio } from './rifle-audio.js';
 import { loadFootstepAudio } from './footstep-audio.js';
 import { loadRifleMechanicalAudio } from './rifle-mechanical-audio.js';
 import { loadBattleVoices, createObjectiveVoiceTracker } from './battle-voices.js';
+import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
@@ -227,6 +228,7 @@ let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audi
 let footstepAudio = null, footstepAudioFailure = null;
 let mechanicalAudio = null, mechanicalAudioFailure = null;
 let battleVoices = null, battleVoicesFailure = null;
+let battleReactions = null, battleReactionsFailure = null;
 const objectiveVoiceTracker = createObjectiveVoiceTracker();
 try {
   rifleAudio = await loadRifleAudio();
@@ -251,6 +253,13 @@ try {
 } catch (error) {
   battleVoicesFailure = error.message;
   console.error('战场语音未加载，喊话和指挥提示不可用：', error);
+}
+try {
+  battleReactions = await loadBattleReactions((position, listener) =>
+    !hasLine(new THREE.Vector3(position.x, position.y + 1.5, position.z), listener.position, 36));
+} catch (error) {
+  battleReactionsFailure = error.message;
+  console.error('真人战斗反应录音未加载，短喊与受击人声不可用：', error);
 }
 let pointerHintShown = false;
 let lean = 0;
@@ -297,6 +306,7 @@ function setGameState(next) {
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
   battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat', 'draw'].includes(state));
+  battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -601,6 +611,10 @@ function presentCombatEvents(bornAt = time) {
       combatEffects.explosion(position(event.position), bornAt, event.radius);
       if (event.sound) sound('blast');
     } else {
+      if (event.type === 'damage') {
+        battleReactions?.damage(audioContext, event, entities.soldiers.get(event.target.id),
+          battleAudioListener(), battleVoices?.priorityActive ?? false);
+      }
       combatFeedback.consume(event, { soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
         grenadeWeaponId: controlledSoldier(entities)?.grenades.id,
         explosivePackWeaponId: controlledSoldier(entities)?.explosivePack.id,
@@ -609,20 +623,23 @@ function presentCombatEvents(bornAt = time) {
   });
 }
 
-function presentRifleReports() {
+function battleAudioListener() {
   camera.updateMatrixWorld();
   const elements = camera.matrixWorld.elements;
-  rifleAudio?.playBatch(audioContext, rifleReports.splice(0), {
+  return {
     position: camera.position, right: { x: elements[0], y: elements[1], z: elements[2] },
     soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
-  });
-  battleVoices?.update(audioContext, allForces, {
-    position: camera.position, right: { x: elements[0], y: elements[1], z: elements[2] },
-    soldierId: entities.control.soldierId,
-  }, time, activeStates.has(state), (observer, target) => {
+  };
+}
+
+function presentRifleReports() {
+  const listener = battleAudioListener();
+  rifleAudio?.playBatch(audioContext, rifleReports.splice(0), listener);
+  battleVoices?.update(audioContext, allForces, listener, time, activeStates.has(state), (observer, target) => {
     const eye = soldierEyePosition(observer);
     return Boolean(visibleTargetPoint(target, point => hasLine(new THREE.Vector3(eye.x, eye.y, eye.z), point, 75, target.vehicleId)));
   });
+  battleReactions?.update(audioContext, allForces, listener, time, battleVoices?.priorityActive ?? false, activeStates.has(state));
 }
 
 function battleVoiceEvent(cue, options = {}) {
@@ -834,6 +851,7 @@ function clearTransient() {
   rifleReports.length = 0;
   rifleAudio?.reset();
   battleVoices?.reset();
+  battleReactions?.reset();
   objectiveVoiceTracker.reset();
   combatFeedback.clear(); recoil = 0;
   $('hit-marker').style.opacity = $('damage-vignette').style.opacity = '0';
@@ -1007,12 +1025,13 @@ function deploy(squadId, spawnId = null) {
   updateCamera(0);
   renderConstruction();
   toast(type === 'plane' ? '从南侧空中入场点进入战场 · 飞机损失后可换其他小队' : `${TYPES[type].name}从${spawn.name}出击`, 5);
-  if ((audioUnsupported || rifleAudioFailure || footstepAudioFailure || mechanicalAudioFailure || battleVoicesFailure) && !audioWarningShown) {
+  if ((audioUnsupported || rifleAudioFailure || footstepAudioFailure || mechanicalAudioFailure || battleVoicesFailure || battleReactionsFailure) && !audioWarningShown) {
     const warnings = [];
     if (rifleAudioFailure) warnings.push('步枪录音未加载，暂用原合成声；友军／敌军空间枪声暂不可用');
     if (footstepAudioFailure) warnings.push('脚步录音未加载，暂用原合成声');
     if (mechanicalAudioFailure) warnings.push('步枪机械录音未加载，暂用原合成声');
     if (battleVoicesFailure) warnings.push('战场语音未加载，喊话与指挥提示不可用');
+    if (battleReactionsFailure) warnings.push('真人战斗反应录音未加载，短喊与受击人声不可用');
     toast(audioUnsupported ? '浏览器不支持Web Audio，当前无音效' : warnings.join('；'), 8);
     audioWarningShown = true;
   }
@@ -1620,6 +1639,7 @@ function fire() {
         rallyId: hit?.object.userData.rallyId || null, vehicleId: hit?.object.userData.vehicleId || null };
     }
     combatEvents.publish('shot', { source, weaponType: unit.type, start: muzzle, end, muzzle: unit.type === 'infantry',
+      automatic: unit.type === 'infantry' && infantryWeaponProfile(allies[current].rifle).automatic,
       sound: unit.type === 'tank' ? 'blast' : 'shot', recoil: unit.type === 'tank' ? .12 : .05 }, time);
     const hitRally = rallyFromHit(hit);
     for (const enemy of enemies) {
@@ -2407,6 +2427,7 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   if (target.targetKind === 'aircraft') combatStats.aiRifleShotsAtAircraft++;
   const source = captureAttackSource(entities, actor, actor.rifle);
   combatEvents.publish('shot', { source, weaponType: 'infantry', start: muzzle, end: threat,
+    automatic: infantryWeaponProfile(actor.rifle).automatic,
     muzzle: true, color: actor.friendly ? 0xf6d399 : 0xdfb17a }, time);
   combatSounds.push({ id: ++soundSerial, friendly: actor.friendly, x: muzzle.x, y: muzzle.y, z: muzzle.z, time, radius: 40 });
   if (combatSounds.length > 32) combatSounds.shift();
@@ -2630,7 +2651,8 @@ function updateAI(dt) {
           ? actor.rifle.shots % 3 === 0 ? .8 : infantryWeaponProfile(actor.rifle).cycleSeconds : 1.4);
         const source = captureAttackSource(entities, actor, actor.rifle);
         combatStats.aiRifleShots++;
-        combatEvents.publish('shot', { source, weaponType: 'infantry', start: muzzle, end: targetPosition, muzzle: true, color: 0xdfb17a }, time);
+        combatEvents.publish('shot', { source, weaponType: 'infantry', start: muzzle, end: targetPosition,
+          automatic: infantryWeaponProfile(actor.rifle).automatic, muzzle: true, color: 0xdfb17a }, time);
         damageRally(hostileRally, 15, source);
       }
     } else if (actor.friendly) {
@@ -2883,7 +2905,7 @@ function updateHUD() {
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
-    : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}`;
+    : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
@@ -3289,6 +3311,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
   battleVoices: audioUnsupported ? { status: 'unavailable' } : battleVoices
     ? { ...battleVoices.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'unavailable', error: battleVoicesFailure },
+  battleReactions: audioUnsupported ? { status: 'unavailable' } : battleReactions
+    ? battleReactions.snapshot : { status: 'unavailable', error: battleReactionsFailure },
   rifleAudio: audioUnsupported ? { status: 'unavailable' } : rifleAudio
     ? { ...rifleAudio.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'fallback', error: rifleAudioFailure },
