@@ -8,6 +8,9 @@ export function infantryLoadout(team, index, type = 'infantry') {
   if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 10) {
     return { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' };
   }
+  if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 9) {
+    return { role: 'sniper', model: 'sniper' };
+  }
   return { role: index % BATTLE_RULES.sectionMembers === 0 ? 'engineer' : 'rifleman', model: 'rifle' };
 }
 const lanes = [-88, -66, -44, -22, 22, 44, 66, 88, 96];

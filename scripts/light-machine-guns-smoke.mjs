@@ -41,7 +41,9 @@ try {
     for (const unit of initial.population.units) {
       assert.equal(unit.memberCount, 11);
       assert.equal(unit.members[0].role, 'engineer');
-      assert.ok(unit.members.slice(1, 10).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.ok(unit.members.slice(1, 9).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.equal(unit.members[9].role, 'sniper');
+      assert.equal(unit.members[9].weaponModel, 'sniper');
       assert.equal(unit.members[10].role, 'machine-gunner');
       assert.equal(unit.members[10].section, 0);
       assert.equal(unit.members[10].weaponModel, unit.team === 'friendly' ? 'zb26' : 'type11');

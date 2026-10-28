@@ -36,17 +36,22 @@ test('all 220 staged soldiers have clear, separated, registered spawn positions'
   }
   assert.equal(occupied.length, 220);
 });
-test('each side adds one faction-specific gunner after the original engineer and nine riflemen', () => {
+test('each eleven-person section retains its engineer and gunner and replaces one rifleman with a sniper', () => {
   for (const team of ['friendly', 'enemy']) {
     const loadouts = Array.from({ length: TYPES.infantry.members }, (_, index) => infantryLoadout(team, index));
     assert.deepEqual(loadouts[0], { role: 'engineer', model: 'rifle' });
-    assert.ok(loadouts.slice(1, 10).every(item => item.role === 'rifleman' && item.model === 'rifle'));
+    assert.ok(loadouts.slice(1, 9).every(item => item.role === 'rifleman' && item.model === 'rifle'));
+    assert.deepEqual(loadouts[9], { role: 'sniper', model: 'sniper' });
+    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, 8);
     assert.deepEqual(loadouts[10], { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' });
     assert.equal(loadouts.filter(item => item.role === 'engineer').length, 1);
     for (let index = 0; index < 10; index++) assert.deepEqual(sectionOffset(index),
       { x: (index % 5 - 2) * 1.15, z: Math.floor(index / 5) * 1.4 - .7 });
     assert.deepEqual(sectionOffset(10), { x: 0, z: 2.1 });
-    for (const type of ['mortar', 'tank', 'plane']) assert.equal(infantryLoadout(team, 0, type).model, 'rifle');
+    for (const type of ['mortar', 'tank', 'plane']) for (const index of [0, 9, 10]) {
+      assert.equal(infantryLoadout(team, index, type).model, 'rifle');
+    }
+    assert.deepEqual(infantryLoadout(team, 20), loadouts[9], 'additional sections keep the same role slot');
   }
   assert.throws(() => infantryLoadout('unknown', 0), /Invalid/);
 });
