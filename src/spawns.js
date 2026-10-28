@@ -1,4 +1,5 @@
 import { circleBlocked, canDeploySquad } from './core.js';
+import { BATTLE_AREA } from './battle-boundary.js';
 
 // Distances and timings are scaled for this small prototype, not Enlisted values.
 export const SPAWN_RULES = Object.freeze({
@@ -78,6 +79,9 @@ export function spawnBlockReason(point, type, hostiles, obstacles) {
 }
 
 export function rallyBuildBlockReason(point, objectives, hostiles, obstacles) {
+  const margin = SPAWN_RULES.placementRadius;
+  if (point.x - margin < BATTLE_AREA.minX || point.x + margin > BATTLE_AREA.maxX ||
+    point.z - margin < BATTLE_AREA.minZ || point.z + margin > BATTLE_AREA.maxZ) return '过于靠近战区边界，无法安全部署，请返回战区内建造';
   if (circleBlocked(point.x, point.z, SPAWN_RULES.placementRadius, obstacles)) return '地面或出入口受阻，请换一个位置';
   if (objectives.some(objective => !objective.captured && Math.hypot(objective.x - point.x, objective.z - point.z) < objective.radius + SPAWN_RULES.objectiveClearance)) return '距离未占领据点过近，不能建造';
   if (hostiles.some(actor => actor.health > 0 && (actor.altitude || 0) < 4 && Math.hypot(actor.x - point.x, actor.z - point.z) < SPAWN_RULES.enemyBlockRadius)) return '附近有敌军，不能建造';

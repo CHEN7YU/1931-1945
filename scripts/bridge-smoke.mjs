@@ -8,6 +8,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 const poseObservations = [];
+const canalObservations = [];
 const observePose = (stage, data) => poseObservations.push({ stage, control: data.control, stance: data.stance,
   look: data.look, position: data.position, eyeHeight: data.locomotion.eyeHeight, cameraHeight: data.locomotion.cameraHeight,
   binding: data.controlBinding, simulation: data.controlSimulation,
@@ -155,9 +156,62 @@ try {
   data = await snapshot();
   assert.ok(data.allies.every(actor => actor.stance === 'standing' && actor.lookPitch === 0), 'new battle cannot inherit old personal pose state');
   observePose('new-battle-defaults', data);
+  assert.equal(data.town.buildings.length, 25);
+  assert.equal(data.doors.length, 93);
+  const waterfront = data.town.buildings.filter(building => building.riverSide);
+  assert.equal(waterfront.length, 8);
+  assert.equal(data.staticDamage.craters.length, 5);
+  assert.equal(data.staticDamage.ruinedShops.length, 3);
+  assert.equal(data.staticDamage.wrecks.length, 3);
+  for (const [side, quayZ] of [[-1, -8.1], [1, -25.5]]) {
+    await walkTo(8, quayZ);
+    for (const building of waterfront.filter(building => building.riverSide === side)) {
+      await walkTo(building.x, quayZ);
+      await walkTo(building.x, building.z + side * 3);
+      data = await snapshot();
+      assert.equal(data.town.inside, building.id, 'the river-facing opening enters the real building');
+      assert.equal(data.locomotion.surface, 'wood');
+      await walkTo(building.x, building.z - side * 3);
+      assert.equal((await snapshot()).town.inside, building.id, 'the interior partition is physically traversable');
+      if (building.id === 'canal-north-east-home') {
+        await turnTo(0, -.75);
+        await page.keyboard.press('x');
+        await page.waitForFunction(building => window.__battle.allies.some((actor, index) =>
+          index !== window.__battle.current && actor.x > building.x - building.w / 2 + .3 &&
+          actor.x < building.x + building.w / 2 - .3 && actor.z > building.z - building.d / 2 + .3 &&
+          actor.z < building.z + building.d / 2 - .3), building, { timeout: 30000 });
+      }
+      await walkTo(building.x, building.z + side * 3);
+      await walkTo(building.x, quayZ);
+      canalObservations.push({ building: building.id, position: (await snapshot()).position });
+    }
+    if (process.env.ARTIFACT_DIR) {
+      await turnTo(Math.PI / 2, -.08);
+      await page.screenshot({ path: join(process.env.ARTIFACT_DIR, side < 0 ? 'canal-south-quay.png' : 'canal-north-quay.png') });
+    }
+    await walkTo(8, quayZ);
+    if (side < 0) {
+      await walkTo(8, -16);
+      await turnTo(-Math.PI / 2, -.06);
+      if (process.env.ARTIFACT_DIR) await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'canal-waterfront.png') });
+    }
+  }
+  await walkTo(-9.5, -25.5);
+  await walkTo(-9.5, -36);
+  await walkTo(-14, -36);
+  await walkTo(-9.5, -36);
+  await walkTo(-5.8, -36);
+  await walkTo(-5.8, -25.5);
+  await walkTo(-9.5, -25.5);
+  await walkTo(-9.5, -36);
+  await turnTo(Math.PI, -.12);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'canal-ruined-courtyard.png') });
+    await writeFile(join(process.env.ARTIFACT_DIR, 'canal-observations.json'), JSON.stringify(canalObservations, null, 2));
+  }
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'control-pose-observations.json'), JSON.stringify(poseObservations, null, 2));
   assert.deepEqual(errors, []);
-  console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, two-way walking, crouch/prone clearance, landing, independent member pose restoration and new-battle reset. Full 200-person combat is measured separately.');
+  console.log('PASS: labelled development geometry fixture, actual deck/ramp ray heights, two-way walking, crouch/prone clearance, landing, independent member pose restoration, new-battle reset, both quay streets, all eight waterfront buildings and breached ruin courtyard. Full 200-person combat is measured separately.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ current: data?.current, health: data?.health, position: data?.position, stance: data?.stance, locomotion: data?.locomotion }));

@@ -43,14 +43,17 @@ try {
   await page.waitForFunction(time => window.__battle.time > time + 8, initial.time, { timeout: 60000 });
   const advanced = await snapshot();
   let movedUnits = 0;
+  const stalledUnits = [];
   for (const unit of advanced.population.units.filter(unit => !unit.player)) {
     const old = initial.population.units.find(item => item.id === unit.id);
     if (unit.members.some(actor => {
       const before = old.members.find(item => item.id === actor.id);
       return before && Math.hypot(actor.x - before.x, actor.z - before.z) > 1;
     })) movedUnits++;
+    else stalledUnits.push({ id: unit.id, members: unit.members.map(actor => ({ id: actor.id, x: actor.x, z: actor.z,
+      distance: Math.hypot(actor.x - actor.spawnPosition.x, actor.z - actor.spawnPosition.z) })) });
   }
-  assert.equal(movedUnits, 19, 'all nineteen autonomous units act in the world, not just in the counters');
+  assert.equal(movedUnits, 19, `all nineteen autonomous units act in the world, not just in the counters: ${JSON.stringify(stalledUnits)}`);
   await page.waitForFunction(() => {
     const data = window.__battle;
     return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 100 || data.population.enemy.alive < 100);
