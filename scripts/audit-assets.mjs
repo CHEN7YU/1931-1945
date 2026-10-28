@@ -8,6 +8,7 @@ const groups = [
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'audio/rifle-mechanical/source.json', directory: 'audio/rifle-mechanical', use: 'runtime', evidence: ['LICENSE.txt'] },
+  { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -73,6 +74,13 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: 'Adapted from the user-authorized original; not CC0 or an independently accepted historical reconstruction.' });
+    } else if (group.directory === 'audio/battle-voices') {
+      if (metadata.provider !== 'Azure AI Speech' || metadata.license !== 'Azure-generated-speech' ||
+        metadata.source !== 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech' ||
+        metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA' ||
+        metadata.files.some(file => file.gender !== 'Male')) throw new Error('Generated battle voice provenance requires review');
+      permissions.push({ directory: group.directory, basis: metadata.license,
+        limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }
