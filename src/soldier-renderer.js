@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { soldierModel } from './world.js';
+import { casualtyProgress, casualtyRotation } from './casualties.js';
 
-export function syncSoldierModelPose(actor) {
+export function syncSoldierModelPose(actor, now = actor.deathTime) {
   if (!actor?.model || !actor.position || !Number.isFinite(actor.position.x) || !Number.isFinite(actor.position.y) ||
     !Number.isFinite(actor.position.z) || !Number.isFinite(actor.heading) || !Number.isFinite(actor.walkPhase) ||
     typeof actor.walkPoseReady !== 'boolean') throw new Error('Soldier projection requires its owned position, heading and gait state');
@@ -14,6 +15,11 @@ export function syncSoldierModelPose(actor) {
   if (legs[1].rotation.x !== -swing) legs[1].rotation.x = -swing;
   const roll = actor.health <= 0 ? Math.PI / 2 : 0;
   if (model.rotation.z !== roll) model.rotation.z = roll;
+  if (actor.casualty) {
+    const progress = casualtyProgress(actor.casualty, now);
+    model.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), actor.heading).multiply(casualtyRotation(actor.casualty, progress));
+    model.position.y += .20 * progress;
+  }
   return model;
 }
 
@@ -34,7 +40,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         scene.add(mesh);
         return mesh;
       });
-      groups.set(key, { parts, count: 0 });
+      groups.set(key, { parts, count: 0, capacity });
     }
     return groups.get(key);
   };
@@ -46,16 +52,23 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       for (const group of groups.values()) group.count = 0;
       summary = { visible: 0, near: 0, far: 0, batches: 0 };
       for (const actor of actors) {
-        syncSoldierModelPose(actor);
-        actor.model.visible = !actor.vehicleId && (actor.health <= 0 ? now - actor.deathTime <= 12 : actor.id !== controlledId);
+        syncSoldierModelPose(actor, now);
+        actor.model.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
         if (actor.id === separateViewId || separateViewId instanceof Set && separateViewId.has(actor.id)) continue;
-        if (!actor.model.visible || (actor.health <= 0 && now - actor.deathTime > 12)) continue;
+        if (!actor.model.visible) continue;
         const distance = camera.position.distanceTo(actor.model.position);
         sphere.center.copy(actor.model.position); sphere.center.y += .85;
         if (distance > 18 && !frustum.intersectsSphere(sphere)) continue;
         const detail = distance < (preset === 'low' ? 20 : 35) ? 'near' : 'far';
         const group = groupFor(actor.friendly, detail);
-        if (group.count >= capacity) throw new Error('Soldier instance capacity exceeded; no combatants were silently removed');
+        if (group.count >= group.capacity) {
+          if (actor.health > 0) throw new Error('Soldier instance capacity exceeded; no combatants were silently removed');
+          group.capacity *= 2;
+          for (const mesh of group.parts) {
+            const matrices = new Float32Array(group.capacity * 16); matrices.set(mesh.instanceMatrix.array);
+            mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
+          }
+        }
         if (group.parts.length !== actor.model.children.length) throw new Error('Soldier LOD hierarchy is inconsistent');
         actor.model.updateMatrix(); root.copy(actor.model.matrix);
         actor.model.children.forEach((part, index) => {

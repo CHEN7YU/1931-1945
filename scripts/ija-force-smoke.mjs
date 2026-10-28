@@ -33,7 +33,7 @@ try {
   assert.equal(initial.entityCounts.soldiers, 200);
   assert.equal(initial.enemies.length, 100);
   assert.equal(new Set(initial.force.members.map(actor => actor.id)).size, 100);
-  assert.equal(initial.force.poseBanks, 30); assert.equal(initial.friendly.poseBanks, 30);
+  assert.equal(initial.force.poseBanks, 44); assert.equal(initial.friendly.poseBanks, 44);
   assert.ok(initial.force.members.every(actor => actor.uniform === 'ija1938' && actor.helmet));
   assert.ok(initial.friendly.members.every(actor => actor.uniform === 'nra88'));
   assert.ok(initial.force.near <= 6 && initial.force.poolSize === 6 && initial.force.far > 0);

@@ -22,6 +22,7 @@ try {
     const { createNraAppearance } = await import('/src/nra-appearance.js');
     const { createNraMotion } = await import('/src/nra-motion.js');
     const { createRifleState } = await import('/src/rifle-action.js');
+    const { createCasualtyState } = await import('/src/casualties.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
     await configureRifleMaterials();
     const template = await loadNraCharacter(), scene = new T.Scene();
@@ -45,7 +46,7 @@ try {
     const people = [actor(0, 'gallery-A', .56), actor(5, 'gallery-B', -.56)];
     await force.prepare(renderer);
     force.update(people, 0, null, 'high'); renderer.render(scene, camera);
-    window.__variantCheck = { T, force, people, actor, scene, camera, lodCamera, renderer };
+    window.__variantCheck = { T, force, people, actor, scene, camera, lodCamera, renderer, createCasualtyState };
     return force.snapshot;
   });
   assert.equal(near.near, 2);
@@ -71,7 +72,7 @@ try {
       variants: active.flatMap(bank => [...bank.geometry.attributes.nraUniformVariant.array.slice(0, bank.count)]),
       atlasWidth: bank.material.map.image.width };
   });
-  assert.equal(far.far, 2); assert.equal(far.bankCount, 30);
+  assert.equal(far.far, 2); assert.equal(far.bankCount, 44);
   assert.deepEqual(far.variants.slice().sort(), [0, 1]);
   assert.equal(far.unchangedSkinUv, true); assert.ok(far.changedClothUv > 10000);
   assert.ok(far.atlasWidth <= 4096);
@@ -87,8 +88,25 @@ try {
   assert.equal(replacement.views.find(view => view.actorId === 'gallery-B-replacement').appearance.uniform, 'B');
   assert.equal(replacement.views.find(view => view.actorId === 'gallery-B-replacement').uniformParts.length, 7);
   assert.equal(replacement.poolSize, 6);
+  const corpsePool = await page.evaluate(() => {
+    const { T, force, people, lodCamera, createCasualtyState } = window.__variantCheck;
+    lodCamera.position.set(0, 1.1, -50); lodCamera.lookAt(0, .9, 0);
+    const corpses = Array.from({ length: 331 }, (_, index) => {
+      const person = { ...people[1], id: `B-corpse-${index}`, health: 0, position: new T.Vector3(), deathTime: 0 };
+      person.casualty = createCasualtyState(person, 0, null, { variant: 0, retainGun: false });
+      return person;
+    });
+    force.update(corpses, 5, null, 'low');
+    const bank = force.root.children.find(node => node.isInstancedMesh && node.count === corpses.length);
+    return { far: force.snapshot.far, matrices: bank.instanceMatrix.count,
+      variants: bank.geometry.attributes.nraUniformVariant.count,
+      allB: [...bank.geometry.attributes.nraUniformVariant.array.slice(0, bank.count)].every(value => value === 1) };
+  });
+  assert.equal(corpsePool.far, 331);
+  assert.equal(corpsePool.variants, corpsePool.matrices);
+  assert.equal(corpsePool.allB, true);
   assert.equal(requests.filter(request => request.endsWith('/character.fbx')).length, 1);
   assert.deepEqual(errors, []);
-  if (out) await writeFile(join(out, 'production-uniform-observations.json'), JSON.stringify({ near, far, replacement, errors, requests }, null, 2));
-  console.log('PASS: real A/B skinned geometry, rendered per-instance atlas variants, unchanged skin, shared 30 banks and B replacement rebind.');
+  if (out) await writeFile(join(out, 'production-uniform-observations.json'), JSON.stringify({ near, far, replacement, corpsePool, errors, requests }, null, 2));
+  console.log('PASS: real A/B skinned geometry, rendered per-instance atlas variants, unchanged skin, shared 44 banks, B replacement rebind and corpse-pool expansion.');
 } finally { await browser.close(); }

@@ -47,13 +47,14 @@ try {
   assert.ok(data.force.members.every(actor => actor.uniform === 'nra88' && actor.helmet));
   assert.equal(data.force.members.find(actor => actor.id === data.control.soldierId).tier, 'hidden');
   assert.ok(data.force.near <= 6 && data.force.poolSize <= 6);
-  assert.equal(data.force.poseBanks, 30);
+  assert.equal(data.force.poseBanks, 44);
   assert.ok(data.force.views.filter(view => view.soldier.health > 0).length >= 2, 'More than one uniformed soldier can be observed');
   observations.push({ stage: 'all-100-assigned', data });
   await page.screenshot({ path: join(directory, 'uniformed-squad.png') });
   const before = data.allies[1];
   await page.keyboard.press('y');
-  await page.waitForFunction(id => window.__battle.control.soldierId === id, before.id);
+  await page.waitForFunction(id => window.__battle.control.soldierId === id &&
+    window.__battle.historicalForce.members.find(actor => actor.id === id)?.tier === 'hidden', before.id);
   data = await snapshot();
   assertUniformSplit(data.force);
   assert.equal(data.force.members.find(actor => actor.id === before.id).tier, 'hidden');

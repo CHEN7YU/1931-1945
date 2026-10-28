@@ -22,6 +22,7 @@ try {
     const { FIRING_POSES } = await import('/src/combat-posture.js');
     const { createRifleState } = await import('/src/rifle-action.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
+    const { hasIjaRifleFlag } = await import('/src/ija-rifle-flag.js');
     await configureRifleMaterials();
     const template = await loadIjaCharacter();
     const scene = new THREE.Scene();
@@ -57,6 +58,10 @@ try {
           heading: 0, position: new THREE.Vector3((index - 2) * 1.5, 0, 0), walkPhase: 0,
           stance: state.stance, locomotion: { speed: state.speed }, health: 100,
           vehicleId: null, deathTime: 0, rifle: createRifleState() };
+        for (let seed = 0; seed < 1000; seed++) {
+          actor.id = `${level}-${state.name}-${seed}`;
+          if (hasIjaRifleFlag(actor) === (index % 2 === 0)) break;
+        }
         actor.nativeMotion = createNraMotion(view.motionProfile, actor);
         actor.nativeMotion.speed = state.speed;
         actor.nativeMotion.weight = state.speed ? 1 : 0;
@@ -78,6 +83,8 @@ try {
             meshes.push(mesh);
           });
           measurements.push({ level, state: state.name, phase, issue: view.issue,
+            rifleFlag: view.snapshot.rifleFlag, expectedFlag: hasIjaRifleFlag(actor),
+            flagParent: view.root.getObjectByName('ija-rifle-flag').parent === view.root.getObjectByName('bolt').parent,
             min: box.min.toArray(), max: box.max.toArray(), actor: actor.position.toArray() });
           if (phase === 0 && state.name === 'idle') {
             const clone = level === 'near' ? template.createView() : template.createFarView(), other = [];
@@ -101,10 +108,14 @@ try {
   assert.deepEqual(errors, []);
   assert.ok(result.sharing.every(item => item.shared), 'LOD views share geometry/materials but own their bones');
   for (const entry of result.measurements) {
+    assert.equal(entry.rifleFlag, entry.expectedFlag, 'both LODs keep the same owned flag selection');
+    assert.ok(entry.flagParent, 'flag follows the actual gun, including a future dropped-gun transform');
     assert.equal(entry.issue, null, `${entry.level} ${entry.state} phase ${entry.phase}: reachable rifle pose`);
     assert.ok([...entry.min, ...entry.max].every(Number.isFinite));
     assert.ok(entry.min[1] > -.15, `${entry.level} ${entry.state}: no substantial below-ground deformation`);
     assert.ok(entry.max[1] < 2.15, `${entry.level} ${entry.state}: correct human scale`);
+    if (entry.state === 'idle') assert.ok(Math.abs(entry.max[1] - 1.683) < .003,
+      `${entry.level}: measured helmet top must reflect the compact production asset`);
     for (const axis of [0, 2]) {
       assert.ok(entry.min[axis] > entry.actor[axis] - 1.8 && entry.max[axis] < entry.actor[axis] + 1.8);
     }
