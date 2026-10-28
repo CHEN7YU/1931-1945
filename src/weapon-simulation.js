@@ -24,6 +24,10 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false, a
     if (vehicle.health <= 0) continue;
     requireWeapon(registry, vehicle.weapon, vehicle.id, vehicle.type);
     shotState(vehicle.weapon, now, false);
+    for (const gun of vehicle.machineGuns ?? []) {
+      requireWeapon(registry, gun, vehicle.id, vehicle.type);
+      shotState(gun, now, false);
+    }
   }
   for (const unit of registry.units.values()) {
     if (unit.type !== 'mortar') continue;

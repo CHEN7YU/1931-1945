@@ -19,11 +19,11 @@ try {
   assert.equal(initial.allies.length, 11);
   assert.equal(initial.population.units.length, 20);
   assert.deepEqual(initial.population.friendly, { units: 10, rosterUnits: 10, alive: 110, vehicles: 0 });
-  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 110, vehicles: 0 });
-  assert.ok(initial.population.units.every(unit => unit.memberCount === 11 && unit.alive === 11));
+  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 96, vehicles: 2 });
+  assert.ok(initial.population.units.every(unit => unit.memberCount === (unit.type === 'tank' ? 4 : 11) && unit.alive === unit.memberCount));
   const members = initial.population.units.flatMap(unit => unit.members);
-  assert.equal(new Set(members.map(actor => actor.id)).size, 220);
-  for (const unit of initial.population.units) {
+  assert.equal(new Set(members.map(actor => actor.id)).size, 206);
+  for (const unit of initial.population.units.filter(unit => unit.type === 'infantry')) {
     assert.equal(unit.members.filter(actor => actor.role === 'engineer').length, 1);
     assert.equal(unit.members.filter(actor => actor.role === 'rifleman').length, 9);
     assert.equal(unit.members[10].role, 'machine-gunner');
@@ -34,8 +34,9 @@ try {
     assert.ok(actor.spawnClear, `${unit.id} member starts inside a real obstacle`);
     assert.equal(origins.get(actor.spawnId)?.team, unit.team);
   }
-  for (let i = 0; i < members.length; i++) for (let j = 0; j < i; j++) {
-    assert.ok(Math.hypot(members[i].spawnPosition.x - members[j].spawnPosition.x, members[i].spawnPosition.z - members[j].spawnPosition.z) >= 1.25 - 1e-8, 'different soldiers do not spawn stacked');
+  const infantry = initial.population.units.filter(unit => unit.type === 'infantry').flatMap(unit => unit.members);
+  for (let i = 0; i < infantry.length; i++) for (let j = 0; j < i; j++) {
+    assert.ok(Math.hypot(infantry[i].spawnPosition.x - infantry[j].spawnPosition.x, infantry[i].spawnPosition.z - infantry[j].spawnPosition.z) >= 1.25 - 1e-8, 'different infantry do not spawn stacked; crew occupy seats in their own hull');
   }
   assert.equal(await page.locator('#members .member').count(), 11);
   assert.match(await page.locator('#force-status').textContent(), /110人/);
@@ -62,7 +63,7 @@ try {
   assert.equal(movedUnits, 19, `all nineteen autonomous units act in the world, not just in the counters: ${JSON.stringify(stalledUnits)}`);
   await page.waitForFunction(() => {
     const data = window.__battle;
-    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 110 || data.population.enemy.alive < 110);
+    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 110 || data.population.enemy.alive < 96);
   }, null, { timeout: 120000 });
   const combat = await snapshot();
   await page.keyboard.press('Escape');
@@ -99,9 +100,9 @@ try {
   assert.equal(data.population.friendly.alive, 100);
   assert.equal(data.population.friendly.vehicles, 1);
   assert.equal(data.allies.length, 1);
-  assert.equal(data.population.enemy.alive, 110);
+  assert.equal(data.population.enemy.alive, 96);
   assert.deepEqual(errors, []);
-  console.log(`PASS: 220 actual members, 20 real units, eleven-person control, safe origins, ${movedUnits} autonomous units moving, one selected vehicle and ${advanced.performance.drawCalls} draw calls / ${advanced.performance.averageFrameMs.toFixed(1)}ms observed mean frame.`);
+  console.log(`PASS: 206 actual members, 20 real units including two enemy tanks, eleven-person control, safe origins, ${movedUnits} autonomous units moving, one selected vehicle and ${advanced.performance.drawCalls} draw calls / ${advanced.performance.averageFrameMs.toFixed(1)}ms observed mean frame.`);
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ state: data?.state, time: data?.time, forces: data?.population && { friendly: data.population.friendly, enemy: data.population.enemy },

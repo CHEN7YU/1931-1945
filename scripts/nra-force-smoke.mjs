@@ -39,7 +39,7 @@ try {
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 110);
   let data = await snapshot();
-  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 110);
+  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 96);
   assert.equal(new Set(data.force.members.map(actor => actor.id)).size, 110);
   assertUniformSplit(data.force);
   assert.equal(data.force.members.filter(actor => actor.uniformVariant === 'A').length, 55);

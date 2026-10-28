@@ -35,6 +35,7 @@ export function advanceCapture(point, dt, friendly, hostile) {
 export function circleBlocked(x, z, radius, obstacles) {
   if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
   return obstacles.some(b => {
+    if (b.circular) return (x - b.cx) ** 2 + (z - b.cz) ** 2 < (radius + b.radius) ** 2;
     if (b.door || b.oriented) {
       const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;
@@ -252,16 +253,17 @@ export function canDeploySquad(state, members) {
 }
 
 export function shotState(unit, now, firing) {
+  const settings = unit.settings ?? TYPES[unit.type];
   if (unit.reloadUntil > 0 && now >= unit.reloadUntil) {
-    unit.ammo = TYPES[unit.type].magazine;
+    unit.ammo = settings.magazine;
     unit.reloadUntil = 0;
   }
   if (!firing || unit.reloadUntil > 0 || now < unit.nextShot) return false;
   if (unit.ammo <= 0) {
-    unit.reloadUntil = now + TYPES[unit.type].reload;
+    unit.reloadUntil = now + settings.reload;
     return false;
   }
   unit.ammo--;
-  unit.nextShot = now + TYPES[unit.type].interval;
+  unit.nextShot = now + settings.interval;
   return true;
 }

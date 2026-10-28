@@ -1,5 +1,6 @@
 import { TYPES, circleBlocked } from './core.js';
 import { spawnBlockReason } from './spawns.js';
+import { CHI_HA, japaneseArmorRoster } from './chi-ha.js';
 
 export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
@@ -15,11 +16,12 @@ export class FormationPlacementError extends Error {}
 
 export function battleRoster(playerType = 'infantry') {
   if (!TYPES[playerType]) throw new RangeError(`Unknown player unit: ${playerType}`);
-  return ['friendly', 'enemy'].flatMap(team => Array.from({ length: BATTLE_RULES.unitsPerTeam }, (_, index) => ({
+  const infantry = ['friendly', 'enemy'].flatMap(team => Array.from({ length: team === 'enemy' ? 8 : BATTLE_RULES.unitsPerTeam }, (_, index) => ({
     id: `${team}-${index}`, team, index, type: team === 'friendly' && index === 0 ? playerType : 'infantry',
     player: team === 'friendly' && index === 0, members: [], generation: 0, respawnAt: null,
     spawnId: index === 0 ? team === 'friendly' ? 'china-base' : 'japan-base' : `${team}-staging-${index}`,
   })));
+  return [...infantry, ...japaneseArmorRoster()];
 }
 
 export function stagingSpawns() {
@@ -72,11 +74,12 @@ export function holdDestination(actor) {
 }
 
 export function reinforcementDue(formation, now) {
-  return !formation.player && formation.respawnAt !== null && now >= formation.respawnAt && !formation.members.some(actor => actor.health > 0);
+  const readyAt = formation.respawnAt ?? (formation.variant === CHI_HA.id ? now : null);
+  return !formation.player && readyAt !== null && now >= readyAt && !formation.members.some(actor => actor.health > 0);
 }
 
 export function battleSpawn(formation, points, hostiles, obstacles, initial = false) {
-  if (!initial) {
+  if (!initial && !isVehicleUnit(formation.type)) {
     const rally = points.find(point => point.team === formation.team && point.kind === 'rally' && !spawnBlockReason(point, 'infantry', hostiles, obstacles));
     if (rally) return rally;
   }

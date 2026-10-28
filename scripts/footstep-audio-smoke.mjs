@@ -131,7 +131,7 @@ try {
   await full.locator('#deploy').click();
   data = await save(full, 'full-army-startup');
   assert.equal(data.population.friendly.alive, 110);
-  assert.equal(data.population.enemy.alive, 110);
+  assert.equal(data.population.enemy.alive, 96);
   await full.keyboard.down('w');
   await full.waitForFunction(() => window.__battle.footstepAudio.counts.played >= 2);
   await full.keyboard.up('w');
