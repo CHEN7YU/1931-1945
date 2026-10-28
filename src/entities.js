@@ -3,6 +3,8 @@ import { nativeMuzzleLocal, nativeGaitDrop, nativeEyeLocal, syncNativeAimGoal } 
 import { FIRING_POSES } from './combat-posture.js';
 import { infantryWeaponProfile } from './rifle-action.js';
 import { CHI_HA, CHI_HA_SEATS, CHI_HA_MG, CHI_HA_MG_MOUNTS } from './chi-ha.js';
+import { createTraversal } from './infantry-traversal.js';
+import { createWeaponMount } from './weapon-mount.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -68,6 +70,8 @@ export function registerSoldier(registry, actor) {
   if (!actor.id || registry.soldiers.has(actor.id) || !registry.units.has(actor.unitId)) throw new Error(`Invalid soldier ownership: ${actor.id}`);
   actor.vehicleId = actor.seatId = null;
   actor.stance = 'standing'; actor.manualStance = null; actor.lookPitch = 0;
+  actor.traversal = createTraversal();
+  actor.weaponMount = createWeaponMount();
   registry.soldiers.set(actor.id, actor);
   return actor;
 }
@@ -111,6 +115,8 @@ export function seatSoldier(registry, actor, vehicle, seatId) {
   if (!seat || seat.occupantId) return '席位已被占用';
   seat.occupantId = actor.id; actor.vehicleId = vehicle.id; actor.seatId = seat.id;
   actor.stance = 'standing'; actor.manualStance = null; actor.firingPose = null;
+  Object.assign(actor.traversal, createTraversal());
+  Object.assign(actor.weaponMount, createWeaponMount());
   if (!vehicle.crewIds.includes(actor.id)) vehicle.crewIds.push(actor.id);
   Object.assign(actor.position, { x: vehicle.position.x, y: vehicle.position.y, z: vehicle.position.z });
   actor.targetKind = vehicle.type === 'tank' ? 'closed-armor' : 'aircraft';

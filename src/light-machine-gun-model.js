@@ -223,6 +223,7 @@ export function lightMachineGunModel(model, detail = 'near') {
       cylinder(body, 'carry-handle-cap', axis + .043, .069, -.549, .012, .008, edge);
     }
     const feed = new THREE.Group(); feed.name = 'feed'; root.add(feed);
+    const reloadParts = [];
     if (model === 'zb26') {
       box(body, 'magazine-well', axis, .012, -.25, .045, .018, .096);
       const magazine = new THREE.Shape();
@@ -244,10 +245,10 @@ export function lightMachineGunModel(model, detail = 'near') {
       box(feed, 'magazine-weld-seam', axis, .112, -.2902, .021, .161, .0007, edge, .0002);
       box(body, 'magazine-latch', axis, .027, -.199, .018, .018, .014, edge);
     } else {
-      box(feed, 'hopper-floor', -.123, .004, -.216, .143, .01, .137);
-      for (const z of [-.282, -.15]) box(feed, 'hopper-wall', -.123, .034, z, .143, .064, .006);
-      box(feed, 'hopper-outer-wall', -.193, .034, -.216, .006, .064, .137);
-      for (let clip = 0; clip < (near ? 6 : 1); clip++) {
+      box(body, 'hopper-floor', -.123, .004, -.216, .143, .01, .137);
+      for (const z of [-.282, -.15]) box(body, 'hopper-wall', -.123, .034, z, .143, .064, .006);
+      box(body, 'hopper-outer-wall', -.193, .034, -.216, .006, .064, .137);
+      for (let clip = 0; clip < 1; clip++) {
         const y = .014 + clip * .009;
         box(feed, 'stripper-clip', -.123, y, -.163, .118, .004, .008);
         for (let round = 0; round < 5; round++) {
@@ -261,11 +262,22 @@ export function lightMachineGunModel(model, detail = 'near') {
           }
         }
       }
-      box(feed, 'hopper-lid', -.123, .079, -.216, .151, .008, .143, steel, .003);
-      cylinder(feed, 'hopper-hinge', -.197, .071, -.216, .0055, .145, edge);
-      box(feed, 'hopper-lid-ridge', -.123, .085, -.216, .019, .006, .12);
+      const lid = new THREE.Group(); lid.name = 'hopper-lid-pivot'; root.add(lid);
+      lid.position.set(-.197, .071, -.216);
+      box(lid, 'hopper-lid', .074, .008, 0, .151, .008, .143, steel, .003);
+      box(lid, 'hopper-lid-ridge', .074, .014, 0, .019, .006, .12);
+      cylinder(body, 'hopper-hinge', -.197, .071, -.216, .0055, .145, edge);
+      const clip = new THREE.Group(); clip.name = 'loading-clip'; root.add(clip);
+      box(clip, 'reload-stripper', -.123, .07, -.163, .118, .004, .008);
+      for (let round = 0; round < 5; round++) {
+        cylinder(clip, 'reload-cartridge', -.169 + round * .023, .073, -.207, .0039, .05, brass, .0039, 12);
+        const tip = new THREE.ConeGeometry(.0029, .011, 12); tip.rotateX(-Math.PI / 2);
+        add(clip, 'reload-bullet-tip', tip, brass, -.169 + round * .023, .073, -.2455);
+      }
+      clip.visible = false;
+      reloadParts.push(lid, clip);
     }
-    for (const group of [body, feed]) {
+    for (const group of [body, feed, ...reloadParts]) {
       group.updateMatrixWorld(true);
       const batches = new Map();
       for (const mesh of [...group.children]) {
@@ -280,6 +292,15 @@ export function lightMachineGunModel(model, detail = 'near') {
         mesh.receiveShadow = true;
         geometries.forEach(geometry => geometry.dispose());
         group.add(mesh);
+      }
+    }
+    if (model === 'type11') {
+      for (const mesh of [...feed.children]) {
+        const layers = new THREE.InstancedMesh(mesh.geometry, mesh.material, 6);
+        for (let i = 0; i < 6; i++) layers.setMatrixAt(i, new THREE.Matrix4().makeTranslation(0, i * .009, 0));
+        layers.receiveShadow = true;
+        layers.computeBoundingSphere();
+        feed.remove(mesh); feed.add(layers);
       }
     }
     root.userData.model = model;

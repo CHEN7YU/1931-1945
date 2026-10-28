@@ -46,8 +46,11 @@ export function advanceRifle(state, dt) {
     const reloading = state.action === 'reload';
     const duration = reloading ? profile.reloadSeconds : profile.cycleSeconds;
     const end = Math.min(duration, state.elapsed + dt);
+    const clips = Math.max(1, Math.ceil((profile.magazine - state.ammo) / 5));
     const cues = profile.automatic
-      ? reloading ? [[duration * .4, 'load'], [duration * .85, 'close']] : []
+      ? reloading ? state.model === 'zb26' ? [[duration * .82, 'load'], [duration * .93, 'close']]
+        : [...Array.from({ length: clips }, (_, index) => [duration * (.2 + .62 * (index + .8) / clips), 'load']),
+          [duration * .93, 'close']] : []
       : reloading ? [[.12, 'unlock'], [.4, 'extract'], [1.45, 'load'], [2.3, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
     for (const [at, cue] of cues) if (state.elapsed < at && end >= at) events.push(cue);
     dt -= end - state.elapsed;

@@ -99,7 +99,7 @@ for (const [model, capacity] of [['zb26', 20], ['type11', 30]]) {
     const counts = [];
     for (const [detail, gun] of [['near', near], ['far', far]]) {
       let triangles = 0, batches = 0;
-      gun.traverse(mesh => {
+      gun.traverseVisible(mesh => {
         if (!mesh.isMesh) return;
         const { position, normal, uv } = mesh.geometry.attributes;
         assert.ok([...position.array, ...normal.array, ...uv.array].every(Number.isFinite));
