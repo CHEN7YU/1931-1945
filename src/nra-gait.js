@@ -1,21 +1,32 @@
 import { Vector3, Quaternion } from 'three';
 import { solveArm } from './nra-rifle-pose.js';
+import { firingCarryPosition } from './rifle-contacts.js';
 
 export function applyNativeBodyLean(root, bones, motion) {
   if (!Number.isFinite(motion.bodyLean) || motion.bodyLean < 0 || motion.bodyLean > .4) throw new Error('Invalid owned torso lean');
-  if (!motion.bodyLean) return;
+  const yaw = motion.torsoYaw ?? 0;
+  if (!Number.isFinite(yaw) || Math.abs(yaw) > .6) throw new Error('Invalid owned firing torso turn');
+  if (!motion.bodyLean && !yaw) return;
   const facing = root.getWorldQuaternion(new Quaternion());
-  const rotate = (bone, angle) => {
-    const delta = facing.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), angle)).multiply(facing.clone().invert());
+  const rotate = (bone, angle, axis = new Vector3(1, 0, 0)) => {
+    const delta = facing.clone().multiply(new Quaternion().setFromAxisAngle(axis, angle)).multiply(facing.clone().invert());
     const world = delta.multiply(bone.getWorldQuaternion(new Quaternion()));
     bone.quaternion.copy(bone.parent.getWorldQuaternion(new Quaternion()).invert().multiply(world));
     bone.updateMatrixWorld(true);
   };
+  if (yaw) {
+    rotate(bones.get('Spine'), yaw, new Vector3(0, 1, 0));
+    rotate(bones.get('Head'), -yaw, new Vector3(0, 1, 0));
+  }
   rotate(bones.get('Spine'), -motion.bodyLean);
   rotate(bones.get('Head'), motion.bodyLean * .8);
 }
 
-export function createNativeGaitProfile(idle) {
+export function createNativeGaitProfile(idle, shoulder = null) {
+  if (shoulder) {
+    const origin = firingCarryPosition(shoulder), original = idle.positions.slice(0, 3);
+    idle = { ...idle, positions: idle.positions.map((value, i) => value - original[i % 3] + origin[i % 3]) };
+  }
   const carry = () => ({ duration: 1, times: [0, 1],
     positions: [...idle.positions.slice(0, 3), ...idle.positions.slice(0, 3)],
     quaternions: [...idle.quaternions.slice(0, 4), ...idle.quaternions.slice(0, 4)] });

@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RIFLE, riflePose } from './rifle-action.js';
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
+import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
 
 let template;
 let distantTemplate;
@@ -168,11 +169,7 @@ function buildTemplate(detail = 'near') {
   const root = new THREE.Group();
   const body = new THREE.Group(); body.name = 'rifleBody'; root.add(body);
   const { wood, steel, edge, black, brass, leather } = materials;
-  add(body, loft([
-    [.22,-.095,.025,.068], [.19,-.094,.027,.071], [.08,-.076,.025,.061],
-    [-.025,-.052,.018,.027], [-.09,-.049,.019,.026], [-.16,-.045,.028,.037],
-    [-.3,-.038,.026,.031], [-.44,-.034,.024,.028], [-.6,-.031,.021,.023], [-.73,-.026,.018,.019],
-  ], detail === 'far' ? 17 : 97, detail === 'far' ? 12 : 32), wood);
+  add(body, loft(RIFLE_STOCK_SECTIONS, detail === 'far' ? 17 : 97, detail === 'far' ? 12 : 32), wood);
   sphere(body, 0, -.026, -.73, .018, .019, .003, wood);
   rounded(body, 0, -.095, .216, .053, .14, .008, steel, .003);
   axial(body, 0, 0, -.595, .0084, .59, steel, '', .0145);

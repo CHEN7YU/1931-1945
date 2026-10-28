@@ -5,6 +5,8 @@ import { Quaternion, Vector3 } from 'three';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeMuzzleLocal } from '../src/nra-motion.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
+import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
+import { FIRING_POSES } from '../src/combat-posture.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
 function actor() {
@@ -111,4 +113,20 @@ test('current native carry lowers the real muzzle during travel and raises smoot
   assert.ok(person.nativeMotion.lowReady < .001);
   const raised = sampleNraMotion(person);
   assert.ok(Math.abs(new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...raised.weaponQuaternion)).y) < .05);
+});
+
+test('contact-based carry anchors the actual buttplate, not the receiver or camera, for shoulder and armpit modes', () => {
+  for (const ready of [true, false]) {
+    const person = actor(), shoulder = [.184, 1.41, .063];
+    person.rifleReady = ready;
+    const profile = { ...createNativeGaitProfile(data.motion.idle, shoulder),
+      rifleContacts: Object.fromEntries(['standing', ...Object.keys(FIRING_POSES)].map(pose => [pose, shoulder])) };
+    person.nativeMotion = createNraMotion(profile, person);
+    const pose = sampleNraMotion(person), rotation = new Quaternion(...pose.weaponQuaternion);
+    const stock = new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(rotation).add(new Vector3(...pose.weaponPosition));
+    assert.ok(stock.distanceTo(new Vector3(...pose.stockContact)) < 1e-10);
+    assert.ok(Math.abs(stock.y - (shoulder[1] + (ready ? .045 : -.08))) < 1e-10);
+    assert.ok(Math.abs(stock.z - shoulder[2]) < .03, 'buttplate cannot sit far behind the actual shoulder');
+    if (!ready) assert.ok(new Vector3(0, 0, -1).applyQuaternion(rotation).x < -.08, 'carrying muzzle lies across the front rather than crowding both hands to the right');
+  }
 });

@@ -60,7 +60,7 @@ const metadata = {
   asset: 'Independent rifle mechanical Foley candidate', license: 'CC0-1.0',
   source: 'https://opengameart.org/content/equipment-clicks-iii',
   licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
-  verified: '2026-10-27', purpose: 'Independent module; not connected to the main game yet.',
+  verified: '2026-10-27', purpose: 'Controlled personal rifle mechanical feedback, driven by original weapon.mechanical events in the main game.',
   originals, files,
   processing: ['FFmpeg mono 24kHz resampling and 40Hz high-pass', 'Fixed excerpts without time stretching',
     'DC removal, peak bounded to 0.65, 1ms attack and 15ms tail fades', '16-bit PCM WAV'],
@@ -69,7 +69,7 @@ const metadata = {
     'Cue mappings are Foley choices, not verified Type 24 or Japanese rifle mechanisms.',
     'extract means bolt extraction motion, not proof of an ejected case or a case striking the ground.',
     'load is generic clip-loading audio, not a verified period five-round stripper-clip recording.',
-    'No independent listening acceptance, battlefield mix acceptance or main-game integration is claimed.',
+    'No independent listening acceptance or battlefield mix acceptance is claimed.',
     'Regeneration requires FFmpeg; different FFmpeg versions may change hashes and require explicit review.',
   ],
 };

@@ -12,13 +12,20 @@
   },
   "sourcePermissionRecord": "/assets/game/nra-88/PERMISSION.txt",
   "sourceModelSha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898",
-  "modelSha256": "b5b5410b900ef0d0c135183c3f5a5ac956cff650c1be0bc31961fa863d02d03b",
+  "modelSha256": "805c889582d8de7e92ee04bc03c475ef6f64d83bb8243d8311c91a3c67c76a00",
   "files": [
-    { "file": "character.glb", "bytes": 7104060, "sha256": "b5b5410b900ef0d0c135183c3f5a5ac956cff650c1be0bc31961fa863d02d03b" }
+    {
+      "file": "character.glb",
+      "bytes": 7104060,
+      "sha256": "805c889582d8de7e92ee04bc03c475ef6f64d83bb8243d8311c91a3c67c76a00"
+    }
   ],
   "runtimeMotion": {
     "method": "Shared native foot-cycle controller; unilateral low poses and coordinated rear ankle",
-    "inactiveEmbeddedClips": ["walk", "run"],
+    "inactiveEmbeddedClips": [
+      "walk",
+      "run"
+    ],
     "limitation": "Embedded clip presence is provenance, not evidence that production playback uses it"
   },
   "historicalAcceptance": false,

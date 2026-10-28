@@ -35,16 +35,17 @@ try {
     const colors = { head: 0xff5555, torso: 0xffcc44, limb: 0x55ccff };
     for (const [team, factory] of Object.entries(factories)) {
       const view = factory.createView();
-      for (const pose of ['standing', ...Object.keys(FIRING_POSES), 'transition', 'walk', 'run']) {
+      for (const pose of ['standing', ...Object.keys(FIRING_POSES), 'transition', 'walk', 'run', 'sprint']) {
         for (const phase of [0, .3, .7]) for (const heading of [0, 1.1]) for (const ready of [false, true]) {
           const actor = { id: `${team}-${pose}-${phase}-${heading}`, team, friendly: team === 'friendly',
             unitId: 'inspection', health: 100, vehicleId: null, stance: FIRING_POSES[pose]?.stance ?? 'standing',
             firingPose: FIRING_POSES[pose] ? pose : null, position: new T.Vector3(0, groundHeight(0, 90), 90),
             heading, rifleReady: ready, walkPhase: .7, walkPoseReady: true, rifle: createRifleState(), deathTime: 0,
-            locomotion: { speed: pose === 'run' ? 3.15 : pose === 'walk' ? 1.75 : 0 } };
+            locomotion: { speed: pose === 'sprint' ? 4.8 : pose === 'run' ? 3.15 : pose === 'walk' ? 1.75 : 0,
+              mode: pose === 'sprint' ? 'sprint' : pose === 'run' ? 'jog' : pose === 'walk' ? 'walk' : 'idle' } };
           actor.nativeMotion = createNraMotion(factory.motionProfile, actor);
           Object.assign(actor.nativeMotion, { speed: actor.locomotion.speed, weight: actor.locomotion.speed ? 1 : 0,
-            distance: phase * (pose === 'walk' ? 1.25 : 2.4), bodyLean: pose === 'run' ? .2 : 0 });
+            distance: phase * (pose === 'walk' ? 1.25 : 2.4), bodyLean: pose === 'sprint' ? .26 : pose === 'run' ? .2 : 0 });
           for (const key of Object.keys(FIRING_POSES)) actor.nativeMotion.posture[key] = key === pose ? 1 :
             pose === 'transition' && key === 'prone' ? .5 : 0;
           view.bind(actor.id); view.update(actor, 0, null);
@@ -62,6 +63,7 @@ try {
           const forward = new T.Vector3(0, 0, -1.5).applyAxisAngle(new T.Vector3(0, 1, 0), heading);
           const lateral = new T.Vector3(-1.5, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), heading);
           samples.push({ team, pose, phase, heading, ready, error, drift, issue: view.issue,
+            fingerError: view.snapshot.riflePose.fingerError,
             barrelY: view.snapshot.riflePose.direction[1],
             head: classify('head', forward), torso: classify('torso', forward.clone().negate()),
             limb: classify('Left-shin', lateral), preserved: JSON.stringify(actor.nativeMotion) === before,
@@ -96,7 +98,7 @@ try {
     assert.ok(sample.error < 1e-6 && sample.drift < 1e-6, JSON.stringify(sample));
     assert.ok(sample.preserved && sample.renderedPreserved, 'collision sampling cannot mutate simulation or the actual rendered pose');
     assert.equal(sample.issue, null, JSON.stringify(sample));
-    if (['walk', 'run', 'standing'].includes(sample.pose)) {
+    if (['walk', 'run', 'sprint', 'standing'].includes(sample.pose)) {
       if (sample.ready) assert.ok(Math.abs(sample.barrelY) < .15, JSON.stringify(sample));
       else assert.ok(sample.barrelY < -.4, JSON.stringify(sample));
     }

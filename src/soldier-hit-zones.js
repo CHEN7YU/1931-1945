@@ -2,7 +2,7 @@ import { Object3D, Group, Ray, Sphere, Vector3, Quaternion, Matrix4 } from 'thre
 import { RIFLE } from './rifle-action.js';
 
 const sides = ['Left', 'Right'];
-const joints = ['Hips', 'Spine', 'Spine2', 'Neck', 'Head', 'HeadTop_End',
+const joints = ['Hips', 'Spine', 'Spine2', 'Neck', 'Head', 'HeadTop_End', 'LeftShoulder', 'RightShoulder',
   ...sides.flatMap(side => ['Arm', 'ForeArm', 'Hand', 'HandMiddle1', 'UpLeg', 'Leg', 'Foot', 'ToeBase'].map(name => side + name))];
 const up = new Vector3(0, 1, 0), sphere = new Sphere(new Vector3(), 1);
 
@@ -53,6 +53,7 @@ function proceduralBones(actor) {
     const sign = index ? 1 : -1;
     Object.assign(local, {
       [side + 'Arm']: [sign * .24, 1.32 - drop, 0],
+      [side + 'Shoulder']: [sign * .12, 1.4 - drop, 0],
       [side + 'ForeArm']: [sign * .22, 1.13 - drop, -.22],
       [side + 'Hand']: [index ? .173 : .1, 1.325 - drop, index ? -.095 : -.43],
       [side + 'HandMiddle1']: [index ? .173 : .1, 1.325 - drop, index ? -.15 : -.49],
@@ -63,6 +64,7 @@ function proceduralBones(actor) {
     });
     if (prone) Object.assign(local, {
       [side + 'Arm']: [sign * .24, .26, -.35], [side + 'ForeArm']: [sign * .25, .15, -.68],
+      [side + 'Shoulder']: [sign * .12, .26, -.35],
       [side + 'Hand']: [sign * .12, .32, -.88], [side + 'HandMiddle1']: [sign * .12, .32, -.94],
       [side + 'UpLeg']: [sign * .135, .25, .12], [side + 'Leg']: [sign * .135, .12, .5],
       [side + 'Foot']: [sign * .135, .22, .84], [side + 'ToeBase']: [sign * .135, .1, .95],
@@ -101,6 +103,12 @@ export function createSoldierHitSystem(sampleNative) {
         volume.position.copy(a).lerp(b, .5);
         volume.quaternion.copy(facing).multiply(new Quaternion().setFromUnitVectors(up,
           direction.divideScalar(length).applyQuaternion(inverseFacing)));
+        if (part === 'torso' || part === 'neck') {
+          const vertical = b.clone().sub(a).normalize();
+          const across = points.RightShoulder.clone().sub(points.LeftShoulder);
+          across.addScaledVector(vertical, -across.dot(vertical)).normalize();
+          volume.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(across, vertical, across.clone().cross(vertical)));
+        }
         volume.scale.set(width, length / 2 + padding, depth);
         volume.updateMatrix();
         index++;

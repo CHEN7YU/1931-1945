@@ -101,9 +101,9 @@ export function createUniformStudy({ textures = {}, upperBody } = {}) {
   const root = new THREE.Group();
   root.name = '1938-uniform-study';
   const materials = {
-    cloth: new THREE.MeshPhysicalMaterial({ color: 0x82775c, roughness: .97, sheen: .22, sheenColor: new THREE.Color(0x9b947d), sheenRoughness: 1, ...textures.cloth }),
-    seam: new THREE.MeshStandardMaterial({ color: 0x655f4b, roughness: 1 }),
-    lining: new THREE.MeshStandardMaterial({ color: 0x665a40, roughness: 1 }),
+    cloth: new THREE.MeshPhysicalMaterial({ color: 0x927c42, roughness: .97, sheen: .22, sheenColor: new THREE.Color(0xada078), sheenRoughness: 1, ...textures.cloth }),
+    seam: new THREE.MeshStandardMaterial({ color: 0x75653b, roughness: 1 }),
+    lining: new THREE.MeshStandardMaterial({ color: 0x6d5b32, roughness: 1 }),
     puttee: new THREE.MeshStandardMaterial({ color: 0x716b52, roughness: 1, ...textures.cloth }),
     leather: new THREE.MeshStandardMaterial({ color: 0x3c3025, roughness: .88, ...textures.leather }),
     edge: new THREE.MeshStandardMaterial({ color: 0x62523b, roughness: .96 }),

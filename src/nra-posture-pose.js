@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { solveArm } from './nra-rifle-pose.js';
 import { FIRING_POSES } from './combat-posture.js';
+import { firingCarryPosition } from './rifle-contacts.js';
 
 const position = bone => bone.getWorldPosition(new THREE.Vector3());
 const rotation = bone => bone.getWorldQuaternion(new THREE.Quaternion());
@@ -55,11 +56,13 @@ export function createNativePosturePoses(normalized, bones) {
     const tracks = [...bones].map(([name, bone]) => new THREE.QuaternionKeyframeTrack(`.bones[${name}].quaternion`, [0, 1],
       [...bone.quaternion.toArray(), ...bone.quaternion.toArray()]));
     tracks.push(new THREE.VectorKeyframeTrack('.bones[Hips].position', [0, 1], [...hips.position.toArray(), ...hips.position.toArray()]));
-    const chestPosition = position(chest), weaponPosition = [chestPosition.x + .13, chestPosition.y + .03, chestPosition.z - .03];
+    const shoulder = position(bones.get('RightArm')).toArray(), weaponPosition = firingCarryPosition(shoulder);
     result[stance] = {
       clip: new THREE.AnimationClip(`NRA88_native_${stance}`, 1, tracks),
       carry: { duration: 1, times: [0, 1], positions: [...weaponPosition, ...weaponPosition],
         quaternions: [0, 0, 0, 1, 0, 0, 0, 1] },
+      shoulder,
+      pivot: position(bones.get('Spine')).toArray(),
     };
   }
   restore();
