@@ -60,14 +60,20 @@ async function walkTo(x, z) {
     const distance = Math.hypot(dx, dz);
     if (distance < .17) break;
     assert.equal(data.state, 'playing');
-    if (distance < .75) await page.keyboard.up('w');
     await aim(0, Math.atan2(-dx, -dz));
-    await page.keyboard.down('w');
-    await page.waitForTimeout(Math.min(100, Math.max(10, distance / 1.5 * 180)));
-    if (distance < .75) {
-      await page.keyboard.up('w');
-      await page.waitForTimeout(130);
-    }
+    await page.evaluate(({ x, z, dx, dz, seconds }) => new Promise(resolve => {
+      const until = window.__battle.time + seconds;
+      const check = () => {
+        const data = window.__battle, px = x - data.position.x, pz = z - data.position.z;
+        if (data.state !== 'playing' || data.time >= until || Math.hypot(px, pz) < .12 || px * dx + pz * dz <= 0) {
+          document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true }));
+          resolve();
+        } else requestAnimationFrame(check);
+      };
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }));
+      requestAnimationFrame(check);
+    }), { x, z, dx, dz, seconds: Math.min(.5, distance / 1.5) });
+    await page.waitForTimeout(130);
   }
   await page.keyboard.up('w'); await page.keyboard.up('c');
   await page.waitForTimeout(150);
@@ -82,6 +88,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu');
   await page.locator('#deploy').click();
   let data = await snapshot();
+  assert.equal(data.benchmark?.scenario, 'interior', 'Grenade geometry checks require the development server; production disables diagnostic query parameters');
   assert.ok(data.allies.every(actor => actor.grenades.ammo === 1 && actor.grenades.packs === 1));
   assert.match(await page.locator('#grenade-status').textContent(), /手雷 1\/1/);
   stage = 'number slot selects an unprimed grenade without spending inventory';
@@ -244,8 +251,9 @@ try {
     assert.equal(thrown.stance, stance);
     assert.equal(thrown.grenades.inventory.ammo, 0);
     assert.equal(thrown.grenades.active[0].throws, 1);
-    heights.push(thrown.grenades.active[0].position.y);
-    observations.push({ stage, stance, position: thrown.grenades.active[0].position });
+    const release = thrown.grenades.history.find(event => event.type === 'throw');
+    heights.push(release.position.y);
+    observations.push({ stage, stance, position: release.position, sampledFlightPosition: thrown.grenades.active[0].position });
   }
   assert.ok(heights[0] > heights[1] + .3 && heights[1] > heights[2] + .3);
 
@@ -254,8 +262,9 @@ try {
   await aim(-1.25); await page.keyboard.press('x');
   await walkTo(0, 64); await walkTo(-2.4, 64);
   const doorId = 'west-0-east-door';
-  assert.equal((await snapshot()).doors.find(door => door.id === doorId).state, 'closed');
   await aim(0, Math.PI / 2);
+  if (Math.abs((await snapshot()).doors.find(door => door.id === doorId).targetAngle) > .01) await page.keyboard.press('f');
+  await page.waitForFunction(id => window.__battle.doors.find(door => door.id === id).state === 'closed', doorId);
   await tapGrenade();
   await page.waitForFunction(() => window.__battle.grenades.active.some(grenade => grenade.collisions > 0));
   data = await snapshot();
@@ -353,6 +362,8 @@ try {
   console.log('PASS: personal throwable stock, empty-slot rejection, exhausted-item primary return, no pickup/throwback, original fuse/source, pause/death, body heights, collision, tools and crew ownership.');
 } catch (error) {
   const data = await snapshot();
+  if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'grenade-failure.json'),
+    JSON.stringify({ stage, observations, grenades: data?.grenades, allies: data?.allies, errors }, null, 2));
   console.error(JSON.stringify({ stage, state: data?.state, grenades: data?.grenades, allies: data?.allies, errors }));
   throw error;
 } finally {

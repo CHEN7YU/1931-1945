@@ -78,12 +78,13 @@ export function spawnBlockReason(point, type, hostiles, obstacles) {
   return null;
 }
 
-export function rallyBuildBlockReason(point, objectives, hostiles, obstacles) {
+export function rallyBuildBlockReason(point, objectives, hostiles, obstacles, team = 'friendly') {
+  if (!['friendly', 'enemy'].includes(team)) throw new RangeError('Rally construction requires a valid team');
   const margin = SPAWN_RULES.placementRadius;
   if (point.x - margin < BATTLE_AREA.minX || point.x + margin > BATTLE_AREA.maxX ||
     point.z - margin < BATTLE_AREA.minZ || point.z + margin > BATTLE_AREA.maxZ) return '过于靠近战区边界，无法安全部署，请返回战区内建造';
   if (circleBlocked(point.x, point.z, SPAWN_RULES.placementRadius, obstacles)) return '地面或出入口受阻，请换一个位置';
-  if (objectives.some(objective => !objective.captured && Math.hypot(objective.x - point.x, objective.z - point.z) < objective.radius + SPAWN_RULES.objectiveClearance)) return '距离未占领据点过近，不能建造';
+  if (objectives.some(objective => objective.owner !== team && Math.hypot(objective.x - point.x, objective.z - point.z) < objective.radius + SPAWN_RULES.objectiveClearance)) return '距离未占领据点过近，不能建造';
   if (hostiles.some(actor => actor.health > 0 && (actor.altitude || 0) < 4 && Math.hypot(actor.x - point.x, actor.z - point.z) < SPAWN_RULES.enemyBlockRadius)) return '附近有敌军，不能建造';
   return null;
 }

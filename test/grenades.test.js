@@ -40,9 +40,13 @@ test('tap queues a throw after draw and windup, cooking preserves the original f
   assert.equal(system.release('a', .06), false);
   step(.45); assert.equal(inventory.ammo, 0);
   step(.67); assert.equal(system.active[0].phase, 'flight');
+  const release = system.history.find(event => event.type === 'throw');
+  assert.deepEqual(release.position, { x: 0, y: 1.5, z: 0 });
+  assert.ok(Object.isFrozen(release.position));
   assert.equal(inventory.action.phase, 'recovering');
   assert.equal(system.active[0].detonateAt, GRENADE.draw + GRENADE.fuse);
   step(1.1); assert.equal(inventory.action, null);
+  assert.deepEqual(release.position, { x: 0, y: 1.5, z: 0 }, 'later flight cannot move the recorded release origin');
   step(4.46); step(5);
   assert.equal(blasts.length, 1); assert.equal(system.active.length, 0);
   assert.equal(blasts[0].source.weaponId, 'a:grenades');

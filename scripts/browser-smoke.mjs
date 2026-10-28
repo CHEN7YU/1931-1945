@@ -96,6 +96,8 @@ try {
   assert.equal(await page.locator('#construction-panel').isVisible(), false);
   await page.waitForTimeout(150);
   assert.equal((await snapshot()).construction.progress, 0);
+  assert.deepEqual((await snapshot()).objectives, data.objectives, 'pause freezes every capture circle');
+  assert.deepEqual((await snapshot()).conquest, data.conquest, 'pause freezes scores and all-control timing');
   await page.locator('#resume').click();
   data = await snapshot();
   assert.equal(data.controlBinding.changed, false, 'same-owner resume does not reset tool selection');
@@ -167,12 +169,21 @@ try {
   await page.mouse.up();
   const firedAmmo = (await snapshot()).ammo;
   assert.ok(firedAmmo < 5, 'rifle fires');
-  await key('y');
-  assert.equal((await snapshot()).current, 1);
-  assert.equal((await snapshot()).ammo, 5);
-  for (let i = 1; i < 11 && (await snapshot()).current !== 0; i++) await key('y');
-  assert.equal((await snapshot()).current, 0);
-  assert.equal((await snapshot()).ammo, firedAmmo, 'switching retains ammunition');
+  const transfers = await page.evaluate(() => {
+    const changes = [];
+    for (let index = 0; index < window.__battle.allies.length; index++) {
+      const before = window.__battle;
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'KeyY', key: 'y', bubbles: true }));
+      const after = window.__battle;
+      changes.push({ current: after.current, ammo: after.ammo, expectedAmmo: before.allies[after.current].rifle.ammo });
+    }
+    return changes;
+  });
+  assert.equal(transfers[0].current, 1);
+  for (const transfer of transfers) assert.equal(transfer.ammo, transfer.expectedAmmo,
+    'taking control preserves the incoming soldier magazine, including ammunition already spent by AI');
+  assert.equal(transfers.at(-1).current, 0);
+  assert.equal(transfers.at(-1).ammo, firedAmmo, 'switching retains ammunition without intervening simulation steps');
   await key('r');
   await page.waitForFunction(() => window.__battle.ammo === 5 && window.__battle.rifle.action === 'idle', null, { timeout: 6000 });
   assert.equal((await snapshot()).ammo, 5, 'reload refills the magazine');
@@ -237,12 +248,15 @@ try {
   assert.equal(await page.locator('#redeploy-choices [data-type="plane"]').isDisabled(), true, 'the just-wiped squad cannot immediately respawn');
   assert.equal(await page.locator('#redeploy-choices [data-type="infantry-reserve"]').isEnabled(), true, 'another infantry squad is a separate reserve choice');
   assert.equal(await page.locator('#confirm-deploy').isDisabled(), true, 'deployment requires a squad selection');
+  const deathObjectives = data.objectives;
   const deathRemaining = data.remaining;
   await page.waitForTimeout(350);
   assert.ok((await snapshot()).remaining < deathRemaining, 'the battlefield keeps running while choosing a new squad');
   await page.waitForFunction(() => window.__battle.spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally'), null, { timeout: 60000 });
   data = await snapshot();
   assert.ok(data.spawnPoints.some(point => point.kind === 'rally' && point.team === 'enemy' && point.health > 0), 'enemy engineers build a forward rally');
+  assert.ok(data.objectives.some((point, index) => point.control !== deathObjectives[index].control ||
+    point.owner !== deathObjectives[index].owner), 'real capture progress continues while the wiped player chooses a unit');
   assert.equal(data.population.enemy.rosterUnits, 10, 'enemy reinforcements retain ten formation slots');
   for (const event of data.spawnEvents) {
     assert.ok(Math.hypot(event.x - event.pointX, event.z - event.pointZ) <= 20, 'each squad expands inside its registered staging area');
@@ -280,6 +294,8 @@ try {
   assert.deepEqual((await snapshot()).rallyViews, { count: 0, ids: [] });
   await page.locator('#deploy').click();
   assert.ok((await snapshot()).remaining > 599, 'new match resets timer');
+  assert.ok((await snapshot()).objectives.every(point => point.owner === null && point.control === 0), 'new match resets all three ownership states');
+  assert.deepEqual((await snapshot()).conquest, { friendly: 0, enemy: 0, dominationTeam: null, dominationTime: 0, winner: null });
   assert.equal((await snapshot()).deployments, 1);
   assert.deepEqual((await snapshot()).rallyViews, { count: 0, ids: [] }, 'new match cannot inherit a rally view or ray target');
   constructionObservations.push({ stage: 'new-match', views: (await snapshot()).rallyViews });

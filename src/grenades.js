@@ -194,7 +194,8 @@ export function createGrenadeSystem() {
             const thrownAt = grenade.throwAt;
             recover(grenade, thrownAt);
             grenade.phase = 'flight'; grenade.throws++;
-            remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source, time: thrownAt });
+            remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source,
+              position: Object.freeze(point(grenade.position)), time: thrownAt });
           }
         }
         if (grenade.phase === 'flight') {

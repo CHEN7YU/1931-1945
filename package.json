@@ -18,6 +18,7 @@
     "test:sniper": "node scripts/sniper-smoke.mjs",
     "test:street": "node scripts/street-smoke.mjs",
     "test:tactics": "node scripts/tactics-smoke.mjs",
+    "test:assault": "node scripts/assault-smoke.mjs",
     "test:bridge": "node scripts/bridge-smoke.mjs",
     "test:multistory": "node scripts/multistory-smoke.mjs",
     "test:river": "node scripts/river-smoke.mjs",
