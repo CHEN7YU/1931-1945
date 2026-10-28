@@ -1,6 +1,8 @@
 export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
 export const INFANTRY_WEAPONS = Object.freeze({
   rifle: Object.freeze({ ...RIFLE, name: '中正式风格步枪 · 比例样枪', automatic: false, muzzleZ: -.891 }),
+  sniper: Object.freeze({ ...RIFLE, name: '带镜栓动步枪 · 狙击样枪', automatic: false, scoped: true,
+    aimFov: 18, aimSensitivity: .22, muzzleZ: -.891 }),
   zb26: Object.freeze({ magazine: 20, range: 180, cycleSeconds: .12, reloadSeconds: 3.8, length: 1.162,
     sightHeight: .05, muzzleZ: -.943, muzzleX: .065, name: 'ZB-26 捷克式轻机枪', automatic: true }),
   type11: Object.freeze({ magazine: 30, range: 180, cycleSeconds: .12, reloadSeconds: 5,

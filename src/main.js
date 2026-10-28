@@ -7,6 +7,7 @@ import { TYPES, MATCH_SECONDS, makeObjectives, advanceCapture, moveGround, circl
 import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, createRallyPoint, replaceTeamRally, damageRallyPoint } from './spawns.js';
 import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopLocomotion, landLocomotion } from './locomotion.js';
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
+import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired } from './tactics.js';
@@ -232,7 +233,6 @@ try {
   console.error('步枪机械录音未加载，将保留原合成声：', error);
 }
 let pointerHintShown = false;
-let breath = 1;
 let lean = 0;
 let jumpHeight = 0;
 let jumpVelocity = 0;
@@ -429,6 +429,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   const actor = { model, health: 100, friendly, index, spawnId: spawn.id, role: loadout.role, nextFire: time + 1 + battleRandom() * 2, nextThink: 0, target: null, walkPhase: battleRandom() * 6, walkPoseReady: false, deathTime: 0, buildProgress: 0, locomotion: createLocomotion(), rifle: createRifleState(loadout.model) };
   actor.targetKind = 'person';
   actor.aiRifle = createAIRifleControl();
+  actor.breathControl = createBreathState();
   actor.grenades = createGrenadeInventory();
   actor.explosivePack = { get ammo() { return actor.grenades.packs; } };
   actor.rifleReady = false;
@@ -490,6 +491,8 @@ function battleSummary(team) {
 
 function clearControlInputs() {
   playerInput.block();
+  const actor = controlledSoldier(entities);
+  if (actor) actor.breathControl.holding = false;
   resetConstruction();
 }
 
@@ -526,9 +529,21 @@ function primaryViewAvailable() {
   return unit?.type !== 'tank' || Boolean(occupiedSeat(entities)?.controlsTurret);
 }
 
+function rifleAimAvailable() {
+  const actor = controlledSoldier(entities);
+  return Boolean(state === 'playing' && actor?.health > 0 && unit.type === 'infantry' && !actor.vehicleId &&
+    held.aiming && !toolEquipped && !grenadeEquipped && !actor.grenades.action &&
+    actor.rifle.action !== 'reload' && (!infantryWeaponProfile(actor.rifle).scoped || actor.rifle.action === 'idle') &&
+    !actor.locomotion.sprinting && actor.locomotion.aimRecovery === 0 && weaponObstruction === 0 && obstructionBlend < .03);
+}
+
+function sniperScopeActive() {
+  return rifleAimAvailable() && Boolean(infantryWeaponProfile(allies[current].rifle).scoped);
+}
+
 function refreshWeaponVisibility() {
   if (weapon) weapon.visible = state === 'playing' && controlledSoldier(entities)?.health > 0 &&
-    !grenadeEquipped && !controlledSoldier(entities).grenades.action && primaryViewAvailable();
+    !grenadeEquipped && !controlledSoldier(entities).grenades.action && primaryViewAvailable() && !sniperScopeActive();
   syncMechanicalAudio();
 }
 
@@ -635,6 +650,7 @@ function refreshControlSurface() {
   $('battle-controls').textContent = transport ? primaryViewAvailable()
     ? 'WASD 载具 · 左键 武器 · Y 换人 · F 地面离车 · Esc 暂停'
     : 'WASD 驾驶 · 鼠标 观察（不转炮塔） · 主炮不可操作 · Y 换人 · F 下车'
+    : actor.role === 'sniper' ? '右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人'
     : '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷 · Y 换人';
   lean = recoil = 0;
   resetPersonalCombatFeedback();
@@ -870,7 +886,6 @@ function deploy(squadId, spawnId = null) {
   weaponObstruction = obstructionBlend = 0;
   lastRifleTrace = null;
   controlPose.stance = 'standing';
-  breath = 1;
   lean = jumpHeight = jumpVelocity = 0;
   eyeHeight = type === 'tank' ? 2.7 : 1.67;
   if (type === 'tank' || type === 'plane') {
@@ -899,7 +914,7 @@ function deploy(squadId, spawnId = null) {
   $('weapon-name').textContent = TYPES[type].weapon;
   $('ammo-max').textContent = `/ ${TYPES[type].magazine}`;
   $('aim-label').hidden = type !== 'mortar';
-  $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '11人步兵班 · 含轻机枪手 · Y切换队员 · 全班阵亡后换队' : 'Y 切换队员 · 整队阵亡后换队';
+  $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '11人班 · 10号狙击手／11号机枪手 · Y换人' : 'Y 切换队员 · 整队阵亡后换队';
   $('battle-controls').innerHTML = {
     infantry: '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷<br>WASD 移动 · Shift 冲刺 · Y 队员 · X 小队命令 · F 交互',
     tank: 'W S 前后 · A D 转向 · 鼠标 炮塔 · 右键 放大<br>左键 主炮 · Y 切换车组 · R 装填 · Esc 暂停',
@@ -1470,6 +1485,7 @@ function fire() {
     if (time < unit.nextShot) return;
     if (weaponObstruction > 0 || obstructionBlend > .03) { toast('枪口受阻 · 后退或移开枪口'); return; }
     if (!shootRifle(allies[current].rifle)) { syncRifleUnit(); return; }
+    if (infantryWeaponProfile(allies[current].rifle).scoped) held.primary = false;
     syncRifleUnit();
   } else if (!shotState(unit, time, true)) return;
   const source = captureAttackSource(entities, allies[current]);
@@ -1605,6 +1621,9 @@ function updateVehicles(dt) {
 }
 
 function updateWeaponSimulation(dt) {
+  for (const actor of entities.soldiers.values()) {
+    if (actor.health > 0 && (actor !== controlledSoldier(entities) || state !== 'playing')) advanceBreath(actor.breathControl, dt, false, false);
+  }
   const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped && !grenadeEquipped, true);
   for (const cue of cues) emitControlEvent('weapon.mechanical', cue);
   if (state === 'playing') syncRifleUnit();
@@ -1655,8 +1674,6 @@ function updatePlayer(dt) {
   if (forward || sideways) actor.firingPose = null;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = actor.locomotion;
-  const holdingBreath = unit.type === 'infantry' && held.aiming && motion.aimRecovery === 0 && keys.has('ShiftLeft') && breath > .05;
-  breath = THREE.MathUtils.clamp(breath + (holdingBreath ? -dt / 6 : dt / 4), 0, 1);
   if (!actor.vehicleId) {
     const steps = advanceLocomotion(motion, position, {
       type: unit.type, forward, sideways, yaw, stance, aiming: held.aiming,
@@ -1681,6 +1698,8 @@ function updatePlayer(dt) {
   actor.heading = yaw;
   actor.aimWalking = foot && held.aiming && motion.speed > .06 && !motion.sprinting;
   actor.rifleReady = !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
+  advanceBreath(actor.breathControl, dt, keys.has('ShiftLeft'),
+    rifleAimAvailable() && motion.speed < .1 && jumpHeight === 0 && jumpVelocity === 0);
   if (actor.nativeMotion) advanceNraMotion(actor, dt);
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
   updateCamera(dt);
@@ -1706,13 +1725,14 @@ function updateCamera(dt) {
   lean = THREE.MathUtils.lerp(lean, safeLean, Math.min(1, dt * 12));
   const cameraSway = foot ? motion.cameraX * motionStrength : 0;
   camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + jumpHeight + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
-  const holdingBreath = unit.type === 'infantry' && held.aiming && motion.aimRecovery === 0 && keys.has('ShiftLeft') && breath > .05;
-  const sway = unit.type === 'infantry' && held.aiming ? Math.sin(time * 2.1) * (holdingBreath ? .00025 : .0016) : 0;
-  camera.rotation.set(pitch + recoil + sway, yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
+  const profile = infantryWeaponProfile(allies[current].rifle);
+  const sway = rifleAimAvailable() ? aimSway(time, { scoped: Boolean(profile.scoped),
+    holding: allies[current].breathControl.holding, moving: motion.speed > .1, stance: controlPose.stance }) : { pitch: 0, yaw: 0 };
+  camera.rotation.set(pitch + recoil + sway.pitch, yaw + sway.yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
   recoil = Math.max(0, recoil - dt * .3);
   const rifleReloading = unit.type === 'infantry' && allies[current].rifle.action === 'reload';
-  const effectiveAim = held.aiming && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
-  const desiredFov = effectiveAim && (unit.type === 'infantry' || unit.type === 'tank') ? 48 : unit.type === 'plane' ? 82 : 72;
+  const effectiveAim = unit.type === 'infantry' ? rifleAimAvailable() : held.aiming && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
+  const desiredFov = effectiveAim && (unit.type === 'infantry' || unit.type === 'tank') ? unit.type === 'infantry' ? profile.aimFov ?? 48 : 48 : unit.type === 'plane' ? 82 : 72;
   camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFov, Math.min(1, dt * 12));
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld(true);
@@ -1763,6 +1783,17 @@ function updateCamera(dt) {
     }
   }
   $('crosshair').hidden = !primaryViewAvailable() || (effectiveAim && unit.type === 'infantry');
+}
+
+function renderSniperScope() {
+  const active = sniperScopeActive(), scope = $('sniper-scope');
+  scope.hidden = !active;
+  refreshWeaponVisibility();
+  if (!active) return;
+  const breath = allies[current].breathControl, percent = Math.round(breath.remaining * 100);
+  $('breath-meter').setAttribute('aria-valuenow', String(percent));
+  $('breath-fill').style.width = `${percent}%`;
+  $('breath-label').textContent = `${breath.holding ? '屏息中' : breath.exhausted ? '呼吸恢复 · 松开 Shift' : '按住左 Shift 屏息'} · ${percent}%`;
 }
 
 function squadCommand(follow) {
@@ -2572,7 +2603,7 @@ function updateHUD() {
     : `${unit.type === 'tank' ? '装甲' : '生命'} ${Math.ceil(health)}`;
   const deployedType = entities.units.get(entities.control.unitId).type;
   $('members').classList.toggle('platoon-members', deployedType === 'infantry');
-  $('members').innerHTML = allies.map((actor, index) => `<span title="${Math.floor(index / BATTLE_RULES.sectionMembers) + 1}班 ${index + 1}号 ${actor.role === 'machine-gunner' ? `轻机枪手 · ${infantryWeaponProfile(actor.rifle).name}` : actor.role === 'engineer' ? '工兵' : '步枪手'}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? actor.role === 'machine-gunner' ? '机' : index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`}${actor.health <= 0 ? '×' : ''}</span>`).join('');
+  $('members').innerHTML = allies.map((actor, index) => `<span title="${Math.floor(index / BATTLE_RULES.sectionMembers) + 1}班 ${index + 1}号 ${['machine-gunner', 'sniper'].includes(actor.role) ? `${actor.role === 'sniper' ? '狙击手' : '轻机枪手'} · ${infantryWeaponProfile(actor.rifle).name}` : actor.role === 'engineer' ? '工兵' : '步枪手'}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? actor.role === 'sniper' ? '狙' : actor.role === 'machine-gunner' ? '机' : index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`}${actor.health <= 0 ? '×' : ''}</span>`).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
@@ -2682,6 +2713,7 @@ function tick(now) {
   for (const flag of world.flags) flag.rotation.y = Math.sin(now * .0015) * .08;
   updateDoorPrompt();
   renderGrenades();
+  renderSniperScope();
   renderDeathFeedback();
   renderConstruction();
   renderSimulationStatus();
@@ -2869,8 +2901,9 @@ function performControlCommand(command) {
     if (toolEquipped) selectConstructionBlueprint(construction, entities.control.soldierId);
     else if (!grenadeEquipped) held.aiming = true;
   } else if (action === 'look') {
-    controlPose.yaw -= payload.x * .0022 * (held.aiming ? .6 : 1);
-    controlPose.pitch -= payload.y * .0022 * (held.aiming ? .6 : 1);
+    const sensitivity = sniperScopeActive() ? infantryWeaponProfile(allies[current].rifle).aimSensitivity : held.aiming ? .6 : 1;
+    controlPose.yaw -= payload.x * .0022 * sensitivity;
+    controlPose.pitch -= payload.y * .0022 * sensitivity;
   }
 }
 
@@ -3000,7 +3033,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
   current, ammo: unit?.ammo, health: occupiedVehicle(entities, allies[current])?.health ?? allies[current]?.health,
   weaponVisible: Boolean(weapon?.visible),
   spawnId: unit?.spawnId, pendingSquad, pendingSpawn,
-  aiming: held.aiming, fov: camera.fov, stance: controlPose.stance, breath,
+  aiming: held.aiming, fov: camera.fov, stance: controlPose.stance, breath: allies[current]?.breathControl.remaining ?? 1,
+  scope: { active: sniperScopeActive(), breath: allies[current] ? { ...allies[current].breathControl } : null },
   controlInput: playerInput.snapshot, controlEvents: controlEvents.snapshot,
   combatEvents: combatEvents.snapshot,
   combatFeedback: combatFeedback.snapshot(time),
