@@ -15,6 +15,7 @@ import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.j
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose } from './casualties.js';
 import { shoulderPocket } from './rifle-contacts.js';
+import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 
 export async function loadIjaCharacter() {
   const base = '/assets/game/ija-1938/';
@@ -67,6 +68,7 @@ export async function loadIjaCharacter() {
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt'), pose = createNraRiflePose(root, bones, gun);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundHeight);
+    const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
     const actions = { idle: mixer.clipAction(clips.get('idle')),
@@ -76,10 +78,12 @@ export async function loadIjaCharacter() {
     root.traverseVisible(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
     root.visible = false;
     return {
-      root, motionProfile, drawBatches, createView,
+      root, motionProfile, createView,
+      get drawBatches() { return drawBatches - (flag.visible ? 0 : 1); },
+      optionalAttachments: [{ mesh: flag, enabled: hasIjaRifleFlag, bake: bakeIjaRifleFlag, update: updateIjaRifleFlagTime }],
       createFarView: () => createView('far'),
       bind(id) {
-        actorId = id; actor = null; root.visible = false; motion = null; casualtyPose = null;
+        actorId = id; actor = null; root.visible = false; motion = null; casualtyPose = null; flag.visible = false;
         mixer.stopAllAction();
         for (const joint of animated) { joint.rotation.copy(joint.bone.quaternion); joint.position.copy(joint.bone.position); }
         for (const [name, action] of Object.entries(actions)) { action.reset().play(); action.paused = true; action.setEffectiveWeight(name === 'idle' ? 1 : 0); }
@@ -89,6 +93,8 @@ export async function loadIjaCharacter() {
       update(person, now, controlledId) {
         if (person.team !== 'enemy') throw new Error('Japanese appearance cannot replace a friendly identity');
         actor = person;
+        flag.visible = hasIjaRifleFlag(actor);
+        updateIjaRifleFlagTime(now);
         root.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
         motion = actor.casualty?.motion ?? sampleNraMotion(actor);
         active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
@@ -111,6 +117,7 @@ export async function loadIjaCharacter() {
       get snapshot() {
         const point = name => bones.get(name).getWorldPosition(new THREE.Vector3()).toArray();
         return { actorId, uniform: 'ija1938', level, active, visible: root.visible, stance: actor?.stance ?? 'standing',
+          rifleFlag: flag.visible, proportions: source.proportions,
           animationSources: Object.values(actions).map(action => action.getClip().name),
           gait: motion ? { source: 'native-foot-cycle', style: motion.travelStyle, runStride: motion.runStride,
             walkStride: motion.walkStride, runContact: motion.runContact, weight: motion.weight, speed: motion.speed, bodyLean: motion.bodyLean, legPose } : null,

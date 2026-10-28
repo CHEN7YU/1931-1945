@@ -92,7 +92,8 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     const lowest = origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal));
     target.y = Math.max(lowest, target.y);
     const solved = solveArm(upper, knee, foot, target, new Vector3(0, 0, -1).applyQuaternion(facing));
-    if (!solved.reachable || solved.error > .01) throw new Error('Native low-step foot is unreachable');
+    if (!solved.reachable || solved.error > .01) throw new Error(`Native low-step foot is unreachable: ${side}, ` +
+      `target=${target.toArray()}, origin=${origin.toArray()}, reach=${reach}, error=${solved.error}`);
     upper.quaternion.copy(upperBefore.slerp(upper.quaternion, weight));
     knee.quaternion.copy(kneeBefore.slerp(knee.quaternion, weight));
     upper.updateMatrixWorld(true);

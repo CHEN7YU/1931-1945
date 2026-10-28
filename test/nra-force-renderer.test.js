@@ -37,9 +37,11 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   const profile = createNativeGaitProfile(track), geometry = new THREE.BoxGeometry(.4, 1.7, .3);
   const material = new THREE.MeshStandardMaterial();
   function view() {
-    const root = new THREE.Group(); root.add(new THREE.Mesh(geometry, material));
+    const root = new THREE.Group(), flag = new THREE.Mesh(geometry, material); flag.name = 'corpse-flag';
+    root.add(new THREE.Mesh(geometry, material), flag);
     return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
-      bind() {}, update(person) { root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
+      optionalAttachments: [{ mesh: flag, enabled: () => true }],
+      bind() {}, update(person) { flag.visible = true; root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
       get snapshot() { return null; } };
   }
   const renderer = createNraForceRenderer(scene, camera, view(), 2);
@@ -53,8 +55,8 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   renderer.update(bodies, 30, null, 'high');
   assert.equal(renderer.snapshot.far, 10);
   const occupied = renderer.root.children.filter(mesh => mesh.isInstancedMesh && mesh.count > 0);
-  assert.equal(occupied.length, 1); assert.equal(occupied[0].count, 10);
-  assert.ok(occupied[0].instanceMatrix.count >= 10);
+  assert.equal(occupied.length, 2);
+  assert.ok(occupied.every(mesh => mesh.count === 10 && mesh.instanceMatrix.count >= 10), 'body and attached flag grow together');
   renderer.update(bodies, 30, null, 'high');
   assert.equal(renderer.snapshot.far, 10);
   for (const mesh of renderer.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }

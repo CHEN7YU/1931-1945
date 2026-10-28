@@ -9,6 +9,7 @@ await mkdir(directory, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } }), errors = [];
 page.on('pageerror', error => errors.push(error.message));
+page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 let result;
 try {
   await page.route('**/__movement-casualties', route => route.fulfill({ contentType: 'text/html',
@@ -21,6 +22,8 @@ try {
     const { createNraMotion, advanceNraMotion, sampleNraMotion, syncNativeAimGoal } = await import('/src/nra-motion.js');
     const { createCasualtyState } = await import('/src/casualties.js');
     const { createRifleState } = await import('/src/rifle-action.js');
+    const { hasIjaRifleFlag } = await import('/src/ija-rifle-flag.js');
+    const { groundHeight } = await import('/src/ground.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
     await configureRifleMaterials();
     const factories = { friendly: await loadNraCharacter(), enemy: await loadIjaCharacter() };
@@ -58,7 +61,9 @@ try {
       const stopped = new Promise(resolve => { recorder.onstop = resolve; }); recorder.start();
       for (let frame = 0; frame < 120; frame++) {
         for (const { actor, view } of entries) {
-          actor.position.z -= actor.locomotion.speed / 30; advanceNraMotion(actor, 1 / 30); view.update(actor, frame / 30, null);
+          actor.position.z -= actor.locomotion.speed / 30;
+          actor.position.y = groundHeight(actor.position.x, actor.position.z);
+          advanceNraMotion(actor, 1 / 30); view.update(actor, frame / 30, null);
         }
         const center = entries.reduce((sum, entry) => sum + entry.actor.position.z, 0) / entries.length;
         camera.position.set(8, 4, center - 12); camera.lookAt(0, .8, center);
@@ -122,7 +127,8 @@ try {
               anatomy[side + 'Leg'].distanceTo(anatomy[side + 'Foot'])]);
             casualties.push({ team, level, stance, variant, retainGun, time, drift, lengths,
               head: anatomy.Head.toArray(), hip: anatomy.Hips.toArray(), rightHand: anatomy.RightHand.toArray(),
-              casualty: snapshot.casualty, preserved: JSON.stringify(actor.casualty) === before, visible: view.root.visible });
+              casualty: snapshot.casualty, flag: snapshot.rifleFlag, expectedFlag: team === 'enemy' ? hasIjaRifleFlag(actor) : false,
+              preserved: JSON.stringify(actor.casualty) === before, visible: view.root.visible });
           }
           if (level === 'near' && stance === 'standing') {
             const display = factory.createView();
@@ -151,6 +157,7 @@ try {
   for (const sample of result.casualties) {
     assert.ok(sample.preserved && sample.visible && sample.drift < 1e-6, JSON.stringify(sample));
     assert.ok(sample.lengths.every(length => length > .20 && length < .55), JSON.stringify(sample));
+    if (sample.team === 'enemy') assert.equal(sample.flag, sample.expectedFlag);
     if (sample.time >= 3) assert.ok(sample.head[1] < .6 && sample.hip[1] < .6, JSON.stringify(sample));
   }
   assert.deepEqual(errors, []);

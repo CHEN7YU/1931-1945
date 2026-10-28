@@ -52,6 +52,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const bankTemplate = template.createFarView?.() ?? template;
   bankTemplate.bind(sampleActor.id);
   bankTemplate.update(sampleActor, 0, null);
+  const optionalAttachments = bankTemplate.optionalAttachments ?? [];
+  for (const attachment of optionalAttachments) attachment.mesh.visible = false;
   const atlas = createNraAtlas(bankTemplate.root);
   const phases = 6;
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
@@ -82,6 +84,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.casualty = dead ? createCasualtyState(sampleActor, 0, sampleNraMotion(sampleActor),
       { variant: Math.floor((bank - livingBanks) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
     bankTemplate.update(sampleActor, dead ? 2 : 0, null);
+    for (const attachment of optionalAttachments) attachment.mesh.visible = false;
     if (bankTemplate.issue) throw new Error(`Distant uniform pose is unreachable: ${bankTemplate.issue}`);
     const baked = [];
     bankTemplate.root.traverseVisible(mesh => {
@@ -96,7 +99,16 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
     root.add(instance);
     const parts = [instance];
-    banks.push({ parts, count: 0, capacity });
+    const attachments = optionalAttachments.map(({ mesh, enabled, bake }) => {
+      const geometry = bakeNraGeometry(mesh);
+      const instance = new THREE.InstancedMesh(bake ? bake(geometry, mesh) : geometry, mesh.material, capacity);
+      instance.customDepthMaterial = mesh.customDepthMaterial; instance.customDistanceMaterial = mesh.customDistanceMaterial;
+      instance.name = mesh.name;
+      instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
+      instance.frustumCulled = false; instance.receiveShadow = true; root.add(instance);
+      return { mesh: instance, enabled, count: 0 };
+    });
+    banks.push({ parts, count: 0, capacity, attachments });
   }
   bankTemplate.bind(null);
   let summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
@@ -131,8 +143,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       }
     },
     update(actors, now, controlledId, preset) {
+      for (const attachment of optionalAttachments) attachment.update?.(now);
       excludedIds.clear(); tiers.clear();
-      for (const bank of banks) bank.count = 0;
+      for (const bank of banks) {
+        bank.count = 0;
+        for (const attachment of bank.attachments) attachment.count = 0;
+      }
       summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection);
@@ -183,6 +199,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
               const colors = new Float32Array(bank.capacity * 3); colors.set(mesh.geometry.attributes.nraSkinTint.array);
               mesh.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
             }
+            for (const attachment of bank.attachments) {
+              const matrices = new Float32Array(bank.capacity * 16); matrices.set(attachment.mesh.instanceMatrix.array);
+              attachment.mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
+            }
           }
           orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
           scale.set(1 + (actor.avatarAppearance?.build ?? 0) * .025, 1, 1);
@@ -191,6 +211,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           for (const mesh of bank.parts) {
             mesh.setMatrixAt(bank.count, matrix);
             mesh.geometry.attributes.nraSkinTint.setXYZ(bank.count, tint.r, tint.g, tint.b);
+          }
+          for (const attachment of bank.attachments) if (attachment.enabled(actor)) {
+            attachment.mesh.setMatrixAt(attachment.count++, matrix);
           }
           bank.count++; tiers.set(actor.id, 'instanced'); summary.far++;
         }
@@ -202,6 +225,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           mesh.geometry.attributes.nraSkinTint.needsUpdate = true;
           summary.batches += Array.isArray(mesh.material) ? mesh.geometry.groups.length : 1;
         }
+      }
+      for (const bank of banks) for (const attachment of bank.attachments) {
+        attachment.mesh.count = attachment.count;
+        if (attachment.count) { attachment.mesh.instanceMatrix.needsUpdate = true; summary.batches++; }
       }
       const controlled = actors.find(actor => actor.id === controlledId);
       const retainedFocus = focused && slots.find(slot => slot.actorId === focused.actorId &&
