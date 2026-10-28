@@ -2,6 +2,7 @@ import { TYPES } from './core.js';
 import { nativeMuzzleLocal, nativeGaitDrop, nativeEyeLocal, syncNativeAimGoal } from './nra-motion.js';
 import { FIRING_POSES } from './combat-posture.js';
 import { infantryWeaponProfile } from './rifle-action.js';
+import { CHI_HA, CHI_HA_SEATS, CHI_HA_MG, CHI_HA_MG_MOUNTS } from './chi-ha.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -71,15 +72,21 @@ export function registerSoldier(registry, actor) {
   return actor;
 }
 
-export function createVehicleEntity(registry, { id, unitId, type, position, team }) {
+export function createVehicleEntity(registry, { id, unitId, type, position, team, variant = null }) {
   if (typeof id !== 'string' || !id || !position || !['x', 'y', 'z'].every(axis => Number.isFinite(position[axis])) ||
-    !['tank', 'plane'].includes(type) || registry.vehicles.has(id) || !registry.units.has(unitId)) throw new Error(`Invalid vehicle: ${id}`);
-  const settings = TYPES[type];
-  const seats = type === 'tank' ? TANK_SEATS : [{ role: 'pilot', label: '飞行员', eyeHeight: 1.67, canFire: true }];
-  const vehicle = { id, unitId, team, type, position: copyPosition(position), health: settings.health, heading: 0, pitch: 0, roll: 0,
-    turretYaw: 0, turretPitch: 0, throttle: 1, outsideTime: 0, speed: 0, crewLossLevel: 0, crewIds: [],
+    !['tank', 'plane'].includes(type) || (variant !== null && (variant !== CHI_HA.id || type !== 'tank' || team !== 'enemy')) ||
+    registry.vehicles.has(id) || !registry.units.has(unitId)) throw new Error(`Invalid vehicle: ${id}`);
+  const settings = variant === CHI_HA.id ? CHI_HA : TYPES[type];
+  const seats = variant === CHI_HA.id ? CHI_HA_SEATS : type === 'tank' ? TANK_SEATS : [{ role: 'pilot', label: '飞行员', eyeHeight: 1.67, canFire: true }];
+  const vehicle = { id, unitId, team, type, variant, position: copyPosition(position), health: settings.health, maxHealth: settings.health, heading: 0, pitch: 0, roll: 0,
+    turretYaw: 0, turretPitch: 0, throttle: 1, outsideTime: 0, speed: 0, trackDistance: 0, crewLossLevel: 0, crewIds: [],
     seats: seats.map((seat, index) => ({ ...seat, id: `${id}:seat-${index}`, occupantId: null, viewYaw: 0, viewPitch: 0 })),
-    weapon: registerWeapon(registry, { ammo: settings.magazine, nextShot: 0, reloadUntil: 0 }, `${id}:primary`, id, type) };
+    weapon: registerWeapon(registry, { ammo: settings.magazine, nextShot: 0, reloadUntil: 0,
+      ...(variant === CHI_HA.id ? { settings } : {}) }, `${id}:primary`, id, type) };
+  if (variant === CHI_HA.id) vehicle.machineGuns = CHI_HA_MG_MOUNTS.map(mount =>
+    registerWeapon(registry, { mount: mount.id, settings: CHI_HA_MG, ammo: CHI_HA_MG.magazine,
+      nextShot: 0, reloadUntil: 0, cooldownUntil: 0, burstLeft: CHI_HA_MG.burst,
+      shots: 0, yaw: 0, pitch: 0, mode: 'search', targetId: null }, `${id}:mg-${mount.id}`, id, type));
   registry.vehicles.set(id, vehicle);
   return vehicle;
 }
@@ -273,9 +280,10 @@ export function createControlView(registry) {
 }
 
 export function vehicleCollider(vehicle) {
-  return { id: vehicle.id, oriented: true, cx: vehicle.position.x, cz: vehicle.position.z, hx: 1.85, hz: 2.5,
+  const chiHa = vehicle.variant === CHI_HA.id;
+  return { id: vehicle.id, oriented: true, cx: vehicle.position.x, cz: vehicle.position.z, hx: chiHa ? CHI_HA.width / 2 : 1.85, hz: chiHa ? CHI_HA.length / 2 : 2.5,
     angle: vehicle.heading, cos: Math.cos(vehicle.heading), sin: Math.sin(vehicle.heading),
-    minX: vehicle.position.x - 3.2, maxX: vehicle.position.x + 3.2, minZ: vehicle.position.z - 3.2, maxZ: vehicle.position.z + 3.2, height: 2.4 };
+    minX: vehicle.position.x - 3.2, maxX: vehicle.position.x + 3.2, minZ: vehicle.position.z - 3.2, maxZ: vehicle.position.z + 3.2, height: chiHa ? CHI_HA.height : 2.4 };
 }
 
 export function groundExit(vehicle, clear, height) {
@@ -297,7 +305,7 @@ export function damageVehicleEntity(registry, vehicle, amount) {
   if (vehicle.health === 0 && previous > 0) {
     for (const actor of occupants) { actor.health = 0; casualties.push(actor); }
   } else if (vehicle.type === 'tank' && vehicle.health > 0) {
-    const lost = Math.floor((TYPES.tank.health - vehicle.health) / 120);
+    const lost = Math.floor(((vehicle.maxHealth ?? TYPES.tank.health) - vehicle.health) / ((vehicle.maxHealth ?? TYPES.tank.health) / 3));
     if (lost > vehicle.crewLossLevel && occupants.length > 1) {
       const actor = occupants.find(actor => actor.id === registry.control.soldierId) || occupants[0];
       actor.health = 0; casualties.push(actor);

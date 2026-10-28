@@ -1,4 +1,5 @@
 import { damagedTownPieces } from './war-damage-layout.js';
+import { TOWN_STOREYS, STOREY_HEIGHT, upperBuilding } from './multistory.js';
 
 export const STREET_BLOCK = Object.freeze({
   streetWidth: 8.76,
@@ -54,7 +55,9 @@ export function makeTownLayout() {
     segment(cursor, to, 0, height);
   }
   function shop(id, x, z, facing, name, { kind = 'shop', height = 3.6, w = 8, d = 14, riverSide = 0 } = {}) {
-    const building = { id, x, z, w, d, height, facing, name, kind, riverSide, doorZ: z + 2 };
+    const storeys = TOWN_STOREYS[id] ?? 1;
+    const building = { id, x, z, w, d, height: storeys > 1 ? storeys * STOREY_HEIGHT : height,
+      storeys, facing, name, kind, riverSide, doorZ: z + 2 };
     buildings.push(building);
     const door = { center: z + 2, width: STREET_BLOCK.doorWidth, sill: 0, top: 2.45 };
     const window = { center: z - 3.4, width: 1.65, sill: .88, top: 2.32 };
@@ -64,7 +67,7 @@ export function makeTownLayout() {
       side === riverSide
         ? [{ center: x, width: kind === 'warehouse' ? 2.6 : 1.9, sill: 0, top: 2.45, openAngle: side * Math.PI / 2 }]
         : [{ center: x, width: 1.8, sill: .88, top: 2.32 }]);
-    wall(`${id}-partition`, 'x', z - .9, x - w / 2, x + w / 2, 3.1,
+    wall(`${id}-partition`, 'x', z - .9, x - w / 2, storeys > 1 ? x + .95 : x + w / 2, 3.1,
       [{ center: x, width: 1.9, sill: 0, top: 2.45 }]);
     add(`${id}-floor`, x, -.055, z, w - .24, .1, d - .24, 'floor', { collision: false });
     if (kind === 'home') {
@@ -72,15 +75,16 @@ export function makeTownLayout() {
       add(`${id}-table`, x + facing * 2.2, .36, z + Math.max(4, d / 2 - 2.2), 1.3, .72, 1.1, 'timber', { collision: true });
     } else if (kind === 'warehouse') {
       const cargoWidth = Math.min(1.4, (w - 4) / 2);
-      for (const side of [-1, 1]) {
+      for (const side of storeys > 1 ? [-1] : [-1, 1]) {
         const cargoX = x + side * (w / 2 - cargoWidth / 2 - .3);
         add(`${id}-cargo-${side}`, cargoX, .55, z - d / 2 + 2, cargoWidth, 1.1, 1.5, 'timber', { collision: true });
         add(`${id}-cargo-band-${side}`, cargoX, .55, z - d / 2 + 2, cargoWidth + .08, .12, 1.58, 'charred', { collision: false });
       }
     } else {
-      add(`${id}-counter`, x + facing * 1.8, .42, z - 4, 1.5, .84, .8, 'timber', { collision: true });
-      add(`${id}-shelf`, x - facing * 3.2, 1.05, z - 4.6, .55, 2.1, 2, 'timber', { collision: true });
-      for (const y of [.15, .75, 1.4, 1.98]) add(`${id}-shelf-edge-${y}`, x - facing * 3.2, y, z - 4.6, .66, .065, 2.08, 'charred', { collision: false });
+      add(`${id}-counter`, x + (storeys > 1 ? -2.2 : facing * 1.8), .42, z - 4, 1.5, .84, .8, 'timber', { collision: true });
+      const shelfX = x + (storeys > 1 ? -3.2 : -facing * 3.2);
+      add(`${id}-shelf`, shelfX, 1.05, z - 4.6, .55, 2.1, 2, 'timber', { collision: true });
+      for (const y of [.15, .75, 1.4, 1.98]) add(`${id}-shelf-edge-${y}`, shelfX, y, z - 4.6, .66, .065, 2.08, 'charred', { collision: false });
     }
     add(`${id}-bench`, x - facing * (riverSide === 1 ? w / 2 - 1.6 : 1.5), .23, z + d / 2 - 1.2, 2.4, .46, .55, 'timber', { collision: true });
     for (const side of [-1, 1]) {
@@ -166,9 +170,15 @@ export function makeTownLayout() {
       covers.push({ id: `support-${piece.id}-${side}-${fraction}`, x, z, peek: { x, z }, kind: 'wall-support', wallId: piece.id });
     }
   }
+  for (const building of buildings.filter(item => item.storeys > 1)) {
+    const upper = upperBuilding(building);
+    pieces.push(...upper.pieces);
+    building.stairs = upper.flights;
+  }
   const damagedPieces = damagedTownPieces(pieces, buildings);
   const obstacles = damagedPieces.filter(p => p.collision).map(p => ({
-    id: p.id, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2, height: p.y + p.h / 2,
+    id: p.id, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2,
+    minY: p.y - p.h / 2, height: p.y + p.h / 2, stair: Boolean(p.stair), walkable: Boolean(p.walkable),
   }));
   return { streetWidth: STREET_BLOCK.streetWidth, buildings, pieces: damagedPieces, obstacles, covers, passages, courtyard: { minX: -19.5, maxX: -12.5, minZ: 55, maxZ: 69 } };
 }

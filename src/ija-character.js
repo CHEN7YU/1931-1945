@@ -9,7 +9,7 @@ import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer } from './nra-force-renderer.js';
 import { FIRING_POSES } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
-import { groundHeight } from './ground.js';
+import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose } from './casualties.js';
@@ -66,7 +66,8 @@ export async function loadIjaCharacter() {
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(), pose = createNraRiflePose(root, bones, gun);
-    const applyCasualty = createCasualtyPose(root, bones, gun, groundHeight);
+    const groundAt = (x, z) => walkHeight(x, z, root.position.y);
+    const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
@@ -107,7 +108,7 @@ export async function loadIjaCharacter() {
         for (const joint of animated) { joint.rotation.copy(joint.bone.quaternion); joint.position.copy(joint.bone.position); }
         root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
         root.updateMatrixWorld(true);
-        legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundHeight);
+        legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundAt);
         applyNativeUpperBody(root, bones, motion);
         pose.update(motion);
         syncWorldWeapon(gun, actor.rifle);

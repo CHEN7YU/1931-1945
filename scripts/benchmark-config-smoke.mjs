@@ -33,12 +33,12 @@ try {
     await built.locator('#deploy').click();
     const state = await built.evaluate(() => window.__battle.population);
     assert.equal(state.friendly.alive, 110);
-    assert.equal(state.enemy.alive, 110);
+    assert.equal(state.enemy.alive, 96);
     assert.equal(state.units.length, 20, 'a production URL cannot silently lower the real roster to a diagnostic fixture');
   }
   await built.close();
   assert.deepEqual(errors, []);
-  console.log('PASS: repeatable development 5v5 spawn records and labelled raw telemetry; production ignores diagnostic overrides and deploys the full 220-person roster.');
+  console.log('PASS: repeatable development 5v5 spawn records and labelled raw telemetry; production ignores diagnostic overrides and deploys the full 206-person roster including two enemy tanks.');
 } finally {
   await browser.close();
   if (production) await new Promise((resolve, reject) => production.httpServer.close(error => error ? reject(error) : resolve()));

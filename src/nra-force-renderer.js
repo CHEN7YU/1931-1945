@@ -6,7 +6,6 @@ import { isNraSkin } from './nra-appearance.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
-import { lightMachineGunModel } from './light-machine-gun-model.js';
 import { CORPSE_RULES, createCasualtyState } from './casualties.js';
 
 export function bakeNraGeometry(mesh) {
@@ -49,7 +48,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const weaponMatrix = new THREE.Matrix4();
   function weaponGroupFor(key) {
     if (!weaponGroups.has(key)) {
-      const gun = key === 'rifle' ? rifleWorldModel('far') : lightMachineGunModel(key, 'far'), batches = new Map();
+      const gun = rifleWorldModel('far', createRifleState(key)), batches = new Map();
       gun.updateMatrixWorld(true);
       gun.traverseVisible(mesh => {
         if (!mesh.isMesh) return;

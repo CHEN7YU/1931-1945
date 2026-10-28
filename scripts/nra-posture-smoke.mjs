@@ -17,7 +17,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 110);
-  assert.equal(await page.evaluate(() => window.__battle.population.enemy.alive), 110);
+  assert.equal(await page.evaluate(() => window.__battle.population.enemy.alive), 96);
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state === 'dead', null, { timeout: 40000 });
   await page.keyboard.up('w');

@@ -11,7 +11,7 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 const snapshot = () => page.evaluate(() => window.__battle);
 async function turnTo(goal) {
   for (let i = 0; i < 60; i++) {
-    const heading = (await snapshot()).vehicles[0].heading;
+    const heading = (await snapshot()).vehicles.find(vehicle => vehicle.team === 'friendly').heading;
     const delta = Math.atan2(Math.sin(goal - heading), Math.cos(goal - heading));
     if (Math.abs(delta) < .025) return;
     const key = delta > 0 ? 'a' : 'd';
@@ -43,7 +43,7 @@ try {
   await page.locator('#deploy').click();
   const initial = await snapshot(), crewIds = initial.allies.map(actor => actor.id);
   assert.equal(initial.benchmark?.scenario, 'full');
-  assert.equal(initial.population.enemy.alive, 110);
+  assert.equal(initial.population.enemy.alive, 96);
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 0, null, { timeout: 25000 });
   await page.keyboard.up('w');

@@ -23,10 +23,10 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#squad-choices [data-type="plane"]').click();
   await page.locator('#deploy').click();
-  const initial = await snapshot(), planeId = initial.vehicles[0].id;
+  const initial = await snapshot(), planeId = initial.vehicles.find(vehicle => vehicle.team === 'friendly' && vehicle.type === 'plane').id;
   assert.equal(initial.benchmark?.scenario, 'full');
   assert.equal(initial.population.friendly.alive, 100, 'one actual pilot replaces an eleven-person infantry unit');
-  assert.equal(initial.population.enemy.alive, 110);
+  assert.equal(initial.population.enemy.alive, 96);
   assert.equal(initial.health, TYPES.plane.health);
   assert.ok(initial.allies.every(actor => actor.targetKind === 'aircraft'));
   record('air-entry', initial);

@@ -5,13 +5,15 @@ import { makeBaseSpawns } from '../src/spawns.js';
 import { makeTownLayout } from '../src/town-layout.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination, infantryLoadout, sectionOffset } from '../src/battle-roster.js';
 
-test('default armies contain ten eleven-person infantry units on each side', () => {
+test('default armies keep ten units: ten friendly infantry and eight enemy infantry plus two tanks', () => {
   const roster = battleRoster();
   validateRoster(roster);
   assert.equal(TYPES.infantry.members, 11);
   assert.equal(roster.length, 20);
   assert.equal(roster.filter(unit => unit.player).length, 1);
-  assert.ok(roster.every(unit => unit.type === 'infantry'));
+  assert.equal(roster.filter(unit => unit.team === 'friendly' && unit.type === 'infantry').length, 10);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'tank').length, 2);
 });
 test('a single selected vehicle replaces one friendly platoon and vehicle caps reject overbooking', () => {
   const roster = battleRoster('tank');
@@ -21,9 +23,9 @@ test('a single selected vehicle replaces one friendly platoon and vehicle caps r
   roster[2].type = 'tank';
   assert.throws(() => validateRoster(roster), /vehicle limit/);
 });
-test('all 220 staged soldiers have clear, separated, registered spawn positions', () => {
+test('all 198 staged infantry have clear, separated, registered spawn positions', () => {
   const roster = battleRoster(), spawns = [...makeBaseSpawns(), ...stagingSpawns()], obstacles = makeTownLayout().obstacles, occupied = [];
-  for (const unit of roster) {
+  for (const unit of roster.filter(unit => unit.type === 'infantry')) {
     const spawn = spawns.find(point => point.id === unit.spawnId);
     assert.ok(spawn && spawn.team === unit.team);
     const positions = formationPositions(spawn, TYPES.infantry.members, obstacles, occupied);
@@ -34,19 +36,24 @@ test('all 220 staged soldiers have clear, separated, registered spawn positions'
       occupied.push(point);
     }
   }
-  assert.equal(occupied.length, 220);
+  assert.equal(occupied.length, 198);
 });
-test('each side adds one faction-specific gunner after the original engineer and nine riflemen', () => {
+test('each eleven-person section retains its engineer and gunner and replaces one rifleman with a sniper', () => {
   for (const team of ['friendly', 'enemy']) {
     const loadouts = Array.from({ length: TYPES.infantry.members }, (_, index) => infantryLoadout(team, index));
     assert.deepEqual(loadouts[0], { role: 'engineer', model: 'rifle' });
-    assert.ok(loadouts.slice(1, 10).every(item => item.role === 'rifleman' && item.model === 'rifle'));
+    assert.ok(loadouts.slice(1, 9).every(item => item.role === 'rifleman' && item.model === 'rifle'));
+    assert.deepEqual(loadouts[9], { role: 'sniper', model: 'sniper' });
+    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, 8);
     assert.deepEqual(loadouts[10], { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' });
     assert.equal(loadouts.filter(item => item.role === 'engineer').length, 1);
     for (let index = 0; index < 10; index++) assert.deepEqual(sectionOffset(index),
       { x: (index % 5 - 2) * 1.15, z: Math.floor(index / 5) * 1.4 - .7 });
     assert.deepEqual(sectionOffset(10), { x: 0, z: 2.1 });
-    for (const type of ['mortar', 'tank', 'plane']) assert.equal(infantryLoadout(team, 0, type).model, 'rifle');
+    for (const type of ['mortar', 'tank', 'plane']) for (const index of [0, 9, 10]) {
+      assert.equal(infantryLoadout(team, index, type).model, 'rifle');
+    }
+    assert.deepEqual(infantryLoadout(team, 20), loadouts[9], 'additional sections keep the same role slot');
   }
   assert.throws(() => infantryLoadout('unknown', 0), /Invalid/);
 });

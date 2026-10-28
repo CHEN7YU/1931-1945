@@ -31,6 +31,16 @@ test('bridge support fixture is separate from both fighting benchmarks and the p
   assert.throws(() => diagnosticRoster('full'), RangeError);
   assert.throws(() => diagnosticSpawns('unknown'), RangeError);
 });
+test('tank ford fixture has a registered off-bridge origin and cannot alter production', () => {
+  assert.equal(benchmarkConfig('?benchmark=ford', false), null);
+  assert.equal(benchmarkConfig('?benchmark=ford', true).diagnostic, true);
+  const roster = diagnosticRoster('ford'), points = diagnosticSpawns('ford');
+  assert.equal(roster.length, 1);
+  assert.equal(roster[0].type, 'tank');
+  assert.equal(roster[0].spawnId, points[0].id);
+  assert.equal(points[0].x, -48);
+  assert.equal(points[0].kind, 'garage');
+});
 test('G2 diagnostic has two independent friendly infantry units and one tank crew, not an altered default roster', () => {
   assert.equal(benchmarkConfig('?benchmark=control', true).diagnostic, true);
   const roster = diagnosticRoster('control'), points = diagnosticSpawns('control');

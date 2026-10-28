@@ -10,7 +10,7 @@ import { createNraAppearanceApplicator } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
-import { groundHeight } from './ground.js';
+import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose } from './casualties.js';
@@ -125,7 +125,8 @@ export async function loadNraCharacter() {
   }
   const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
-  const applyCasualty = createCasualtyPose(root, canonical, gun, groundHeight);
+  const groundAt = (x, z) => walkHeight(x, z, root.position.y);
+  const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
@@ -170,7 +171,7 @@ export async function loadNraCharacter() {
       for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
       root.updateMatrixWorld(true);
-      legPose = applyNativeFootCycle(root, canonical, motion, restFeet, groundHeight);
+      legPose = applyNativeFootCycle(root, canonical, motion, restFeet, groundAt);
       applyNativeUpperBody(root, canonical, motion);
       riflePose.update(motion);
       syncWorldWeapon(gun, actor.rifle);

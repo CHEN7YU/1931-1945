@@ -35,22 +35,25 @@ try {
     await wait(() => window.__battle.state === 'playing');
     const initial = await snapshot();
     assert.equal(initial.population.friendly.alive, 110);
-    assert.equal(initial.population.enemy.alive, 110);
-    assert.equal(initial.entityCounts.soldiers, 220);
-    assert.equal(initial.entityCounts.weapons, initial.entityCounts.soldiers * 3, 'each soldier owns a primary weapon, one grenade inventory and one pack identity');
-    for (const unit of initial.population.units) {
+    assert.equal(initial.population.enemy.alive, 96);
+    assert.equal(initial.entityCounts.soldiers, 206);
+    assert.equal(initial.entityCounts.weapons, 206 * 3 + 2 + 4,
+      'each soldier owns a primary weapon, grenade inventory and pack; tank primary and machine guns are independent');
+    for (const unit of initial.population.units.filter(unit => unit.type === 'infantry')) {
       assert.equal(unit.memberCount, 11);
       assert.equal(unit.members[0].role, 'engineer');
-      assert.ok(unit.members.slice(1, 10).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.ok(unit.members.slice(1, 9).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.equal(unit.members[9].role, 'sniper');
+      assert.equal(unit.members[9].weaponModel, 'sniper');
       assert.equal(unit.members[10].role, 'machine-gunner');
       assert.equal(unit.members[10].section, 0);
       assert.equal(unit.members[10].weaponModel, unit.team === 'friendly' ? 'zb26' : 'type11');
     }
     if (appearance === 'native') {
-      await wait(() => window.__battle.historicalForce?.assigned === 110 && window.__battle.enemyHistoricalForce?.assigned === 110);
+      await wait(() => window.__battle.historicalForce?.assigned === 110 && window.__battle.enemyHistoricalForce?.assigned === 96);
       const forces = await snapshot();
       assert.equal(forces.historicalForce.members.filter(actor => actor.weaponModel === 'zb26').length, 10);
-      assert.equal(forces.enemyHistoricalForce.members.filter(actor => actor.weaponModel === 'type11').length, 10);
+      assert.equal(forces.enemyHistoricalForce.members.filter(actor => actor.weaponModel === 'type11').length, 8);
     }
     await switchTo(10);
     let data = await snapshot();
@@ -117,7 +120,7 @@ try {
   }
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'light-machine-guns.json'), JSON.stringify(observations, null, 2));
-  console.log('PASS: 220 real soldiers, 20 added faction-specific LMGs, native/procedural equipment, Y ownership, held automatic fire, reload/pause and autonomous fire on both sides.');
+  console.log('PASS: 206 real soldiers, 18 faction-specific LMGs and two enemy tanks, native/procedural equipment, Y ownership, held automatic fire, reload/pause and autonomous fire on both sides.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ errors, state: data?.state, time: data?.time, current: data?.current, rifle: data?.rifle,

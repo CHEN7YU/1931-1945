@@ -10,6 +10,7 @@ import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
 let template;
 let distantTemplate;
 let automaticHands;
+const scopeTemplates = new Map();
 const materials = {};
 function texture(canvas, color = false) {
   const map = new THREE.CanvasTexture(canvas);
@@ -303,6 +304,34 @@ function buildTemplate(detail = 'near') {
   return root;
 }
 
+function scopeModel(detail = 'near') {
+  if (!scopeTemplates.has(detail)) {
+    const scope = new THREE.Group();
+    scope.name = 'sniper-scope';
+    const sides = detail === 'far' ? 8 : 24;
+    for (const [z, radius, length] of [[-.36, .016, .24], [-.225, .023, .05], [-.505, .025, .05]]) {
+      const geometry = new THREE.CylinderGeometry(radius, radius, length, sides);
+      geometry.rotateX(Math.PI / 2);
+      add(scope, geometry, materials.steel, 0, RIFLE.sightHeight, z);
+    }
+    for (const z of [-.29, -.43]) {
+      rounded(scope, 0, .027, z, .03, .025, .025, materials.steel);
+      const ring = add(scope, new THREE.TorusGeometry(.018, .003, 6, sides), materials.edge, 0, RIFLE.sightHeight, z);
+      ring.name = 'scope-mount';
+    }
+    axial(scope, 0, RIFLE.sightHeight, -.199, .020, .002, materials.black);
+    axial(scope, 0, RIFLE.sightHeight, -.531, .022, .002, materials.black);
+    if (detail === 'near') {
+      add(scope, new THREE.CylinderGeometry(.013, .013, .018, 16), materials.edge, 0, .073, -.35);
+      const dial = add(scope, new THREE.CylinderGeometry(.011, .011, .018, 16), materials.edge, .024, .05, -.35);
+      dial.rotation.z = Math.PI / 2;
+    }
+    batch(scope);
+    scopeTemplates.set(detail, scope);
+  }
+  return scopeTemplates.get(detail).clone(true);
+}
+
 export function rifleModel(weaponState = null) {
   if (!template) template = buildTemplate();
   const model = template.clone(true);
@@ -312,6 +341,7 @@ export function rifleModel(weaponState = null) {
     muzzle: model.getObjectByName('muzzle'), rearSight: model.getObjectByName('rearSight'), frontSight: model.getObjectByName('frontSight'),
     flash: model.getObjectByName('flash'), casing: model.getObjectByName('casing'),
   };
+  if (infantryWeaponProfile(weaponState).scoped) model.add(scopeModel());
   if (infantryWeaponProfile(weaponState).automatic) {
     model.getObjectByName('rifleBody').visible = false;
     model.getObjectByName('bolt').visible = false;
@@ -328,7 +358,7 @@ export function rifleModel(weaponState = null) {
   return model;
 }
 
-export function rifleWorldModel(detail = 'near') {
+export function rifleWorldModel(detail = 'near', weaponState = null) {
   if (!template) template = buildTemplate();
   if (detail === 'far' && !distantTemplate) distantTemplate = buildTemplate('far');
   const source = detail === 'far' ? distantTemplate : template;
@@ -336,6 +366,8 @@ export function rifleWorldModel(detail = 'near') {
   model.add(source.getObjectByName('rifleBody').clone(true), source.getObjectByName('bolt').clone(true));
   model.userData.referenceLength = RIFLE.length;
   model.userData.personalWeapon = true;
+  model.userData.detail = detail;
+  if (weaponState) syncWorldWeapon(model, weaponState);
   return model;
 }
 
@@ -343,12 +375,16 @@ export function syncWorldWeapon(model, state) {
   const profile = infantryWeaponProfile(state);
   const key = state.model ?? 'rifle';
   if (model.userData.weaponModel !== key) {
-    for (const child of model.children) child.visible = key === 'rifle';
+    model.getObjectByName('rifleBody').visible = !profile.automatic;
+    model.getObjectByName('bolt').visible = !profile.automatic;
     const previous = model.getObjectByName('light-machine-gun');
     if (previous) model.remove(previous);
-    if (key !== 'rifle') {
-      const gun = lightMachineGunModel(key); gun.name = 'light-machine-gun'; model.add(gun);
+    const previousScope = model.getObjectByName('sniper-scope');
+    if (previousScope) model.remove(previousScope);
+    if (profile.automatic) {
+      const gun = lightMachineGunModel(key, model.userData.detail ?? 'near'); gun.name = 'light-machine-gun'; model.add(gun);
     }
+    if (profile.scoped) model.add(scopeModel(model.userData.detail ?? 'near'));
     model.userData.weaponModel = key;
   }
   const pose = riflePose(state), bolt = model.getObjectByName('bolt');
@@ -375,13 +411,14 @@ export function updateRifleModel(model, state) {
   parts.clip.visible = pose.clipVisible;
   parts.clip.position.y = -.055 * pose.cartridgePush;
   const missing = RIFLE.magazine - state.ammo;
-  parts.clip.getObjectByName('charger').visible = state.ammo === 0;
+  const loose = Boolean(infantryWeaponProfile(state).scoped) || state.ammo > 0;
+  parts.clip.getObjectByName('charger').visible = !loose;
   const looseFeed = Math.max(0, (state.elapsed - .7) / 1.2) * missing;
-  if (state.ammo > 0) parts.clip.position.y = -.055 * (looseFeed % 1);
+  if (loose) parts.clip.position.y = -.055 * (looseFeed % 1);
   for (let i = 0; i < RIFLE.magazine; i++) {
     const cartridge = parts.clip.getObjectByName(`cartridge${i}`);
-    cartridge.visible = state.ammo === 0 || (i === Math.min(missing - 1, Math.floor(looseFeed)));
-    cartridge.position.x = state.ammo === 0 ? -.022 + i * .011 : 0;
+    cartridge.visible = !loose || (i === Math.min(missing - 1, Math.floor(looseFeed)));
+    cartridge.position.x = !loose ? -.022 + i * .011 : 0;
   }
   parts.flash.visible = state.action === 'cycle' && state.elapsed < .045;
   const ejection = (state.elapsed - .3) / .35;

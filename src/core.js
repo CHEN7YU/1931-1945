@@ -6,9 +6,9 @@ export const MATCH_SECONDS = 600;
 export const CAPTURE_SECONDS = 12;
 export const TYPES = Object.freeze({
   infantry: { name: '步兵班', weapon: '中正式风格步枪 · 比例样枪', members: 11, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
-  tank: { name: '装甲小队', weapon: '坦克主炮', members: 3, magazine: 1, reload: 3.8, interval: .5, speed: 8, health: 360, damage: 160 },
+  tank: { name: '装甲小队', weapon: '维克斯B型 · 47毫米炮', members: 3, magazine: 1, reload: 3.8, interval: .5, speed: 8, health: 360, damage: 160 },
   mortar: { name: '迫击炮组', weapon: '轻型迫击炮', members: 3, magazine: 1, reload: 3.2, interval: .5, speed: 2.45, health: 100, damage: 160 },
-  plane: { name: '航空小队', weapon: '对地机炮', members: 1, magazine: 60, reload: 3, interval: .1, speed: 24, health: 180, damage: 65 },
+  plane: { name: '航空小队', weapon: '伊-15bis · 7.62毫米机枪', members: 1, magazine: 60, reload: 3, interval: .1, speed: 24, health: 180, damage: 65 },
 });
 export const OBJECTIVES = Object.freeze([
   { id: 'A', name: '南街路口', x: -12, z: 30, radius: 13 },
@@ -32,9 +32,12 @@ export function advanceCapture(point, dt, friendly, hostile) {
   return 'empty';
 }
 
-export function circleBlocked(x, z, radius, obstacles) {
+export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1.75) {
   if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
   return obstacles.some(b => {
+    if ((b.minY ?? -Infinity) >= feetY + bodyHeight ||
+      (b.height ?? Infinity) <= feetY + .025) return false;
+    if (b.circular) return (x - b.cx) ** 2 + (z - b.cz) ** 2 < (radius + b.radius) ** 2;
     if (b.door || b.oriented) {
       const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;
@@ -252,16 +255,17 @@ export function canDeploySquad(state, members) {
 }
 
 export function shotState(unit, now, firing) {
+  const settings = unit.settings ?? TYPES[unit.type];
   if (unit.reloadUntil > 0 && now >= unit.reloadUntil) {
-    unit.ammo = TYPES[unit.type].magazine;
+    unit.ammo = settings.magazine;
     unit.reloadUntil = 0;
   }
   if (!firing || unit.reloadUntil > 0 || now < unit.nextShot) return false;
   if (unit.ammo <= 0) {
-    unit.reloadUntil = now + TYPES[unit.type].reload;
+    unit.reloadUntil = now + settings.reload;
     return false;
   }
   unit.ammo--;
-  unit.nextShot = now + TYPES[unit.type].interval;
+  unit.nextShot = now + settings.interval;
   return true;
 }

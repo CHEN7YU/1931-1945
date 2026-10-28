@@ -30,7 +30,7 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
     const actor = { id: `enemy-${index}`, unitId: `enemy-${Math.floor(index / 10)}`, team: 'enemy', heading: Math.PI,
       health: 100, model: new THREE.Group(), position: new THREE.Vector3((index % 10 - 5) * 1.5, 0, -5 - Math.floor(index / 10) * 4),
       walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0,
-      rifle: createRifleState(index % 11 === 10 ? 'type11' : 'rifle') };
+      rifle: createRifleState(index % 11 === 10 ? 'type11' : index % 11 === 9 ? 'sniper' : 'rifle') };
     actor.nativeMotion = createNraMotion(profile, actor); return actor;
   });
   const before = actors.map(actor => ({ model: actor.model, weapon: { ...actor.rifle } }));
@@ -45,6 +45,8 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
     assert.equal(bank.geometry.attributes.position.count, 12, 'far body banks must not bake the near mesh, hidden LOD or personal gun');
   }
   assert.ok(renderer.snapshot.members.some(member => member.weaponModel === 'type11' && member.tier === 'instanced'));
+  assert.ok(renderer.snapshot.members.some(member => member.weaponModel === 'sniper' && member.tier === 'instanced'));
+  assert.ok(renderer.root.children.some(mesh => mesh.name === 'owned-weapon-sniper' && mesh.count > 0));
   actors.forEach((actor, index) => {
     assert.equal(actor.model, before[index].model);
     assert.deepEqual(actor.rifle, before[index].weapon);
