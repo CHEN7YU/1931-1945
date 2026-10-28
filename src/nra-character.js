@@ -20,7 +20,7 @@ import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUn
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
-  if (id === 'eye') texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  if (id === 'eye' || id === 'hand') texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   return texture;
 }
 

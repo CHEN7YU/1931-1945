@@ -15,6 +15,13 @@ test('eye textures repeat outside the first UV tile instead of clamping the iris
   const uv = texture.transformUv(new THREE.Vector2(1.5, .5));
   assert.ok(Math.abs(uv.x - .5) < 1e-8 && Math.abs(uv.y - .5) < 1e-8);
 });
+test('hand textures repeat their negative U coordinates rather than smearing the left image edge into colored bands', () => {
+  const texture = configureNraTexture(new THREE.Texture(), 'hand');
+  assert.equal(texture.wrapS, THREE.RepeatWrapping);
+  assert.equal(texture.wrapT, THREE.RepeatWrapping);
+  const uv = texture.transformUv(new THREE.Vector2(-.25, .75));
+  assert.ok(Math.abs(uv.x - .75) < 1e-8);
+});
 test('promoted NRA subset retains explicit permission basis and matches every published file hash', () => {
   const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
   assert.equal(source.permission.basis, 'user-reported-author-phone-consent');

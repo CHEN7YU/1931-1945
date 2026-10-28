@@ -46,7 +46,7 @@ import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
 import { CORPSE_RULES, createCasualtyState, expiredCorpses } from './casualties.js';
-import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
+import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
@@ -1014,6 +1014,10 @@ function equipGrenade(kind = 'grenade') {
   throwableProfile(kind);
   const actor = controlledSoldier(entities);
   if (!actor || actor.health <= 0 || actor.vehicleId) { toast('请先离开载具再选择投掷装备'); return; }
+  if (throwableStock(actor.grenades, kind) === 0) {
+    toast(kind === 'grenade' ? '手榴弹已用完，保持当前装备' : '炸药包已用完，保持当前装备');
+    return;
+  }
   resetConstruction();
   toolEquipped = false; grenadeEquipped = true;
   selectedThrowable = kind;
@@ -1021,6 +1025,15 @@ function equipGrenade(kind = 'grenade') {
   actor.rifleReady = false;
   refreshWeaponVisibility();
   $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
+}
+
+function equipPrimary() {
+  grenadeEquipped = false;
+  if (unit.type === 'infantry') equipTool(false);
+  else {
+    held.primary = held.secondary = held.aiming = false;
+    refreshControlSurface();
+  }
 }
 
 function renderEquippedTool() {
@@ -1386,28 +1399,23 @@ function interruptGrenade(actor) {
   if (actor) grenades.interrupt(actor.id);
 }
 
-function reachableGrenade(actor, kind = null) {
-  if (!actor || actor.health <= 0 || actor.vehicleId || actor.grenades.action) return null;
-  const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
-  return grenades.active.filter(grenade => (!kind || grenade.kind === kind) && grenade.phase === 'flight' && grenade.detonateAt > time &&
-    origin.distanceTo(new THREE.Vector3(grenade.position.x, grenade.position.y, grenade.position.z)) <= GRENADE.pickup)
-    .sort((a, b) => a.detonateAt - b.detonateAt)
-    .find(grenade => hasLine(origin, new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), GRENADE.pickup + .1));
-}
-
 function prepareGrenade() {
   const actor = controlledSoldier(entities);
   if (!actor || actor.health <= 0) return;
   if (actor.vehicleId) { toast('车内不能投掷；先离开地面载具'); return; }
   if (!grenadeEquipped) return;
   if (actor.grenades.action) { toast('正在准备或投掷'); return; }
-  const source = captureAttackSource(entities, actor, selectedThrowable === 'explosive-pack' ? actor.explosivePack : actor.grenades);
-  const nearby = reachableGrenade(actor, selectedThrowable);
-  const reason = nearby ? grenades.rethrow(nearby.id, actor.id, actor.grenades, source, time)
-    : grenades.begin(actor.id, actor.grenades, source, time, selectedThrowable);
+  startThrowableAction(actor, selectedThrowable);
+}
+
+function startThrowableAction(actor, kind) {
+  const source = captureAttackSource(entities, actor, kind === 'explosive-pack' ? actor.explosivePack : actor.grenades);
+  const reason = grenades.begin(actor.id, actor.grenades, source, time, kind);
   if (reason) { toast(reason); return; }
   held.primary = held.secondary = held.aiming = false;
   resetConstruction();
+  toolEquipped = false; grenadeEquipped = true; selectedThrowable = kind;
+  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
   actor.rifleReady = false;
   const action = actor.grenades.action;
   action.position = grenadeThrowPose(actor.id, action).position;
@@ -1423,6 +1431,9 @@ function updateGrenades(dt) {
       explode(new THREE.Vector3(event.position.x, event.position.y, event.position.z), profile.damage, profile.radius, event.source, event.kind);
     },
   });
+  const actor = controlledSoldier(entities);
+  if (state === 'playing' && grenadeEquipped && actor?.health > 0 && !actor.vehicleId &&
+    !actor.grenades.action && throwableStock(actor.grenades, selectedThrowable) === 0) equipPrimary();
   refreshWeaponVisibility();
 }
 
@@ -1449,10 +1460,8 @@ function renderGrenades() {
     hasLine(new THREE.Vector3(eye.x, eye.y, eye.z),
       new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 2))
     .sort((a, b) => a.detonateAt - b.detonateAt)[0] : null;
-  const pickup = state === 'playing' ? reachableGrenade(actor) : null;
-  warning.hidden = !nearby && !pickup;
-  warning.textContent = pickup ? `附近有${pickup.kind === 'explosive-pack' ? '炸药包 · 6' : '手榴弹 · 5'}选择后左键回掷（引信不会重置）`
-    : nearby ? `${nearby.kind === 'explosive-pack' ? '炸药包' : '手榴弹'}危险 · 立即寻找掩护` : '';
+  warning.hidden = !nearby;
+  warning.textContent = nearby ? `${nearby.kind === 'explosive-pack' ? '炸药包' : '手榴弹'}危险 · 无法回掷，立即寻找掩护` : '';
 }
 
 function fire() {
@@ -2839,9 +2848,7 @@ function performControlCommand(command) {
     }
   } else if (action === 'reload') reload();
   else if (action === 'equipRifle' && foot) {
-    grenadeEquipped = false;
-    if (unit.type === 'infantry') equipTool(false);
-    else refreshControlSurface();
+    equipPrimary();
   }
   else if (action === 'equipTool' && unit.type === 'infantry') equipTool(true);
   else if (action === 'cycleMember') {
