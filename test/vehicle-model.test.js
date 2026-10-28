@@ -93,3 +93,16 @@ test('first-person views use matching vehicle profiles and shared buffers withou
   assert.throws(() => historicalVehicleModel('unknown'), /Unknown historical vehicle/);
   assert.throws(() => vehicleWeaponView('unknown'), /Unknown vehicle view/);
 });
+
+test('tank seats have independent detailed observation frames with an unobstructed center and bounded shared geometry', () => {
+  const views = ['commander', 'gunner', 'driver'].map(seat => vehicleWeaponView('tank', seat));
+  for (const [index, seat] of ['commander', 'gunner', 'driver'].entries()) {
+    const view = views[index], other = vehicleWeaponView('tank', seat), stats = geometryStats(view);
+    assert.equal(view.userData.observationSeat, seat);
+    assert.equal(view.children[0].geometry, other.children[0].geometry);
+    assert.ok(stats.calls <= 7 && stats.triangles < 12000, `${seat}: ${JSON.stringify(stats)}`);
+    assert.equal(contacts(view, [0, 0, 0], [0, 0, -1]).filter(hit => !hit.object.material.transparent).length, 0);
+  }
+  assert.ok(views[1].userData.breech);
+  assert.equal(views[2].userData.breech, null);
+});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { rifleMix, createRifleAudio } from '../src/rifle-audio.js';
+import { rifleMix, createRifleAudio, loadRifleAudio } from '../src/rifle-audio.js';
 
 const listener = () => ({ position: { x: 0, y: 1.6, z: 0 }, right: { x: 1, y: 0, z: 0 },
   soldierId: 'player', weaponId: 'player:rifle' });
@@ -26,6 +26,179 @@ function fakeContext() {
     } };
 }
 const buffer = { duration: .6, sampleRate: 24000 };
+const friendlyReports = { rifle: { duration: .42, sampleRate: 24000 }, sniper: { duration: .28, sampleRate: 24000 } };
+
+test('selected operators own only their primary and explicitly listed current secondary weapons', () => {
+  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext();
+  const ears = { ...listener(), weaponId: 'tank-current:cannon', ownedWeaponIds: ['tank-current:mg-coax'] };
+  const coax = (id, soldierId = 'player', weaponId = 'tank-current:mg-coax') => {
+    const shot = event(id, 20, soldierId);
+    Object.assign(shot.source, { weaponId, team: 'friendly', weaponClass: 'tank-machine-gun' });
+    return shot;
+  };
+  const ownShot = coax(5);
+  const shots = [coax(1, 'other'), coax(2, 'player', 'tank-old:mg-coax'),
+    event(3, 1, 'ally'), event(4, 2, 'enemy'), ownShot];
+  assert.equal(audio.playBatch(context, shots, ears), 4, 'secondary is prioritized outside the three-remote batch budget');
+  const history = audio.snapshot.history;
+  assert.equal(history[0].eventId, 5);
+  assert.equal(history[0].owned, true);
+  assert.equal(history[0].pan, 0);
+  assert.equal(history[0].gain, rifleMix(ownShot.start, ears, true).gain);
+  assert.equal(history[0].report, 'fallback', 'owned tank MG does not inherit friendly rifle samples');
+  assert.ok(history.slice(1).every(item => !item.owned));
+  assert.equal(audio.snapshot.counts.owned, 1);
+  assert.equal(audio.snapshot.counts.remote, 3);
+  const ownSource = context.sources[0];
+  const ownGain = context.nodes.filter(node => node.kind === 'gain')[1];
+  const ownPan = context.nodes.find(node => node.kind === 'panner');
+  audio.update(ears);
+  assert.equal(ownGain.gain.value, rifleMix(ownShot.start, ears, true).gain);
+  assert.equal(ownPan.pan.value, 0);
+  ears.ownedWeaponIds = ['tank-new:mg-coax'];
+  audio.update(ears);
+  assert.equal(ownGain.gain.value, rifleMix(ownShot.start, ears, false).gain);
+  assert.ok(ownPan.pan.value > 0, 'old vehicle tail becomes remote immediately');
+  assert.notEqual(ownSource.stopped, true);
+  audio.reset();
+  audio.playBatch(context, [coax(6, 'other')], ears);
+  assert.equal(audio.snapshot.history[0].owned, false, 'listing a weapon never relaxes selected soldier matching');
+});
+
+test('additional weapon ownership remains one personal tail and eight shared remote voices', () => {
+  const audio = createRifleAudio(buffer), context = fakeContext(), ears = listener();
+  const primary = event(1, 4, 'player'), secondary = event(2, 5, 'player');
+  secondary.source.weaponId = 'tank-current:mg-coax';
+  audio.playBatch(context, [primary, secondary], ears);
+  assert.equal(audio.snapshot.active, 2);
+  ears.ownedWeaponIds = ['tank-current:mg-coax'];
+  audio.update(ears);
+  assert.equal(audio.snapshot.active, 1, 'reclassifying existing tails cannot open another personal voice');
+  assert.equal(context.sources[0].stopped, true);
+  for (let id = 3; id <= 11; id++) {
+    audio.beginBatch(); audio.playBatch(context, [event(id)], ears);
+  }
+  assert.equal(audio.snapshot.active, 9);
+  assert.equal(audio.snapshot.peakVoices, 9);
+  audio.playBatch(context, [primary, secondary], ears);
+  assert.equal(audio.snapshot.active, 9, 'primary and secondary replace the same personal channel');
+  assert.equal(audio.snapshot.counts.owned, 3);
+});
+
+test('optional owned weapon IDs reject malformed lists before changing mixer state', () => {
+  const audio = createRifleAudio(buffer), context = fakeContext(), ears = listener();
+  for (const ids of [null, 'tank:mg-coax', {}, [null], [''], [12], new Array(1)]) {
+    const invalid = { ...ears, ownedWeaponIds: ids };
+    assert.throws(() => audio.playBatch(context, [], invalid), /ownedWeaponIds/);
+    assert.throws(() => audio.update(invalid), /ownedWeaponIds/);
+    assert.throws(() => audio.play(context, event(1), invalid, false), /ownedWeaponIds/);
+  }
+  assert.equal(audio.snapshot.counts.played, 0);
+  assert.equal(context.sources.length, 0);
+  assert.equal(audio.playBatch(context, [event(1, 0, 'player')], { ...ears, ownedWeaponIds: [] }), 1);
+  assert.equal(audio.snapshot.history[0].owned, true, 'empty additional list preserves primary ownership');
+});
+
+test('only explicit friendly ordinary/scoped rifle metadata selects the supplied reports', () => {
+  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext(), ears = listener();
+  const cases = [
+    ['friendly', 'rifle', 'friendly-rifle'],
+    ['friendly', 'sniper', 'friendly-sniper'],
+    ['enemy', 'rifle', 'fallback'],
+    ['enemy', 'sniper', 'fallback'],
+    ...['machine-gun', 'tank-machine-gun', 'tank-cannon', 'grenade', 'unknown'].map(kind => ['friendly', kind, 'fallback']),
+    [undefined, 'rifle', 'fallback'], ['friendly', undefined, 'fallback'], [undefined, undefined, 'fallback'],
+    ['ally', 'rifle', 'fallback'],
+  ];
+  for (const [index, [team, weaponClass, expected]] of cases.entries()) {
+    const shot = event(index + 1, 0, 'player');
+    Object.assign(shot.source, { team, weaponClass });
+    audio.play(context, shot, ears, true);
+    assert.equal(audio.snapshot.history.at(-1).report, expected);
+    assert.equal(context.sources.at(-1).buffer, expected === 'fallback' ? buffer :
+      friendlyReports[expected === 'friendly-rifle' ? 'rifle' : 'sniper']);
+    assert.equal(audio.snapshot.active, 1, 'sample changes share the personal-tail replacement policy');
+  }
+  const legacy = createRifleAudio(buffer);
+  const shot = event(50);
+  Object.assign(shot.source, { team: 'friendly', weaponClass: 'sniper' });
+  legacy.play(fakeContext(), shot, ears, false);
+  assert.equal(legacy.snapshot.history[0].report, 'fallback', 'single-buffer API stays compatible');
+  assert.throws(() => createRifleAudio(buffer, { rifle: { duration: 2 } }), /short audio/);
+});
+
+test('all sample types share batch, range, replacement, ownership-transfer and reset budgets', () => {
+  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext(), ears = listener();
+  const shot = (id, x = 10, soldierId = 'ally') => {
+    const value = event(id, x, soldierId);
+    Object.assign(value.source, { team: id % 3 === 0 ? 'enemy' : 'friendly',
+      weaponClass: id % 3 === 1 ? 'rifle' : 'sniper' });
+    return value;
+  };
+  assert.equal(audio.playBatch(context, [shot(1), shot(2), shot(3), shot(4)], ears), 3);
+  assert.deepEqual(audio.snapshot.history.map(item => item.report), ['friendly-rifle', 'friendly-sniper', 'fallback']);
+  assert.equal(audio.snapshot.counts.budget, 1);
+  for (let id = 5; id <= 9; id++) {
+    audio.beginBatch(); audio.play(context, shot(id, 80 + id), ears, false);
+  }
+  assert.equal(audio.snapshot.active, 8);
+  audio.beginBatch();
+  audio.play(context, shot(10, 4), ears, false);
+  assert.equal(audio.snapshot.counts.replaced, 1);
+  audio.play(context, shot(11, 0, 'player'), ears, true);
+  assert.equal(audio.snapshot.active, 9);
+  ears.soldierId = 'other'; ears.weaponId = 'other:rifle';
+  audio.update(ears);
+  assert.equal(audio.snapshot.active, 8);
+  assert.equal(audio.snapshot.counts.replaced, 2);
+  audio.beginBatch();
+  assert.equal(audio.play(context, shot(12, 300), ears, false), false);
+  assert.equal(audio.snapshot.counts.range, 1);
+  assert.equal(audio.snapshot.peakVoices, 9);
+  assert.equal(context.nodes.filter(node => node.kind === 'safety').length, 1, 'one shared bus across samples');
+  audio.reset();
+  assert.equal(audio.snapshot.active, 0);
+  assert.equal(audio.snapshot.history.length, 0);
+  assert.ok(context.sources.every(source => source.stopped));
+});
+
+test('loader decodes three reports and rejects a missing supplied asset instead of pretending it loaded', async t => {
+  const originalFetch = globalThis.fetch, originalOffline = globalThis.OfflineAudioContext;
+  t.after(() => { globalThis.fetch = originalFetch; globalThis.OfflineAudioContext = originalOffline; });
+  const paths = [], decoded = [];
+  const wavHeader = () => {
+    const bytes = new Uint8Array(16);
+    bytes.set([82, 73, 70, 70], 0);
+    bytes.set([87, 65, 86, 69], 8);
+    return bytes.buffer;
+  };
+  globalThis.OfflineAudioContext = class {
+    async decodeAudioData(bytes) { decoded.push(bytes); return buffer; }
+  };
+  globalThis.fetch = async path => {
+    paths.push(path);
+    return { ok: true, arrayBuffer: async () => wavHeader() };
+  };
+  const audio = await loadRifleAudio();
+  assert.equal(decoded.length, 3);
+  assert.deepEqual(Object.keys(audio.snapshot.reports), ['fallback', 'friendly-rifle', 'friendly-sniper']);
+  assert.ok(paths.some(path => path.endsWith('friendly-rifle-generated/rifle-report.wav')));
+  for (const name of ['rifle-report.wav', 'sniper-report.wav']) {
+    globalThis.fetch = async path => ({ ok: !path.endsWith(name), status: 404, arrayBuffer: async () => wavHeader() });
+    await assert.rejects(loadRifleAudio(), new RegExp(`${name}: HTTP 404`));
+  }
+  globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => wavHeader() });
+  globalThis.OfflineAudioContext = class {
+    async decodeAudioData() { throw new Error('Invalid supplied audio'); }
+  };
+  await assert.rejects(loadRifleAudio(), /Invalid supplied audio/);
+  assert.equal(decoded.length, 7, 'HTTP errors do not reach decoding');
+  for (const body of [new TextEncoder().encode('<!doctype html><html>SPA fallback</html>'), new Uint8Array(0)]) {
+    globalThis.fetch = async () => ({ ok: true, headers: new Headers({ 'content-type': 'text/html' }),
+      arrayBuffer: async () => body.buffer.slice(0) });
+    await assert.rejects(loadRifleAudio(), /report\.wav: expected RIFF\/WAVE audio, received text\/html.*restart the development server/);
+  }
+});
 
 test('rifle stereo placement follows camera orientation and range reduces volume/high frequencies', () => {
   const ears = listener(), right = rifleMix({ x: 10, y: 1.39, z: 0 }, ears), left = rifleMix({ x: -10, y: 1.39, z: 0 }, ears);
@@ -193,4 +366,41 @@ test('recorded report file matches source hash, is short mono PCM, and has faded
   let peak = 0;
   for (let offset = 44; offset < data.length; offset += 2) peak = Math.max(peak, Math.abs(data.readInt16LE(offset)));
   assert.ok(peak > 15000 && peak <= 23200);
+});
+
+test('supplied report excerpts match provenance, short mono PCM format, gain and mechanical-safe trims', () => {
+  const base = new URL('../public/assets/audio/friendly-rifle-generated/', import.meta.url);
+  const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
+  assert.equal(source.permission.isCC0, false);
+  assert.equal(source.permission.request, '这两个声音 作为我军步枪和狙击枪的声音');
+  assert.equal(source.processing.gainDb, -7);
+  assert.deepEqual(source.originals.map(item => item.bytes), [40585, 33061]);
+  assert.deepEqual(source.originals.map(item => item.sha256), [
+    '849703e11808ba5222ed3595c3f2e40de4265ab35eff126e53438d349369b3c7',
+    'e7e21ed28abf42b083db7090dfaddbef88e0c5582e65ef4588f7727291aa1b22',
+  ]);
+  for (const record of source.files) {
+    const data = readFileSync(new URL(record.file, base));
+    assert.equal(data.length, record.bytes);
+    assert.equal(createHash('sha256').update(data).digest('hex'), record.sha256);
+    if (!record.file.endsWith('.wav')) continue;
+    assert.equal(data.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(data.toString('ascii', 8, 12), 'WAVE');
+    assert.equal(data.readUInt16LE(20), 1);
+    assert.equal(data.readUInt16LE(22), 1);
+    assert.equal(data.readUInt32LE(24), 24000);
+    assert.equal(data.readUInt16LE(34), 16);
+    assert.equal((data.length - 44) / 2, record.frames);
+    assert.equal(record.frames / 24000, record.durationSeconds);
+    assert.equal(record.startSeconds, 0);
+    assert.equal(data.readInt16LE(44), 0);
+    assert.ok(Math.abs(data.readInt16LE(data.length - 2)) <= 2);
+    let peak = 0;
+    for (let offset = 44; offset < data.length; offset += 2) peak = Math.max(peak, Math.abs(data.readInt16LE(offset)));
+    assert.equal(peak / 32768, record.runtimePeak);
+    assert.ok(peak > 15000 && peak < 23200);
+    const secondaryTransient = record.originalRole === 'friendly-rifle' ? .45 : .30;
+    assert.ok(record.durationSeconds < secondaryTransient);
+    assert.ok(Math.abs(record.tailFadeStartSeconds + source.processing.tailFadeSeconds - record.durationSeconds) < 1e-12);
+  }
 });

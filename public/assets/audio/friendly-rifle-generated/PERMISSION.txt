@@ -1,0 +1,25 @@
+User-supplied generated rifle audio: project-use permission record
+
+The user supplied two local MP3 files and requested:
+"这两个声音 作为我军步枪和狙击枪的声音"
+Translation: "Use these two sounds as the sounds of our army's rifles and sniper rifles."
+
+Basis: user-supplied-generated-audio-project-use.
+Provider: ElevenLabs, as indicated by the user-supplied filenames; the
+generation account, model, date and provider receipt have not been verified.
+This request authorizes integration into this project; it is not a CC0 grant.
+Provider terms and redistribution rights have not been independently verified.
+No claim of unrestricted commercial rights, sublicensing rights or verified
+historical firearm authenticity is made.
+
+The supplied originals are identified by their exact filenames, byte counts
+and SHA-256 hashes in source.json. Original MP3 bytes are not redistributed
+here. The two runtime WAVs are locally derived excerpts, not substituted
+recordings. No external upload or generation service was used in processing.
+
+Only the initial report portions are used; later secondary transients are
+excluded conservatively so the existing animation-timed mechanical recordings
+remain in charge of bolt unlocking, extraction, loading and closing.
+The selection is based on local decoded waveform/energy measurements, not an
+auditory assessment. It does not certify semantic separation of any mechanical
+content overlapping the initial report, nor recover clipping in the source.

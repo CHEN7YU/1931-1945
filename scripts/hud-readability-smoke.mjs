@@ -13,7 +13,8 @@ const labels = ['#hud-notice', '#objective-title', '#objective-help', '#timer',
   '#squad-hint', '#section-status', '#weapon-name', '#health-text', '#pace-label',
   '#stamina-label', '#battle-controls', '#minimap span', '#pause-button', '#members .member',
   '#interaction-prompt', '#toast', '#simulation-status', '#aim-label', '.feed-entry',
-  '.control-count', '.squad-heading kbd', '.hud-label', '.ammo small', '.objective-chip'];
+  '.control-count', '.squad-heading kbd', '.hud-label', '.ammo small', '.objective-chip',
+  '#tank-machine-gun', '#tank-orientation span'];
 if (artifacts) await mkdir(artifacts, { recursive: true });
 
 async function loadMenu(page, address) {
@@ -101,7 +102,7 @@ async function capture(page, name) {
         textRects };
     }));
     const panels = ['.battle-time', '#objectives', '.objective-banner',
-      '.squad-status', '.weapon-status', '#minimap', '#pause-button', '.hud-notices', '#kill-feed']
+      '.squad-status', '.weapon-status', '#tank-orientation', '#minimap', '#pause-button', '.hud-notices', '#kill-feed']
       .flatMap(selector => [...document.querySelectorAll(selector)].filter(visible)
         .map(element => ({ selector, rect: rect(element) })))
       .filter(panel => panel.rect.width > 0 && panel.rect.height > 0);
@@ -206,8 +207,14 @@ try {
     assert.equal(await full.locator('.objective-banner').isVisible(), false, 'capture details hidden away from objectives');
     await full.keyboard.down('Tab');
     await full.locator('#scoreboard').waitFor({ state: 'visible' });
-    assert.ok(await full.locator('#force-status').isVisible(), 'army details available on Tab');
-    assert.match(await full.locator('#force-status').textContent(), /我方.*日军/);
+    const scoreboard = await full.locator('#scoreboard').boundingBox();
+    assert.ok(scoreboard.x >= 0 && scoreboard.y >= 0 &&
+      scoreboard.x + scoreboard.width <= viewport.width + 1 &&
+      scoreboard.y + scoreboard.height <= viewport.height + 1, 'expanded squad scoreboard stays inside the viewport');
+    assert.ok(await full.locator('#scoreboard-stats').isVisible(), 'compact battle summary available on Tab');
+    assert.equal(await full.locator('#force-status').isVisible(), false, 'technical prose is not part of the icon scoreboard');
+    assert.equal(await full.locator('.score-team').count(), 2);
+    assert.equal(await full.locator('#squad-score-table thead th[aria-label="总击杀"] svg').count(), 2);
     await full.keyboard.up('Tab');
     if (viewport.width === 960) {
       await full.waitForFunction(() => getComputedStyle(document.querySelector('#toast')).opacity === '0');

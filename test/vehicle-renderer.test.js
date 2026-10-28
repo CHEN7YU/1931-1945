@@ -53,7 +53,7 @@ test('propeller presentation uses simulation time, freezes on repeated time and 
   assert.throws(() => renderer.update(registry.vehicles.values(), NaN), /presentation time/);
   renderer.clear();
 });
-test('only the occupied aircraft external view is hidden behind its cockpit; ray identity and other views remain', () => {
+test('only the occupied vehicle exterior is hidden behind its seat view; ray identity and other views remain', () => {
   const { registry, tank, plane, renderer } = fixture();
   renderer.update(registry.vehicles.values(), 0, plane.id);
   const aircraft = renderer.model(plane.id);
@@ -64,7 +64,13 @@ test('only the occupied aircraft external view is hidden behind its cockpit; ray
   renderer.update(registry.vehicles.values(), 1);
   assert.equal(aircraft.visible, true);
   renderer.update(registry.vehicles.values(), 1, tank.id);
-  assert.equal(renderer.model(tank.id).visible, true);
+  const armored = renderer.model(tank.id);
+  assert.equal(armored.visible, false);
+  assert.equal(aircraft.visible, true);
+  const tankRay = new THREE.Raycaster(tank.position.clone().add(new THREE.Vector3(0, 1, 15)), new THREE.Vector3(0, 0, -1), 0, 30);
+  assert.equal(tankRay.intersectObject(armored, true)[0].object.userData.vehicleId, tank.id);
+  renderer.update(registry.vehicles.values(), 2);
+  assert.equal(armored.visible, true, 'dismount restores the original external tank model');
   renderer.clear();
 });
 test('actual vehicle ray targets are synchronised to owned position and bind by stable ID', () => {

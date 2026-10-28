@@ -8,6 +8,8 @@ const groups = [
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'audio/rifle-mechanical/source.json', directory: 'audio/rifle-mechanical', use: 'runtime', evidence: ['LICENSE.txt'] },
+  { manifest: 'audio/friendly-rifle-generated/source.json', directory: 'audio/friendly-rifle-generated', use: 'runtime',
+    evidence: ['PERMISSION.txt'] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -58,7 +60,23 @@ export async function auditAssets({ root, buildRoot } = {}) {
     await include(group.manifest, group.use);
     const metadata = JSON.parse(await readFile(assetPath(root, group.manifest), 'utf8'));
     if (!Array.isArray(metadata.files) || !metadata.files.length) throw new Error(`No files in ${group.manifest}`);
-    if (group.directory === 'game/nra-88') {
+    if (group.directory === 'audio/friendly-rifle-generated') {
+      const request = '这两个声音 作为我军步枪和狙击枪的声音';
+      const permission = metadata.permission;
+      const record = await readFile(assetPath(root, `${group.directory}/PERMISSION.txt`), 'utf8');
+      if (metadata.sourceKind !== 'user-supplied-generated-audio' || metadata.provider !== 'ElevenLabs' ||
+        metadata.license !== 'User project-use request; provider and redistribution rights unverified' ||
+        permission?.basis !== 'user-supplied-generated-audio-project-use' || permission.record !== 'PERMISSION.txt' ||
+        permission.request !== request || permission.isCC0 !== false ||
+        permission.providerTermsIndependentlyVerified !== false || permission.redistributionRightsIndependentlyVerified !== false ||
+        !record.includes(request) || !record.includes('Provider terms and redistribution rights have not been independently verified.') ||
+        !metadata.files.some(file => file.file === 'PERMISSION.txt' && file.sha256) ||
+        metadata.files.map(file => file.file).sort().join(',') !== 'PERMISSION.txt,rifle-report.wav,sniper-report.wav') {
+        throw new Error('User-supplied generated rifle audio permission requires explicit review');
+      }
+      permissions.push({ directory: group.directory, basis: permission.basis,
+        limitation: 'User-requested project use; not CC0. Provider terms and redistribution rights have not been independently verified.' });
+    } else if (group.directory === 'game/nra-88') {
       if (metadata.permission?.basis !== 'user-reported-author-phone-consent' || metadata.permission.isCC0 !== false ||
         metadata.permission.record !== 'PERMISSION.txt') throw new Error('NRA permission record requires explicit review');
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,

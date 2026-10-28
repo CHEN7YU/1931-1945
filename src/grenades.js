@@ -55,17 +55,63 @@ export function throwableVehicleDamage(kind, source, vehicle, position, clear) {
 
 export function grenadePose(action, eyeHeight = 1.67) {
   if (!action) return null;
-  const profile = throwableProfile(action.kind);
-  const progress = action.phase === 'drawing' ? Math.min(1, action.elapsed / profile.draw)
-    : action.phase === 'throwing' ? Math.min(1, action.elapsed / profile.windup)
-    : action.phase === 'recovering' ? Math.max(0, 1 - action.elapsed / profile.recovery) : 1;
-  const throwing = action.phase === 'throwing', returning = action.phase === 'recovering';
-  const y = eyeHeight - .15;
-  return { phase: action.phase, progress, visible: !returning,
-    hand: throwing ? [.32, y + .14 * progress, .02 - .44 * progress]
-      : [.32, y - .35 * (1 - progress), .02],
-    position: throwing ? [.32, y + .14 * progress, -.04 - .44 * progress]
-      : [.32, y - .35 * (1 - progress), -.04] };
+  const profile = throwableProfile(action.kind), pack = action.kind === 'explosive-pack', phase = action.phase;
+  const t = Math.max(0, Math.min(1, (action.elapsed ?? 0) /
+    (phase === 'drawing' ? profile.draw : phase === 'throwing' ? profile.windup : profile.recovery)));
+  const smooth = value => { const p = Math.max(0, Math.min(1, value)); return p * p * (3 - 2 * p); };
+  const lerp = (a, b, weight) => a.map((value, index) => value + (b[index] - value) * weight);
+  const pose = (wrist, forward, palm, pole, opening = 0) => ({ wrist, forward, palm, pole, opening });
+  const blend = (a, b, weight) => ({
+    ...Object.fromEntries(['wrist', 'forward', 'palm', 'pole'].map(key => [key, lerp(a[key], b[key], weight)])),
+    opening: a.opening + (b.opening - a.opening) * weight,
+  });
+  const restForward = [-.1, .9, -.42], restPalm = [-.85, -.29, -.44], lowElbow = [.8, -.65, .25];
+  const idle = pose([.18, -.30, -.36], restForward, restPalm, lowElbow);
+  const hold = pose(pack ? [.16, -.28, -.36] : [.16, -.25, -.38], restForward, restPalm, lowElbow);
+  const lift = pose(pack ? [.44, -.06, -.02] : [.42, -.04, -.05], [.15, .9, .4], [.7, -.5, -.4], [.9, .45, .1]);
+  const loaded = pose(pack ? [.40, .04, .12] : [.35, .08, .14], [0, .9, .42], [.8, -.35, .2], [.9, .45, .1]);
+  const release = pose(pack ? [.40, .025, -.28] : [.39, .06, -.28], [-.15, .2, -.97], [.55, -.8, -.25], [.9, .2, .1], .58);
+  const follow = pose([.43, -.12, -.25], [-.15, -.15, -.97], [.75, -.5, -.3], [.9, -.3, .15], .52);
+  const withdrawn = pose([.35, -.40, -.13], [-.1, -.35, -.93], [.9, -.35, -.25], lowElbow, .45);
+  const stow = pose([.32, -.61, -.02], [-.1, -.65, -.75], [.95, -.1, -.28], lowElbow, .45);
+  const loadAt = pack ? .66 : .60, liftAt = pack ? .49 : .46;
+  let view = idle, preparation = 0, guiding = 0, releaseWeight = 0;
+  if (phase === 'drawing') {
+    view = t < .36 ? blend(idle, hold, smooth(t / .36))
+      : t < loadAt ? blend(hold, lift, smooth((t - .36) / (loadAt - .36)))
+      : blend(lift, loaded, smooth((t - loadAt) / (1 - loadAt)));
+    preparation = smooth(t / .18) * (1 - smooth((t - .36) / .12));
+    guiding = smooth((t - liftAt) / (.80 - liftAt));
+  } else if (phase === 'cooking') { view = loaded; guiding = 1; }
+  else if (phase === 'throwing') {
+    releaseWeight = t ** (pack ? 2.4 : 2);
+    view = blend(loaded, release, releaseWeight);
+    guiding = 1 - smooth((t - .12) / .65);
+    view.opening = .58 * smooth((t - .94) / .06);
+  } else if (phase === 'recovering') {
+    view = t < .18 ? blend(release, follow, smooth(t / .18))
+      : t < .48 ? blend(follow, withdrawn, smooth((t - .18) / .30))
+      : blend(withdrawn, stow, smooth((t - .48) / .52));
+    releaseWeight = 1 - smooth(t);
+  }
+  const guide = { wrist: [-.16, -.22, -.40], forward: [.2, .7, -.68], palm: [-.1, .7, .69],
+    palmSide: -1, pole: [-.8, -.45, .2], closure: .60 };
+  view = { ...view, preparation, guiding, guide,
+    pull: phase === 'drawing' ? smooth((t - .25) / .10) : phase === 'idle' ? 0 : 1 };
+  // Keep the historical terminal launch point; the wrist stays behind it by a real hand's reach.
+  const hand = lerp(view.wrist, [
+    view.wrist[0] + .32 - release.wrist[0], view.wrist[1] - .08 - release.wrist[1],
+    view.wrist[2] - .34 - release.wrist[2],
+  ], releaseWeight);
+  const prone = Math.max(0, Math.min(1, (.85 - eyeHeight) / .40));
+  hand[1] = Math.max(.10, hand[1] + eyeHeight - .10 * prone * (1 - releaseWeight));
+  hand[2] -= .28 * prone * (1 - releaseWeight);
+  const pole = lerp(view.pole, [view.pole[0], Math.max(.45, view.pole[1]), view.pole[2]], prone);
+  const guideHand = [guide.wrist[0], Math.max(.10, guide.wrist[1] + eyeHeight), guide.wrist[2] - .28 * prone];
+  const guidePole = lerp(guide.pole, [guide.pole[0], .45, guide.pole[2]], prone);
+  return { phase, progress: phase === 'recovering' ? 1 - t : ['drawing', 'throwing'].includes(phase) ? t : 1,
+    visible: phase !== 'recovering', hand, pole, guideHand, guidePole,
+    position: [hand[0], hand[1] + .07, hand[2] - .14], view };
 }
 
 export function advanceGrenadeFlight(grenade, dt, trace) {
@@ -195,6 +241,7 @@ export function createGrenadeSystem() {
             recover(grenade, thrownAt);
             grenade.phase = 'flight'; grenade.throws++;
             remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source,
+              ...(grenade.aiTargetId ? { targetId: grenade.aiTargetId } : {}),
               position: Object.freeze(point(grenade.position)), time: thrownAt });
           }
         }

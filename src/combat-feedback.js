@@ -19,6 +19,8 @@ export function createCombatFeedback() {
       if (viewer?.explosivePackWeaponId != null && (typeof viewer.explosivePackWeaponId !== 'string' || !viewer.explosivePackWeaponId)) {
         throw new Error('Explosive pack feedback requires its owned weapon identity');
       }
+      if (viewer?.machineGunWeaponIds != null && (!Array.isArray(viewer.machineGunWeaponIds) ||
+        viewer.machineGunWeaponIds.some(id => typeof id !== 'string' || !id))) throw new Error('Machine-gun feedback requires owned weapon identities');
       if (event.type === 'casualty') {
         if (event.target.team === 'enemy') {
           feed.unshift({ text: `${creditNames[event.source.credit]}　›　日军守兵`, until: event.time + 5,
@@ -35,7 +37,7 @@ export function createCombatFeedback() {
       if (event.target.team === 'enemy' && event.source.credit === 'player' &&
         event.source.soldierId === viewer.soldierId &&
         (event.source.weaponId === viewer.weaponId || event.source.weaponId === viewer.grenadeWeaponId ||
-          event.source.weaponId === viewer.explosivePackWeaponId)) {
+          event.source.weaponId === viewer.explosivePackWeaponId || viewer.machineGunWeaponIds?.includes(event.source.weaponId))) {
         markerUntil = Math.max(markerUntil, event.time + (event.health === 0 ? .25 : .2));
         markerSource = { soldierId: event.source.soldierId, weaponId: event.source.weaponId };
       }

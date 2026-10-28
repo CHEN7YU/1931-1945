@@ -35,7 +35,7 @@ export function createVehicleRenderer(scene) {
         const view = views.get(vehicle.id);
         if (view.type !== vehicle.type) throw new Error('A vehicle identity cannot change model type');
         if (view.variant !== vehicle.variant) throw new Error('A vehicle identity cannot change model variant');
-        view.model.visible = vehicle.type !== 'plane' || vehicle.id !== cockpitVehicleId;
+        view.model.visible = vehicle.id !== cockpitVehicleId;
         view.model.position.copy(vehicle.position);
         view.model.rotation.set(vehicle.type === 'plane' ? vehicle.pitch : 0, vehicle.heading, vehicle.type === 'plane' ? vehicle.roll : 0);
         if (vehicle.type === 'tank') {

@@ -135,10 +135,39 @@ export function createNraRiflePose(root, bones, gun) {
       leftTarget = left.target;
       root.updateMatrixWorld(true);
       if (carry.grenade) {
+        bone('LeftShoulder').quaternion.copy(leftShoulderRest);
+        root.updateMatrixWorld(true);
         const target = root.localToWorld(new THREE.Vector3(...carry.grenade.hand));
+        const view = carry.grenade.view;
         solveArm(bone('RightArm'), bone('RightForeArm'), bone('RightHand'), target,
-          new THREE.Vector3(.8, -.3, .3).applyQuaternion(bodyFacing));
-        orientHand('Right', new THREE.Vector3(-1, 0, 0).applyQuaternion(bodyFacing));
+          new THREE.Vector3(...(carry.grenade.pole ?? view?.pole ?? [.8, -.3, .3])).applyQuaternion(bodyFacing));
+        if (view) {
+          const hand = bone('RightHand'), desiredForward = new THREE.Vector3(...view.forward).normalize().applyQuaternion(bodyFacing);
+          const normal = new THREE.Vector3(...view.palm).applyQuaternion(bodyFacing);
+          normal.addScaledVector(desiredForward, -normal.dot(desiredForward)).normalize();
+          const currentForward = position(bone('RightHandMiddle1')).sub(position(hand));
+          const currentAcross = position(bone('RightHandIndex1')).sub(position(bone('RightHandPinky1')));
+          const delta = basis(desiredForward, desiredForward.clone().cross(normal)).multiply(basis(currentForward, currentAcross).invert());
+          setRotation(hand, delta.multiply(rotation(hand)));
+          for (const [finger, rest] of fingers) {
+            if (finger.name.startsWith('RightHand')) finger.quaternion.slerp(rest, view.opening);
+          }
+          if (view.guiding > 0) {
+            const guideTarget = position(bone('LeftHand')).lerp(root.localToWorld(new THREE.Vector3(...carry.grenade.guideHand)), view.guiding);
+            solveArm(bone('LeftArm'), bone('LeftForeArm'), bone('LeftHand'), guideTarget,
+              new THREE.Vector3(...carry.grenade.guidePole).applyQuaternion(bodyFacing));
+            const guideForward = new THREE.Vector3(...view.guide.forward).normalize().applyQuaternion(bodyFacing);
+            const guideNormal = new THREE.Vector3(...view.guide.palm).applyQuaternion(bodyFacing);
+            guideNormal.addScaledVector(guideForward, -guideNormal.dot(guideForward)).normalize();
+            const leftHand = bone('LeftHand'), leftForward = position(bone('LeftHandMiddle1')).sub(position(leftHand));
+            const leftAcross = position(bone('LeftHandIndex1')).sub(position(bone('LeftHandPinky1')));
+            const guideRotation = basis(guideForward, guideForward.clone().cross(guideNormal)).multiply(basis(leftForward, leftAcross).invert());
+            setRotation(leftHand, new THREE.Quaternion().slerp(guideRotation, view.guiding).multiply(rotation(leftHand)));
+            for (const [finger, rest] of fingers) {
+              if (finger.name.startsWith('LeftHand')) finger.quaternion.slerp(rest, .55 * view.guiding);
+            }
+          }
+        } else orientHand('Right', new THREE.Vector3(-1, 0, 0).applyQuaternion(bodyFacing));
         root.updateMatrixWorld(true);
       }
     },

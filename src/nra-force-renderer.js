@@ -6,7 +6,7 @@ import { isNraSkin } from './nra-appearance.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
-import { CORPSE_RULES, createCasualtyState } from './casualties.js';
+import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -98,7 +98,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.nativeMotion.gaitCharge = mode === 'charge' ? 1 : 0;
     sampleActor.nativeMotion.gaitAim = mode === 'aim' ? 1 : 0;
     sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
-    sampleActor.nativeMotion.bodyLean = mode === 'charge' ? .26 : mode === 'short' ? .10 : mode === 'run' ? .14 : mode === 'walk' ? .035 : mode === 'aim' ? .02 : 0;
+    sampleActor.nativeMotion.bodyLean = mode === 'charge' ? .34 : ['short', 'run'].includes(mode) ? .21 : mode === 'walk' ? .075 : mode === 'aim' ? .045 : 0;
     const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (gait ? gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog : mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
@@ -139,7 +139,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       instance.frustumCulled = false; instance.receiveShadow = true; root.add(instance);
       return { mesh: instance, enabled, count: 0 };
     });
-    banks.push({ parts, count: 0, capacity, attachments, gunMatrix });
+    instance.geometry.computeBoundingBox();
+    banks.push({ parts, count: 0, capacity, attachments, gunMatrix, bounds: instance.geometry.boundingBox.clone(),
+      footprint: dead ? corpseFootprint(instance.geometry) : null });
   }
   bankTemplate.bind(null);
   let summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
@@ -158,6 +160,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   }
   return {
     root, motionProfile: profile, excludedIds,
+    casualtyBounds(variant, retainGun) {
+      const bounds = banks[livingBanks + variant * 2 + Number(retainGun)]?.bounds;
+      if (!bounds) throw new RangeError('Casualty bank does not exist');
+      return { min: bounds.min.toArray(), max: bounds.max.toArray(),
+        footprint: banks[livingBanks + variant * 2 + Number(retainGun)].footprint };
+    },
     createGrenadeHand: template.createGrenadeHand,
     async prepare(renderer) {
       for (let index = 0; index < 6; index++) {
@@ -217,7 +225,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
           const posture = postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
-          const index = actor.health <= 0 && actor.casualty && deathBanks
+          const index = actor.casualty?.wallLimited ? 0 : actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
             : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
@@ -241,9 +249,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
               attachment.mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
             }
           }
-          orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
+          orientation.setFromEuler(euler.set(0, actor.heading + (actor.casualty?.yaw ?? 0), actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
           scale.set(1 + (actor.avatarAppearance?.build ?? 0) * .025, 1, 1);
           matrix.compose(actor.position, orientation, scale);
+          if (actor.casualty?.offset) {
+            matrix.elements[12] += actor.casualty.offset.x; matrix.elements[14] += actor.casualty.offset.z;
+          }
           const weapons = weaponGroupFor(actor.rifle.model ?? 'rifle');
           if (weapons.count >= weapons.capacity) {
             if (actor.health > 0) throw new Error('Distant weapon instance capacity exceeded');

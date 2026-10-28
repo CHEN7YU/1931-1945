@@ -1,0 +1,99 @@
+{
+  "asset": "User-supplied generated friendly rifle reports",
+  "provider": "ElevenLabs",
+  "sourceKind": "user-supplied-generated-audio",
+  "license": "User project-use request; provider and redistribution rights unverified",
+  "permission": {
+    "basis": "user-supplied-generated-audio-project-use",
+    "record": "PERMISSION.txt",
+    "request": "这两个声音 作为我军步枪和狙击枪的声音",
+    "isCC0": false,
+    "providerTermsIndependentlyVerified": false,
+    "redistributionRightsIndependentlyVerified": false
+  },
+  "originals": [
+    {
+      "role": "friendly-rifle",
+      "filename": "ElevenLabs_德国毛瑟98步枪单发枪声，约80米外泥泞战场传来，深沉的爆裂声和破裂声在山丘和建筑间回响，仅一枪。.mp3",
+      "bytes": 40585,
+      "sha256": "849703e11808ba5222ed3595c3f2e40de4265ab35eff126e53438d349369b3c7",
+      "codec": "mp3",
+      "sampleRate": 44100,
+      "channels": 2,
+      "durationSeconds": 2.48,
+      "retained": "Hash only; original MP3 is not published"
+    },
+    {
+      "role": "friendly-sniper",
+      "filename": "ElevenLabs_AWP_sniper_rifle_shot_with_a_powerful_crack_and_a_distinct_bolt-action_reload_sound.mp3",
+      "bytes": 33061,
+      "sha256": "e7e21ed28abf42b083db7090dfaddbef88e0c5582e65ef4588f7727291aa1b22",
+      "codec": "mp3",
+      "sampleRate": 44100,
+      "channels": 2,
+      "durationSeconds": 2,
+      "retained": "Hash only; original MP3 is not published"
+    }
+  ],
+  "processing": {
+    "tool": "ffmpeg 9.0.2",
+    "format": "RIFF WAV, signed 16-bit little-endian PCM, mono, 24000 Hz",
+    "gainDb": -7,
+    "gainLinear": 0.44668359215096315,
+    "attackFadeSeconds": 0.0005,
+    "tailFadeSeconds": 0.025,
+    "downmix": "FFmpeg mono downmix, floating-point processing before final PCM quantization",
+    "recipe": "ffmpeg -i <matching original filename> -af <file-specific ffmpegFilter> -ar 24000 -ac 1 -c:a pcm_s16le -map_metadata -1 -fflags +bitexact -flags:a +bitexact <file>",
+    "selectionBasis": "Local numerical waveform and 25ms RMS/peak analysis only; no audible listening claimed",
+    "mechanicalPolicy": "Conservative initial bursts only. Existing animation-timed bolt and reload cues remain unchanged; no embedded later bolt sequence is played."
+  },
+  "files": [
+    {
+      "file": "rifle-report.wav",
+      "bytes": 20204,
+      "sha256": "388fc7f99ab9326c655d583774d34a16b7a4628911f4320f83df9e666d577b3e",
+      "originalRole": "friendly-rifle",
+      "startSeconds": 0,
+      "durationSeconds": 0.42,
+      "frames": 10080,
+      "decodedSegmentPeakBeforeGain": 1.4415357112884521,
+      "runtimePeak": 0.6439208984375,
+      "runtimeRmsDbFS": -17.459388316618515,
+      "tailFadeStartSeconds": 0.395,
+      "ffmpegFilter": "aformat=sample_fmts=flt:channel_layouts=mono,aresample=24000,atrim=start=0:duration=0.42,asetpts=PTS-STARTPTS,volume=-7dB,afade=t=in:st=0:d=0.0005,afade=t=out:st=0.395:d=0.025",
+      "selection": "Initial burst peaks in first 75ms and decays; stop before renewed transient around 0.45s rather than classifying that transient as echo or mechanism."
+    },
+    {
+      "file": "sniper-report.wav",
+      "bytes": 13484,
+      "sha256": "b46c0628f00f753ec76d1dea7ce43ada267ef9be24f22d4d4d433d93a7a2f816",
+      "originalRole": "friendly-sniper",
+      "startSeconds": 0,
+      "durationSeconds": 0.28,
+      "frames": 6720,
+      "decodedSegmentPeakBeforeGain": 1.5282083749771118,
+      "runtimePeak": 0.6826171875,
+      "runtimeRmsDbFS": -10.449773040567724,
+      "tailFadeStartSeconds": 0.255,
+      "ffmpegFilter": "aformat=sample_fmts=flt:channel_layouts=mono,aresample=24000,atrim=start=0:duration=0.28,asetpts=PTS-STARTPTS,volume=-7dB,afade=t=in:st=0:d=0.0005,afade=t=out:st=0.255:d=0.025",
+      "selection": "Keep only the initial decaying burst; exclude renewed energy around 0.30/0.45s and separated later transients around 0.90-1.03s, 1.28-1.33s and 1.57-1.70s. This intentionally sacrifices the long tail to avoid playing the filename-described embedded bolt sequence."
+    },
+    {
+      "file": "PERMISSION.txt",
+      "bytes": 1524,
+      "sha256": "5c0c7ec5bea2d7c39b069a9ff85576bfd9d920b19cb9c0116811cbaa6555619a"
+    }
+  ],
+  "routing": {
+    "friendly-rifle": "event.source.team === 'friendly' && event.source.weaponClass === 'rifle'",
+    "friendly-sniper": "event.source.team === 'friendly' && event.source.weaponClass === 'sniper'",
+    "allOtherShots": "Existing recorded-rifle/report.wav, including missing metadata"
+  },
+  "limitations": [
+    "Provider identity is inferred from filenames, not independently authenticated.",
+    "Provider terms and redistribution rights have not been independently verified; these files are not CC0.",
+    "Generated effects are not verified commercial-use assets or historical firearm recordings.",
+    "The source float decode has over-unit peaks; attenuation avoids new runtime clipping but cannot repair source distortion.",
+    "Numerical timing separation cannot certify that no mechanical sound overlaps the initial burst. No audible listening or historical authenticity acceptance is claimed."
+  ]
+}

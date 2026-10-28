@@ -38,7 +38,7 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false, a
   for (const actor of registry.soldiers.values()) {
     const autonomous = actor !== selected && aiActive;
     const active = autonomous || actor === selected && personalActive && actor.groundType === 'infantry';
-    if (!active || actor.health <= 0 || actor.vehicleId) continue;
+    if (!active || actor.health <= 0 || actor.vehicleId || actor.grenades?.action) continue;
     requireWeapon(registry, actor.rifle, actor.id, 'infantry');
     if (autonomous && actor.rifle.ammo === 0) reloadRifle(actor.rifle);
     for (const cue of advanceRifle(actor.rifle, dt)) {

@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, cp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { auditAssets } from '../scripts/audit-assets.mjs';
 
 const source = new URL('../public/assets/', import.meta.url);
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'battle-assets-'));
+  const directory = await mkdtemp(resolve('.asset-audit-fixtures-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, 'assets');
   await cp(source, root, { recursive: true });
@@ -22,6 +21,32 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.equal(mechanical.length, 6);
   assert.ok(mechanical.every(file => file.use === 'runtime'), 'main-game mechanical recordings must not remain diagnostic-only');
   assert.match(report.permissions[0].limitation, /not CC0/);
+  const generated = report.permissions.find(item => item.directory === 'audio/friendly-rifle-generated');
+  assert.equal(generated.basis, 'user-supplied-generated-audio-project-use');
+  assert.match(generated.limitation, /redistribution rights have not been independently verified/);
+});
+
+test('generated rifle permission cannot become CC0, verified redistribution, or an unquoted grant', async t => {
+  const { root } = await fixture(t);
+  const manifest = join(root, 'audio', 'friendly-rifle-generated', 'source.json');
+  const original = JSON.parse(await readFile(manifest, 'utf8'));
+  for (const change of [
+    value => { value.license = 'CC0-1.0'; },
+    value => { value.permission.isCC0 = true; },
+    value => { value.permission.providerTermsIndependentlyVerified = true; },
+    value => { value.permission.redistributionRightsIndependentlyVerified = true; },
+    value => { value.permission.request = 'unrestricted commercial redistribution'; },
+    value => { value.permission.record = 'LICENSE.txt'; },
+    value => { value.files.push({ file: 'another-generated-shot.wav' }); },
+  ]) {
+    const changed = structuredClone(original);
+    change(changed);
+    await writeFile(manifest, JSON.stringify(changed));
+    await assert.rejects(auditAssets({ root }), /generated rifle audio permission/);
+  }
+  await writeFile(manifest, JSON.stringify(original));
+  await writeFile(join(root, 'audio', 'friendly-rifle-generated', 'PERMISSION.txt'), 'No user request here.');
+  await assert.rejects(auditAssets({ root }), /generated rifle audio permission/);
 });
 
 test('an unlisted archive or a corrupted existing file blocks the audit', async t => {

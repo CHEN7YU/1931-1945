@@ -57,6 +57,9 @@
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="tank-optics" hidden aria-label="坦克瞄准观察镜">
+        <div class="tank-sight"><i></i><b></b><span>┴　┴　┼　┴　┴</span></div>
+      </div>
       <div id="sniper-scope" hidden aria-label="狙击瞄准镜">
         <div class="scope-lens"><div class="scope-reticle" aria-hidden="true"></div></div>
         <div class="scope-help"><span>约 4.6× · 左键单发 · R 装填</span><div id="breath-meter" role="progressbar" aria-label="屏息余量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="breath-fill"></div></div><span id="breath-label">按住左 Shift 屏息</span></div>
@@ -74,11 +77,18 @@
         <div class="squad-status"><div class="squad-heading"><span class="hud-label" id="unit-title">步兵小队</span><span id="section-status" hidden></span><kbd>Y</kbd></div><div id="members"></div></div>
         <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div>
           <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="工兵工具"><b>2</b>工</span><span data-equipment-slot="5" title="手榴弹"><b>5</b>雷<span class="equipment-count">1</span></span><span data-equipment-slot="6" title="炸药包"><b>6</b>包<span class="equipment-count">1</span></span></div>
-          <div id="grenade-status" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
+          <div id="grenade-status" hidden></div><div id="tank-machine-gun" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
+        <div id="tank-orientation" hidden aria-label="坦克车体与炮塔朝向，图上方为当前视线">
+          <svg viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="40" fill="none" stroke="#85927d"/>
+            <g id="tank-north"><text x="44" y="14" text-anchor="middle" fill="#eeeade">N</text></g>
+            <g id="tank-hull"><path d="M29 22 L59 22 L62 64 L26 64 Z" fill="#68755d" stroke="#d2d6c6"/><path d="M37 22 L44 15 L51 22" fill="none" stroke="#eeeade" stroke-width="2"/></g>
+            <g id="tank-turret"><circle cx="44" cy="44" r="11" fill="#303c2c" stroke="#f0d397"/><path d="M44 44 V18" stroke="#f0d397" stroke-width="4"/></g>
+          </svg><span>车体 / 炮塔</span>
+        </div>
       </div>
       <button id="pause-button" class="hud-button">Esc 暂停</button>
       <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>
-      <div id="scoreboard" hidden><span class="eyebrow">本局战况 / TAB</span><h2>中国军队 · 台儿庄</h2><div id="scoreboard-stats"></div><p id="force-status" class="force-status"></p><p>按住 Tab 查看 · 松开继续观察战场</p></div>
+      <div id="scoreboard" hidden aria-label="台儿庄战况"><div class="scoreboard-heading"><div id="scoreboard-objectives" aria-label="据点控制"></div><span id="scoreboard-clock" aria-label="剩余时间">10:00</span><div id="scoreboard-stats"></div></div><div id="squad-score-table" aria-label="各小队按武器分类的本局击杀"></div><p class="scoreboard-hint"><kbd>Tab</kbd> 战况　<kbd>Alt</kbd> 交互</p></div>
     </section>
     <section id="overlay" class="overlay" hidden>
       <div class="dialog">
@@ -113,7 +123,7 @@
           <small>不改变战局 · 仅当前页面有效 · 自动降级与后期尚未接入</small>
         </fieldset>
         <button id="back-menu" class="text-button">返回作战大厅</button>
-        <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；连续完整控制三点20秒获胜。</p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>
+        <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；连续完整控制三点20秒获胜。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>

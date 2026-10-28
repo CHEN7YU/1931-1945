@@ -24,7 +24,8 @@ function fixture() {
 }
 test('unit, person, weapon, vehicle and seat identities have independent owners', () => {
   const { world, actors, vehicle } = fixture();
-  assert.equal(world.units.size, 2); assert.equal(world.soldiers.size, 5); assert.equal(world.weapons.size, 6);
+  assert.equal(world.units.size, 2); assert.equal(world.soldiers.size, 5); assert.equal(world.weapons.size, 7);
+  assert.equal(world.weapons.get(vehicle.machineGuns[0].id), vehicle.machineGuns[0]);
   assert.equal(occupiedVehicle(world, actors[0]), vehicle);
   assert.equal(controlledWeapon(world), vehicle.weapon);
   assert.equal(vehicle.seats[0].occupantId, actors[0].id);

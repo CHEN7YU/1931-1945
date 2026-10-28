@@ -95,7 +95,7 @@ export function createNraMotion(profile, actor) {
   const ready = nativePoseIntent(actor) === 'aim';
   const motion = { profile, aim: 0, lowReady: profile.lowReadyCarry && !ready ? 1 : 0,
     cheekWeight: profile.headAim && ready ? 1 : 0, headGoal: null,
-    bodyLean: 0, runLean: .11 + .12 * Math.sin(seed * 7.7) ** 2,
+    bodyLean: 0, runLean: .23 + .03 * Math.sin(seed * 7.7) ** 2,
     fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
     legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
@@ -144,7 +144,7 @@ export function advanceNraMotion(actor, dt) {
     if (motion.lowReady > .999) motion.lowReady = 1;
   }
   const leanTarget = !motion.profile.leanPivot ? 0 : actor.locomotion.speed > .2
-    ? motion.runLean * (pace === 'walk' ? .3 : (.65 + .60 * motion.gaitCharge) * (1 - .8 * motion.gaitAim))
+    ? motion.runLean * (pace === 'walk' ? .3 : (.85 + .55 * motion.gaitCharge) * (1 - .8 * motion.gaitAim))
     : actor.tactics?.lastSeen ? motion.fireLean : 0;
   motion.bodyLean += (leanTarget - motion.bodyLean) * (1 - Math.exp(-dt / .18));
   const target = motion.speed > .15 ? 1 : 0;

@@ -16,7 +16,13 @@ const copySource = value => {
     !['unitId', 'soldierId', 'weaponId'].every(field => typeof value[field] === 'string' && value[field]) ||
     value.team !== (value.credit === 'enemy' ? 'enemy' : 'friendly') ||
     !['vehicleId', 'seatId'].every(field => value[field] == null || typeof value[field] === 'string')) throw new Error('Combat feedback requires an original attack source');
+  const classification = {};
+  if (value.weaponClass != null) {
+    if (!['weaponClass', 'squadId', 'unitName'].every(field => typeof value[field] === 'string' && value[field])) throw new Error('Attack classification requires immutable weapon and squad labels');
+    for (const field of ['weaponClass', 'squadId', 'unitName']) classification[field] = value[field];
+  }
   return Object.freeze({ credit: value.credit, team: value.team, unitId: value.unitId, soldierId: value.soldierId,
+    ...classification,
     weaponId: value.weaponId, vehicleId: value.vehicleId ?? null, seatId: value.seatId ?? null });
 };
 const copyTarget = value => {

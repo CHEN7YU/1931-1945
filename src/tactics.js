@@ -4,7 +4,7 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.z);
 
 export function createTactics(id, squad, slot) {
-  return { id, squad, slot: slot % 10, mode: 'advance', lastSeen: null, threatKind: 'person', threatSense: null, threatId: null,
+  return { id, squad, slot: slot % 11, mode: 'advance', lastSeen: null, threatKind: 'person', threatSense: null, threatId: null,
     observedAt: null, engagementPoint: null, lastSightCheck: null, forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
 }
 
@@ -120,10 +120,10 @@ export function selectCover({ state, position, threat, slots, claims, now, block
 export function objectiveDestination(state, position, objective) {
   if (!validPoint(position) || !validPoint(objective) || !Number.isFinite(objective.radius) || objective.radius <= 0 ||
     !Number.isInteger(state.slot) || !Number.isInteger(state.squad)) throw new RangeError('Objective advance requires an assigned squad and capture area');
-  const lane = (state.squad % 3 - 1) * 3.2;
-  const slot = state.slot % 10, x = lane + (slot % 3 - 1) * 1.1, z = (Math.floor(slot / 3) - 1.5) * 1.25;
-  const scale = Math.min(1, (objective.radius - 1) / Math.max(1, Math.hypot(x, z)));
-  return { x: objective.x + x * scale, z: objective.z + z * scale };
+  const index = state.squad % 10 * 11 + state.slot;
+  const angle = index * Math.PI * (3 - Math.sqrt(5));
+  const radius = (objective.radius - 1.5) * Math.sqrt((index + .5) / 110);
+  return { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
 }
 
 export function objectiveAdvanceRequired(actor, objective, threatDistance, closeRange = 35) {
@@ -131,6 +131,10 @@ export function objectiveAdvanceRequired(actor, objective, threatDistance, close
     !Number.isFinite(threatDistance) || threatDistance < 0) throw new RangeError('Mission decision needs finite objective and observed distance');
   if (!actor.friendly || actor.playerUnit && actor.order !== 'advance') return false;
   if (Math.hypot(actor.position.x - objective.x, actor.position.z - objective.z) <= objective.radius * .7) return false;
+  const reserved = actor.tactics.personalSlot;
+  const goal = reserved?.objectiveId === objective.id && reserved.point
+    ? reserved.point : objectiveDestination(actor.tactics, actor.position, objective);
+  if (Math.hypot(actor.position.x - goal.x, actor.position.z - goal.z) < .9) return false;
   // One stable covering element per squad; the remaining soldiers keep closing on the objective.
   return threatDistance > closeRange ? actor.tactics.slot % 4 !== 0 :
     threatDistance > 18 && actor.tactics.slot % 3 !== 0;
@@ -191,9 +195,7 @@ export function assignAssaultObjectives(formations, objectives) {
 }
 
 export function assaultDestination(actor, objective) {
-  const angle = actor.index * Math.PI * 2 / 11 + actor.formation.index * 2.4;
-  const radius = Math.min(objective.radius - 2, 3 + actor.index % 3 * 1.8);
-  return { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
+  return objectiveDestination({ squad: actor.formation.index, slot: actor.index }, actor.position, { ...objective, radius: objective.radius - .6 });
 }
 
 export function enemyAssaultAction(state, position, objective, now, hasTarget) {

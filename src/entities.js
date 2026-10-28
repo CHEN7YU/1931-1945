@@ -3,6 +3,8 @@ import { nativeMuzzleLocal, nativeGaitDrop, nativeEyeLocal, syncNativeAimGoal } 
 import { FIRING_POSES } from './combat-posture.js';
 import { infantryWeaponProfile } from './rifle-action.js';
 import { CHI_HA, CHI_HA_SEATS, CHI_HA_MG, CHI_HA_MG_MOUNTS } from './chi-ha.js';
+import { TANK_MACHINE_GUN } from './player-tank.js';
+import { attackCategory } from './battle-stats.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -87,6 +89,9 @@ export function createVehicleEntity(registry, { id, unitId, type, position, team
     registerWeapon(registry, { mount: mount.id, settings: CHI_HA_MG, ammo: CHI_HA_MG.magazine,
       nextShot: 0, reloadUntil: 0, cooldownUntil: 0, burstLeft: CHI_HA_MG.burst,
       shots: 0, yaw: 0, pitch: 0, mode: 'search', targetId: null }, `${id}:mg-${mount.id}`, id, type));
+  else if (type === 'tank') vehicle.machineGuns = [registerWeapon(registry,
+    { mount: 'coax', settings: TANK_MACHINE_GUN, ammo: TANK_MACHINE_GUN.magazine,
+      nextShot: 0, reloadUntil: 0, shots: 0, mode: 'idle' }, `${id}:mg-coax`, id, type)];
   registry.vehicles.set(id, vehicle);
   return vehicle;
 }
@@ -181,6 +186,8 @@ export function captureAttackSource(registry, actor, weapon = soldierWeapon(regi
     ![actor.id, actor.unitId, actor.vehicleId].includes(weapon.ownerId)) throw new Error('Attack source requires an owned registered weapon');
   return Object.freeze({ credit: actor === controlledSoldier(registry) ? 'player' : actor.team === 'friendly' ? 'ally' : 'enemy',
     team: actor.team, unitId: actor.unitId, soldierId: actor.id, weaponId: weapon.id,
+    weaponClass: attackCategory(weapon), squadId: registry.units.get(actor.unitId).squadId ?? actor.unitId,
+    unitName: registry.units.get(actor.unitId).scoreLabel ?? actor.unitId,
     vehicleId: actor.vehicleId, seatId: actor.seatId });
 }
 

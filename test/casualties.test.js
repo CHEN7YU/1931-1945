@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation } from '../src/casualties.js';
+import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty } from '../src/casualties.js';
+import { circleBlocked } from '../src/core.js';
 
 function corpse(index, time = 0) {
   const actor = { id: `soldier-${index}`, health: 0, heading: .5, position: new Vector3(), deathTime: time };
@@ -41,4 +42,30 @@ test('casualties reject living actors, invalid variants and future simulation ti
   assert.throws(() => expiredCorpses([corpse(2, 10)], 9), /invalid casualty/);
   assert.throws(() => expiredCorpses([{ ...actor, casualty: null }], 10), /invalid casualty/);
   assert.throws(() => expiredCorpses([], NaN), /simulation time/);
+});
+
+test('falling body envelopes select a clear direction and bounded floor slide beside walls, corners and narrow passages', () => {
+  const bounds = variant => variant < 2 ? { min: [-1.1, 0, -.40], max: [1.1, .6, .40] }
+    : { min: [-.40, 0, -1.1], max: [.40, .6, 1.1] };
+  for (const [position, obstacles] of [
+    [new Vector3(.43, 0, 0), [{ minX: -2, maxX: 0, minZ: -8, maxZ: 8, height: 3 }]],
+    [new Vector3(.43, 0, .43), [{ minX: -2, maxX: 0, minZ: -8, maxZ: 8, height: 3 },
+      { minX: -8, maxX: 8, minZ: -2, maxZ: 0, height: 3 }]],
+    [new Vector3(0, 0, 0), [{ minX: -.9, maxX: -.675, minZ: -8, maxZ: 8, height: 3 },
+      { minX: .675, maxX: .9, minZ: -8, maxZ: 8, height: 3 }]],
+  ]) {
+    const actor = corpse(2); actor.position.copy(position); actor.heading = .3;
+    const blocked = (point, radius, height) => circleBlocked(point.x, point.z, radius, obstacles, point.y, height);
+    const state = placeCasualty(actor, actor.casualty, bounds, blocked);
+    assert.equal(state.wallLimited, false);
+    assert.ok(Math.hypot(state.offset.x, state.offset.z) <= 2.001);
+    assert.deepEqual(placeCasualty(actor, actor.casualty, bounds, blocked), state, 'sampling cannot reroll or advance a corpse');
+    const box = bounds(state.variant), heading = actor.heading + state.yaw;
+    for (let x = box.min[0]; x <= box.max[0]; x += .1) for (let z = box.min[2]; z <= box.max[2]; z += .1) {
+      const point = { x: actor.position.x + state.offset.x + x * Math.cos(heading) + z * Math.sin(heading),
+        y: 0, z: actor.position.z + state.offset.z - x * Math.sin(heading) + z * Math.cos(heading) };
+      assert.equal(blocked(point, .12, .75), false);
+    }
+    assert.deepEqual(actor.position, position, 'presentation correction does not move the registered death/hit location');
+  }
 });

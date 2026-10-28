@@ -150,9 +150,9 @@ export function planeModel() {
   return historicalVehicleModel('plane');
 }
 
-export function weaponModel(type, state = null) {
+export function weaponModel(type, state = null, seat = 'commander') {
   if (type === 'infantry') return rifleModel(state);
-  if (type === 'tank' || type === 'plane') return vehicleWeaponView(type);
+  if (type === 'tank' || type === 'plane') return vehicleWeaponView(type, seat);
   const group = new THREE.Group();
   const steel = actorMaterials.dark, wood = actorMaterials.wood, uniform = actorMaterials.friendly;
   if (type === 'hammer') {
