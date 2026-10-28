@@ -7,7 +7,7 @@ import { prepareNraRig } from '../src/nra-rig.js';
 import { createNativePosturePoses } from '../src/nra-posture-pose.js';
 import { createNativeGaitProfile, applyNativeUpperBody } from '../src/nra-gait.js';
 import { createHeadAimProfile, createHeadAimProbe } from '../src/head-aim.js';
-import { createNraMotion, sampleNraMotion, nativeAimReady, advanceNraMotion, syncNativeAimGoal } from '../src/nra-motion.js';
+import { createNraMotion, sampleNraMotion, nativeEyeLocal, nativeMuzzleLocal, nativeAimReady, advanceNraMotion, syncNativeAimGoal } from '../src/nra-motion.js';
 import { shoulderPocket } from '../src/rifle-contacts.js';
 import { soldierEyePosition, soldierPostureHeight } from '../src/entities.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
@@ -110,6 +110,66 @@ test('pause and repeated sampling do not advance or mutate the simulation; missi
   assert.deepEqual(sampleNraMotion(f.actor).headAim, first);
   assert.throws(() => { first.eye[0] = 100; }, TypeError);
   assert.throws(() => createHeadAimProfile(f.normalized, f.bones, f.idle, f.postures, []), /eye surface/);
+});
+
+test('eye-only reuse preserves immutable local results, world projection and the head-free muzzle path', () => {
+  const f = fixture();
+  f.project('standing', true);
+  const before = JSON.stringify(f.actor.nativeMotion), first = nativeEyeLocal(f.actor);
+  for (let read = 0; read < 20; read++) {
+    assert.equal(nativeEyeLocal(f.actor), first);
+    soldierEyePosition(f.actor); soldierPostureHeight(f.actor);
+  }
+  advanceNraMotion(f.actor, 0);
+  assert.equal(nativeEyeLocal(f.actor), first);
+  assert.equal(JSON.stringify(f.actor.nativeMotion), before);
+  assert.throws(() => { first[0] = 100; }, TypeError);
+  f.actor.heading += .4; f.actor.position.y += .5;
+  assert.equal(nativeEyeLocal(f.actor), first, 'world position is applied after local reuse');
+  const eye = soldierEyePosition(f.actor);
+  assert.ok(new T.Vector3(eye.x, eye.y, eye.z).distanceTo(new T.Vector3(...first)
+    .applyAxisAngle(new T.Vector3(0, 1, 0), f.actor.heading).add(f.actor.position)) < 1e-8);
+  const full = sampleNraMotion(f.actor), muzzle = nativeMuzzleLocal(f.actor);
+  const expected = new T.Vector3(...f.profile.muzzle).applyQuaternion(new T.Quaternion(...full.weaponQuaternion))
+    .add(new T.Vector3(...full.weaponPosition));
+  assert.ok(expected.distanceTo(new T.Vector3(muzzle.x, muzzle.y, muzzle.z)) < 1e-10);
+  assert.equal(Object.hasOwn(sampleNraMotion(f.actor, false), 'headAim'), false);
+  f.actor.nativeMotion.cheekWeight = NaN;
+  assert.throws(() => nativeEyeLocal(f.actor), /simulation-owned target/);
+  f.actor.position.y = NaN;
+  assert.throws(() => nativeEyeLocal(f.actor), /calibrated motion state/);
+});
+
+test('eye reuse invalidates on every mutable local pose input and is isolated from unseen soldiers', () => {
+  const f = fixture();
+  f.project('standing', true);
+  const changes = [
+    actor => { actor.nativeMotion.profile = structuredClone(actor.nativeMotion.profile); },
+    ...['idleTime', 'distance', 'gaitCycles', 'phaseDistance', 'speed', 'strideScale', 'gaitCharge',
+      'gaitAim', 'weight', 'aim', 'bodyLean', 'lowReady', 'legLift'].map(name =>
+      actor => { actor.nativeMotion[name] += .05; }),
+    actor => { actor.nativeMotion.position.x += .1; },
+    actor => { actor.nativeMotion.position.z += .1; },
+    actor => { actor.position.x += .1; },
+    actor => { actor.position.z += .1; },
+    actor => { actor.locomotion.mode = 'sprint'; },
+    actor => { actor.rifleReady = false; },
+    actor => { actor.rifle = { action: 'reload' }; },
+    actor => { actor.nativeMotion.cheekWeight = .5; },
+    actor => { actor.nativeMotion.headGoal = structuredClone(actor.nativeMotion.headGoal); },
+    ...Object.keys(FIRING_POSES).map(name => actor => { actor.nativeMotion.posture[name] = .25; }),
+  ];
+  for (const change of changes) {
+    const actor = { ...f.actor, position: f.actor.position.clone(), locomotion: { ...f.actor.locomotion },
+      nativeMotion: structuredClone(f.actor.nativeMotion) };
+    const first = nativeEyeLocal(actor);
+    change(actor);
+    assert.deepEqual(nativeEyeLocal(actor), sampleNraMotion(actor).headAim.eye, change.toString());
+    const unseen = { ...actor, nativeMotion: structuredClone(actor.nativeMotion) };
+    assert.deepEqual(nativeEyeLocal(unseen), nativeEyeLocal(actor));
+    assert.equal(nativeEyeLocal(f.actor), sampleNraMotion(f.actor).headAim.eye);
+    assert.equal(first.length, 3);
+  }
 });
 
 test('raising, releasing and reloading use a continuous owned head blend independent of rendering history', () => {

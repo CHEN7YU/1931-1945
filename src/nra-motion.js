@@ -21,6 +21,7 @@ function sample(track, time) {
 
 const validPosition = position => position && ['x', 'y', 'z'].every(axis => Number.isFinite(position[axis]));
 const cycleFraction = phase => ((phase % 1) + 1) % 1;
+const eyeSamples = new WeakMap();
 
 export function nativeGaitParameters(motion) {
   const { profile } = motion;
@@ -164,6 +165,25 @@ export function syncNativeAimGoal(actor) {
   }
 }
 
+export function nativeEyeLocal(actor) {
+  const motion = actor.nativeMotion;
+  if (!motion?.profile?.headAim || !validPosition(actor.position)) throw new Error('Native eye requires a calibrated motion state');
+  const { profile } = motion;
+  // Profiles are calibrated once; mutable simulation inputs must match exactly, even within a substep.
+  const inputs = [profile, motion.idleTime, motion.distance, motion.position.x, motion.position.z,
+    actor.position.x, actor.position.z, motion.gaitCycles, motion.phaseDistance, motion.speed,
+    motion.strideScale, motion.gaitCharge, motion.gaitAim, motion.weight, motion.aim, motion.bodyLean,
+    motion.lowReady, motion.legLift, actor.locomotion.mode, nativePoseIntent(actor),
+    motion.headGoal, motion.cheekWeight,
+    ...Object.keys(FIRING_POSES).map(name => motion.posture[name])];
+  let retained = eyeSamples.get(motion);
+  if (!retained || inputs.length !== retained.inputs.length || inputs.some((value, index) => value !== retained.inputs[index])) {
+    retained = { inputs, eye: sampleNraMotion(actor).headAim.eye };
+    eyeSamples.set(motion, retained);
+  }
+  return retained.eye;
+}
+
 export function sampleNraMotion(actor, includeHead = true) {
   const motion = actor.nativeMotion;
   if (!motion || !validPosition(actor.position)) throw new Error('Native motion state is missing');
@@ -261,7 +281,7 @@ export function nativeAimReady(actor) {
 }
 
 export function nativeMuzzleLocal(actor) {
-  const pose = sampleNraMotion(actor);
+  const pose = sampleNraMotion(actor, false);
   const result = new Vector3().fromArray(actor.nativeMotion.profile.muzzle)
     .applyQuaternion(new Quaternion().fromArray(pose.weaponQuaternion))
     .add(new Vector3().fromArray(pose.weaponPosition));

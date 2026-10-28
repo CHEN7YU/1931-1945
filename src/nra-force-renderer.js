@@ -178,7 +178,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           view.update(actor, now, controlledId); tiers.set(actor.id, 'skinned'); summary.near++;
           summary.batches += view.drawBatches;
         } else {
-          const pose = sampleNraMotion(actor);
+          const pose = sampleNraMotion(actor, false);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;

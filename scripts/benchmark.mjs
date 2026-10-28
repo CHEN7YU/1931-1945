@@ -62,6 +62,15 @@ async function main() {
   await writeFile(join(directory, 'sources.json'), JSON.stringify(sources, null, 2));
   const repeats = integer('BENCH_REPEATS', 2, 1, 5), seconds = integer('BENCH_SECONDS', 18, 5, 60);
   const warmup = integer('BENCH_WARMUP', 3, 1, 15), seed = integer('BENCH_SEED', 1938, 0, 0xffffffff);
+  const minimumTime = integer('BENCH_MIN_TIME', 0, 0, 180);
+  const baselinePath = process.env.BENCH_BASELINE_POSE;
+  const poseModules = ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
+  const baselineSources = baselinePath ? JSON.parse(await readFile(resolve(baselinePath), 'utf8')) : null;
+  if (baselinePath) {
+    for (const name of poseModules) assert.equal(typeof baselineSources[name], 'string', `baseline snapshot must contain ${name}`);
+    await writeFile(join(directory, 'baseline-pose-sources.json'), JSON.stringify(
+      Object.fromEntries(poseModules.map(name => [name, baselineSources[name]])), null, 2));
+  }
   const scenarios = (process.env.BENCH_SCENARIOS || 'duel,full').split(',');
   assert.ok(scenarios.every(scenario => ['duel', 'full'].includes(scenario)));
   const quality = process.env.BENCH_QUALITY || 'high';
@@ -73,27 +82,41 @@ async function main() {
     memoryGiB: totalmem() / 1024 ** 3, os: `${platform()} ${release()}`, browser: browser.version(), headless: true,
     gpu: system.gpu.devices, gpuFeatures: system.gpu.featureStatus,
     viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, quality, seed, warmupSeconds: warmup,
-    sampleSeconds: seconds, cpuSampleIntervalUs: 1000, repeats,
+    sampleSeconds: seconds, minimumSimulationTime: minimumTime, cpuSampleIntervalUs: 1000, repeats,
+    baselinePoseSource: baselinePath ? resolve(baselinePath) : null,
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     dirtyFiles: execFileSync('git', ['status', '--short'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean),
     limitation: 'Seed fixes random choices, not exact per-frame scheduling. Frame intervals include renderer/browser/OS work; CPU renderMs is submission, not GPU timing. Inclusive CPU entries overlap.' };
   await writeFile(join(directory, 'environment.json'), JSON.stringify(metadata, null, 2));
   const summaries = [];
   try {
-    for (const scenario of scenarios) for (let repeat = 1; repeat <= repeats; repeat++) {
+    for (const scenario of scenarios) for (let repeat = 1; repeat <= repeats; repeat++)
+      for (const variant of baselineSources ? repeat % 2 ? ['baseline', 'current'] : ['current', 'baseline'] : ['current']) {
       const context = await browser.newContext({ viewport: metadata.viewport, deviceScaleFactor: 1 });
       const page = await context.newPage(), errors = [], events = [];
+      const poseRequests = new Set();
+      if (baselineSources) await page.route(/\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
+        const response = await route.fetch(), current = await response.text();
+        const name = new URL(route.request().url()).pathname.slice(1), original = baselineSources[name];
+        const three = current.match(/from\s+["']([^"']*\/three\.js[^"']*)["']/)?.[1];
+        if (original.includes("from 'three'")) assert.ok(three, 'Vite must resolve the shared Three.js module for both variants');
+        poseRequests.add(name);
+        await route.fulfill({ response, body: variant === 'baseline'
+          ? original.replace("from 'three'", `from '${three}'`) : current });
+      });
       page.on('pageerror', error => errors.push(error.message));
       page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
       const cdp = await context.newCDPSession(page);
-      const name = `${scenario}-${repeat}`;
+      const name = `${scenario}-${repeat}${baselineSources ? `-${variant}` : ''}`;
       let profileStarted = false;
       try {
         const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
         url.searchParams.set('benchmark', scenario); url.searchParams.set('seed', String(seed));
         await page.goto(url.href);
-        await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
+        await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000, polling: 250 });
+        await page.locator('#deploy').waitFor({ state: 'visible', timeout: 90000 });
         assert.equal(await page.evaluate(() => window.__battle.benchmark?.scenario), scenario, 'benchmarks must not silently run against a production build without overrides');
+        if (baselineSources) assert.ok(poseModules.every(name => poseRequests.has(name)), 'paired run must load all three selected pose modules');
         await page.locator('#menu-quality').selectOption(quality);
         await page.locator('#deploy').click();
         const initial = await page.evaluate(() => {
@@ -106,13 +129,17 @@ async function main() {
         if (scenario === 'full') {
           events.push({ input: 'KeyW down; straight route from registered base to z<=42', wall: Date.now() });
           await page.keyboard.down('w');
-          await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state === 'dead', null, { timeout: 60000 });
+          await page.waitForFunction(() => {
+            const data = window.__battle;
+            return data.position.z <= 42 || data.state === 'dead';
+          }, null, { timeout: 60000, polling: 100 });
           await page.keyboard.up('w');
           events.push({ input: 'KeyW up', observed: await page.evaluate(() => ({ time: window.__battle.time, position: window.__battle.position, state: window.__battle.state })) });
         } else events.push({ input: 'hold registered 5v5 position; autonomous combat', wall: Date.now() });
-        await page.waitForFunction(() => window.__battle.combatStats.aiRifleShots > 0, null, { timeout: 90000 });
+        await page.waitForFunction(() => window.__battle.combatStats.aiRifleShots > 0, null, { timeout: 90000, polling: 500 });
+        if (minimumTime) await page.waitForFunction(minimum => window.__battle.time >= minimum, minimumTime, { timeout: 180000, polling: 1000 });
         const sampleStart = await page.evaluate(() => ({ now: performance.now(), time: window.__battle.time, clock: window.__battle.simulationClock, shots: window.__battle.combatStats.aiRifleShots,
-          serial: window.__battleTelemetry.totalFrames }));
+          corpses: window.__battle.corpses.count, serial: window.__battleTelemetry.totalFrames }));
         await cdp.send('Profiler.enable');
         await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
         await cdp.send('Profiler.start'); profileStarted = true;
@@ -120,12 +147,13 @@ async function main() {
         const { profile } = await cdp.send('Profiler.stop'); profileStarted = false;
         const result = await page.evaluate(() => ({ now: performance.now(), frames: window.__battleTelemetry.frames,
           final: { time: window.__battle.time, state: window.__battle.state, combat: window.__battle.combatStats, population: window.__battle.population,
-            position: window.__battle.position, graphics: window.__battle.graphics, simulationClock: window.__battle.simulationClock } }));
+            corpses: window.__battle.corpses, position: window.__battle.position, graphics: window.__battle.graphics, simulationClock: window.__battle.simulationClock } }));
         const frames = result.frames.filter(frame => frame.serial > sampleStart.serial && frame.now <= result.now);
         assert.ok(frames.length >= 60, 'raw sample needs enough active/deployment frames, not a menu/paused scene');
         assert.equal(result.frames.some(frame => frame.serial === sampleStart.serial + 1), true, 'raw frame buffer did not overwrite the sample');
         const metrics = Object.fromEntries(['intervalMs', 'cpuMs', 'aiMs', 'pathMs', 'coverMs', 'sensingMs', 'playerMs', 'doorsMs', 'effectsMs', 'hudMs', 'instancesMs', 'renderMs'].map(key => [key, distribution(frames.map(frame => frame[key]))]));
-        const summary = { name, scenario, repeat, sampleWallSeconds: (result.now - sampleStart.now) / 1000,
+        const summary = { name, scenario, repeat, variant, sampleWallSeconds: (result.now - sampleStart.now) / 1000,
+          corpsesBefore: sampleStart.corpses, corpsesAfter: result.final.corpses.count,
           simulatedSeconds: result.final.time - sampleStart.time, simulatedWallRatio: (result.final.time - sampleStart.time) / ((result.now - sampleStart.now) / 1000),
           shotsBefore: sampleStart.shots, shotsAfter: result.final.combat.aiRifleShots,
           initialAlive: { friendly: initial.population.friendly.alive, enemy: initial.population.enemy.alive },
@@ -156,7 +184,11 @@ async function main() {
           const { profile } = await cdp.send('Profiler.stop');
           await writeFile(join(directory, `${name}-failed.cpuprofile`), JSON.stringify(profile));
         }
-        const state = await page.evaluate(() => window.__battle ? { state: window.__battle.state, time: window.__battle.time, population: window.__battle.population, combat: window.__battle.combatStats } : null);
+        const state = await page.evaluate(() => {
+          const data = window.__battle;
+          return data ? { state: data.state, time: data.time, population: data.population, combat: data.combatStats,
+            simulationClock: data.simulationClock, telemetry: window.__battleTelemetry } : null;
+        });
         await writeFile(join(directory, `${name}-error.json`), JSON.stringify({ error: error.message, state, events, errors }, null, 2));
         throw error;
       } finally { await context.close(); }
