@@ -6,9 +6,15 @@ import { createDoorWorld } from './door-world.js';
 import { bakeSurfaceGeometry } from './surface-uv.js';
 import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
 import { damagedSurfaceGeometry, craterGeometry, addStaticWrecks } from './war-damage.js';
+import { makeOutskirtsLayout, outskirtsObstacles } from './outskirts-layout.js';
+import { BATTLE_AREA } from './battle-boundary.js';
 
 export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
-  [4, -4, 17, 12], [-10, 52.5, 34, 5], [-16, 62, 7, 14], [8, -16, 16, 13]];
+  [4, -4, 17, 12], [0, 52.5, 87, 4], [-16, 62, 7, 14],
+  [-29.5, 62, 3.4, 24], [31.75, 52.5, 4, 43],
+  [0, -8.1, 108, 3.4], [0, -25.5, 108, 4],
+  [-36, 18, 16, 12], [27, 16.5, 14, 13], [-9.5, -34.5, 5, 11],
+  [8, -16, 16, 13]];
 
 export function createRoofGeometry(w, d, rise, meters) {
   const vertices = [], uv = [], distances = [0], segments = 16;
@@ -34,6 +40,7 @@ export function createRoofGeometry(w, d, rise, meters) {
 export function makeWorld(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
   const town = makeTownLayout();
+  const outskirts = makeOutskirtsLayout();
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   let seed = 1938;
   const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -294,11 +301,11 @@ export function makeWorld(scene, surface) {
   }
 
   let buildingIndex = 0;
-  function building(x, z, w, d, height, ruined = false) {
+  function building(x, z, w, d, height, ruined = false, { collider = true } = {}) {
     const mat = plaster[Math.floor(random() * plaster.length)];
     const wallHeight = ruined ? Math.min(3.8, height) : height;
     box(x, wallHeight / 2, z, w, wallHeight, d, mat, true);
-    obstacle(x, z, w, d, height + (ruined ? .5 : 3));
+    if (collider) obstacle(x, z, w, d, height + (ruined ? .5 : 3));
     box(x, .34, z, w + .14, .68, d + .14, brick, true);
     if (!ruined) roof(x, height, z, w + 1.6, d + 1.8, 2.6);
     else {
@@ -329,7 +336,7 @@ export function makeWorld(scene, surface) {
   }
   obstacles.push(...town.obstacles);
   for (const shop of town.buildings) {
-    if (!shop.ruined) roof(shop.x, shop.height, shop.z, shop.w + .8, shop.d + .8, 1.65);
+    if (!shop.ruined) roof(shop.x, shop.height, shop.z, shop.w + .8, shop.d + .8, shop.kind === 'home' ? 1.35 : 1.65);
     else {
       const partial = mesh(createRoofGeometry(shop.w + .8, (shop.d + .8) * .44, 1.65, roofMat.userData.metersPerTile),
         roofMat, shop.x, shop.height, shop.z - shop.d * .28, true);
@@ -355,12 +362,13 @@ export function makeWorld(scene, surface) {
           Math.abs(Math.sin(rubble.rotation.y)) * w + Math.abs(Math.cos(rubble.rotation.y)) * d, h);
       }
     }
+    if (shop.kind === 'home') continue;
     const group = new THREE.Group();
     group.position.set(shop.x + shop.facing * shop.w / 2, 0, shop.doorZ);
     group.rotation.y = shop.facing * Math.PI / 2;
     scene.add(group);
     sign(shop.name, 0, 2.98, .18, 2.85, group);
-    if (!shop.ruined) {
+    if (!shop.ruined && shop.kind === 'shop') {
       box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
       for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05], [side * 1.22, 2.58, 1.05], .025, timber, group);
     }
@@ -373,6 +381,48 @@ export function makeWorld(scene, surface) {
   building(-7, -90, 24, 11, 8);
   building(-9, 92, 21, 10, 7);
   sign('臺 兒 莊', -7, 6.8, -84.3, 10);
+  for (const house of outskirts.buildings) {
+    const { x, z, w, d, height, ruined, near } = house;
+    if (near) {
+      building(x, z, w, d, height, ruined, { collider: false });
+      continue;
+    }
+    const h = ruined ? height * .6 : height;
+    const mat = plaster[Number(house.id.split('-').at(-1)) % plaster.length];
+    for (const side of [-1, 1]) {
+      box(x + side * (w / 2 - .2), h / 2, z, .4, h, d, mat, true);
+      box(x, h / 2, z + side * (d / 2 - .2), w, h, .4, mat, true);
+      for (const offset of [-w * .27, w * .27]) {
+        box(x + offset, 1.7, z + side * (d / 2 + .015), 1.15, 1.4, .08, ruined ? charred : dark);
+      }
+    }
+    box(x, .24, z, w + .1, .48, d + .1, brick, true);
+    const roofDepth = ruined ? d * .42 : d + .8;
+    mesh(createRoofGeometry(w + .8, roofDepth, 1.8, roofMat.userData.metersPerTile),
+      roofMat, x, height, z - (ruined ? d * .27 : 0), true).userData.keepUV = true;
+    if (ruined) {
+      for (const dz of [0, d * .32]) {
+        beam([x - w / 2, h, z + dz], [x, height + 1.8, z + dz], .1, charred);
+        beam([x, height + 1.8, z + dz], [x + w * .4, h * .7, z + dz + .5], .1, charred);
+      }
+    } else box(x, height + 1.85, z, .3, .18, d + 1, roofMat);
+  }
+  // Match the visible plinth as well as the existing closed-building collider.
+  obstacles.push(...outskirtsObstacles(outskirts));
+  for (const [x, z, rotation] of [
+    ...[-72, -48, 0, 24, 48, 72].flatMap(z => [
+      [BATTLE_AREA.minX, z, Math.PI / 2], [BATTLE_AREA.maxX, z, -Math.PI / 2],
+    ]),
+    ...[-84, -60, -36, 12, 36, 60, 84].flatMap(x => [
+      [x, BATTLE_AREA.minZ, 0], [x, BATTLE_AREA.maxZ, Math.PI],
+    ]),
+  ]) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z); group.rotation.y = rotation;
+    scene.add(group);
+    box(0, 1.1, 0, .15, 2.2, .15, charred, false, group);
+    sign('戰區邊界', 0, 1.8, 0, 2.1, group);
+  }
 
   const bagGeometry = new THREE.SphereGeometry(1, 10, 6);
   function sandbags(x, z, count, rotate = false) {
@@ -483,6 +533,8 @@ export function makeWorld(scene, surface) {
   const leaves = new THREE.MeshStandardMaterial({ map: leafTexture, alphaTest: .5, side: THREE.DoubleSide, roughness: 1 });
   for (let i = 0; i < 34; i++) {
     const x = (i % 2 ? -1 : 1) * (83 + random() * 24), z = (random() - .5) * 230;
+    if (outskirts.buildings.some(house => Math.abs(x - house.x) < house.w / 2 + 3 &&
+      Math.abs(z - house.z) < house.d / 2 + 3)) continue;
     cylinder(x, 3, z, .18 + random() * .1, 6, timber);
     for (let b = 0; b < 5; b++) {
       const a = random() * 6.28, bx = x + Math.cos(a) * 2, bz = z + Math.sin(a) * 2, y = 5 + random() * 2;
@@ -520,11 +572,26 @@ export function makeWorld(scene, surface) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(12.9, 13, 64), new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(point.x, .055, point.z); scene.add(ring);
   }
-  for (let i = 0; i < 40; i++) {
-    const x = (i % 2 ? -1 : 1) * (126 + random() * 75), z = (random() - .5) * 350;
-    const h = 3 + random() * 5;
-    box(x, h / 2, z, 10 + random() * 12, h, 10, plaster[i % plaster.length]);
-    roof(x, h, z, 14, 13, 2);
+  // Pre-tinted haze keeps the distant ridges from tone-mapping into white silhouettes.
+  const hillMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false });
+  const hillBase = new THREE.Color(0x8e8d86), hillCrest = new THREE.Color(0x61746b), hillColor = new THREE.Color();
+  for (const hill of outskirts.hills) {
+    const geometry = new THREE.PlaneGeometry(hill.w, hill.d, 36, 24);
+    geometry.rotateX(-Math.PI / 2);
+    const positions = geometry.attributes.position;
+    const colors = [];
+    for (let i = 0; i < positions.count; i++) {
+      const u = positions.getX(i) / hill.w + .5, v = positions.getZ(i) / hill.d + .5;
+      const envelope = Math.pow(Math.max(0, Math.sin(u * Math.PI) * Math.sin(v * Math.PI)), 1.4);
+      const ridge = .72 + .18 * Math.sin(u * Math.PI * 3 + hill.phase) + .1 * Math.cos(v * Math.PI * 4 + u * 5);
+      const elevation = envelope * ridge;
+      positions.setY(i, elevation * hill.height - .08);
+      hillColor.copy(hillBase).lerp(hillCrest, Math.min(1, elevation * 1.4));
+      colors.push(hillColor.r, hillColor.g, hillColor.b);
+    }
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    mesh(geometry, hillMaterial, hill.x, 0, hill.z);
   }
 
   scene.updateMatrixWorld(true);
@@ -563,6 +630,6 @@ export function makeWorld(scene, surface) {
     bridgeSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
   }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron);
-  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, visibility, doorSystem,
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, outskirts, visibility, doorSystem,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

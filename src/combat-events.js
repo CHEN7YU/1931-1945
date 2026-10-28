@@ -6,6 +6,9 @@ const point = value => {
   return Object.freeze({ x: value.x, y: value.y, z: value.z });
 };
 const copySource = value => {
+  if (value?.credit === 'environment' && value.cause === 'boundary' && typeof value.subjectId === 'string' && value.subjectId) {
+    return Object.freeze({ credit: 'environment', cause: 'boundary', subjectId: value.subjectId });
+  }
   if (value?.credit === 'environment' && value.cause === 'crash' && typeof value.vehicleId === 'string' && value.vehicleId) {
     return Object.freeze({ credit: 'environment', cause: 'crash', vehicleId: value.vehicleId });
   }

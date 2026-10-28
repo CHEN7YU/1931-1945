@@ -7,6 +7,19 @@ import * as THREE from 'three';
 import { createDoorWorld } from '../src/door-world.js';
 
 const makeDoor = () => makeDoors(makeTownLayout()).find(door => door.id === 'west-0-east-door');
+test('new courtyard gate leaves match their authored openings and stay clear when open', () => {
+  const town = makeTownLayout(), doors = makeDoors(town);
+  assert.equal(doors.length, 93);
+  for (const gate of doors.filter(door => door.width === 2.4)) {
+    assert.ok(Math.abs(gate.height - 1.85) < 1e-9);
+    assert.equal(gate.state, 'open');
+    assert.equal(circleBlocked(gate.x, gate.z, .46, [doorCollider(gate)]), false);
+    requestDoor(gate, { x: gate.x, z: gate.z - 2 });
+    advanceDoor(gate, 1);
+    assert.equal(gate.state, 'closed');
+    assert.equal(circleBlocked(gate.x, gate.z, .46, [doorCollider(gate)]), true);
+  }
+});
 test('closed door blocks the actual opening and opens with an oriented collider', () => {
   const door = makeDoor();
   assert.equal(door.state, 'closed');
