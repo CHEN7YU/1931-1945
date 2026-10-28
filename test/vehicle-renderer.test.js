@@ -15,7 +15,7 @@ function fixture() {
 }
 test('vehicle views project independent hull/turret/flight pose without modifying simulation or owning its records', () => {
   const { registry, scene, tank, plane, renderer } = fixture();
-  tank.heading = .4; tank.turretYaw = 1.1;
+  tank.heading = .4; tank.turretYaw = 1.1; tank.turretPitch = .25;
   plane.heading = -.6; plane.pitch = .2; plane.roll = -.15;
   const before = JSON.stringify([...registry.vehicles.values()]);
   renderer.update(registry.vehicles.values());
@@ -25,10 +25,46 @@ test('vehicle views project independent hull/turret/flight pose without modifyin
   assert.deepEqual(hull.position, tank.position);
   assert.equal(hull.rotation.y, .4);
   assert.ok(Math.abs(hull.userData.turret.rotation.y - .7) < 1e-10);
+  assert.equal(hull.userData.gun.rotation.x, .25);
   assert.equal(aircraft.rotation.x, plane.pitch); assert.equal(aircraft.rotation.y, plane.heading); assert.equal(aircraft.rotation.z, plane.roll);
   renderer.update(registry.vehicles.values());
   assert.equal(renderer.model(tank.id), hull);
   assert.equal(scene.children.length, 2);
+  renderer.clear();
+});
+test('propeller presentation uses simulation time, freezes on repeated time and wrecks, and resets with a new battle', () => {
+  const { registry, plane, renderer } = fixture();
+  renderer.update(registry.vehicles.values(), 1);
+  const propeller = renderer.model(plane.id).userData.propeller;
+  assert.equal(propeller.rotation.z, 95);
+  const before = JSON.stringify(plane);
+  renderer.update(registry.vehicles.values(), 1);
+  assert.equal(propeller.rotation.z, 95);
+  renderer.update(registry.vehicles.values(), 2);
+  assert.equal(propeller.rotation.z, 190);
+  assert.equal(JSON.stringify(plane), before, 'rendering does not own simulation or weapon state');
+  plane.health = 0;
+  renderer.update(registry.vehicles.values(), 3);
+  assert.equal(propeller.rotation.z, 190);
+  renderer.clear();
+  plane.health = 180;
+  renderer.update(registry.vehicles.values(), 0);
+  assert.equal(renderer.model(plane.id).userData.propeller.rotation.z, 0);
+  assert.throws(() => renderer.update(registry.vehicles.values(), NaN), /presentation time/);
+  renderer.clear();
+});
+test('only the occupied aircraft external view is hidden behind its cockpit; ray identity and other views remain', () => {
+  const { registry, tank, plane, renderer } = fixture();
+  renderer.update(registry.vehicles.values(), 0, plane.id);
+  const aircraft = renderer.model(plane.id);
+  assert.equal(aircraft.visible, false);
+  assert.equal(renderer.model(tank.id).visible, true);
+  const ray = new THREE.Raycaster(plane.position.clone().add(new THREE.Vector3(0, 0, 15)), new THREE.Vector3(0, 0, -1), 0, 30);
+  assert.equal(ray.intersectObject(aircraft, true)[0].object.userData.vehicleId, plane.id);
+  renderer.update(registry.vehicles.values(), 1);
+  assert.equal(aircraft.visible, true);
+  renderer.update(registry.vehicles.values(), 1, tank.id);
+  assert.equal(renderer.model(tank.id).visible, true);
   renderer.clear();
 });
 test('actual vehicle ray targets are synchronised to owned position and bind by stable ID', () => {

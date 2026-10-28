@@ -874,7 +874,7 @@ function deploy(squadId, spawnId = null) {
       const reason = seatSoldier(entities, allies[i], transport, transport.seats[i].id);
       if (reason) throw new Error(reason);
     }
-    vehicleRenderer.update(entities.vehicles.values());
+    vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
   }
   weapon = weaponModel(type);
   weapon.traverse(mesh => {
@@ -896,7 +896,7 @@ function deploy(squadId, spawnId = null) {
     infantry: 'WASD 慢跑 · C 慢走 · Shift 冲刺 / 举枪屏息 · F 开关门<br>Y 队员 · X 命令 · 工兵：1 步枪 / 2 工具 · 按住左键建造',
     tank: 'W S 前后 · A D 转向 · 鼠标 炮塔 · 右键 放大<br>左键 主炮 · Y 切换车组 · R 装填 · Esc 暂停',
     mortar: 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点<br>左键 发射 · Y 炮组 · X 命令 · B 镜头步态 · Esc 暂停',
-    plane: 'W S 调节速度 · A D 转向 · 鼠标 控制机头<br>Space 爬升 · Ctrl 下降 · 左键 机炮 · 无法空中占点',
+    plane: 'W S 调节速度 · A D 转向 · 鼠标 控制机头<br>Space 爬升 · Ctrl 下降 · 左键 机枪 · 无法空中占点',
   }[type];
   allies.forEach(actor => { actor.order = 'follow'; });
   $('overlay').hidden = true;
@@ -2569,7 +2569,7 @@ function advanceBattleStep(dt, presentationTime) {
   })));
   if (benchmark) { telemetry.add('doorsMs', performance.now() - started); started = performance.now(); }
   updateVehicles(dt);
-  vehicleRenderer.update(entities.vehicles.values());
+  vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
   updateWeaponSimulation(dt);
   if (state === 'playing') updatePlayer(dt);
   for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
