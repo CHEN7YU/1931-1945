@@ -36,7 +36,7 @@
           <span class="map-stamp">TAIERZHUANG / 1938</span>
         </div>
         <div class="map-title"><div><span class="eyebrow">当前可玩战场</span><h2>台儿庄 <span>巷战</span></h2></div><span class="mode-tag">单人 · 人机</span></div>
-        <p class="map-description">穿过残损商铺、石板街与运河，依次夺取三个据点。原创主题布局，非历史地形复原；载具采用简化街机操控。</p>
+        <p class="map-description">A/B/C 三点同时争夺，双方可占领和反夺。连续控制三点20秒获胜；10分钟结束比较控制点数，同分比较累计控制点秒。原创布局，非历史地形复原。</p>
         <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
         <div id="squad-choices" class="squad-choices">
           <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 含工兵、轻机枪手</small></button>
@@ -52,8 +52,9 @@
       <footer class="menu-footer"><span><i></i> 原创场景 / CC0 扫描材质 / 美术迭代版</span><span>WASD 移动 <b>·</b> 右键举枪瞄准 <b>·</b> Y 切换队员 <b>·</b> X 小队命令</span><span>谨记历史，珍视和平</span></footer>
     </main>
     <section id="hud" hidden>
-      <div class="hud-top"><div class="battle-name">      台儿庄<span>中国军队 · 据点进攻</span><small id="force-status" class="force-status"></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div><div id="objectives"></div><div class="battle-time"><span id="timer">10:00</span><small>剩余作战时间</small></div></div>
-      <div class="objective-banner"><span id="objective-title">夺取 A · 南街路口</span><small id="objective-help">进入据点范围并清除守军</small><div class="capture-track"><div id="capture-fill"></div></div></div>
+      <div class="hud-top"><div id="objectives" aria-label="三点控制情况"></div><div class="battle-time"><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
+      <div class="hud-notices"><small id="hud-notice" role="status" hidden></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div>
+      <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
       <div id="hit-marker">×</div>
@@ -66,13 +67,12 @@
       <div id="grenade-warning" role="alert" hidden></div>
       <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
       <div class="hud-bottom">
-        <div class="squad-status"><div class="hud-label" id="unit-title">步兵小队</div>        <div id="members"></div><div id="section-status" hidden></div><span class="squad-hint" id="squad-hint">Y 切换存活队员</span></div>
-        <div class="battle-controls" id="battle-controls"></div>
+        <div class="squad-status"><div class="squad-heading"><span class="hud-label" id="unit-title">步兵小队</span><span id="section-status" hidden></span><kbd>Y</kbd></div><div id="members"></div></div>
         <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div id="grenade-status" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
       </div>
       <button id="pause-button" class="hud-button">Esc 暂停</button>
       <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>
-      <div id="scoreboard" hidden><span class="eyebrow">本局战况 / TAB</span><h2>中国军队 · 台儿庄</h2><div id="scoreboard-stats"></div><p>按住 Tab 查看 · 松开继续观察战场</p></div>
+      <div id="scoreboard" hidden><span class="eyebrow">本局战况 / TAB</span><h2>中国军队 · 台儿庄</h2><div id="scoreboard-stats"></div><p id="force-status" class="force-status"></p><p>按住 Tab 查看 · 松开继续观察战场</p></div>
     </section>
     <section id="overlay" class="overlay" hidden>
       <div class="dialog">
@@ -107,7 +107,7 @@
           <small>不改变战局 · 仅当前页面有效 · 自动降级与后期尚未接入</small>
         </fieldset>
         <button id="back-menu" class="text-button">返回作战大厅</button>
-        <p class="dialog-hint">浏览器需捕获鼠标才能瞄准；Esc 释放鼠标并暂停。<br />如不支持鼠标捕获，可按住右键拖动瞄准。</p>
+        <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；连续完整控制三点20秒获胜。</p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>

@@ -9,11 +9,11 @@ const artifacts = process.env.ARTIFACT_DIR;
 const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const observations = [], errors = [];
-const labels = ['#force-status', '#objective-title', '#objective-help', '#timer',
+const labels = ['#hud-notice', '#objective-title', '#objective-help', '#timer',
   '#squad-hint', '#section-status', '#weapon-name', '#health-text', '#pace-label',
   '#stamina-label', '#battle-controls', '#minimap span', '#pause-button', '#members .member',
   '#interaction-prompt', '#toast', '#simulation-status', '#aim-label', '.feed-entry',
-  '.battle-time small', '.battle-name span', '.hud-label', '.ammo small', '.objective-chip'];
+  '.control-count', '.squad-heading kbd', '.hud-label', '.ammo small', '.objective-chip'];
 if (artifacts) await mkdir(artifacts, { recursive: true });
 
 async function loadMenu(page, address) {
@@ -40,7 +40,7 @@ async function walkTo(page, x, z) {
     assert.equal(data.state, 'playing');
     const dx = x - data.position.x, dz = z - data.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance < .17) break;
+    if (distance < .25) break;
     await look(page, Math.atan2(-dx, -dz));
     await page.keyboard.down('w');
     await page.waitForTimeout(Math.min(100, Math.max(10, distance / 1.5 * 180)));
@@ -53,7 +53,8 @@ async function walkTo(page, x, z) {
   await page.keyboard.up('c');
   await page.waitForTimeout(150);
   const position = await page.evaluate(() => window.__battle.position);
-  assert.ok(Math.hypot(position.x - x, position.z - z) < .3, 'capture location reached by normal movement');
+  assert.ok(Math.hypot(position.x - x, position.z - z) < .3,
+    `capture location (${x}, ${z}) reached by normal movement; actual (${position.x}, ${position.z})`);
 }
 
 async function capture(page, name) {
@@ -88,17 +89,24 @@ async function capture(page, name) {
         contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), rect: rect(element),
         textRects };
     }));
-    const panels = ['.battle-name', '.battle-time', '#objectives', '.objective-banner',
-      '.squad-status', '.weapon-status', '.battle-controls', '#minimap', '#pause-button']
-      .map(selector => ({ selector, rect: rect(document.querySelector(selector)) }));
+    const panels = ['.battle-time', '#objectives', '.objective-banner',
+      '.squad-status', '.weapon-status', '#minimap', '#pause-button', '.hud-notices', '#kill-feed']
+      .flatMap(selector => [...document.querySelectorAll(selector)].filter(visible)
+        .map(element => ({ selector, rect: rect(element) })))
+      .filter(panel => panel.rect.width > 0 && panel.rect.height > 0);
+    const persistent = panels.filter(panel => !['.hud-notices', '#kill-feed', '.objective-banner'].includes(panel.selector));
+    const persistentCoverage = persistent.reduce((area, panel) => area + panel.rect.width * panel.rect.height, 0) / (innerWidth * innerHeight);
     const battle = window.__battle;
-    return { text, panels, position: battle.position, look: battle.look, inside: battle.town.inside,
+    return { text, panels, persistentCoverage, position: battle.position, look: battle.look, inside: battle.town.inside,
       population: { friendly: battle.population.friendly.alive, enemy: battle.population.enemy.alive },
       viewport: { width: innerWidth, height: innerHeight } };
   }, labels);
   observations.push({ name, ...measurement });
   if (artifacts) await page.screenshot({ path: join(artifacts, `${name}.png`) });
   if (baseline) return;
+  assert.ok(measurement.persistentCoverage <= .12, `${name}: persistent HUD <=12% of viewport (${(measurement.persistentCoverage * 100).toFixed(2)}%)`);
+  assert.ok(measurement.panels.find(panel => panel.selector === '#objectives').rect.height <= 32, `${name}: compact objective row`);
+  assert.equal(await page.locator('#battle-controls').isVisible(), false, `${name}: long controls are not permanent HUD`);
   for (const label of measurement.text) {
     const active = !label.selector.includes('.member') || !label.text.includes('×');
     if (active) {
@@ -127,7 +135,8 @@ async function capture(page, name) {
 }
 
 try {
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+  for (const viewport of [{ width: 960, height: 540 }, { width: 1280, height: 720 },
+    { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     const page = await browser.newPage({ viewport });
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
@@ -151,9 +160,26 @@ try {
     assert.equal(await page.evaluate(() => window.__battle.town.inside), 'west-0');
     await look(page, Math.PI / 2, -.15);
     await capture(page, `${viewport.width}-interior`);
+    if (viewport.width === 960) {
+      await walkTo(page, 0, 64);
+      await walkTo(page, 0, 34);
+      await page.locator('.objective-banner').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#objective-title').textContent(), /^A ·/);
+      await capture(page, '960-capture-area');
+      await page.mouse.up({ button: 'right' });
+      await page.keyboard.down('Shift');
+      await page.keyboard.down('w');
+      await page.waitForFunction(() => window.__battle.locomotion.stamina < .99);
+      await page.keyboard.up('w');
+      await page.keyboard.up('Shift');
+      await page.locator('#movement-status').waitFor({ state: 'visible' });
+      await capture(page, '960-stamina');
+    }
     await page.mouse.up({ button: 'right' });
     await page.keyboard.press('Escape');
     await page.locator('#resume').waitFor({ state: 'visible' });
+    assert.ok(await page.locator('#battle-controls').isVisible(), 'full controls available in pause');
+    assert.match(await page.locator('#battle-controls').textContent(), /WASD/);
     await page.locator('#resume').click();
     await page.waitForFunction(() => window.__battle.state === 'playing');
     await page.close();
@@ -164,6 +190,16 @@ try {
     await full.locator('#deploy').click();
     await full.waitForFunction(() => document.querySelectorAll('#members .member').length === 11);
     await capture(full, `${viewport.width}-full-roster`);
+    assert.equal(await full.locator('.objective-banner').isVisible(), false, 'capture details hidden away from objectives');
+    await full.keyboard.down('Tab');
+    await full.locator('#scoreboard').waitFor({ state: 'visible' });
+    assert.ok(await full.locator('#force-status').isVisible(), 'army details available on Tab');
+    assert.match(await full.locator('#force-status').textContent(), /我方.*日军/);
+    await full.keyboard.up('Tab');
+    if (viewport.width === 960) {
+      await full.waitForFunction(() => getComputedStyle(document.querySelector('#toast')).opacity === '0');
+      await capture(full, '960-compact-battle');
+    }
     const originalMember = await full.evaluate(() => window.__battle.current);
     await full.keyboard.press('y');
     await full.waitForFunction(previous => window.__battle.current !== previous, originalMember);
@@ -185,9 +221,21 @@ try {
     }
     await full.close();
   }
+  const failed = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  failed.on('pageerror', error => errors.push(error.message));
+  await failed.route('**/assets/audio/recorded-rifle/report.wav', route => route.abort());
+  const failureUrl = new URL(url);
+  failureUrl.searchParams.set('benchmark', 'interior');
+  await loadMenu(failed, failureUrl.href);
+  assert.equal(await failed.evaluate(() => window.__battle.rifleAudio.status), 'fallback');
+  await failed.locator('#deploy').click();
+  await failed.locator('#hud-notice').waitFor({ state: 'visible' });
+  assert.match(await failed.locator('#hud-notice').textContent(), /步枪录音未加载/);
+  await capture(failed, '960-audio-fallback');
+  await failed.close();
   assert.deepEqual(errors, [], 'no runtime errors or missing game assets');
   console.log(baseline ? 'HUD baseline captured; readability assertions intentionally deferred.'
-    : 'PASS: both resolutions, sky/wall/interior, all four unit HUDs, 12px text, 4.5:1 local backing contrast, no overlap/clipping, clear aiming area, door interaction, pause/resume, Y and expanded map.');
+    : 'PASS: 960/1280/1440/1920, persistent HUD <=12%, sky/wall/interior, four unit HUDs, 12px text, 4.5:1 local contrast, no overlap/clipping, clear aiming area, Tab details, pause controls, door interaction, Y and expanded map.');
 } finally {
   if (artifacts) await writeFile(join(artifacts, 'measurements.json'), JSON.stringify({ baseline, observations, errors }, null, 2));
   await browser.close();

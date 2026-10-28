@@ -17,6 +17,7 @@
     "test:light-machine-guns": "node scripts/light-machine-guns-smoke.mjs",
     "test:street": "node scripts/street-smoke.mjs",
     "test:tactics": "node scripts/tactics-smoke.mjs",
+    "test:assault": "node scripts/assault-smoke.mjs",
     "test:bridge": "node scripts/bridge-smoke.mjs",
     "test:boundary": "node scripts/boundary-smoke.mjs",
     "test:doors": "node scripts/door-smoke.mjs",

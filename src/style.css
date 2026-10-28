@@ -29,59 +29,60 @@
   --hud-secondary: #d2d6c6;
   color: var(--hud-text);
 }
-#hud .battle-name,
-#hud .battle-time,
-#hud .objective-banner,
-#hud .squad-status,
-#hud .weapon-status,
-#hud .battle-controls {
-  background: var(--hud-backing);
-  border: 1px solid rgba(216, 216, 186, .24);
-  border-radius: 3px;
-  padding: 10px 12px;
-  text-shadow: 0 1px 2px #000;
-}
-#hud .battle-name { max-width: min(430px, 31vw); }
-#hud .battle-name span { font-size: 12px; line-height: 1.5; color: var(--hud-secondary); }
-#hud .force-status,
-#hud .simulation-status { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-#hud .battle-time { min-width: 112px; }
-#hud .battle-time small { font-size: 12px; color: var(--hud-secondary); }
-#hud .objective-chip { background: var(--hud-backing); }
+#hud { --map-size: clamp(112px, 9vw, 140px); background: none; }
+#hud .hud-top { padding: 16px 20px; justify-content: flex-end; }
+#hud #objectives { gap: 10px; align-items: center; }
+#hud .objective-chip { background: var(--hud-backing); width: 28px; height: 28px; border-radius: 50%; padding-bottom: 3px; }
+#hud .objective-chip:after { display: none; }
 #hud .objective-chip.captured { background: #3f5534; }
-#hud .objective-banner { top: 86px; width: 320px; max-width: calc(100% - 60px); }
-#hud #objective-title { font-size: 15px; line-height: 1.5; }
-#hud #objective-help { font-size: 12px; line-height: 1.6; color: var(--hud-secondary); }
+#hud .objective-chip.enemy { background: #773c32; color: #fff; }
+#hud .objective-chip.contested { outline: 1px dashed #f0d397; outline-offset: 3px; }
+.point-progress { position: absolute; left: 5px; right: 5px; bottom: 3px; height: 5px; background: #171d17; }
+.point-progress i, .point-progress b { display: block; height: 2px; background: #9aaa78; }
+.point-progress b { margin-top: 1px; background: #ed9d8b; }
+.control-count { font: 12px/18px "Microsoft YaHei", sans-serif; background: var(--hud-backing); padding: 2px 4px; white-space: nowrap; }
+.control-count.friendly { color: #c8d8ae; }
+.control-count.enemy { color: #ffb9a9; }
+#hud .battle-time { background: var(--hud-backing); padding: 2px 5px; }
+#hud #timer { font: 16px/20px monospace; }
+#hud .objective-banner { top: 55px; width: max-content; min-width: 0; max-width: calc(100% - 60px); }
+#hud #objective-title,
+#hud #objective-help { display: table; margin: 0 auto 2px; padding: 2px 5px; background: var(--hud-backing); font-size: 12px; line-height: 16px; letter-spacing: 0; color: var(--hud-text); }
 #hud .capture-track,
 #hud .health-track,
 #hud #stamina-meter { height: 4px; background: rgba(216, 216, 186, .3); }
-#hud .hud-label { font-size: 13px; line-height: 1.5; letter-spacing: 1px; margin-bottom: 8px; }
-#hud .squad-status { width: 340px; max-width: 36%; }
-#hud #members.platoon-members { grid-template-columns: repeat(11, minmax(0, 1fr)); }
-#hud .platoon-members .member { font-size: 12px; line-height: 20px; padding: 3px 0; }
-#hud .member { font-size: 12px; color: var(--hud-secondary); }
+#hud .hud-bottom { bottom: 20px; left: 20px; right: 20px; }
+#hud .hud-label { font-size: 12px; line-height: 16px; letter-spacing: 0; margin-bottom: 0; }
+#hud .squad-status { position: absolute; left: 0; bottom: calc(var(--map-size) + 26px); width: 228px; max-width: 45vw; }
+.squad-heading { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; width: max-content; max-width: 100%; padding: 2px 4px; background: var(--hud-backing); }
+.squad-heading kbd { font: 12px/16px monospace; color: #f0d397; }
+#hud #members { display: flex; gap: 3px; }
+#hud .member { padding: 2px 4px; font-size: 12px; line-height: 16px; color: var(--hud-secondary); background: var(--hud-backing); }
+#hud .platoon-members .member { width: 18px; padding: 2px 0; text-align: center; }
 #hud .member.active { color: #f0d397; border-color: #f0d397; }
-#hud .squad-hint,
-#hud #section-status { font-size: 12px; line-height: 1.6; color: var(--hud-secondary); margin-top: 8px; }
-#hud .battle-controls {
-  width: min(580px, calc(100% - 650px));
-  font-size: 12px;
-  line-height: 1.8;
-  color: var(--hud-secondary);
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-#hud .weapon-status { width: 230px; max-width: 25%; }
-#hud #movement-status { margin-bottom: 14px; font-size: 12px; }
+#hud #section-status { font-size: 12px; line-height: 16px; color: var(--hud-secondary); margin: 0; white-space: nowrap; }
+#hud .weapon-status { margin-left: auto; width: 188px; max-width: 32vw; }
+#hud #weapon-name { display: inline-block; padding: 2px 4px; background: var(--hud-backing); }
+#hud .ammo { width: max-content; margin-left: auto; padding: 0 4px; background: var(--hud-backing); font: 28px/32px monospace; }
+#hud .ammo small { font-size: 12px; color: var(--hud-secondary); }
+#hud #grenade-status { width: fit-content; margin: 3px 0 0 auto; padding: 0 4px; background: var(--hud-backing); font-size: 12px; line-height: 18px; }
+#hud .health-track { margin: 4px 0 3px auto; width: 100px; }
+#hud #movement-status { width: 145px; margin: 0 0 6px auto; }
+#hud #pace-label { display: none; }
 #hud #pace-label,
 #hud #stamina-label,
-#hud #health-text { font-size: 12px; line-height: 1.6; color: var(--hud-secondary); }
+#hud #health-text { font-size: 12px; line-height: 16px; color: var(--hud-secondary); background: var(--hud-backing); padding: 2px 4px; }
+#hud #stamina-meter { margin: 3px 0; }
 #hud .exhausted #stamina-label { color: #f0d397; }
-#hud #minimap:not(.expanded) { bottom: 188px; }
-#hud #minimap span { font-size: 12px; letter-spacing: 0; color: var(--hud-secondary); }
-#hud .hud-button { font-size: 12px; background: var(--hud-backing); color: var(--hud-text); }
-#hud #kill-feed { font-size: 12px; line-height: 1.6; max-width: 300px; }
-#hud .feed-entry { background: var(--hud-backing); overflow-wrap: anywhere; }
+#hud #minimap:not(.expanded) { left: 20px; bottom: 20px; width: var(--map-size); padding: 3px; background: var(--hud-backing); }
+#hud #minimap:not(.expanded) #radar { width: 100%; height: auto; }
+#hud #minimap span { font-size: 12px; line-height: 16px; letter-spacing: 0; padding: 0; color: var(--hud-secondary); }
+#hud .hud-button { right: 20px; top: 46px; padding: 3px 5px; font-size: 12px; background: var(--hud-backing); color: var(--hud-text); }
+.hud-notices { position: absolute; left: 20px; top: 16px; max-width: min(260px, 27vw); display: flex; flex-direction: column; gap: 4px; }
+#hud-notice,
+#hud .simulation-status { padding: 3px 5px; background: var(--hud-backing); font: 12px/18px "Microsoft YaHei", sans-serif; color: #f0d397; overflow-wrap: anywhere; }
+#hud #kill-feed { top: 82px; right: 20px; gap: 3px; font-size: 12px; line-height: 16px; max-width: min(260px, 28vw); align-items: flex-end; }
+#hud .feed-entry { padding: 3px 5px; background: var(--hud-backing); overflow-wrap: anywhere; }
 #hud #aim-label { font-size: 12px; padding: 3px 7px; background: var(--hud-backing); }
 #hud #toast {
   left: 50%;
@@ -95,14 +96,5 @@
   overflow-wrap: anywhere;
 }
 #hud #construction-panel small { font-size: 12px; line-height: 1.6; }
-@media(max-width:1100px) {
-  #hud .squad-status { width: 300px; }
-  #hud .battle-controls { width: calc(100% - 550px); }
-  #hud .weapon-status { width: 210px; }
-}
-@media(max-width:800px) {
-  #hud .battle-name { max-width: 35vw; padding: 8px; }
-  #hud .squad-status { max-width: 55%; }
-  #hud .weapon-status { max-width: 35%; }
-  #hud .objective-banner { width: 240px; top: 80px; }
-}
+.dialog #battle-controls { white-space: normal; }
+.dialog #squad-hint { display: block; font-size: 12px; }
