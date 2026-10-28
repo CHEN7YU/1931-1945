@@ -81,6 +81,13 @@
 #hud #weapon-name { display: inline-block; padding: 2px 4px; background: var(--hud-backing); }
 #hud .ammo { width: max-content; margin-left: auto; padding: 0 4px; background: var(--hud-backing); font: 28px/32px monospace; }
 #hud .ammo small { font-size: 12px; color: var(--hud-secondary); }
+#tank-reload { position: absolute; left: calc(50% + 56px); top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; color: var(--hud-text); }
+#tank-reload[hidden] { display: none; }
+#tank-reload svg { width: 40px; height: 40px; transform: rotate(-90deg); fill: none; stroke-width: 3; }
+#tank-reload .reload-track { stroke: rgba(216, 216, 186, .3); }
+#tank-reload-progress { stroke: #f0d397; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; }
+#tank-reload span { padding: 2px 4px; background: var(--hud-backing); font: 12px/18px "Microsoft YaHei", sans-serif; white-space: nowrap; }
+#tank-reload-time { font: 12px monospace; }
 #hud #equipment-slots { position: static; transform: none; justify-content: flex-end; gap: 3px; margin: 3px 0 0; font-size: 12px; }
 #hud #equipment-slots > span { padding: 1px 3px; background: var(--hud-backing); color: var(--hud-secondary); }
 #hud #equipment-slots b { font-size: 12px; margin-right: 3px; }

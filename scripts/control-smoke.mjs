@@ -16,6 +16,11 @@ const checkpoint = name => { stage = name; console.log(`G2: ${name}`); };
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 const snapshot = () => page.evaluate(() => window.__battle);
+function assertCannonReload(data, deadline) {
+  const loaded = data.time >= deadline;
+  assert.equal(data.vehicles[0].weapon.ammo, loaded ? 1 : 0);
+  assert.equal(data.vehicles[0].weapon.reloadUntil, loaded ? 0 : deadline);
+}
 const wait = predicate => page.waitForFunction(predicate, null, { timeout: 15000 });
 const capture = async name => {
   if (!process.env.ARTIFACT_DIR) return;
@@ -56,7 +61,8 @@ try {
   const ownIds = data.allies.map(actor => actor.id);
   checkpoint('fire vehicle primary');
   await shoot();
-  assert.equal((await snapshot()).vehicles[0].weapon.ammo, 0);
+  const reloadDeadline = (await snapshot()).vehicles[0].weapon.reloadUntil;
+  assert.ok(reloadDeadline > (await snapshot()).time, 'cannon loading starts immediately after firing');
   await page.keyboard.press('f');
   checkpoint('ground exit');
   data = await snapshot();
@@ -64,7 +70,7 @@ try {
   assert.equal(data.control.soldierId, personId);
   assert.equal(data.vehicles[0].id, id);
   assert.equal(data.vehicles[0].weapon.id, weaponId);
-  assert.equal(data.vehicles[0].weapon.ammo, 0);
+  assertCannonReload(data, reloadDeadline);
   assert.equal(data.allies[0].vehicleId, null);
   assert.equal(data.controlInput.owner.soldierId, personId);
   assert.equal(data.controlInput.owner.vehicleId, null);
@@ -84,7 +90,8 @@ try {
   assert.equal(data.type, 'tank'); assert.equal(data.current, 1);
   assert.equal(data.look.pitch, initial.vehicles[0].turretPitch, 'ground rifle look cannot overwrite the original cannon aim');
   assert.equal(data.locomotion.eyeHeight, 1.9);
-  assert.equal(data.ammo, 0, 'Y returns to shared primary ammo rather than the dismounted rifle');
+  assertCannonReload(data, reloadDeadline);
+  assert.equal(data.ammo, data.vehicles[0].weapon.ammo, 'Y returns to the shared primary rather than the dismounted rifle');
   assert.equal(data.vehicles[0].seats[1].occupantId, data.control.soldierId);
   assert.equal(data.controlInput.held.primary, false);
   assert.equal(data.controlInput.held.secondary, false);
@@ -93,7 +100,7 @@ try {
   const parked = { ...data.vehicles[0].position }, beforeWait = data.time;
   await page.waitForFunction(time => window.__battle.time > time + .6, beforeWait);
   data = await snapshot();
-  assert.equal(data.vehicles[0].weapon.reloadUntil, 0, 'the old held trigger cannot start an empty cannon reload on the new crew');
+  assertCannonReload(data, reloadDeadline);
   assert.deepEqual(data.vehicles[0].position, parked, 'W held by the dismounted soldier does not drive a different member tank');
   await page.keyboard.up('w'); await page.mouse.up(); await page.mouse.up({ button: 'right' });
   await page.keyboard.press('y');
@@ -126,11 +133,11 @@ try {
   assert.equal(data.vehicles[0].turretPitch, cannon.pitch);
   const driverLook = { ...data.look };
   await page.keyboard.press('r');
-  assert.equal((await snapshot()).vehicles[0].weapon.reloadUntil, 0);
-  assert.match(await page.locator('#toast').textContent(), /驾驶员.*不能装填/);
+  assertCannonReload(await snapshot(), reloadDeadline);
+  assert.match(await page.locator('#toast').textContent(), /自动装填/);
   await page.mouse.down(); await page.waitForTimeout(100); await page.mouse.up();
   assert.match(await page.locator('#toast').textContent(), /驾驶员.*不能/);
-  assert.equal((await snapshot()).vehicles[0].weapon.ammo, 0);
+  assertCannonReload(await snapshot(), reloadDeadline);
   await capture('g2-driver-observation.png');
   observations.push({ stage: 'driver-observation', look: data.look, vehicles: data.vehicles, weaponVisible: data.weaponVisible });
   await page.keyboard.press('y');
@@ -161,16 +168,15 @@ try {
   assert.equal(data.controlBinding.jumpHeight, 0);
   assert.equal(data.controlBinding.jumpVelocity, 0);
   assert.equal(data.controlBinding.viewHasRifle, true, 'F clears jump simulation before replacing the old rifle view with the tank view');
-  assert.equal(data.controlBinding.ammo, 0);
+  assert.equal(data.controlBinding.ammo, data.controlBinding.time >= reloadDeadline ? 1 : 0);
   assert.equal(data.controlSimulation.jumpHeight, 0);
   assert.equal(data.vehicles[0].health, initial.vehicles[0].health);
   assert.equal(data.allies[0].rifle.ammo, 4);
-  assert.equal(data.vehicles[0].weapon.ammo, 0);
+  assertCannonReload(data, reloadDeadline);
   assert.deepEqual(data.allies.map(actor => actor.id), ownIds);
   await capture('g2-seat-return.png');
   observations.push({ stage: 'reboarded', control: data.control, vehicles: data.vehicles, own: data.allies,
     binding: data.controlBinding, simulation: data.controlSimulation });
-  await page.keyboard.press('r');
   await page.keyboard.press('f');
   assert.equal((await snapshot()).type, 'infantry');
   await wait(() => window.__battle.vehicles[0].weapon.ammo === 1);
@@ -239,7 +245,7 @@ try {
   assert.equal(data.vehicles[0].id, id); assert.equal(data.vehicles[0].weapon.id, weaponId);
   assert.equal(data.vehicles[0].health, firstDeath.health);
   assert.equal(data.look.pitch, firstDeath.vehicles[0].turretPitch, 'death takeover reads the surviving vehicle aim, not an old personal view');
-  assert.equal(data.ammo, 0, 'holding a button during death feedback does not shoot or start an empty-mag reload on the new member');
+  assert.equal(data.ammo, 0, 'holding a button during death feedback does not fire the new member cannon');
   assert.equal(data.allies[1].health, 100);
   assert.equal(data.deathTransfer.active, false);
   assert.equal(data.combatFeedback.flash, 0);
@@ -256,7 +262,7 @@ try {
     }));
   }
   checkpoint('second casualty transfers to the surviving driver without a cannon view');
-  await page.keyboard.press('r'); await wait(() => window.__battle.ammo === 1);
+  await wait(() => window.__battle.ammo === 1);
   await lookAt(data.position.x, data.position.z - 10, -1.24);
   await page.mouse.down();
   await wait(() => window.__battle.state === 'playing' && window.__battle.current === 2);
@@ -268,7 +274,7 @@ try {
   assert.equal(data.weaponVisible, false, 'death.completed cannot re-enable the cannon model in a driver seat');
   assert.equal(await page.locator('#crosshair').isVisible(), false);
   assert.deepEqual(data.look, driverLook);
-  assert.equal(data.vehicles[0].weapon.reloadUntil, 0);
+  assert.ok(data.vehicles[0].weapon.reloadUntil > data.time, 'automatic cannon loading continues during death takeover');
   assert.ok(data.combatEvents.history.some(event => event.type === 'explosion' && event.source.soldierId === ownIds[1]),
     'explosion feedback retains the dead firing gunner rather than the current surviving driver');
   observations.push({ stage: 'driver-after-two-casualties', control: data.control, look: data.look, vehicles: data.vehicles, weaponVisible: data.weaponVisible });
