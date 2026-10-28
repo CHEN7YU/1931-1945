@@ -7,6 +7,7 @@ import { prepareNraRig } from '../src/nra-rig.js';
 import { createUniformStudy, disposeUniformStudy } from './model.js';
 import { createStudyPose, studyTransform, loadStudyAppearance } from './skin.js';
 import { createStudySurface } from './surfaces.js';
+import { fitIjaProportions } from './proportions.js';
 
 export function createIjaSkeleton(source, canonical) {
   const pose = createStudyPose(source), transform = studyTransform(), worlds = new Map(), bones = new Map();
@@ -261,6 +262,7 @@ export async function buildIjaAsset() {
     levels[level] = { triangles, batches: group.children.length };
   }
   const clips = retargetClips(animationData, canonical, rig.bones);
+  fitIjaProportions(rig.root, rig.skeleton, clips);
   const converted = new Map();
   rig.root.traverse(node => {
     if (!node.isMesh) return;
@@ -283,7 +285,7 @@ export async function buildIjaAsset() {
   });
   rig.root.updateMatrixWorld(true);
   const binary = await new GLTFExporter().parseAsync(rig.root, { binary: true, animations: clips, onlyVisible: false });
-  const result = { binary, levels, motion: animationData.motion };
+  const result = { binary, levels, motion: animationData.motion, proportions: rig.root.userData.proportions };
   disposeUniformStudy(study.root); disposeUniformStudy(source);
   return result;
 }
