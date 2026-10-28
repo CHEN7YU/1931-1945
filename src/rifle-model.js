@@ -9,6 +9,7 @@ import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
 
 let template;
 let distantTemplate;
+let automaticHands;
 const materials = {};
 function texture(canvas, color = false) {
   const map = new THREE.CanvasTexture(canvas);
@@ -167,6 +168,49 @@ function makeHand(parent, side) {
   return hand;
 }
 
+function machineGunHands(model) {
+  if (!automaticHands) {
+    automaticHands = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0xad8062, roughness: .82 });
+    for (const side of ['right', 'left']) {
+      const hand = new THREE.Group(); hand.name = `${side}Hand`; automaticHands.add(hand);
+      if (side === 'right') {
+        sphere(hand, .04, -.11, -.061, .017, .031, .024, skin);
+        for (let i = 0; i < 3; i++) {
+          const y = -.113 - i * .013;
+          tube(hand, [[.039, y, -.073], [.033, y, -.096], [.013, y, -.108],
+            [-.005, y, -.103], [-.009, y + .006, -.086]], .0058 - i * .0004, skin, 18);
+          sphere(hand, .033, y, -.093, .006, .006, .007, skin);
+        }
+        tube(hand, [[.039, -.087, -.071], [.034, -.082, -.103], [.023, -.087, -.125],
+          [.012, -.091, -.128]], .0055, skin, 18);
+        tube(hand, [[.041, -.09, -.049], [.026, -.077, -.044], [.004, -.075, -.056],
+          [-.006, -.086, -.067]], .007, skin, 18);
+        sphere(hand, .042, -.12, -.038, .016, .018, .025, skin);
+      } else {
+        sphere(hand, -.029, -.101, -.386, .023, .017, .039, skin);
+        for (let i = 0; i < 4; i++) {
+          const z = -.419 + i * .017;
+          tube(hand, [[-.04, -.09, z], [-.035, -.065, z], [-.02, -.046, z],
+            [.006, -.046, z], [.025, -.06, z], [.02, -.077, z]], .0055 - i * .0002, skin, 18);
+          sphere(hand, -.034, -.066, z, .006, .007, .006, skin);
+        }
+        tube(hand, [[-.043, -.096, -.357], [-.02, -.116, -.35],
+          [.004, -.109, -.361], [.012, -.095, -.378]], .007, skin, 18);
+        sphere(hand, -.046, -.106, -.382, .018, .017, .029, skin);
+      }
+      batch(hand);
+    }
+  }
+  for (const side of ['right', 'left']) {
+    model.remove(model.getObjectByName(`${side}Hand`));
+    const hand = automaticHands.getObjectByName(`${side}Hand`).clone(true);
+    model.add(hand); model.userData.rifle[`${side}Hand`] = hand;
+    model.getObjectByName(`${side}Sleeve`).userData.wrist = side === 'right'
+      ? [.043, -.12, -.034] : [-.05, -.106, -.38];
+  }
+}
+
 function buildTemplate(detail = 'near') {
   const root = new THREE.Group();
   const body = new THREE.Group(); body.name = 'rifleBody'; root.add(body);
@@ -272,6 +316,7 @@ export function rifleModel(weaponState = null) {
     model.getObjectByName('rifleBody').visible = false;
     model.getObjectByName('bolt').visible = false;
     model.add(lightMachineGunModel(weaponState.model));
+    machineGunHands(model);
     model.userData.rifle.muzzle.position.z = infantryWeaponProfile(weaponState).muzzleZ;
     model.userData.rifle.muzzle.position.x = infantryWeaponProfile(weaponState).muzzleX;
     model.userData.rifle.frontSight.position.z = infantryWeaponProfile(weaponState).muzzleZ + .045;

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createRifleState, infantryWeaponProfile, advanceRifle, shootRifle, reloadRifle, riflePose } from '../src/rifle-action.js';
 import { createAIRifleControl, attemptAIRifleShot } from '../src/ai-rifle.js';
-import { lightMachineGunModel } from '../src/light-machine-gun-model.js';
+import { lightMachineGunModel, configureLightMachineGunMaterials } from '../src/light-machine-gun-model.js';
 import { soldierModel } from '../src/world.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
-import { rifleWorldModel, syncWorldWeapon } from '../src/rifle-model.js';
+import { rifleModel, rifleWorldModel, syncWorldWeapon, updateRifleModel, updateRifleArms } from '../src/rifle-model.js';
 
 for (const [model, capacity] of [['zb26', 20], ['type11', 30]]) {
   test(`${model} fires its full capacity automatically without manual bolt cues or early refill`, () => {
@@ -91,6 +91,11 @@ for (const [model, capacity] of [['zb26', 20], ['type11', 30]]) {
     assert.ok(hits.length > 0, 'the physical front sight must be visible through the rear notch');
     assert.ok(Math.abs(hits[0].point.z - (profile.muzzleZ + .045)) < .003,
       'the first surface along the sight line must be the front post, not a receiver or feed block');
+    const supportEnd = new THREE.Raycaster(new THREE.Vector3(0, -.071, -.29), new THREE.Vector3(0, 0, -1))
+      .intersectObject(near, true)[0];
+    assert.ok(supportEnd && Math.abs(supportEnd.point.z + .3) < .001,
+      'the sculpted foregrip has a solid end, not an open wooden tube');
+    assert.ok(supportEnd.face.normal.z > .8);
     const counts = [];
     for (const [detail, gun] of [['near', near], ['far', far]]) {
       let triangles = 0, batches = 0;
@@ -100,6 +105,7 @@ for (const [model, capacity] of [['zb26', 20], ['type11', 30]]) {
         assert.ok([...position.array, ...normal.array, ...uv.array].every(Number.isFinite));
         triangles += position.count / 3; batches++;
       });
+
       assert.ok(triangles <= (detail === 'near' ? 30000 : 2500));
       assert.ok(batches <= 7, 'small details must be merged, not individual draw calls');
       assert.ok(Math.abs(new THREE.Box3().setFromObject(gun).getSize(new THREE.Vector3()).z - profile.length) < .003);
@@ -121,4 +127,59 @@ test('native pooled weapons can switch between rifle and either LMG without dupl
     assert.equal(gun.userData.weaponModel, model);
   }
   assert.throws(() => createRifleState('unknown'), /Unknown infantry weapon/);
+});
+
+test('LMG hands wrap their separate grips without changing rifle hands or sharing moving transforms', () => {
+  const rifle = rifleModel(), first = rifleModel(createRifleState('zb26')), second = rifleModel(createRifleState('type11'));
+  for (const side of ['left', 'right']) {
+    const name = `${side}Hand`;
+    assert.notEqual(first.getObjectByName(name).children[0].geometry, rifle.getObjectByName(name).children[0].geometry);
+    assert.equal(first.getObjectByName(name).children[0].geometry, second.getObjectByName(name).children[0].geometry);
+    assert.notDeepEqual(first.getObjectByName(`${side}Sleeve`).userData.wrist,
+      rifle.getObjectByName(`${side}Sleeve`).userData.wrist);
+    assert.equal(first.userData.rifle[`${side}Hand`], first.getObjectByName(name));
+  }
+  const state = createRifleState('zb26');
+  shootRifle(state); advanceRifle(state, .12); reloadRifle(state); advanceRifle(state, .5);
+  updateRifleModel(first, state); updateRifleArms(first);
+  assert.ok(first.getObjectByName('leftHand').position.length() > 0);
+  assert.equal(second.getObjectByName('leftHand').position.length(), 0);
+  assert.equal(rifle.getObjectByName('leftHand').position.length(), 0);
+  for (const lengths of Object.values(first.userData.armLengths)) {
+    assert.ok(Math.abs(lengths.upper - .35) < .002);
+    assert.ok(Math.abs(lengths.forearm - .34) < .002);
+  }
+});
+
+test('authored LMG grain and microfinish share mipmapped color, bump and roughness maps without modifying rifle materials', () => {
+  const source = Object.fromEntries(['steel', 'wood', 'brass', 'edge', 'black'].map(name =>
+    [name, new THREE.MeshStandardMaterial({ name, metalness: name === 'wood' ? 0 : .8 })]));
+  const sourceMap = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
+  sourceMap.anisotropy = 4; source.wood.map = sourceMap;
+  configureLightMachineGunMaterials(source);
+  const materialFor = (model, name) => {
+    let found;
+    model.traverse(mesh => { if (mesh.isMesh && mesh.material.name === name) found = mesh.material; });
+    return found;
+  };
+  const first = lightMachineGunModel('zb26'), second = lightMachineGunModel('type11', 'far');
+  for (const name of ['steel', 'wood']) {
+    const material = materialFor(first, name);
+    assert.equal(material, materialFor(second, name));
+    assert.notEqual(material, source[name]);
+    assert.equal(material.map.colorSpace, THREE.SRGBColorSpace);
+    assert.equal(material.roughnessMap.colorSpace, THREE.NoColorSpace);
+    assert.equal(material.bumpMap.colorSpace, THREE.NoColorSpace);
+    for (const map of [material.map, material.bumpMap, material.roughnessMap]) {
+      assert.equal(map.image.width, 256);
+      assert.equal(map.image.height, 256);
+      assert.equal(map.anisotropy, 4);
+      assert.equal(map.generateMipmaps, true);
+      assert.equal(map.minFilter, THREE.LinearMipmapLinearFilter);
+      const values = new Set(map.image.data.filter((_, index) => index % 4 === 0));
+      assert.ok(values.size > 5, 'surface variation must exist in the actual texture pixels');
+    }
+  }
+  assert.equal(source.wood.map, sourceMap);
+  assert.equal(source.steel.bumpMap, null);
 });

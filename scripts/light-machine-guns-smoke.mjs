@@ -70,12 +70,19 @@ try {
     await capture(`lmg-${appearance}-aim.png`);
     const shots = data.rifle.shots;
     await page.mouse.down();
-    await wait(shots => window.__battle.rifle.shots >= shots + 6, shots);
+    const firingSample = await wait(shots => {
+      const data = window.__battle;
+      return data.rifle.shots >= shots + 6 && data.rifle.trace
+        ? data.rifle : false;
+    }, shots);
+    const firing = await firingSample.jsonValue();
+    await firingSample.dispose();
+    assert.ok(Math.hypot(...firing.trace.start.map((value, index) => value - firing.muzzle[index])) < .15,
+      'compare the shot origin with its firing-frame muzzle, before lowering the weapon');
     await page.mouse.up();
     await page.mouse.up({ button: 'right' });
     data = await snapshot();
     assert.ok(data.rifle.ammo <= 14, 'one held trigger spends at least six actual rounds');
-    assert.ok(Math.hypot(...data.rifle.trace.start.map((value, index) => value - data.rifle.muzzle[index])) < .15);
     const fired = data.rifle.shots;
     await switchTo(0);
     assert.equal((await snapshot()).rifle.ammo, 5, 'the original engineer retains their own rifle');
