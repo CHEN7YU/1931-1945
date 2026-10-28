@@ -78,6 +78,38 @@ for (const [model, capacity] of [['zb26', 20], ['type11', 30]]) {
       for (const detail of ['near', 'far']) assert.ok(soldierModel(team === 'friendly', detail, model).children.length > 2);
     }
   });
+
+  test(`${model} detailed contours preserve a clear sight line and use bounded shared distant geometry`, () => {
+    const profile = infantryWeaponProfile({ model });
+    const near = lightMachineGunModel(model), far = lightMachineGunModel(model, 'far');
+    const feedBounds = new THREE.Box3().setFromObject(near.getObjectByName('feed'));
+    assert.ok(model === 'zb26' ? feedBounds.min.x > .04 : feedBounds.max.x < -.04,
+      'the magazine or hopper must not cover the offset iron sights');
+    near.updateMatrixWorld(true);
+    const hits = new THREE.Raycaster(new THREE.Vector3(0, .049, .01), new THREE.Vector3(0, 0, -1))
+      .intersectObject(near, true);
+    assert.ok(hits.length > 0, 'the physical front sight must be visible through the rear notch');
+    assert.ok(Math.abs(hits[0].point.z - (profile.muzzleZ + .045)) < .003,
+      'the first surface along the sight line must be the front post, not a receiver or feed block');
+    const counts = [];
+    for (const [detail, gun] of [['near', near], ['far', far]]) {
+      let triangles = 0, batches = 0;
+      gun.traverse(mesh => {
+        if (!mesh.isMesh) return;
+        const { position, normal, uv } = mesh.geometry.attributes;
+        assert.ok([...position.array, ...normal.array, ...uv.array].every(Number.isFinite));
+        triangles += position.count / 3; batches++;
+      });
+      assert.ok(triangles <= (detail === 'near' ? 30000 : 2500));
+      assert.ok(batches <= 7, 'small details must be merged, not individual draw calls');
+      assert.ok(Math.abs(new THREE.Box3().setFromObject(gun).getSize(new THREE.Vector3()).z - profile.length) < .003);
+      counts.push(triangles);
+    }
+    assert.ok(counts[1] < counts[0] / 5);
+    assert.equal(far.children[0].children[0].geometry,
+      lightMachineGunModel(model, 'far').children[0].children[0].geometry);
+    assert.notEqual(near.children[0].children[0].geometry, far.children[0].children[0].geometry);
+  });
 }
 
 test('native pooled weapons can switch between rifle and either LMG without duplicate guns or shared reload transforms', () => {

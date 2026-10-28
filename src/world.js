@@ -116,7 +116,7 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
   sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
   sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
   if (weapon !== 'rifle') {
-    const gun = lightMachineGunModel(weapon);
+    const gun = lightMachineGunModel(weapon, detail);
     gun.position.set(.13, 1.39, .02); group.add(gun);
   } else if (friendly) {
     const rifle = rifleWorldModel(detail);

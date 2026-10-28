@@ -48,7 +48,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const weaponMatrix = new THREE.Matrix4();
   function weaponGroupFor(key) {
     if (!weaponGroups.has(key)) {
-      const gun = key === 'rifle' ? rifleWorldModel('far') : lightMachineGunModel(key), batches = new Map();
+      const gun = key === 'rifle' ? rifleWorldModel('far') : lightMachineGunModel(key, 'far'), batches = new Map();
       gun.updateMatrixWorld(true);
       gun.traverseVisible(mesh => {
         if (!mesh.isMesh) return;

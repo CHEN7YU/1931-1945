@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RIFLE, riflePose, infantryWeaponProfile } from './rifle-action.js';
-import { lightMachineGunModel } from './light-machine-gun-model.js';
+import { lightMachineGunModel, configureLightMachineGunMaterials } from './light-machine-gun-model.js';
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
 import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
@@ -62,6 +62,7 @@ export async function configureRifleMaterials(maxAnisotropy = 8) {
   materials.cloth.map.repeat.set(6, 8);
   materials.leather = new THREE.MeshStandardMaterial({ color: 0x443124, roughness: .8 });
   await applyRifleTextures(materials, RIFLE_PBR_ASSETS, maxAnisotropy);
+  configureLightMachineGunMaterials(materials);
 }
 
 export function rifleTextureSnapshot() {
