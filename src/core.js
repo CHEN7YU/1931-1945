@@ -32,9 +32,11 @@ export function advanceCapture(point, dt, friendly, hostile) {
   return 'empty';
 }
 
-export function circleBlocked(x, z, radius, obstacles) {
+export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1.75) {
   if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
   return obstacles.some(b => {
+    if ((b.minY ?? -Infinity) >= feetY + bodyHeight ||
+      (b.height ?? Infinity) <= feetY + .025) return false;
     if (b.door || b.oriented) {
       const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;

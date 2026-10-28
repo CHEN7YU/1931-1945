@@ -3,7 +3,7 @@ export function benchmarkConfig(search, development) {
   const params = new URLSearchParams(search);
   if (!params.has('benchmark')) return null;
   const scenario = params.get('benchmark');
-  if (!['duel', 'full', 'bridge', 'interior', 'control'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
+  if (!['duel', 'full', 'bridge', 'interior', 'control', 'ford'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
   const value = params.get('seed') ?? '1938';
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > 0xffffffff) throw new RangeError('Benchmark seed must be an unsigned 32-bit integer');
   return Object.freeze({ scenario, seed: Number(value), diagnostic: scenario !== 'full' });
@@ -15,7 +15,11 @@ export function seededRandom(seed) {
 }
 
 export function diagnosticRoster(scenario = 'duel') {
-  if (!['duel', 'bridge', 'interior', 'control'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
+  if (!['duel', 'bridge', 'interior', 'control', 'ford'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
+  if (scenario === 'ford') return [
+    { id: 'friendly-0', team: 'friendly', index: 0, type: 'tank', player: true, members: [], memberCount: 3,
+      generation: 0, respawnAt: null, spawnId: 'diagnostic-ford' },
+  ];
   if (scenario === 'control') return [
     { id: 'friendly-0', team: 'friendly', index: 0, type: 'tank', player: true, members: [], memberCount: 3, generation: 0, respawnAt: null, spawnId: 'diagnostic-tank' },
     ...[1, 2].map(index => ({ id: `friendly-${index}`, team: 'friendly', index, type: 'infantry', player: false, members: [], memberCount: 2, generation: 0, respawnAt: null, spawnId: `diagnostic-friendly-${index}` })),
@@ -28,6 +32,9 @@ export function diagnosticRoster(scenario = 'duel') {
 }
 
 export function diagnosticSpawns(scenario = 'duel') {
+  if (scenario === 'ford') return [
+    { id: 'diagnostic-ford', name: '浅河坦克通行诊断点', team: 'friendly', kind: 'garage', x: -48, z: -6, altitude: 0 },
+  ];
   if (scenario === 'interior') return [
     { id: 'diagnostic-friendly', name: '门与室内几何诊断点', team: 'friendly', kind: 'base', x: 0, z: 78, altitude: 0 },
   ];

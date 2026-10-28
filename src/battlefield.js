@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
-import { BRIDGE, groundHeight } from './ground.js';
+import { BRIDGE, RIVER, groundHeight, riverBedHeight, waterDepth, walkHeight, configureWalkSupport } from './ground.js';
 import { createDoorWorld } from './door-world.js';
 import { bakeSurfaceGeometry } from './surface-uv.js';
 import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
@@ -40,6 +40,7 @@ export function createRoofGeometry(w, d, rise, meters) {
 export function makeWorld(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
   const town = makeTownLayout();
+  const walkSupport = configureWalkSupport(town.pieces);
   const outskirts = makeOutskirtsLayout();
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   let seed = 1938;
@@ -88,11 +89,25 @@ export function makeWorld(scene, surface) {
     return object;
   }
 
-  const groundGeometry = damagedSurfaceGeometry(0, 0, 800, 800);
-  mesh(groundGeometry, earth, 0, -.035, 0, true);
+  const drySurface = (x, z, w, d, material, offset) => {
+    const minZ = z - d / 2, maxZ = z + d / 2;
+    for (const [from, to] of [[minZ, Math.min(maxZ, RIVER.centerZ - RIVER.bankHalfWidth)],
+      [Math.max(minZ, RIVER.centerZ + RIVER.bankHalfWidth), maxZ]]) {
+      if (to > from) mesh(damagedSurfaceGeometry(x, (from + to) / 2, w, to - from), material, 0, offset, 0, true);
+    }
+  };
+  drySurface(0, 0, 800, 800, earth, -.035);
+  const riverbed = new THREE.PlaneGeometry(800, RIVER.bankHalfWidth * 2, 1, 28);
+  riverbed.rotateX(-Math.PI / 2);
+  for (let i = 0; i < riverbed.attributes.position.count; i++) {
+    const positions = riverbed.attributes.position;
+    positions.setY(i, riverBedHeight(positions.getZ(i) + RIVER.centerZ) - .035);
+  }
+  riverbed.computeVertexNormals();
+  mesh(riverbed, earth, 0, 0, RIVER.centerZ, true);
   const pavedAreas = PAVED_AREAS;
   for (const [x, z, w, d] of pavedAreas.slice(0, -1)) {
-    mesh(damagedSurfaceGeometry(x, z, w, d), paving, 0, .0125, 0, true);
+    drySurface(x, z, w, d, paving, .0125);
   }
   const craterMat = earth.clone(); craterMat.vertexColors = true;
   for (const crater of SHELL_CRATERS) {
@@ -113,31 +128,23 @@ export function makeWorld(scene, surface) {
     }
   }
 
-  // The canal retains its existing impassable banks and bridge crossing.
-  const waterGeometry = new THREE.PlaneGeometry(214, 10, 100, 10);
+  const waterHalfWidth = RIVER.bankHalfWidth - RIVER.waterHeight / RIVER.bedHeight *
+    (RIVER.bankHalfWidth - RIVER.bedHalfWidth);
+  const waterGeometry = new THREE.PlaneGeometry(800, waterHalfWidth * 2, 100, 10);
   waterGeometry.rotateX(-Math.PI / 2);
   const water = new THREE.Mesh(waterGeometry, new THREE.MeshStandardMaterial({
     color: 0x536c66, roughness: .24, metalness: .35,
     normalMap: earth.normalMap, normalScale: new THREE.Vector2(.13, .13),
+    transparent: true, opacity: .8,
   }));
   for (let i = 0; i < waterGeometry.attributes.position.count; i++) {
     const p = waterGeometry.attributes.position;
     p.setY(i, Math.sin(p.getX(i) * 1.7 + p.getZ(i) * 3.4) * .018);
   }
   waterGeometry.computeVertexNormals();
-  water.position.set(0, .012, -16);
+  water.position.set(0, RIVER.waterHeight, RIVER.centerZ);
   water.receiveShadow = true;
   scene.add(water);
-  for (const z of [-10.7, -21.3]) {
-    box(-51, .2, z, 102, .65, .7, stone, true);
-    box(65, .2, z, 98, .65, .7, stone, true);
-    for (let x = -100; x <= 108; x += 2) {
-      if (x > -1 && x < 17) continue;
-      box(x, .57, z, 1.97, .12, .9, stone);
-    }
-  }
-  obstacle(-54, -16, 108, 10, 1);
-  obstacle(62, -16, 92, 10, 1);
   box(8, (BRIDGE.height - .05) / 2, -16, BRIDGE.maxX - BRIDGE.minX, BRIDGE.height + .05, BRIDGE.maxZ - BRIDGE.minZ, stone, true);
   for (const [startZ, descending] of [[BRIDGE.minZ - BRIDGE.rampLength, false], [BRIDGE.maxZ, true]]) {
     const geometry = new THREE.BoxGeometry(16, 1, BRIDGE.rampLength);
@@ -611,6 +618,7 @@ export function makeWorld(scene, surface) {
     geometries.forEach(geometry => geometry.dispose());
   }
   const groundSurface = (x, z) => {
+    if (riverBedHeight(z) < 0 && groundHeight(x, z) <= 0) return 'earth';
     if (SHELL_CRATERS.some(crater => Math.hypot(x - crater.x, z - crater.z) < crater.radius * CRATER_EDGE)) return 'earth';
     if (town.buildings.some(building => Math.abs(x - building.x) < building.w / 2 - .12 && Math.abs(z - building.z) < building.d / 2 - .12)) return 'wood';
     if (groundHeight(x, z) > 0) return 'stone';
@@ -629,7 +637,14 @@ export function makeWorld(scene, surface) {
     probe.far = 4;
     bridgeSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
   }
+  const riverSurfaces = {};
+  for (const [name, z] of [['bed', -16], ['southBank', -10], ['northBank', -22], ['street', -8]]) {
+    probe.set(new THREE.Vector3(-48, 3, z), new THREE.Vector3(0, -1, 0));
+    probe.far = 5;
+    riverSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
+  }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron);
-  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, bridgeSurfaces, town, outskirts, visibility, doorSystem,
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, waterDepth, walkHeight,
+    moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

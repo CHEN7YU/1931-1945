@@ -46,7 +46,7 @@ export function advanceDoor(door, dt, occupants = []) {
   for (let i = 0; i < steps; i++) {
     const next = door.angle + travel / steps;
     const collision = doorCollider(door, next);
-    if (occupants.some(actor => circleBlocked(actor.x, actor.z, actor.radius || .42, [collision]))) {
+    if (occupants.some(actor => circleBlocked(actor.x, actor.z, actor.radius || .42, [collision], actor.y ?? 0))) {
       door.blocked = true; door.state = 'blocked';
       return changed;
     }

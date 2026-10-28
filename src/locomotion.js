@@ -55,7 +55,7 @@ export function landLocomotion(motion, impactSpeed) {
   motion.landingVelocity -= Math.min(.6, Math.abs(impactSpeed) * .065);
 }
 
-export function advanceLocomotion(motion, position, input, obstacles, dt) {
+export function advanceLocomotion(motion, position, input, obstacles, dt, move = moveGround) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Locomotion requires a non-negative finite timestep');
   if (dt === 0) return 0;
   const profile = FOOT_SPEEDS[input.type];
@@ -75,7 +75,7 @@ export function advanceLocomotion(motion, position, input, obstacles, dt) {
       !input.busy && input.stance === 'standing' && grounded && !motion.exhausted && motion.stamina > 0;
     mode = !moving ? 'idle' : input.stance === 'prone' ? 'prone' : input.stance === 'crouched' ? 'crouch' :
       input.aiming ? 'aim' : input.walking ? 'walk' : sprint ? 'sprint' : 'jog';
-    let targetSpeed = mode === 'idle' ? 0 : profile[mode];
+    let targetSpeed = (mode === 'idle' ? 0 : profile[mode]) * (input.speedScale ?? 1);
     if (forward < 0) targetSpeed *= .8;
     const targetX = (-Math.sin(input.yaw) * forward + Math.cos(input.yaw) * sideways) / magnitude * targetSpeed;
     const targetZ = (-Math.cos(input.yaw) * forward - Math.sin(input.yaw) * sideways) / magnitude * targetSpeed;
@@ -86,7 +86,7 @@ export function advanceLocomotion(motion, position, input, obstacles, dt) {
     const nextX = motion.vx + deltaX * fraction, nextZ = motion.vz + deltaZ * fraction;
     const dx = (motion.vx + nextX) * .5 * h, dz = (motion.vz + nextZ) * .5 * h;
     const x = position.x, z = position.z;
-    moveGround(position, dx, dz, .4, obstacles);
+    move(position, dx, dz, .4, obstacles, input.stance === 'prone' ? .55 : input.stance === 'crouched' ? 1.15 : 1.75);
     const actualX = position.x - x, actualZ = position.z - z;
     const travelled = Math.hypot(actualX, actualZ);
     distance += travelled;
