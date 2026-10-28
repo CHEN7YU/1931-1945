@@ -252,6 +252,7 @@ export function tailorStudyGarment(reference, sleeves) {
     hasGeometricFolds: true, rebuiltStandingCollar: true, waistJoined: true,
     measuredCoverage: coverage, reconstructedSamples: (ROWS + 1) * SEGMENTS - validSamples,
     bodyTriangleCount: indices.length / 3,
+    sleeveTriangleCount: draped.attributes.position.count / 3,
     attachedArmholeEdges: armholes.userData.attachedArmholeEdges,
     chestBackEase: true, smoothedTorsoPanels: true,
     localizedLoadFolds: true, sleeveSubdivision: 1,

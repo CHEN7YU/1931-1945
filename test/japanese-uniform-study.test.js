@@ -94,6 +94,7 @@ test('upper body refits inspected source sleeves and reconstructs its panels ins
   assert.equal(garment.userData.sourceBreastPocketsIncluded, false);
   assert.equal(garment.geometry.userData.rebuiltStandingCollar, true);
   assert.equal(garment.geometry.userData.waistJoined, true);
+  assert.equal(garment.geometry.userData.sleeveTriangleCount, garment.userData.retainedSleeveTriangles * 4);
   assert.ok(garment.geometry.userData.measuredCoverage >= .60);
   assert.ok(garment.geometry.userData.reconstructedSamples > 0);
   assert.ok(garment.geometry.userData.attachedArmholeEdges >= 12);

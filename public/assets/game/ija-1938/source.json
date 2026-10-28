@@ -12,12 +12,12 @@
   },
   "sourcePermissionRecord": "/assets/game/nra-88/PERMISSION.txt",
   "sourceModelSha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898",
-  "modelSha256": "a946651a211737dab5b32909ed18ebb72781277c42a582b165d5a9fe0f59d37c",
+  "modelSha256": "cb96112503b71ef1cd1de6904d84bcfcedf6e44c6f8b68df01ce426101c790fd",
   "files": [
     {
       "file": "character.glb",
-      "bytes": 7182608,
-      "sha256": "a946651a211737dab5b32909ed18ebb72781277c42a582b165d5a9fe0f59d37c"
+      "bytes": 7182368,
+      "sha256": "cb96112503b71ef1cd1de6904d84bcfcedf6e44c6f8b68df01ce426101c790fd"
     }
   ],
   "runtimeMotion": {
@@ -29,7 +29,7 @@
     "limitation": "Embedded clip presence is provenance, not evidence that production playback uses it"
   },
   "historicalAcceptance": false,
-  "geometry": "Adapted licensed head/hands/sleeves and measured torso; original reconstructed tunic, trousers, helmet and equipment. Spatial skin-weight transfer and authored attachment weights on a refitted source skeleton.",
+  "geometry": "Adapted licensed head/hands/sleeves and measured torso; original reconstructed tunic, trousers, helmet and equipment. Spatial transfer for skin/legs and anatomically bounded sleeves; measured armhole blending and authored torso/equipment weights on a refitted source skeleton.",
   "sourceClothingTexturesIncluded": false,
   "sourceInsigniaIncluded": false,
   "motionSource": {
