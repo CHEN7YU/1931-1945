@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from '../src/combat-particles.js';
+import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from '../src/combat-particles.js';
 
 const options = { fragmentCount: 8, fragmentLimit: 96, clouds: true, cloudLimit: 18, lightLimit: 2 };
 const position = { x: 8, y: .45, z: -16 }, normal = { x: 0, y: 1, z: 0 };
@@ -68,4 +68,23 @@ test('visual input errors are explicit and do not poison the pool', () => {
   assert.throws(() => emitCombatParticles(state, position, normal, 'unknown', options), RangeError);
   assert.throws(() => emitCombatParticles(state, position, normal, 'soil', { ...options, fragmentLimit: 1000 }), RangeError);
   assert.throws(() => advanceCombatParticles(state, -1, () => 0), RangeError);
+});
+
+test('explosions have a short flash, ballistic fragments, outward dust and lingering smoke in the existing bounded pools', () => {
+  for (const low of [false, true]) {
+    const state = createParticleState();
+    emitExplosionParticles(state, position, .05, { low });
+    assert.ok(state.fragments.length >= 8 && state.clouds.some(cloud => cloud.kind === 'blast-flash'));
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-dust') && state.clouds.some(cloud => cloud.kind === 'blast-smoke'));
+    assert.equal(state.lights.length, low ? 0 : 1);
+    advanceCombatParticles(state, .05, () => .45, .05);
+    assert.ok(state.clouds.every(cloud => cloud.age === 0), 'first displayed frame retains short flash');
+    advanceCombatParticles(state, .15, () => .45, .2);
+    assert.ok(!state.clouds.some(cloud => cloud.kind === 'blast-flash'));
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-smoke'));
+    for (let i = 0; i < 80; i++) emitExplosionParticles(state, position, .2, { low });
+    for (const [name, cap] of Object.entries(PARTICLE_LIMITS)) assert.equal(state[name].length + state.free[name].length, cap);
+    advanceCombatParticles(state, 3, () => .45, 3.2);
+    assert.equal(state.fragments.length + state.clouds.length + state.lights.length, 0);
+  }
 });

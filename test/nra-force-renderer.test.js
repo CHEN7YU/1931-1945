@@ -88,7 +88,7 @@ test('all friendly identities retain uniforms while detail pooling survives casu
     const actor = { id: `soldier-${index}`, unitId: 'friendly-0', team: 'friendly', heading: 0, health: 100,
       position: new THREE.Vector3((index % 10 - 5) * 1.5, 0, -5 - Math.floor(index / 10) * 3),
       walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, ammo: 5,
-      rifle: createRifleState(index % 11 === 10 ? 'zb26' : 'rifle') };
+      rifle: createRifleState(index % 11 === 10 ? 'zb26' : index % 11 === 9 ? 'sniper' : 'rifle') };
     actor.nativeMotion = createNraMotion(profile, actor); return actor;
   });
   force.update(actors, 1, actors[0].id, 'high');
@@ -97,6 +97,8 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   assert.equal(force.snapshot.members.find(member => member.id === actors[0].id).tier, 'hidden');
   assert.ok(force.snapshot.near <= 6); assert.equal(force.snapshot.poolSize, 6);
   assert.ok(force.snapshot.far > 0);
+  assert.ok(force.snapshot.members.some(member => member.weaponModel === 'sniper' && member.tier === 'instanced'));
+  assert.ok(force.root.children.some(mesh => mesh.name === 'owned-weapon-sniper' && mesh.count > 0));
   const observed = force.focusedSnapshot.actorId;
   const casualty = actors.find(actor => actor.id === observed); casualty.health = 0; casualty.deathTime = 1;
   force.update(actors, 1.2, actors[0].id, 'high');

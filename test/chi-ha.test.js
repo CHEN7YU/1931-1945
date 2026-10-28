@@ -246,6 +246,8 @@ test('tank squads receive separate objective stations rather than parking togeth
   const [a, b] = [0, 1].map(slot => chiHaObjectiveDestination(slot, objective));
   assert.equal(a.id, 'B'); assert.equal(b.id, 'B');
   assert.ok(b.x - a.x > CHI_HA.clearance * 2);
+  assert.ok(b.x - a.x - CHI_HA.arrivalDistance * 2 > CHI_HA.clearance * 2 + .1,
+    'arrival tolerances cannot let a parked tank consume the other station turning envelope');
   assert.equal(a.z, objective.z); assert.equal(b.z, objective.z);
   assert.deepEqual(objective, { id: 'B', x: 8, z: -7, radius: 13 });
   assert.equal(chiHaObjectiveDestination(0, null), null);
@@ -301,6 +303,23 @@ function machineGunContext(crew, extra = {}) {
     busyCrewIds: [], aimPoint: actor => ({ ...actor.position, y: actor.position.y + 1 }),
     visible: () => true, safeToFire: () => true, ...extra };
 }
+
+test('a stationed tank faces visible enemies so its hull machine gun is not stranded facing the approach route', () => {
+  const { registry, vehicle, crew } = fixture(), guns = machineGunContext(crew);
+  vehicle.heading = Math.PI / 2;
+  const ctx = context(crew, { objective: { id: 'C', x: 0, z: 0 }, canFire: false, targets: guns.targets });
+  advanceChiHaAI(vehicle, .1, 0, { ...ctx, visible: () => false });
+  assert.equal(vehicle.heading, Math.PI / 2, 'holding a station alone does not invent an enemy bearing');
+  for (let i = 1; i <= 80; i++) {
+    const now = i / 10;
+    advanceOwnedWeapons(registry, .1, now);
+    advanceChiHaAI(vehicle, .1, now, ctx);
+    advanceChiHaMachineGuns(vehicle, .1, now, guns);
+  }
+  assert.deepEqual({ ...vehicle.position }, { x: 0, y: 0, z: 0 });
+  assert.equal(vehicle.ai.mode, 'engage');
+  assert.ok(vehicle.machineGuns[0].shots >= CHI_HA_MG.burst);
+});
 
 test('owned tank machine guns fire five-round bursts, cool down, empty twenty-round magazines and reload independently', () => {
   const { registry, vehicle, crew } = fixture(), gun = vehicle.machineGuns[0], log = [];

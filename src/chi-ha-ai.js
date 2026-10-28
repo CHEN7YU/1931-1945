@@ -41,6 +41,10 @@ export function advanceChiHaAI(vehicle, dt, now, context) {
   const distance = Math.hypot(goal.x - position.x, goal.z - position.z);
   ai.distanceToObjective = Math.hypot(objective.x - position.x, objective.z - position.z);
   const arrived = distance <= CHI_HA.arrivalDistance;
+  if (arrived && visible) {
+    vehicle.heading = turn(vehicle.heading,
+      Math.atan2(position.x - target.position.x, position.z - target.position.z), CHI_HA.turnRate * dt);
+  }
   const muzzle = chiHaMuzzle(vehicle), point = visible ? aimPoint(target) : { ...goal, y: position.y + 1.7 };
   const yaw = Math.atan2(muzzle.x - point.x, muzzle.z - point.z);
   const actualPitch = Math.atan2(point.y - muzzle.y, Math.hypot(point.x - muzzle.x, point.z - muzzle.z));

@@ -39,10 +39,10 @@
         <p class="map-description">穿过残损商铺、石板街与运河，依次夺取三个据点。日军为8个步兵班与2个九七式坦克小队，坦克损失后补充，附近步兵利用车后掩护推进。原创主题布局，非台儿庄参战编制复原。</p>
         <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
         <div id="squad-choices" class="squad-choices">
-          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 含工兵、轻机枪手</small></button>
-          <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>3人车组 / 主炮</small></button>
+          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 工兵、狙击手、机枪手</small></button>
+          <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>维克斯六吨B型 / 3人车组</small></button>
           <button class="squad-choice" data-type="mortar" aria-pressed="false"><span class="unit-icon">⌁</span><strong>迫击炮组</strong><small>3人 / 区域压制</small></button>
-          <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>单人飞行员 / 机炮</small></button>
+          <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>伊-15bis双翼机 / 单人飞行员</small></button>
         </div>
         <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>可在暂停菜单分别调整效果</small></label>
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
@@ -56,6 +56,10 @@
       <div class="objective-banner"><span id="objective-title">夺取 A · 南街路口</span><small id="objective-help">进入据点范围并清除守军</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="sniper-scope" hidden aria-label="狙击瞄准镜">
+        <div class="scope-lens"><div class="scope-reticle" aria-hidden="true"></div></div>
+        <div class="scope-help"><span>约 4.6× · 左键单发 · R 装填</span><div id="breath-meter" role="progressbar" aria-label="屏息余量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="breath-fill"></div></div><span id="breath-label">按住左 Shift 屏息</span></div>
+      </div>
       <div id="hit-marker">×</div>
       <div id="damage-vignette"></div>
       <div id="death-transfer" hidden><strong id="death-transfer-label"></strong><span>战场仍在继续 · 稍后接管存活队员</span></div>
@@ -68,6 +72,7 @@
       <div class="hud-bottom">
         <div class="squad-status"><div class="hud-label" id="unit-title">步兵小队</div>        <div id="members"></div><div id="section-status" hidden></div><span class="squad-hint" id="squad-hint">Y 切换存活队员</span></div>
         <div class="battle-controls" id="battle-controls"></div>
+        <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected"><b>1</b> 主武器</span><span data-equipment-slot="2"><b>2</b> 工兵工具</span>        <span data-equipment-slot="5"><b>5</b> 手榴弹</span><span data-equipment-slot="6"><b>6</b> 炸药包</span></div>
         <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div id="grenade-status" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
       </div>
       <button id="pause-button" class="hud-button">Esc 暂停</button>

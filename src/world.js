@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { configureRifleMaterials, rifleModel, rifleWorldModel } from './rifle-model.js';
 import { lightMachineGunModel } from './light-machine-gun-model.js';
+import { historicalVehicleModel, vehicleWeaponView } from './vehicle-model.js';
 
 const actorBox = new THREE.BoxGeometry(1, 1, 1);
 const actorSphere = new THREE.SphereGeometry(1, 12, 8);
@@ -115,7 +116,10 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
   limb(group, [.34, 1.1, .05], [.173, 1.325, -.095], .052, uniform);
   sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
   sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
-  if (weapon !== 'rifle') {
+  if (weapon === 'sniper') {
+    const rifle = rifleWorldModel(detail, { model: weapon });
+    rifle.position.set(.13, 1.39, .02); group.add(rifle);
+  } else if (weapon !== 'rifle') {
     const gun = lightMachineGunModel(weapon, detail);
     gun.position.set(.13, 1.39, .02); group.add(gun);
   } else if (friendly) {
@@ -139,37 +143,16 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
 }
 
 export function tankModel() {
-  const group = new THREE.Group();
-  const m = actorMaterials.steel;
-  part(group, 0, .8, 0, 2.8, 1.2, 4.7, m);
-  part(group, -1.5, .55, 0, .65, 1.05, 4.9, actorMaterials.dark);
-  part(group, 1.5, .55, 0, .65, 1.05, 4.9, actorMaterials.dark);
-  for (const x of [-1.85, 1.85]) for (let z = -1.6; z <= 1.7; z += .8) {
-    cylinder(group, x, .5, z, .33, .1, m).rotation.z = Math.PI / 2;
-  }
-  const turret = new THREE.Group();
-  turret.position.y = 1.5;
-  group.add(turret);
-  part(turret, 0, .4, -.1, 1.9, .8, 2, m);
-  cylinder(turret, 0, .45, -2.5, .09, 3.3, m).rotation.x = Math.PI / 2;
-  cylinder(turret, .4, .87, -.1, .33, .14, actorMaterials.dark);
-  group.userData.turret = turret;
-  return group;
+  return historicalVehicleModel('tank');
 }
 
 export function planeModel() {
-  const group = new THREE.Group();
-  sphere(group, 0, 0, 0, .48, .45, 2.9, actorMaterials.steel);
-  part(group, 0, .1, -.2, 8, .14, 1.6, actorMaterials.steel);
-  part(group, 0, .35, 2, 3.1, .12, .9, actorMaterials.steel);
-  part(group, 0, .7, 2.1, .12, 1.5, .85, actorMaterials.steel);
-  sphere(group, 0, .38, .15, .35, .5, .6, actorMaterials.dark);
-  part(group, 0, 0, -3, 2.5, .12, .12, actorMaterials.wood);
-  return group;
+  return historicalVehicleModel('plane');
 }
 
 export function weaponModel(type, state = null) {
   if (type === 'infantry') return rifleModel(state);
+  if (type === 'tank' || type === 'plane') return vehicleWeaponView(type);
   const group = new THREE.Group();
   const steel = actorMaterials.dark, wood = actorMaterials.wood, uniform = actorMaterials.friendly;
   if (type === 'hammer') {
@@ -177,14 +160,6 @@ export function weaponModel(type, state = null) {
     part(group, .3, -.03, -.75, .38, .15, .16, actorMaterials.steel);
     limb(group, [.38, -.65, -.22], [.3, -.39, -.59], .085, uniform);
     sphere(group, .3, -.35, -.62, .065, .085, .07, actorMaterials.skin);
-  } else if (type === 'plane') {
-    for (const x of [-.7, .7]) cylinder(group, x, -.44, -.9, .05, .9, steel).rotation.x = Math.PI / 2;
-    part(group, 0, -.7, -.5, 2.4, .3, .6, actorMaterials.steel);
-    part(group, -.42, -.1, -.8, .045, 1, .045, actorMaterials.steel).rotation.z = -.25;
-    part(group, .42, -.1, -.8, .045, 1, .045, actorMaterials.steel).rotation.z = .25;
-  } else if (type === 'tank') {
-    part(group, 0, -.7, -.5, 3, .65, 1.6, actorMaterials.steel);
-    cylinder(group, .2, -.4, -1.6, .075, 2.2, steel).rotation.x = Math.PI / 2;
   } else if (type === 'mortar') {
     cylinder(group, .36, -.46, -.75, .09, 1.2, actorMaterials.steel).rotation.x = .8;
     shaped(group, actorCylinder, .36, -.8, -.55, .4, .08, .35, steel);

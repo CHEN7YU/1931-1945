@@ -3,7 +3,7 @@ export const CHI_HA = Object.freeze({
   length: 5.5, width: 2.33, height: 2.21,
   health: 280, speed: 4.2, magazine: 1, reload: 5.5, interval: .5,
   damage: 125, blastRadius: 6, range: 95, turnRate: .48, turretRate: .55,
-  clearance: 3, arrivalDistance: 1.25, stationOffset: 3.1, firePause: 1.2, firePauseInterval: 4,
+  clearance: 3, arrivalDistance: 1.25, stationOffset: 4.5, firePause: 1.2, firePauseInterval: 4,
   turret: Object.freeze({ x: .1, y: 1.41, z: -.42 }),
   gun: Object.freeze({ x: -.2, y: .30, z: -.60, length: .94 }),
 });

@@ -11,6 +11,7 @@ import { createNraMotion, sampleNraMotion, nativeEyeLocal, nativeMuzzleLocal, na
 import { shoulderPocket } from '../src/rifle-contacts.js';
 import { soldierEyePosition, soldierPostureHeight } from '../src/entities.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
+import { createNraGrenadeHand } from '../src/nra-hand.js';
 
 function fixture() {
   const manager = new T.LoadingManager();
@@ -97,6 +98,37 @@ test('travel and partial posture blends keep the same eye projection, with no ai
     assert.equal(nativeAimReady(f.actor), false);
     const partial = f.project(stance, true, 1.4, .04, .5);
     assert.ok(partial.actual.projectionError < 1e-6);
+  }
+});
+
+test('single-knee firing folds the rear calf under the body instead of stretching it far behind the hip', () => {
+  const f = fixture();
+  for (const stance of ['kneeling', 'crouched']) {
+    f.project(stance, true);
+    const local = name => f.bones.get(name).getWorldPosition(new T.Vector3()).sub(f.actor.position)
+      .applyAxisAngle(new T.Vector3(0, 1, 0), -f.actor.heading);
+    const hip = local('Hips'), rear = local('RightFoot'), knee = local('RightLeg'), front = local('LeftFoot');
+    assert.ok(rear.z - hip.z < .35, `${stance}: rear foot extends ${rear.z - hip.z}m`);
+    assert.ok(rear.z - front.z < .65);
+    assert.ok(knee.y > .025 && knee.y < .13, `${stance}: supporting knee ${knee.y}`);
+  }
+});
+
+test('grenade view reuses the authorized skinned hands and UVs with isolated finger bones and no retained body meshes', () => {
+  const f = fixture();
+  for (const side of ['left', 'right']) {
+    const hand = createNraGrenadeHand(f.normalized, side), duplicate = createNraGrenadeHand(f.normalized, side);
+    const prefix = side === 'right' ? 'Right' : 'Left', bones = new Map(), drawn = [];
+    hand.traverse(node => { if (node.isBone) bones.set(node.name, node); });
+    hand.traverseVisible(node => { if (node.isMesh) drawn.push(node); });
+    assert.equal(drawn.length, 1); assert.equal(drawn[0].name, '\u624b\u90e8');
+    assert.ok(drawn[0].isSkinnedMesh && drawn[0].geometry.attributes.uv);
+    const first = bones.get(prefix + 'HandMiddle1'), second = bones.get(prefix + 'HandMiddle2');
+    const before = first.getWorldPosition(new T.Vector3()).distanceTo(second.getWorldPosition(new T.Vector3()));
+    hand.poseGrip(.85); hand.poseGrip(.85);
+    assert.ok(Math.abs(before - first.getWorldPosition(new T.Vector3()).distanceTo(second.getWorldPosition(new T.Vector3()))) < 1e-8);
+    assert.equal(duplicate.userData.handSource, 'nra-authorized-skinned-hand');
+    assert.throws(() => hand.poseGrip(2), RangeError);
   }
 });
 

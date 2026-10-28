@@ -37,11 +37,14 @@ try {
     assert.equal(initial.population.friendly.alive, 110);
     assert.equal(initial.population.enemy.alive, 96);
     assert.equal(initial.entityCounts.soldiers, 206);
-    assert.equal(initial.entityCounts.weapons, 206 * 2 + 2 + 4);
+    assert.equal(initial.entityCounts.weapons, 206 * 3 + 2 + 4,
+      'each soldier owns a primary weapon, grenade inventory and pack; tank primary and machine guns are independent');
     for (const unit of initial.population.units.filter(unit => unit.type === 'infantry')) {
       assert.equal(unit.memberCount, 11);
       assert.equal(unit.members[0].role, 'engineer');
-      assert.ok(unit.members.slice(1, 10).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.ok(unit.members.slice(1, 9).every(actor => actor.role === 'rifleman' && actor.weaponModel === 'rifle'));
+      assert.equal(unit.members[9].role, 'sniper');
+      assert.equal(unit.members[9].weaponModel, 'sniper');
       assert.equal(unit.members[10].role, 'machine-gunner');
       assert.equal(unit.members[10].section, 0);
       assert.equal(unit.members[10].weaponModel, unit.team === 'friendly' ? 'zb26' : 'type11');

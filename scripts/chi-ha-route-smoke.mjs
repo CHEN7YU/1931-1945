@@ -31,9 +31,9 @@ try {
       turretPitch: 0, health: CHI_HA.health, speed: 0, trackDistance: 0,
       weapon: { settings: CHI_HA, ammo: 1, reloadUntil: 0, nextShot: 0 },
     }));
-    const samples = [], reached = [], collisions = [];
-    for (let frame = 0; frame < 1000; frame++) {
-      const now = frame / 10, objective = OBJECTIVES[now < 30 ? 0 : 1];
+    const samples = [], reached = [], stationed = [], collisions = [];
+    for (let frame = 0; frame < 3200; frame++) {
+      const now = frame / 10, objective = OBJECTIVES[now < 30 ? 0 : now < 130 ? 1 : 2];
       for (const [slot, vehicle] of vehicles.entries()) {
         advanceChiHaAI(vehicle, .1, now, {
           crew: [{ health: 100 }], targets: [], objective, canFire: false,
@@ -50,24 +50,30 @@ try {
           !reached.some(visit => visit.id === vehicle.id && visit.objectiveId === objective.id)) {
           reached.push({ id: vehicle.id, objectiveId: objective.id, time: now });
         }
+        if (Math.hypot(vehicle.position.x - vehicle.ai.goal.x, vehicle.position.z - vehicle.ai.goal.z) <= CHI_HA.arrivalDistance &&
+          !stationed.some(visit => visit.id === vehicle.id && visit.objectiveId === objective.id)) {
+          stationed.push({ id: vehicle.id, objectiveId: objective.id, time: now });
+        }
       }
       if (frame % 50 === 0) samples.push({ time: now, tanks: vehicles.map(vehicle => ({
         id: vehicle.id, position: { ...vehicle.position }, tracks: vehicle.trackDistance,
         ai: { ...vehicle.ai, path: vehicle.ai.path.map(point => ({ ...point })) }, navigation: navigation.stats(vehicle),
       })) });
     }
-    return { obstacleCount: world.obstacles.length, samples, reached, collisions };
+    return { obstacleCount: world.obstacles.length, samples, reached, stationed, collisions };
   });
   if (out) {
     await mkdir(out, { recursive: true });
     await writeFile(join(out, 'chi-ha-routes.json'), JSON.stringify(result, null, 2));
   }
   assert.deepEqual(result.collisions, []);
-  for (const id of ['route-0', 'route-1']) {
-    assert.ok(result.reached.some(visit => visit.id === id && visit.objectiveId === 'B'),
-      `${id} must reach B after the objective changes: ${JSON.stringify(result.samples.at(-1))}`);
+  for (const id of ['route-0', 'route-1']) for (const objectiveId of ['B', 'C']) {
+    assert.ok(result.reached.some(visit => visit.id === id && visit.objectiveId === objectiveId),
+      `${id} must reach ${objectiveId} after the objective changes: ${JSON.stringify(result.samples.at(-1))}`);
+    assert.ok(result.stationed.some(visit => visit.id === id && visit.objectiveId === objectiveId),
+      `${id} must reach its own ${objectiveId} station without a parked partner blocking it`);
   }
-  console.log(`PASS: both tanks reach the assigned objective across ${result.obstacleCount} actual battlefield obstacles, including the 30-second objective change.`);
+  console.log(`PASS: both tanks reach their B and C stations across ${result.obstacleCount} actual battlefield obstacles, including objective changes at 30 and 130 seconds.`);
 } finally {
   await browser.close();
 }

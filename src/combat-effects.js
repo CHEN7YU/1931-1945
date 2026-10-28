@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
+import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
 
-const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0 };
+const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0,
+  'blast-dust': 0x9b8a6e, 'blast-smoke': 0x666560, 'blast-flash': 0xffc575 };
 const fragmentColors = Object.fromEntries(Object.entries(colors).map(([name, value]) => [name, new THREE.Color(value)]));
 export function impactKind(object) {
   const surface = object.material?.userData.surface;
@@ -36,6 +37,18 @@ export function createCombatEffects(scene, camera, groundHeight) {
   gradient.addColorStop(0, 'rgba(255,255,255,.55)'); gradient.addColorStop(.35, 'rgba(255,255,255,.3)'); gradient.addColorStop(1, 'rgba(255,255,255,0)');
   context.fillStyle = gradient; context.fillRect(0, 0, 128, 128);
   const texture = new THREE.CanvasTexture(canvas);
+  const blastPixels = new Uint8Array(128 * 128 * 4);
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+    const nx = (x - 63.5) / 64, ny = (y - 63.5) / 64, r = Math.hypot(nx, ny);
+    const lobes = .10 * Math.sin(Math.atan2(ny, nx) * 7 + .7) + .05 * Math.sin(Math.atan2(ny, nx) * 11);
+    const noise = .60 + .18 * Math.sin(x * .18 + Math.sin(y * .14) * 2) +
+      .12 * Math.cos(y * .33 + x * .25) + .07 * Math.sin(x * .77 - y * .49);
+    const density = Math.max(0, Math.min(1, (1 + lobes - r) * 3)) * noise;
+    const i = (y * 128 + x) * 4, shade = 190 + Math.round(noise * 55);
+    blastPixels.set([shade, shade, shade, Math.round(density * 195)], i);
+  }
+  const blastTexture = new THREE.DataTexture(blastPixels, 128, 128);
+  blastTexture.magFilter = THREE.LinearFilter; blastTexture.needsUpdate = true;
   const clouds = Array.from({ length: PARTICLE_LIMITS.clouds }, () => {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0 }));
     sprite.visible = false; scene.add(sprite); return sprite;
@@ -61,20 +74,23 @@ export function createCombatEffects(scene, camera, groundHeight) {
       const cloud = state.clouds[index]; sprite.visible = Boolean(cloud);
       if (!cloud) return;
       const t = cloud.age / cloud.life;
+      const blast = cloud.kind.startsWith('blast-');
+      sprite.material.map = blast ? blastTexture : texture;
       sprite.position.set(cloud.x, cloud.y, cloud.z);
-      sprite.scale.setScalar(cloud.size * (1 + t * 2));
+      sprite.scale.set(cloud.size * (1 + t * (blast ? 3.2 : 2)), cloud.size * (1 + t * (cloud.kind === 'blast-dust' ? 1.1 : 2.4)), 1);
       sprite.material.color.setHex(colors[cloud.kind]);
-      sprite.material.opacity = .28 * (1 - t);
-      const flash = cloud.kind === 'muzzle' && cloud.age < .05;
+      sprite.material.opacity = (blast ? .62 : .28) * (1 - t) * (cloud.kind === 'blast-smoke' ? Math.min(1, .2 + t * 7) : 1);
+      const flash = cloud.kind === 'muzzle' && cloud.age < .05 || cloud.kind === 'blast-flash';
       sprite.material.blending = flash ? THREE.AdditiveBlending : THREE.NormalBlending;
-      if (flash) { sprite.material.color.setHex(0xffdfa0); sprite.material.opacity = .65 * (1 - cloud.age / .05); }
+      if (flash) { sprite.material.color.setHex(cloud.kind === 'muzzle' ? 0xffdfa0 : 0xffc575); sprite.material.opacity = .85 * (1 - t); }
       sprite.material.rotation = cloud.rotation;
     });
     lights.forEach((light, index) => {
       const pulse = state.lights[index];
       // Keep a fixed shader light count during high-quality combat; inactive lights emit zero.
       light.visible = Boolean(settings && settings.preset !== 'low' && settings.effects.muzzle && settings.effects.muzzleLight);
-      light.intensity = pulse ? 9 * (1 - pulse.age / pulse.life) : 0;
+      light.intensity = pulse ? (pulse.intensity ?? 9) * (1 - pulse.age / pulse.life) : 0;
+      light.distance = pulse?.distance ?? 3;
       if (pulse) light.position.set(pulse.x, pulse.y, pulse.z);
     });
   };
@@ -109,11 +125,17 @@ export function createCombatEffects(scene, camera, groundHeight) {
       lastImpact = { kind: impact.kind, position: position.toArray(), normal: normal.toArray() };
       emit(position, normal, impact.kind, time);
     },
+    explosion(position, time, radius = 7) {
+      if (!settings.effects.hitParticles || camera.position.distanceTo(position) > 140) return;
+      emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight });
+      display();
+    },
     update(dt, time) { advanceCombatParticles(state, dt, groundHeight, time); display(); },
     clear() { clearCombatParticles(state); lastImpact = null; display(); },
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length,
+        blastClouds: state.clouds.filter(cloud => cloud.kind.startsWith('blast-')).length,
         visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
         shaderLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
         limits: { ...PARTICLE_LIMITS }, emitted: state.emitted,

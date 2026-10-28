@@ -33,6 +33,7 @@ export function createNativePosturePoses(normalized, bones) {
       .setFromAxisAngle(new THREE.Vector3(0, 0, 1), stance === 'wallLeft' ? .20 : -.20)));
     for (const side of ['Left', 'Right']) {
       const foot = feet.get(side), target = foot.position.clone();
+      const pole = prone ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(0, 0, -1);
       if (prone) { target.y = .22; target.z = .84; }
       if (kneeling) {
         if (side === 'Right') {
@@ -40,12 +41,17 @@ export function createNativePosturePoses(normalized, bones) {
           const thigh = upper.distanceTo(knee), shin = knee.distanceTo(position(bones.get(`${side}Foot`)));
           const drop = upper.y - .08;
           if (drop >= thigh) throw new Error('Kneeling hip is too high for ground contact');
-          target.set(upper.x, .22, upper.z + Math.sqrt(thigh * thigh - drop * drop) + Math.sqrt(shin * shin - .14 * .14));
+          const kneeZ = upper.z - Math.sqrt(thigh * thigh - drop * drop);
+          target.set(upper.x, .22, kneeZ + Math.sqrt(shin * shin - .14 * .14));
+          pole.set(0, .08 - upper.y, kneeZ - upper.z);
         } else target.z = -.32;
       }
       const solved = solveArm(bones.get(`${side}UpLeg`), bones.get(`${side}Leg`), bones.get(`${side}Foot`), target,
-        prone || kneeling && side === 'Right' ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(0, 0, -1));
+        pole);
       if (!solved.reachable || solved.error > .01) throw new Error(`Native ${stance} leg pose is unreachable`);
+      if (kneeling && side === 'Right' && Math.abs(position(bones.get(`${side}Leg`)).y - .08) > .005) {
+        throw new Error('Supporting knee must retain actual ground contact');
+      }
       if (prone && position(bones.get(`${side}Leg`)).y < .03) throw new Error('Prone knee would intersect the ground');
       const rearFoot = prone || kneeling && side === 'Right';
       setRotation(bones.get(`${side}Foot`), rearFoot

@@ -14,6 +14,7 @@ import { groundHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose } from './casualties.js';
+import { createNraGrenadeHand } from './nra-hand.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
 
@@ -141,6 +142,7 @@ export async function loadNraCharacter() {
       return count;
     },
     createView,
+    createGrenadeHand: side => createNraGrenadeHand(normalized, side),
     bind(id) {
       actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; casualtyPose = null; resets++;
       mixer.stopAllAction();
