@@ -89,6 +89,8 @@ try {
       if (data.time >= 150 || ['victory', 'defeat', 'draw'].includes(data.state)) break;
       await page.waitForTimeout(700);
     }
+    assert.ok(data.time >= 150 || ['victory', 'defeat', 'draw'].includes(data.state),
+      'full battle reaches 150 simulated seconds or a legitimate match result within the observation deadline');
     actual = [...throws.values()];
     assert.ok(actual.some(event => event.source.team === 'friendly' && event.source.credit === 'ally'));
     assert.ok(actual.some(event => event.source.team === 'enemy'));

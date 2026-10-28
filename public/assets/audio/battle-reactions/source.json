@@ -1,0 +1,204 @@
+{
+  "asset": "Wordless male combat reactions",
+  "author": "HaelDB",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/male-gruntyelling-sounds",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "archive": {
+    "url": "https://opengameart.org/sites/default/files/yelling%20sounds.zip",
+    "sha256": "e9100a4e3b9dcd146993089970dc6097dcf9935fa4683b196040012bad65d67a"
+  },
+  "licenseEvidence": "Author page offers OGA-BY 3.0 and CC0 as alternative licenses; CC0 selected.",
+  "limitations": [
+    "Wordless human vocals shared across factions, not Chinese/Japanese spoken performances or historical recordings.",
+    "Three source performer groups, two takes per cue; cue assignments are game-design choices.",
+    "Listening quality and emotional suitability need human acceptance; no independent listening acceptance is claimed."
+  ],
+  "processing": [
+    "FFmpeg mono 24kHz, 16-bit PCM",
+    "Peak bounded to 0.65; 1ms attack and 8ms tail fades",
+    "Trim leading/trailing silence only; no pitch change"
+  ],
+  "files": [
+    {
+      "file": "0-hurt-0.wav",
+      "variant": 0,
+      "cue": "hurt",
+      "original": "1yell1.wav",
+      "originalSha256": "d9fd329f37c07327bf6a3249ff9b30dad9ecec8762981c6d8eda225f892d028e",
+      "duration": 0.41729166666666667,
+      "bytes": 20074,
+      "sha256": "388fc5c79bf778b81483df9e7af1c67e866f6d75abd35b56ddc16590d5def7a7"
+    },
+    {
+      "file": "0-hurt-1.wav",
+      "variant": 0,
+      "cue": "hurt",
+      "original": "1yell8.wav",
+      "originalSha256": "eb878527b89573c537c49790450706646fa16dd1cd6f3705c9a7c2e920f917cb",
+      "duration": 0.5355416666666667,
+      "bytes": 25750,
+      "sha256": "a70a750210aea1ad4a477a6fc11a9d58c95f49719ba45921f66d9e0a7c297754"
+    },
+    {
+      "file": "0-cover-0.wav",
+      "variant": 0,
+      "cue": "cover",
+      "original": "1yell2.wav",
+      "originalSha256": "5bd2d3b068ba08b2d1237676bd441c4edd608624df4c2ed1d7a6a471d5765138",
+      "duration": 0.6719583333333333,
+      "bytes": 32298,
+      "sha256": "37938317b180a2c4a7e8d4291b9e4a0fbd6b60b547d6f0d8c6416067b309995d"
+    },
+    {
+      "file": "0-cover-1.wav",
+      "variant": 0,
+      "cue": "cover",
+      "original": "1yell14.wav",
+      "originalSha256": "365ac7a540e2696bb3e3258b3aa26cc86c5781ff7e56c722b2679b28d41ba3fd",
+      "duration": 0.461375,
+      "bytes": 22190,
+      "sha256": "9a3b6c72593963a03e50e47caa48bf9b9cc3c109d95feeeff547d7cdd4e5807c"
+    },
+    {
+      "file": "0-charge-0.wav",
+      "variant": 0,
+      "cue": "charge",
+      "original": "1yell10.wav",
+      "originalSha256": "186ae615ac7cd5b50752a6c4898837f885c42fe648cd8148425425843f1dfca3",
+      "duration": 0.5340416666666666,
+      "bytes": 25678,
+      "sha256": "f59ff799b695ddf8883046eb0f753e127c4adccfde024a4f0db7cc53a1beb7c8"
+    },
+    {
+      "file": "0-charge-1.wav",
+      "variant": 0,
+      "cue": "charge",
+      "original": "1yell15.wav",
+      "originalSha256": "761a03d1ea2339ef26e11744c7aa7f641ba259acc1e3398516ca90eef3f3da1d",
+      "duration": 0.40208333333333335,
+      "bytes": 19344,
+      "sha256": "485361e7ce6b2a202d11e5169849948d690293cee3c04d5045cd8bf3a1cf7ae5"
+    },
+    {
+      "file": "1-hurt-0.wav",
+      "variant": 1,
+      "cue": "hurt",
+      "original": "2yell1.wav",
+      "originalSha256": "7c14c178f7d765cc60e20f72d296de8a6ad26172dcc98e69a36b4f817df7fa25",
+      "duration": 0.409375,
+      "bytes": 19694,
+      "sha256": "279a462f6914af2dbcbb98d32e29848949957fab0f8acbf451e7e430906b86d6"
+    },
+    {
+      "file": "1-hurt-1.wav",
+      "variant": 1,
+      "cue": "hurt",
+      "original": "2yell3.wav",
+      "originalSha256": "5fbacf0e1d7fca6f8c3022203793af19f6903a6281f6822e022206ec29bf625d",
+      "duration": 0.916375,
+      "bytes": 44030,
+      "sha256": "435c8e8f10acf50eb78f7a28f52da81f4aac36c7ad6e6853e7a90d9c8ff456b9"
+    },
+    {
+      "file": "1-cover-0.wav",
+      "variant": 1,
+      "cue": "cover",
+      "original": "2yell10.wav",
+      "originalSha256": "718542b6a1ba707b613499f4510c2fe1eb063a28546cc608030bc63354e45b83",
+      "duration": 0.604,
+      "bytes": 29036,
+      "sha256": "913c978fe4450f27a883886b138009520f67664168fec20e097fb947beaf173f"
+    },
+    {
+      "file": "1-cover-1.wav",
+      "variant": 1,
+      "cue": "cover",
+      "original": "2yell2.wav",
+      "originalSha256": "1a9836ad95d3102459a416839ccc0b0cf551dfc3322b44284fb7b6ab0b7daf77",
+      "duration": 0.7424583333333333,
+      "bytes": 35682,
+      "sha256": "251b1263d490f1034edfa8b69420e4de4f1d671a31697dff605d03b71558a0f9"
+    },
+    {
+      "file": "1-charge-0.wav",
+      "variant": 1,
+      "cue": "charge",
+      "original": "2yell7.wav",
+      "originalSha256": "b88f6a390493935c2682a52e7e52d7a4e77b7d8a60c73af7b508f312454af839",
+      "duration": 0.643625,
+      "bytes": 30938,
+      "sha256": "8116acbd7380464f78d9d0a98ca8df28e9cb64c847ce38b0cdfa371c131f6234"
+    },
+    {
+      "file": "1-charge-1.wav",
+      "variant": 1,
+      "cue": "charge",
+      "original": "2yell8.wav",
+      "originalSha256": "c0e6628c4a548cfd7e5aa9adf1d8f2d6d99b22f73a4884bb20470ff06d7fc7d9",
+      "duration": 1.118125,
+      "bytes": 53714,
+      "sha256": "4f55edfca7f827c52b6b8a4627977e797e36d3e114a72a57f964773a46adeae9"
+    },
+    {
+      "file": "2-hurt-0.wav",
+      "variant": 2,
+      "cue": "hurt",
+      "original": "3grunt3.wav",
+      "originalSha256": "6006516ae7979896a4053cfc88f26ef575a67133fa0c51de5d9a893498960cc9",
+      "duration": 0.4731666666666667,
+      "bytes": 22756,
+      "sha256": "41beb40de8ba592d97e99e5880065fe7e5bf9652b28dd85f27b9afaa1e0d47a7"
+    },
+    {
+      "file": "2-hurt-1.wav",
+      "variant": 2,
+      "cue": "hurt",
+      "original": "3grunt4.wav",
+      "originalSha256": "4ba97adf030acefa10195f88c3fb329ebbea2c9638bd412896e1b4fc0ca35404",
+      "duration": 0.22491666666666665,
+      "bytes": 10840,
+      "sha256": "1299f0994bc05a10bbfe423a302191caf15b97601a0b1c52cecc702cc50d2e06"
+    },
+    {
+      "file": "2-cover-0.wav",
+      "variant": 2,
+      "cue": "cover",
+      "original": "3yell3.wav",
+      "originalSha256": "2e55e23478c86bf9bfdf4297a24fb5135c18822dd38f95cabeb45612c840b64b",
+      "duration": 0.34291666666666665,
+      "bytes": 16504,
+      "sha256": "b1479d2a2b6bf5a4b09bafead68020aa0e1a216671f0e55ebf67ec57823dace5"
+    },
+    {
+      "file": "2-cover-1.wav",
+      "variant": 2,
+      "cue": "cover",
+      "original": "3yell7.wav",
+      "originalSha256": "5d864df467eb4e4f1937f0f3eeb210514551a38c3fca9a8b2bfaf8ef45dbd79f",
+      "duration": 0.8589583333333334,
+      "bytes": 41274,
+      "sha256": "9d3ef2341547f69034bc6da56ffa07d9e45be4d8679f3428c3663de5fbc678cf"
+    },
+    {
+      "file": "2-charge-0.wav",
+      "variant": 2,
+      "cue": "charge",
+      "original": "3yell8.wav",
+      "originalSha256": "3944906b73779fcd6bc300385ed65456bffae3c31165417a42a56f3534c38469",
+      "duration": 0.8179166666666666,
+      "bytes": 39304,
+      "sha256": "9d0e6c2e7d348332cb8ba4bb40e12e87b38fd3602a4807e06a06acf737fee82d"
+    },
+    {
+      "file": "2-charge-1.wav",
+      "variant": 2,
+      "cue": "charge",
+      "original": "3yell12.wav",
+      "originalSha256": "24d232e83d15537868a849328e367f6e8fb0028b6825d67637515ff350817056",
+      "duration": 0.8545416666666666,
+      "bytes": 41062,
+      "sha256": "ebac1cdcd7847674a4224fe9349f26153440d08436bcbdab88f5f31a16f5759f"
+    }
+  ]
+}

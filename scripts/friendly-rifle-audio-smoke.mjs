@@ -8,7 +8,8 @@ const directory = resolve(process.env.ARTIFACT_DIR ?? 'audio-observations', 'chi
 await mkdir(directory, { recursive: true });
 const files = new Map([
   ['/src/rifle-audio.js', ['src/rifle-audio.js', 'text/javascript']],
-  ...['recorded-rifle/report.wav', 'friendly-rifle-generated/rifle-report.wav', 'friendly-rifle-generated/sniper-report.wav']
+  ...['recorded-rifle/report.wav', 'friendly-rifle-generated/rifle-report.wav', 'friendly-rifle-generated/sniper-report.wav',
+    'enemy-rifle/report.wav', ...[0, 1, 2].map(take => `machine-gun/shot-${take}.wav`)]
     .map(file => [`/assets/audio/${file}`, [`public/assets/audio/${file}`, 'audio/wav']]),
 ]);
 const server = createServer(async (request, response) => {
@@ -21,7 +22,8 @@ const server = createServer(async (request, response) => {
   try {
     response.writeHead(200, { 'Content-Type': file[1] });
     response.end(await readFile(new URL(`../${file[0]}`, import.meta.url)));
-  } catch {
+  } catch (error) {
+    console.error('Audio fixture read failed:', file[0], error);
     response.writeHead(500); response.end();
   }
 });
@@ -61,12 +63,17 @@ try {
       ['friendly', 'machine-gun'], ['friendly', 'tank-machine-gun'], [undefined, undefined]]) {
       const event = { id: ++id, start: { ...listener.position }, source: {
         soldierId: 'player', weaponId: 'player:rifle', team, weaponClass } };
+      const start = context.currentTime, deadline = performance.now() + 2000;
       mixer.playBatch(context, [event], listener);
-      await new Promise(resolve => setTimeout(resolve, 45));
+      while (context.currentTime < start + .045) {
+        if (performance.now() > deadline) throw new Error('Running browser audio clock did not advance');
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
       const values = new Float32Array(analyser.fftSize);
       analyser.getFloatTimeDomainData(values);
       samples.push({ team: team ?? null, weaponClass: weaponClass ?? null,
         report: mixer.snapshot.history.at(-1).report, duration: sources.at(-1).buffer.duration,
+        renderedSeconds: context.currentTime - start,
         rms: Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length) });
     }
     const snapshot = mixer.snapshot;
@@ -75,9 +82,11 @@ try {
     await context.close();
     return { samples, snapshot, reset, webglCreated: false, audibleListeningClaimed: false };
   });
+  await writeFile(join(directory, 'browser-playback.json'), JSON.stringify({ ...result, errors }, null, 2));
   assert.deepEqual(result.samples.map(item => item.report),
-    ['friendly-rifle', 'friendly-sniper', 'fallback', 'fallback', 'fallback', 'fallback']);
-  assert.deepEqual(result.samples.map(item => item.duration), [.42, .28, .6, .6, .6, .6]);
+    ['friendly-rifle', 'friendly-sniper', 'enemy-rifle', 'machine-gun', 'machine-gun', 'recorded-rifle']);
+  assert.deepEqual(result.samples.map(item => item.duration), [.42, .28, result.snapshot.enemyDuration,
+    result.snapshot.machineGunDurations[1], result.snapshot.machineGunDurations[2], .6]);
   assert.ok(result.samples.every(item => item.rms > .0001), 'real browser graph produces nonzero audio');
   assert.equal(result.snapshot.peakVoices, 1);
   assert.equal(result.reset.active, 0);
@@ -91,7 +100,6 @@ try {
     await page.unroute(`**/friendly-rifle-generated/${name}`);
   }
   assert.deepEqual(errors, []);
-  await writeFile(join(directory, 'browser-playback.json'), JSON.stringify({ ...result, errors }, null, 2));
   console.log(JSON.stringify({ passed: true, directory, reports: result.samples, errors }));
 } finally {
   await browser?.close();

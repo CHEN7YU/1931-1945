@@ -49,7 +49,7 @@ function peakSafetyCurve() {
   return curve;
 }
 
-export function createRifleAudio(buffer, friendlyReports = {}) {
+export function createRifleAudio(buffer, enemyBuffer = buffer, machineGunBuffers = [buffer], friendlyReports = {}) {
   const reports = { fallback: buffer, 'friendly-rifle': friendlyReports.rifle, 'friendly-sniper': friendlyReports.sniper };
   for (const [name, report] of Object.entries(reports)) {
     if (name !== 'fallback' && report === undefined) continue;
@@ -58,9 +58,18 @@ export function createRifleAudio(buffer, friendlyReports = {}) {
     }
   }
   function reportFor(event) {
+    if (event.automatic === true || ['machine-gun', 'tank-machine-gun'].includes(event.source.weaponClass)) return 'machine-gun';
+    if (event.source.team === 'enemy' && event.weaponType !== 'tank') return 'enemy-rifle';
     const weaponClass = event.source.team === 'friendly' ? event.source.weaponClass : null;
     const name = weaponClass === 'rifle' ? 'friendly-rifle' : weaponClass === 'sniper' ? 'friendly-sniper' : 'fallback';
     return reports[name] ? name : 'fallback';
+  }
+  if (!enemyBuffer || !Number.isFinite(enemyBuffer.duration) || enemyBuffer.duration <= 0 || enemyBuffer.duration > 4) {
+    throw new RangeError('Enemy rifle report must be a decoded audio buffer no longer than four seconds');
+  }
+  if (!Array.isArray(machineGunBuffers) || !machineGunBuffers.length || machineGunBuffers.some(clip =>
+    !clip || !Number.isFinite(clip.duration) || clip.duration <= 0 || clip.duration > .65)) {
+    throw new RangeError('Machine-gun reports must be decoded short audio buffers');
   }
   const voices = new Set(), history = [];
   const counts = { played: 0, owned: 0, remote: 0, range: 0, budget: 0, polyphony: 0, suspended: 0, replaced: 0 };
@@ -136,7 +145,9 @@ export function createRifleAudio(buffer, friendlyReports = {}) {
       }
       const source = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter(), panner = audio.createStereoPanner();
       const report = reportFor(event);
-      source.buffer = reports[report]; source.playbackRate.value = [1, .99, 1.015][event.id % 3];
+      source.buffer = report === 'machine-gun' ? machineGunBuffers[event.id % machineGunBuffers.length]
+        : report === 'enemy-rifle' ? enemyBuffer : reports[report];
+      source.playbackRate.value = ['machine-gun', 'enemy-rifle'].includes(report) ? 1 : [1, .99, 1.015][event.id % 3];
       filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
       gain.gain.value = mix.gain; panner.pan.value = mix.pan;
       source.connect(filter).connect(gain).connect(panner).connect(bus);
@@ -156,7 +167,9 @@ export function createRifleAudio(buffer, friendlyReports = {}) {
       else batchRemote++;
       counts.played++; counts[owned ? 'owned' : 'remote']++;
       peakVoices = Math.max(peakVoices, voices.size);
-      history.push({ eventId: event.id, soldierId: event.source.soldierId, credit: event.source.credit, owned, report,
+      history.push({ eventId: event.id, soldierId: event.source.soldierId, credit: event.source.credit, owned,
+        report: report === 'fallback' ? 'recorded-rifle' : report,
+        time: event.time ?? null,
         distance: mix.distance, pan: mix.pan, gain: mix.gain, cutoff: mix.cutoff });
       if (history.length > 40) history.shift();
       source.start(audio.currentTime);
@@ -171,6 +184,8 @@ export function createRifleAudio(buffer, friendlyReports = {}) {
       return { status: 'recorded', contextState: context?.state ?? 'not-started', duration: buffer.duration, sampleRate: buffer.sampleRate,
         reports: Object.fromEntries(Object.entries(reports).filter(([, report]) => report).map(([name, report]) =>
           [name, { duration: report.duration, sampleRate: report.sampleRate }])),
+        enemyDuration: enemyBuffer.duration,
+        machineGunDurations: machineGunBuffers.map(clip => clip.duration),
         active: voices.size, peakVoices, counts: { ...counts }, history: history.map(item => ({ ...item })),
         dynamics: { linearBelow: .85, safetyCeiling: .95 },
         limits: { remoteVoices: 8, remotePerBatch: 3, maxDistance: 240, fadeFrom: 180 } };
@@ -183,10 +198,12 @@ export async function loadRifleAudio() {
   const Audio = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!Audio) throw new Error('Browser does not provide offline audio decoding');
   const context = new Audio(1, 1, 24000);
-  const [fallback, rifle, sniper] = await Promise.all([
+  const [fallback, rifle, sniper, enemyBuffer, ...machineGunBuffers] = await Promise.all([
     '/assets/audio/recorded-rifle/report.wav',
     '/assets/audio/friendly-rifle-generated/rifle-report.wav',
     '/assets/audio/friendly-rifle-generated/sniper-report.wav',
+    '/assets/audio/enemy-rifle/report.wav',
+    ...[0, 1, 2].map(take => `/assets/audio/machine-gun/shot-${take}.wav`),
   ].map(async path => {
     const response = await fetch(path, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) throw new Error(`Recorded rifle sound ${path}: HTTP ${response.status}`);
@@ -202,5 +219,5 @@ export async function loadRifleAudio() {
       throw new Error(`Recorded rifle sound ${path}: ${error.name}: ${error.message}`, { cause: error });
     }
   }));
-  return createRifleAudio(fallback, { rifle, sniper });
+  return createRifleAudio(fallback, enemyBuffer, machineGunBuffers, { rifle, sniper });
 }

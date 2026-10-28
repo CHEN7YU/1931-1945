@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { rifleMix, createRifleAudio, loadRifleAudio } from '../src/rifle-audio.js';
+import { createRifleState, shootRifle, advanceRifle, infantryWeaponProfile } from '../src/rifle-action.js';
+import { createCombatEvents } from '../src/combat-events.js';
 
 const listener = () => ({ position: { x: 0, y: 1.6, z: 0 }, right: { x: 1, y: 0, z: 0 },
   soldierId: 'player', weaponId: 'player:rifle' });
@@ -29,7 +31,7 @@ const buffer = { duration: .6, sampleRate: 24000 };
 const friendlyReports = { rifle: { duration: .42, sampleRate: 24000 }, sniper: { duration: .28, sampleRate: 24000 } };
 
 test('selected operators own only their primary and explicitly listed current secondary weapons', () => {
-  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext();
+  const audio = createRifleAudio(buffer, buffer, [buffer], friendlyReports), context = fakeContext();
   const ears = { ...listener(), weaponId: 'tank-current:cannon', ownedWeaponIds: ['tank-current:mg-coax'] };
   const coax = (id, soldierId = 'player', weaponId = 'tank-current:mg-coax') => {
     const shot = event(id, 20, soldierId);
@@ -45,7 +47,7 @@ test('selected operators own only their primary and explicitly listed current se
   assert.equal(history[0].owned, true);
   assert.equal(history[0].pan, 0);
   assert.equal(history[0].gain, rifleMix(ownShot.start, ears, true).gain);
-  assert.equal(history[0].report, 'fallback', 'owned tank MG does not inherit friendly rifle samples');
+  assert.equal(history[0].report, 'machine-gun', 'owned tank MG does not inherit friendly rifle samples');
   assert.ok(history.slice(1).every(item => !item.owned));
   assert.equal(audio.snapshot.counts.owned, 1);
   assert.equal(audio.snapshot.counts.remote, 3);
@@ -100,35 +102,39 @@ test('optional owned weapon IDs reject malformed lists before changing mixer sta
 });
 
 test('only explicit friendly ordinary/scoped rifle metadata selects the supplied reports', () => {
-  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext(), ears = listener();
+  const enemyBuffer = { duration: 3.074 }, machine = { duration: .095 };
+  const audio = createRifleAudio(buffer, enemyBuffer, [machine], friendlyReports), context = fakeContext(), ears = listener();
   const cases = [
     ['friendly', 'rifle', 'friendly-rifle'],
     ['friendly', 'sniper', 'friendly-sniper'],
-    ['enemy', 'rifle', 'fallback'],
-    ['enemy', 'sniper', 'fallback'],
-    ...['machine-gun', 'tank-machine-gun', 'tank-cannon', 'grenade', 'unknown'].map(kind => ['friendly', kind, 'fallback']),
-    [undefined, 'rifle', 'fallback'], ['friendly', undefined, 'fallback'], [undefined, undefined, 'fallback'],
-    ['ally', 'rifle', 'fallback'],
+    ['enemy', 'rifle', 'enemy-rifle'],
+    ['enemy', 'sniper', 'enemy-rifle'],
+    ['friendly', 'machine-gun', 'machine-gun'], ['friendly', 'tank-machine-gun', 'machine-gun'],
+    ...['tank-cannon', 'grenade', 'unknown'].map(kind => ['friendly', kind, 'recorded-rifle']),
+    [undefined, 'rifle', 'recorded-rifle'], ['friendly', undefined, 'recorded-rifle'], [undefined, undefined, 'recorded-rifle'],
+    ['ally', 'rifle', 'recorded-rifle'],
   ];
   for (const [index, [team, weaponClass, expected]] of cases.entries()) {
     const shot = event(index + 1, 0, 'player');
     Object.assign(shot.source, { team, weaponClass });
     audio.play(context, shot, ears, true);
     assert.equal(audio.snapshot.history.at(-1).report, expected);
-    assert.equal(context.sources.at(-1).buffer, expected === 'fallback' ? buffer :
-      friendlyReports[expected === 'friendly-rifle' ? 'rifle' : 'sniper']);
+    assert.equal(context.sources.at(-1).buffer, {
+      'recorded-rifle': buffer, 'enemy-rifle': enemyBuffer, 'machine-gun': machine,
+      'friendly-rifle': friendlyReports.rifle, 'friendly-sniper': friendlyReports.sniper,
+    }[expected]);
     assert.equal(audio.snapshot.active, 1, 'sample changes share the personal-tail replacement policy');
   }
   const legacy = createRifleAudio(buffer);
   const shot = event(50);
   Object.assign(shot.source, { team: 'friendly', weaponClass: 'sniper' });
   legacy.play(fakeContext(), shot, ears, false);
-  assert.equal(legacy.snapshot.history[0].report, 'fallback', 'single-buffer API stays compatible');
-  assert.throws(() => createRifleAudio(buffer, { rifle: { duration: 2 } }), /short audio/);
+  assert.equal(legacy.snapshot.history[0].report, 'recorded-rifle', 'single-buffer API stays compatible');
+  assert.throws(() => createRifleAudio(buffer, buffer, [buffer], { rifle: { duration: 2 } }), /short audio/);
 });
 
 test('all sample types share batch, range, replacement, ownership-transfer and reset budgets', () => {
-  const audio = createRifleAudio(buffer, friendlyReports), context = fakeContext(), ears = listener();
+  const audio = createRifleAudio(buffer, buffer, [buffer], friendlyReports), context = fakeContext(), ears = listener();
   const shot = (id, x = 10, soldierId = 'ally') => {
     const value = event(id, x, soldierId);
     Object.assign(value.source, { team: id % 3 === 0 ? 'enemy' : 'friendly',
@@ -136,7 +142,7 @@ test('all sample types share batch, range, replacement, ownership-transfer and r
     return value;
   };
   assert.equal(audio.playBatch(context, [shot(1), shot(2), shot(3), shot(4)], ears), 3);
-  assert.deepEqual(audio.snapshot.history.map(item => item.report), ['friendly-rifle', 'friendly-sniper', 'fallback']);
+  assert.deepEqual(audio.snapshot.history.map(item => item.report), ['friendly-rifle', 'friendly-sniper', 'enemy-rifle']);
   assert.equal(audio.snapshot.counts.budget, 1);
   for (let id = 5; id <= 9; id++) {
     audio.beginBatch(); audio.play(context, shot(id, 80 + id), ears, false);
@@ -162,7 +168,7 @@ test('all sample types share batch, range, replacement, ownership-transfer and r
   assert.ok(context.sources.every(source => source.stopped));
 });
 
-test('loader decodes three reports and rejects a missing supplied asset instead of pretending it loaded', async t => {
+test('loader decodes seven reports and rejects a missing supplied asset instead of pretending it loaded', async t => {
   const originalFetch = globalThis.fetch, originalOffline = globalThis.OfflineAudioContext;
   t.after(() => { globalThis.fetch = originalFetch; globalThis.OfflineAudioContext = originalOffline; });
   const paths = [], decoded = [];
@@ -180,7 +186,7 @@ test('loader decodes three reports and rejects a missing supplied asset instead 
     return { ok: true, arrayBuffer: async () => wavHeader() };
   };
   const audio = await loadRifleAudio();
-  assert.equal(decoded.length, 3);
+  assert.equal(decoded.length, 7);
   assert.deepEqual(Object.keys(audio.snapshot.reports), ['fallback', 'friendly-rifle', 'friendly-sniper']);
   assert.ok(paths.some(path => path.endsWith('friendly-rifle-generated/rifle-report.wav')));
   for (const name of ['rifle-report.wav', 'sniper-report.wav']) {
@@ -192,7 +198,7 @@ test('loader decodes three reports and rejects a missing supplied asset instead 
     async decodeAudioData() { throw new Error('Invalid supplied audio'); }
   };
   await assert.rejects(loadRifleAudio(), /Invalid supplied audio/);
-  assert.equal(decoded.length, 7, 'HTTP errors do not reach decoding');
+  assert.equal(decoded.length, 19, 'HTTP errors do not reach decoding');
   for (const body of [new TextEncoder().encode('<!doctype html><html>SPA fallback</html>'), new Uint8Array(0)]) {
     globalThis.fetch = async () => ({ ok: true, headers: new Headers({ 'content-type': 'text/html' }),
       arrayBuffer: async () => body.buffer.slice(0) });
@@ -402,5 +408,71 @@ test('supplied report excerpts match provenance, short mono PCM format, gain and
     const secondaryTransient = record.originalRole === 'friendly-rifle' ? .45 : .30;
     assert.ok(record.durationSeconds < secondaryTransient);
     assert.ok(Math.abs(record.tailFadeStartSeconds + source.processing.tailFadeSeconds - record.durationSeconds) < 1e-12);
+  }
+});
+
+test('faction and automatic flags select the correct recording without changing cadence or pitch', () => {
+  const enemyBuffer = { duration: 3.074 }, machine = [0, 1, 2].map(take => ({ duration: .095, take }));
+  const audio = createRifleAudio(buffer, enemyBuffer, machine), context = fakeContext(), ears = listener();
+  const shots = [
+    { ...event(1), source: { ...event(1).source, team: 'friendly' } },
+    { ...event(2, 4, 'enemy'), source: { ...event(2, 4, 'enemy').source, team: 'enemy' } },
+    { ...event(3, 4, 'enemy'), weaponType: 'tank', source: { ...event(3, 4, 'enemy').source, team: 'enemy' } },
+    { ...event(4), automatic: true },
+    { ...event(5, 4, 'enemy'), automatic: true, source: { ...event(5, 4, 'enemy').source, team: 'enemy' } },
+  ];
+  for (const shot of shots) { audio.beginBatch(); audio.play(context, shot, ears, false); }
+  assert.deepEqual(context.sources.map(source => source.buffer), [buffer, enemyBuffer, buffer, machine[1], machine[2]]);
+  assert.deepEqual(audio.snapshot.history.map(item => item.report),
+    ['recorded-rifle', 'enemy-rifle', 'recorded-rifle', 'machine-gun', 'machine-gun']);
+  assert.equal(context.sources[1].playbackRate.value, 1);
+  assert.equal(context.sources[3].playbackRate.value, 1);
+  assert.equal(context.sources[4].playbackRate.value, 1);
+});
+
+test('both machine guns play exactly once per real shot at their weapon cycle, without a looping burst', () => {
+  for (const model of ['zb26', 'type11']) {
+    const gun = createRifleState(model), audio = createRifleAudio(buffer, buffer, [{ duration: .095 }]);
+    const context = fakeContext(), bus = createCombatEvents(), times = [];
+    for (let i = 0; i < 10; i++) {
+      const now = i * infantryWeaponProfile(gun).cycleSeconds;
+      assert.equal(shootRifle(gun), true);
+      bus.publish('shot', { source: { unitId: 'unit', soldierId: 'player', weaponId: 'player:rifle',
+        team: 'friendly', credit: 'player' }, weaponType: 'infantry', automatic: true, start: { x: 0, y: 1.6, z: 0 } }, now);
+      context.currentTime = now;
+      bus.drain(shot => { times.push(shot.time); audio.playBatch(context, [shot], listener()); });
+      advanceRifle(gun, infantryWeaponProfile(gun).cycleSeconds);
+    }
+    assert.equal(context.sources.length, 10); assert.equal(gun.shots, 10);
+    assert.ok(context.sources.every(source => source.buffer.duration < .12 && !source.loop));
+    assert.ok(times.every((time, i) => i === 0 || Math.abs(time - times[i - 1] - .12) < 1e-10));
+    assert.equal(audio.snapshot.counts.played, 10);
+    assert.equal(audio.playBatch(context, [], listener()), 0);
+  }
+});
+
+test('user-selected recordings have exact hashes, short isolated machine shots and separate licenses', () => {
+  for (const directory of ['enemy-rifle', 'machine-gun']) {
+    const base = new URL(`../public/assets/audio/${directory}/`, import.meta.url);
+    const source = JSON.parse(readFileSync(new URL('source.json', base), 'utf8'));
+    assert.equal(source.license, directory === 'enemy-rifle' ? 'CC0-1.0' : 'Pixabay-Content-License');
+    for (const record of source.files) {
+      const bytes = readFileSync(new URL(record.file, base));
+      assert.equal(createHash('sha256').update(bytes).digest('hex'), record.sha256);
+      assert.equal(bytes.length, record.bytes);
+      assert.equal(bytes.readUInt16LE(22), 1); assert.equal(bytes.readUInt32LE(24), 24000);
+      const dataOffset = bytes.indexOf(Buffer.from('data')) + 8;
+      let peak = 0;
+      for (let offset = dataOffset; offset < bytes.length; offset += 2) peak = Math.max(peak, Math.abs(bytes.readInt16LE(offset)));
+      assert.ok(peak >= 15000 && peak <= 21400, 'new gunshots are normalized before integer PCM conversion');
+      if (directory === 'machine-gun') {
+        assert.equal(record.duration, .095);
+        assert.equal(bytes.length, 44 + 2280 * 2);
+        assert.equal(bytes.readInt16LE(44), 0); assert.equal(bytes.readInt16LE(bytes.length - 2), 0);
+        let onset = 0;
+        while (onset < 2280 && Math.abs(bytes.readInt16LE(44 + onset * 2)) < 2000) onset++;
+        assert.ok(onset < 240, 'each shot attacks within 10ms, with no imported burst pause');
+      }
+    }
   }
 });

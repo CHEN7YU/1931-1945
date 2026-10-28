@@ -7,9 +7,13 @@ const groups = [
   { manifest: 'sources.json', directory: '', use: 'runtime', evidence: [] },
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
+  { manifest: 'audio/enemy-rifle/source.json', directory: 'audio/enemy-rifle', use: 'runtime', evidence: [] },
+  { manifest: 'audio/battle-reactions/source.json', directory: 'audio/battle-reactions', use: 'runtime', evidence: [] },
+  { manifest: 'audio/machine-gun/source.json', directory: 'audio/machine-gun', use: 'runtime', evidence: [] },
   { manifest: 'audio/rifle-mechanical/source.json', directory: 'audio/rifle-mechanical', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'audio/friendly-rifle-generated/source.json', directory: 'audio/friendly-rifle-generated', use: 'runtime',
     evidence: ['PERMISSION.txt'] },
+  { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -91,6 +95,22 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: 'Adapted from the user-authorized original; not CC0 or an independently accepted historical reconstruction.' });
+    } else if (group.directory === 'audio/battle-voices') {
+      if (metadata.provider !== 'Azure AI Speech' || metadata.license !== 'Azure-generated-speech' ||
+        metadata.source !== 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech' ||
+        metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA' ||
+        metadata.files.some(file => file.gender !== 'Male')) throw new Error('Generated battle voice provenance requires review');
+      permissions.push({ directory: group.directory, basis: metadata.license,
+        limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
+    } else if (group.directory === 'audio/machine-gun') {
+      if (metadata.license !== 'Pixabay-Content-License' || metadata.author !== 'Foisal72' ||
+        metadata.source !== 'https://pixabay.com/sound-effects/film-special-effects-gun-fire-346766/' ||
+        metadata.licenseUrl !== 'https://pixabay.com/service/license-summary/' ||
+        metadata.original?.sha256 !== '6d744d3c82244de278f9dac2c6f4792bdfcf4ae15869befef590f6b7844be46b') {
+        throw new Error('User-supplied machine-gun recording provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: metadata.license,
+        limitation: 'User-supplied recording; not CC0. Source/license pages returned HTTP 403; verify redistribution terms before public release.' });
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }
@@ -123,6 +143,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
     }
     warnings.push(`Build includes ${diagnostic.length} diagnostic-only files (${diagnostic.reduce((sum, item) => sum + item.bytes, 0)} bytes). They are not main-game downloads; this read-only audit does not remove them.`);
   }
+  for (const permission of permissions) if (permission.directory === 'audio/machine-gun') warnings.push(permission.limitation);
   return { files: [...inventory.values()].sort((a, b) => a.file.localeCompare(b.file)),
     bytes: [...inventory.values()].reduce((sum, item) => sum + item.bytes, 0), permissions, warnings };
 }

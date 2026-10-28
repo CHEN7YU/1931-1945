@@ -21,6 +21,7 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.equal(mechanical.length, 6);
   assert.ok(mechanical.every(file => file.use === 'runtime'), 'main-game mechanical recordings must not remain diagnostic-only');
   assert.match(report.permissions[0].limitation, /not CC0/);
+  assert.ok(report.warnings.some(warning => /verify redistribution terms before public release/.test(warning)));
   const generated = report.permissions.find(item => item.directory === 'audio/friendly-rifle-generated');
   assert.equal(generated.basis, 'user-supplied-generated-audio-project-use');
   assert.match(generated.limitation, /redistribution rights have not been independently verified/);

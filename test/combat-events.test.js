@@ -24,6 +24,13 @@ test('shot feedback copies original source and geometry values without retaining
   assert.throws(() => { event.source.weaponId = 'another'; }, TypeError);
   assert.throws(() => { event.end.z = 0; }, TypeError);
 });
+test('automatic fire classification is copied and validated at the original shot event', () => {
+  const events = createCombatEvents();
+  assert.equal(events.publish('shot', { ...shot(), automatic: true }, 0).automatic, true);
+  assert.equal(events.publish('shot', shot(), 0).automatic, undefined);
+  assert.throws(() => events.publish('shot', { ...shot(), automatic: 'yes' }, 0), /Invalid shot/);
+  assert.throws(() => events.publish('shot', { ...shot(), weaponType: 'tank', automatic: true }, 0), /Invalid shot/);
+});
 test('shot, impact and explosion render in order exactly once and publishing never requires a live shooter', () => {
   const events = createCombatEvents(), rendered = [], original = source();
   events.publish('shot', shot(), 1);
@@ -68,6 +75,20 @@ test('new battle clears pending feedback, history and counts, while crash source
   assert.equal(events.drain(() => assert.fail('old battle feedback replayed')), 0);
   assert.deepEqual(events.snapshot, { pending: 0, history: [], published: emptyCounts(), presented: emptyCounts() });
   assert.equal(events.publish('shot', shot(), 0).id, 1);
+});
+test('explosion events preserve presentation styles without altering their gameplay radius or ownership', () => {
+  const events = createCombatEvents();
+  for (const style of ['default', 'explosive-pack', 'tank-destruction']) {
+    const event = events.publish('explosion', { source: source(), position: { x: 0, y: 1.5, z: 0 },
+      sound: true, radius: 9, style }, 1);
+    assert.equal(event.style, style);
+    assert.equal(event.radius, 9);
+    assert.equal(event.source.weaponId, 's1:rifle');
+  }
+  assert.equal(events.publish('explosion', { source: source(), position: { x: 0, y: 0, z: 0 }, sound: false }, 1).style, 'default');
+  assert.throws(() => events.publish('explosion', { source: source(), position: { x: 0, y: 0, z: 0 },
+    sound: true, style: 'unknown' }, 1), /Invalid explosion style/);
+  assert.equal(events.snapshot.pending, 4);
 });
 test('invalid feedback is explicit and cannot poison the event stream', () => {
   const events = createCombatEvents();
