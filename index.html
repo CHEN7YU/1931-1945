@@ -63,11 +63,12 @@
       <div id="toast" role="status"></div>
       <div id="boundary-warning" role="alert" hidden><strong>已离开作战区域 · 立即返回</strong><span id="boundary-detail"></span></div>
       <div id="interaction-prompt" role="status" hidden></div>
+      <div id="grenade-warning" role="alert" hidden></div>
       <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
       <div class="hud-bottom">
         <div class="squad-status"><div class="hud-label" id="unit-title">步兵小队</div>        <div id="members"></div><div id="section-status" hidden></div><span class="squad-hint" id="squad-hint">Y 切换存活队员</span></div>
         <div class="battle-controls" id="battle-controls"></div>
-        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
+        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div id="grenade-status" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
       </div>
       <button id="pause-button" class="hud-button">Esc 暂停</button>
       <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>

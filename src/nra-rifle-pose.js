@@ -134,6 +134,13 @@ export function createNraRiflePose(root, bones, gun) {
         new THREE.Vector3(0, 1, 0).applyQuaternion(facing));
       leftTarget = left.target;
       root.updateMatrixWorld(true);
+      if (carry.grenade) {
+        const target = root.localToWorld(new THREE.Vector3(...carry.grenade.hand));
+        solveArm(bone('RightArm'), bone('RightForeArm'), bone('RightHand'), target,
+          new THREE.Vector3(.8, -.3, .3).applyQuaternion(bodyFacing));
+        orientHand('Right', new THREE.Vector3(-1, 0, 0).applyQuaternion(bodyFacing));
+        root.updateMatrixWorld(true);
+      }
     },
     get issue() {
       if (right && (!right.reachable || right.error > .015)) return '右手握点超出可达范围';

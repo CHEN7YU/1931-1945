@@ -2,9 +2,10 @@ import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
+import { grenadePose } from './grenades.js';
 
 export function nativePoseIntent(actor) {
-  return actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
+  return actor.grenades?.action ? 'grenade' : actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
 }
 
 function sample(track, time) {
@@ -237,7 +238,9 @@ export function sampleNraMotion(actor, includeHead = true) {
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }
-  const result = { intent: nativePoseIntent(actor), idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+  const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
+    1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
+  const result = { intent: nativePoseIntent(actor), grenade, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,
     walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,

@@ -13,6 +13,9 @@ export function createCombatFeedback() {
       if (!['damage', 'casualty'].includes(event.type)) throw new RangeError('HUD feedback requires damage or casualty events');
       if (!Number.isFinite(now) || now < event.time || (viewer && typeof viewer.active !== 'boolean')) throw new RangeError('HUD feedback requires simulation time and an explicit viewer state');
       if (viewer?.active && !['soldierId', 'weaponId'].every(field => typeof viewer[field] === 'string' && viewer[field])) throw new Error('Active HUD feedback requires a controlled soldier and weapon');
+      if (viewer?.grenadeWeaponId != null && (typeof viewer.grenadeWeaponId !== 'string' || !viewer.grenadeWeaponId)) {
+        throw new Error('Grenade hit feedback requires an owned weapon identity');
+      }
       if (event.type === 'casualty') {
         if (event.target.team === 'enemy') {
           feed.unshift({ text: `${creditNames[event.source.credit]}　›　日军守兵`, until: event.time + 5,
@@ -27,7 +30,8 @@ export function createCombatFeedback() {
         flash = Math.max(flash, strength - (now - event.time) * .65);
       }
       if (event.target.team === 'enemy' && event.source.credit === 'player' &&
-        event.source.soldierId === viewer.soldierId && event.source.weaponId === viewer.weaponId) {
+        event.source.soldierId === viewer.soldierId &&
+        (event.source.weaponId === viewer.weaponId || event.source.weaponId === viewer.grenadeWeaponId)) {
         markerUntil = Math.max(markerUntil, event.time + (event.health === 0 ? .25 : .2));
         markerSource = { soldierId: event.source.soldierId, weaponId: event.source.weaponId };
       }

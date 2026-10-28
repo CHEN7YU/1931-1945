@@ -72,6 +72,20 @@ test('owner checks include weapon/seat identity and invalid actions are explicit
   for (let i = 0; i < 100; i++) input.execute(input.capture('look', { x: 0, y: 0 }), source, true, () => {});
   assert.equal(input.snapshot.decisions.length, 32);
 });
+test('grenade press and release are one-shot owned commands invalidated by switching or pausing', () => {
+  const input = createControlInput(), first = owner();
+  input.bind(first);
+  const press = input.capture('prepareGrenade'), release = input.capture('releaseGrenade');
+  let prepares = 0;
+  assert.equal(input.execute(press, first, true, () => prepares++).status, 'applied');
+  assert.equal(input.execute(press, first, true, assert.fail).reason, 'duplicate');
+  input.bind(owner('s2'));
+  assert.equal(input.execute(release, owner('s2'), true, assert.fail).reason, 'stale-owner');
+  const next = input.capture('prepareGrenade');
+  input.block();
+  assert.equal(input.execute(next, owner('s2'), false, assert.fail).reason, 'inactive');
+  assert.equal(prepares, 1);
+});
 test('control feedback is a bounded ordered stream, consumed separately without event replay', () => {
   const events = createControlEvents(), presented = [];
   for (let i = 0; i < 100; i++) {

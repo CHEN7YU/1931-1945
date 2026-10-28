@@ -27,6 +27,10 @@ test('blast and cannon damage remain separate from the rifle restriction', () =>
     assert.equal(damageForTarget(weapon, 'aircraft', 160), 160);
   }
 });
+test('ordinary fragmentation damages infantry but not closed armor or aircraft', () => {
+  for (const kind of ['person', 'exposed-crew']) assert.equal(damageForTarget('grenade', kind, 120), 120);
+  for (const kind of ['closed-armor', 'aircraft']) assert.equal(damageForTarget('grenade', kind, 120), 0);
+});
 test('armor threats remain armor in copied visual memory and expire normally', () => {
   const state = createTactics(1, 1, 0);
   rememberThreat(state, { x: 1, y: 1, z: 2 }, 0, 'closed-armor');

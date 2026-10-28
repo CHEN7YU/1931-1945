@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.setDefaultTimeout(15000);
 const errors = [], observations = [];
@@ -108,8 +108,8 @@ try {
   await page.waitForFunction(() => window.__battle.state === 'playing');
   data = await snapshot();
   assert.equal(data.type, 'infantry');
-  assert.equal(data.entityCounts.weapons, data.entityCounts.soldiers + data.entityCounts.vehicles,
-    'only personal and vehicle weapons remain registered after replacing the mortar squad');
+  assert.equal(data.entityCounts.weapons, data.entityCounts.soldiers * 2 + data.entityCounts.vehicles,
+    'only personal rifles, grenade inventories and vehicle weapons remain after replacing the mortar squad');
   assert.equal(data.projectileImpacts[1].source.weaponId, close.source.weaponId,
     'retiring a weapon registry entry does not rewrite its existing attack source');
   observations.push({ stage, counts: data.entityCounts, impact: data.projectileImpacts[1] });
