@@ -14,7 +14,7 @@ import { groundHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { shoulderPocket } from './rifle-contacts.js';
-import { createIjaRifleFlag, hasIjaRifleFlag } from './ija-rifle-flag.js';
+import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 
 export async function loadIjaCharacter() {
   const base = '/assets/game/ija-1938/';
@@ -78,7 +78,7 @@ export async function loadIjaCharacter() {
     return {
       root, motionProfile, createView,
       get drawBatches() { return drawBatches - (flag.visible ? 0 : 1); },
-      optionalAttachments: [{ mesh: flag, enabled: hasIjaRifleFlag }],
+      optionalAttachments: [{ mesh: flag, enabled: hasIjaRifleFlag, bake: bakeIjaRifleFlag, update: updateIjaRifleFlagTime }],
       createFarView: () => createView('far'),
       bind(id) {
         actorId = id; actor = null; initialized = false; root.visible = false; motion = null; flag.visible = false;
@@ -92,6 +92,7 @@ export async function loadIjaCharacter() {
         if (person.team !== 'enemy') throw new Error('Japanese appearance cannot replace a friendly identity');
         actor = person;
         flag.visible = hasIjaRifleFlag(actor);
+        updateIjaRifleFlagTime(now);
         root.visible = !actor.vehicleId && (actor.health > 0 ? actor.id !== controlledId : now - actor.deathTime <= 12);
         motion = sampleNraMotion(actor);
         active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';

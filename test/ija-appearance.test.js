@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { fitIjaPoint, fitIjaProportions } from '../uniform-study/proportions.js';
-import { createIjaRifleFlag, hasIjaRifleFlag } from '../src/ija-rifle-flag.js';
+import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from '../src/ija-rifle-flag.js';
 import { createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
@@ -61,8 +61,26 @@ test('only a stable subset of enemy identities carry shared, two-sided rifle fla
   assert.equal(first.material.side, THREE.DoubleSide);
   assert.equal(first.userData.rifleAttachment, true);
   gun.add(first); gun.position.set(1, 2, 3); gun.rotation.set(.4, 1, .2); gun.updateMatrixWorld(true);
-  assert.deepEqual(first.matrixWorld.elements, gun.matrixWorld.elements);
-  assert.ok(first.geometry.boundingBox.max.y < 0, 'flag stays below the sight line');
+  const pin = gun.localToWorld(new THREE.Vector3(.022, -.014, -.705));
+  assert.ok(first.getWorldPosition(new THREE.Vector3()).distanceTo(pin) < 1e-8);
+  assert.ok(first.geometry.boundingBox.max.y <= 0, 'flag stays below its pin');
+  assert.equal(first.geometry.boundingBox.max.z - first.geometry.boundingBox.min.z < .06, true, 'cloth has folds but no solid thickness');
+  for (const mat of [first.material, first.customDepthMaterial, first.customDistanceMaterial]) {
+    const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <beginnormal_vertex>\n#include <begin_vertex>' };
+    mat.onBeforeCompile(shader);
+    updateIjaRifleFlagTime(1.25); assert.equal(shader.uniforms.ijaClothTime.value, 1.25);
+    updateIjaRifleFlagTime(1.25); assert.equal(shader.uniforms.ijaClothTime.value, 1.25);
+    updateIjaRifleFlagTime(0); assert.equal(shader.uniforms.ijaClothTime.value, 0);
+    assert.match(shader.vertexShader, /ijaClothOffset/);
+    assert.match(shader.vertexShader, /instanceMatrix/);
+  }
+  assert.throws(() => updateIjaRifleFlagTime(NaN), /simulation time/);
+  const baked = bakeIjaRifleFlag(first.geometry.clone().applyMatrix4(first.matrixWorld), first);
+  for (let index = 0; index < baked.attributes.position.count; index++) {
+    assert.ok(new THREE.Vector3().fromBufferAttribute(baked.attributes.ijaClothAnchor, index).distanceTo(pin) < 1e-6);
+  }
+  assert.ok(baked.boundingSphere.center.distanceTo(pin) < 1e-8);
+  baked.dispose();
 });
 
 test('distant flags use only selected identities and clear on cull, removal and quality changes', () => {

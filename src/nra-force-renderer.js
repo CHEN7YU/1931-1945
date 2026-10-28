@@ -89,8 +89,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
     root.add(instance);
     const parts = [instance];
-    const attachments = optionalAttachments.map(({ mesh, enabled }) => {
-      const instance = new THREE.InstancedMesh(bakeNraGeometry(mesh), mesh.material, capacity);
+    const attachments = optionalAttachments.map(({ mesh, enabled, bake }) => {
+      const geometry = bakeNraGeometry(mesh);
+      const instance = new THREE.InstancedMesh(bake ? bake(geometry, mesh) : geometry, mesh.material, capacity);
+      instance.customDepthMaterial = mesh.customDepthMaterial; instance.customDistanceMaterial = mesh.customDistanceMaterial;
       instance.name = mesh.name;
       instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
       instance.frustumCulled = false; instance.receiveShadow = true; root.add(instance);
@@ -131,6 +133,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       }
     },
     update(actors, now, controlledId, preset) {
+      for (const attachment of optionalAttachments) attachment.update?.(now);
       excludedIds.clear(); tiers.clear();
       for (const bank of banks) {
         bank.count = 0;

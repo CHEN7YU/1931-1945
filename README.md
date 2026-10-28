@@ -25,7 +25,7 @@ npm.cmd run dev -- --port 5173
 
 日军体型试版将站立含盔高度由约1.747米收至1.683米，缩短腿段并轻微加宽腰腹，脚底和头肩比例保留，不在运行时把整个人压扁。65骨rest位置、逆绑定、近远LOD和髋部动画位移由`uniform-study\proportions.js`同步离线拟合；持枪、贴腮及人体代理仍从实际新骨架校准。**这是视觉体型取值，不是1938年特定部队的平均裸身身高，也未新增个人身高分布。**不能由国别直接推断每名士兵的高矮。
 
-按实体身份固定为约五分之一的日军步枪挂小幅白底红圆日章旗，国军不挂；换LOD、模型池复用、新局和补充成员均按同一规则选取。比例是游戏美术分配，不是历史装备率。旗布为自制27×18厘米双面折面，随实际枪械移动，远处单独共享实例化；无新外部贴图、无标语，也不是实时布料模拟。`mesh.userData.rifleAttachment`标记用于后续掉枪接地排除旗布，避免把软布当刚性枪体支点。[IWM个人旗藏品FLA 5503](https://www.iwm.org.uk/collections/item/object/30018038)记录了1944年英帕尔将旗系于步枪／刺刀的实例，能支持这种携带方式存在，不能证明台儿庄全员或普遍如此。`node --test test\ija-appearance.test.js test\ija-character-asset.test.js test\ija-force-renderer.test.js`与开发服务器下的`node scripts\ija-character-smoke.mjs`检查体型、绑定、旗帜分配和近远LOD；后者设置`GAME_URL`／`ARTIFACT_DIR`可保存明确标注的定姿检查图。
+按实体身份固定为约五分之一的日军步枪挂小幅白底红圆日章旗，国军不挂；换LOD、模型池复用、新局和补充成员均按同一规则选取。比例是游戏美术分配，不是历史装备率。旗布为自制27×18厘米双面薄面，固定角随实际枪械移动，布身按世界重力方向下垂，叠加弯曲褶皱、自由边轻摆及同步变化的光照法线；不是随枪一起僵硬翻转的矩形牌。近景、远景实例和旗布阴影使用同一形变，时间来自模拟，暂停冻结、重开复位。无新外部贴图、无标语；**这是程序化软布形变，不是完整布料物理，没有旗布与身体／地面的碰撞解算。**`mesh.userData.rifleAttachment`标记用于后续掉枪接地排除旗布，避免把软布当刚性枪体支点。[IWM个人旗藏品FLA 5503](https://www.iwm.org.uk/collections/item/object/30018038)记录了1944年英帕尔将旗系于步枪／刺刀的实例，能支持这种携带方式存在，不能证明台儿庄全员或普遍如此。`node --test test\ija-appearance.test.js test\ija-character-asset.test.js test\ija-force-renderer.test.js`与开发服务器下的`node scripts\ija-character-smoke.mjs`检查体型、绑定、旗帜分配和近远LOD；后者设置`GAME_URL`／`ARTIFACT_DIR`可保存明确标注的定姿检查图。相同环境下运行`node scripts\ija-rifle-flag-smoke.mjs`另检查真实GPU形变、四种枪械方向、近景／实例化／阴影着色器、暂停及复位，并输出三秒动态预览；不是实战录像。
 
 日军衣身由独立研究模块离线生成，运行时只读取`public\assets\game\ija-1938`，不导入研究页或重建静态衣身。来源许可仍依赖用户转述原作者电话同意，改制部分及校验见来源清单；不是CC0，历史服装考据尚未验收。近景手／枪对齐、全员分配、共享下载与缺资源显式失败均有回归，不代表所有外观、动作或持续性能已通过。
 
