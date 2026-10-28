@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction, targetAimPoint, observeVisualThreat } from '../src/tactics.js';
+  friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired } from '../src/tactics.js';
 
 test('threat memory copies only observed position and expires without tracking an unseen actor', () => {
   const state = createTactics(1, 1, 0), target = { x: 4, y: 1.2, z: 8 };
@@ -11,6 +11,25 @@ test('threat memory copies only observed position and expires without tracking a
   assert.equal(expireThreat(state, 14.9), false);
   assert.equal(expireThreat(state, 15.1), true);
   assert.equal(state.lastSeen, null);
+});
+
+test('friendly capture assignments stay inside the objective with stable squad lanes and respect player orders', () => {
+  const objective = { id: 'A', x: -12, z: 30, radius: 13 }, position = { x: 0, z: 70 };
+  const goals = new Set();
+  for (let squad = 0; squad < 10; squad++) for (let slot = 0; slot < 10; slot++) {
+    const tactics = createTactics(squad * 10 + slot, squad, slot), actor = { friendly: true, playerUnit: false, position, tactics };
+    const goal = objectiveDestination(tactics, position, objective);
+    assert.ok(Math.hypot(goal.x - objective.x, goal.z - objective.z) < objective.radius - 1);
+    assert.deepEqual(goal, objectiveDestination(tactics, { x: 4, z: 60 }, objective));
+    goals.add(`${goal.x},${goal.z}`);
+    assert.equal(objectiveAdvanceRequired(actor, objective, 55), slot % 4 !== 0);
+    assert.equal(objectiveAdvanceRequired({ ...actor, playerUnit: true, order: 'hold' }, objective, 55), false);
+    assert.equal(objectiveAdvanceRequired({ ...actor, playerUnit: true, order: 'follow' }, objective, 55), false);
+    assert.equal(objectiveAdvanceRequired({ ...actor, playerUnit: true, order: 'advance' }, objective, 55), slot % 4 !== 0);
+    assert.equal(objectiveAdvanceRequired({ ...actor, position: objective }, objective, 55), false);
+    assert.equal(objectiveAdvanceRequired(actor, objective, 12), false);
+  }
+  assert.ok(goals.size >= 25);
 });
 test('paired squad roles alternate peeking rather than all exposing simultaneously', () => {
   const a = createTactics(1, 1, 0), b = createTactics(2, 1, 1);

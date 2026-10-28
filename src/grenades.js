@@ -1,7 +1,15 @@
 // Prototype balance values, not verified Enlisted or historical weapon specifications.
-export const GRENADE = Object.freeze({ count: 2, fuse: 4, draw: .45, windup: .22, recovery: .4,
+import { blastDamage } from './core.js';
+export const GRENADE = Object.freeze({ count: 1, fuse: 4, draw: .45, windup: .22, recovery: .4,
   autoThrowRemaining: .65, speed: 15, lift: 2.2, gravity: 9.81, bounce: .32, friction: .65,
   size: .065, radius: 7, damage: 180, pickup: 2, limit: 32, step: 1 / 120 });
+export const EXPLOSIVE_PACK = Object.freeze({ ...GRENADE, fuse: 5, draw: .6, windup: .3, recovery: .5,
+  speed: 11, lift: 2.4, bounce: .18, friction: .5, size: .18, radius: 9, damage: 240,
+  armorRadius: 4, armorDamage: 720 });
+export function throwableProfile(kind = 'grenade') {
+  if (!['grenade', 'explosive-pack'].includes(kind)) throw new RangeError(`Unknown throwable: ${kind}`);
+  return kind === 'grenade' ? GRENADE : EXPLOSIVE_PACK;
+}
 
 const finiteTime = time => {
   if (!Number.isFinite(time) || time < 0) throw new RangeError('Grenades require finite non-negative simulation time');
@@ -17,18 +25,35 @@ const sourceCopy = source => {
   return Object.freeze({ ...source });
 };
 
-export function createGrenadeInventory() { return { ammo: GRENADE.count, action: null }; }
+export function createGrenadeInventory() { return { ammo: GRENADE.count, packs: EXPLOSIVE_PACK.count, action: null }; }
 
-export function grenadeCanDamage(source, target) {
-  return target.targetKind !== 'closed-armor' && target.targetKind !== 'aircraft' &&
+export function grenadeCanDamage(source, target, kind = 'grenade') {
+  throwableProfile(kind);
+  return (kind === 'explosive-pack' || target.targetKind !== 'closed-armor' && target.targetKind !== 'aircraft') &&
     (target.team !== source.team || target.id === source.soldierId);
+}
+
+export function throwableVehicleDamage(kind, source, vehicle, position, clear) {
+  const profile = throwableProfile(kind);
+  if (!['tank', 'plane'].includes(vehicle?.type) || !Number.isFinite(vehicle.health) ||
+    typeof clear !== 'function') throw new RangeError('Throwable vehicle damage requires an actual vehicle, blast position and visibility query');
+  point(vehicle.position); point(position);
+  if (kind === 'grenade' || vehicle.health <= 0 || vehicle.team === source.team) return 0;
+  const target = { x: vehicle.position.x, y: vehicle.position.y + 1, z: vehicle.position.z };
+  const origin = { ...position, y: Math.max(position.y, .5) };
+  const distance = Math.hypot(target.x - position.x, target.y - position.y, target.z - position.z);
+  if (distance >= profile.armorRadius) return 0;
+  const visible = clear(origin, target, profile.armorRadius + 1);
+  if (typeof visible !== 'boolean') throw new TypeError('Blast visibility must be explicit');
+  return visible ? blastDamage(distance, profile.armorRadius, profile.armorDamage) : 0;
 }
 
 export function grenadePose(action, eyeHeight = 1.67) {
   if (!action) return null;
-  const progress = action.phase === 'drawing' ? Math.min(1, action.elapsed / GRENADE.draw)
-    : action.phase === 'throwing' ? Math.min(1, action.elapsed / GRENADE.windup)
-    : action.phase === 'recovering' ? Math.max(0, 1 - action.elapsed / GRENADE.recovery) : 1;
+  const profile = throwableProfile(action.kind);
+  const progress = action.phase === 'drawing' ? Math.min(1, action.elapsed / profile.draw)
+    : action.phase === 'throwing' ? Math.min(1, action.elapsed / profile.windup)
+    : action.phase === 'recovering' ? Math.max(0, 1 - action.elapsed / profile.recovery) : 1;
   const throwing = action.phase === 'throwing', returning = action.phase === 'recovering';
   const y = eyeHeight - .15;
   return { phase: action.phase, progress, visible: !returning,
@@ -40,19 +65,20 @@ export function grenadePose(action, eyeHeight = 1.67) {
 
 export function advanceGrenadeFlight(grenade, dt, trace) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Invalid grenade flight timestep');
+  const profile = throwableProfile(grenade.kind);
   for (let remaining = dt; remaining > 1e-9;) {
-    const step = Math.min(remaining, GRENADE.step);
+    const step = Math.min(remaining, profile.step);
     remaining -= step;
     if (grenade.resting) {
-      const support = trace(grenade.position, { ...grenade.position, y: grenade.position.y - .005 }, GRENADE.size);
+      const support = trace(grenade.position, { ...grenade.position, y: grenade.position.y - .005 }, profile.size);
       if (support && support.normal.y > .6) continue;
       grenade.resting = false;
     }
     const from = point(grenade.position), to = {};
     for (const axis of ['x', 'y', 'z']) to[axis] = from[axis] + grenade.velocity[axis] * step;
-    to.y -= .5 * GRENADE.gravity * step * step;
-    grenade.velocity.y -= GRENADE.gravity * step;
-    const hit = trace(from, to, GRENADE.size);
+    to.y -= .5 * profile.gravity * step * step;
+    grenade.velocity.y -= profile.gravity * step;
+    const hit = trace(from, to, profile.size);
     if (!hit) { grenade.position = to; continue; }
     const normal = point(hit.normal), length = Math.hypot(normal.x, normal.y, normal.z);
     if (length < 1e-8) throw new RangeError('Grenade collision requires a nonzero normal');
@@ -61,7 +87,7 @@ export function advanceGrenadeFlight(grenade, dt, trace) {
     const incoming = ['x', 'y', 'z'].reduce((sum, axis) => sum + grenade.velocity[axis] * normal[axis], 0);
     for (const axis of ['x', 'y', 'z']) {
       const tangent = grenade.velocity[axis] - incoming * normal[axis];
-      grenade.velocity[axis] = tangent * GRENADE.friction - Math.min(0, incoming) * normal[axis] * GRENADE.bounce;
+      grenade.velocity[axis] = tangent * profile.friction - Math.min(0, incoming) * normal[axis] * profile.bounce;
       grenade.position[axis] += normal[axis] * .001;
     }
     if (normal.y > .6 && Math.hypot(grenade.velocity.x, grenade.velocity.y, grenade.velocity.z) < .35) {
@@ -77,7 +103,8 @@ export function createGrenadeSystem() {
   let serial = 0;
   const remember = event => { history.push(Object.freeze(event)); if (history.length > 32) history.shift(); };
   const inventoryFor = (id, inventory) => {
-    if (!id || !Number.isInteger(inventory?.ammo) || inventory.ammo < 0 || inventory.ammo > GRENADE.count) {
+    if (!id || !Number.isInteger(inventory?.ammo) || inventory.ammo < 0 || inventory.ammo > GRENADE.count ||
+      !Number.isInteger(inventory.packs) || inventory.packs < 0 || inventory.packs > EXPLOSIVE_PACK.count) {
       throw new Error('Grenade inventory requires a soldier identity and bounded count');
     }
     inventories.set(id, inventory);
@@ -85,19 +112,20 @@ export function createGrenadeSystem() {
   };
   const recover = (grenade, now) => {
     const inventory = inventories.get(grenade.holderId);
-    if (inventory?.action === grenade) inventory.action = { phase: 'recovering', elapsed: 0, startedAt: now };
+    if (inventory?.action === grenade) inventory.action = { phase: 'recovering', kind: grenade.kind, elapsed: 0, startedAt: now };
     grenade.holderId = null;
   };
   return {
-    begin(id, inventory, source, now) {
+    begin(id, inventory, source, now, kind = 'grenade') {
       finiteTime(now); inventoryFor(id, inventory);
+      const profile = throwableProfile(kind), field = kind === 'grenade' ? 'ammo' : 'packs';
       if (inventory.action) return '正在操作手榴弹';
-      if (!inventory.ammo) return '这名士兵的手榴弹已用完';
+      if (!inventory[field]) return kind === 'grenade' ? '这名士兵的手榴弹已用完' : '这名士兵的炸药包已用完';
       if (active.size >= GRENADE.limit) return '场上手榴弹已达上限，请稍候';
       const captured = sourceCopy(source);
       if (captured.soldierId !== id) throw new Error('Grenade source must own its inventory');
-      const grenade = { id: `grenade-${++serial}`, source: captured, originalSource: captured, holderId: id,
-        phase: 'drawing', elapsed: 0, startedAt: now, pinAt: now + GRENADE.draw, detonateAt: null, throwAt: null, releaseRequested: false,
+      const grenade = { id: `grenade-${++serial}`, kind, source: captured, originalSource: captured, holderId: id,
+        phase: 'drawing', elapsed: 0, startedAt: now, pinAt: now + profile.draw, detonateAt: null, throwAt: null, releaseRequested: false,
         position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, collisions: 0, throws: 0 };
       active.set(grenade.id, grenade); inventory.action = grenade;
       return null;
@@ -106,7 +134,7 @@ export function createGrenadeSystem() {
       finiteTime(now);
       const action = inventories.get(id)?.action;
       if (!action || !['drawing', 'cooking'].includes(action.phase) || action.releaseRequested) return false;
-      action.throwAt = Math.max(action.pinAt, now) + GRENADE.windup;
+      action.throwAt = Math.max(action.pinAt, now) + throwableProfile(action.kind).windup;
       action.releaseRequested = true;
       return true;
     },
@@ -128,7 +156,7 @@ export function createGrenadeSystem() {
       const captured = sourceCopy(source);
       if (captured.soldierId !== id) throw new Error('Throwback source must own its inventory');
       Object.assign(grenade, { holderId: id, source: captured, phase: 'throwing', startedAt: now,
-        pinAt: null, throwAt: now + GRENADE.windup, elapsed: 0, resting: false, releaseRequested: true });
+        pinAt: null, throwAt: now + throwableProfile(grenade.kind).windup, elapsed: 0, resting: false, releaseRequested: true });
       inventory.action = grenade;
       return null;
     },
@@ -140,24 +168,26 @@ export function createGrenadeSystem() {
         const action = inventory.action;
         if (action?.phase === 'recovering') {
           action.elapsed = now - action.startedAt;
-          if (action.elapsed >= GRENADE.recovery) inventory.action = null;
+          if (action.elapsed >= throwableProfile(action.kind).recovery) inventory.action = null;
         }
       }
       for (const grenade of [...active.values()]) {
+        const profile = throwableProfile(grenade.kind);
         if (grenade.holderId) {
           if (grenade.detonateAt === null && now >= grenade.pinAt) {
             const inventory = inventories.get(grenade.holderId);
-            if (!inventory?.ammo) throw new Error('Priming requires a remaining personal grenade');
-            inventory.ammo--;
-            grenade.detonateAt = grenade.pinAt + GRENADE.fuse;
+            const field = grenade.kind === 'explosive-pack' ? 'packs' : 'ammo';
+            if (!inventory?.[field]) throw new Error('Priming requires a remaining personal throwable');
+            inventory[field]--;
+            grenade.detonateAt = grenade.pinAt + profile.fuse;
             grenade.phase = 'cooking';
             primed(grenade);
           }
           if (grenade.detonateAt !== null) {
-            if (grenade.pinAt !== null) grenade.throwAt = Math.min(grenade.throwAt ?? Infinity, grenade.detonateAt - GRENADE.autoThrowRemaining);
-            const throwing = now >= grenade.throwAt - GRENADE.windup;
+            if (grenade.pinAt !== null) grenade.throwAt = Math.min(grenade.throwAt ?? Infinity, grenade.detonateAt - profile.autoThrowRemaining);
+            const throwing = now >= grenade.throwAt - profile.windup;
             grenade.phase = throwing ? 'throwing' : 'cooking';
-            grenade.elapsed = now - (throwing ? grenade.throwAt - GRENADE.windup : grenade.pinAt);
+            grenade.elapsed = now - (throwing ? grenade.throwAt - profile.windup : grenade.pinAt);
           } else grenade.elapsed = now - grenade.startedAt;
           const held = pose(grenade.holderId, grenade);
           grenade.position = point(held.position);
@@ -167,12 +197,12 @@ export function createGrenadeSystem() {
           } else if (grenade.throwAt !== null && now >= grenade.throwAt && grenade.detonateAt !== null) {
             const direction = point(held.direction), length = Math.hypot(direction.x, direction.y, direction.z);
             if (length < 1e-8) throw new RangeError('Throwing requires an aim direction');
-            grenade.velocity = { x: direction.x / length * GRENADE.speed, y: direction.y / length * GRENADE.speed + GRENADE.lift,
-              z: direction.z / length * GRENADE.speed };
+            grenade.velocity = { x: direction.x / length * profile.speed, y: direction.y / length * profile.speed + profile.lift,
+              z: direction.z / length * profile.speed };
             const thrownAt = grenade.throwAt;
             recover(grenade, thrownAt);
             grenade.phase = 'flight'; grenade.throws++;
-            remember({ type: 'throw', id: grenade.id, source: grenade.source, time: thrownAt });
+            remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source, time: thrownAt });
           }
         }
         if (grenade.phase === 'flight') {
@@ -182,7 +212,7 @@ export function createGrenadeSystem() {
         }
         if (grenade.detonateAt !== null && now >= grenade.detonateAt) {
           active.delete(grenade.id);
-          const event = { type: 'explosion', id: grenade.id, source: grenade.source, originalSource: grenade.originalSource,
+          const event = { type: 'explosion', kind: grenade.kind, id: grenade.id, source: grenade.source, originalSource: grenade.originalSource,
             position: point(grenade.position), time: grenade.detonateAt, collisions: grenade.collisions, throws: grenade.throws };
           remember(event); explode(event);
         }

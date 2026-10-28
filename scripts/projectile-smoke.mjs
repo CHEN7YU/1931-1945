@@ -108,7 +108,7 @@ try {
   await page.waitForFunction(() => window.__battle.state === 'playing');
   data = await snapshot();
   assert.equal(data.type, 'infantry');
-  assert.equal(data.entityCounts.weapons, data.entityCounts.soldiers * 2 + data.entityCounts.vehicles,
+  assert.equal(data.entityCounts.weapons, data.entityCounts.soldiers * 3 + data.entityCounts.vehicles,
     'only personal rifles, grenade inventories and vehicle weapons remain after replacing the mortar squad');
   assert.equal(data.projectileImpacts[1].source.weaponId, close.source.weaponId,
     'retiring a weapon registry entry does not rewrite its existing attack source');

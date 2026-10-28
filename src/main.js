@@ -9,7 +9,7 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat } from './tactics.js';
+  friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight } from './lighting.js';
@@ -36,7 +36,7 @@ import { createControlInput } from './control-input.js';
 import { createControlEvents } from './control-events.js';
 import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './projectiles.js';
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
-import { createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
+import { AI_RIFLE, createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -46,7 +46,7 @@ import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
 import { CORPSE_RULES, createCasualtyState, expiredCorpses } from './casualties.js';
-import { GRENADE, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
+import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
@@ -151,7 +151,7 @@ const bodyRay = new THREE.Raycaster();
 const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
 const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
-const grenadeRenderer = createGrenadeRenderer(scene, camera);
+const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.createGrenadeHand);
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain') });
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 world.doorSystem.onNavigationChanged = bounds => { navigate.refresh(bounds); groundCollision.rebuild(); };
@@ -163,7 +163,7 @@ const direction = new THREE.Vector3();
 const up = new THREE.Vector3(0, 1, 0);
 const groundPlane = new THREE.Plane(up, 0);
 const projectileGeometry = new THREE.SphereGeometry(.12, 6, 6);
-const explosionGeometry = new THREE.IcosahedronGeometry(1, 1);
+const impactGeometry = new THREE.IcosahedronGeometry(1, 1);
 const shellMaterial = new THREE.MeshBasicMaterial({ color: 0xffce70 });
 const radarContext = $('radar').getContext('2d');
 const keys = playerInput.keys;
@@ -250,6 +250,8 @@ let pendingSquad = null;
 let pendingSpawn = null;
 let deploymentRefreshAt = 0;
 let toolEquipped = false;
+let grenadeEquipped = false;
+let selectedThrowable = 'grenade';
 let controlBinding = null;
 const construction = createConstructionState();
 let fatal = false;
@@ -282,7 +284,7 @@ function mechanicalPlayback() {
   const actor = controlledSoldier(entities);
   const owner = controlOwner(entities);
   return { owner, playing: Boolean(state === 'playing' && actor?.health > 0 &&
-    !actor.vehicleId && actor.groundType === 'infantry' && !toolEquipped && owner.weaponId === actor.rifle?.id) };
+    !actor.vehicleId && actor.groundType === 'infantry' && !toolEquipped && !grenadeEquipped && owner.weaponId === actor.rifle?.id) };
 }
 
 function syncMechanicalAudio() {
@@ -428,6 +430,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   actor.targetKind = 'person';
   actor.aiRifle = createAIRifleControl();
   actor.grenades = createGrenadeInventory();
+  actor.explosivePack = { get ammo() { return actor.grenades.packs; } };
   actor.rifleReady = false;
   actor.spawnPosition = { x, z };
   actor.spawnClear = !circleBlocked(x, z, .42, world.obstacles);
@@ -446,6 +449,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   registerSoldier(entities, actor);
   registerWeapon(entities, Object.assign(actor.rifle, { nextShot: 0, reloadUntil: 0 }), `${actor.id}:rifle`, actor.id, 'infantry');
   registerWeapon(entities, actor.grenades, `${actor.id}:grenades`, actor.id, 'grenade');
+  registerWeapon(entities, actor.explosivePack, `${actor.id}:explosive-pack`, actor.id, 'explosive-pack');
   model.position.copy(position);
   model.rotation.y = actor.heading;
   spawnEvents.push({ team: friendly ? 'friendly' : 'enemy', pointId: spawn.id, pointX: spawn.x, pointZ: spawn.z, x, z, time,
@@ -491,6 +495,8 @@ function clearControlInputs() {
 
 function resetControlledSimulation() {
   toolEquipped = false;
+  grenadeEquipped = false;
+  selectedThrowable = 'grenade';
   jumpHeight = jumpVelocity = 0;
   resetConstruction();
 }
@@ -522,7 +528,7 @@ function primaryViewAvailable() {
 
 function refreshWeaponVisibility() {
   if (weapon) weapon.visible = state === 'playing' && controlledSoldier(entities)?.health > 0 &&
-    !controlledSoldier(entities).grenades.action && primaryViewAvailable();
+    !grenadeEquipped && !controlledSoldier(entities).grenades.action && primaryViewAvailable();
   syncMechanicalAudio();
 }
 
@@ -554,13 +560,14 @@ function presentCombatEvents(bornAt = time) {
       }
     } else if (event.type === 'impact') {
       if (event.kind) combatEffects.hit(event, bornAt);
-      else renderImpact(position(event.position), false, bornAt);
+      else renderImpact(position(event.position), bornAt);
     } else if (event.type === 'explosion') {
-      renderImpact(position(event.position), true, bornAt);
+      combatEffects.explosion(position(event.position), bornAt, event.radius);
       if (event.sound) sound('blast');
     } else {
       combatFeedback.consume(event, { soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
         grenadeWeaponId: controlledSoldier(entities)?.grenades.id,
+        explosivePackWeaponId: controlledSoldier(entities)?.explosivePack.id,
         active: state === 'playing' || state === 'transferring' }, time);
     }
   });
@@ -628,7 +635,7 @@ function refreshControlSurface() {
   $('battle-controls').textContent = transport ? primaryViewAvailable()
     ? 'WASD 载具 · 左键 武器 · Y 换人 · F 地面离车 · Esc 暂停'
     : 'WASD 驾驶 · 鼠标 观察（不转炮塔） · 主炮不可操作 · Y 换人 · F 下车'
-    : 'WASD 移动 · 左键 射击 · 右键 瞄准 · G 快投 / 长按捏弹 / 回掷 · Y 换人 · F 交互';
+    : '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷 · Y 换人';
   lean = recoil = 0;
   resetPersonalCombatFeedback();
   weaponObstruction = obstructionBlend = 0;
@@ -724,6 +731,7 @@ function clearActors(list, preserveCorpses = false) {
     entities.soldiers.delete(actor.id);
     entities.weapons.delete(actor.rifle.id);
     entities.weapons.delete(actor.grenades.id);
+    entities.weapons.delete(actor.explosivePack.id);
   }
 }
 
@@ -893,7 +901,7 @@ function deploy(squadId, spawnId = null) {
   $('aim-label').hidden = type !== 'mortar';
   $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '11人步兵班 · 含轻机枪手 · Y切换队员 · 全班阵亡后换队' : 'Y 切换队员 · 整队阵亡后换队';
   $('battle-controls').innerHTML = {
-    infantry: 'WASD 慢跑 · C 慢走 · Shift 冲刺 / 举枪屏息 · F 开关门<br>Y 队员 · X 命令 · 工兵：1 步枪 / 2 工具 · 按住左键建造',
+    infantry: '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷<br>WASD 移动 · Shift 冲刺 · Y 队员 · X 小队命令 · F 交互',
     tank: 'W S 前后 · A D 转向 · 鼠标 炮塔 · 右键 放大<br>左键 主炮 · Y 切换车组 · R 装填 · Esc 暂停',
     mortar: 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点<br>左键 发射 · Y 炮组 · X 命令 · B 镜头步态 · Esc 暂停',
     plane: 'W S 调节速度 · A D 转向 · 鼠标 控制机头<br>Space 爬升 · Ctrl 下降 · 左键 机炮 · 无法空中占点',
@@ -994,11 +1002,25 @@ function equipTool(equipped) {
     return;
   }
   resetConstruction();
+  grenadeEquipped = false;
   toolEquipped = equipped;
   held.primary = held.aiming = held.secondary = false;
   unit.nextShot = Math.max(unit.nextShot, time + .3);
   syncRifleUnit();
   emitControlEvent('equipment.changed', { equipped });
+}
+
+function equipGrenade(kind = 'grenade') {
+  throwableProfile(kind);
+  const actor = controlledSoldier(entities);
+  if (!actor || actor.health <= 0 || actor.vehicleId) { toast('请先离开载具再选择投掷装备'); return; }
+  resetConstruction();
+  toolEquipped = false; grenadeEquipped = true;
+  selectedThrowable = kind;
+  held.primary = held.secondary = held.aiming = false;
+  actor.rifleReady = false;
+  refreshWeaponVisibility();
+  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
 }
 
 function renderEquippedTool() {
@@ -1094,6 +1116,7 @@ function syncRifleUnit() {
 }
 
 function reload() {
+  if (grenadeEquipped) { toast('当前选择投掷装备；按 1 切回主武器'); return; }
   if (allies[current]?.grenades.action) { toast('先完成手榴弹动作再装填'); return; }
   if (unit.type === 'tank' && !occupiedSeat(entities).canFire) {
     toast('驾驶员席位不能装填主炮；按 Y 切换车长或炮手');
@@ -1129,14 +1152,13 @@ function tracer(start, end, color = 0xffd49a, life = .08, bornAt = time) {
   effects.push({ object: line, end: bornAt + life, bornAt, lastAt: bornAt, life, kind: 'line' });
 }
 
-function renderImpact(position, large = false, bornAt = time) {
-  if (!large && !graphics.snapshot.effects.hitParticles) return;
-  const mesh = new THREE.Mesh(explosionGeometry, new THREE.MeshBasicMaterial({ color: large ? 0xffb85c : 0xd0ba86, transparent: true, opacity: .85, depthWrite: false }));
+function renderImpact(position, bornAt = time) {
+  if (!graphics.snapshot.effects.hitParticles) return;
+  const mesh = new THREE.Mesh(impactGeometry, new THREE.MeshBasicMaterial({ color: 0xd0ba86, transparent: true, opacity: .85, depthWrite: false }));
   mesh.position.copy(position);
-  mesh.scale.setScalar(large ? 1.5 : .12);
+  mesh.scale.setScalar(.12);
   scene.add(mesh);
-  effects.push({ object: mesh, end: bornAt + (large ? .65 : .18), bornAt, lastAt: bornAt,
-    life: large ? .65 : .18, kind: large ? 'blast' : 'spark' });
+  effects.push({ object: mesh, end: bornAt + .18, bornAt, lastAt: bornAt, life: .18, kind: 'spark' });
 }
 
 function removeEffect(effect) {
@@ -1175,7 +1197,7 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
-    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : ['explosion', 'grenade'].includes(weaponKind) ? '爆炸' : '中弹');
+    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
@@ -1268,10 +1290,16 @@ function renderDeathFeedback() {
 }
 
 function explode(position, damage, radius, source, weaponKind = 'explosion') {
-  combatEvents.publish('explosion', { position, source, sound: true }, time);
+  combatEvents.publish('explosion', { position, source, sound: true, radius }, time);
   for (const transport of entities.vehicles.values()) {
     if (transport.health <= 0) continue;
     if (weaponKind === 'grenade') continue;
+    if (weaponKind === 'explosive-pack') {
+      const applied = throwableVehicleDamage(weaponKind, source, transport, position,
+        (from, to, maxDistance) => hasLine(new THREE.Vector3(from.x, from.y, from.z), new THREE.Vector3(to.x, to.y, to.z), maxDistance, transport.id));
+      if (applied > 0) damageVehicle(transport, applied, source, weaponKind);
+      continue;
+    }
     const target = transport.position.clone().add(new THREE.Vector3(0, 1, 0));
     const distance = target.distanceTo(position), origin = position.clone();
     origin.y = Math.max(origin.y, .5);
@@ -1280,9 +1308,9 @@ function explode(position, damage, radius, source, weaponKind = 'explosion') {
   for (const actor of allForces) {
     if (actor.health <= 0) continue;
     if (actor.vehicleId) continue;
-    if (weaponKind === 'grenade' && !grenadeCanDamage(source, actor)) continue;
+    if (['grenade', 'explosive-pack'].includes(weaponKind) && !grenadeCanDamage(source, actor, weaponKind)) continue;
     const target = actor.position.clone();
-    target.y += weaponKind === 'grenade' ? soldierPostureHeight(actor, 'aim') : 1;
+    target.y += ['grenade', 'explosive-pack'].includes(weaponKind) ? soldierPostureHeight(actor, 'aim') : 1;
     const d = target.distanceTo(position);
     // Walls shield units from blast; raise the ray above ground to avoid self-occlusion.
     const origin = position.clone();
@@ -1290,7 +1318,7 @@ function explode(position, damage, radius, source, weaponKind = 'explosion') {
     if (d < radius && hasLine(origin, target, radius + 1)) hurt(actor, blastDamage(d, radius, damage), source, weaponKind);
   }
   for (const point of spawnPoints.filter(point => point.kind === 'rally' && point.health > 0)) {
-    if (weaponKind === 'grenade' && point.team === source.team) continue;
+    if (['grenade', 'explosive-pack'].includes(weaponKind) && point.team === source.team) continue;
     const target = new THREE.Vector3(point.x, point.altitude + .8, point.z);
     const distance = target.distanceTo(position);
     const origin = position.clone();
@@ -1345,7 +1373,7 @@ function grenadeThrowPose(id, action) {
   const position = new THREE.Vector3(actor.position.x + x * c + z * s,
     actor.position.y + y + (actor === controlledSoldier(entities) ? jumpHeight : 0), actor.position.z - x * s + z * c);
   const origin = new THREE.Vector3(eye.x, eye.y + (actor === controlledSoldier(entities) ? jumpHeight : 0), eye.z);
-  const hit = traceGrenade(origin, position, GRENADE.size);
+  const hit = traceGrenade(origin, position, throwableProfile(action.kind).size);
   if (hit) position.copy(hit.position).addScaledVector(new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z), .002);
   const direction = actor === controlledSoldier(entities) ? camera.getWorldDirection(new THREE.Vector3())
     : new THREE.Vector3(-s * Math.cos(actor.lookPitch), Math.sin(actor.lookPitch), -c * Math.cos(actor.lookPitch));
@@ -1358,10 +1386,10 @@ function interruptGrenade(actor) {
   if (actor) grenades.interrupt(actor.id);
 }
 
-function reachableGrenade(actor) {
+function reachableGrenade(actor, kind = null) {
   if (!actor || actor.health <= 0 || actor.vehicleId || actor.grenades.action) return null;
   const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
-  return grenades.active.filter(grenade => grenade.phase === 'flight' && grenade.detonateAt > time &&
+  return grenades.active.filter(grenade => (!kind || grenade.kind === kind) && grenade.phase === 'flight' && grenade.detonateAt > time &&
     origin.distanceTo(new THREE.Vector3(grenade.position.x, grenade.position.y, grenade.position.z)) <= GRENADE.pickup)
     .sort((a, b) => a.detonateAt - b.detonateAt)
     .find(grenade => hasLine(origin, new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), GRENADE.pickup + .1));
@@ -1370,12 +1398,13 @@ function reachableGrenade(actor) {
 function prepareGrenade() {
   const actor = controlledSoldier(entities);
   if (!actor || actor.health <= 0) return;
-  if (actor.vehicleId) { toast('车内不能投掷手榴弹；先离开地面载具'); return; }
-  if (actor.grenades.action) { toast('正在操作手榴弹'); return; }
-  if (actor.rifle.action !== 'idle' || unit.reloadUntil > time) { toast('先完成当前武器动作再取手榴弹'); return; }
-  const source = captureAttackSource(entities, actor, actor.grenades), nearby = reachableGrenade(actor);
+  if (actor.vehicleId) { toast('车内不能投掷；先离开地面载具'); return; }
+  if (!grenadeEquipped) return;
+  if (actor.grenades.action) { toast('正在准备或投掷'); return; }
+  const source = captureAttackSource(entities, actor, selectedThrowable === 'explosive-pack' ? actor.explosivePack : actor.grenades);
+  const nearby = reachableGrenade(actor, selectedThrowable);
   const reason = nearby ? grenades.rethrow(nearby.id, actor.id, actor.grenades, source, time)
-    : grenades.begin(actor.id, actor.grenades, source, time);
+    : grenades.begin(actor.id, actor.grenades, source, time, selectedThrowable);
   if (reason) { toast(reason); return; }
   held.primary = held.secondary = held.aiming = false;
   resetConstruction();
@@ -1389,37 +1418,46 @@ function updateGrenades(dt) {
   grenades.advance(time, dt, {
     pose: grenadeThrowPose, trace: traceGrenade,
     primed: () => sound('click'),
-    explode: event => explode(new THREE.Vector3(event.position.x, event.position.y, event.position.z),
-      GRENADE.damage, GRENADE.radius, event.source, 'grenade'),
+    explode: event => {
+      const profile = throwableProfile(event.kind);
+      explode(new THREE.Vector3(event.position.x, event.position.y, event.position.z), profile.damage, profile.radius, event.source, event.kind);
+    },
   });
   refreshWeaponVisibility();
 }
 
 function renderGrenades() {
   const actor = controlledSoldier(entities);
-  grenadeRenderer.update(grenades.active, actor, state === 'playing');
+  grenadeRenderer.update(grenades.active, actor, state === 'playing', grenadeEquipped, selectedThrowable);
   const action = actor?.grenades.action, label = $('grenade-status'), warning = $('grenade-warning');
+  $('equipment-slots').hidden = !actor || Boolean(actor.vehicleId);
   label.hidden = !actor || Boolean(actor.vehicleId);
-  label.textContent = action ? `手榴弹 ${actor.grenades.ammo} · ${action.phase === 'drawing' ? '取弹中' :
-    action.phase === 'cooking' ? '已拉弦 · 松开 G 投掷' : action.phase === 'throwing' ? '投掷中' : '恢复持枪'}`
-    : `手榴弹 ${actor?.grenades.ammo ?? 0} / ${GRENADE.count} · G`;
+  const pack = (action?.kind ?? selectedThrowable) === 'explosive-pack', name = pack ? '炸药包' : '手榴弹';
+  const count = pack ? actor?.grenades.packs ?? 0 : actor?.grenades.ammo ?? 0;
+  label.textContent = action ? `${name} ${count} · ${action.phase === 'drawing' ? '准备中' :
+    action.phase === 'cooking' ? '已拉弦 · 松开左键投掷' : action.phase === 'throwing' ? '投掷中' : '收回手臂'}`
+    : `5 手雷 ${actor?.grenades.ammo ?? 0}/1 · 6 炸药包 ${actor?.grenades.packs ?? 0}/1${grenadeEquipped ? ' · 左键投掷' : ''}`;
+  for (const element of document.querySelectorAll('[data-equipment-slot]')) {
+    const active = Number(element.dataset.equipmentSlot) === (grenadeEquipped ? selectedThrowable === 'explosive-pack' ? 6 : 5 : toolEquipped ? 2 : 1);
+    element.classList.toggle('selected', active); element.setAttribute('aria-current', String(active));
+  }
   const eye = actor ? soldierEyePosition(actor) : null;
   const nearby = state === 'playing' && actor?.health > 0 && !actor.vehicleId ? grenades.active.filter(grenade =>
-    grenade.detonateAt !== null && grenade.holderId !== actor.id && grenadeCanDamage(grenade.source, actor) &&
+    grenade.detonateAt !== null && grenade.holderId !== actor.id && grenadeCanDamage(grenade.source, actor, grenade.kind) &&
     Math.hypot(grenade.position.x - actor.position.x, grenade.position.z - actor.position.z,
-      grenade.position.y - actor.position.y) < GRENADE.radius &&
+      grenade.position.y - actor.position.y) < throwableProfile(grenade.kind).radius &&
     hasLine(new THREE.Vector3(eye.x, eye.y, eye.z),
-      new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), GRENADE.radius + 2))
+      new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 2))
     .sort((a, b) => a.detonateAt - b.detonateAt)[0] : null;
   const pickup = state === 'playing' ? reachableGrenade(actor) : null;
   warning.hidden = !nearby && !pickup;
-  warning.textContent = pickup ? '附近有手榴弹 · G 拾起并立即回掷（引信不会重置）'
-    : nearby ? '手榴弹危险 · 立即寻找掩护' : '';
+  warning.textContent = pickup ? `附近有${pickup.kind === 'explosive-pack' ? '炸药包 · 6' : '手榴弹 · 5'}选择后左键回掷（引信不会重置）`
+    : nearby ? `${nearby.kind === 'explosive-pack' ? '炸药包' : '手榴弹'}危险 · 立即寻找掩护` : '';
 }
 
 function fire() {
   if (state !== 'playing' || allies[current]?.health <= 0) return;
-  if (allies[current].grenades.action) return;
+  if (grenadeEquipped || allies[current].grenades.action) return;
   const transport = occupiedVehicle(entities, allies[current]);
   if (transport && !occupiedSeat(entities).canFire) {
     toast('驾驶员席位不能发射主炮；按 Y 切换车长或炮手');
@@ -1567,7 +1605,7 @@ function updateVehicles(dt) {
 }
 
 function updateWeaponSimulation(dt) {
-  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped, true);
+  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped && !grenadeEquipped, true);
   for (const cue of cues) emitControlEvent('weapon.mechanical', cue);
   if (state === 'playing') syncRifleUnit();
 }
@@ -1642,7 +1680,7 @@ function updatePlayer(dt) {
   if (!actor.vehicleId) position.y = world.groundHeight(position.x, position.z);
   actor.heading = yaw;
   actor.aimWalking = foot && held.aiming && motion.speed > .06 && !motion.sprinting;
-  actor.rifleReady = !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
+  actor.rifleReady = !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
   if (actor.nativeMotion) advanceNraMotion(actor, dt);
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
   updateCamera(dt);
@@ -1673,12 +1711,12 @@ function updateCamera(dt) {
   camera.rotation.set(pitch + recoil + sway, yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
   recoil = Math.max(0, recoil - dt * .3);
   const rifleReloading = unit.type === 'infantry' && allies[current].rifle.action === 'reload';
-  const effectiveAim = held.aiming && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
+  const effectiveAim = held.aiming && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
   const desiredFov = effectiveAim && (unit.type === 'infantry' || unit.type === 'tank') ? 48 : unit.type === 'plane' ? 82 : 72;
   camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFov, Math.min(1, dt * 12));
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld(true);
-  if (weapon) {
+  if (weapon && !grenadeEquipped && !allies[current].grenades.action) {
     const aim = effectiveAim && unit.type === 'infantry';
     const response = 1 - Math.exp(-dt * 15);
     if (unit.type === 'infantry' && !toolEquipped) {
@@ -1900,6 +1938,16 @@ function fightFromCover(actor, target, dt) {
   const t = actor.tactics, position = actor.position;
   const armorThreat = t.threatKind === 'closed-armor';
   const threat = new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
+  const objective = objectives.find(point => !point.captured);
+  if (!armorThreat && objective && time >= t.suppressedUntil &&
+    objectiveAdvanceRequired(actor, objective, position.distanceTo(threat), AI_RIFLE.closeRange)) {
+    if (t.cover) coverClaims.delete(t.cover.id);
+    t.cover = null; t.wallContact = null; t.shotMovePending = false; t.shotMoveGoal = null;
+    t.mode = 'advance-to-objective'; t.objectiveId = objective.id;
+    walkActor(actor, formationDestination(actor, objective), 3, dt);
+    resetAIRifleAim(actor.aiRifle, 'objective-advance');
+    return;
+  }
   t.engagementPoint ??= {};
   Object.assign(t.engagementPoint, t.lastSeen);
   const committedMove = actor.friendly && t.cover && !t.enteredCover && time < (t.coverMoveUntil || 0) && time >= t.suppressedUntil;
@@ -1909,7 +1957,9 @@ function fightFromCover(actor, target, dt) {
     t.decisionAt = time + 2.3 + t.slot * .17;
     const context = {
       state: t, position, threat,
-      slots: actor.friendly && actor.order === 'hold' ? world.town.covers.filter(slot => Math.hypot(slot.x - actor.orderPoint.x, slot.z - actor.orderPoint.z) < 7) : world.town.covers,
+      slots: actor.friendly && actor.order === 'hold' ? world.town.covers.filter(slot => Math.hypot(slot.x - actor.orderPoint.x, slot.z - actor.orderPoint.z) < 7)
+        : actor.friendly && objective ? world.town.covers.filter(slot =>
+          Math.hypot(slot.x - objective.x, slot.z - objective.z) <= Math.hypot(position.x - objective.x, position.z - objective.z) + 1.5) : world.town.covers,
       claims: coverClaims, now: time,
       blocked: point => circleBlocked(point.x, point.z, .46, world.obstacles),
       protectedAt: point => {
@@ -2012,8 +2062,7 @@ function fightFromCover(actor, target, dt) {
     } else if (actor.friendly && actor.order === 'hold') {
       const goal = holdDestination(actor);
       if (time >= (t.relocatedFireUntil ?? 0) && Math.hypot(goal.x - position.x, goal.z - position.z) > .4) walkActor(actor, goal, 2.4, dt);
-    } else if (distance > 24 && time >= (t.relocatedFireUntil ?? 0) &&
-      !(actor.firingPose === 'prone' && distance < 45) && t.slot % 2 === Math.floor(time / 2.6) % 2) {
+    } else if (distance > AI_RIFLE.closeRange && time >= (t.relocatedFireUntil ?? 0) && !actor.friendly) {
       const angle = Math.atan2(threat.z - position.z, threat.x - position.x);
       const flank = { x: threat.x - Math.cos(angle) * 18 + Math.sin(angle) * (t.slot % 2 ? 5 : -5), z: threat.z - Math.sin(angle) * 18 - Math.cos(angle) * (t.slot % 2 ? 5 : -5) };
       walkActor(actor, flank, 2.2, dt);
@@ -2076,7 +2125,7 @@ function fightFromCover(actor, target, dt) {
       if (!muzzle) return null;
       firingOptions = actor.friendly && actor.nativeMotion ? (t.eligiblePoses ?? []).filter(pose =>
         postureFireLine(actor, position, pose, threat)) : [];
-      if (actor.friendly && !infantryWeaponProfile(actor.rifle).automatic && !t.cover && !t.wallContact && t.lastShot && !t.lastShot.coverId) {
+      if (actor.friendly && t.shotMovePending && !infantryWeaponProfile(actor.rifle).automatic && !t.cover && !t.wallContact && t.lastShot && !t.lastShot.coverId) {
         if (Math.hypot(position.x - t.lastShot.position.x, position.z - t.lastShot.position.z) < 2) {
           t.shotMovePending = true; t.shotMoveGoal = null; t.shotMoveStartsAt = time;
           t.shotMoveRetryAt = 0; t.mode = 'seek-clear-relocation';
@@ -2102,7 +2151,7 @@ function fightFromCover(actor, target, dt) {
       speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
       position: { x: position.x, z: position.z } };
   if (actor.friendly) {
-    if (!t.cover && !t.wallContact && !infantryWeaponProfile(actor.rifle).automatic) {
+    if (suppressed && !t.cover && !t.wallContact && !infantryWeaponProfile(actor.rifle).automatic) {
       t.shotMovePending = true; t.shotMoveGoal = null;
       t.shotMoveStartsAt = time + .45;
       t.previousFiringPose = ownedFiringPose(actor);
@@ -2128,8 +2177,8 @@ function formationDestination(actor, active) {
   const formation = actor.formation;
   const offset = sectionOffset(actor.index);
   if (actor.friendly) {
-    const flank = actor.playerUnit ? actor.section - Math.floor(TYPES.infantry.members / BATTLE_RULES.sectionMembers / 2) : (formation.index - 1) % 3 - 1;
-    return { x: active.x + flank * 16 + offset.x, z: active.z + (flank ? 5 : -2) + offset.z };
+    actor.tactics.objectiveId = active.id;
+    return objectiveDestination(actor.tactics, actor.position, active);
   }
   const activeIndex = objectives.indexOf(active);
   const assignment = formation.index >= 7 ? 2 : formation.index >= 3 ? 1 : activeIndex;
@@ -2181,13 +2230,13 @@ function updateAI(dt) {
     }
     if (actor.vehicleId) { resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
     const dangers = grenades.active.filter(grenade => grenade.phase === 'flight' && grenade.detonateAt > time &&
-      grenadeCanDamage(grenade.source, actor) &&
+      grenadeCanDamage(grenade.source, actor, grenade.kind) &&
       Math.hypot(grenade.position.x - actor.position.x, grenade.position.z - actor.position.z,
-        grenade.position.y - actor.position.y) < GRENADE.radius).sort((a, b) => a.detonateAt - b.detonateAt);
+        grenade.position.y - actor.position.y) < throwableProfile(grenade.kind).radius).sort((a, b) => a.detonateAt - b.detonateAt);
     if (dangers.length) {
       const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
       const danger = dangers.find(grenade => hasLine(origin,
-        new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), GRENADE.radius + 3));
+        new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 3));
       if (danger) {
         resetAIRifleAim(actor.aiRifle, 'moving');
         const distance = Math.hypot(actor.position.x - danger.position.x, actor.position.z - danger.position.z);
@@ -2276,7 +2325,8 @@ function updateAI(dt) {
     if (target) {
       actor.buildProgress = 0;
       fightFromCover(actor, target, dt);
-    } else if (tactics.lastSeen && canRiflemanTrackTarget(tactics.threatKind)) {
+    } else if (tactics.lastSeen && canRiflemanTrackTarget(tactics.threatKind) &&
+      !(actor.friendly && (!actor.playerUnit || actor.order === 'advance') && tactics.threatKind !== 'closed-armor')) {
       if (tactics.cover || tactics.shotMovePending || time < (tactics.relocatedFireUntil ?? 0) ||
         tactics.threatKind === 'closed-armor') fightFromCover(actor, null, dt);
       else {
@@ -2421,14 +2471,8 @@ function updateEffects(dt) {
       continue;
     }
     const t = Math.max(0, (time - effect.bornAt) / effect.life);
-    const elapsed = Math.max(0, time - effect.lastAt);
     effect.lastAt = Math.max(time, effect.bornAt);
     effect.object.material.opacity = (1 - t) * .8;
-    if (effect.kind === 'blast') {
-      effect.object.scale.setScalar(1 + t * 8);
-      effect.object.position.y += elapsed * 2;
-      effect.object.material.color.lerp(new THREE.Color(0x53574a), elapsed * 5);
-    }
   }
   combatFeedback.update(dt);
   $('damage-vignette').style.opacity = graphics.snapshot.effects.damageVignette ? String(combatFeedback.flash) : '0';
@@ -2518,8 +2562,9 @@ function updateHUD() {
   $('objectives').innerHTML = objectives.map(point => `<span class="objective-chip ${point.captured ? 'captured' : point === active ? 'active' : ''}">${point.id}</span>`).join('');
   if (active) $('objective-title').textContent = `夺取 ${active.id} · ${active.name}`;
   $('timer').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.floor(remaining % 60)).padStart(2, '0')}`;
-  $('ammo').textContent = unit.reloadUntil ? '装填' : String(unit.ammo);
-  $('ammo').style.fontSize = unit.reloadUntil ? '25px' : '';
+  $('ammo').textContent = grenadeEquipped ? String(selectedThrowable === 'explosive-pack' ? allies[current].grenades.packs : allies[current].grenades.ammo) : unit.reloadUntil ? '装填' : String(unit.ammo);
+  $('ammo-max').textContent = `/ ${grenadeEquipped ? GRENADE.count : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).magazine : TYPES[unit.type].magazine}`;
+  $('ammo').style.fontSize = !grenadeEquipped && unit.reloadUntil ? '25px' : '';
   const health = occupiedVehicle(entities, allies[current])?.health ?? allies[current].health;
   $('health-fill').style.width = `${health / TYPES[unit.type].health * 100}%`;
   $('health-text').textContent = deathTransfer.active && !deathTransfer.handedOff
@@ -2775,10 +2820,13 @@ function performControlCommand(command) {
   const { action, payload } = command;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   if (allies[current]?.grenades.action && !['look', 'cycleMember', 'releaseGrenade'].includes(action)) {
-    toast('正在操作手榴弹；松开 G 投掷，切换队员会丢下已拉弦的弹');
+    if (action === 'pressFire') return;
+    toast('正在操作投掷装备；松开左键投掷，换人会丢下已启动的投掷物');
     return;
   }
   if (action === 'prepareGrenade') { prepareGrenade(); return; }
+  if (action === 'equipGrenade') { equipGrenade(); return; }
+  if (action === 'equipExplosivePack') { equipGrenade('explosive-pack'); return; }
   if (action === 'releaseGrenade') { grenades.release(entities.control.soldierId, time); return; }
   if (action === 'interact') {
     updateCamera(0);
@@ -2790,7 +2838,11 @@ function performControlCommand(command) {
       else if (!interactVehicle()) toast('靠近房门或原车，并看向交互目标再按 F');
     }
   } else if (action === 'reload') reload();
-  else if (action === 'equipRifle' && unit.type === 'infantry') equipTool(false);
+  else if (action === 'equipRifle' && foot) {
+    grenadeEquipped = false;
+    if (unit.type === 'infantry') equipTool(false);
+    else refreshControlSurface();
+  }
   else if (action === 'equipTool' && unit.type === 'infantry') equipTool(true);
   else if (action === 'cycleMember') {
     const next = nextAlive(allies, current);
@@ -2808,11 +2860,14 @@ function performControlCommand(command) {
   else if (action === 'finishOrder' && held.orderStarted !== null) {
     squadCommand(payload.now - held.orderStarted > 450);
     held.orderStarted = null;
-  } else if (action === 'pressFire') held.primary = true;
+  } else if (action === 'pressFire') {
+    if (grenadeEquipped) prepareGrenade();
+    else held.primary = true;
+  }
   else if (action === 'pressAim') {
     held.secondary = true;
     if (toolEquipped) selectConstructionBlueprint(construction, entities.control.soldierId);
-    else held.aiming = true;
+    else if (!grenadeEquipped) held.aiming = true;
   } else if (action === 'look') {
     controlPose.yaw -= payload.x * .0022 * (held.aiming ? .6 : 1);
     controlPose.pitch -= payload.y * .0022 * (held.aiming ? .6 : 1);
@@ -2828,7 +2883,7 @@ function dispatchControlCommand(action, payload) {
 }
 
 const keyActions = { KeyF: 'interact', KeyR: 'reload', Digit1: 'equipRifle', Digit2: 'equipTool', KeyY: 'cycleMember',
-  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', KeyG: 'prepareGrenade' };
+  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', Digit5: 'equipGrenade', Digit6: 'equipExplosivePack', KeyG: 'equipGrenade' };
 document.addEventListener('keydown', event => {
   if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   if (event.code === 'Escape' && state === 'transferring' && !event.repeat) { showOverlay(); return; }
@@ -2837,7 +2892,7 @@ document.addEventListener('keydown', event => {
   const action = keyActions[event.code];
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   if (action && (!['crouch', 'prone', 'jump'].includes(action) || foot) &&
-      (!['equipRifle', 'equipTool'].includes(action) || unit.type === 'infantry')) dispatchControlCommand(action);
+      (action !== 'equipTool' || unit.type === 'infantry')) dispatchControlCommand(action);
   if (event.code === 'KeyX') dispatchControlCommand('startOrder', { now: performance.now() });
   if (event.code === 'Tab') $('scoreboard').hidden = false;
   if (event.code === 'KeyM') $('minimap').classList.toggle('expanded');
@@ -2850,7 +2905,6 @@ document.addEventListener('keydown', event => {
 });
 document.addEventListener('keyup', event => {
   keys.delete(event.code);
-  if (event.code === 'KeyG' && state === 'playing') dispatchControlCommand('releaseGrenade');
   if (event.code === 'Tab') $('scoreboard').hidden = true;
   if (event.code === 'KeyX' && held.orderStarted !== null) {
     if (state === 'playing') dispatchControlCommand('finishOrder', { now: performance.now() });
@@ -2869,7 +2923,10 @@ canvas.addEventListener('mousedown', event => {
   }
 });
 document.addEventListener('mouseup', event => {
-  if (event.button === 0) held.primary = false;
+  if (event.button === 0) {
+    held.primary = false;
+    if (state === 'playing' && controlledSoldier(entities)?.grenades.action) dispatchControlCommand('releaseGrenade');
+  }
   if (event.button === 2) { held.secondary = false; held.aiming = false; }
 });
 document.addEventListener('mousemove', event => {
@@ -2912,7 +2969,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
-  controlSimulation: { toolEquipped, jumpHeight, jumpVelocity },
+  controlSimulation: { toolEquipped, grenadeEquipped, selectedThrowable, jumpHeight, jumpVelocity },
   historicalCharacter: nraCharacter?.focusedSnapshot ?? null,
   historicalForce: nraCharacter?.snapshot ?? null,
   enemyHistoricalCharacter: ijaCharacter?.focusedSnapshot ?? null,
@@ -2952,11 +3009,13 @@ Object.defineProperty(window, '__battle', { get: () => ({
   projectileViews: shellViews.size,
   projectileSceneObjects: scene.children.filter(object => object.userData.projectileId).length,
   projectileImpacts: projectileImpacts.map(event => ({ ...event, source: { ...event.source }, position: { ...event.position } })),
-  grenades: { rules: { ...GRENADE }, active: grenades.active.map(grenade => ({ ...grenade,
+  grenades: { rules: { ...GRENADE }, packRules: { ...EXPLOSIVE_PACK }, active: grenades.active.map(grenade => ({ ...grenade,
     source: { ...grenade.source }, originalSource: { ...grenade.originalSource },
     position: { ...grenade.position }, velocity: { ...grenade.velocity } })),
     history: grenades.history, renderer: grenadeRenderer.snapshot,
-    inventory: controlledSoldier(entities) ? { ammo: controlledSoldier(entities).grenades.ammo,
+    equipped: grenadeEquipped,
+    selected: selectedThrowable,
+    inventory: controlledSoldier(entities) ? { ammo: controlledSoldier(entities).grenades.ammo, packs: controlledSoldier(entities).grenades.packs,
       phase: controlledSoldier(entities).grenades.action?.phase ?? null } : null },
   graphics: graphics.snapshot, combatStats: { ...combatStats },
   population: { rules: { ...BATTLE_RULES }, friendly: battleSummary('friendly'), enemy: battleSummary('enemy'),
@@ -3010,7 +3069,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     lookPitch: actor.lookPitch, order: actor.order,
     orderPoint: actor.orderPoint ? { ...actor.orderPoint } : null, mode: actor.tactics.mode, coverId: actor.tactics.cover?.id || null, bodyScaleY: actor.model.scale.y,
     role: actor.role, targetKind: actor.targetKind, spawnId: actor.spawnId, stamina: actor.locomotion.stamina,
-    grenades: { ammo: actor.grenades.ammo, phase: actor.grenades.action?.phase ?? null }, rifle: { ...actor.rifle } })),
+    grenades: { ammo: actor.grenades.ammo, packs: actor.grenades.packs, phase: actor.grenades.action?.phase ?? null }, rifle: { ...actor.rifle } })),
   construction: { tool: toolEquipped, builderId: construction.builderId, blueprint: construction.blueprint, mode: construction.mode,
     progress: construction.progress, blockedReason: construction.blockedReason, preview: construction.preview ? { ...construction.preview } : null,
     site: construction.site ? { x: construction.site.x, z: construction.site.z } : null },
@@ -3028,6 +3087,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     completedShotMoves: actor.tactics.completedShotMoves ?? 0, shotMovePending: Boolean(actor.tactics.shotMovePending),
     wallContact: actor.tactics.wallContact ? { ...actor.tactics.wallContact } : null,
     x: actor.position.x, z: actor.position.z, health: actor.health, order: actor.order, mode: actor.tactics.mode,
+    objectiveId: actor.tactics.objectiveId ?? null,
     cover: actor.tactics.cover ? { id: actor.tactics.cover.id, x: actor.tactics.cover.x, z: actor.tactics.cover.z,
       kind: actor.tactics.cover.kind, peek: { ...actor.tactics.cover.peek } } : null, enteredCover: actor.tactics.enteredCover,
     suppressedUntil: actor.tactics.suppressedUntil,
@@ -3055,7 +3115,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     engagementPoint: actor.tactics.engagementPoint ? { ...actor.tactics.engagementPoint } : null,
     lastSeen: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null, blockedBy: actor.tactics.blockedBy })),
   coverClaims: [...coverClaims].filter(([, claim]) => claim.until > time).map(([id, claim]) => ({ id, ...claim })),
-  objectives: objectives.map(({ id, progress, captured }) => ({ id, progress, captured })),
+  objectives: objectives.map(({ id, x, z, radius, progress, captured }) => ({ id, x, z, radius, progress, captured })),
   drawCalls: renderer.info.render.calls,
 }), configurable: false });
 

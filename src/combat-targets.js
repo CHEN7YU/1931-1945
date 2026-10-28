@@ -2,7 +2,7 @@ import { RIFLE } from './rifle-action.js';
 
 export const RIFLE_HIT_DAMAGE = Object.freeze({ head: 100, torso: 100, limb: 40 });
 const kinds = new Set(['person', 'exposed-crew', 'closed-armor', 'aircraft']);
-const weapons = new Set(['rifle', 'grenade', 'explosion', 'cannon', 'aircraft-gun', 'collision', 'boundary']);
+const weapons = new Set(['rifle', 'grenade', 'explosive-pack', 'explosion', 'cannon', 'aircraft-gun', 'collision', 'boundary']);
 
 export function canWeaponDamageTarget(weapon, kind) {
   if (!weapons.has(weapon) || !kinds.has(kind)) throw new RangeError(`Unknown weapon/target classification: ${weapon}/${kind}`);
@@ -24,7 +24,7 @@ export function damageForTarget(weapon, kind, damage, hitZone = null) {
 
 export function rifleAIFireDelay(distance, suppressed, random) {
   if (!Number.isFinite(distance) || distance < 0 || typeof suppressed !== 'boolean' || !Number.isFinite(random) || random < 0 || random > 1) throw new RangeError('Invalid AI firing inputs');
-  return RIFLE.cycleSeconds + (distance <= 10 ? .15 + random * .25 : .4 + random * .7) + (suppressed ? .35 : 0);
+  return RIFLE.cycleSeconds + (distance <= 35 ? .15 + random * .25 : .4 + random * .7) + (suppressed ? .35 : 0);
 }
 
 export function rifleAIHitChance(distance, suppressed) {

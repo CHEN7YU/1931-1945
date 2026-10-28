@@ -117,6 +117,25 @@ export function selectCover({ state, position, threat, slots, claims, now, block
   return null;
 }
 
+export function objectiveDestination(state, position, objective) {
+  if (!validPoint(position) || !validPoint(objective) || !Number.isFinite(objective.radius) || objective.radius <= 0 ||
+    !Number.isInteger(state.slot) || !Number.isInteger(state.squad)) throw new RangeError('Objective advance requires an assigned squad and capture area');
+  const lane = (state.squad % 3 - 1) * 3.2;
+  const slot = state.slot % 10, x = lane + (slot % 3 - 1) * 1.1, z = (Math.floor(slot / 3) - 1.5) * 1.25;
+  const scale = Math.min(1, (objective.radius - 1) / Math.max(1, Math.hypot(x, z)));
+  return { x: objective.x + x * scale, z: objective.z + z * scale };
+}
+
+export function objectiveAdvanceRequired(actor, objective, threatDistance, closeRange = 35) {
+  if (!validPoint(actor.position) || !validPoint(objective) || !Number.isFinite(objective.radius) ||
+    !Number.isFinite(threatDistance) || threatDistance < 0) throw new RangeError('Mission decision needs finite objective and observed distance');
+  if (!actor.friendly || actor.playerUnit && actor.order !== 'advance') return false;
+  if (Math.hypot(actor.position.x - objective.x, actor.position.z - objective.z) <= objective.radius * .7) return false;
+  // One stable covering element per squad; the remaining soldiers keep closing on the objective.
+  return threatDistance > closeRange ? actor.tactics.slot % 4 !== 0 :
+    threatDistance > 18 && actor.tactics.slot % 3 !== 0;
+}
+
 export function advancePosition(state, position, objective) {
   const slotX = state.slot % 2 ? 1.4 : -1.4;
   const lane = (state.squad % 3 - 1) * 14.5;

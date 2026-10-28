@@ -50,7 +50,8 @@ export function createCombatEvents() {
         payload = { source, position: point(data.position), kind, normal: kind ? point(data.normal) : null };
       } else if (type === 'explosion') {
         if (typeof data.sound !== 'boolean') throw new RangeError('Explosion feedback requires an explicit sound policy');
-        payload = { source, position: point(data.position), sound: data.sound };
+        if (data.radius != null && (!Number.isFinite(data.radius) || data.radius <= 0)) throw new RangeError('Explosion radius must be positive');
+        payload = { source, position: point(data.position), sound: data.sound, radius: data.radius ?? 7 };
       } else if (type === 'damage') {
         if (!Number.isFinite(data.amount) || data.amount <= 0 || !Number.isFinite(data.health) || data.health < 0 ||
           (data.observerId != null && (typeof data.observerId !== 'string' || !data.observerId))) throw new RangeError('Invalid applied damage feedback');

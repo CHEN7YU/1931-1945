@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAIRifleControl, attemptAIRifleShot, resetAIRifleAim, rifleAIAimSeconds } from '../src/ai-rifle.js';
+import { AI_RIFLE, createAIRifleControl, attemptAIRifleShot, resetAIRifleAim, rifleAIAimSeconds } from '../src/ai-rifle.js';
 import { createRifleState, advanceRifle, RIFLE } from '../src/rifle-action.js';
 
 function fixture(team = 'enemy') {
@@ -114,4 +114,40 @@ test('invalid aim facts and query results fail explicitly', () => {
   assert.throws(() => fire(0), RangeError);
   actor.rifle.ammo = 5; actor.rifle.action = 'invalid';
   assert.throws(() => fire(0), RangeError);
+});
+
+test('far contacts get a normally aimed first shot then a long stable follow-up, including machine guns and changed targets', () => {
+  for (const team of ['friendly', 'enemy']) for (const automatic of [false, true]) {
+    const { actor, fire } = fixture(team);
+    if (automatic) actor.rifle = createRifleState('zb26');
+    let first = null, second = null;
+    for (let frame = 0; frame < 360; frame++) {
+      const now = frame * .05;
+      advanceRifle(actor.rifle, .05);
+      if (fire(now, { targetId: first !== null ? 'new-far-target' : 'target', confirmShot: () => 55 })) {
+        if (first === null) first = now;
+        else { second = now; break; }
+      }
+    }
+    assert.ok(first > .7 && first < 1.5, `${team} first far shot must actually occur after basic aiming`);
+    assert.ok(second - first >= rifleAIAimSeconds(55, false, true));
+    assert.ok(second - first < 11);
+    assert.equal(actor.aiRifle.lastShot.continuingBurst, false);
+    assert.ok(actor.aiRifle.lastShot.requiredSeconds >= 6);
+  }
+});
+
+test('close bolt follow-ups and machine-gun bursts do not inherit the far-contact long aim penalty', () => {
+  assert.equal(AI_RIFLE.closeRange, 35);
+  const { actor, fire } = fixture();
+  actor.aiRifle.lastDistantShotAt = 1;
+  const fired = [];
+  for (let frame = 0; frame < 100; frame++) {
+    const now = 2 + frame * .05; advanceRifle(actor.rifle, .05);
+    if (fire(now)) fired.push(now);
+    if (fired.length === 3) break;
+  }
+  assert.equal(fired.length, 3);
+  assert.ok(fired[1] - fired[0] < 1.1 && fired[1] - fired[0] >= RIFLE.cycleSeconds);
+  assert.ok(actor.aiRifle.lastShot.requiredSeconds <= .35);
 });
