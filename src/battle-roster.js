@@ -73,7 +73,8 @@ export function sectionOffset(index) {
 
 export function holdDestination(actor) {
   const offset = actor.personalHold ? { x: 0, z: 0 } : sectionOffset(actor.index);
-  return { x: actor.orderPoint.x + offset.x, z: actor.orderPoint.z + offset.z };
+  return { x: actor.orderPoint.x + offset.x, z: actor.orderPoint.z + offset.z,
+    ...(actor.orderPoint.y !== undefined ? { y: actor.orderPoint.y } : {}) };
 }
 
 export function reinforcementDue(formation, now) {
