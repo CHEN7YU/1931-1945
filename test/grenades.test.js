@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, advanceGrenadeFlight, grenadeCanDamage, grenadePose } from '../src/grenades.js';
+import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, advanceGrenadeFlight, grenadeCanDamage, grenadePose } from '../src/grenades.js';
 import { createEntityRegistry, registerUnit, createVehicleEntity, damageVehicleEntity } from '../src/entities.js';
 
 const source = (id = 'a', team = 'friendly') => ({ soldierId: id, unitId: 'squad', weaponId: `${id}:grenades`, team,
@@ -22,15 +22,31 @@ test('each soldier starts with one grenade and one pack; cancellation does not c
   step(.8); assert.equal(inventory.ammo, 0); assert.equal(other.ammo, 1); assert.equal(inventory.packs, 1);
   assert.match(system.begin('a', inventory, source(), .8), /正在/);
 });
+test('slot availability checks each owned stock independently without consuming or mutating either item', () => {
+  const inventory = createGrenadeInventory();
+  assert.equal(throwableStock(inventory, 'grenade'), 1);
+  inventory.ammo = 0;
+  assert.equal(throwableStock(inventory, 'grenade'), 0);
+  assert.equal(throwableStock(inventory, 'explosive-pack'), 1);
+  inventory.packs = 0;
+  const before = JSON.stringify(inventory);
+  for (let i = 0; i < 10; i++) assert.equal(throwableStock(inventory, 'explosive-pack'), 0);
+  assert.equal(JSON.stringify(inventory), before);
+  assert.throws(() => throwableStock({ ammo: NaN }, 'grenade'), RangeError);
+});
 test('tap queues a throw after draw and windup, cooking preserves the original fuse; one explosion', () => {
   const { system, inventory, step, blasts } = fixture();
   assert.equal(system.release('a', .05), true);
   assert.equal(system.release('a', .06), false);
   step(.45); assert.equal(inventory.ammo, 0);
   step(.67); assert.equal(system.active[0].phase, 'flight');
+  const release = system.history.find(event => event.type === 'throw');
+  assert.deepEqual(release.position, { x: 0, y: 1.5, z: 0 });
+  assert.ok(Object.isFrozen(release.position));
   assert.equal(inventory.action.phase, 'recovering');
   assert.equal(system.active[0].detonateAt, GRENADE.draw + GRENADE.fuse);
   step(1.1); assert.equal(inventory.action, null);
+  assert.deepEqual(release.position, { x: 0, y: 1.5, z: 0 }, 'later flight cannot move the recorded release origin');
   step(4.46); step(5);
   assert.equal(blasts.length, 1); assert.equal(system.active.length, 0);
   assert.equal(blasts[0].source.weaponId, 'a:grenades');
@@ -53,25 +69,17 @@ test('death or changing member drops a live grenade without refunding or changin
   system.forget('a'); step(4.46);
   assert.equal(blasts.length, 1); assert.equal(blasts[0].source.soldierId, 'a');
 });
-test('throwback uses no personal grenade, changes credit, and never resets the fuse', () => {
+test('live grenades cannot be picked up or thrown back and always retain the original thrower', () => {
   const { system, step, inventory, blasts } = fixture();
   step(.5); system.interrupt('a');
   const grenade = system.active[0], second = createGrenadeInventory();
-  second.ammo = 0;
-  assert.equal(system.rethrow(grenade.id, 'b', second, source('b', 'enemy'), 1), null);
-  step(1.23); assert.equal(second.ammo, 0); assert.equal(inventory.ammo, 0);
-  assert.equal(grenade.detonateAt, 4.45); assert.equal(grenade.throws, 1);
+  assert.equal(system.rethrow, undefined, 'no hidden throwback API remains');
+  assert.equal(system.begin('b', second, source('b', 'enemy'), 1), null);
+  step(1.23); assert.equal(inventory.ammo, 0);
+  assert.equal(grenade.detonateAt, 4.45); assert.equal(grenade.holderId, null);
+  assert.equal(grenade.source.soldierId, 'a');
   step(4.46);
-  assert.equal(blasts[0].source.soldierId, 'b'); assert.equal(blasts[0].originalSource.soldierId, 'a');
-});
-test('too-late throwback detonates in the new holder hand and cannot duplicate the grenade', () => {
-  const { system, step, blasts } = fixture();
-  step(.5); system.interrupt('a');
-  const grenade = system.active[0], second = createGrenadeInventory();
-  system.rethrow(grenade.id, 'b', second, source('b'), 4.4);
-  assert.match(system.rethrow(grenade.id, 'c', createGrenadeInventory(), source('c'), 4.41), /无法/);
-  step(4.46); assert.equal(blasts.length, 1); assert.equal(second.ammo, 1);
-  assert.equal(blasts[0].source.soldierId, 'b');
+  assert.equal(blasts[0].source.soldierId, 'a'); assert.equal(blasts[0].originalSource.soldierId, 'a');
 });
 test('continuous collision bounces rather than detonating, and ground motion settles', () => {
   const grenade = { position: { x: 0, y: .1, z: 0 }, velocity: { x: 2, y: -3, z: 0 }, collisions: 0 };
@@ -148,7 +156,7 @@ test('active grenade cap rejects before spending inventory, never deletes existi
   assert.equal(extra.ammo, 1); assert.equal(extra.packs, 1); assert.equal(extra.action, null); assert.equal(system.active.length, GRENADE.limit);
 });
 
-test('packs have a separate fuse, lower throw speed, timed-only detonation and preserved source on throwback', () => {
+test('packs have a separate fuse, lower throw speed, timed-only detonation and no throwback', () => {
   const system = createGrenadeSystem(), inventory = createGrenadeInventory(), blasts = [];
   assert.equal(system.begin('a', inventory, { ...source(), weaponId: 'a:explosive-pack' }, 0, 'explosive-pack'), null);
   system.release('a', 0);
@@ -161,12 +169,11 @@ test('packs have a separate fuse, lower throw speed, timed-only detonation and p
   system.advance(.91, .3, hooks); assert.equal(pack.phase, 'flight');
   assert.ok(Math.abs(pack.velocity.z + EXPLOSIVE_PACK.speed) < 1e-8 && EXPLOSIVE_PACK.speed < GRENADE.speed);
   assert.equal(blasts.length, 0, 'launching or collision must not detonate the pack');
-  const second = createGrenadeInventory();
-  assert.equal(system.rethrow(pack.id, 'b', second, { ...source('b'), weaponId: 'b:explosive-pack' }, 1), null);
-  system.advance(1.31, .4, hooks); assert.equal(second.packs, 1); assert.equal(pack.detonateAt, deadline);
+  assert.equal(system.rethrow, undefined);
+  system.advance(1.31, .4, hooks); assert.equal(pack.holderId, null); assert.equal(pack.detonateAt, deadline);
   system.advance(deadline + .01, deadline - 1.3, hooks);
   assert.equal(blasts.length, 1); assert.equal(blasts[0].kind, 'explosive-pack');
-  assert.equal(blasts[0].source.weaponId, 'b:explosive-pack'); assert.equal(blasts[0].originalSource.weaponId, 'a:explosive-pack');
+  assert.equal(blasts[0].source.weaponId, 'a:explosive-pack'); assert.equal(blasts[0].originalSource.weaponId, 'a:explosive-pack');
   assert.equal(grenadeCanDamage(source(), { id: 'enemy-tank', team: 'enemy', targetKind: 'closed-armor' }, 'explosive-pack'), true);
   assert.equal(grenadeCanDamage(source(), { id: 'friend-tank', team: 'friendly', targetKind: 'closed-armor' }, 'explosive-pack'), false);
   assert.throws(() => throwableProfile('sticky-remote'), RangeError);

@@ -128,6 +128,22 @@ test('grenade view reuses the authorized skinned hands and UVs with isolated fin
     hand.poseGrip(.85); hand.poseGrip(.85);
     assert.ok(Math.abs(before - first.getWorldPosition(new T.Vector3()).distanceTo(second.getWorldPosition(new T.Vector3()))) < 1e-8);
     assert.equal(duplicate.userData.handSource, 'nra-authorized-skinned-hand');
+    for (const kind of ['grenade', 'explosive-pack']) {
+      hand.poseGrip(1, 0, kind);
+      assert.ok(hand.gripSnapshot.reachAdjustment < .001, `${side}/${kind}: contact cannot need stretched fingers`);
+      const end = bones.get(prefix + 'HandMiddle4');
+      const before = hand.worldToLocal(end.getWorldPosition(new T.Vector3()));
+      hand.position.set(1, .2, -3); hand.rotation.set(.3, 1, -.4); hand.updateMatrixWorld(true);
+      hand.poseGrip(1, 0, kind);
+      assert.ok(hand.worldToLocal(end.getWorldPosition(new T.Vector3())).distanceTo(before) < 1e-8,
+        'cached local finger contact is independent of camera/world transforms');
+      const index = bones.get(prefix + 'HandIndex1'), closed = index.quaternion.clone().normalize();
+      hand.poseGrip(1, .01, kind);
+      const partial = closed.angleTo(index.quaternion.clone().normalize());
+      hand.poseGrip(1, 1, kind);
+      const full = closed.angleTo(index.quaternion.clone().normalize());
+      assert.ok(partial < full * .02 + 1e-8, `${side}/${kind}: initial pin-pull angle ${partial}, full ${full}`);
+    }
     assert.throws(() => hand.poseGrip(2), RangeError);
   }
 });

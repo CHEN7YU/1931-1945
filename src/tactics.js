@@ -147,6 +147,71 @@ export function advancePosition(state, position, objective) {
   return { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
 }
 
+export function assignAssaultObjectives(formations, objectives) {
+  if (!objectives.length) throw new RangeError('Assault assignments require objectives');
+  for (const team of ['friendly', 'enemy']) {
+    const units = formations.filter(item => item.team === team && !item.player).map(formation => {
+      const alive = formation.members.filter(actor => actor.health > 0 && !actor.vehicleId);
+      return { formation, alive, center: alive.reduce((sum, actor) => ({
+        x: sum.x + actor.position.x / alive.length, z: sum.z + actor.position.z / alive.length,
+      }), { x: 0, z: 0 }) };
+    }).filter(unit => unit.alive.length);
+    const secured = point => point.owner === team && point.status !== 'contested' &&
+      point.control === (team === 'friendly' ? 1 : -1);
+    const quotas = new Map(objectives.map(point => [point.id, 0]));
+    let remaining = units.length;
+    for (const point of objectives.filter(secured)) {
+      if (!remaining) break;
+      quotas.set(point.id, 1);
+      remaining--;
+    }
+    const targets = objectives.filter(point => !secured(point));
+    const attackPoints = targets.length ? targets : objectives;
+    while (remaining-- > 0) {
+      const point = attackPoints.reduce((best, candidate) => quotas.get(candidate.id) < quotas.get(best.id) ? candidate : best);
+      quotas.set(point.id, quotas.get(point.id) + 1);
+    }
+    const assigned = new Set();
+    // Keep committed attackers, preferring those already closest when a quota shrinks.
+    for (const point of objectives) {
+      const incumbents = units.filter(unit => unit.formation.objectiveId === point.id)
+        .sort((a, b) => distance(a.center, point) - distance(b.center, point));
+      for (const unit of incumbents.slice(0, quotas.get(point.id))) {
+        assigned.add(unit);
+        quotas.set(point.id, quotas.get(point.id) - 1);
+      }
+    }
+    for (const unit of units.filter(item => !assigned.has(item))) {
+      const available = objectives.filter(point => quotas.get(point.id) > 0);
+      const point = available.reduce((best, candidate) => distance(unit.center, candidate) < distance(unit.center, best) ? candidate : best);
+      unit.formation.objectiveId = point.id;
+      quotas.set(point.id, quotas.get(point.id) - 1);
+    }
+  }
+}
+
+export function assaultDestination(actor, objective) {
+  const angle = actor.index * Math.PI * 2 / 11 + actor.formation.index * 2.4;
+  const radius = Math.min(objective.radius - 2, 3 + actor.index % 3 * 1.8);
+  return { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
+}
+
+export function enemyAssaultAction(state, position, objective, now, hasTarget) {
+  if (!validPoint(position) || !validPoint(objective) || !Number.isFinite(now) || now < 0) {
+    throw new RangeError('Assault decisions require finite positions and simulation time');
+  }
+  if (state.lastSeen && state.threatKind === 'closed-armor') return 'cover';
+  if (distance(position, objective) < objective.radius - 2) return hasTarget ? 'cover' : 'advance';
+  if (now < state.suppressedUntil && now >= (state.assaultSuppressionReadyAt ?? 0)) {
+    state.assaultSuppressionUntil = now + 1.5;
+    state.assaultSuppressionReadyAt = now + 7;
+  }
+  if (now < (state.assaultSuppressionUntil ?? 0) && state.lastSeen) return 'cover';
+  if (!hasTarget) return 'advance';
+  // Half a section covers for a bounded interval while the other half closes on its objective.
+  return Math.floor((now + state.squad * .37) / 4) % 2 === state.slot % 2 ? 'advance' : 'cover';
+}
+
 export function pointSegmentDistance(point, start, end) {
   const dx = end.x - start.x, dz = end.z - start.z, length2 = dx * dx + dz * dz;
   const fraction = length2 ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.z - start.z) * dz) / length2)) : 0;

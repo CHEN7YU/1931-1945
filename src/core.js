@@ -4,6 +4,7 @@ import { obstacleLookup } from './spatial.js';
 export const MAP_LIMIT = 108;
 export const MATCH_SECONDS = 600;
 export const CAPTURE_SECONDS = 12;
+export const DOMINATION_SECONDS = 20;
 export const TYPES = Object.freeze({
   infantry: { name: '步兵班', weapon: '中正式风格步枪 · 比例样枪', members: 11, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
   tank: { name: '装甲小队', weapon: '维克斯B型 · 47毫米炮', members: 3, magazine: 1, reload: 3.8, interval: .5, speed: 8, health: 360, damage: 160 },
@@ -17,19 +18,49 @@ export const OBJECTIVES = Object.freeze([
 ]);
 
 export function makeObjectives() {
-  return OBJECTIVES.map(point => ({ ...point, progress: 0, captured: false }));
+  return OBJECTIVES.map(point => ({ ...point, owner: null, control: 0, progress: 0, enemyProgress: 0, captured: false, status: 'empty' }));
 }
 
 export function advanceCapture(point, dt, friendly, hostile) {
-  if (point.captured) return 'captured';
-  if (friendly && hostile) return 'contested';
-  if (friendly) {
-    point.progress = Math.min(1, point.progress + dt / CAPTURE_SECONDS);
-    point.captured = point.progress >= 1;
-    return point.captured ? 'captured' : 'capturing';
+  if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Capture requires a finite non-negative step');
+  if (friendly && hostile) return point.status = 'contested';
+  const direction = friendly ? 1 : hostile ? -1 : 0;
+  if (direction) {
+    point.control = Math.max(-1, Math.min(1, point.control + direction * dt / CAPTURE_SECONDS));
+    if (point.owner === 'friendly' && point.control <= 0 || point.owner === 'enemy' && point.control >= 0) point.owner = null;
+    if (point.control === 1) point.owner = 'friendly';
+    if (point.control === -1) point.owner = 'enemy';
+  } else {
+    const home = point.owner === 'friendly' ? 1 : point.owner === 'enemy' ? -1 : 0;
+    point.control += Math.sign(home - point.control) * Math.min(Math.abs(home - point.control), dt / (CAPTURE_SECONDS * 2));
   }
-  point.progress = Math.max(0, point.progress - dt / (CAPTURE_SECONDS * 2));
-  return 'empty';
+  point.progress = Math.max(0, point.control);
+  point.enemyProgress = Math.max(0, -point.control);
+  point.captured = point.owner === 'friendly';
+  return point.status = direction ? point.control === direction ? 'captured' : 'capturing' : point.owner ? 'held' : 'empty';
+}
+
+export function createConquest() {
+  return { friendly: 0, enemy: 0, dominationTeam: null, dominationTime: 0, winner: null };
+}
+
+export function advanceConquest(match, points, dt, remaining) {
+  if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(remaining) || remaining < 0 || !points.length) {
+    throw new RangeError('Conquest requires objectives and finite non-negative time');
+  }
+  if (match.winner) return match.winner;
+  for (const team of ['friendly', 'enemy']) match[team] += points.filter(point => point.owner === team).length * dt;
+  const dominant = ['friendly', 'enemy'].find(team => points.every(point => point.owner === team &&
+    point.control === (team === 'friendly' ? 1 : -1) && point.status !== 'contested'));
+  match.dominationTime = dominant ? match.dominationTeam === dominant ? match.dominationTime + dt : dt : 0;
+  match.dominationTeam = dominant ?? null;
+  if (match.dominationTime >= DOMINATION_SECONDS) match.winner = dominant;
+  else if (!remaining) {
+    const owned = team => points.filter(point => point.owner === team).length;
+    const difference = owned('friendly') - owned('enemy') || match.friendly - match.enemy;
+    match.winner = difference > 0 ? 'friendly' : difference < 0 ? 'enemy' : 'draw';
+  }
+  return match.winner;
 }
 
 export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1.75) {

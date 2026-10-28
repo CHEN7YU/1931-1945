@@ -45,8 +45,12 @@ test('rally building requires clearance from terrain, capture zones and nearby h
   assert.ok(rallyBuildBlockReason(rally, makeObjectives(), [{ x: 0, z: 69, health: 100 }], []));
   assert.ok(rallyBuildBlockReason({ x: 108, z: 0 }, [], [], []));
   assert.ok(rallyBuildBlockReason(rally, [], [], [{ minX: -2, maxX: 2, minZ: 65, maxZ: 72 }]));
-  const captured = makeObjectives().map(point => ({ ...point, captured: true }));
+  const captured = makeObjectives().map(point => ({ ...point, owner: 'friendly', captured: true }));
   assert.equal(rallyBuildBlockReason({ x: -12, z: 30 }, captured, [], []), null);
+  assert.ok(rallyBuildBlockReason({ x: -12, z: 30 }, captured, [], [], 'enemy'));
+  const enemyOwned = captured.map(point => ({ ...point, owner: 'enemy', captured: false }));
+  assert.equal(rallyBuildBlockReason({ x: -12, z: 30 }, enemyOwned, [], [], 'enemy'), null);
+  assert.ok(rallyBuildBlockReason({ x: -12, z: 30 }, enemyOwned, [], []));
 });
 
 test('squad members enter as a formation at the selected point, not at the current objective', () => {

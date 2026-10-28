@@ -1,7 +1,78 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired } from '../src/tactics.js';
+  friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction } from '../src/tactics.js';
+import { makeObjectives, advanceCapture } from '../src/core.js';
+import { battleRoster } from '../src/battle-roster.js';
+
+test('both armies distribute real formations across three simultaneous goals and retask after ownership changes', () => {
+  const formations = battleRoster(), points = makeObjectives();
+  for (const formation of formations) formation.members = [{ health: 100, position: { x: 0, z: formation.team === 'friendly' ? 82 : -82 } }];
+  const before = structuredClone(formations);
+  assignAssaultObjectives(formations, points);
+  for (const team of ['friendly', 'enemy']) {
+    const units = formations.filter(item => item.team === team && !item.player);
+    assert.equal(new Set(units.map(item => item.objectiveId)).size, 3);
+    const loads = points.map(point => units.filter(item => item.objectiveId === point.id).length);
+    assert.ok(Math.max(...loads) - Math.min(...loads) <= 1);
+  }
+  const initialC = formations.filter(item => item.team === 'enemy' && item.objectiveId === 'C').length;
+  advanceCapture(points[2], 12, false, true);
+  assignAssaultObjectives(formations, points);
+  assert.ok(formations.filter(item => item.team === 'enemy' && item.objectiveId === 'C').length < initialC,
+    'holding the northern point frees units to attack instead of parking the whole force there');
+  assert.deepEqual(formations.map(({ objectiveId, ...unit }) => unit), before, 'assignment cannot spawn, revive or relocate soldiers');
+});
+
+test('secured points retain one guard while attackers stay committed instead of oscillating across objectives', () => {
+  const formations = battleRoster(), points = makeObjectives();
+  for (const formation of formations) formation.members = [{ health: 100, position: { x: formation.index * 8, z: -82 } }];
+  assignAssaultObjectives(formations, points);
+  const original = formations.map(unit => unit.objectiveId);
+  for (let round = 0; round < 10; round++) {
+    for (const formation of formations) formation.members[0].position.x *= -1;
+    assignAssaultObjectives(formations, points);
+    assert.deepEqual(formations.map(unit => unit.objectiveId), original, 'motion and changing distance alone do not reverse an attack');
+  }
+  for (const point of points.slice(1)) advanceCapture(point, 12, false, true);
+  assignAssaultObjectives(formations, points);
+  const enemies = formations.filter(unit => unit.team === 'enemy');
+  assert.equal(enemies.filter(unit => unit.objectiveId === 'A').length, 8);
+  assert.equal(enemies.filter(unit => unit.objectiveId === 'B').length, 1);
+  assert.equal(enemies.filter(unit => unit.objectiveId === 'C').length, 1);
+  formations.find(unit => unit.team === 'enemy' && unit.objectiveId === 'A').members[0].health = 0;
+  assignAssaultObjectives(formations, points);
+  assert.equal(enemies.filter(unit => unit.members[0].health > 0 && unit.objectiveId === 'A').length, 7);
+});
+
+test('every formation member targets a stable destination well inside its capture circle', () => {
+  for (const point of makeObjectives()) for (let formation = 0; formation < 10; formation++) for (let index = 0; index < 11; index++) {
+    const actor = { index, formation: { index: formation }, position: { x: 0, z: -82 } };
+    const goal = assaultDestination(actor, point);
+    assert.ok(Math.hypot(goal.x - point.x, goal.z - point.z) < point.radius - 2);
+    actor.position.z += 1;
+    assert.deepEqual(assaultDestination(actor, point), goal, 'moving does not invalidate the path request every step');
+  }
+});
+
+test('enemy rifle sections alternate bounded cover and objective advances despite continuous visual contact', () => {
+  const point = makeObjectives()[0], position = { x: 8, z: -30 };
+  const a = createTactics(1, 1, 0), b = createTactics(2, 1, 1);
+  for (let now = 0; now < 24; now += .25) {
+    assert.notEqual(enemyAssaultAction(a, position, point, now, true), enemyAssaultAction(b, position, point, now, true));
+    assert.equal(enemyAssaultAction(a, position, point, now, false), 'advance', 'heard shots alone cannot pin an entire assault');
+  }
+  rememberThreat(a, { x: 0, y: 1, z: 0 }, 0);
+  let moving = 0;
+  for (let now = 0; now < 24; now += .25) {
+    a.suppressedUntil = now + 3;
+    if (enemyAssaultAction(a, position, point, now, true) === 'advance') moving += .25;
+  }
+  assert.ok(moving >= 7, `persistent suppression still leaves genuine advance windows: ${moving}`);
+  a.threatKind = 'closed-armor';
+  assert.equal(enemyAssaultAction(a, position, point, 25, true), 'cover', 'unarmed riflemen retain armor evasion');
+});
 
 test('threat memory copies only observed position and expires without tracking an unseen actor', () => {
   const state = createTactics(1, 1, 0), target = { x: 4, y: 1.2, z: 8 };
@@ -53,16 +124,6 @@ test('cover selection requires real shielding, a clear firing peek, a route and 
   assert.equal(second.cover.id, 'good-b');
   assert.equal(claims.get('good-a').owner, a.id);
   assert.equal(selectCover({ ...context, state: createTactics(3, 1, 2), seesTarget: () => false }), null);
-});
-test('squad approach lanes diverge but all cross the actual bridge corridor', () => {
-  const goal = { x: -12, z: 30 };
-  const a = advancePosition(createTactics(1, 0, 0), { x: 9, z: -70 }, goal);
-  const b = advancePosition(createTactics(2, 1, 0), { x: 9, z: -70 }, goal);
-  assert.ok(Math.abs(a.x - b.x) > 10);
-  for (let i = 0; i < 4; i++) {
-    const bridge = advancePosition(createTactics(i, i, i), { x: 8, z: -24 }, goal);
-    assert.ok(bridge.x > 4 && bridge.x < 12 && bridge.z === -6);
-  }
 });
 test('near-miss distance is bounded by the actual shot segment', () => {
   assert.equal(pointSegmentDistance({ x: 5, z: 1 }, { x: 0, z: 0 }, { x: 10, z: 0 }).distance, 1);

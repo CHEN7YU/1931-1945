@@ -3,7 +3,7 @@ import './style.css';
 import { soldierModel, weaponModel, rallyPointModel, baseSpawnModel, setModelSurfaces } from './world.js';
 import { makeWorld } from './battlefield.js';
 import { loadSceneMaterials } from './materials.js';
-import { TYPES, MATCH_SECONDS, makeObjectives, advanceCapture, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
+import { TYPES, MATCH_SECONDS, DOMINATION_SECONDS, makeObjectives, advanceCapture, createConquest, advanceConquest, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
 import { floorDestination, multistoryPath } from './multistory.js';
 import { RIVER } from './ground.js';
 import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, createRallyPoint, replaceTeamRally, damageRallyPoint } from './spawns.js';
@@ -11,8 +11,9 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
-import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
-  friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired } from './tactics.js';
+import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
+  friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight } from './lighting.js';
@@ -50,7 +51,7 @@ import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
 import { CORPSE_RULES, createCasualtyState, expiredCorpses } from './casualties.js';
-import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
+import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 import { CHI_HA, CHI_HA_MG, japaneseArmorSpawns, chiHaObjectiveDestination } from './chi-ha.js';
 import { advanceChiHaAI } from './chi-ha-ai.js';
@@ -82,7 +83,7 @@ const grenades = createGrenadeSystem();
 const boundaryStates = new Map();
 const simulationClock = createSimulationClock(performance.now());
 const activeStates = new Set(['playing', 'transferring', 'dead']);
-const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', 'victory', 'defeat']);
+const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', 'victory', 'defeat', 'draw']);
 let pausedFrom = 'playing';
 let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
@@ -192,6 +193,8 @@ let soundSerial = 0;
 let state = 'menu';
 let selectedType = 'infantry';
 let objectives = makeObjectives();
+let conquest = createConquest();
+let assaultAssignmentAt = 0;
 let allies = [];
 let enemies = [];
 let friendlyAI = [];
@@ -293,7 +296,7 @@ function setGameState(next) {
   const active = activeStates.has(next);
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
-  battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat'].includes(state));
+  battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat', 'draw'].includes(state));
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -665,8 +668,22 @@ function presentControlEvents() {
   if (count) renderConstruction();
 }
 
-function refreshControlSurface() {
+function updateControlHelp() {
   const actor = controlledSoldier(entities), transport = occupiedVehicle(entities, actor);
+  $('battle-controls').textContent = transport?.type === 'plane'
+    ? 'W S 调节速度 · A D 转向 · 鼠标 控制机头 · Space 爬升 · Ctrl 下降 · 左键 机炮 · 无法空中占点'
+    : transport ? primaryViewAvailable()
+      ? 'W S 前后 · A D 转向 · 鼠标 炮塔 · 右键 放大 · 左键 主炮 · R 装填 · Y 换人 · F 地面离车'
+      : 'WASD 驾驶 · 鼠标 观察（不转炮塔） · 主炮不可操作 · Y 换人 · F 下车'
+    : unit.type === 'mortar'
+      ? 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点 · 左键 发射 · R 装填 · Y 炮组 · X 命令 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷 · B 镜头步态'
+      : actor.role === 'sniper'
+        ? 'WASD 移动 · 右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷'
+        : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 5 手榴弹（G兼容选择） · 6 炸药包 · 左键准备／松开投掷 · 按住左键建造 · B 镜头步态';
+}
+
+function refreshControlSurface() {
+  const actor = controlledSoldier(entities);
   if (weapon) camera.remove(weapon);
   weapon = weaponModel(toolEquipped ? 'hammer' : unit.type, actor.rifle);
   weapon.traverse(mesh => { if (mesh.isMesh) { mesh.castShadow = false; mesh.frustumCulled = false; } });
@@ -677,11 +694,7 @@ function refreshControlSurface() {
     : primaryViewAvailable() ? unit.type === 'infantry' ? infantryWeaponProfile(actor.rifle).name : TYPES[unit.type].weapon : `${occupiedSeat(entities).label}观察 · 主炮不可操作`;
   $('ammo-max').textContent = `/ ${unit.type === 'infantry' ? infantryWeaponProfile(actor.rifle).magazine : TYPES[unit.type].magazine}`;
   $('aim-label').hidden = unit.type !== 'mortar';
-  $('battle-controls').textContent = transport ? primaryViewAvailable()
-    ? 'WASD 载具 · 左键 武器 · Y 换人 · F 地面离车 · Esc 暂停'
-    : 'WASD 驾驶 · 鼠标 观察（不转炮塔） · 主炮不可操作 · Y 换人 · F 下车'
-    : actor.role === 'sniper' ? '右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人'
-    : '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷 · Y 换人';
+  updateControlHelp();
   lean = recoil = 0;
   resetPersonalCombatFeedback();
   weaponObstruction = obstructionBlend = 0;
@@ -864,6 +877,8 @@ function beginMatch() {
   resetSpawns();
   pendingSquad = pendingSpawn = null;
   objectives = makeObjectives();
+  conquest = createConquest();
+  assaultAssignmentAt = 0;
   for (const flag of world.flags) flag.material.color.setHex(0xa19469);
   time = 0;
   remaining = MATCH_SECONDS;
@@ -978,12 +993,7 @@ function deploy(squadId, spawnId = null) {
   $('ammo-max').textContent = `/ ${TYPES[type].magazine}`;
   $('aim-label').hidden = type !== 'mortar';
   $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '11人班 · 10号狙击手／11号机枪手 · Y换人' : 'Y 切换队员 · 整队阵亡后换队';
-  $('battle-controls').innerHTML = {
-    infantry: '1 主武器 · 2 工兵工具 · 5 手榴弹 · 6 炸药包 · 左键使用／松开投掷<br>WASD 移动 · Shift 冲刺 · Y 队员 · X 小队命令 · F 交互',
-    tank: 'W S 前后 · A D 转向 · 鼠标 炮塔 · 右键 放大<br>左键 主炮 · Y 切换车组 · R 装填 · Esc 暂停',
-    mortar: 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点<br>左键 发射 · Y 炮组 · X 命令 · B 镜头步态 · Esc 暂停',
-    plane: 'W S 调节速度 · A D 转向 · 鼠标 控制机头<br>Space 爬升 · Ctrl 下降 · 左键 机枪 · 无法空中占点',
-  }[type];
+  updateControlHelp();
   allies.forEach(actor => { actor.order = 'follow'; });
   $('overlay').hidden = true;
   pendingSquad = pendingSpawn = null;
@@ -1015,14 +1025,14 @@ function showOverlay(kind = 'pause') {
   setGameState(kind);
   releaseMouse();
   $('overlay').hidden = false;
-  const ended = kind === 'victory' || kind === 'defeat';
+  const ended = ['victory', 'defeat', 'draw'].includes(kind);
   if (ended) battleVoiceEvent(kind, { eventKey: `match:${kind}` });
   const dead = kind === 'dead';
   resetConstruction();
   renderConstruction();
-  $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战结束 / TIME EXPIRED' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
-  $('overlay-title').textContent = kind === 'victory' ? '阵地已夺，山河犹在。' : kind === 'defeat' ? '时间耗尽，战线未竟。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
-  $('overlay-description').textContent = ended ? '这是原创灰盒玩法演示，不代表真实历史战斗过程。' : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。' : '当前小队仍在作战。可切换本队存活队员；整队阵亡后才能选择其他小队。';
+  $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
+  $('overlay-title').textContent = kind === 'victory' ? '阵地已夺，山河犹在。' : kind === 'defeat' ? '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
+  $('overlay-description').textContent = ended ? `${conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。'}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
   $('resume').hidden = ended || dead;
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
@@ -1031,7 +1041,7 @@ function showOverlay(kind = 'pause') {
   pendingSquad = pendingSpawn = null;
   $('deployment-error').textContent = '';
   if (dead) refreshDeployment();
-  $('battle-summary').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}　占领 ${objectives.filter(p => p.captured).length} / 3`;
+  $('battle-summary').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}　我方控制 ${objectives.filter(p => p.owner === 'friendly').length}/3 · 日军 ${objectives.filter(p => p.owner === 'enemy').length}/3`;
 }
 
 function refreshDeployment() {
@@ -1045,8 +1055,7 @@ function refreshDeployment() {
     button.setAttribute('aria-pressed', String(pendingSquad === id));
     button.querySelector('small').textContent = reason ? '刚刚阵亡 · 请选其他小队' : `${TYPES[type].members} 人 · 可出击`;
   }
-  const active = objectives.find(point => !point.captured);
-  $('deployment-objective').textContent = active ? `当前目标 ${active.id} · ${active.name}` : '据点已全部夺取';
+  $('deployment-objective').textContent = `三点争夺 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
   const pendingType = SQUADS[pendingSquad]?.type;
   $('deployment-selection').textContent = pendingSquad ? `${SQUADS[pendingSquad].name} / ${TYPES[pendingType].weapon}` : '选择其他小队，再选择重生点。';
   const candidates = pendingSquad ? spawnPoints.filter(point => !point.aiOnly && point.team === 'friendly' && supportsSquad(point, pendingType)) : [];
@@ -1095,6 +1104,10 @@ function equipGrenade(kind = 'grenade') {
   throwableProfile(kind);
   const actor = controlledSoldier(entities);
   if (!actor || actor.health <= 0 || actor.vehicleId) { toast('请先离开载具再选择投掷装备'); return; }
+  if (throwableStock(actor.grenades, kind) === 0) {
+    toast(kind === 'grenade' ? '手榴弹已用完，保持当前装备' : '炸药包已用完，保持当前装备');
+    return;
+  }
   resetConstruction();
   toolEquipped = false; grenadeEquipped = true;
   selectedThrowable = kind;
@@ -1102,6 +1115,15 @@ function equipGrenade(kind = 'grenade') {
   actor.rifleReady = false;
   refreshWeaponVisibility();
   $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
+}
+
+function equipPrimary() {
+  grenadeEquipped = false;
+  if (unit.type === 'infantry') equipTool(false);
+  else {
+    held.primary = held.secondary = held.aiming = false;
+    refreshControlSurface();
+  }
 }
 
 function renderEquippedTool() {
@@ -1469,28 +1491,23 @@ function interruptGrenade(actor) {
   if (actor) grenades.interrupt(actor.id);
 }
 
-function reachableGrenade(actor, kind = null) {
-  if (!actor || actor.health <= 0 || actor.vehicleId || actor.grenades.action) return null;
-  const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
-  return grenades.active.filter(grenade => (!kind || grenade.kind === kind) && grenade.phase === 'flight' && grenade.detonateAt > time &&
-    origin.distanceTo(new THREE.Vector3(grenade.position.x, grenade.position.y, grenade.position.z)) <= GRENADE.pickup)
-    .sort((a, b) => a.detonateAt - b.detonateAt)
-    .find(grenade => hasLine(origin, new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), GRENADE.pickup + .1));
-}
-
 function prepareGrenade() {
   const actor = controlledSoldier(entities);
   if (!actor || actor.health <= 0) return;
   if (actor.vehicleId) { toast('车内不能投掷；先离开地面载具'); return; }
   if (!grenadeEquipped) return;
   if (actor.grenades.action) { toast('正在准备或投掷'); return; }
-  const source = captureAttackSource(entities, actor, selectedThrowable === 'explosive-pack' ? actor.explosivePack : actor.grenades);
-  const nearby = reachableGrenade(actor, selectedThrowable);
-  const reason = nearby ? grenades.rethrow(nearby.id, actor.id, actor.grenades, source, time)
-    : grenades.begin(actor.id, actor.grenades, source, time, selectedThrowable);
+  startThrowableAction(actor, selectedThrowable);
+}
+
+function startThrowableAction(actor, kind) {
+  const source = captureAttackSource(entities, actor, kind === 'explosive-pack' ? actor.explosivePack : actor.grenades);
+  const reason = grenades.begin(actor.id, actor.grenades, source, time, kind);
   if (reason) { toast(reason); return; }
   held.primary = held.secondary = held.aiming = false;
   resetConstruction();
+  toolEquipped = false; grenadeEquipped = true; selectedThrowable = kind;
+  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
   actor.rifleReady = false;
   const action = actor.grenades.action;
   action.position = grenadeThrowPose(actor.id, action).position;
@@ -1506,6 +1523,9 @@ function updateGrenades(dt) {
       explode(new THREE.Vector3(event.position.x, event.position.y, event.position.z), profile.damage, profile.radius, event.source, event.kind);
     },
   });
+  const actor = controlledSoldier(entities);
+  if (state === 'playing' && grenadeEquipped && actor?.health > 0 && !actor.vehicleId &&
+    !actor.grenades.action && throwableStock(actor.grenades, selectedThrowable) === 0) equipPrimary();
   refreshWeaponVisibility();
 }
 
@@ -1514,15 +1534,21 @@ function renderGrenades() {
   grenadeRenderer.update(grenades.active, actor, state === 'playing', grenadeEquipped, selectedThrowable);
   const action = actor?.grenades.action, label = $('grenade-status'), warning = $('grenade-warning');
   $('equipment-slots').hidden = !actor || Boolean(actor.vehicleId);
-  label.hidden = !actor || Boolean(actor.vehicleId);
+  label.hidden = !actor || Boolean(actor.vehicleId) || !action;
   const pack = (action?.kind ?? selectedThrowable) === 'explosive-pack', name = pack ? '炸药包' : '手榴弹';
   const count = pack ? actor?.grenades.packs ?? 0 : actor?.grenades.ammo ?? 0;
   label.textContent = action ? `${name} ${count} · ${action.phase === 'drawing' ? '准备中' :
     action.phase === 'cooking' ? '已拉弦 · 松开左键投掷' : action.phase === 'throwing' ? '投掷中' : '收回手臂'}`
     : `5 手雷 ${actor?.grenades.ammo ?? 0}/1 · 6 炸药包 ${actor?.grenades.packs ?? 0}/1${grenadeEquipped ? ' · 左键投掷' : ''}`;
   for (const element of document.querySelectorAll('[data-equipment-slot]')) {
-    const active = Number(element.dataset.equipmentSlot) === (grenadeEquipped ? selectedThrowable === 'explosive-pack' ? 6 : 5 : toolEquipped ? 2 : 1);
+    const slot = Number(element.dataset.equipmentSlot);
+    const active = slot === (grenadeEquipped ? selectedThrowable === 'explosive-pack' ? 6 : 5 : toolEquipped ? 2 : 1);
     element.classList.toggle('selected', active); element.setAttribute('aria-current', String(active));
+    if (slot === 5 || slot === 6) {
+      const count = (slot === 5 ? actor?.grenades.ammo : actor?.grenades.packs) ?? 0;
+      element.querySelector('.equipment-count').textContent = String(count);
+      element.setAttribute('aria-label', `${slot} ${slot === 5 ? '手榴弹' : '炸药包'} ${count}/1`);
+    }
   }
   const eye = actor ? soldierEyePosition(actor) : null;
   const nearby = state === 'playing' && actor?.health > 0 && !actor.vehicleId ? grenades.active.filter(grenade =>
@@ -1532,10 +1558,8 @@ function renderGrenades() {
     hasLine(new THREE.Vector3(eye.x, eye.y, eye.z),
       new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 2))
     .sort((a, b) => a.detonateAt - b.detonateAt)[0] : null;
-  const pickup = state === 'playing' ? reachableGrenade(actor) : null;
-  warning.hidden = !nearby && !pickup;
-  warning.textContent = pickup ? `附近有${pickup.kind === 'explosive-pack' ? '炸药包 · 6' : '手榴弹 · 5'}选择后左键回掷（引信不会重置）`
-    : nearby ? `${nearby.kind === 'explosive-pack' ? '炸药包' : '手榴弹'}危险 · 立即寻找掩护` : '';
+  warning.hidden = !nearby;
+  warning.textContent = nearby ? `${nearby.kind === 'explosive-pack' ? '炸药包' : '手榴弹'}危险 · 无法回掷，立即寻找掩护` : '';
 }
 
 function fire() {
@@ -1647,7 +1671,7 @@ scene.add(mortarMarker);
 
 function updateJapaneseArmor(transport, dt) {
   const vehicles = [...entities.vehicles.values()];
-  const objective = objectives.find(point => !point.captured);
+  const objective = objectives.find(point => !point.captured) ?? objectives[0];
   const crew = transport.seats.map(seat => entities.soldiers.get(seat.occupantId)).filter(actor => actor?.health > 0);
   const gunner = transport.seats.filter(seat => seat.canFire).map(seat => entities.soldiers.get(seat.occupantId)).find(actor => actor?.health > 0);
   const shot = advanceChiHaAI(transport, dt, time, {
@@ -1964,19 +1988,20 @@ function squadCommand(follow) {
   const hit = ray.intersectObjects(world.solids, false)[0];
   ray.far = Infinity;
   const target = hit ? hit.point : camera.position.clone().addScaledVector(direction, 45);
-  const objective = objectives.find(p => !p.captured);
-  const attack = objective && Math.hypot(target.x - objective.x, target.z - objective.z) < objective.radius;
+  const objective = objectives.find(point => Math.hypot(target.x - point.x, target.z - point.z) < point.radius);
+  const attack = Boolean(objective);
   for (const actor of allies) {
     actor.order = follow ? 'follow' : attack ? 'advance' : 'hold';
     actor.personalHold = false;
     actor.orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
       { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100) }, world.town.buildings);
+    actor.orderObjectiveId = attack && !follow ? objective.id : null;
     actor.path = null;
     actor.tactics.decisionAt = 0;
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.tactics.cover = null;
   }
-  toast(follow ? '小队命令：取消命令，跟随我' : attack ? '小队命令：进攻当前据点' : '小队命令：移动并守住标记位置');
+  toast(follow ? '小队命令：取消命令，跟随我' : attack ? `小队命令：进攻 ${objective.id} 据点` : '小队命令：移动并守住标记位置');
   battleVoiceEvent(follow ? 'order-follow' : attack ? 'order-advance' : 'order-hold', { command: true });
 }
 function walkActor(actor, target, speed, dt, sprint = false) {
@@ -2134,7 +2159,7 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   const t = actor.tactics, position = actor.position;
   const armorThreat = t.threatKind === 'closed-armor';
   const threat = new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
-  const objective = objectives.find(point => !point.captured);
+  const objective = formationObjective(actor, objectives[0]);
   if (!armorThreat && objective && time >= t.suppressedUntil &&
     objectiveAdvanceRequired(actor, objective, position.distanceTo(threat), AI_RIFLE.closeRange)) {
     if (t.cover) coverClaims.delete(t.cover.id);
@@ -2165,7 +2190,11 @@ function fightFromCover(actor, target, dt, tankCover = null) {
       state: t, position, threat,
       slots: position.y > 1 ? [] : actor.friendly && actor.order === 'hold' ? world.town.covers.filter(slot => Math.hypot(slot.x - actor.orderPoint.x, slot.z - actor.orderPoint.z) < 7)
         : actor.friendly && objective ? world.town.covers.filter(slot =>
-          Math.hypot(slot.x - objective.x, slot.z - objective.z) <= Math.hypot(position.x - objective.x, position.z - objective.z) + 1.5) : world.town.covers,
+          Math.hypot(slot.x - objective.x, slot.z - objective.z) <= Math.hypot(position.x - objective.x, position.z - objective.z) + 1.5)
+        : !actor.friendly ? world.town.covers.filter(slot => {
+          return objective && Math.hypot(slot.x - position.x, slot.z - position.z) < 10 &&
+            Math.hypot(slot.x - objective.x, slot.z - objective.z) < Math.max(objective.radius - 2, Math.hypot(position.x - objective.x, position.z - objective.z));
+        }) : world.town.covers,
       claims: coverClaims, now: time,
       blocked: point => circleBlocked(point.x, point.z, .46, world.obstacles),
       protectedAt: point => {
@@ -2389,29 +2418,24 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   }
 }
 
+function formationObjective(actor, fallback) {
+  return objectives.find(point => point.id === (actor.playerUnit ? actor.orderObjectiveId : actor.formation.objectiveId)) ?? fallback;
+}
+
 function formationDestination(actor, active) {
-  const formation = actor.formation;
-  const offset = sectionOffset(actor.index);
-  if (actor.friendly) {
-    actor.tactics.objectiveId = active.id;
-    return objectiveDestination(actor.tactics, actor.position, active);
-  }
-  const activeIndex = objectives.indexOf(active);
-  const assignment = formation.index >= 7 ? 2 : formation.index >= 3 ? 1 : activeIndex;
-  let point = objectives[Math.max(activeIndex, assignment)];
-  if (Math.max(activeIndex, assignment) === 1 && formation.index >= 3 && formation.index <= 6) {
-    const guard = formation.index - 3;
-    point = { x: guard % 2 ? 21 : -6, z: guard < 2 ? -3 : -27 };
-  }
-  if (Math.hypot(actor.position.x - point.x, actor.position.z - point.z) > 20) return advancePosition(actor.tactics, actor.position, point);
-  return { x: point.x + (formation.index % 3 - 1) * 5 + offset.x, z: point.z + offset.z };
+  const point = formationObjective(actor, active);
+  actor.tactics.objectiveId = point.id;
+  return actor.friendly ? objectiveDestination(actor.tactics, actor.position, point) : assaultDestination(actor, point);
 }
 
 function updateAI(dt) {
   const player = allies[current];
   const yaw = controlPose.yaw;
-  const objective = objectives.find(p => !p.captured);
-  if (!objective) return;
+  const objective = objectives.find(p => !p.captured) ?? objectives[0];
+  if (time >= assaultAssignmentAt) {
+    assignAssaultObjectives(formations, objectives);
+    assaultAssignmentAt = time + 5;
+  }
   actorGrid.rebuild(allForces);
   sensorBudget = 12; coverBudget = 1;
   let completedPaths = 0;
@@ -2545,7 +2569,8 @@ function updateAI(dt) {
     const target = actor.target?.health > 0 ? actor.target : null;
     const oldEscort = tactics.armorEscort;
     if (oldEscort) escortClaims.delete(`${oldEscort.vehicleId}:${oldEscort.slot}`);
-    const escort = actor === builder && !target ? null : chooseTankCover({ actor, vehicles: armor, objective,
+    const assaultObjective = formationObjective(actor, objective);
+    const escort = actor === builder && !target ? null : chooseTankCover({ actor, vehicles: armor, objective: assaultObjective,
       threat: target?.position ?? tactics.lastSeen,
       reserved: (id, slot) => escortClaims.has(`${id}:${slot}`),
       blocked: point => circleBlocked(point.x, point.z, .46, movementObstacles(point.x, point.z)) ||
@@ -2561,7 +2586,19 @@ function updateAI(dt) {
     }
     const hostileRally = !actor.friendly && !target ? spawnPoints.find(point => point.team === 'friendly' && point.kind === 'rally' && point.health > 0 && Math.hypot(point.x - position.x, point.z - position.z) < 40 && hasLine(from, new THREE.Vector3(point.x, .8, point.z), 40)) : null;
     if (!target && !hostileRally) resetAIRifleAim(actor.aiRifle, 'no-target');
-    if (target) {
+    const assault = !actor.friendly && enemyAssaultAction(tactics, position, assaultObjective, time, Boolean(target || hostileRally)) === 'advance';
+    const buildingRally = actor === builder && !spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally' && point.health > 0) && !target && !tactics.lastSeen;
+    if (assault && !buildingRally) {
+      if (tactics.cover) {
+        coverClaims.delete(tactics.cover.id);
+        tactics.cover = null; tactics.enteredCover = false;
+        actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
+      }
+      tactics.mode = 'assault';
+      resetAIRifleAim(actor.aiRifle, 'moving');
+      const goal = formationDestination(actor, objective);
+      if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7) walkActor(actor, goal, 3, dt, true);
+    } else if (target) {
       actor.buildProgress = 0;
       fightFromCover(actor, target, dt, escort);
     } else if (escort) {
@@ -2609,12 +2646,12 @@ function updateAI(dt) {
           { x: player.position.x + Math.cos(yaw) * offset.x + Math.sin(yaw) * (offset.z + 5),
             z: player.position.z - Math.sin(yaw) * offset.x + Math.cos(yaw) * (offset.z + 5) }, world.town.buildings), 3.5, dt);
       }
-    } else if (actor === builder && !spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally' && point.health > 0)) {
+    } else if (buildingRally) {
       tactics.mode = 'engineer';
       const buildSite = { x: -48, z: -53 };
       if (Math.hypot(position.x - buildSite.x, position.z - buildSite.z) > 1.3) walkActor(actor, buildSite, 3.4, dt);
       else {
-        const reason = rallyBuildBlockReason(buildSite, objectives, hostilePositions('enemy'), deploymentObstacles());
+        const reason = rallyBuildBlockReason(buildSite, objectives, hostilePositions('enemy'), deploymentObstacles(), 'enemy');
         actor.buildProgress = reason ? 0 : actor.buildProgress + dt;
         if (actor.buildProgress >= SPAWN_RULES.buildSeconds) {
           completeRally('enemy', buildSite, actor.id);
@@ -2668,22 +2705,22 @@ function updateAI(dt) {
 }
 
 function updateObjectives(dt) {
-  const active = objectives.find(p => !p.captured);
-  if (!active) return;
-  const inRadius = actor => Math.hypot(actor.position.x - active.x, actor.position.z - active.z) < active.radius && actor.health > 0;
-  const friendly = friendlyForces.some(actor => inRadius(actor) && occupiedVehicle(entities, actor)?.type !== 'plane');
-  const hostile = enemies.some(inRadius);
-  const status = advanceCapture(active, dt, friendly, hostile);
-  for (const cue of objectiveVoiceTracker.update(active, status)) {
-    battleVoiceEvent(cue, { eventKey: `objective:${active.id}:${cue}` });
+  for (const [index, point] of objectives.entries()) {
+    const inRadius = actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane' &&
+      Math.hypot(actor.position.x - point.x, actor.position.z - point.z) < point.radius;
+    const owner = point.owner;
+    const status = advanceCapture(point, dt, friendlyForces.some(inRadius), enemies.some(inRadius));
+    for (const cue of objectiveVoiceTracker.update(point, status)) {
+      battleVoiceEvent(cue, { eventKey: `objective:${point.id}:${cue}` });
+    }
+    if (owner !== point.owner) {
+      world.flags[index].material.color.setHex(point.owner === 'friendly' ? 0x70865d : point.owner === 'enemy' ? 0xb66551 : 0xa19469);
+      assaultAssignmentAt = 0;
+      toast(`${point.id} · ${point.name} ${point.owner === 'friendly' ? '我方占领' : point.owner === 'enemy' ? '日军占领' : '已被中和'}`, 4);
+    }
   }
-  $('objective-help').textContent = status === 'contested' ? '据点争夺中 · 清除范围内守军' : status === 'capturing' ? '正在占领 · 保持阵地 12 秒' : unit.type === 'plane' ? '航空支援 · 无法空中占领据点' : '进入据点范围并清除守军';
-  $('capture-fill').style.width = `${active.progress * 100}%`;
-  if (active.captured) {
-    world.flags[objectives.indexOf(active)].material.color.setHex(0x70865d);
-    toast(`${active.id} · ${active.name} 已占领！`, 4);
-    if (objectives.every(p => p.captured)) showOverlay('victory');
-  }
+  const winner = advanceConquest(conquest, objectives, dt, remaining);
+  if (winner) showOverlay(winner === 'friendly' ? 'victory' : winner === 'enemy' ? 'defeat' : 'draw');
 }
 
 function updateProjectiles(dt) {
@@ -2767,8 +2804,12 @@ function drawRadar(ctx = radarContext) {
   ctx.textAlign = 'center';
   for (const point of objectives) {
     const [x, z] = map(point.x, point.z);
-    ctx.fillStyle = point.captured ? '#9aaa78' : '#d9bc7e';
+    ctx.fillStyle = point.status === 'contested' ? '#f6df92' : point.owner === 'friendly' ? '#9aaa78' : point.owner === 'enemy' ? '#ed9d8b' : '#d9bc7e';
     ctx.fillText(point.id, x, z);
+    ctx.fillStyle = '#9aaa78';
+    ctx.fillRect(x - 6, z + 3, 12 * point.progress, 2);
+    ctx.fillStyle = '#ed9d8b';
+    ctx.fillRect(x - 6, z + 6, 12 * point.enemyProgress, 2);
   }
   for (const point of spawnPoints) {
     if (point.kind === 'air' || (point.kind === 'rally' && point.health <= 0)) continue;
@@ -2796,7 +2837,7 @@ function drawRadar(ctx = radarContext) {
 function updateHUD() {
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = allies[current].locomotion;
-  $('movement-status').hidden = !foot;
+  $('movement-status').hidden = !foot || motion.stamina >= .999 && !motion.exhausted;
   if (foot) {
     const names = { idle: '站定', walk: '慢走', jog: '慢跑', sprint: '负重冲刺', crouch: '蹲行', prone: '匍匐', aim: '谨慎移动', turn: '转向' };
     $('pace-label').textContent = world.waterDepth(allies[current].position.x, allies[current].position.z, allies[current].position.y) > .05
@@ -2806,9 +2847,23 @@ function updateHUD() {
     $('stamina-label').textContent = `${motion.exhausted ? '体力不足 · 恢复中' : '体力'} ${Math.round(motion.stamina * 100)}%`;
     $('movement-status').classList.toggle('exhausted', motion.exhausted);
   }
-  const active = objectives.find(p => !p.captured);
-  $('objectives').innerHTML = objectives.map(point => `<span class="objective-chip ${point.captured ? 'captured' : point === active ? 'active' : ''}">${point.id}</span>`).join('');
-  if (active) $('objective-title').textContent = `夺取 ${active.id} · ${active.name}`;
+  const position = allies[current].position;
+  const distanceToPoint = point => (position.x - point.x) ** 2 + (position.z - point.z) ** 2;
+  const active = objectives.reduce((nearest, point) => distanceToPoint(point) < distanceToPoint(nearest) ? point : nearest);
+  const ownerLabel = point => point.owner === 'friendly' ? '我方控制' : point.owner === 'enemy' ? '日军控制' : '中立';
+  const controlCount = team => objectives.filter(point => point.owner === team).length;
+  $('objectives').innerHTML = `<span class="control-count friendly" aria-label="我方控制${controlCount('friendly')}点">我 ${controlCount('friendly')}</span>` +
+    objectives.map(point => {
+      const label = `${point.id} ${ownerLabel(point)}${point.status === 'contested' ? ' · 争夺中' : ''} · 我方 ${Math.round(point.progress * 100)}% / 日军 ${Math.round(point.enemyProgress * 100)}%`;
+      return `<span class="objective-chip ${point.owner === 'friendly' ? 'captured' : point.owner === 'enemy' ? 'enemy' : 'neutral'} ${point.status === 'contested' ? 'contested' : ''}" role="img" aria-label="${label}" title="${label}">${point.id}<small class="point-progress" aria-hidden="true"><i style="width:${point.progress * 100}%"></i><b style="width:${point.enemyProgress * 100}%"></b></small></span>`;
+    }).join('') + `<span class="control-count enemy" aria-label="日军控制${controlCount('enemy')}点">敌 ${controlCount('enemy')}</span>`;
+  const inCaptureArea = unit.type !== 'plane' && distanceToPoint(active) <= active.radius ** 2;
+  $('objective-title').textContent = inCaptureArea ? `${active.id} · ${active.name} · ${ownerLabel(active)}` : '三点控制';
+  const domination = conquest.dominationTeam ? ` · ${conquest.dominationTeam === 'friendly' ? '我方' : '日军'}全控 ${Math.floor(conquest.dominationTime)}/${DOMINATION_SECONDS}秒` : '';
+  document.querySelector('.objective-banner').hidden = !inCaptureArea && !conquest.dominationTeam;
+  $('objective-help').textContent = `${!inCaptureArea ? '保持全点控制20秒获胜' : active.status === 'contested' ? '争夺中 · 清除圈内敌军' : active.status === 'capturing' ? '占领 / 反夺进行中' : active.owner === 'friendly' ? '守住阵地' : '进入范围占领'}${domination}`;
+  $('capture-fill').style.width = `${Math.abs(active.control) * 100}%`;
+  $('capture-fill').style.background = active.control < 0 ? '#ed9d8b' : '#9aaa78';
   $('timer').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.floor(remaining % 60)).padStart(2, '0')}`;
   $('ammo').textContent = grenadeEquipped ? String(selectedThrowable === 'explosive-pack' ? allies[current].grenades.packs : allies[current].grenades.ammo) : unit.reloadUntil ? '装填' : String(unit.ammo);
   $('ammo-max').textContent = `/ ${grenadeEquipped ? GRENADE.count : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).magazine : TYPES[unit.type].magazine}`;
@@ -2820,13 +2875,19 @@ function updateHUD() {
     : `${unit.type === 'tank' ? '装甲' : '生命'} ${Math.ceil(health)}`;
   const deployedType = entities.units.get(entities.control.unitId).type;
   $('members').classList.toggle('platoon-members', deployedType === 'infantry');
-  $('members').innerHTML = allies.map((actor, index) => `<span title="${Math.floor(index / BATTLE_RULES.sectionMembers) + 1}班 ${index + 1}号 ${['machine-gunner', 'sniper'].includes(actor.role) ? `${actor.role === 'sniper' ? '狙击手' : '轻机枪手'} · ${infantryWeaponProfile(actor.rifle).name}` : actor.role === 'engineer' ? '工兵' : '步枪手'}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? actor.role === 'sniper' ? '狙' : actor.role === 'machine-gunner' ? '机' : index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`}${actor.health <= 0 ? '×' : ''}</span>`).join('');
+  $('members').innerHTML = allies.map((actor, index) => {
+    const label = unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' : unit.type === 'infantry' ? actor.role === 'sniper' ? '狙' : actor.role === 'machine-gunner' ? '机' : index + 1 : actor.role === 'engineer' ? '工兵' : `${index + 1} 号`;
+    const title = `${Math.floor(index / BATTLE_RULES.sectionMembers) + 1}班 ${index + 1}号 ${['machine-gunner', 'sniper'].includes(actor.role) ? `${actor.role === 'sniper' ? '狙击手' : '轻机枪手'} · ${infantryWeaponProfile(actor.rifle).name}` : actor.role === 'engineer' ? '工兵' : '步枪手'}`;
+    return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
+  }).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
-  $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
+  $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
+  $('hud-notice').textContent = audioLabel + diagnosticLabel;
+  $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n控制点 我方 ${objectives.filter(p => p.owner === 'friendly').length}/3 · 日军 ${objectives.filter(p => p.owner === 'enemy').length}/3　出击 ${deployments}次\n累计控制 我方 ${Math.floor(conquest.friendly)} / 日军 ${Math.floor(conquest.enemy)} 点秒\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
   $('section-status').textContent = deployedType === 'infantry' ? `本班 ${allies.filter(actor => actor.health > 0).length}/${allies.length}` : '';
   $('kill-feed').innerHTML = combatFeedback.entries(time).map(entry => `<span class="feed-entry">${entry.text}</span>`).join('');
@@ -2885,13 +2946,15 @@ function advanceBattleStep(dt, presentationTime) {
   updateDeathFeedback(dt);
   presentControlEvents();
   if (benchmark) telemetry.add('effectsMs', performance.now() - started);
-  if (!remaining && activeStates.has(state)) showOverlay('defeat');
 }
 
 function renderSimulationStatus() {
   const status = simulationClock.snapshot, element = $('simulation-status');
   element.hidden = !status.active || status.pendingSeconds < SIMULATION_CLOCK.lagWarningSeconds;
-  if (!element.hidden) element.textContent = `模拟缓慢追赶 · 积压 ${status.pendingSeconds.toFixed(2)} 秒 · 上限${status.limits.maxRecoveryRate.toFixed(1)}倍`;
+  if (!element.hidden) {
+    element.textContent = `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶`;
+    element.title = `模拟缓慢追赶 · 上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃积压时间`;
+  }
 }
 
 function tick(now) {
@@ -3089,9 +3152,7 @@ function performControlCommand(command) {
     }
   } else if (action === 'reload') reload();
   else if (action === 'equipRifle' && foot) {
-    grenadeEquipped = false;
-    if (unit.type === 'infantry') equipTool(false);
-    else refreshControlSurface();
+    equipPrimary();
   }
   else if (action === 'equipTool' && unit.type === 'infantry') equipTool(true);
   else if (action === 'cycleMember') {
@@ -3291,7 +3352,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     units: formations.map(formation => ({ id: formation.id, team: formation.team, type: formation.type, player: formation.player,
       respawnAt: formation.respawnAt, blockedReason: formation.blockedReason ?? null,
       memberCount: formation.members.length, alive: formation.members.filter(actor => actor.health > 0).length,
-      generation: formation.generation, spawnId: formation.spawnId,
+      generation: formation.generation, spawnId: formation.spawnId, objectiveId: formation.objectiveId ?? null,
       members: formation.members.map(actor => ({ id: actor.tactics.id, soldierId: actor.id, role: actor.role, weaponModel: actor.rifle.model ?? 'rifle', ammo: actor.rifle.ammo, shots: actor.rifle.shots,
         x: actor.position.x, z: actor.position.z, health: actor.health, spawnId: actor.spawnId, section: actor.section, spawnClear: actor.spawnClear, spawnPosition: { ...actor.spawnPosition } })) })) },
   performance: { samples: frameTimes.length, averageFrameMs: frameTimes.length ? frameTimes.reduce((sum, value) => sum + value, 0) / frameTimes.length : 0,
@@ -3367,6 +3428,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     blockedBy: actor.tactics.blockedBy, bodyScaleY: actor.model.scale.y })),
   enemyPositions: enemies.filter(actor => actor.health > 0).map(actor => ({ x: actor.position.x, z: actor.position.z, health: actor.health,
     armorEscort: actor.tactics.armorEscort ? { ...actor.tactics.armorEscort } : null,
+    formationId: actor.formation.id, objectiveId: actor.formation.objectiveId ?? null,
+    pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
     rifleReady: actor.rifleReady, lowReady: actor.nativeMotion?.lowReady ?? null,
     turningToPath: Boolean(actor.turningToPath), lastHit: actor.lastHit ? { ...actor.lastHit } : null,
     soldierId: actor.id, speed: actor.locomotion.speed, aimRecovery: actor.locomotion.aimRecovery,
@@ -3382,7 +3445,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     engagementPoint: actor.tactics.engagementPoint ? { ...actor.tactics.engagementPoint } : null,
     lastSeen: actor.tactics.lastSeen ? { ...actor.tactics.lastSeen } : null, blockedBy: actor.tactics.blockedBy })),
   coverClaims: [...coverClaims].filter(([, claim]) => claim.until > time).map(([id, claim]) => ({ id, ...claim })),
-  objectives: objectives.map(({ id, x, z, radius, progress, captured }) => ({ id, x, z, radius, progress, captured })),
+  objectives: objectives.map(point => ({ ...point })),
+  conquest: { ...conquest },
   drawCalls: renderer.info.render.calls,
 }), configurable: false });
 

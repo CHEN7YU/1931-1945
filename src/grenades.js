@@ -2,13 +2,18 @@
 import { blastDamage } from './core.js';
 export const GRENADE = Object.freeze({ count: 1, fuse: 4, draw: .45, windup: .22, recovery: .4,
   autoThrowRemaining: .65, speed: 15, lift: 2.2, gravity: 9.81, bounce: .32, friction: .65,
-  size: .065, radius: 7, damage: 180, pickup: 2, limit: 32, step: 1 / 120 });
+  size: .065, radius: 7, damage: 180, limit: 32, step: 1 / 120 });
 export const EXPLOSIVE_PACK = Object.freeze({ ...GRENADE, fuse: 5, draw: .6, windup: .3, recovery: .5,
   speed: 11, lift: 2.4, bounce: .18, friction: .5, size: .18, radius: 9, damage: 240,
   armorRadius: 4, armorDamage: 720 });
 export function throwableProfile(kind = 'grenade') {
   if (!['grenade', 'explosive-pack'].includes(kind)) throw new RangeError(`Unknown throwable: ${kind}`);
   return kind === 'grenade' ? GRENADE : EXPLOSIVE_PACK;
+}
+export function throwableStock(inventory, kind = 'grenade') {
+  const profile = throwableProfile(kind), value = inventory?.[kind === 'grenade' ? 'ammo' : 'packs'];
+  if (!Number.isInteger(value) || value < 0 || value > profile.count) throw new RangeError('Invalid owned throwable stock');
+  return value;
 }
 
 const finiteTime = time => {
@@ -148,18 +153,6 @@ export function createGrenadeSystem() {
       else { action.phase = 'flight'; action.throwAt = null; action.resting = false; action.velocity = { x: 0, y: 0, z: 0 }; }
     },
     forget(id) { this.interrupt(id); inventories.delete(id); },
-    rethrow(grenadeId, id, inventory, source, now) {
-      finiteTime(now); inventoryFor(id, inventory);
-      const grenade = active.get(grenadeId);
-      if (!grenade || grenade.phase !== 'flight' || grenade.detonateAt <= now) return '手榴弹已无法回掷';
-      if (inventory.action) return '先完成当前投掷动作';
-      const captured = sourceCopy(source);
-      if (captured.soldierId !== id) throw new Error('Throwback source must own its inventory');
-      Object.assign(grenade, { holderId: id, source: captured, phase: 'throwing', startedAt: now,
-        pinAt: null, throwAt: now + throwableProfile(grenade.kind).windup, elapsed: 0, resting: false, releaseRequested: true });
-      inventory.action = grenade;
-      return null;
-    },
     advance(now, dt, { pose, trace, explode, primed = () => {} }) {
       finiteTime(now);
       if (!Number.isFinite(dt) || dt < 0 || dt > now + 1e-8) throw new RangeError('Invalid grenade simulation step');
@@ -191,7 +184,6 @@ export function createGrenadeSystem() {
           } else grenade.elapsed = now - grenade.startedAt;
           const held = pose(grenade.holderId, grenade);
           grenade.position = point(held.position);
-          // A late throwback can still detonate in the holder's hand.
           if (grenade.detonateAt !== null && now >= grenade.detonateAt) {
             recover(grenade, now);
           } else if (grenade.throwAt !== null && now >= grenade.throwAt && grenade.detonateAt !== null) {
@@ -202,7 +194,8 @@ export function createGrenadeSystem() {
             const thrownAt = grenade.throwAt;
             recover(grenade, thrownAt);
             grenade.phase = 'flight'; grenade.throws++;
-            remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source, time: thrownAt });
+            remember({ type: 'throw', kind: grenade.kind, id: grenade.id, source: grenade.source,
+              position: Object.freeze(point(grenade.position)), time: thrownAt });
           }
         }
         if (grenade.phase === 'flight') {

@@ -35,8 +35,10 @@ export const BATTLE_VOICE_LINES = Object.freeze({
     { id: 'setback-1', cue: 'setback', text: '进攻受挫！重新组织，继续进攻！' },
     { id: 'captured-1', cue: 'captured', text: '阵地拿下了！弟兄们，继续前进！' },
     { id: 'rally-lost-1', cue: 'rally-lost', text: '我方集结点被毁！寻找其他出发位置！' },
-    { id: 'victory-1', cue: 'victory', text: '所有阵地已拿下！我们胜利了！' },
-    { id: 'defeat-1', cue: 'defeat', text: '进攻时间已到！停止进攻，重整队伍！' },
+    { id: 'victory-1', cue: 'victory', text: '作战胜利！弟兄们，守住阵地！' },
+    { id: 'defeat-1', cue: 'defeat', text: '作战失利！重整队伍，准备再战！' },
+    { id: 'draw-1', cue: 'draw', text: '时间到了！双方未分胜负，重整队伍！' },
+    { id: 'lost-1', cue: 'lost', text: '阵地失去控制！重新集结，准备夺回！' },
     ...['十二', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一'].flatMap((hour, index) =>
       [
         { role: 'sniper', label: '狙击手' },
@@ -73,6 +75,8 @@ export const BATTLE_VOICE_LINES = Object.freeze({
     { id: 'rally-lost-1', cue: 'rally-lost', text: '集合地点が破壊された！', translation: '集结点被摧毁了！' },
     { id: 'victory-1', cue: 'victory', text: '防衛に成功した！警戒を続けろ！', translation: '防守成功！继续警戒！' },
     { id: 'defeat-1', cue: 'defeat', text: '防衛線が突破された！後退しろ！', translation: '防线被突破！后退！' },
+    { id: 'draw-1', cue: 'draw', text: '時間切れだ！勝負はついていない！', translation: '时间到了！胜负未分！' },
+    { id: 'lost-1', cue: 'lost', text: '陣地を確保した！警戒を続けろ！', translation: '占领阵地了！继续警戒！' },
   ],
 });
 

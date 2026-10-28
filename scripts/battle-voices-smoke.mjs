@@ -15,7 +15,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   const snapshot = () => page.evaluate(() => window.__battle);
   assert.equal((await snapshot()).battleVoices.status, 'ready');
-  assert.equal(requests.size, 252, 'all actual Azure MP3s load and decode');
+  assert.equal(requests.size, 264, 'all actual Azure MP3s load and decode');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.battleVoices.history.some(item => item.cue === 'deploy'));
   for (let i = 0; i < 3; i++) await page.keyboard.press('x');
@@ -86,14 +86,15 @@ try {
     const listener = { position: { x: 0, y: 1.7, z: 0 }, right: { x: 1, y: 0, z: 0 }, soldierId: 'player' };
     const tracker = createObjectiveVoiceTracker(), objective = makeObjectives()[0];
     const cues = [];
-    for (const [dt, friendly, hostile] of [[1, true, false], [1, true, true], [24, false, true], [12, true, false]]) {
+    for (const [dt, friendly, hostile] of [[1, true, false], [1, true, true], [24, false, true],
+      [24, true, false], [12, false, true], [12, false, true], [24, true, false]]) {
       const status = advanceCapture(objective, dt, friendly, hostile);
       for (const cue of tracker.update(objective, status)) {
         voices.event(context, cue); cues.push(cue);
       }
     }
-    voices.event(context, 'rally-lost'); voices.event(context, 'victory');
-    const deadline = performance.now() + 40000;
+    for (const cue of ['rally-lost', 'victory', 'defeat', 'draw']) voices.event(context, cue);
+    const deadline = performance.now() + 60000;
     while ((voices.snapshot.queued || voices.snapshot.active) && performance.now() < deadline) {
       voices.update(context, [], listener, 30, false);
       await new Promise(resolve => setTimeout(resolve, 30));
@@ -141,8 +142,8 @@ try {
     voices.reset(); await context.close();
     return { cues, events, ambient, callouts };
   });
-  assert.deepEqual(results.cues, ['capturing', 'contested', 'setback', 'captured']);
-  assert.deepEqual(results.events.history.map(item => item.cue), [...results.cues, 'rally-lost', 'victory']);
+  assert.deepEqual(results.cues, ['capturing', 'contested', 'setback', 'captured', 'lost', 'captured']);
+  assert.deepEqual(results.events.history.map(item => item.cue), [...results.cues, 'rally-lost', 'victory', 'defeat', 'draw']);
   assert.equal(results.events.queued, 0);
   assert.equal(results.events.active, 0);
   assert.deepEqual(results.ambient.history.map(item => item.team), ['friendly', 'enemy']);

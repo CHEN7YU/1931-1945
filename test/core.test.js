@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceCapture, makeObjectives, CAPTURE_SECONDS, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
+import { advanceCapture, makeObjectives, CAPTURE_SECONDS, DOMINATION_SECONDS, createConquest, advanceConquest, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
 
 test('objectives require a full uncontested twelve seconds and do not share mutable state', () => {
   const [point] = makeObjectives();
@@ -13,16 +13,95 @@ test('objectives require a full uncontested twelve seconds and do not share muta
   assert.equal(makeObjectives()[0].progress, 0);
 });
 
-test('unattended capture decays and completed objectives stay captured', () => {
+test('unattended partial capture decays but owned points persist until actually recaptured', () => {
   const [point] = makeObjectives();
-  point.progress = .5;
+  advanceCapture(point, 6, true, false);
   advanceCapture(point, 6, false, false);
   assert.equal(point.progress, .25);
   advanceCapture(point, 100, false, false);
   assert.equal(point.progress, 0);
   advanceCapture(point, 12, true, false);
-  advanceCapture(point, 100, false, true);
+  advanceCapture(point, 100, false, false);
   assert.equal(point.progress, 1);
+  assert.equal(point.owner, 'friendly');
+  advanceCapture(point, 12, false, true);
+  assert.equal(point.owner, null);
+  assert.equal(point.captured, false);
+  advanceCapture(point, 12, false, true);
+  assert.equal(point.owner, 'enemy');
+  assert.equal(point.enemyProgress, 1);
+});
+
+test('both teams use identical neutral capture, contested freeze and counterattack rules on all three points', () => {
+  for (const team of ['friendly', 'enemy']) for (const point of makeObjectives()) {
+    const friendly = team === 'friendly', sign = friendly ? 1 : -1;
+    advanceCapture(point, 6, friendly, !friendly);
+    assert.equal(point.control, sign * .5);
+    assert.equal(point.owner, null);
+    assert.equal(advanceCapture(point, 100, true, true), 'contested');
+    assert.equal(point.control, sign * .5);
+    advanceCapture(point, 6, friendly, !friendly);
+    assert.equal(point.owner, team);
+    advanceCapture(point, 6, !friendly, friendly);
+    assert.equal(point.owner, team, 'partial neutralization does not immediately transfer ownership');
+    advanceCapture(point, 6, false, false);
+    assert.equal(point.control, sign * .75, 'abandoned neutralization returns towards its current owner');
+    advanceCapture(point, 9, !friendly, friendly);
+    assert.equal(point.owner, null);
+    advanceCapture(point, 12, !friendly, friendly);
+    assert.equal(point.owner, friendly ? 'enemy' : 'friendly');
+  }
+});
+
+test('all-control victory requires twenty uninterrupted seconds and can be won by either team', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const points = makeObjectives(), match = createConquest(), friendly = team === 'friendly';
+    for (const point of points) advanceCapture(point, 12, friendly, !friendly);
+    assert.equal(advanceConquest(match, points, 19, 500), null);
+    advanceCapture(points[1], 1, true, true);
+    assert.equal(advanceConquest(match, points, 1, 499), null);
+    assert.equal(match.dominationTime, 0);
+    advanceCapture(points[1], 0, friendly, !friendly);
+    assert.equal(advanceConquest(match, points, DOMINATION_SECONDS, 479), team);
+    assert.equal(advanceConquest(match, points, 10, 469), team, 'results do not change after match end');
+  }
+});
+
+test('a lone counterattacker interrupts all-control timing before the point is neutralized', () => {
+  const points = makeObjectives(), match = createConquest();
+  for (const point of points) advanceCapture(point, 12, true, false);
+  advanceConquest(match, points, 19.9, 500);
+  advanceCapture(points[0], .2, false, true);
+  assert.equal(points[0].owner, 'friendly');
+  assert.equal(advanceConquest(match, points, .2, 499.8), null);
+  assert.equal(match.dominationTime, 0);
+});
+
+test('30/60/144Hz preserve twelve-second capture and twenty-four-second countercapture thresholds', () => {
+  for (const fps of [30, 60, 144]) {
+    const [point] = makeObjectives(), dt = 1 / fps;
+    for (let frame = 0; frame < 12 * fps - 1; frame++) advanceCapture(point, dt, true, false);
+    assert.equal(point.owner, null);
+    for (let frame = 0; frame < 2; frame++) advanceCapture(point, dt, true, false);
+    assert.equal(point.owner, 'friendly');
+    for (let frame = 0; frame < 24 * fps - 1; frame++) advanceCapture(point, dt, false, true);
+    assert.notEqual(point.owner, 'enemy');
+    for (let frame = 0; frame < 2; frame++) advanceCapture(point, dt, false, true);
+    assert.equal(point.owner, 'enemy');
+  }
+});
+
+test('timeout compares current ownership then point-seconds with an explicit draw', () => {
+  const points = makeObjectives(), match = createConquest();
+  advanceCapture(points[0], 12, true, false);
+  advanceConquest(match, points, 10, 1);
+  advanceCapture(points[1], 12, false, true);
+  assert.equal(advanceConquest(match, points, 1, 0), 'friendly');
+  const tied = createConquest();
+  assert.equal(advanceConquest(tied, points, 0, 0), 'draw');
+  advanceCapture(points[2], 12, false, true);
+  assert.equal(advanceConquest(createConquest(), points, 0, 0), 'enemy');
+  for (const dt of [-1, NaN, Infinity]) assert.throws(() => advanceCapture(points[0], dt, true, false), RangeError);
 });
 
 test('collision permits wall sliding but never tunnels through buildings', () => {

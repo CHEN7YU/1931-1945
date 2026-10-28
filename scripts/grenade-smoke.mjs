@@ -60,14 +60,20 @@ async function walkTo(x, z) {
     const distance = Math.hypot(dx, dz);
     if (distance < .17) break;
     assert.equal(data.state, 'playing');
-    if (distance < .75) await page.keyboard.up('w');
     await aim(0, Math.atan2(-dx, -dz));
-    await page.keyboard.down('w');
-    await page.waitForTimeout(Math.min(100, Math.max(10, distance / 1.5 * 180)));
-    if (distance < .75) {
-      await page.keyboard.up('w');
-      await page.waitForTimeout(130);
-    }
+    await page.evaluate(({ x, z, dx, dz, seconds }) => new Promise(resolve => {
+      const until = window.__battle.time + seconds;
+      const check = () => {
+        const data = window.__battle, px = x - data.position.x, pz = z - data.position.z;
+        if (data.state !== 'playing' || data.time >= until || Math.hypot(px, pz) < .12 || px * dx + pz * dz <= 0) {
+          document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true }));
+          resolve();
+        } else requestAnimationFrame(check);
+      };
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }));
+      requestAnimationFrame(check);
+    }), { x, z, dx, dz, seconds: Math.min(.5, distance / 1.5) });
+    await page.waitForTimeout(130);
   }
   await page.keyboard.up('w'); await page.keyboard.up('c');
   await page.waitForTimeout(150);
@@ -82,6 +88,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu');
   await page.locator('#deploy').click();
   let data = await snapshot();
+  assert.equal(data.benchmark?.scenario, 'interior', 'Grenade geometry checks require the development server; production disables diagnostic query parameters');
   assert.ok(data.allies.every(actor => actor.grenades.ammo === 1 && actor.grenades.packs === 1));
   assert.match(await page.locator('#grenade-status').textContent(), /手雷 1\/1/);
   stage = 'number slot selects an unprimed grenade without spending inventory';
@@ -151,28 +158,38 @@ try {
   assert.ok(impact.collisions > 0, 'real world geometry / terrain causes collision before timed detonation');
   assert.equal(data.grenades.inventory.ammo, 0);
   assert.equal(data.grenades.active.length, 0); assert.equal(data.grenades.renderer.views, 0);
-  assert.equal(data.weaponVisible, false, 'the selected grenade slot does not silently switch back to the rifle');
-  await page.keyboard.press('1'); assert.equal((await snapshot()).weaponVisible, true);
+  assert.equal(data.weaponVisible, true, 'the exhausted throwable returns to the primary after recovery');
+  assert.equal(data.grenades.equipped, false);
+  await page.keyboard.press('5');
+  assert.equal((await snapshot()).grenades.equipped, false, 'an empty slot cannot replace the primary with empty hands');
   observations.push({ stage, cooked: cooked.grenades, impact });
 
-  stage = 'quick throw and real nearby throwback keep the same fuse and inventory';
+  stage = 'live grenades cannot be picked up or thrown back, even at reachable distance with an empty own inventory';
   await reset(); await aim(-1.25);
   await tapGrenade();
   await page.waitForFunction(() => window.__battle.grenades.active.some(grenade => grenade.phase === 'flight'));
   await page.waitForFunction(() => window.__battle.grenades.inventory.phase === null);
   await page.keyboard.down('w');
-  await page.waitForFunction(() => document.getElementById('grenade-warning').textContent.includes('回掷'));
+  await page.waitForFunction(() => {
+    const data = window.__battle, grenade = data.grenades.active[0];
+    return grenade && Math.hypot(grenade.position.x - data.position.x, grenade.position.z - data.position.z,
+      grenade.position.y - data.position.y - data.locomotion.eyeHeight) < 1.95;
+  });
   await page.keyboard.up('w');
   data = await snapshot();
   assert.equal(data.grenades.inventory.ammo, 0);
   assert.ok(await page.locator('#grenade-warning').isVisible());
-  assert.match(await page.locator('#grenade-warning').textContent(), /回掷/);
+  assert.match(await page.locator('#grenade-warning').textContent(), /无法回掷/);
+  assert.doesNotMatch(await page.locator('#grenade-warning').textContent(), /按 G|拾起|立即回掷/);
   const original = data.grenades.active[0];
-  await aim(.5); await tapGrenade();
-  await page.waitForFunction(() => window.__battle.grenades.history.filter(event => event.type === 'throw').length === 2);
+  await page.keyboard.press('5'); await page.keyboard.press('g'); await page.keyboard.press('f');
   data = await snapshot();
   assert.equal(data.grenades.active.length, 1); assert.equal(data.grenades.active[0].id, original.id);
   assert.equal(data.grenades.active[0].detonateAt, original.detonateAt);
+  assert.equal(data.grenades.active[0].holderId, null);
+  assert.deepEqual(data.grenades.active[0].source, original.source);
+  assert.equal(data.grenades.history.filter(event => event.type === 'throw').length, 1);
+  assert.equal(data.grenades.equipped, false);
   assert.equal(data.grenades.inventory.ammo, 0);
   await page.waitForFunction(() => window.__battle.grenades.history.some(event => event.type === 'explosion'));
   observations.push({ stage, original, result: (await snapshot()).grenades });
@@ -234,8 +251,9 @@ try {
     assert.equal(thrown.stance, stance);
     assert.equal(thrown.grenades.inventory.ammo, 0);
     assert.equal(thrown.grenades.active[0].throws, 1);
-    heights.push(thrown.grenades.active[0].position.y);
-    observations.push({ stage, stance, position: thrown.grenades.active[0].position });
+    const release = thrown.grenades.history.find(event => event.type === 'throw');
+    heights.push(release.position.y);
+    observations.push({ stage, stance, position: release.position, sampledFlightPosition: thrown.grenades.active[0].position });
   }
   assert.ok(heights[0] > heights[1] + .3 && heights[1] > heights[2] + .3);
 
@@ -244,8 +262,9 @@ try {
   await aim(-1.25); await page.keyboard.press('x');
   await walkTo(0, 64); await walkTo(-2.4, 64);
   const doorId = 'west-0-east-door';
-  assert.equal((await snapshot()).doors.find(door => door.id === doorId).state, 'closed');
   await aim(0, Math.PI / 2);
+  if (Math.abs((await snapshot()).doors.find(door => door.id === doorId).targetAngle) > .01) await page.keyboard.press('f');
+  await page.waitForFunction(id => window.__battle.doors.find(door => door.id === id).state === 'closed', doorId);
   await tapGrenade();
   await page.waitForFunction(() => window.__battle.grenades.active.some(grenade => grenade.collisions > 0));
   data = await snapshot();
@@ -271,7 +290,7 @@ try {
   await page.waitForFunction(() => window.__battle.grenades.inventory.phase === null);
   data = await snapshot();
   assert.equal(data.construction.tool, false);
-  assert.equal(data.weaponVisible, false);
+  assert.equal(data.weaponVisible, true);
   await page.keyboard.press('2');
   assert.equal((await snapshot()).construction.tool, true);
   assert.equal((await snapshot()).weaponVisible, true);
@@ -299,8 +318,12 @@ try {
   data = await snapshot();
   assert.equal(data.grenades.history.find(item => item.type === 'explosion').source.weaponId, `${packPrimed.control.soldierId}:explosive-pack`);
   assert.equal(data.grenades.inventory.packs, 0); assert.equal(data.grenades.inventory.ammo, 1);
+  assert.equal(data.grenades.equipped, false);
+  await page.keyboard.press('6'); assert.equal((await snapshot()).grenades.equipped, false);
   await page.keyboard.press('5');
   await page.waitForFunction(() => window.__battle.grenades.renderer.heldKind === 'grenade');
+  await page.keyboard.press('6');
+  assert.equal((await snapshot()).grenades.selected, 'grenade', 'empty pack slot preserves the currently selected grenade');
   observations.push({ stage, inventory: data.grenades.inventory, history: data.grenades.history });
 
   stage = 'seated crew cannot throw; dismounted crew retain personal grenades across a seat takeover';
@@ -336,9 +359,11 @@ try {
   assert.equal((await snapshot()).grenades.active.length, 0);
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'grenade-observations.json'), JSON.stringify(observations, null, 2));
-  console.log('PASS: personal grenades, cancel, cook/release, pause, throwback, unchanged fuse, self-only friendly damage, death transfer, cleanup, three posture heights, closed-door bounce, engineer tool restoration and dismounted crew ownership.');
+  console.log('PASS: personal throwable stock, empty-slot rejection, exhausted-item primary return, no pickup/throwback, original fuse/source, pause/death, body heights, collision, tools and crew ownership.');
 } catch (error) {
   const data = await snapshot();
+  if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'grenade-failure.json'),
+    JSON.stringify({ stage, observations, grenades: data?.grenades, allies: data?.allies, errors }, null, 2));
   console.error(JSON.stringify({ stage, state: data?.state, grenades: data?.grenades, allies: data?.allies, errors }));
   throw error;
 } finally {

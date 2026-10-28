@@ -8,8 +8,7 @@ const nail = new THREE.MeshStandardMaterial({ color: 0xc6aa91, roughness: .62 })
 const olive = new THREE.MeshStandardMaterial({ color: 0x4e5541, roughness: .86, metalness: .28 });
 const steel = new THREE.MeshStandardMaterial({ color: 0x777b70, roughness: .5, metalness: .7 });
 const cloth = new THREE.MeshStandardMaterial({ ...createStudySurface('cloth', 64), color: 0x68725b, roughness: 1 });
-let grenadeTemplate;
-let packTemplate;
+const grenadeTemplates = new Map(), packTemplates = new Map();
 const hands = new Map(), Y = new THREE.Vector3(0, 1, 0);
 
 function palmGeometry() {
@@ -36,59 +35,202 @@ function mesh(parent, geometry, material, name, position = [0, 0, 0]) {
   part.position.fromArray(position); part.receiveShadow = true; parent.add(part); return part;
 }
 
-export function grenadeModel() {
-  if (!grenadeTemplate) {
-    grenadeTemplate = new THREE.Group();
-    const profile = [[0, -.048], [.022, -.047], [.033, -.035], [.039, -.012], [.038, .018], [.029, .042], [.016, .048]];
-    const shell = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 24);
-    mesh(grenadeTemplate, shell, olive, 'fragmentation-body');
-    const grooves = [];
-    for (const y of [-.027, -.008, .012, .031]) {
-      const ring = new THREE.TorusGeometry(y > .02 ? .031 : .038, .0012, 4, 24);
-      ring.rotateX(Math.PI / 2); ring.translate(0, y, 0); grooves.push(ring);
-    }
-    mesh(grenadeTemplate, mergeGeometries(grooves), olive, 'cast-shell-ridges');
-    grooves.forEach(geometry => geometry.dispose());
-    mesh(grenadeTemplate, new THREE.CylinderGeometry(.012, .015, .023, 16), steel, 'fuse-neck', [0, .057, 0]);
-    mesh(grenadeTemplate, new RoundedBoxGeometry(.012, .072, .008, 2, .002), steel, 'safety-lever', [.031, .025, 0]).rotation.z = .24;
-    const ring = mesh(grenadeTemplate, new THREE.TorusGeometry(.012, .0016, 6, 24), steel, 'safety-ring', [.009, .067, .01]);
-    ring.rotation.y = Math.PI / 2;
-  }
-  return grenadeTemplate.clone(true);
+function merged(parts) {
+  const expanded = parts.map(geometry => {
+    if (!geometry.index) return geometry;
+    const result = geometry.toNonIndexed(); geometry.dispose(); return result;
+  });
+  const result = mergeGeometries(expanded);
+  expanded.forEach(geometry => geometry.dispose()); return result;
 }
 
-export function explosivePackModel() {
-  if (!packTemplate) {
-    packTemplate = new THREE.Group(); packTemplate.name = 'explosive-pack';
-    const fibers = new Uint8Array(64 * 64 * 4);
-    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-      const value = 237 + 6 * Math.sin(x * 2.3 + y * .2) + 4 * Math.cos(y * 1.7);
-      fibers.set([value, value, value, 255], (y * 64 + x) * 4);
-    }
-    const paperMap = new THREE.DataTexture(fibers, 64, 64);
-    paperMap.wrapS = paperMap.wrapT = THREE.RepeatWrapping; paperMap.repeat.set(2, 5);
-    paperMap.magFilter = THREE.LinearFilter; paperMap.needsUpdate = true;
-    const paper = new THREE.MeshStandardMaterial({ map: paperMap, color: 0xcbb78e, roughness: 1 });
-    const edge = new THREE.MeshStandardMaterial({ color: 0xa18b69, roughness: 1 });
-    const strap = new THREE.MeshStandardMaterial({ ...createStudySurface('leather', 64), color: 0x48494a, roughness: .94 });
-    const handle = new THREE.MeshStandardMaterial({ color: 0x96534b, roughness: .85 });
-    for (const [index, [x, y]] of [[0, 0], [-.029, 0], [.029, 0], [-.015, .027], [.015, .027], [-.015, -.027], [.015, -.027]].entries()) {
-      const tube = new THREE.CylinderGeometry(.017, .017, .23, 16, 1); tube.rotateX(Math.PI / 2);
-      mesh(packTemplate, tube, paper, `paper-bundle-${index}`, [x, y, 0]);
-      for (const z of [-.116, .116]) mesh(packTemplate, new THREE.TorusGeometry(.012, .0011, 4, 16), edge,
-        `rolled-paper-end-${index}-${z}`, [x, y, z]);
-    }
-    const shape = new THREE.Shape();
-    shape.absellipse(0, 0, .057, .049, 0, Math.PI * 2, false);
-    const hole = new THREE.Path(); hole.absellipse(0, 0, .051, .043, 0, Math.PI * 2, true); shape.holes.push(hole);
-    const band = new THREE.ExtrudeGeometry(shape, { depth: .025, bevelEnabled: true, bevelSize: .0015, bevelThickness: .0015, bevelSegments: 1, steps: 1, curveSegments: 16 });
-    for (const [index, z] of [-.075, .05].entries()) mesh(packTemplate, band, strap, `binding-strap-${index}`, [0, 0, z]);
-    const loop = new THREE.CatmullRomCurve3([[0, .025, .11], [.022, .025, .15], [0, .025, .18], [-.022, .025, .15], [0, .025, .11]].map(p => new THREE.Vector3(...p)));
-    mesh(packTemplate, new THREE.TubeGeometry(loop, 20, .0028, 6, false), strap, 'carrying-loop');
-    mesh(packTemplate, new THREE.CylinderGeometry(.004, .004, .075, 8), steel, 'pull-handle-stem', [0, .04, -.13]).rotation.x = Math.PI / 2;
-    mesh(packTemplate, new RoundedBoxGeometry(.05, .009, .009, 2, .002), handle, 'pull-handle', [0, .04, -.17]);
+function surface(kind) {
+  const size = 128, color = new Uint8Array(size * size * 4), normal = new Uint8Array(color.length);
+  const rough = new Uint8Array(color.length), height = new Float32Array(size * size);
+  let seed = 1938;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const grain = (seed >>> 24) / 255, broad = Math.sin(x * .12 + Math.sin(y * .08)) * Math.cos(y * .09);
+    const fiber = Math.sin(x * 2.8 + y * .11) * .5 + Math.sin(y * .41) * .25;
+    const base = kind === 'cast' ? [69, 77, 56] : [197, 173, 131];
+    const value = (grain - .5) * (kind === 'cast' ? 13 : 7) + broad * 7 + (kind === 'paper' ? fiber * 5 : 0);
+    const index = y * size + x, at = index * 4;
+    color.set([...base.map(channel => Math.round(channel + value)), 255], at);
+    const r = kind === 'cast' ? 205 + grain * 35 : 237 + grain * 16;
+    rough.set([r, r, r, 255], at);
+    height[index] = kind === 'cast' ? grain * .10 + broad * .018 : grain * .025 + fiber * .03;
   }
-  return packTemplate.clone(true);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = height[y * size + (x + 1) % size] - height[y * size + (x + size - 1) % size];
+    const dy = height[((y + 1) % size) * size + x] - height[((y + size - 1) % size) * size + x];
+    const n = new THREE.Vector3(-dx, -dy, 1).normalize();
+    normal.set([Math.round((n.x * .5 + .5) * 255), Math.round((n.y * .5 + .5) * 255), Math.round((n.z * .5 + .5) * 255), 255], (y * size + x) * 4);
+  }
+  const texture = (bytes, srgb = false) => {
+    const map = new THREE.DataTexture(bytes, size, size);
+    if (srgb) map.colorSpace = THREE.SRGBColorSpace;
+    map.wrapS = map.wrapT = THREE.RepeatWrapping; map.magFilter = THREE.LinearFilter;
+    map.minFilter = THREE.LinearMipmapLinearFilter; map.generateMipmaps = true; map.needsUpdate = true; return map;
+  };
+  return new THREE.MeshStandardMaterial({ map: texture(color, true), normalMap: texture(normal),
+    roughnessMap: texture(rough), normalScale: new THREE.Vector2(.24, .24), roughness: 1, metalness: kind === 'cast' ? .35 : 0 });
+}
+
+let castMaterial, paperMaterial, strapMaterial;
+const shellProfile = [[-.048, .014], [-.045, .024], [-.033, .035], [-.012, .039], [.018, .038], [.038, .027], [.048, .016]];
+function shellRadius(y) {
+  if (y < shellProfile[0][0] || y > shellProfile.at(-1)[0]) return 0;
+  for (let i = 1; i < shellProfile.length; i++) if (y <= shellProfile[i][0]) {
+    const a = shellProfile[i - 1], b = shellProfile[i];
+    return THREE.MathUtils.lerp(a[1], b[1], (y - a[0]) / (b[0] - a[0]));
+  }
+  return shellProfile.at(-1)[1];
+}
+
+const paperCenters = [[0, 0], [-.029, 0], [.029, 0], [-.015, .027], [.015, .027], [-.015, -.027], [.015, -.027]];
+export function throwableGripPoint(kind, x, angle) {
+  if (!['grenade', 'explosive-pack'].includes(kind) || ![x, angle].every(Number.isFinite)) throw new RangeError('Invalid throwable surface contact');
+  const y = Math.sin(angle), z = -Math.cos(angle);
+  let distance;
+  if (kind === 'grenade') {
+    let low = 0, high = .065;
+    for (let i = 0; i < 24; i++) {
+      const t = (low + high) / 2, radius = shellRadius(t * y);
+      if (x * x + (t * z) ** 2 <= radius * radius) low = t;
+      else high = t;
+    }
+    distance = low;
+  } else {
+    distance = 0;
+    for (const [px, py] of paperCenters) {
+      const dot = py * y - px * z, discriminant = dot * dot - (px * px + py * py - .017 ** 2);
+      if (discriminant >= 0) distance = Math.max(distance, dot + Math.sqrt(discriminant));
+    }
+  }
+  return new THREE.Vector3(x, (distance + .003) * y, (distance + .003) * z);
+}
+
+function shellPanel(y0, y1, a0, a1) {
+  const outline = [[.1, 0], [.9, 0], [1, .12], [1, .88], [.9, 1], [.1, 1], [0, .88], [0, .12]];
+  const positions = [], uv = [], indices = [];
+  for (const depth of [-.001, .0012]) {
+    for (const [u, v] of [[.5, .5], ...outline]) {
+      const y = THREE.MathUtils.lerp(y0, y1, v), a = THREE.MathUtils.lerp(a0, a1, u), r = shellRadius(y) + depth;
+      positions.push(Math.cos(a) * r, y, Math.sin(a) * r); uv.push(a / (Math.PI * 2), (y + .05) * 10);
+    }
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = i + 1, b = (i + 1) % 8 + 1;
+    indices.push(9, b + 9, a + 9, 0, a, b, a, a + 9, b, b, a + 9, b + 9);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geometry.setIndex(indices); geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function grenadeModel(detail = 'near') {
+  if (!['near', 'world'].includes(detail)) throw new RangeError('Unknown grenade detail');
+  if (!grenadeTemplates.has(detail)) {
+    castMaterial ??= surface('cast');
+    const root = new THREE.Group(), fine = detail === 'near', sectors = fine ? 10 : 8;
+    const levels = fine ? [-.043, -.027, -.009, .010, .028, .042] : [-.043, -.023, .001, .023, .042];
+    mesh(root, new THREE.LatheGeometry([new THREE.Vector2(0, -.048),
+      ...shellProfile.map(([y, r]) => new THREE.Vector2(r, y)), new THREE.Vector2(0, .048)], fine ? 40 : 20), olive, 'fragmentation-body');
+    const panels = [];
+    for (let row = 1; row < levels.length; row++) for (let sector = 0; sector < sectors; sector++) {
+      panels.push(shellPanel(levels[row - 1] + .0007, levels[row] - .0007,
+        sector / sectors * Math.PI * 2 + .019, (sector + 1) / sectors * Math.PI * 2 - .019));
+    }
+    mesh(root, merged(panels), castMaterial, 'cast-shell-ridges');
+    const necks = [new THREE.CylinderGeometry(.012, .016, .022, 16).translate(0, .058, 0)];
+    for (const y of fine ? [.048, .052, .056, .060] : [.05, .058]) {
+      const ring = new THREE.TorusGeometry(.0128, .0007, 4, fine ? 24 : 12); ring.rotateX(Math.PI / 2); ring.translate(0, y, 0); necks.push(ring);
+    }
+    mesh(root, merged(necks), steel, 'fuse-neck');
+    const shape = new THREE.Shape();
+    [[-.012, .076], [.016, .076], [.035, .051], [.045, -.010], [.035, -.043], [.029, -.041], [.038, -.010], [.029, .047], [.012, .069], [-.012, .069]]
+      .forEach(([x, y], i) => i ? shape.lineTo(x, y) : shape.moveTo(x, y));
+    shape.closePath();
+    const lever = new THREE.ExtrudeGeometry(shape, { depth: .009, bevelEnabled: fine, bevelThickness: .0006, bevelSize: .0006, bevelSegments: 1, steps: 1 });
+    lever.translate(0, 0, -.0045);
+    mesh(root, lever, steel, 'safety-lever');
+    const ring = new THREE.TorusGeometry(.012, .0014, 6, fine ? 32 : 16);
+    ring.rotateY(Math.PI / 2); ring.translate(.009, .067, .011);
+    const pin = new THREE.CylinderGeometry(.0011, .0011, .025, 8); pin.rotateZ(Math.PI / 2); pin.translate(.003, .064, .009);
+    mesh(root, merged([ring, pin]), steel, 'safety-ring');
+    if (fine) {
+      const hinge = new THREE.CylinderGeometry(.0045, .0045, .011, 16); hinge.rotateX(Math.PI / 2); hinge.translate(.011, .069, 0);
+      const seam = new THREE.BoxGeometry(.0007, .005, .012); seam.translate(.011, .069, 0);
+      mesh(root, merged([hinge, seam]), steel, 'lever-hinge');
+    }
+    root.userData.detail = detail; root.userData.shellPanels = (levels.length - 1) * sectors;
+    grenadeTemplates.set(detail, root);
+  }
+  return grenadeTemplates.get(detail).clone(true);
+}
+
+function paperRoll(x, y, length, index, fine) {
+  const positions = [], uv = [], indices = [], sides = fine ? 24 : 12, rings = fine ? 16 : 3;
+  for (let ring = 0; ring <= rings; ring++) for (let side = 0; side <= sides; side++) {
+    const t = ring / rings, a = side / sides * Math.PI * 2;
+    const bandPressure = Math.exp(-(((t - .22) / .07) ** 2)) + Math.exp(-(((t - .77) / .07) ** 2));
+    const radius = .017 - .0006 * bandPressure + (fine ? .00045 * Math.sin(a * 5 + t * 13 + index) : 0);
+    positions.push(x + Math.cos(a) * radius, y + Math.sin(a) * radius, (t - .5) * length);
+    uv.push(side / sides * 2, t * 3);
+    if (ring < rings && side < sides) {
+      const a = ring * (sides + 1) + side; indices.push(a, a + 1, a + sides + 1, a + 1, a + sides + 2, a + sides + 1);
+    }
+  }
+  for (const sign of [-1, 1]) {
+    const center = positions.length / 3; positions.push(x, y, sign * (length / 2 - .0015)); uv.push(.5, .5);
+    for (let side = 0; side <= sides; side++) {
+      const a = side / sides * Math.PI * 2, fold = fine ? .0012 * (1 + Math.cos(a * 6 + index)) : 0;
+      positions.push(x + Math.cos(a) * .0165, y + Math.sin(a) * .0165, sign * (length / 2 - fold));
+      uv.push(.5 + Math.cos(a) * .5, .5 + Math.sin(a) * .5);
+      if (side < sides) sign > 0 ? indices.push(center, center + side + 1, center + side + 2) : indices.push(center, center + side + 2, center + side + 1);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geometry.setIndex(indices); geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function explosivePackModel(detail = 'near') {
+  if (!['near', 'world'].includes(detail)) throw new RangeError('Unknown pack detail');
+  if (!packTemplates.has(detail)) {
+    paperMaterial ??= surface('paper');
+    strapMaterial ??= new THREE.MeshStandardMaterial({ ...createStudySurface('leather', 128), color: 0x484642, roughness: .92 });
+    const root = new THREE.Group(), fine = detail === 'near', rolls = [], seams = [];
+    root.name = 'explosive-pack';
+    const edge = new THREE.MeshStandardMaterial({ color: 0xa18b69, roughness: 1 });
+    const handle = new THREE.MeshStandardMaterial({ color: 0x96534b, roughness: .85 });
+    for (const [index, [x, y]] of paperCenters.entries()) {
+      const length = .23 + (fine ? .003 * Math.sin(index * 2.3) : 0);
+      rolls.push(paperRoll(x, y, length, index, fine));
+      if (fine) {
+        const seam = new THREE.BoxGeometry(.0008, .001, length - .004); seam.translate(x + .012, y + .011, 0); seams.push(seam);
+        for (const sign of [-1, 1]) {
+          const fold = new THREE.TorusGeometry(.012, .0006, 4, 20);
+          fold.translate(x, y, sign * (length / 2 - .0005)); seams.push(fold);
+        }
+      }
+    }
+    mesh(root, merged(rolls), paperMaterial, 'paper-wrappers');
+    if (fine) mesh(root, merged(seams), edge, 'paper-seams-and-folds');
+    const shape = new THREE.Shape(); shape.absellipse(0, 0, .0555, .048, 0, Math.PI * 2, false);
+    const hole = new THREE.Path(); hole.absellipse(0, 0, .0535, .046, 0, Math.PI * 2, true); shape.holes.push(hole);
+    const band = new THREE.ExtrudeGeometry(shape, { depth: .027, bevelEnabled: fine, bevelSize: .0006, bevelThickness: .0006, bevelSegments: 1, steps: 1, curveSegments: fine ? 32 : 12 });
+    for (const [index, z] of [-.075, .05].entries()) mesh(root, band, strapMaterial, `binding-strap-${index}`, [0, 0, z]);
+    const loop = new THREE.CatmullRomCurve3([[0, .025, .11], [.022, .025, .15], [0, .025, .18], [-.022, .025, .15], [0, .025, .11]].map(p => new THREE.Vector3(...p)));
+    const section = new THREE.Shape(); section.moveTo(-.003, -.0009); section.lineTo(.003, -.0009); section.lineTo(.003, .0009); section.lineTo(-.003, .0009); section.closePath();
+    mesh(root, new THREE.ExtrudeGeometry(section, { extrudePath: loop, steps: fine ? 28 : 10, bevelEnabled: false }), strapMaterial, 'carrying-loop');
+    mesh(root, new THREE.CylinderGeometry(.0025, .0025, .075, fine ? 12 : 6), steel, 'pull-handle-stem', [0, .04, -.13]).rotation.x = Math.PI / 2;
+    mesh(root, new RoundedBoxGeometry(.05, .009, .009, fine ? 2 : 1, .002), handle, 'pull-handle', [0, .04, -.17]);
+    root.userData.detail = detail; root.userData.paperRolls = 7; packTemplates.set(detail, root);
+  }
+  return packTemplates.get(detail).clone(true);
 }
 
 export function grenadeHand(side) {

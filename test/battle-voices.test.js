@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('252 original clips use three distinct stock male voices per side, with reproducible SSML', () => {
+test('264 original clips use three distinct stock male voices per side, with reproducible SSML', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 252);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 252);
+  assert.equal(clips.length, 264);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 264);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 180 : 72);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 186 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -70,7 +70,7 @@ test('all generated MP3s have exact source evidence and cannot be accidentally r
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 252);
+  assert.equal(manifest.files.length, 264);
   for (const clip of battleVoiceClips()) {
     const record = manifest.files.find(file => file.file === clip.file);
     const bytes = await readFile(new URL(clip.file, base));
@@ -206,7 +206,7 @@ test('a command interrupts and preserves an announcement rather than overlapping
   assert.equal(audio.snapshot.active, 1);
 });
 
-test('objective events follow real capture transitions, never invent a lost captured point, and reset for a new battle', () => {
+test('objective events distinguish neutral setbacks, enemy captures, friendly losses and repeated recaptures', () => {
   const tracker = createObjectiveVoiceTracker(), objective = makeObjectives()[0];
   const step = (dt, friendly, hostile) => {
     const status = advanceCapture(objective, dt, friendly, hostile);
@@ -216,13 +216,53 @@ test('objective events follow real capture transitions, never invent a lost capt
   assert.deepEqual(step(1, true, false), ['capturing']);
   assert.deepEqual(step(1, true, true), ['contested']);
   assert.deepEqual(step(1, true, true), []);
-  assert.deepEqual(step(24, false, true), ['setback']);
+  assert.deepEqual(step(2, false, false), ['setback']);
+  assert.deepEqual(step(12, false, true), [], 'enemy capture is never announced as friendly success');
+  assert.equal(objective.owner, 'enemy');
+  assert.deepEqual(step(12, true, false), []);
   assert.deepEqual(step(1, true, false), ['capturing']);
-  assert.deepEqual(step(12, true, false), ['captured']);
-  assert.deepEqual(step(30, false, true), []);
-  assert.equal(objective.captured, true, 'capture rules remain unchanged');
+  assert.deepEqual(step(11, true, false), ['captured']);
+  assert.deepEqual(step(1, true, true), ['contested'], 'owned points can be contested too');
+  assert.deepEqual(step(6, false, true), [], 'partial neutralization is not yet a lost point');
+  assert.equal(objective.owner, 'friendly');
+  assert.deepEqual(step(6, false, true), ['lost']);
+  assert.equal(objective.owner, null);
+  assert.deepEqual(step(12, false, true), []);
+  assert.equal(objective.owner, 'enemy');
+  assert.deepEqual(step(24, true, false), ['captured']);
+  assert.deepEqual(step(24, false, true), ['lost'], 'loss is not also a neutral attack setback');
+  assert.deepEqual(step(24, true, false), ['captured'], 'recaptures remain audible every time');
+});
+
+test('all three objective histories are independent and reset with a new battle', () => {
+  const tracker = createObjectiveVoiceTracker(), objectives = makeObjectives();
+  for (const objective of objectives) {
+    assert.deepEqual(tracker.update(objective, advanceCapture(objective, 1, true, false)), ['capturing']);
+    assert.deepEqual(tracker.update(objective, advanceCapture(objective, 1, true, true)), ['contested']);
+  }
+  for (const objective of objectives) {
+    assert.deepEqual(tracker.update(objective, advanceCapture(objective, 11, true, false)), ['captured']);
+  }
   tracker.reset();
-  assert.deepEqual(tracker.update({ ...objective, progress: .1, captured: false }, 'capturing'), ['capturing']);
+  for (const objective of makeObjectives()) {
+    assert.deepEqual(tracker.update(objective, advanceCapture(objective, 1, true, false)), ['capturing']);
+    assert.deepEqual(tracker.update(objective, advanceCapture(objective, 1, true, true)), ['contested']);
+  }
+});
+
+test('victory, defeat and draw each have an actual announcement independent of ambient cooldowns', () => {
+  for (const cue of ['victory', 'defeat', 'draw']) {
+    const { audio, context } = setup();
+    audio.event(context, 'lost', { eventKey: 'objective:A:lost' });
+    audio.event(context, cue, { eventKey: `match:${cue}` });
+    assert.equal(audio.snapshot.queued, 1);
+    finish(context);
+    audio.update(context, [], listener, 30, false);
+    assert.equal(audio.snapshot.history.at(-1).cue, cue);
+    assert.equal(audio.snapshot.history.at(-1).eventKey, `match:${cue}`);
+    assert.equal(audio.snapshot.active, 1);
+    assert.equal(audio.snapshot.counts.ambient, 0);
+  }
 });
 
 test('missing or oversized decoded recordings fail explicitly', () => {

@@ -76,16 +76,17 @@ export function createObjectiveVoiceTracker() {
   const states = new Map();
   return {
     update(objective, status) {
-      const previous = states.get(objective.id) ?? { progress: 0, captured: false, contested: false };
+      const previous = states.get(objective.id) ?? { progress: 0, owner: null, contested: false };
       const cues = [];
-      if (!previous.captured && objective.captured) cues.push('captured');
-      else if (!objective.captured) {
+      if (previous.owner === 'friendly' && objective.owner !== 'friendly') cues.push('lost');
+      if (previous.owner !== 'friendly' && objective.owner === 'friendly') cues.push('captured');
+      else if (objective.owner !== 'friendly') {
         if (previous.progress === 0 && objective.progress > 0) cues.push('capturing');
-        if (status === 'contested' && !previous.contested) cues.push('contested');
-        if (previous.progress > 0 && objective.progress === 0) cues.push('setback');
+        if (previous.owner !== 'friendly' && previous.progress > 0 && objective.progress === 0) cues.push('setback');
       }
-      states.set(objective.id, { progress: objective.progress, captured: objective.captured,
-        contested: previous.contested || status === 'contested' });
+      if (status === 'contested' && !previous.contested) cues.push('contested');
+      states.set(objective.id, { progress: objective.progress, owner: objective.owner,
+        contested: status === 'contested' || previous.owner === objective.owner && previous.contested });
       return cues;
     },
     reset() { states.clear(); },
