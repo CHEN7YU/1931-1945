@@ -5,7 +5,7 @@ export const MAP_LIMIT = 108;
 export const MATCH_SECONDS = 600;
 export const CAPTURE_SECONDS = 12;
 export const TYPES = Object.freeze({
-  infantry: { name: '步兵班', weapon: '中正式风格步枪 · 比例样枪', members: 10, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
+  infantry: { name: '步兵班', weapon: '中正式风格步枪 · 比例样枪', members: 11, magazine: RIFLE.magazine, reload: RIFLE.reloadSeconds, interval: RIFLE.cycleSeconds, speed: 3.15, health: 100, damage: 100 },
   tank: { name: '装甲小队', weapon: '坦克主炮', members: 3, magazine: 1, reload: 3.8, interval: .5, speed: 8, health: 360, damage: 160 },
   mortar: { name: '迫击炮组', weapon: '轻型迫击炮', members: 3, magazine: 1, reload: 3.2, interval: .5, speed: 2.45, health: 100, damage: 160 },
   plane: { name: '航空小队', weapon: '对地机炮', members: 1, magazine: 60, reload: 3, interval: .1, speed: 24, health: 180, damage: 65 },

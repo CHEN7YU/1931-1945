@@ -39,6 +39,17 @@ test('ally kills and old-member delayed kills preserve feed credit without claim
   feedback.consume(damage({ source: source('player', 'old-member', 'unit-mortar') }), viewer, 1);
   assert.equal(feedback.snapshot(1).markerVisible, false);
 });
+test('a current soldier grenade hit lights the marker without accepting a previous soldier or unrelated weapon', () => {
+  const feedback = createCombatFeedback(), observer = { ...viewer, grenadeWeaponId: 's1:grenades' };
+  feedback.consume(damage({ source: source('player', 's1', 's1:grenades') }), observer, 1);
+  assert.equal(feedback.snapshot(1).markerVisible, true);
+  assert.deepEqual(feedback.snapshot(1).markerSource, { soldierId: 's1', weaponId: 's1:grenades' });
+  feedback.resetPersonal();
+  feedback.consume(damage({ source: source('player', 'old-member', 's1:grenades') }), observer, 1);
+  feedback.consume(damage({ source: source('player', 's1', 'other:grenades') }), observer, 1);
+  assert.equal(feedback.snapshot(1).markerVisible, false);
+  assert.throws(() => feedback.consume(damage(), { ...observer, grenadeWeaponId: '' }, 1), /owned weapon/);
+});
 test('damage flash belongs to the observer at the hit, pauses with simulation and resets on takeover', () => {
   const feedback = createCombatFeedback();
   const event = damage({ source: source('enemy', 'e2', 'enemy-rifle'), target: victim('friendly', 's1'), observerId: 's1' });

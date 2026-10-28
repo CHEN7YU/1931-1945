@@ -39,7 +39,7 @@
         <p class="map-description">穿过残损商铺、石板街与运河，依次夺取三个据点。原创主题布局，非历史地形复原；载具采用简化街机操控。</p>
         <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
         <div id="squad-choices" class="squad-choices">
-          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>10人 / 含工兵</small></button>
+          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 含工兵、轻机枪手</small></button>
           <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>3人车组 / 主炮</small></button>
           <button class="squad-choice" data-type="mortar" aria-pressed="false"><span class="unit-icon">⌁</span><strong>迫击炮组</strong><small>3人 / 区域压制</small></button>
           <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>单人飞行员 / 机炮</small></button>
@@ -63,11 +63,12 @@
       <div id="toast" role="status"></div>
       <div id="boundary-warning" role="alert" hidden><strong>已离开作战区域 · 立即返回</strong><span id="boundary-detail"></span></div>
       <div id="interaction-prompt" role="status" hidden></div>
+      <div id="grenade-warning" role="alert" hidden></div>
       <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
       <div class="hud-bottom">
         <div class="squad-status"><div class="hud-label" id="unit-title">步兵小队</div>        <div id="members"></div><div id="section-status" hidden></div><span class="squad-hint" id="squad-hint">Y 切换存活队员</span></div>
         <div class="battle-controls" id="battle-controls"></div>
-        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
+        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div><div id="grenade-status" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
       </div>
       <button id="pause-button" class="hud-button">Esc 暂停</button>
       <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>

@@ -4,8 +4,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraRiflePose } from './nra-rifle-pose.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { sampleNraMotion } from './nra-motion.js';
-import { rifleWorldModel } from './rifle-model.js';
-import { riflePose as rifleActionPose } from './rifle-action.js';
+import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer } from './nra-force-renderer.js';
 import { FIRING_POSES } from './combat-posture.js';
@@ -66,7 +65,7 @@ export async function loadIjaCharacter() {
       [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
-    const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt'), pose = createNraRiflePose(root, bones, gun);
+    const gun = rifleWorldModel(), pose = createNraRiflePose(root, bones, gun);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundHeight);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);
@@ -74,12 +73,15 @@ export async function loadIjaCharacter() {
     const actions = { idle: mixer.clipAction(clips.get('idle')),
       ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, mixer.clipAction(value.clip)])) };
     for (const action of Object.values(actions)) { action.play(); action.paused = true; }
-    let actorId = null, actor = null, active = 'idle', motion = null, legPose = null, casualtyPose = null, drawBatches = 0;
-    root.traverseVisible(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+    let actorId = null, actor = null, active = 'idle', motion = null, legPose = null, casualtyPose = null;
     root.visible = false;
     return {
       root, motionProfile, createView,
-      get drawBatches() { return drawBatches - (flag.visible ? 0 : 1); },
+      get drawBatches() {
+        let count = 0;
+        root.traverseVisible(node => { if (node.isMesh) count += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+        return count;
+      },
       optionalAttachments: [{ mesh: flag, enabled: hasIjaRifleFlag, bake: bakeIjaRifleFlag, update: updateIjaRifleFlagTime }],
       createFarView: () => createView('far'),
       bind(id) {
@@ -108,9 +110,9 @@ export async function loadIjaCharacter() {
         legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundHeight);
         applyNativeUpperBody(root, bones, motion);
         pose.update(motion);
+        syncWorldWeapon(gun, actor.rifle);
+        flag.visible = hasIjaRifleFlag(actor);
         casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
-        const weapon = rifleActionPose(actor.rifle);
-        bolt.rotation.z = weapon.boltLift; bolt.position.z = weapon.boltTravel;
       },
       sampleAnatomy,
       get anatomy() { return readAnatomicalBones(bones); },

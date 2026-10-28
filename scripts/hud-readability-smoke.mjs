@@ -162,7 +162,7 @@ try {
     full.on('pageerror', error => errors.push(error.message));
     await loadMenu(full, url.href);
     await full.locator('#deploy').click();
-    await full.waitForFunction(() => document.querySelectorAll('#members .member').length === 10);
+    await full.waitForFunction(() => document.querySelectorAll('#members .member').length === 11);
     await capture(full, `${viewport.width}-full-roster`);
     const originalMember = await full.evaluate(() => window.__battle.current);
     await full.keyboard.press('y');

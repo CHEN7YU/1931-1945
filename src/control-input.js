@@ -1,5 +1,5 @@
 const actions = new Set(['interact', 'reload', 'cycleMember', 'equipRifle', 'equipTool', 'crouch', 'prone',
-  'jump', 'startOrder', 'finishOrder', 'look', 'pressFire', 'pressAim']);
+  'jump', 'startOrder', 'finishOrder', 'look', 'pressFire', 'pressAim', 'prepareGrenade', 'releaseGrenade']);
 const ownerFields = ['unitId', 'soldierId', 'vehicleId', 'seatId', 'weaponId'];
 const sameOwner = (a, b) => Boolean(a && b && ownerFields.every(field => a[field] === b[field]));
 

@@ -1,10 +1,12 @@
 import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
+import { infantryWeaponProfile } from './rifle-action.js';
 import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
+import { grenadePose } from './grenades.js';
 
 export function nativePoseIntent(actor) {
-  return actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
+  return actor.grenades?.action ? 'grenade' : actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
 }
 
 function sample(track, time) {
@@ -257,7 +259,9 @@ export function sampleNraMotion(actor, includeHead = true) {
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }
-  const result = { intent: nativePoseIntent(actor), idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+  const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
+    1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
+  const result = { intent: nativePoseIntent(actor), grenade, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,
     walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
@@ -282,7 +286,8 @@ export function nativeAimReady(actor) {
 
 export function nativeMuzzleLocal(actor) {
   const pose = sampleNraMotion(actor, false);
-  const result = new Vector3().fromArray(actor.nativeMotion.profile.muzzle)
+  const profile = infantryWeaponProfile(actor.rifle);
+  const result = (profile.automatic ? new Vector3(profile.muzzleX, 0, profile.muzzleZ) : new Vector3().fromArray(actor.nativeMotion.profile.muzzle))
     .applyQuaternion(new Quaternion().fromArray(pose.weaponQuaternion))
     .add(new Vector3().fromArray(pose.weaponPosition));
   return { x: result.x, y: result.y, z: result.z };

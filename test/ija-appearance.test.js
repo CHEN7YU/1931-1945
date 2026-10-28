@@ -92,6 +92,7 @@ test('distant flags use only selected identities and clear on cull, removal and 
   function view() {
     const root = new THREE.Group(), body = new THREE.Mesh(geometry, material), flag = new THREE.Mesh(geometry, material);
     flag.name = 'test-flag'; root.add(body, flag);
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
     return { root, motionProfile: profile, drawBatches: 2, createView: view,
       optionalAttachments: [{ mesh: flag, enabled: hasIjaRifleFlag }],
       bind() { root.visible = false; }, issue: null,
@@ -109,7 +110,9 @@ test('distant flags use only selected identities and clear on cull, removal and 
     renderer.update(actors, 0, null, quality);
     assert.equal(renderer.counts.far, 100);
     assert.equal(flagCount(), actors.filter(hasIjaRifleFlag).length);
-    assert.equal(renderer.counts.batches, 2, 'one body bank and one optional flag bank are counted once');
+    const weaponBatches = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count > 0).length;
+    assert.ok(weaponBatches > 0);
+    assert.equal(renderer.counts.batches, 2 + weaponBatches, 'body, optional flag and shared firearm batches are counted once');
   }
   camera.rotation.y = Math.PI;
   renderer.update(actors, 1, null, 'high'); assert.equal(flagCount(), 0);

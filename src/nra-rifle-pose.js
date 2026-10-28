@@ -49,7 +49,7 @@ export function createNraRiflePose(root, bones, gun) {
   const leftShoulderRest = bone('LeftShoulder').quaternion.clone();
   const grip = new THREE.Object3D(); grip.position.fromArray(RIFLE_CONTACTS.supportWrist); gun.add(grip);
   const triggerPalm = new THREE.Object3D(); triggerPalm.position.fromArray(RIFLE_CONTACTS.triggerPalm); gun.add(triggerPalm);
-  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, -.891); gun.add(muzzle);
+  const muzzle = new THREE.Object3D(); muzzle.name = 'owned-muzzle'; muzzle.position.set(0, 0, -.891); gun.add(muzzle);
   const stock = new THREE.Object3D(); stock.position.fromArray(RIFLE_CONTACTS.stock); gun.add(stock);
   root.add(gun);
   let right = null, left = null, rightTarget = new THREE.Vector3(), leftTarget = new THREE.Vector3(), contactTarget = null;
@@ -134,6 +134,13 @@ export function createNraRiflePose(root, bones, gun) {
         new THREE.Vector3(0, 1, 0).applyQuaternion(facing));
       leftTarget = left.target;
       root.updateMatrixWorld(true);
+      if (carry.grenade) {
+        const target = root.localToWorld(new THREE.Vector3(...carry.grenade.hand));
+        solveArm(bone('RightArm'), bone('RightForeArm'), bone('RightHand'), target,
+          new THREE.Vector3(.8, -.3, .3).applyQuaternion(bodyFacing));
+        orientHand('Right', new THREE.Vector3(-1, 0, 0).applyQuaternion(bodyFacing));
+        root.updateMatrixWorld(true);
+      }
     },
     get issue() {
       if (right && (!right.reachable || right.error > .015)) return '右手握点超出可达范围';

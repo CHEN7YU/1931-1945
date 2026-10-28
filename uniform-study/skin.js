@@ -2,43 +2,8 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { disposeUniformStudy } from './model.js';
 import { tailorStudyGarment } from './tailoring.js';
-
-const STUDY_SCALE = .0082;
-export const studyTransform = () => new THREE.Matrix4().makeScale(STUDY_SCALE, STUDY_SCALE, STUDY_SCALE).setPosition(0, .1805, -.012);
-
-function attachmentTransform(origin, end, targetOrigin, targetEnd, stretch = true) {
-  const direction = end.clone().sub(origin), targetDirection = targetEnd.clone().sub(targetOrigin);
-  const ratio = stretch ? targetDirection.length() / direction.length() : 1;
-  const rotation = new THREE.Quaternion().setFromUnitVectors(direction.clone().normalize(), targetDirection.normalize());
-  const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return new THREE.Matrix4().makeTranslation(...targetOrigin.toArray())
-    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
-    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(basis))
-    .multiply(new THREE.Matrix4().makeScale(1, ratio, 1))
-    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(basis.clone().invert()))
-    .multiply(new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z));
-}
-
-export function createStudyPose(model) {
-  const hands = model.getObjectByName('手部');
-  if (!hands?.isSkinnedMesh) throw new Error('Static appearance source is missing the inspected hand skeleton');
-  const pose = new Map(), inverse = studyTransform().invert();
-  for (const [side, prefix] of [[1, 'Left'], [-1, 'Right']]) {
-    const landmark = name => {
-      const bone = hands.skeleton.bones.find(item => item.name === `${prefix}${name}`);
-      if (!bone) throw new Error(`Missing static attachment landmark: ${prefix}${name}`);
-      return bone.getWorldPosition(new THREE.Vector3());
-    };
-    const arm = landmark('Arm'), elbow = landmark('ForeArm'), wrist = landmark('Hand'), middle = landmark('HandMiddle1');
-    const targetElbow = new THREE.Vector3(side * 25.8, 117, -4);
-    const targetWrist = new THREE.Vector3(side * .248, .875, .035).applyMatrix4(inverse);
-    pose.set(`${prefix}Arm`, attachmentTransform(arm, elbow, arm, targetElbow));
-    pose.set(`${prefix}ForeArm`, attachmentTransform(elbow, wrist, targetElbow, targetWrist));
-    const handTransform = attachmentTransform(wrist, middle, targetWrist, targetWrist.clone().add(new THREE.Vector3(0, -1, .10)), false);
-    for (const bone of hands.skeleton.bones) if (bone.name.startsWith(`${prefix}Hand`)) pose.set(bone.name, handTransform);
-  }
-  return pose;
-}
+import { createUniformReferencePose as createStudyPose, uniformReferenceTransform as studyTransform } from '../src/nra-uniform.js';
+export { createStudyPose, studyTransform };
 
 function garmentShellTriangles(mesh) {
   const geometry = mesh.geometry, positions = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
@@ -71,7 +36,7 @@ function garmentShellTriangles(mesh) {
   return { body: new Set([...torso, ...skirt]), sleeves: new Set(sleeves.flat()) };
 }
 
-function bakeMesh(mesh, transform, material, name, { side = 0, pose = new Map(), triangles = null } = {}) {
+export function bakeMesh(mesh, transform, material, name, { side = 0, pose = new Map(), triangles = null } = {}) {
   const geometry = mesh.geometry, sourcePosition = geometry.getAttribute('position');
   const sourceNormal = geometry.getAttribute('normal'), sourceUv = geometry.getAttribute('uv');
   if (!mesh.isSkinnedMesh || !sourcePosition || !sourceNormal || !sourceUv) throw new Error(`Static skin source lacks required attributes: ${name}`);
@@ -118,6 +83,9 @@ function bakeMesh(mesh, transform, material, name, { side = 0, pose = new Map(),
   baked.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   baked.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   baked.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  if (!side && !triangles) {
+    for (const group of geometry.groups) baked.addGroup(group.start, group.count, group.materialIndex);
+  }
   const result = new THREE.Mesh(baked, material);
   result.name = name; result.castShadow = result.receiveShadow = true;
   return result;

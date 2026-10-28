@@ -1,13 +1,26 @@
 export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
+export const INFANTRY_WEAPONS = Object.freeze({
+  rifle: Object.freeze({ ...RIFLE, name: '中正式风格步枪 · 比例样枪', automatic: false, muzzleZ: -.891 }),
+  zb26: Object.freeze({ magazine: 20, range: 180, cycleSeconds: .12, reloadSeconds: 3.8, length: 1.162,
+    sightHeight: .05, muzzleZ: -.943, muzzleX: .065, name: 'ZB-26 捷克式轻机枪', automatic: true }),
+  type11: Object.freeze({ magazine: 30, range: 180, cycleSeconds: .12, reloadSeconds: 5,
+    length: 1.1, sightHeight: .05, muzzleZ: -.881, muzzleX: -.035, name: '大正十一年式轻机枪 · 歪把子', automatic: true }),
+});
+export function infantryWeaponProfile(state) {
+  const model = state?.model ?? 'rifle';
+  if (!Object.hasOwn(INFANTRY_WEAPONS, model)) throw new RangeError(`Unknown infantry weapon: ${model}`);
+  return INFANTRY_WEAPONS[model];
+}
 const clamp = value => Math.max(0, Math.min(1, value));
 const smooth = (time, from, to) => { const t = clamp((time - from) / (to - from)); return t * t * (3 - 2 * t); };
 
-export function createRifleState() {
-  return { ammo: RIFLE.magazine, action: 'idle', elapsed: 0, queuedReload: false, shots: 0 };
+export function createRifleState(model = 'rifle') {
+  const profile = infantryWeaponProfile({ model });
+  return { ...(model === 'rifle' ? {} : { model }), ammo: profile.magazine, action: 'idle', elapsed: 0, queuedReload: false, shots: 0 };
 }
 
 export function reloadRifle(state) {
-  if (state.ammo === RIFLE.magazine || state.action === 'reload') return false;
+  if (state.ammo === infantryWeaponProfile(state).magazine || state.action === 'reload') return false;
   if (state.action === 'cycle') state.queuedReload = true;
   else { state.action = 'reload'; state.elapsed = 0; }
   return true;
@@ -26,16 +39,19 @@ export function shootRifle(state) {
 export function advanceRifle(state, dt) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Rifle requires a non-negative finite timestep');
   const events = [];
+  const profile = infantryWeaponProfile(state);
   while (dt > 0 && state.action !== 'idle') {
     const reloading = state.action === 'reload';
-    const duration = reloading ? RIFLE.reloadSeconds : RIFLE.cycleSeconds;
+    const duration = reloading ? profile.reloadSeconds : profile.cycleSeconds;
     const end = Math.min(duration, state.elapsed + dt);
-    const cues = reloading ? [[.12, 'unlock'], [.4, 'extract'], [1.45, 'load'], [2.3, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
+    const cues = profile.automatic
+      ? reloading ? [[duration * .4, 'load'], [duration * .85, 'close']] : []
+      : reloading ? [[.12, 'unlock'], [.4, 'extract'], [1.45, 'load'], [2.3, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
     for (const [at, cue] of cues) if (state.elapsed < at && end >= at) events.push(cue);
     dt -= end - state.elapsed;
     state.elapsed = end;
     if (end < duration) break;
-    if (reloading) { state.ammo = RIFLE.magazine; events.push('ready'); }
+    if (reloading) { state.ammo = profile.magazine; events.push('ready'); }
     state.action = 'idle';
     state.elapsed = 0;
     if (state.queuedReload) {
@@ -47,6 +63,12 @@ export function advanceRifle(state, dt) {
 }
 
 export function riflePose(state) {
+  const profile = infantryWeaponProfile(state);
+  if (profile.automatic) return {
+    boltLift: 0, boltTravel: 0, hand: 0, loading: 0, cartridgePush: 0, clipVisible: false,
+    lower: state.action === 'reload' ? smooth(state.elapsed, 0, .25) * (1 - smooth(state.elapsed, profile.reloadSeconds - .3, profile.reloadSeconds)) : 0,
+    recoil: state.action === 'cycle' ? 1 - smooth(state.elapsed, 0, profile.cycleSeconds) : 0,
+  };
   const reload = state.action === 'reload';
   const cycling = state.action === 'cycle';
   const t = state.elapsed;

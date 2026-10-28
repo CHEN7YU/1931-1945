@@ -14,12 +14,18 @@ const faces = [
   { jaw: -.4, cheek: -.7, nose: .3, chin: .7, brow: -.4 },
 ];
 
+export function nraUniformForSquad(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= 10) throw new Error('NRA uniform requires one of the ten squad slots');
+  return index < 5 ? 'A' : 'B';
+}
+
 export function createNraAppearance(actor) {
   if (!actor?.id || !actor.unitId) throw new Error('Soldier appearance requires an owned identity');
+  const uniform = actor.formation ? nraUniformForSquad(actor.formation.index) : 'A';
   let seed = 2166136261;
   for (const letter of `${actor.unitId}:${actor.id}`) seed = Math.imul(seed ^ letter.charCodeAt(0), 16777619) >>> 0;
   const face = (seed >>> 8) % faces.length, complexion = seed % complexions.length, build = (seed >>> 16) % 3 - 1;
-  return Object.freeze({ key: `${face}-${complexion}-${build}`, face, complexion, skin: complexions[complexion], build });
+  return Object.freeze({ key: `${uniform}-${face}-${complexion}-${build}`, uniform, face, complexion, skin: complexions[complexion], build });
 }
 
 export function isNraSkin(name) { return name === NRA_FACE_NAME || name === NRA_HAND_NAME; }
@@ -68,7 +74,7 @@ function smoothNormals(geometry) {
   }
 }
 
-export function createNraAppearanceApplicator(meshes, cache = { geometries: new Map(), materials: new Map() }) {
+export function createNraAppearanceApplicator(meshes, cache = { geometries: new Map(), materials: new Map() }, uniforms = new Map()) {
   const originals = new Map(meshes.map(mesh => [mesh, { geometry: mesh.geometry, material: mesh.material }]));
   const geometryCache = cache.geometries, materialCache = cache.materials;
   const point = new THREE.Vector3();
@@ -78,9 +84,11 @@ export function createNraAppearanceApplicator(meshes, cache = { geometries: new 
       if (current === (appearance?.key ?? null)) return;
       current = appearance?.key ?? null;
       for (const mesh of meshes) {
-        const original = originals.get(mesh), face = mesh.name === NRA_FACE_NAME;
+        if (appearance?.uniform === 'B' && !uniforms.has(mesh.name)) throw new Error(`Missing B uniform part: ${mesh.name}`);
+        const original = appearance?.uniform === 'B' ? uniforms.get(mesh.name) : originals.get(mesh);
+        const face = mesh.name === NRA_FACE_NAME;
         if (appearance && (face || !isNraSkin(mesh.name))) {
-          const key = `${mesh.name}:${face ? appearance.face : appearance.build}`;
+          const key = `${mesh.name}:${appearance.uniform ?? 'A'}:${face ? appearance.face : appearance.build}`;
           if (!geometryCache.has(key)) {
             const geometry = original.geometry.clone(), positions = geometry.attributes.position;
             const inverse = mesh.bindMatrix.clone().invert();
