@@ -1,74 +1,75 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GRENADE, grenadePose } from './grenades.js';
+import { GRENADE, grenadePose, throwableProfile } from './grenades.js';
+import { grenadeModel, explosivePackModel, grenadeHand, poseGrenadeHand, grenadeSleeve, alignGrenadeSleeve } from './grenade-model.js';
 
-const body = new THREE.SphereGeometry(.052, 10, 7); body.scale(1, 1.15, 1);
-const neck = new THREE.CylinderGeometry(.019, .025, .04, 8); neck.translate(0, .068, 0);
-const lever = new THREE.BoxGeometry(.012, .09, .018); lever.rotateZ(.25); lever.translate(.035, .045, 0);
-const geometry = mergeGeometries([body.toNonIndexed(), neck.toNonIndexed(), lever.toNonIndexed()]);
-body.dispose(); neck.dispose(); lever.dispose();
-const metal = new THREE.MeshStandardMaterial({ color: 0x4e5541, roughness: .85, metalness: .25 });
-const sleeve = new THREE.MeshStandardMaterial({ color: 0x657069, roughness: .95 });
-const skin = new THREE.MeshStandardMaterial({ color: 0xb89978, roughness: .9 });
-const limbGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
-const palmGeometry = new THREE.SphereGeometry(1, 8, 6);
-const axis = new THREE.Vector3(0, 1, 0);
-const model = () => new THREE.Mesh(geometry, metal);
-
-export function createGrenadeRenderer(scene, camera) {
-  const views = new Map(), handView = new THREE.Group(), held = model(), limbs = [], palms = [];
-  camera.add(handView); handView.add(held);
-  for (let side = 0; side < 2; side++) {
-    const upper = new THREE.Mesh(limbGeometry, sleeve), lower = new THREE.Mesh(limbGeometry, sleeve);
-    const palm = new THREE.Mesh(palmGeometry, skin);
-    handView.add(upper, lower, palm); limbs.push([upper, lower]); palms.push(palm);
-    palm.scale.set(.035, .046, .025);
+export function createGrenadeRenderer(scene, camera, createHand = grenadeHand) {
+  const views = new Map(), handView = new THREE.Group(), heldGrenade = grenadeModel(), heldPack = explosivePackModel(), hands = [], sleeves = [];
+  const restBounds = new THREE.Box3();
+  camera.add(handView); handView.add(heldGrenade, heldPack);
+  for (const side of ['left', 'right']) {
+    const hand = createHand(side), upper = grenadeSleeve(), lower = grenadeSleeve();
+    hands.push(hand); sleeves.push([upper, lower]); handView.add(hand, upper, lower);
   }
-  handView.traverse(mesh => { if (mesh.isMesh) mesh.frustumCulled = false; });
   handView.visible = false;
-  const segment = (mesh, a, b, radius) => {
-    mesh.position.copy(a).add(b).multiplyScalar(.5);
-    mesh.quaternion.setFromUnitVectors(axis, b.clone().sub(a).normalize());
-    mesh.scale.set(radius, a.distanceTo(b), radius);
-  };
   return {
-    update(grenades, actor, playing) {
+    update(grenades, actor, playing, selected = false, selectedKind = 'grenade') {
       const ids = new Set(grenades.map(grenade => grenade.id));
       for (const [id, mesh] of views) if (!ids.has(id)) { scene.remove(mesh); views.delete(id); }
       for (const grenade of grenades) {
         let mesh = views.get(grenade.id);
-        if (!mesh) { mesh = model(); mesh.userData.grenadeId = grenade.id; scene.add(mesh); views.set(grenade.id, mesh); }
+        if (!mesh) { mesh = grenade.kind === 'explosive-pack' ? explosivePackModel() : grenadeModel(); mesh.userData.grenadeId = grenade.id; scene.add(mesh); views.set(grenade.id, mesh); }
         mesh.visible = !grenade.holderId || grenade.holderId !== actor?.id;
         mesh.position.copy(grenade.position);
         mesh.rotation.set(grenade.phase === 'flight' && !grenade.resting ? grenade.position.x * 2 : 0, 0, grenade.position.z * 2);
+        if (grenade.resting) {
+          if (mesh.userData.restOffset === undefined) {
+            mesh.updateMatrixWorld(true); restBounds.setFromObject(mesh);
+            mesh.userData.restOffset = grenade.position.y - throwableProfile(grenade.kind).size - restBounds.min.y + .003;
+          }
+          mesh.position.y += mesh.userData.restOffset;
+        } else delete mesh.userData.restOffset;
       }
-      const action = actor?.grenades.action, pose = grenadePose(action);
-      handView.visible = Boolean(playing && actor?.health > 0 && !actor.vehicleId && pose);
+      const action = actor?.grenades.action;
+      const pack = (action?.kind ?? selectedKind) === 'explosive-pack', held = pack ? heldPack : heldGrenade;
+      heldPack.visible = heldGrenade.visible = false;
+      const pose = grenadePose(action);
+      handView.visible = Boolean(playing && actor?.health > 0 && !actor.vehicleId && (pose || selected));
       if (!handView.visible) return;
-      const recovery = action.phase === 'recovering' ? 1 - pose.progress : 0;
-      const draw = action.phase === 'drawing' ? 1 - pose.progress : 0;
-      const swing = action.phase === 'throwing' ? pose.progress : 0;
-      const right = new THREE.Vector3(.2, -.15 - draw * .35 - recovery * .45 + swing * .1, -.4 - swing * .18);
-      const left = new THREE.Vector3(-.1, -.2 - recovery * .4, -.4);
-      held.visible = pose.visible;
-      held.position.copy(right).add(new THREE.Vector3(0, .035, -.035));
-      held.rotation.z = -.25 + swing * .6;
+      const recovering = action?.phase === 'recovering', drawing = action?.phase === 'drawing';
+      const swing = action?.phase === 'throwing' ? pose.progress : 0;
+      const recovery = recovering ? 1 - pose.progress : 0, draw = drawing ? 1 - pose.progress : 0;
+      const open = swing > .65 ? (swing - .65) / .35 : recovering ? recovery : 0;
+      const right = new THREE.Vector3(.18 + swing * .025, -.26 - draw * .24 - recovery * .28 + Math.sin(swing * Math.PI) * .11,
+        -.46 - swing * .20);
+      const left = new THREE.Vector3(.04 - (drawing ? pose.progress * .08 : 0), pack ? -.30 : -.20, pack ? -.46 : -.43);
+      held.visible = (pose ? pose.visible : (pack ? actor.grenades.packs : actor.grenades.ammo) > 0);
+      if (!pack) held.getObjectByName('safety-ring').visible = !action || drawing && pose.progress < .7;
       for (const [side, target] of [left, right].entries()) {
-        const sign = side ? 1 : -1;
-        const shoulder = new THREE.Vector3(sign * .23, -.42, .03);
-        const elbow = new THREE.Vector3(sign * .31, -.38, -.2);
-        segment(limbs[side][0], shoulder, elbow, .047);
-        segment(limbs[side][1], elbow, target, .037);
-        palms[side].position.copy(target);
+        const sign = side ? 1 : -1, hand = hands[side];
+        hand.position.copy(target);
+        hand.rotation.set(-.15 + swing * .25, side ? -.85 : .5, side ? -.45 : -.6);
+        const closure = side ? .85 * (1 - open) : .6, pinPull = side ? 0 : drawing ? pose.progress : 0;
+        if (hand.poseGrip) hand.poseGrip(closure, pinPull);
+        else poseGrenadeHand(hand, closure, pinPull);
+        const shoulder = new THREE.Vector3(sign * .25, -.43, .06), elbow = new THREE.Vector3(sign * .28, -.34, -.16);
+        alignGrenadeSleeve(sleeves[side][0], shoulder, elbow);
+        alignGrenadeSleeve(sleeves[side][1], elbow, target.clone().add(new THREE.Vector3(0, -.04, 0)));
+        hand.visible = side === 1 || drawing;
+        for (const mesh of sleeves[side]) mesh.visible = hand.visible;
       }
-      // The left hand assists with preparation, then lowers during the throw.
-      limbs[0].forEach(mesh => { mesh.visible = action.phase === 'drawing'; });
-      palms[0].visible = action.phase === 'drawing';
+      held.quaternion.copy(hands[1].quaternion);
+      held.position.fromArray(hands[1].userData.grenadeGrip ?? [0, .065, -.04]).applyQuaternion(held.quaternion).add(right);
+      if (pack) { held.rotation.set(.3 + swing * .3, 1.3, -.55); held.position.x -= .025; }
     },
     clear() {
       for (const mesh of views.values()) scene.remove(mesh);
       views.clear(); handView.visible = false;
     },
-    get snapshot() { return { views: views.size, handVisible: handView.visible, size: GRENADE.size }; },
+    get snapshot() { return { views: views.size, handVisible: handView.visible, size: GRENADE.size,
+      handDetail: { fingersPerHand: 5, articulatedSegmentsPerHand: 14,
+        nails: hands[1].poseGrip ? 'source-texture' : 5, palm: hands[1].poseGrip ? 'source-skinned-palm' : 'tapered-rounded-palm', cuff: true },
+      handSource: hands[1].userData.handSource ?? 'procedural-articulated-hand',
+      heldVisible: handView.visible && (heldGrenade.visible || heldPack.visible),
+      heldKind: heldPack.visible ? 'explosive-pack' : heldGrenade.visible ? 'grenade' : null }; },
   };
 }

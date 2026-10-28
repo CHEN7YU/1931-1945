@@ -37,7 +37,7 @@ try {
     assert.equal(initial.population.friendly.alive, 110);
     assert.equal(initial.population.enemy.alive, 110);
     assert.equal(initial.entityCounts.soldiers, 220);
-    assert.equal(initial.entityCounts.weapons, 220);
+    assert.equal(initial.entityCounts.weapons, initial.entityCounts.soldiers * 3, 'each soldier owns a primary weapon, one grenade inventory and one pack identity');
     for (const unit of initial.population.units) {
       assert.equal(unit.memberCount, 11);
       assert.equal(unit.members[0].role, 'engineer');

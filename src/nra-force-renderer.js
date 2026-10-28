@@ -159,6 +159,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   }
   return {
     root, motionProfile: profile, excludedIds,
+    createGrenadeHand: template.createGrenadeHand,
     async prepare(renderer) {
       for (let index = 0; index < 6; index++) {
         const view = template.createView(); root.add(view.root);

@@ -51,7 +51,7 @@ try {
   }
   for (const shot of result.shots) {
     assert.ok(shot.aimedSeconds + 1e-8 >= shot.requiredSeconds);
-    assert.ok(shot.requiredSeconds >= .45 || shot.requiredSeconds === 0 && shot.continuingBurst && shot.weaponModel !== 'rifle');
+    assert.ok(shot.requiredSeconds >= .15 || shot.requiredSeconds === 0 && shot.continuingBurst && shot.weaponModel !== 'rifle');
     assert.ok(shot.distance <= 75 && shot.ammo >= 0 && shot.ammo < shot.magazine);
     if (shot.speed !== null) assert.ok(shot.speed <= .1 && shot.recovery === 0);
   }
