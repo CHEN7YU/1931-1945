@@ -18,7 +18,7 @@ try {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
     const { loadIjaCharacter } = await import('/src/ija-character.js');
-    const { createNraMotion } = await import('/src/nra-motion.js');
+    const { createNraMotion, syncNativeAimGoal } = await import('/src/nra-motion.js');
     const { FIRING_POSES } = await import('/src/combat-posture.js');
     const { createRifleState } = await import('/src/rifle-action.js');
     const { createSoldierHitSystem } = await import('/src/soldier-hit-zones.js');
@@ -48,6 +48,7 @@ try {
             distance: phase * (pose === 'walk' ? 1.25 : 2.4), bodyLean: pose === 'sprint' ? .26 : pose === 'run' ? .2 : 0 });
           for (const key of Object.keys(FIRING_POSES)) actor.nativeMotion.posture[key] = key === pose ? 1 :
             pose === 'transition' && key === 'prone' ? .5 : 0;
+          syncNativeAimGoal(actor);
           view.bind(actor.id); view.update(actor, 0, null);
           const rendered = view.anatomy, before = JSON.stringify(actor.nativeMotion);
           const sampled = factory.sampleAnatomy(actor, 0);

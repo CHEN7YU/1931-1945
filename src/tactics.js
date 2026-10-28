@@ -1,4 +1,4 @@
-import { soldierPostureHeight } from './entities.js';
+import { soldierPostureHeight, soldierEyePosition } from './entities.js';
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.z);
@@ -38,7 +38,7 @@ export function visibleTargetPoint(target, canSee) {
   };
   let visible = query(point);
   if (!visible && !target.vehicleId && target.nativeMotion && soldierPostureHeight(target) < 1.55) {
-    const head = { ...point, y: target.position.y + soldierPostureHeight(target) };
+    const head = soldierEyePosition(target);
     if (query(head)) { point = head; visible = true; }
   }
   return visible ? point : null;

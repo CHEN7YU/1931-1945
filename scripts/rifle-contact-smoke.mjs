@@ -18,7 +18,7 @@ try {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
     const { loadIjaCharacter } = await import('/src/ija-character.js');
-    const { createNraMotion } = await import('/src/nra-motion.js');
+    const { createNraMotion, syncNativeAimGoal } = await import('/src/nra-motion.js');
     const { createRifleState } = await import('/src/rifle-action.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
     const { groundHeight } = await import('/src/ground.js');
@@ -42,6 +42,7 @@ try {
       actor.nativeMotion = createNraMotion(factory.motionProfile, actor);
       Object.assign(actor.nativeMotion, { speed: actor.locomotion.speed, weight: ready ? 0 : 1,
         bodyLean: ready ? .03 : .2, distance: .6 * factory.motionProfile.strideMeters });
+      syncNativeAimGoal(actor);
       view.bind(actor.id); view.update(actor, 0, null); scene.add(view.root);
       const anatomy = view.anatomy, pose = view.snapshot.riflePose;
       const vector = values => new T.Vector3(...values);

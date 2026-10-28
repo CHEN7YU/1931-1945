@@ -9,9 +9,11 @@ import { riflePose as rifleActionPose } from './rifle-action.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer } from './nra-force-renderer.js';
 import { FIRING_POSES } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeBodyLean } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
 import { groundHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
+import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
+import { shoulderPocket } from './rifle-contacts.js';
 
 export async function loadIjaCharacter() {
   const base = '/assets/game/ija-1938/';
@@ -31,7 +33,13 @@ export async function loadIjaCharacter() {
   }
   const canonical = new Map(skins[0].skeleton.bones.map(bone => [bone.name, bone]));
   const postures = createNativePosturePoses(normalized, canonical);
-  const motionProfile = { ...createNativeGaitProfile(source.motion.idle, canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray()),
+  const pocket = shoulderPocket(canonical.get('RightShoulder').getWorldPosition(new THREE.Vector3()).toArray(),
+    canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), {
+      leftClavicle: canonical.get('LeftShoulder').getWorldPosition(new THREE.Vector3()).toArray(),
+      neck: canonical.get('Neck').getWorldPosition(new THREE.Vector3()).toArray(),
+      chest: canonical.get('Spine2').getWorldPosition(new THREE.Vector3()).toArray() });
+  const motionProfile = { ...createNativeGaitProfile(source.motion.idle, canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), pocket),
+    rifleShoulderContacts: { standing: pocket, ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pocket])) },
     rifleContacts: { standing: canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
     riflePivots: { standing: canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
@@ -40,6 +48,8 @@ export async function loadIjaCharacter() {
     ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, value.carry])) };
   const clips = new Map(asset.animations.map(clip => [clip.name, clip]));
   if (!clips.get('idle')?.validate()) throw new Error('Japanese character lacks valid native idle');
+  const near = normalized.getObjectByName('near'), nearMeshes = skins.filter(mesh => near.getObjectById(mesh.id));
+  motionProfile.headAim = createHeadAimProfile(normalized, canonical, clips.get('idle'), postures, nearMeshes);
   const sampleAnatomy = createHitPoseSampler(() => createView());
 
   function createView(level = 'near') {
@@ -52,9 +62,10 @@ export async function loadIjaCharacter() {
     root.updateMatrixWorld(true);
     const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
       [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
-    const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Head']
+    const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt'), pose = createNraRiflePose(root, bones, gun);
+    const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
     const actions = { idle: mixer.clipAction(clips.get('idle')),
       ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, mixer.clipAction(value.clip)])) };
@@ -90,7 +101,7 @@ export async function loadIjaCharacter() {
         root.updateMatrixWorld(true);
         if (actor.health > 0) {
           legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundHeight);
-          applyNativeBodyLean(root, bones, motion);
+          applyNativeUpperBody(root, bones, motion);
         }
         if (actor.health > 0 || !initialized) pose.update(motion);
         initialized = true;
@@ -108,6 +119,7 @@ export async function loadIjaCharacter() {
           leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
           leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),
           riflePose: pose.snapshot, issue: pose.issue, logicalMuzzle: actor ? soldierRifleMuzzle(actor) : null,
+          headAim: motion?.headAim ? headProbe(motion.headAim) : null,
           soldier: actor ? { id: actor.id, health: actor.health, ammo: actor.rifle.ammo, shots: actor.rifle.shots } : null,
           geometry: source.levels[level], historicalAcceptance: false };
       },

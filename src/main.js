@@ -22,13 +22,13 @@ import { createSoldierHitSystem } from './soldier-hit-zones.js';
 import { loadRifleAudio } from './rifle-audio.js';
 import { loadFootstepAudio } from './footstep-audio.js';
 import { loadRifleMechanicalAudio } from './rifle-mechanical-audio.js';
-import { createNraMotion, advanceNraMotion, sampleNraMotion } from './nra-motion.js';
+import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
   damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat,
-  soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT, soldierPostureHeight } from './entities.js';
+  soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT, soldierPostureHeight, soldierEyePosition } from './entities.js';
 import { FIRING_POSES, chooseCombatPosture, postureReady, ownedFiringPose, wallFiringContact,
   chooseAdvancePace, chooseShotRelocation } from './combat-posture.js';
 import { createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer } from './control-transition.js';
@@ -1454,6 +1454,7 @@ function updatePlayer(dt) {
   if (!actor.vehicleId) position.y = world.groundHeight(position.x, position.z);
   actor.heading = yaw;
   actor.rifleReady = !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
+  if (actor.nativeMotion) advanceNraMotion(actor, dt);
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
   updateCamera(dt);
   if (toolEquipped) updateConstruction(dt);
@@ -1466,15 +1467,17 @@ function updateCamera(dt) {
   const position = allies[current].position;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = allies[current].locomotion;
+  const eyePoint = foot && !allies[current].vehicleId ? soldierEyePosition(allies[current]) : position;
   const desiredHeight = controlPose.eyeHeight;
-  eyeHeight = THREE.MathUtils.lerp(eyeHeight, desiredHeight, 1 - Math.exp(-dt * 12));
+  eyeHeight = !allies[current].vehicleId && allies[current].nativeMotion?.profile.headAim
+    ? desiredHeight : THREE.MathUtils.lerp(eyeHeight, desiredHeight, 1 - Math.exp(-dt * 12));
   const desiredLean = foot ? (Number(keys.has('KeyE')) - Number(keys.has('KeyQ'))) * .23 : 0;
   const offsetX = Math.cos(yaw) * desiredLean;
   const offsetZ = -Math.sin(yaw) * desiredLean;
-  const safeLean = foot && circleBlocked(position.x + offsetX, position.z + offsetZ, .35, world.obstacles) ? 0 : desiredLean;
+  const safeLean = foot && circleBlocked(eyePoint.x + offsetX, eyePoint.z + offsetZ, .35, world.obstacles) ? 0 : desiredLean;
   lean = THREE.MathUtils.lerp(lean, safeLean, Math.min(1, dt * 12));
   const cameraSway = foot ? motion.cameraX * motionStrength : 0;
-  camera.position.set(position.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + jumpHeight + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), position.z - Math.sin(yaw) * (lean + cameraSway));
+  camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + jumpHeight + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
   const holdingBreath = unit.type === 'infantry' && held.aiming && motion.aimRecovery === 0 && keys.has('ShiftLeft') && breath > .05;
   const sway = unit.type === 'infantry' && held.aiming ? Math.sin(time * 2.1) * (holdingBreath ? .00025 : .0016) : 0;
   camera.rotation.set(pitch + recoil + sway, yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
@@ -1644,19 +1647,38 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   actor.aimWalking = pace === 'aim' && actor.locomotion.speed > .06;
 }
 
+const posturePreviews = new WeakMap();
 function postureFireLine(actor, point, stance, threat) {
   const profile = actor.nativeMotion?.profile, track = profile && (stance === 'standing' ? profile.idle : profile[stance]);
   if (!track) throw new Error('Native combat posture is missing its carry profile');
   const heading = Math.atan2(point.x - threat.x, point.z - threat.z), c = Math.cos(heading), s = Math.sin(heading);
-  const preview = profile.rifleContacts ? sampleNraMotion({ ...actor, position: new THREE.Vector3(point.x, 0, point.z),
-    nativeMotion: { ...actor.nativeMotion, speed: 0, weight: 0, lowReady: 0, bodyLean: actor.nativeMotion.fireLean, aim: 0,
-      posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === stance ? 1 : 0])) } }) : null;
+  let preview = null;
+  if (profile.rifleContacts) {
+    let cached = posturePreviews.get(actor);
+    if (!cached) { cached = new Map(); posturePreviews.set(actor, cached); }
+    if (!cached.has(stance)) cached.set(stance, { time: null, motion: { ...actor.nativeMotion, speed: 0,
+      weight: 0, lowReady: 0, cheekWeight: profile.headAim ? 1 : 0, aim: 0,
+      posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === stance ? 1 : 0])) } });
+    const entry = cached.get(stance);
+    if (entry.time !== time) {
+      entry.motion.idleTime = actor.nativeMotion.idleTime;
+      entry.motion.bodyLean = actor.nativeMotion.fireLean;
+      const derived = { ...actor, rifleReady: true, rifle: { ...actor.rifle, action: 'idle' }, nativeMotion: entry.motion };
+      syncNativeAimGoal(derived);
+      entry.pose = sampleNraMotion(derived); entry.time = time;
+    }
+    preview = entry.pose;
+  }
+  if (preview?.headAim && (preview.headAim.sightError >= .004 || preview.headAim.cheekError >= .012 ||
+    preview.headAim.gazeError >= .05 || preview.headAim.eyeRelief <= .04)) return false;
   const local = new THREE.Vector3(...profile.muzzle)
     .applyQuaternion(new THREE.Quaternion(...(preview?.weaponQuaternion ?? track.quaternions.slice(0, 4))))
     .add(new THREE.Vector3(...(preview?.weaponPosition ?? track.positions.slice(0, 3))));
   const y = world.groundHeight(point.x, point.z);
   const muzzle = new THREE.Vector3(point.x + local.x * c + local.z * s, y + local.y, point.z - local.x * s + local.z * c);
-  const eye = new THREE.Vector3(point.x, y + (stance === 'standing' ? 1.67 : FIRING_POSES[stance].eye), point.z);
+  const eyeLocal = preview?.headAim?.eye ?? [0, stance === 'standing' ? 1.67 : FIRING_POSES[stance].eye, 0];
+  const eye = new THREE.Vector3(point.x + eyeLocal[0] * c + eyeLocal[2] * s, y + eyeLocal[1],
+    point.z - eyeLocal[0] * s + eyeLocal[2] * c);
   return hasLine(eye, muzzle, 2) && hasLine(muzzle, threat, 90);
 }
 
@@ -1842,14 +1864,15 @@ function fightFromCover(actor, target, dt) {
   const desiredHeading = Math.atan2(position.x - threat.x, position.z - threat.z);
   const facing = !actor.turningThisStep && actor.locomotion.speed <= .1 &&
     advanceAITurn(actor, desiredHeading, dt).facing;
-  const from = position.clone().add(new THREE.Vector3(0, actor.nativeMotion ? soldierPostureHeight(actor) : SOLDIER_FIRE_HEIGHT, 0));
+  const eye = actor.nativeMotion ? soldierEyePosition(actor) : { x: position.x, y: position.y + SOLDIER_FIRE_HEIGHT, z: position.z };
+  const from = new THREE.Vector3(eye.x, eye.y, eye.z);
   const suppressed = time < t.suppressedUntil;
   const solution = Boolean(target && t.threatSense === 'vision' && t.threatId === target.id && mayFire &&
     canWeaponDamageTarget('rifle', t.threatKind) && canRiflemanTrackTarget(t.threatKind));
   actor.rifleReady = solution && facing && actor.locomotion.speed <= .1 && actor.locomotion.aimRecovery === 0;
   let muzzle = null, firingOptions = [];
   if (!attemptAIRifleShot(actor, { now: time, targetId: target?.id ?? null, suppressed,
-    postureSettled: postureReady(actor) && (!actor.nativeMotion || actor.nativeMotion.lowReady < .05),
+    postureSettled: postureReady(actor) && nativeAimReady(actor),
     mayFire: solution && facing,
     confirmShot: () => {
       const observed = observeVisualThreat(t, target, time, point => hasLine(from, point, 75, target.vehicleId));
@@ -1974,7 +1997,8 @@ function updateAI(dt) {
       resetAIRifleAim(actor.aiRifle, 'moving');
       continue;
     }
-    const from = position.clone().add(new THREE.Vector3(0, actor.nativeMotion ? soldierPostureHeight(actor) : 1.45, 0));
+    const eye = actor.nativeMotion ? soldierEyePosition(actor) : { x: position.x, y: position.y + 1.45, z: position.z };
+    const from = new THREE.Vector3(eye.x, eye.y, eye.z);
     if (time >= actor.nextThink && sensorBudget > 0) {
       const sensingStarted = benchmark ? performance.now() : 0;
       sensorBudget--;
@@ -2044,7 +2068,7 @@ function updateAI(dt) {
       actor.rifleReady = facing && actor.locomotion.aimRecovery === 0;
       let muzzle = null;
       if (attemptAIRifleShot(actor, { now: time, targetId: hostileRally.id, mayFire: facing,
-        postureSettled: postureReady(actor) && (!actor.nativeMotion || actor.nativeMotion.lowReady < .05), suppressed: time < tactics.suppressedUntil,
+        postureSettled: postureReady(actor) && nativeAimReady(actor), suppressed: time < tactics.suppressedUntil,
         confirmShot: () => {
           muzzle = clearAIRifleLine(actor, from, targetPosition);
           return muzzle ? from.distanceTo(targetPosition) : null;
@@ -2312,7 +2336,8 @@ function advanceBattleStep(dt, presentationTime) {
   vehicleRenderer.update(entities.vehicles.values());
   updateWeaponSimulation(dt);
   if (state === 'playing') updatePlayer(dt);
-  for (const actor of allForces) if (actor.nativeMotion && actor.health > 0) advanceNraMotion(actor, dt);
+  for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
+    (state !== 'playing' || actor !== controlledSoldier(entities))) advanceNraMotion(actor, dt);
   if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) updateAI(dt);
   if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }

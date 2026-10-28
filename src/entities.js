@@ -1,5 +1,5 @@
 import { TYPES } from './core.js';
-import { nativeMuzzleLocal, nativeGaitDrop } from './nra-motion.js';
+import { nativeMuzzleLocal, nativeGaitDrop, sampleNraMotion, syncNativeAimGoal } from './nra-motion.js';
 import { FIRING_POSES } from './combat-posture.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
@@ -10,6 +10,7 @@ export function soldierPostureHeight(actor, kind = 'eye') {
   if (!heights) throw new RangeError('Unknown soldier posture height');
   if (actor.stance != null && !Object.hasOwn(stanceHeights, actor.stance)) throw new RangeError('Unknown personal stance');
   if (actor.vehicleId) return heights[0];
+  if (kind === 'eye' && actor.nativeMotion?.profile?.headAim) return sampleNraMotion(actor).headAim.eye[1];
   const posture = actor.nativeMotion?.posture ?? { crouched: actor.stance === 'crouched' ? 1 : 0, prone: actor.stance === 'prone' ? 1 : 0 };
   const entries = Object.entries(posture), total = entries.reduce((sum, [, weight]) => sum + weight, 0);
   if (entries.some(([pose, weight]) => !FIRING_POSES[pose] || !Number.isFinite(weight) || weight < 0 || weight > 1) ||
@@ -18,6 +19,16 @@ export function soldierPostureHeight(actor, kind = 'eye') {
   const height = heights[0] * Math.max(0, 1 - total) + entries.reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose][kind] * weight, 0) - drop;
   const pivot = actor.nativeMotion?.profile?.leanPivot?.[1] - drop, lean = (actor.nativeMotion?.bodyLean ?? 0) * Math.max(0, 1 - total);
   return Number.isFinite(pivot) && height > pivot ? pivot + (height - pivot) * Math.cos(lean) : height;
+}
+export function soldierEyePosition(actor) {
+  if (!actor?.position ||
+    !['x', 'y', 'z'].every(axis => Number.isFinite(actor.position[axis]))) throw new RangeError('Eye projection requires a finite owned pose');
+  if (!actor.vehicleId && actor.nativeMotion?.profile?.headAim) {
+    if (!Number.isFinite(actor.heading)) throw new RangeError('Native eye projection requires a finite heading');
+    const [x, y, z] = sampleNraMotion(actor).headAim.eye, c = Math.cos(actor.heading), s = Math.sin(actor.heading);
+    return { x: actor.position.x + x * c + z * s, y: actor.position.y + y, z: actor.position.z - x * s + z * c };
+  }
+  return { x: actor.position.x, y: actor.position.y + soldierPostureHeight(actor), z: actor.position.z };
 }
 export const TANK_SEATS = Object.freeze([
   Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
@@ -123,6 +134,7 @@ export function selectControlledSoldier(registry, actor) {
     if (actor.nativeMotion) for (const pose of Object.keys(actor.nativeMotion.posture)) {
       actor.nativeMotion.posture[pose] = pose === actor.stance && actor.nativeMotion.profile[pose] ? 1 : 0;
     }
+    syncNativeAimGoal(actor);
   }
   registry.control.soldierId = actor.id;
   return true;

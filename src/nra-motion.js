@@ -1,6 +1,11 @@
 import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
+import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
+
+export function nativePoseIntent(actor) {
+  return actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
+}
 
 function sample(track, time) {
   const local = ((time % track.duration) + track.duration) % track.duration;
@@ -49,6 +54,9 @@ export function createNraMotion(profile, actor) {
   if (profile.riflePivots && ['standing', ...Object.keys(FIRING_POSES)].some(pose =>
     !Array.isArray(profile.riflePivots[pose]) || profile.riflePivots[pose].length !== 3 ||
     !profile.riflePivots[pose].every(Number.isFinite))) throw new Error('Invalid rifle torso pivot profile');
+  if (profile.rifleShoulderContacts && ['standing', ...Object.keys(FIRING_POSES)].some(pose =>
+    !Array.isArray(profile.rifleShoulderContacts[pose]) || profile.rifleShoulderContacts[pose].length !== 3 ||
+    !profile.rifleShoulderContacts[pose].every(Number.isFinite))) throw new Error('Invalid shoulder pocket profile');
   for (const track of [profile.idle, profile.run, ...[profile.walk, ...Object.keys(FIRING_POSES).map(pose => profile[pose])].filter(Boolean)]) {
     if (!track || !Number.isFinite(track.duration) || track.duration <= 0 || !Array.isArray(track.times) || track.times.length < 2 ||
       track.positions?.length !== track.times.length * 3 || track.quaternions?.length !== track.times.length * 4 ||
@@ -62,13 +70,17 @@ export function createNraMotion(profile, actor) {
     }
   }
   const seed = actor.walkPhase;
-  return { profile, aim: 0, lowReady: profile.lowReadyCarry && actor.rifleReady !== true ? 1 : 0,
+  const ready = nativePoseIntent(actor) === 'aim';
+  const motion = { profile, aim: 0, lowReady: profile.lowReadyCarry && !ready ? 1 : 0,
+    cheekWeight: profile.headAim && ready ? 1 : 0, headGoal: null,
     bodyLean: 0, runLean: .11 + .12 * Math.sin(seed * 7.7) ** 2,
     fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
     legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
     idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z } };
+  if (profile.headAim && ready) syncNativeAimGoal({ ...actor, nativeMotion: motion });
+  return motion;
 }
 
 export function advanceNraMotion(actor, dt) {
@@ -93,7 +105,7 @@ export function advanceNraMotion(actor, dt) {
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
   if (motion.profile.lowReadyCarry) {
-    motion.lowReady += ((actor.rifleReady === true ? 0 : 1) - motion.lowReady) * (1 - Math.exp(-dt / .1));
+    motion.lowReady += ((nativePoseIntent(actor) === 'aim' ? 0 : 1) - motion.lowReady) * (1 - Math.exp(-dt / .1));
     if (motion.lowReady < .001) motion.lowReady = 0;
     if (motion.lowReady > .999) motion.lowReady = 1;
   }
@@ -106,9 +118,23 @@ export function advanceNraMotion(actor, dt) {
   motion.weight += (target - motion.weight) * (1 - Math.exp(-dt / .12));
   if (motion.weight < .001) motion.weight = 0;
   if (motion.weight > .999) motion.weight = 1;
+  if (motion.profile.headAim) {
+    const target = nativePoseIntent(actor) === 'aim' && motion.lowReady < .2 ? 1 : 0;
+    motion.cheekWeight += (target - motion.cheekWeight) * (1 - Math.exp(-dt / .12));
+    if (motion.cheekWeight < .001) motion.cheekWeight = 0;
+    if (motion.cheekWeight > .999) motion.cheekWeight = 1;
+    syncNativeAimGoal(actor);
+  }
 }
 
-export function sampleNraMotion(actor) {
+export function syncNativeAimGoal(actor) {
+  const motion = actor.nativeMotion;
+  if (motion?.profile?.headAim && nativePoseIntent(actor) === 'aim' && motion.lowReady < .2) {
+    motion.headGoal = solveHeadAimGoal(motion.profile.headAim, sampleNraMotion(actor, false), motion.headGoal);
+  }
+}
+
+export function sampleNraMotion(actor, includeHead = true) {
   const motion = actor.nativeMotion;
   if (!motion || !validPosition(actor.position)) throw new Error('Native motion state is missing');
   const { profile } = motion;
@@ -160,7 +186,12 @@ export function sampleNraMotion(actor) {
   if (profile.rifleContacts) {
     const contact = new Vector3(...profile.rifleContacts.standing).multiplyScalar(upright);
     for (const [stance, weight] of Object.entries(motion.posture)) contact.addScaledVector(new Vector3(...profile.rifleContacts[stance]), weight);
-    contact.add(new Vector3(...RIFLE_CONTACTS.shoulder).lerp(new Vector3(...RIFLE_CONTACTS.armpit), lowReady));
+    if (profile.rifleShoulderContacts) {
+      const raised = new Vector3(...profile.rifleShoulderContacts.standing).multiplyScalar(upright);
+      for (const [stance, weight] of Object.entries(motion.posture)) raised.addScaledVector(new Vector3(...profile.rifleShoulderContacts[stance]), weight);
+      contact.add(new Vector3(...RIFLE_CONTACTS.armpit));
+      contact.lerp(raised, 1 - lowReady);
+    } else contact.add(new Vector3(...RIFLE_CONTACTS.shoulder).lerp(new Vector3(...RIFLE_CONTACTS.armpit), lowReady));
     contact.y -= hipDrop;
     if ((torsoYaw || bodyLean) && profile.leanPivot) {
       const pivot = new Vector3(...(profile.riflePivots?.standing ?? profile.leanPivot)).multiplyScalar(upright);
@@ -174,13 +205,23 @@ export function sampleNraMotion(actor) {
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }
-  return { idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+  const result = { intent: nativePoseIntent(actor), idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: profile.strideMeters * motion.strideScale, walkStride: (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
     runContact: profile.runContact,
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
+  if (includeHead && profile.headAim) result.headAim = projectHeadAim(profile.headAim, result, motion);
+  return result;
+}
+
+export function nativeAimReady(actor) {
+  if (!actor.nativeMotion) return true;
+  const pose = sampleNraMotion(actor);
+  return actor.nativeMotion.lowReady < .05 && (!pose.headAim || pose.intent === 'aim' &&
+    pose.headAim.weight > .98 && pose.headAim.sightError < .004 && pose.headAim.cheekError < .012 &&
+    pose.headAim.gazeError < .05 && pose.headAim.eyeRelief > .04);
 }
 
 export function nativeMuzzleLocal(actor) {

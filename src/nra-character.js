@@ -10,9 +10,11 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeBodyLean } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
 import { groundHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
+import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
+import { shoulderPocket } from './rifle-contacts.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -75,13 +77,20 @@ export async function loadNraCharacter() {
   model.position.y -= bounds.min.y; normalized.add(model);
   attachNraHelmet(inspected.canonical.get('Head'), helmet, textures.get('helmet'), source.helmet);
   const postures = createNativePosturePoses(normalized, inspected.canonical);
-  const motionProfile = { ...createNativeGaitProfile(clips.motion.idle, inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray()),
+  const pocket = shoulderPocket(inspected.canonical.get('RightShoulder').getWorldPosition(new THREE.Vector3()).toArray(),
+    inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), {
+      leftClavicle: inspected.canonical.get('LeftShoulder').getWorldPosition(new THREE.Vector3()).toArray(),
+      neck: inspected.canonical.get('Neck').getWorldPosition(new THREE.Vector3()).toArray(),
+      chest: inspected.canonical.get('Spine2').getWorldPosition(new THREE.Vector3()).toArray() });
+  const motionProfile = { ...createNativeGaitProfile(clips.motion.idle, inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), pocket),
+    rifleShoulderContacts: { standing: pocket, ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pocket])) },
     rifleContacts: { standing: inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
     riflePivots: { standing: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pivot])) },
     leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
+  motionProfile.headAim = createHeadAimProfile(normalized, inspected.canonical, idle, postures, inspected.meshes);
   const appearanceCache = { geometries: new Map(), materials: new Map() };
   const sampleAnatomy = createHitPoseSampler(() => createView(true));
   function createView(collision = false) {
@@ -92,9 +101,10 @@ export async function loadNraCharacter() {
   root.updateMatrixWorld(true);
   const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
     [side, root.worldToLocal(canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
-  const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Head']
+  const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
     .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone(), position: canonical.get(name).position.clone() }));
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache);
+  const headProbe = createHeadAimProbe(root, canonical, meshes);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
     if (mesh.skeleton.bones.every((bone, index) => bone === sharedSkeleton.bones[index]) &&
@@ -149,7 +159,7 @@ export async function loadNraCharacter() {
       root.updateMatrixWorld(true);
       if (actor.health > 0) {
         legPose = applyNativeFootCycle(root, canonical, motion, restFeet, groundHeight);
-        applyNativeBodyLean(root, canonical, motion);
+        applyNativeUpperBody(root, canonical, motion);
       }
       if (actor.health > 0 || !initialized) riflePose.update(motion);
       initialized = true;
@@ -169,6 +179,7 @@ export async function loadNraCharacter() {
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         heading: root.rotation.y, issue: riflePose.issue,
+        headAim: motion?.headAim ? headProbe(motion.headAim) : null,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
         motion: motion ? { weight: motion.weight, jog: motion.jog, ...motion.postures,
           idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,

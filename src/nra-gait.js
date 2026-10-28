@@ -1,6 +1,12 @@
 import { Vector3, Quaternion } from 'three';
 import { solveArm } from './nra-rifle-pose.js';
 import { firingCarryPosition } from './rifle-contacts.js';
+import { applyHeadAim } from './head-aim.js';
+
+export function applyNativeUpperBody(root, bones, motion) {
+  applyNativeBodyLean(root, bones, motion);
+  applyHeadAim(root, bones, motion.headAim);
+}
 
 export function applyNativeBodyLean(root, bones, motion) {
   if (!Number.isFinite(motion.bodyLean) || motion.bodyLean < 0 || motion.bodyLean > .4) throw new Error('Invalid owned torso lean');
@@ -22,9 +28,9 @@ export function applyNativeBodyLean(root, bones, motion) {
   rotate(bones.get('Head'), motion.bodyLean * .8);
 }
 
-export function createNativeGaitProfile(idle, shoulder = null) {
+export function createNativeGaitProfile(idle, shoulder = null, pocket = null) {
   if (shoulder) {
-    const origin = firingCarryPosition(shoulder), original = idle.positions.slice(0, 3);
+    const origin = firingCarryPosition(shoulder, pocket), original = idle.positions.slice(0, 3);
     idle = { ...idle, positions: idle.positions.map((value, i) => value - original[i % 3] + origin[i % 3]) };
   }
   const carry = () => ({ duration: 1, times: [0, 1],

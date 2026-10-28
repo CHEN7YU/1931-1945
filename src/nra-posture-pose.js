@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { solveArm } from './nra-rifle-pose.js';
 import { FIRING_POSES } from './combat-posture.js';
-import { firingCarryPosition } from './rifle-contacts.js';
+import { firingCarryPosition, shoulderPocket } from './rifle-contacts.js';
 
 const position = bone => bone.getWorldPosition(new THREE.Vector3());
 const rotation = bone => bone.getWorldQuaternion(new THREE.Quaternion());
@@ -15,6 +15,7 @@ export function createNativePosturePoses(normalized, bones) {
   const hips = bones.get('Hips'), head = bones.get('Head'), chest = bones.get('Spine2');
   if (!hips || !head || !chest) throw new Error('Native posture requires the inspected body joints');
   const originalHips = position(hips), originalHipsRotation = rotation(hips), headRotation = rotation(head);
+  const neckRotation = rotation(bones.get('Neck'));
   const feet = new Map(['Left', 'Right'].map(side => [side, { position: position(bones.get(`${side}Foot`)), rotation: rotation(bones.get(`${side}Foot`)) }]));
   const restore = () => {
     for (const [bone, rest] of saved) { bone.position.copy(rest.position); bone.quaternion.copy(rest.rotation); }
@@ -29,7 +30,7 @@ export function createNativePosturePoses(normalized, bones) {
     hips.position.copy(hips.parent.worldToLocal(lowered));
     setRotation(hips, originalHipsRotation.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), prone ? Math.PI / 2 : .12)));
     if (wall) setRotation(bones.get('Spine'), rotation(bones.get('Spine')).premultiply(new THREE.Quaternion()
-      .setFromAxisAngle(new THREE.Vector3(0, 0, 1), stance === 'wallLeft' ? .25 : -.25)));
+      .setFromAxisAngle(new THREE.Vector3(0, 0, 1), stance === 'wallLeft' ? .20 : -.20)));
     for (const side of ['Left', 'Right']) {
       const foot = feet.get(side), target = foot.position.clone();
       if (prone) { target.y = .22; target.z = .84; }
@@ -51,17 +52,23 @@ export function createNativePosturePoses(normalized, bones) {
         ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -1.75).multiply(foot.rotation)
         : foot.rotation);
     }
+    if (prone) setRotation(bones.get('Neck'), neckRotation);
     setRotation(head, headRotation);
     normalized.updateMatrixWorld(true);
     const tracks = [...bones].map(([name, bone]) => new THREE.QuaternionKeyframeTrack(`.bones[${name}].quaternion`, [0, 1],
       [...bone.quaternion.toArray(), ...bone.quaternion.toArray()]));
     tracks.push(new THREE.VectorKeyframeTrack('.bones[Hips].position', [0, 1], [...hips.position.toArray(), ...hips.position.toArray()]));
-    const shoulder = position(bones.get('RightArm')).toArray(), weaponPosition = firingCarryPosition(shoulder);
+    const shoulder = position(bones.get('RightArm')).toArray();
+    const pocket = shoulderPocket(position(bones.get('RightShoulder')).toArray(), shoulder, {
+      leftClavicle: position(bones.get('LeftShoulder')).toArray(), neck: position(bones.get('Neck')).toArray(),
+      chest: position(chest).toArray() });
+    const weaponPosition = firingCarryPosition(shoulder, pocket);
     result[stance] = {
       clip: new THREE.AnimationClip(`NRA88_native_${stance}`, 1, tracks),
       carry: { duration: 1, times: [0, 1], positions: [...weaponPosition, ...weaponPosition],
         quaternions: [0, 0, 0, 1, 0, 0, 0, 1] },
       shoulder,
+      pocket,
       pivot: position(bones.get('Spine')).toArray(),
     };
   }

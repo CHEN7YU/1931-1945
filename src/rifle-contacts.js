@@ -29,7 +29,18 @@ export const RIFLE_CONTACTS = Object.freeze({
   carrySupportPalm: Object.freeze([0, -.095, -.21]),
 });
 
-export function firingCarryPosition(shoulder) {
-  return new Vector3().fromArray(shoulder).add(new Vector3(...RIFLE_CONTACTS.shoulder))
+export function shoulderPocket(clavicle, upperArm, frame = null) {
+  const surface = new Vector3(0, .015, -.02);
+  if (frame) {
+    const across = new Vector3().fromArray(clavicle).sub(new Vector3().fromArray(frame.leftClavicle)).normalize();
+    const up = new Vector3().fromArray(frame.neck).sub(new Vector3().fromArray(frame.chest));
+    up.addScaledVector(across, -up.dot(across)).normalize();
+    surface.copy(up).multiplyScalar(.015).addScaledVector(across.clone().cross(up).normalize(), -.02);
+  }
+  return new Vector3().fromArray(clavicle).lerp(new Vector3().fromArray(upperArm), .3).add(surface).toArray();
+}
+
+export function firingCarryPosition(shoulder, pocket = null) {
+  return (pocket ? new Vector3().fromArray(pocket) : new Vector3().fromArray(shoulder).add(new Vector3(...RIFLE_CONTACTS.shoulder)))
     .sub(new Vector3(...RIFLE_CONTACTS.stock)).toArray();
 }

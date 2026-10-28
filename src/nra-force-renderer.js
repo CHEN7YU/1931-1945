@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNraMotion, sampleNraMotion } from './nra-motion.js';
+import { createNraMotion, sampleNraMotion, syncNativeAimGoal } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
@@ -62,6 +62,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     const mode = bank === 0 || posture || ready ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
     sampleActor.rifleReady = ready;
     if (profile.lowReadyCarry) sampleActor.nativeMotion.lowReady = ready ? 0 : 1;
+    sampleActor.nativeMotion.cheekWeight = profile.headAim && ready ? 1 : 0;
     sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
     sampleActor.nativeMotion.speed = mode.startsWith('run') ? 3.15 : mode === 'walk' ? 1.75 : 0;
@@ -69,6 +70,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runB' ? .26 : .14 : mode === 'walk' ? .035 : 0;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
+    syncNativeAimGoal(sampleActor);
     bankTemplate.update(sampleActor, 0, null);
     if (bankTemplate.issue) throw new Error(`Distant uniform pose is unreachable: ${bankTemplate.issue}`);
     const baked = [];
@@ -155,7 +157,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
           const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.gaitBanks && pose.legLift > .7 ? phases : 0);
           const posture = postures.find(name => pose[name] > .5);
-          const raised = profile.lowReadyCarry && pose.lowReady < .5;
+          const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
           const index = posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
             : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
