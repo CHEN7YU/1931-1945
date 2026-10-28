@@ -1,6 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
+import { infantryWeaponProfile } from './rifle-action.js';
 import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
 
 export function nativePoseIntent(actor) {
@@ -226,7 +227,8 @@ export function nativeAimReady(actor) {
 
 export function nativeMuzzleLocal(actor) {
   const pose = sampleNraMotion(actor);
-  const result = new Vector3().fromArray(actor.nativeMotion.profile.muzzle)
+  const profile = infantryWeaponProfile(actor.rifle);
+  const result = (profile.automatic ? new Vector3(profile.muzzleX, 0, profile.muzzleZ) : new Vector3().fromArray(actor.nativeMotion.profile.muzzle))
     .applyQuaternion(new Quaternion().fromArray(pose.weaponQuaternion))
     .add(new Vector3().fromArray(pose.weaponPosition));
   return { x: result.x, y: result.y, z: result.z };

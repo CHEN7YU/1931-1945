@@ -14,13 +14,13 @@ try {
   await page.goto('http://127.0.0.1:5173/?benchmark=full&seed=1938');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 100);
+  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 110);
   const initial = await page.evaluate(() => window.__battle.historicalForce);
   const keys = new Map(initial.members.map(member => [member.id, member.appearance.key]));
   assert.ok(new Set(keys.values()).size >= 40);
   assert.equal(new Set(initial.members.map(member => member.appearance.face)).size, 8);
   assert.ok(initial.views.every(view => view.appearance?.key === keys.get(view.actorId)));
-  observations.push({ stage: 'actual-100-appearances', force: initial });
+  observations.push({ stage: 'actual-110-appearances', force: initial });
   await page.screenshot({ path: join(directory, 'individual-squad.png') });
   await page.keyboard.press('y');
   await page.keyboard.down('s');

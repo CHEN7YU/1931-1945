@@ -21,10 +21,10 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
   const groups = new Map(), matrix = new THREE.Matrix4(), root = new THREE.Matrix4(), projection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
   let summary = { visible: 0, near: 0, far: 0, batches: 0 };
-  const groupFor = (friendly, detail) => {
-    const key = `${friendly}-${detail}`;
+  const groupFor = (friendly, detail, weapon) => {
+    const key = `${friendly}-${detail}-${weapon}`;
     if (!groups.has(key)) {
-      const template = soldierModel(friendly, detail);
+      const template = soldierModel(friendly, detail, weapon);
       const parts = template.children.map(source => {
         const mesh = new THREE.InstancedMesh(source.geometry, source.material, capacity);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -54,7 +54,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         sphere.center.copy(actor.model.position); sphere.center.y += .85;
         if (distance > 18 && !frustum.intersectsSphere(sphere)) continue;
         const detail = distance < (preset === 'low' ? 20 : 35) ? 'near' : 'far';
-        const group = groupFor(actor.friendly, detail);
+        const group = groupFor(actor.friendly, detail, actor.rifle?.model ?? 'rifle');
         if (group.count >= capacity) throw new Error('Soldier instance capacity exceeded; no combatants were silently removed');
         if (group.parts.length !== actor.model.children.length) throw new Error('Soldier LOD hierarchy is inconsistent');
         actor.model.updateMatrix(); root.copy(actor.model.matrix);

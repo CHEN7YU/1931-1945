@@ -1,13 +1,14 @@
-import { shootRifle, reloadRifle, RIFLE } from './rifle-action.js';
+import { shootRifle, reloadRifle, infantryWeaponProfile } from './rifle-action.js';
 
 export const AI_RIFLE = Object.freeze({ sightRange: 75, checkInterval: .1, maxSightGap: .2, stationarySpeed: .1 });
 
 export function createAIRifleControl() {
-  return { targetId: null, aimingSince: null, confirmedAt: null, nextCheckAt: 0, blocked: 'no-target', lastShot: null };
+  return { targetId: null, aimingSince: null, confirmedAt: null, nextCheckAt: 0, blocked: 'no-target', lastShot: null, burstTargetId: null };
 }
 
 export function resetAIRifleAim(control, reason) {
   control.targetId = control.aimingSince = control.confirmedAt = null;
+  control.burstTargetId = null;
   control.nextCheckAt = 0;
   control.blocked = reason;
 }
@@ -18,9 +19,10 @@ export function rifleAIAimSeconds(distance, suppressed) {
 }
 
 export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettled, suppressed, confirmShot }) {
+  const profile = infantryWeaponProfile(actor.rifle);
   if (!Number.isFinite(now) || now < 0 || !Number.isFinite(actor.nextFire) ||
     !Number.isFinite(actor.health) || typeof actor.locomotion.sprinting !== 'boolean' ||
-    !Number.isInteger(actor.rifle.ammo) || actor.rifle.ammo < 0 || actor.rifle.ammo > RIFLE.magazine ||
+    !Number.isInteger(actor.rifle.ammo) || actor.rifle.ammo < 0 || actor.rifle.ammo > profile.magazine ||
     !['idle', 'cycle', 'reload'].includes(actor.rifle.action) ||
     !Number.isFinite(actor.locomotion.speed) || actor.locomotion.speed < 0 ||
     !Number.isFinite(actor.locomotion.aimRecovery) || actor.locomotion.aimRecovery < 0 ||
@@ -36,8 +38,18 @@ export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettl
     : !postureSettled ? 'posture'
     : rifle.action !== 'idle' || rifle.ammo <= 0 ? 'weapon'
     : now < actor.nextFire ? 'cadence' : null;
-  if (blocked) { resetAIRifleAim(control, blocked); return false; }
-  if (targetId !== control.targetId) resetAIRifleAim(control, 'new-target');
+  if (blocked) {
+    const burst = profile.automatic && ['weapon', 'cadence'].includes(blocked) && rifle.action !== 'reload' &&
+      control.burstTargetId === targetId && now - (control.lastShot?.time ?? -Infinity) <= profile.cycleSeconds + .15;
+    resetAIRifleAim(control, blocked);
+    if (burst) control.burstTargetId = targetId;
+    return false;
+  }
+  if (targetId !== control.targetId) {
+    const burst = control.burstTargetId === targetId;
+    resetAIRifleAim(control, 'new-target');
+    if (burst) control.burstTargetId = targetId;
+  }
   if (now < control.nextCheckAt) return false;
   const distance = confirmShot();
   if (distance !== null && (!Number.isFinite(distance) || distance < 0)) throw new RangeError('AI shot confirmation must return a visible distance or null');
@@ -52,12 +64,16 @@ export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettl
   control.confirmedAt = now;
   control.nextCheckAt = now + AI_RIFLE.checkInterval;
   control.blocked = 'aiming';
-  const required = rifleAIAimSeconds(distance, suppressed), aimed = now - control.aimingSince;
+  const continuingBurst = profile.automatic && control.burstTargetId === targetId && control.lastShot?.targetId === targetId &&
+    now - control.lastShot.time <= profile.cycleSeconds + .15 && rifle.shots % 3 !== 0;
+  const required = continuingBurst ? 0 : rifleAIAimSeconds(distance, suppressed), aimed = now - control.aimingSince;
   if (aimed + 1e-8 < required) return false;
   if (!shootRifle(rifle)) throw new Error('AI rifle changed after firing readiness was validated');
   control.lastShot = Object.freeze({ time: now, targetId, distance, suppressed, aimingSince: control.aimingSince,
-    aimedSeconds: aimed, requiredSeconds: required, ammo: rifle.ammo, shots: rifle.shots });
+    aimedSeconds: aimed, requiredSeconds: required, ammo: rifle.ammo, shots: rifle.shots,
+    weaponModel: rifle.model ?? 'rifle', magazine: profile.magazine, continuingBurst });
   if (rifle.ammo === 0) reloadRifle(rifle);
   resetAIRifleAim(control, 'weapon');
+  if (profile.automatic && rifle.shots % 3 !== 0 && rifle.ammo > 0) control.burstTargetId = targetId;
   return true;
 }

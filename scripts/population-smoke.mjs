@@ -16,13 +16,19 @@ try {
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.state === 'playing' && window.__battle.population.renderer.visible > 50, null, { timeout: 60000 });
   const initial = await snapshot();
-  assert.equal(initial.allies.length, 10);
+  assert.equal(initial.allies.length, 11);
   assert.equal(initial.population.units.length, 20);
-  assert.deepEqual(initial.population.friendly, { units: 10, rosterUnits: 10, alive: 100, vehicles: 0 });
-  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 100, vehicles: 0 });
-  assert.ok(initial.population.units.every(unit => unit.memberCount === 10 && unit.alive === 10));
+  assert.deepEqual(initial.population.friendly, { units: 10, rosterUnits: 10, alive: 110, vehicles: 0 });
+  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 110, vehicles: 0 });
+  assert.ok(initial.population.units.every(unit => unit.memberCount === 11 && unit.alive === 11));
   const members = initial.population.units.flatMap(unit => unit.members);
-  assert.equal(new Set(members.map(actor => actor.id)).size, 200);
+  assert.equal(new Set(members.map(actor => actor.id)).size, 220);
+  for (const unit of initial.population.units) {
+    assert.equal(unit.members.filter(actor => actor.role === 'engineer').length, 1);
+    assert.equal(unit.members.filter(actor => actor.role === 'rifleman').length, 9);
+    assert.equal(unit.members[10].role, 'machine-gunner');
+    assert.equal(unit.members[10].weaponModel, unit.team === 'friendly' ? 'zb26' : 'type11');
+  }
   const origins = new Map(initial.spawnPoints.map(point => [point.id, point]));
   for (const unit of initial.population.units) for (const actor of unit.members) {
     assert.ok(actor.spawnClear, `${unit.id} member starts inside a real obstacle`);
@@ -31,11 +37,11 @@ try {
   for (let i = 0; i < members.length; i++) for (let j = 0; j < i; j++) {
     assert.ok(Math.hypot(members[i].spawnPosition.x - members[j].spawnPosition.x, members[i].spawnPosition.z - members[j].spawnPosition.z) >= 1.25 - 1e-8, 'different soldiers do not spawn stacked');
   }
-  assert.equal(await page.locator('#members .member').count(), 10);
-  assert.match(await page.locator('#force-status').textContent(), /100人/);
+  assert.equal(await page.locator('#members .member').count(), 11);
+  assert.match(await page.locator('#force-status').textContent(), /110人/);
   assert.ok(initial.population.renderer.procedural.batches <= 40, 'procedural opponents retain their shared instance batches');
   if (initial.historicalForce) {
-    assert.equal(initial.historicalForce.assigned, 100);
+    assert.equal(initial.historicalForce.assigned, 110);
     assert.ok(initial.historicalForce.near <= initial.historicalForce.detailBudget);
     assert.ok(initial.historicalForce.poolSize <= 6, 'native rigs are pooled, not allocated once per soldier');
     assert.equal(initial.historicalForce.poseBanks, 30, 'shared travel/low-ready/firing banks remain bounded, not one skeleton per soldier');
@@ -56,7 +62,7 @@ try {
   assert.equal(movedUnits, 19, `all nineteen autonomous units act in the world, not just in the counters: ${JSON.stringify(stalledUnits)}`);
   await page.waitForFunction(() => {
     const data = window.__battle;
-    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 100 || data.population.enemy.alive < 100);
+    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 110 || data.population.enemy.alive < 110);
   }, null, { timeout: 120000 });
   const combat = await snapshot();
   await page.keyboard.press('Escape');
@@ -84,18 +90,18 @@ try {
   await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
   let data = await snapshot();
   assert.equal(data.population.friendly.units, 10);
-  assert.equal(data.population.friendly.alive, 93);
+  assert.equal(data.population.friendly.alive, 102);
   assert.equal(data.population.friendly.vehicles, 1);
   assert.equal(data.allies.length, 3);
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
   await page.locator('#squad-choices [data-type="plane"]').click(); await page.locator('#deploy').click();
   data = await snapshot();
-  assert.equal(data.population.friendly.alive, 91);
+  assert.equal(data.population.friendly.alive, 100);
   assert.equal(data.population.friendly.vehicles, 1);
   assert.equal(data.allies.length, 1);
-  assert.equal(data.population.enemy.alive, 100);
+  assert.equal(data.population.enemy.alive, 110);
   assert.deepEqual(errors, []);
-  console.log(`PASS: 200 actual members, 20 real units, ten-person control, safe origins, ${movedUnits} autonomous units moving, one selected vehicle and ${advanced.performance.drawCalls} draw calls / ${advanced.performance.averageFrameMs.toFixed(1)}ms observed mean frame.`);
+  console.log(`PASS: 220 actual members, 20 real units, eleven-person control, safe origins, ${movedUnits} autonomous units moving, one selected vehicle and ${advanced.performance.drawCalls} draw calls / ${advanced.performance.averageFrameMs.toFixed(1)}ms observed mean frame.`);
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ state: data?.state, time: data?.time, forces: data?.population && { friendly: data.population.friendly, enemy: data.population.enemy },

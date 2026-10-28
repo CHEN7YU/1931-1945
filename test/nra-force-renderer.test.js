@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
+import { createRifleState } from '../src/rifle-action.js';
 
 test('distant shared geometry preserves actual transformed skin vertices, normals, UVs and material groups', () => {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -36,6 +37,7 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   const geometry = new THREE.BoxGeometry(.4, 1.7, .3), material = new THREE.MeshStandardMaterial();
   function view() {
     const root = new THREE.Group(); root.add(new THREE.Mesh(geometry, material));
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
     let id = null, actor = null;
     return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
       bind(value) { id = value; actor = null; root.visible = false; },
@@ -48,7 +50,8 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   const actors = Array.from({ length: 100 }, (_, index) => {
     const actor = { id: `soldier-${index}`, unitId: 'friendly-0', team: 'friendly', heading: 0, health: 100,
       position: new THREE.Vector3((index % 10 - 5) * 1.5, 0, -5 - Math.floor(index / 10) * 3),
-      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, ammo: 5 };
+      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, ammo: 5,
+      rifle: createRifleState(index % 11 === 10 ? 'zb26' : 'rifle') };
     actor.nativeMotion = createNraMotion(profile, actor); return actor;
   });
   force.update(actors, 1, actors[0].id, 'high');

@@ -23,16 +23,16 @@ try {
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5173/?benchmark=full&seed=1938');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 100);
+  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 110);
   let data = await snapshot();
-  assert.equal(data.population.friendly.alive, 100); assert.equal(data.population.enemy.alive, 100);
-  assert.equal(new Set(data.force.members.map(actor => actor.id)).size, 100);
+  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 110);
+  assert.equal(new Set(data.force.members.map(actor => actor.id)).size, 110);
   assert.ok(data.force.members.every(actor => actor.uniform === 'nra88' && actor.helmet));
   assert.equal(data.force.members.find(actor => actor.id === data.control.soldierId).tier, 'hidden');
   assert.ok(data.force.near <= 6 && data.force.poolSize <= 6);
   assert.equal(data.force.poseBanks, 30);
   assert.ok(data.force.views.filter(view => view.soldier.health > 0).length >= 2, 'More than one uniformed soldier can be observed');
-  observations.push({ stage: 'all-100-assigned', data });
+  observations.push({ stage: 'all-110-assigned', data });
   await page.screenshot({ path: join(directory, 'uniformed-squad.png') });
   const before = data.allies[1];
   await page.keyboard.press('y');
@@ -60,7 +60,7 @@ try {
   }
   await page.keyboard.up('s');
   data = await snapshot();
-  assert.equal(data.force.assigned, 100);
+  assert.equal(data.force.assigned, 110);
   assert.ok(observedMoving, 'Observe real moving poses during the displacement interval, not just the final stopped frame');
   for (const view of data.force.views.filter(view => view.soldier.health > 0)) {
     assert.equal(view.issue, null);
@@ -73,13 +73,13 @@ try {
   await page.locator('#back-menu').click();
   await page.waitForFunction(() => window.__battle.historicalForce.assigned === 0);
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.historicalForce.assigned === 100);
+  await page.waitForFunction(() => window.__battle.historicalForce.assigned === 110);
   data = await snapshot();
-  assert.equal(data.force.members.length, 100); assert.ok(data.force.poolSize <= 6);
+  assert.equal(data.force.members.length, 110); assert.ok(data.force.poolSize <= 6);
   observations.push({ stage: 'new-deployment-no-stale-bodies', data });
   assert.deepEqual(errors, []);
   const modelRequests = requests.filter(url => url.endsWith('/character.fbx'));
-  assert.equal(modelRequests.length, 1, 'Army members share one downloaded character, not 100 copies');
+  assert.equal(modelRequests.length, 1, 'Army members share one downloaded character, not 110 copies');
   console.log(JSON.stringify({ passed: true, directory, stages: observations.map(item => item.stage), modelDownloads: modelRequests.length }));
 } catch (error) {
   failure = { message: error.message, stack: error.stack }; throw error;

@@ -1,8 +1,15 @@
 import { TYPES, circleBlocked } from './core.js';
 import { spawnBlockReason } from './spawns.js';
 
-export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 10, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
+export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
+export function infantryLoadout(team, index, type = 'infantry') {
+  if (!['friendly', 'enemy'].includes(team) || !Number.isInteger(index) || index < 0 || !TYPES[type]) throw new RangeError('Invalid infantry loadout');
+  if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 10) {
+    return { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' };
+  }
+  return { role: index % BATTLE_RULES.sectionMembers === 0 ? 'engineer' : 'rifleman', model: 'rifle' };
+}
 const lanes = [-88, -66, -44, -22, 22, 44, 66, 88, 96];
 export class FormationPlacementError extends Error {}
 
@@ -54,8 +61,9 @@ export function armySummary(roster, team) {
 }
 
 export function sectionOffset(index) {
-  const sections = Math.ceil(TYPES.infantry.members / 10);
-  return { x: (index % 5 - 2) * 1.15, z: Math.floor(index % 10 / 5) * 1.4 - .7 + (Math.floor(index / 10) - (sections - 1) / 2) * 3.2 };
+  const member = index % BATTLE_RULES.sectionMembers, section = Math.floor(index / BATTLE_RULES.sectionMembers);
+  return member === 10 ? { x: 0, z: 2.1 + section * 3.2 }
+    : { x: (member % 5 - 2) * 1.15, z: Math.floor(member / 5) * 1.4 - .7 + section * 3.2 };
 }
 
 export function holdDestination(actor) {

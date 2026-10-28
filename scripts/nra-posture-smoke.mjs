@@ -16,8 +16,8 @@ try {
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5173/?benchmark=full&seed=1938');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 100);
-  assert.equal(await page.evaluate(() => window.__battle.population.enemy.alive), 100);
+  await page.waitForFunction(() => window.__battle.historicalForce?.assigned === 110);
+  assert.equal(await page.evaluate(() => window.__battle.population.enemy.alive), 110);
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state === 'dead', null, { timeout: 40000 });
   await page.keyboard.up('w');
@@ -75,7 +75,7 @@ try {
   for (const sample of samples) for (const actor of sample.friends) {
     const shot = actor.lastShot, previous = lastShots.get(actor.id);
     if (!shot || previous?.time === shot.time) continue;
-    if (previous && shot.previousTime === previous.time && !previous.coverId && !shot.coverId) {
+    if (!actor.rifle.model && previous && shot.previousTime === previous.time && !previous.coverId && !shot.coverId) {
       consecutiveOpenShots++;
       assert.ok(Math.hypot(shot.position.x - previous.position.x, shot.position.z - previous.position.z) > 1.8);
       if (shot.eligiblePoses.some(pose => pose !== previous.firingPose)) assert.notEqual(shot.firingPose, previous.firingPose);

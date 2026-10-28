@@ -14,6 +14,7 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   let farViews = 0;
   function view(level = 'near') {
     const root = new THREE.Group(); root.add(new THREE.Mesh(level === 'near' ? near : far, material));
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
     const hidden = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), material); hidden.visible = false; root.add(hidden);
     let id = null, actor = null;
     return { root, motionProfile: profile, drawBatches: 1, createView: view,
@@ -28,7 +29,8 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   const actors = Array.from({ length: 100 }, (_, index) => {
     const actor = { id: `enemy-${index}`, unitId: `enemy-${Math.floor(index / 10)}`, team: 'enemy', heading: Math.PI,
       health: 100, model: new THREE.Group(), position: new THREE.Vector3((index % 10 - 5) * 1.5, 0, -5 - Math.floor(index / 10) * 4),
-      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, rifle: createRifleState() };
+      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0,
+      rifle: createRifleState(index % 11 === 10 ? 'type11' : 'rifle') };
     actor.nativeMotion = createNraMotion(profile, actor); return actor;
   });
   const before = actors.map(actor => ({ model: actor.model, weapon: { ...actor.rifle } }));
@@ -39,7 +41,10 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   assert.ok(renderer.snapshot.members.every(member => member.uniform === 'ija1938' && member.helmet));
   assert.ok(renderer.counts.near > 0 && renderer.counts.near <= 6 && renderer.counts.far > 0);
   assert.equal(farViews, 1, 'pose banks share one far-detail template');
-  for (const bank of renderer.root.children.filter(node => node.isInstancedMesh)) assert.equal(bank.geometry.attributes.position.count, 12, 'far banks must not bake the near mesh or hidden LOD');
+  for (const bank of renderer.root.children.filter(node => node.isInstancedMesh).slice(0, renderer.snapshot.poseBanks)) {
+    assert.equal(bank.geometry.attributes.position.count, 12, 'far body banks must not bake the near mesh, hidden LOD or personal gun');
+  }
+  assert.ok(renderer.snapshot.members.some(member => member.weaponModel === 'type11' && member.tier === 'instanced'));
   actors.forEach((actor, index) => {
     assert.equal(actor.model, before[index].model);
     assert.deepEqual(actor.rifle, before[index].weapon);

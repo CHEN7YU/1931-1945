@@ -55,7 +55,7 @@
 #hud #stamina-meter { height: 4px; background: rgba(216, 216, 186, .3); }
 #hud .hud-label { font-size: 13px; line-height: 1.5; letter-spacing: 1px; margin-bottom: 8px; }
 #hud .squad-status { width: 340px; max-width: 36%; }
-#hud #members.platoon-members { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+#hud #members.platoon-members { grid-template-columns: repeat(11, minmax(0, 1fr)); }
 #hud .platoon-members .member { font-size: 12px; line-height: 20px; padding: 3px 0; }
 #hud .member { font-size: 12px; color: var(--hud-secondary); }
 #hud .member.active { color: #f0d397; border-color: #f0d397; }

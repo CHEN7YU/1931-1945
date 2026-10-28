@@ -1,6 +1,6 @@
 import { shotState } from './core.js';
 import { controlledSoldier, occupiedVehicle } from './entities.js';
-import { advanceRifle, reloadRifle, RIFLE } from './rifle-action.js';
+import { advanceRifle, reloadRifle, infantryWeaponProfile } from './rifle-action.js';
 
 function requireWeapon(registry, weapon, ownerId, type) {
   if (!weapon || weapon.ownerId !== ownerId || weapon.type !== type || registry.weapons.get(weapon.id) !== weapon) throw new Error(`Broken weapon ownership: ${ownerId}`);
@@ -11,7 +11,7 @@ export function syncControlledRifleTiming(registry, now, stowed) {
   const actor = controlledSoldier(registry);
   if (!actor || actor.health <= 0 || occupiedVehicle(registry, actor) || actor.groundType !== 'infantry') return false;
   requireWeapon(registry, actor.rifle, actor.id, 'infantry');
-  actor.rifle.reloadUntil = !stowed && actor.rifle.action === 'reload' ? now + RIFLE.reloadSeconds - actor.rifle.elapsed : 0;
+  actor.rifle.reloadUntil = !stowed && actor.rifle.action === 'reload' ? now + infantryWeaponProfile(actor.rifle).reloadSeconds - actor.rifle.elapsed : 0;
   return true;
 }
 

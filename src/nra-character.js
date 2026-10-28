@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { prepareNraRig } from './nra-rig.js';
-import { rifleWorldModel } from './rifle-model.js';
+import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { createNraRiflePose } from './nra-rifle-pose.js';
 import { soldierRifleMuzzle } from './entities.js';
-import { riflePose as rifleActionPose } from './rifle-action.js';
 import { sampleNraMotion } from './nra-motion.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator } from './nra-appearance.js';
@@ -112,13 +111,11 @@ export async function loadNraCharacter() {
       mesh.skeleton = sharedSkeleton;
     }
   }
-  const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt');
+  const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
-  let drawBatches = 0;
-  root.traverse(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
   let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
   let observedActor = null, initialized = false, legPose = null;
   for (const action of Object.values(actions)) { action.play(); action.paused = true; }
@@ -126,7 +123,11 @@ export async function loadNraCharacter() {
   root.visible = false;
   return {
     root,
-    drawBatches,
+    get drawBatches() {
+      let count = 0;
+      root.traverseVisible(node => { if (node.isMesh) count += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+      return count;
+    },
     createView,
     bind(id) {
       actorId = id; observedActor = null; initialized = false; speed = 0; active = 'idle'; motion = null; resets++;
@@ -163,8 +164,7 @@ export async function loadNraCharacter() {
       }
       if (actor.health > 0 || !initialized) riflePose.update(motion);
       initialized = true;
-      const weaponPose = rifleActionPose(actor.rifle);
-      bolt.rotation.z = weaponPose.boltLift; bolt.position.z = weaponPose.boltTravel;
+      syncWorldWeapon(gun, actor.rifle);
     },
     sampleAnatomy,
     get anatomy() { return readAnatomicalBones(canonical); },

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { configureRifleMaterials, rifleModel, rifleWorldModel } from './rifle-model.js';
+import { lightMachineGunModel } from './light-machine-gun-model.js';
 
 const actorBox = new THREE.BoxGeometry(1, 1, 1);
 const actorSphere = new THREE.SphereGeometry(1, 12, 8);
@@ -53,8 +54,8 @@ function limb(parent, from, to, radius, mat) {
 }
 
 const soldierBodies = new Map();
-function batchSoldier(group, legs, friendly, detail) {
-  const key = `${friendly}-${detail}`;
+function batchSoldier(group, legs, friendly, detail, weapon) {
+  const key = `${friendly}-${detail}-${weapon}`;
   // Only the two leg meshes animate independently; cache the rigid body per side.
   if (!soldierBodies.has(key)) {
     group.updateMatrixWorld(true);
@@ -80,11 +81,11 @@ function batchSoldier(group, legs, friendly, detail) {
   }
 }
 
-export function soldierModel(friendly = false, detail = 'near') {
+export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle') {
   const group = new THREE.Group();
   group.userData.detail = detail;
   const uniform = friendly ? actorMaterials.friendly : actorMaterials.enemy;
-  const key = `${friendly}-${detail}`;
+  const key = `${friendly}-${detail}-${weapon}`;
   if (soldierBodies.has(key)) {
     const left = shaped(group, actorCapsule, -.135, .43, 0, .095, .25, .105, uniform);
     const right = shaped(group, actorCapsule, .135, .43, 0, .095, .25, .105, uniform);
@@ -114,7 +115,10 @@ export function soldierModel(friendly = false, detail = 'near') {
   limb(group, [.34, 1.1, .05], [.173, 1.325, -.095], .052, uniform);
   sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
   sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
-  if (friendly) {
+  if (weapon !== 'rifle') {
+    const gun = lightMachineGunModel(weapon);
+    gun.position.set(.13, 1.39, .02); group.add(gun);
+  } else if (friendly) {
     const rifle = rifleWorldModel(detail);
     rifle.position.set(.13, 1.39, .02);
     group.add(rifle);
@@ -130,7 +134,7 @@ export function soldierModel(friendly = false, detail = 'near') {
   limb(group, [.18, 1.39, .12], [.17, .98, -.19], .025, actorMaterials.leather);
   cylinder(group, .29, .99, .07, .08, .2, actorMaterials.steel);
   group.userData.legs = [leftLeg, rightLeg];
-  batchSoldier(group, group.userData.legs, friendly, detail);
+  batchSoldier(group, group.userData.legs, friendly, detail, weapon);
   return group;
 }
 
@@ -164,8 +168,8 @@ export function planeModel() {
   return group;
 }
 
-export function weaponModel(type) {
-  if (type === 'infantry') return rifleModel();
+export function weaponModel(type, state = null) {
+  if (type === 'infantry') return rifleModel(state);
   const group = new THREE.Group();
   const steel = actorMaterials.dark, wood = actorMaterials.wood, uniform = actorMaterials.friendly;
   if (type === 'hammer') {

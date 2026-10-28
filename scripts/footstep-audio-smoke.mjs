@@ -130,8 +130,8 @@ try {
   const full = await open('full');
   await full.locator('#deploy').click();
   data = await save(full, 'full-army-startup');
-  assert.equal(data.population.friendly.alive, 100);
-  assert.equal(data.population.enemy.alive, 100);
+  assert.equal(data.population.friendly.alive, 110);
+  assert.equal(data.population.enemy.alive, 110);
   await full.keyboard.down('w');
   await full.waitForFunction(() => window.__battle.footstepAudio.counts.played >= 2);
   await full.keyboard.up('w');
@@ -176,7 +176,7 @@ try {
   await failed.close();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, stages: observations.map(item => item.stage),
-    limitation: 'Surface route is a geometry fixture; normal 100v100 startup is not a performance or listening acceptance.' }));
+    limitation: 'Surface route is a geometry fixture; normal 110v110 startup is not a performance or listening acceptance.' }));
 } finally {
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'observations.json'),
     JSON.stringify({ stage, observations, requests, errors }, null, 2));

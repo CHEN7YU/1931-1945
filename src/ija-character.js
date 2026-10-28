@@ -4,8 +4,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraRiflePose } from './nra-rifle-pose.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { sampleNraMotion } from './nra-motion.js';
-import { rifleWorldModel } from './rifle-model.js';
-import { riflePose as rifleActionPose } from './rifle-action.js';
+import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer } from './nra-force-renderer.js';
 import { FIRING_POSES } from './combat-posture.js';
@@ -64,17 +63,21 @@ export async function loadIjaCharacter() {
       [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
-    const gun = rifleWorldModel(), bolt = gun.getObjectByName('bolt'), pose = createNraRiflePose(root, bones, gun);
+    const gun = rifleWorldModel(), pose = createNraRiflePose(root, bones, gun);
     const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
     const actions = { idle: mixer.clipAction(clips.get('idle')),
       ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, mixer.clipAction(value.clip)])) };
     for (const action of Object.values(actions)) { action.play(); action.paused = true; }
-    let actorId = null, actor = null, initialized = false, active = 'idle', motion = null, legPose = null, drawBatches = 0;
-    root.traverseVisible(node => { if (node.isMesh) drawBatches += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+    let actorId = null, actor = null, initialized = false, active = 'idle', motion = null, legPose = null;
     root.visible = false;
     return {
-      root, motionProfile, drawBatches, createView,
+      root, motionProfile, createView,
+      get drawBatches() {
+        let count = 0;
+        root.traverseVisible(node => { if (node.isMesh) count += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
+        return count;
+      },
       createFarView: () => createView('far'),
       bind(id) {
         actorId = id; actor = null; initialized = false; root.visible = false; motion = null;
@@ -105,8 +108,7 @@ export async function loadIjaCharacter() {
         }
         if (actor.health > 0 || !initialized) pose.update(motion);
         initialized = true;
-        const weapon = rifleActionPose(actor.rifle);
-        bolt.rotation.z = weapon.boltLift; bolt.position.z = weapon.boltTravel;
+        syncWorldWeapon(gun, actor.rifle);
       },
       sampleAnatomy,
       get anatomy() { return readAnatomicalBones(bones); },
