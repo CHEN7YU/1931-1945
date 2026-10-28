@@ -15,6 +15,7 @@ import { groundHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { shoulderPocket } from './rifle-contacts.js';
+import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -55,16 +56,25 @@ export async function loadNraCharacter() {
   ]);
   if (!animationResponse.ok) throw new Error(`Character animations: HTTP ${animationResponse.status}`);
   const textures = new Map(loadedTextures), inspected = prepareNraRig(model);
+  const referencePose = createUniformReferencePose(model), uniformGeometries = new Map(), materialIds = new Map();
   for (const mesh of inspected.meshes) {
     const slots = source.meshMaterials[mesh.name];
     if (!slots || slots.length !== (Array.isArray(mesh.material) ? mesh.material.length : 1)) throw new Error(`Unmapped character material: ${mesh.name}`);
     const materials = slots.map(id => {
       if (!textures.has(id)) throw new Error(`Missing character texture: ${id}`);
-      return new THREE.MeshStandardMaterial({ map: textures.get(id), roughness: id === 'eye' ? .45 : .9, metalness: 0, side: THREE.DoubleSide });
+      const material = new THREE.MeshStandardMaterial({ map: textures.get(id), roughness: id === 'eye' ? .45 : .9, metalness: 0, side: THREE.DoubleSide });
+      materialIds.set(material, id);
+      return material;
     });
     mesh.material = materials.length === 1 ? materials[0] : materials;
     mesh.castShadow = mesh.receiveShadow = true;
+    uniformGeometries.set(mesh.name, createRemadeUniformGeometry(mesh, referencePose));
   }
+  const uniformMaterials = createRemadeUniformMaterials(materialIds, textures);
+  const uniformVariants = new Map(inspected.meshes.map(mesh => [mesh.name, {
+    geometry: uniformGeometries.get(mesh.name),
+    material: Array.isArray(mesh.material) ? mesh.material.map(material => uniformMaterials.get(material)) : uniformMaterials.get(mesh.material),
+  }]));
   // Locomotion is generated from foot targets; the rejected walk/run clips never enter the mixer.
   const clips = await animationResponse.json(), idle = THREE.AnimationClip.parse(clips.idle);
   if (!idle.validate()) throw new Error('Invalid native idle animation');
@@ -103,7 +113,7 @@ export async function loadNraCharacter() {
     [side, root.worldToLocal(canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
   const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
     .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone(), position: canonical.get(name).position.clone() }));
-  const appearance = createNraAppearanceApplicator(meshes, appearanceCache);
+  const appearance = createNraAppearanceApplicator(meshes, appearanceCache, uniformVariants);
   const headProbe = createHeadAimProbe(root, canonical, meshes);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
@@ -125,7 +135,7 @@ export async function loadNraCharacter() {
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
   return {
-    root,
+    root, uniformMaterials,
     drawBatches,
     createView,
     bind(id) {
@@ -181,6 +191,7 @@ export async function loadNraCharacter() {
         heading: root.rotation.y, issue: riflePose.issue,
         headAim: motion?.headAim ? headProbe(motion.headAim, motion) : null,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
+        uniformParts: meshes.filter(mesh => mesh.geometry.userData.uniformVariant === 'B').map(mesh => mesh.name),
         motion: motion ? { weight: motion.weight, jog: motion.jog, ...motion.postures,
           idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,
         logicalMuzzle: observedActor ? soldierRifleMuzzle(observedActor) : null,

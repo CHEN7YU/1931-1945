@@ -355,7 +355,15 @@
     "basis": "Project-authored runtime derivatives of the permission-recorded source character; no additional face downloads.",
     "traits": "8 mild jaw/cheek/nose/brow geometry families, 5 face-and-hand complexion tints, 3 mild torso volume variants.",
     "ownership": "Deterministic per original unit/soldier identity; restored on pooled view rebind. Shared source geometry is not mutated.",
-    "limits": "Original base mesh, face texture and hairstyle remain shared. Distant LOD retains complexion/approximate build but simplifies facial geometry. Not 100 independently scanned faces."
+    "limits": "Original base mesh, face texture and hairstyle remain shared. Distant LOD retains complexion/approximate build but simplifies facial geometry. Not 100 independently scanned faces.",
+    "uniformVariants": {
+      "assignment": "Friendly squad slots 0-4 use A; slots 5-9 use B. Members and replacement generations retain their squad's variant.",
+      "A": "Original 88th Division uniform and M1935 helmet.",
+      "B": "Project-authored gray-olive garment/material derivative with localized cloth sculpture and fitted attachments in the original bind space. Same source skin weights, skeleton, head, helmet, insignia and equipment design.",
+      "lod": "Near views retain original geometry density and share cached A/B variants. Far instances retain original silhouette and select A/B fabric tiles in a shared atlas; no duplicate pose banks.",
+      "permission": "Same user-reported author consent; no new model or texture downloads and no CC0 claim.",
+      "historicalAcceptance": false
+    }
   },
   "evaluation": {
     "status": "prototype-friendly-force",

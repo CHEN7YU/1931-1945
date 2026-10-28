@@ -51,7 +51,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const bankTemplate = template.createFarView?.() ?? template;
   bankTemplate.bind(sampleActor.id);
   bankTemplate.update(sampleActor, 0, null);
-  const atlas = createNraAtlas(bankTemplate.root);
+  const atlas = createNraAtlas(bankTemplate.root, bankTemplate.uniformMaterials);
   const phases = 6, runModes = profile.gaitBanks ? ['runA', 'runB'] : ['run'];
   const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
@@ -81,6 +81,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     const instance = new THREE.InstancedMesh(mergeNraPose(baked, atlas), atlas.material, capacity);
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
       .setUsage(THREE.DynamicDrawUsage));
+    if (atlas.hasUniformVariants) instance.geometry.setAttribute('nraUniformVariant',
+      new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage));
     for (const part of baked) part.geometry.dispose();
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
@@ -170,6 +172,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           for (const mesh of bank.parts) {
             mesh.setMatrixAt(bank.count, matrix);
             mesh.geometry.attributes.nraSkinTint.setXYZ(bank.count, tint.r, tint.g, tint.b);
+            mesh.geometry.attributes.nraUniformVariant?.setX(bank.count, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
           }
           bank.count++; tiers.set(actor.id, 'instanced'); summary.far++;
         }
@@ -179,6 +182,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         if (bank.count) {
           mesh.instanceMatrix.needsUpdate = true;
           mesh.geometry.attributes.nraSkinTint.needsUpdate = true;
+          if (mesh.geometry.attributes.nraUniformVariant) mesh.geometry.attributes.nraUniformVariant.needsUpdate = true;
           summary.batches += Array.isArray(mesh.material) ? mesh.geometry.groups.length : 1;
         }
       }
@@ -189,7 +193,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
-        health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform, helmet: true, tier: tiers.get(actor.id),
+        health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform,
+        uniformVariant: actor.avatarAppearance?.uniform ?? null, helmet: true, tier: tiers.get(actor.id),
         motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
