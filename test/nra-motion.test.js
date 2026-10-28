@@ -130,3 +130,36 @@ test('contact-based carry anchors the actual buttplate, not the receiver or came
     if (!ready) assert.ok(new Vector3(0, 0, -1).applyQuaternion(rotation).x < -.08, 'carrying muzzle lies across the front rather than crowding both hands to the right');
   }
 });
+
+test('one soldier switches between charge, quick short steps and aimed slow movement with continuous distance-driven phase', () => {
+  const person = actor();
+  person.nativeMotion = createNraMotion({ ...createNativeGaitProfile(data.motion.idle), leanPivot: [0, 1, 0] }, person);
+  const samples = {};
+  for (const [mode, speed, aimed] of [['sprint', 4.8, false], ['jog', 3.15, false], ['aim', 1.5, true]]) {
+    person.locomotion = { mode, speed }; person.aimWalking = aimed; person.rifleReady = aimed;
+    for (let frame = 0; frame < 120; frame++) {
+      const previous = person.nativeMotion.gaitCycles;
+      person.position.z -= speed / 60;
+      advanceNraMotion(person, 1 / 60);
+      assert.ok(person.nativeMotion.gaitCycles > previous && person.nativeMotion.gaitCycles - previous < .08);
+    }
+    samples[mode] = sampleNraMotion(person);
+  }
+  assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
+  assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.4);
+  assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
+  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean * 1.5);
+  assert.ok(samples.sprint.runContact < samples.jog.runContact - .1);
+  assert.ok(samples.aim.walkClearance < samples.jog.walkClearance * .5);
+  assert.ok(samples.aim.lowReady < .001 && samples.aim.bodyLean < samples.jog.bodyLean * .5);
+  const distance = person.nativeMotion.distance, phase = person.nativeMotion.gaitCycles;
+  person.locomotion = { mode: 'sprint', speed: 0 }; person.aimWalking = false;
+  for (let frame = 0; frame < 60; frame++) advanceNraMotion(person, 1 / 60);
+  assert.equal(person.nativeMotion.distance, distance); assert.equal(person.nativeMotion.gaitCycles, phase);
+  const before = JSON.stringify(person.nativeMotion);
+  advanceNraMotion(person, 0); sampleNraMotion(person);
+  assert.equal(JSON.stringify(person.nativeMotion), before);
+  person.nativeMotion.gaitCycles = -3.2;
+  const wrapped = sampleNraMotion(person);
+  assert.ok(wrapped.runPhase >= 0 && wrapped.runPhase < 1 && wrapped.walkPhase >= 0 && wrapped.walkPhase < 1);
+});

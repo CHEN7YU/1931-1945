@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { createNraMotion, sampleNraMotion, syncNativeAimGoal } from './nra-motion.js';
+import { createNraMotion, sampleNraMotion, syncNativeAimGoal, nativeGaitParameters } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
+import { CORPSE_RULES, createCasualtyState } from './casualties.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -52,26 +53,35 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   bankTemplate.bind(sampleActor.id);
   bankTemplate.update(sampleActor, 0, null);
   const atlas = createNraAtlas(bankTemplate.root);
-  const phases = 6, runModes = profile.gaitBanks ? ['runA', 'runB'] : ['run'];
-  const movingModes = profile.walk ? ['walk', ...runModes] : runModes;
+  const phases = 6;
+  const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
-  for (let bank = 0; bank < baseBanks + readyBanks; bank++) {
-    const ready = bank >= baseBanks;
-    const posture = ready ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
-    const mode = bank === 0 || posture || ready ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+  const livingBanks = baseBanks + readyBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
+  for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
+    const dead = bank >= livingBanks;
+    const firingBank = !dead && bank >= baseBanks;
+    const posture = dead ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const mode = bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    const ready = firingBank || mode === 'aim';
     sampleActor.rifleReady = ready;
     if (profile.lowReadyCarry) sampleActor.nativeMotion.lowReady = ready ? 0 : 1;
     sampleActor.nativeMotion.cheekWeight = profile.headAim && ready ? 1 : 0;
     sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
-    sampleActor.nativeMotion.speed = mode.startsWith('run') ? 3.15 : mode === 'walk' ? 1.75 : 0;
-    sampleActor.nativeMotion.legLift = mode === 'runB' ? .85 : .55;
-    sampleActor.nativeMotion.bodyLean = mode.startsWith('run') ? mode === 'runB' ? .26 : .14 : mode === 'walk' ? .035 : 0;
+    sampleActor.nativeMotion.speed = mode === 'charge' ? 4.8 : ['short', 'run'].includes(mode) ? 3.15 : mode === 'walk' ? 1.75 : mode === 'aim' ? 1.1 : 0;
+    sampleActor.nativeMotion.gaitCharge = mode === 'charge' ? 1 : 0;
+    sampleActor.nativeMotion.gaitAim = mode === 'aim' ? 1 : 0;
+    sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
+    sampleActor.nativeMotion.bodyLean = mode === 'charge' ? .26 : mode === 'short' ? .10 : mode === 'run' ? .14 : mode === 'walk' ? .035 : mode === 'aim' ? .02 : 0;
+    const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
-      (mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
+      (gait ? gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog : mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
     syncNativeAimGoal(sampleActor);
-    bankTemplate.update(sampleActor, 0, null);
+    sampleActor.health = dead ? 0 : 100;
+    sampleActor.casualty = dead ? createCasualtyState(sampleActor, 0, sampleNraMotion(sampleActor),
+      { variant: Math.floor((bank - livingBanks) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
+    bankTemplate.update(sampleActor, dead ? 2 : 0, null);
     if (bankTemplate.issue) throw new Error(`Distant uniform pose is unreachable: ${bankTemplate.issue}`);
     const baked = [];
     bankTemplate.root.traverseVisible(mesh => {
@@ -86,7 +96,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
     root.add(instance);
     const parts = [instance];
-    banks.push({ parts, count: 0 });
+    banks.push({ parts, count: 0, capacity });
   }
   bankTemplate.bind(null);
   let summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
@@ -131,7 +141,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         if (!actor.nativeMotion) continue;
         if (actor.team !== team) throw new Error(`A ${actor.team} identity cannot use the ${team} uniform renderer`);
         excludedIds.add(actor.id); summary.assigned++;
-        if (actor.vehicleId || (actor.health > 0 && actor.id === controlledId) || (actor.health <= 0 && now - actor.deathTime > 12)) {
+        if (actor.vehicleId || (actor.health > 0 && actor.id === controlledId)) {
           tiers.set(actor.id, 'hidden'); summary.hidden++; continue;
         }
         sphere.center.copy(actor.position); sphere.center.y += .9;
@@ -141,7 +151,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         }
         visible.push(actor);
         const existing = slots.some(slot => slot.actorId === actor.id);
-        if (distance <= limit + (existing ? 3 : 0)) candidates.push({ actor, priority: distance - (existing ? 2 : 0) });
+        if (distance <= limit + (existing ? 3 : 0)) candidates.push({ actor, priority: distance - (existing ? 2 : 0) + (actor.health <= 0 ? 6 : 0) });
       }
       candidates.sort((a, b) => a.priority - b.priority);
       const detailed = new Set(candidates.slice(0, budget).map(candidate => candidate.actor.id));
@@ -155,15 +165,26 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const pose = sampleNraMotion(actor);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
-          const offset = walking ? 0 : (profile.walk ? phases : 0) + (profile.gaitBanks && pose.legLift > .7 ? phases : 0);
+          const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
           const posture = postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
-          const index = posture && postures.includes(posture)
+          const index = actor.health <= 0 && actor.casualty && deathBanks
+            ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
+            : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
             : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
           const bank = banks[index];
-          if (bank.count >= capacity) throw new Error('Distant uniform instance capacity exceeded');
-          orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 ? 0 : Math.PI / 2));
+          if (bank.count >= bank.capacity) {
+            if (index < livingBanks) throw new Error('Distant uniform instance capacity exceeded');
+            bank.capacity *= 2;
+            for (const mesh of bank.parts) {
+              const matrices = new Float32Array(bank.capacity * 16); matrices.set(mesh.instanceMatrix.array);
+              mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
+              const colors = new Float32Array(bank.capacity * 3); colors.set(mesh.geometry.attributes.nraSkinTint.array);
+              mesh.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+            }
+          }
+          orientation.setFromEuler(euler.set(0, actor.heading, actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
           scale.set(1 + (actor.avatarAppearance?.build ?? 0) * .025, 1, 1);
           matrix.compose(actor.position, orientation, scale);
           const tint = new THREE.Color(actor.avatarAppearance?.skin ?? '#ffffff');
@@ -191,6 +212,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
         health: actor.health, stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform, helmet: true, tier: tiers.get(actor.id),
         motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,
+        travelStyle: actor.casualty?.motion?.travelStyle ?? (profile.footCycleGait
+          ? nativeGaitParameters(actor.nativeMotion).style : actor.nativeMotion.speed > 2.55 ? 'run' : 'walk'),
+        casualty: actor.casualty ? { variant: actor.casualty.variant, retainGun: actor.casualty.retainGun, time: actor.casualty.time } : null,
         appearance: actor.avatarAppearance ? { ...actor.avatarAppearance } : null }));
       summary.detailBudget = budget;
     },

@@ -24,13 +24,24 @@ try {
   await page.waitForFunction(() => window.__battle.position.z < 45, null, { timeout: 25000 });
   await page.keyboard.up('w');
   const result = await page.evaluate(() => new Promise(resolve => {
-    const previous = new Map(), controllers = new Set(), samples = [];
+    const previous = new Map(), controllers = new Set(), samples = [], gaitHistory = new Map();
+    const styles = {}, gaitChanges = [];
     let turns = 0, lowered = 0, firing = 0, brakes = 0, worstRate = 0;
     const failures = [], deadline = performance.now() + 45000;
     function collect() {
       const data = window.__battle;
       controllers.add(data.control.soldierId);
       const actors = [...data.friendlyPositions, ...data.enemyPositions];
+      for (const [team, force] of [['friendly', data.historicalForce], ['enemy', data.enemyHistoricalForce]]) {
+        for (const member of force.members) {
+          if (member.health <= 0 || member.motionSpeed < .5) continue;
+          const key = `${team}-${member.travelStyle}`;
+          styles[key] = (styles[key] ?? 0) + 1;
+          const previous = gaitHistory.get(member.id);
+          if (previous && previous !== member.travelStyle) gaitChanges.push({ id: member.id, from: previous, to: member.travelStyle });
+          gaitHistory.set(member.id, member.travelStyle);
+        }
+      }
       for (const actor of actors) {
         const old = previous.get(actor.soldierId), dt = old ? data.time - old.time : 0;
         if (old && dt > 1e-5 && !controllers.has(actor.soldierId)) {
@@ -63,7 +74,7 @@ try {
       if (!samples.length || data.time - samples.at(-1).time >= 3) samples.push({
         time: data.time, population: { friendly: data.population.friendly.alive, enemy: data.population.enemy.alive },
         banks: [data.historicalForce.poseBanks, data.enemyHistoricalForce.poseBanks], turns, lowered, firing, brakes });
-      if (performance.now() >= deadline) resolve({ samples, turns, lowered, firing, brakes, worstRate, failures });
+      if (performance.now() >= deadline) resolve({ samples, turns, lowered, firing, brakes, worstRate, failures, styles, gaitChanges });
       else setTimeout(collect, 80);
     }
     collect();
@@ -73,11 +84,16 @@ try {
   assert.ok(result.turns > 20 && result.brakes > 0, 'real AI turn and braking samples required');
   assert.ok(result.lowered > 20, 'actual moving skinned guns, not just logical metadata, point down');
   assert.ok(result.firing > 5, 'AI still completes raising/facing and actually fires');
-  assert.ok(result.samples.every(sample => sample.banks.every(count => count === 30)));
+  assert.ok(result.samples.every(sample => sample.banks.every(count => count === 44)));
+  for (const team of ['friendly', 'enemy']) for (const style of ['charge', 'short']) {
+    assert.ok(result.styles[`${team}-${style}`] > 10, 'both factions must actually use distinct charge and short-step movement');
+  }
+  assert.ok(result.gaitChanges.some(change => change.from === 'charge' && change.to === 'short'),
+    'one soldier must change its movement with the situation instead of having one permanent run');
   assert.deepEqual(result.failures, []);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, turns: result.turns, lowered: result.lowered,
-    firing: result.firing, brakes: result.brakes, worstRate: result.worstRate }));
+    firing: result.firing, brakes: result.brakes, worstRate: result.worstRate, styles: result.styles, gaitChanges: result.gaitChanges.length }));
 } finally {
   await writeFile(join(directory, 'observations.json'), JSON.stringify({ samples, errors }, null, 2));
   await context.close(); await browser.close();

@@ -20,20 +20,39 @@ function sample(track, time) {
 }
 
 const validPosition = position => position && ['x', 'y', 'z'].every(axis => Number.isFinite(position[axis]));
+const cycleFraction = phase => ((phase % 1) + 1) % 1;
+
+export function nativeGaitParameters(motion) {
+  const { profile } = motion;
+  const charge = motion.gaitCharge, aimed = motion.gaitAim;
+  const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
+  const jog = transition * transition * (3 - 2 * transition) * (1 - aimed);
+  return { jog, charge, aimed, style: aimed > .5 ? 'aim' : jog > .5 ? charge > .5 ? 'charge' : 'short' : 'walk',
+    runStride: (1.7 + .85 * charge) * motion.strideScale,
+    walkStride: profile.walkStrideMeters * (1 - .25 * aimed) * motion.strideScale,
+    runContact: .40 - .13 * charge, walkContact: .52 + .10 * aimed,
+    heelHeight: .10 + .025 * motion.legLift + .12 * charge,
+    walkClearance: (.03 + .02 * motion.legLift) * (1 - .6 * aimed) };
+}
+
+function nativeCycle(actor, gait) {
+  const motion = actor.nativeMotion;
+  const distance = motion.distance + Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
+  const stride = gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog;
+  return motion.gaitCycles + (distance - motion.phaseDistance) / stride;
+}
 
 export function nativeGaitDrop(actor) {
   const motion = actor.nativeMotion;
   if (!motion?.profile?.footCycleGait) return 0;
   const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
-  const distance = motion.distance + Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
-  const runPhase = distance / (motion.profile.strideMeters * motion.strideScale);
-  const walkPhase = distance / (motion.profile.walkStrideMeters * motion.strideScale);
-  const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9)), jog = transition * transition * (3 - 2 * transition);
-  const half = (runPhase * 2) % 1, contact = motion.profile.runContact * 2;
+  const gait = nativeGaitParameters(motion), phase = nativeCycle(actor, gait);
+  const half = cycleFraction(phase * 2), contact = gait.runContact * 2;
   const flight = Math.max(0, (half - contact) / (1 - contact));
-  const flightTime = motion.profile.strideMeters * motion.strideScale * (.5 - motion.profile.runContact) / Math.max(2.1, motion.speed);
+  const flightTime = gait.runStride * (.5 - gait.runContact) / Math.max(2.1, motion.speed);
   const rise = Math.min(.04, 9.81 * flightTime * flightTime / 8) * Math.sin(Math.PI * flight) ** 2;
-  const drop = (.09 + .005 * Math.sin(walkPhase * Math.PI * 4)) * (1 - jog) + (.10 - rise) * jog;
+  const walkDrop = (.09 - .02 * gait.aimed) + .005 * (1 - .7 * gait.aimed) * Math.sin(phase * Math.PI * 4);
+  const drop = walkDrop * (1 - gait.jog) + (.105 - rise) * gait.jog;
   return drop * motion.weight * upright;
 }
 
@@ -78,6 +97,7 @@ export function createNraMotion(profile, actor) {
     legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
     idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
+    gaitCharge: 0, gaitAim: 0, gaitCycles: seed / 2.5 / profile.strideMeters, phaseDistance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z } };
   if (profile.headAim && ready) syncNativeAimGoal({ ...actor, nativeMotion: motion });
   return motion;
@@ -90,7 +110,9 @@ export function advanceNraMotion(actor, dt) {
     throw new Error('Native motion requires owned finite gait, speed and simulation time');
   }
   if (dt === 0) return;
-  motion.distance += Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
+  const traveled = Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
+  const beforeGait = motion.profile.footCycleGait ? nativeGaitParameters(motion) : null;
+  motion.distance += traveled;
   motion.position = { x: actor.position.x, z: actor.position.z };
   motion.idleTime += dt;
   const stance = actor.stance ?? 'standing';
@@ -104,14 +126,22 @@ export function advanceNraMotion(actor, dt) {
   }
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
+  const pace = actor.locomotion.mode;
+  motion.gaitCharge += ((pace === 'sprint' ? 1 : 0) - motion.gaitCharge) * (1 - Math.exp(-dt / .22));
+  motion.gaitAim += ((actor.aimWalking || pace === 'aim' ? 1 : 0) - motion.gaitAim) * (1 - Math.exp(-dt / .18));
+  if (motion.profile.footCycleGait) {
+    const afterGait = nativeGaitParameters(motion);
+    const stride = gait => gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog;
+    motion.gaitCycles += traveled * (.5 / stride(beforeGait) + .5 / stride(afterGait));
+    motion.phaseDistance = motion.distance;
+  }
   if (motion.profile.lowReadyCarry) {
     motion.lowReady += ((nativePoseIntent(actor) === 'aim' ? 0 : 1) - motion.lowReady) * (1 - Math.exp(-dt / .1));
     if (motion.lowReady < .001) motion.lowReady = 0;
     if (motion.lowReady > .999) motion.lowReady = 1;
   }
-  const pace = actor.locomotion.mode;
   const leanTarget = !motion.profile.leanPivot ? 0 : actor.locomotion.speed > .2
-    ? motion.runLean * (actor.aimWalking ? .2 : pace === 'sprint' ? 1.25 : pace === 'walk' ? .3 : Math.min(1, actor.locomotion.speed / 3.15))
+    ? motion.runLean * (pace === 'walk' ? .3 : (.65 + .60 * motion.gaitCharge) * (1 - .8 * motion.gaitAim))
     : actor.tactics?.lastSeen ? motion.fireLean : 0;
   motion.bodyLean += (leanTarget - motion.bodyLean) * (1 - Math.exp(-dt / .18));
   const target = motion.speed > .15 ? 1 : 0;
@@ -140,10 +170,12 @@ export function sampleNraMotion(actor, includeHead = true) {
   const { profile } = motion;
   const idleTime = motion.idleTime % profile.idle.duration;
   const distance = motion.distance + Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
-  const runTime = ((distance / (profile.strideMeters * motion.strideScale)) % 1) * profile.run.duration;
-  const walkTime = profile.walk ? ((distance / (profile.walkStrideMeters * motion.strideScale)) % 1) * profile.walk.duration : runTime;
+  const gait = profile.footCycleGait ? nativeGaitParameters(motion) : null;
+  const cycle = gait ? nativeCycle(actor, gait) : null;
+  const runTime = cycleFraction(cycle ?? distance / (profile.strideMeters * motion.strideScale)) * profile.run.duration;
+  const walkTime = profile.walk ? cycleFraction(cycle ?? distance / (profile.walkStrideMeters * motion.strideScale)) * profile.walk.duration : runTime;
   const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
-  const jog = profile.walk ? transition * transition * (3 - 2 * transition) : 1;
+  const jog = gait ? gait.jog : profile.walk ? transition * transition * (3 - 2 * transition) : 1;
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
   const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
@@ -207,8 +239,12 @@ export function sampleNraMotion(actor, includeHead = true) {
   }
   const result = { intent: nativePoseIntent(actor), idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
-    runStride: profile.strideMeters * motion.strideScale, walkStride: (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
-    runContact: profile.runContact,
+    runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,
+    walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
+    runContact: gait?.runContact ?? profile.runContact, walkContact: gait?.walkContact, heelHeight: gait?.heelHeight,
+    walkClearance: gait?.walkClearance,
+    travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'),
+    gaitCharge: motion.gaitCharge, gaitAim: motion.gaitAim,
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };

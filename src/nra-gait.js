@@ -37,7 +37,7 @@ export function createNativeGaitProfile(idle, shoulder = null, pocket = null) {
     positions: [...idle.positions.slice(0, 3), ...idle.positions.slice(0, 3)],
     quaternions: [...idle.quaternions.slice(0, 4), ...idle.quaternions.slice(0, 4)] });
   return { idle, walk: carry(), run: carry(), strideMeters: 2.4, walkStrideMeters: 1.25,
-    muzzle: [0, 0, -.891], footCycleGait: true, lowReadyCarry: true, gaitBanks: [.55, .85], runContact: .27 };
+    muzzle: [0, 0, -.891], footCycleGait: true, lowReadyCarry: true, runContact: .27 };
 }
 
 export function lowStepTarget(phase, stride, duty, clearance) {
@@ -78,8 +78,10 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     const upperBefore = upper.quaternion.clone(), kneeBefore = knee.quaternion.clone();
     const rotation = foot.getWorldQuaternion(new Quaternion());
     const offset = side === 'Left' ? 0 : .5;
-    const walk = lowStepTarget((motion.walkPhase + offset) % 1, motion.walkStride, .52, .03 + .02 * motion.legLift);
-    const run = runningStepTarget((motion.runPhase + offset) % 1, motion.runStride, .20 + .06 * motion.legLift, motion.runContact);
+    const walk = lowStepTarget((motion.walkPhase + offset) % 1, motion.walkStride, motion.walkContact ?? .52,
+      motion.walkClearance ?? .03 + .02 * motion.legLift);
+    const run = runningStepTarget((motion.runPhase + offset) % 1, motion.runStride,
+      motion.heelHeight ?? .20 + .06 * motion.legLift, motion.runContact);
     const local = restFeet[side].clone();
     local.z += walk.z + (run.z - walk.z) * motion.jog;
     root.localToWorld(local);
