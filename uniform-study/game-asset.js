@@ -64,13 +64,14 @@ function weightReference(mesh, skeleton, canonical) {
     if (!buckets.has(bucket)) buckets.set(bucket, []);
     buckets.get(bucket).push({ point: fitted.clone(), influences });
   }
-  return point => {
+  return (point, allowedBones = null) => {
     const center = point.toArray().map(value => Math.floor(value / cell));
     let candidates = [];
     for (let radius = 1; radius <= 5 && candidates.length < 4; radius++) {
       candidates = [];
       for (let x = -radius; x <= radius; x++) for (let y = -radius; y <= radius; y++) for (let z = -radius; z <= radius; z++) {
         for (const item of buckets.get(`${center[0] + x},${center[1] + y},${center[2] + z}`) ?? []) {
+          if (allowedBones && !item.influences.some(([bone, weight]) => weight > 0 && allowedBones.has(bone))) continue;
           candidates.push({ ...item, distance: item.point.distanceToSquared(point) });
         }
       }
@@ -79,9 +80,11 @@ function weightReference(mesh, skeleton, canonical) {
     if (!candidates.length || candidates[0].distance > .15 ** 2) throw new Error(`Skin transfer has no nearby ${mesh.name} surface: ${point.toArray()}`);
     const combined = new Map();
     for (const item of candidates.slice(0, 4)) for (const [bone, weight] of item.influences) {
+      if (allowedBones && !allowedBones.has(bone)) continue;
       combined.set(bone, (combined.get(bone) ?? 0) + weight / Math.max(1e-9, item.distance));
     }
     const selected = [...combined].sort((a, b) => b[1] - a[1]).slice(0, 4), total = selected.reduce((sum, item) => sum + item[1], 0);
+    if (!(total > 0)) throw new Error(`Skin transfer has no permitted influences for ${mesh.name}`);
     return selected.map(([bone, weight]) => [bone, weight / total]);
   };
 }
@@ -138,6 +141,62 @@ export async function buildIjaAsset() {
     if (index < 0) throw new Error(`Missing Japanese character attachment: ${name}`);
     return index;
   };
+  // Nearby lowered sleeves must not donate arm weights to the torso or pelvis weights to a cuff.
+  const torsoLevels = [['Hips', 1.09], ['Spine', 1.16], ['Spine1', 1.24], ['Spine2', 1.37], ['Neck', 1.465]]
+    .map(([name, y]) => ({ bone: boneIndex(name), y }));
+  const sleeveBones = Object.fromEntries(['Left', 'Right'].map(side =>
+    [side, new Set(['Shoulder', 'Arm', 'ForeArm', 'Hand'].map(part => boneIndex(`${side}${part}`)))]));
+  const torsoWeights = point => {
+    if (point.y <= torsoLevels[0].y) return [[torsoLevels[0].bone, 1]];
+    for (let index = 1; index < torsoLevels.length; index++) {
+      const lower = torsoLevels[index - 1], upper = torsoLevels[index];
+      if (point.y > upper.y) continue;
+      const weight = THREE.MathUtils.smoothstep(point.y, lower.y, upper.y);
+      return [[lower.bone, 1 - weight], [upper.bone, weight]];
+    }
+    return [[torsoLevels.at(-1).bone, 1]];
+  };
+  const garment = study.root.getObjectByName('standing-collar-tunic').geometry;
+  const vertexKey = point => point.toArray().map(value => Math.round(value * 100000)).join(',');
+  const sleeveVertices = new Set(), panelVertices = new Set();
+  for (let index = 0; index < garment.attributes.position.count; index++) {
+    const point = new THREE.Vector3().fromBufferAttribute(garment.attributes.position, index);
+    if (index < garment.userData.bodyTriangleCount * 3) panelVertices.add(vertexKey(point));
+    else if (index < (garment.userData.bodyTriangleCount + garment.userData.sleeveTriangleCount) * 3) sleeveVertices.add(vertexKey(point));
+  }
+  const sections = new Map();
+  for (const key of panelVertices) {
+    const [x, y, z] = key.split(',').map(value => Number(value) / 100000);
+    if (y < 1.10 || y > 1.415) continue;
+    if (!sections.has(y)) sections.set(y, []);
+    const angle = (Math.atan2(x, z + .026) + Math.PI * 2) % (Math.PI * 2);
+    sections.get(y).push({ angle, radius: Math.hypot(x, z + .026) });
+  }
+  const rings = [...sections].sort((a, b) => a[0] - b[0])
+    .map(([y, points]) => ({ y, points: points.sort((a, b) => a.angle - b.angle) }));
+  if (rings.length < 3 || rings.some(ring => ring.points.length < 32)) throw new Error('Garment armholes require measured torso sections');
+  const ringRadius = (ring, angle) => {
+    const index = ring.points.findIndex(point => point.angle >= angle);
+    const lower = index <= 0 ? { ...ring.points.at(-1), angle: ring.points.at(-1).angle - (index === 0 ? Math.PI * 2 : 0) } : ring.points[index - 1];
+    const upper = index < 0 ? { ...ring.points[0], angle: ring.points[0].angle + Math.PI * 2 } : ring.points[index];
+    return THREE.MathUtils.lerp(lower.radius, upper.radius, (angle - lower.angle) / Math.max(1e-9, upper.angle - lower.angle));
+  };
+  const sleeveWeights = (point, side) => {
+    const arm = references.cloth(point, sleeveBones[side]);
+    if (point.y <= 1.10) return arm;
+    const angle = (Math.atan2(point.x, point.z + .026) + Math.PI * 2) % (Math.PI * 2);
+    const at = rings.findIndex(ring => ring.y >= point.y);
+    const upper = rings[at < 0 ? rings.length - 1 : at], lower = rings[Math.max(0, at < 0 ? rings.length - 1 : at - 1)];
+    const radius = THREE.MathUtils.lerp(ringRadius(lower, angle), ringRadius(upper, angle),
+      THREE.MathUtils.clamp((point.y - lower.y) / Math.max(1e-9, upper.y - lower.y), 0, 1));
+    const blend = (1 - THREE.MathUtils.smoothstep(Math.hypot(point.x, point.z + .026) - radius, .004, .065)) *
+      THREE.MathUtils.smoothstep(point.y, 1.10, 1.40);
+    const combined = new Map(arm.map(([bone, weight]) => [bone, weight * (1 - blend)]));
+    for (const [bone, weight] of torsoWeights(point)) combined.set(bone, (combined.get(bone) ?? 0) + weight * blend);
+    const selected = [...combined].filter(([, weight]) => weight > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const total = selected.reduce((sum, [, weight]) => sum + weight, 0);
+    return selected.map(([bone, weight]) => [bone, weight / total]);
+  };
   const modifier = new SimplifyModifier(), levels = {};
   for (const level of ['near', 'far']) {
     const group = new THREE.Group(); group.name = level; rig.root.add(group);
@@ -172,8 +231,10 @@ export async function buildIjaAsset() {
         else {
           let parent = node.parent;
           while (parent && parent !== study.groups.equipment && parent !== study.groups.uniform) parent = parent.parent;
-          influences = parent === study.groups.equipment && !/shoulder-strap|sling/.test(node.name) ?
-            [[boneIndex('Hips'), 1]] : references.cloth(point);
+          if (parent === study.groups.equipment && !/shoulder-strap|sling/.test(node.name)) influences = [[boneIndex('Hips'), 1]];
+          else if (node.name === 'standing-collar-tunic' && sleeveVertices.has(vertexKey(point)) && !panelVertices.has(vertexKey(point))) {
+            influences = sleeveWeights(point, side);
+          } else influences = torsoWeights(point);
         }
         influences.forEach(([bone, weight], slot) => { indices[index * 4 + slot] = bone; weights[index * 4 + slot] = weight; });
       }

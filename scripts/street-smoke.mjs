@@ -59,7 +59,12 @@ try {
   await page.mouse.down({ button: 'right' });
   let data = await snapshot();
   assert.deepEqual(data.town.visibility, { doorOpening: true, wall: false, window: true, sill: false, lintel: false }, 'actual wall apertures remain distinct from the physical door leaves');
-  assert.equal(data.town.buildings.length, 11);
+  assert.equal(data.town.buildings.length, 25);
+  assert.equal(data.town.buildings.filter(building => building.kind === 'home' && !building.riverSide).length, 6);
+  assert.equal(data.doors.length, 93);
+  assert.equal(data.staticDamage.craters.length, 5);
+  assert.equal(data.staticDamage.ruinedShops.length, 3);
+  assert.equal(data.staticDamage.wrecks.length, 3);
   await walkTo(0, 73);
   await look(0); await capture('street-narrow.png');
   await walkTo(0, 64);
@@ -87,8 +92,48 @@ try {
   await walkTo(-16, 74);
   await walkTo(0, 74);
   assert.equal((await snapshot()).town.inside, null, 'courtyard gate and side lane return to the street without teleportation');
+  await walkTo(-29.5, 74);
+  await walkTo(-29.5, 64);
+  await walkTo(-35.5, 64);
+  assert.equal((await snapshot()).town.inside, 'west-home-0');
+  assert.equal((await snapshot()).locomotion.surface, 'wood');
+  await walkTo(-35.5, 58.5);
+  await look(0, -.75); await page.keyboard.press('x');
+  await page.waitForFunction(() => window.__battle.allies.some((actor, index) =>
+    index !== window.__battle.current && actor.x > -39 && actor.x < -32 && actor.z > 55 && actor.z < 69),
+  null, { timeout: 30000 });
+  await capture('district-home-ai.png');
+  await walkTo(-35.5, 64);
+  await walkTo(-29.5, 64);
+  await look(-Math.PI / 2, -.12); await capture('district-workshop-courtyard.png');
+  await walkTo(-29.5, 52.5);
+  await walkTo(-18, 52.5);
+  await walkTo(-18, 46.5);
+  await walkTo(-29.5, 46.5);
+  await walkTo(-29.5, 45);
+  await walkTo(-35.5, 45);
+  assert.equal((await snapshot()).town.inside, 'west-home-1');
+  await walkTo(-29.5, 45);
+  await walkTo(-29.5, 46.5);
+  await walkTo(-18, 46.5);
+  await walkTo(-18, 52.5);
+  await walkTo(0, 52.5);
+  await walkTo(31.75, 52.5);
+  await walkTo(31.75, 72);
+  await look(0, -.1); await capture('district-back-lane.png');
+  for (const [index, z] of [64, 45].entries()) {
+    await walkTo(31.75, z);
+    await walkTo(25.5, z);
+    assert.equal((await snapshot()).town.inside, `east-home-${index}`);
+    await walkTo(31.75, z);
+    await walkTo(38, z);
+    assert.equal((await snapshot()).town.inside, `east-lane-home-${index}`);
+    await walkTo(31.75, z);
+  }
+  await walkTo(31.75, 52.5);
+  await walkTo(0, 52.5);
   assert.deepEqual(errors, []);
-  console.log('PASS: eleven open buildings, real door/window occlusion, player and AI entry, interior partition, rear door, courtyard workshop, gate and return lane.');
+  console.log('PASS: twenty-five buildings registered; six southern homes, courtyard gates, both back lanes and cross street walked; real player/AI entry and all existing fixed war damage retained. Canal buildings are walked by the separate bridge check. Geometry routes may use the interior diagnostic and are not a full-roster performance claim.');
 } catch (error) {
   const state = await snapshot();
   console.error(JSON.stringify({ time: state?.time, state: state?.state, position: state?.position, allies: state?.allies, enemies: state?.enemyPositions?.length }));

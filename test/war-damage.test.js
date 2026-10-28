@@ -59,6 +59,16 @@ test('partially collapsed shops retain their floor and usable front doorway', ()
     assert.ok(town.pieces.some(piece => piece.wall && piece.id.startsWith(`${id}-`) && piece.h > .88 && piece.h < 2.4));
   }
 });
+test('new homes and courtyard walls leave the entire existing shell crater bowls and rims exposed', () => {
+  const town = makeTownLayout();
+  for (const crater of SHELL_CRATERS) {
+    for (const piece of town.pieces.filter(piece => /^(west-home-|east-home-|east-lane-home-|west-lane-gate-|west-yard-gate-|east-yard-gate-|canal-)/.test(piece.id))) {
+      const dx = Math.max(0, Math.abs(crater.x - piece.x) - piece.w / 2);
+      const dz = Math.max(0, Math.abs(crater.z - piece.z) - piece.d / 2);
+      assert.ok(Math.hypot(dx, dz) > crater.radius * CRATER_EDGE, `${piece.id} overlaps ${crater.id}`);
+    }
+  }
+});
 
 test('static vehicle wreck geometry has blocking bounds but leaves the central infantry lane clear', () => {
   const scene = new THREE.Scene(), obstacles = [], boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -82,5 +92,9 @@ test('static vehicle wreck geometry has blocking bounds but leaves the central i
     assert.ok(wreck.height > 1.7 && wreck.maxX > wreck.minX && wreck.maxZ > wreck.minZ);
     const laneX = wreck.z < -20 ? 8 : 0;
     assert.ok(laneX + .45 < wreck.minX || laneX - .45 > wreck.maxX);
+    for (const home of makeTownLayout().buildings.filter(building => building.kind === 'home' || building.riverSide)) {
+      assert.ok(home.x + home.w / 2 < wreck.minX || home.x - home.w / 2 > wreck.maxX ||
+        home.z + home.d / 2 < wreck.minZ || home.z - home.d / 2 > wreck.maxZ, home.id);
+    }
   }
 });

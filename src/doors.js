@@ -3,9 +3,9 @@ import { circleBlocked } from './core.js';
 export function makeDoors(town) {
   return town.passages.map(passage => {
     const building = town.buildings.find(item => passage.id.startsWith(`${item.id}-`));
-    const initialAngle = passage.id === 'west-0-east-door' || passage.id === 'courtyard-shop-east-door'
-      ? 0 : passage.axis === 'z' && building ? Math.sign(building.x - passage.x) * Math.PI / 2 : Math.PI / 2;
-    return { ...passage, height: building ? 2.42 : 1.5, initialAngle, angle: initialAngle, targetAngle: initialAngle,
+    const initialAngle = passage.openAngle ?? (passage.id === 'west-0-east-door' || passage.id === 'courtyard-shop-east-door'
+      ? 0 : passage.axis === 'z' && building ? Math.sign(building.x - passage.x) * Math.PI / 2 : Math.PI / 2);
+    return { ...passage, height: building ? 2.42 : passage.height - .05, initialAngle, angle: initialAngle, targetAngle: initialAngle,
       state: initialAngle ? 'open' : 'closed', blocked: false, revision: 0 };
   });
 }

@@ -33,7 +33,7 @@ try {
     sourcePermissionRecord: '/assets/game/nra-88/PERMISSION.txt', sourceModelSha256: permission.modelOriginalSha256,
     modelSha256,
     files: previous.files.map(file => file.file === 'character.glb' ? { ...file, bytes: bytes.length, sha256: modelSha256 } : file),
-    historicalAcceptance: false, geometry: 'Adapted licensed head/hands/sleeves and measured torso; original reconstructed tunic, trousers, helmet and equipment. Spatial skin-weight transfer and authored attachment weights on a refitted source skeleton.',
+    historicalAcceptance: false, geometry: 'Adapted licensed head/hands/sleeves and measured torso; original reconstructed tunic, trousers, helmet and equipment. Spatial transfer for skin/legs and anatomically bounded sleeves; measured armhole blending and authored torso/equipment weights on a refitted source skeleton.',
     sourceClothingTexturesIncluded: false, sourceInsigniaIncluded: false,
     motionSource: permission.motionSource, levels: asset.levels, motion: asset.motion,
   }, null, 2) + '\n');

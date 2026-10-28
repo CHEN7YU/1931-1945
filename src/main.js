@@ -44,6 +44,7 @@ import { createConstructionState, resetConstructionState, selectConstructionBlue
 import { createRallyRenderer } from './rally-renderer.js';
 import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
+import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -65,6 +66,7 @@ const held = playerInput.held;
 const controlEvents = createControlEvents();
 const combatEvents = createCombatEvents();
 const combatFeedback = createCombatFeedback();
+const boundaryStates = new Map();
 const simulationClock = createSimulationClock(performance.now());
 const activeStates = new Set(['playing', 'transferring', 'dead']);
 const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', 'victory', 'defeat']);
@@ -710,6 +712,7 @@ function clearActors(list) {
 }
 
 function clearTransient() {
+  boundaryStates.clear();
   combatEvents.clear();
   rifleReports.length = 0;
   rifleAudio?.reset();
@@ -1141,13 +1144,15 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
   const previous = actor.health;
   actor.health = Math.max(0, previous - damage);
   actor.lastHit = { time, hitZone, damage: previous - actor.health, weaponKind };
-  actor.tactics.suppressedUntil = time + 4;
-  if (actor.friendly) actor.tactics.decisionAt = Math.min(actor.tactics.decisionAt, time + .1);
+  if (weaponKind !== 'boundary') {
+    actor.tactics.suppressedUntil = time + 4;
+    if (actor.friendly) actor.tactics.decisionAt = Math.min(actor.tactics.decisionAt, time + .1);
+  }
   const selected = actor === controlledSoldier(entities);
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
-    beginDeathFeedback(actor, weaponKind === 'explosion' ? '爆炸' : '中弹');
+    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'explosion' ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
@@ -1180,7 +1185,7 @@ function damageVehicle(transport, damage, source, weaponKind) {
     amount: result.damage, health: transport.health, observerId }, time);
   for (const actor of result.casualties) {
     finishActorDeath(actor, source);
-    if (actor === allies[current]) beginDeathFeedback(actor, result.destroyed ? '载具被毁' : '车组成员阵亡');
+    if (actor === allies[current]) beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : result.destroyed ? '载具被毁' : '车组成员阵亡');
   }
   if (result.destroyed) {
     transport.destroyedAt = time;
@@ -1393,11 +1398,6 @@ function updateVehicles(dt) {
       position.y = Math.min(position.y, 90);
       const colliding = world.obstacles.some(b => position.x > b.minX - 1 && position.x < b.maxX + 1 && position.z > b.minZ - 1 && position.z < b.maxZ + 1 && position.y < b.height + 1);
       if (position.y < 1.8 || colliding) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
-      if (Math.abs(position.x) > 170 || Math.abs(position.z) > 170) {
-        transport.outsideTime += dt;
-        if (controlled) toast(`请返回作战区域 · ${Math.max(0, Math.ceil(10 - transport.outsideTime))} 秒后失去飞机`, 1);
-        if (transport.outsideTime >= 10) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
-      } else transport.outsideTime = 0;
     } else {
       transport.heading -= sideways * dt * .8;
       const speed = TYPES.tank.speed * forward;
@@ -1417,6 +1417,41 @@ function updateWeaponSimulation(dt) {
   const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped, true);
   for (const cue of cues) emitControlEvent('weapon.mechanical', cue);
   if (state === 'playing') syncRifleUnit();
+}
+
+function updateBattleBoundary(dt) {
+  const apply = (subject, area, vehicle) => {
+    let boundary = boundaryStates.get(subject.id);
+    if (!boundary) { boundary = createBoundaryState(); boundaryStates.set(subject.id, boundary); }
+    const damage = advanceBoundary(boundary, subject.position, dt, area);
+    if (damage > 0) {
+      const source = { credit: 'environment', cause: 'boundary', subjectId: subject.id };
+      if (vehicle) damageVehicle(subject, damage, source, 'boundary');
+      else hurt(subject, damage, source, 'boundary');
+    }
+  };
+  for (const actor of allies) if (actor.health > 0 && !actor.vehicleId) apply(actor, BATTLE_AREA, false);
+  for (const transport of entities.vehicles.values()) {
+    if (transport.health > 0 && entities.units.get(transport.unitId)?.player) {
+      apply(transport, transport.type === 'plane' ? AIR_BATTLE_AREA : BATTLE_AREA, true);
+    }
+  }
+}
+
+function controlledBoundary() {
+  const actor = controlledSoldier(entities);
+  return actor ? boundaryStates.get(occupiedVehicle(entities, actor)?.id ?? actor.id) : null;
+}
+
+function renderBattleBoundary() {
+  const boundary = controlledBoundary(), element = $('boundary-warning');
+  element.hidden = state !== 'playing' || !boundary?.outside || controlledSoldier(entities)?.health <= 0;
+  if (element.hidden) return;
+  element.classList.toggle('damaging', boundary.damaging);
+  const direction = `${boundary.returnX < 0 ? '西' : boundary.returnX > 0 ? '东' : ''}${boundary.returnZ < 0 ? '北' : boundary.returnZ > 0 ? '南' : ''}`;
+  const distance = Math.ceil(Math.hypot(boundary.returnX, boundary.returnZ));
+  $('boundary-detail').textContent = `向${direction}返回约 ${distance} 米 · ${boundary.damaging
+    ? `正在损失生命（${BOUNDARY_RULES.damagePerSecond}/秒）` : `${Math.ceil(boundary.remaining)} 秒后开始掉血`}`;
 }
 
 function updatePlayer(dt) {
@@ -2236,6 +2271,18 @@ function drawRadar(ctx = radarContext) {
     const [x, z] = map(b.minX, b.minZ);
     ctx.fillRect(x, z, (b.maxX - b.minX) / 220 * size, (b.maxZ - b.minZ) / 220 * size);
   }
+  const [areaX, areaZ] = map(BATTLE_AREA.minX, BATTLE_AREA.minZ);
+  const areaW = (BATTLE_AREA.maxX - BATTLE_AREA.minX) / 220 * size;
+  const areaD = (BATTLE_AREA.maxZ - BATTLE_AREA.minZ) / 220 * size;
+  ctx.fillStyle = '#b9574538';
+  ctx.fillRect(0, 0, size, areaZ);
+  ctx.fillRect(0, areaZ + areaD, size, size - areaZ - areaD);
+  ctx.fillRect(0, areaZ, areaX, areaD);
+  ctx.fillRect(areaX + areaW, areaZ, size - areaX - areaW, areaD);
+  ctx.strokeStyle = '#e5a078';
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(areaX, areaZ, areaW, areaD);
+  ctx.setLineDash([]);
   ctx.font = 'bold 10px sans-serif';
   ctx.textAlign = 'center';
   for (const point of objectives) {
@@ -2340,6 +2387,7 @@ function advanceBattleStep(dt, presentationTime) {
     (state !== 'playing' || actor !== controlledSoldier(entities))) advanceNraMotion(actor, dt);
   if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) updateAI(dt);
+  if (activeStates.has(state)) updateBattleBoundary(dt);
   if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) updateObjectives(dt);
   if (activeStates.has(state)) updateProjectiles(dt);
@@ -2395,6 +2443,7 @@ function tick(now) {
   renderDeathFeedback();
   renderConstruction();
   renderSimulationStatus();
+  renderBattleBoundary();
   rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
   nraCharacter?.update(friendlyForces, time, entities.control.soldierId, graphics.snapshot.preset);
@@ -2668,6 +2717,10 @@ Object.defineProperty(window, '__battle', { get: () => ({
     ? { ...mechanicalAudio.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'fallback', error: mechanicalAudioFailure },
   simulationClock: simulationClock.snapshot,
+  boundary: { area: { ...BATTLE_AREA }, airArea: { ...AIR_BATTLE_AREA }, rules: { ...BOUNDARY_RULES },
+    ...controlledBoundary(), members: allies.map(actor => ({ id: actor.id, ...boundaryStates.get(actor.id) })) },
+  outskirts: { buildings: world.outskirts.buildings.length, nearBuildings: world.outskirts.buildings.filter(house => house.near).length,
+    ruinedBuildings: world.outskirts.buildings.filter(house => house.ruined).length, hills: world.outskirts.hills.map(hill => ({ ...hill })) },
   entityCounts: { units: entities.units.size, soldiers: entities.soldiers.size, weapons: entities.weapons.size, vehicles: entities.vehicles.size },
   vehicleViews: vehicleRenderer.snapshot,
   deathTransfer: { ...deathTransfer, mask: deathTransferMask(deathTransfer) },
