@@ -243,6 +243,7 @@ export function createBattleVoices(buffers, random = Math.random) {
       nextAmbient = 2; nextScan = 0; nextCallout = nextCalloutScan = 0;
       for (const key of Object.keys(counts)) counts[key] = 0;
     },
+    get priorityActive() { return queue.length > 0 || ['command', 'announcement', 'callout'].some(channel => voices.has(channel)); },
     get snapshot() {
       return { status: 'ready', clips: clips.length, enabled, active: voices.size, queued: queue.length,
         counts: { ...counts }, history: history.map(item => ({ ...item })), limits: { ...BATTLE_VOICE_LIMITS } };

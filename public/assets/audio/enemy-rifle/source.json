@@ -1,0 +1,40 @@
+{
+  "asset": "Japanese infantry rifle report selected by the user",
+  "author": "morganpurkis",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source": "https://freesound.org/people/morganpurkis/sounds/391847/",
+  "original": {
+    "file": "freesound_community-single-gunshot-54-40780.mp3",
+    "bytes": 62400,
+    "sha256": "fa77589d088a844f741850fc5667ba37ada6542320b843c5785a3a6246d7a2fb",
+    "title": "Single Gunshot 5.4.wav",
+    "discovery": "https://pixabay.com/sound-effects/film-special-effects-single-gunshot-54-40780/"
+  },
+  "licenseEvidence": "Original Freesound author page explicitly offers Creative Commons 0; Pixabay page could not be fetched.",
+  "identityEvidence": {
+    "preview": "https://cdn.freesound.org/previews/391/391847_5937039-lq.mp3",
+    "sha256": "487637cc83e1cd090cc6538e05aba640e1d0fd31b9dcb10ca5ce7301cf075800",
+    "alignedWaveformCorrelation": 0.9997787450604955,
+    "comparison": "Mono 24kHz, 0.6 seconds aligned by peak; user MP3 delayed by 1105 samples relative to the author preview."
+  },
+  "processing": [
+    "Mono 24kHz 16-bit PCM",
+    "Remove 1105 samples of encoder lead-in",
+    "Normalize decoded peak to 0.65 before integer PCM conversion to avoid additional clipping",
+    "0.5ms attack and 54ms final tail fade; full report retained; no pitch change"
+  ],
+  "limitations": [
+    "Not a verified Arisaka or historical Japanese rifle recording.",
+    "Decoded MP3 exceeds full scale; normalization does not restore clipping already in the source.",
+    "Source identity supported by waveform comparison, not byte identity with the original WAV.",
+    "No independent listening acceptance is claimed."
+  ],
+  "files": [
+    {
+      "file": "report.wav",
+      "bytes": 147594,
+      "sha256": "8753cf6d60d27a1d266e199178f806331b116bb74be48828dba87e6e3eb711a9"
+    }
+  ]
+}

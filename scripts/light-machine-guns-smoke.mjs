@@ -86,7 +86,13 @@ try {
     await page.mouse.up({ button: 'right' });
     data = await snapshot();
     assert.ok(data.rifle.ammo <= 14, 'one held trigger spends at least six actual rounds');
+    const gunnerReports = data.rifleAudio.history.filter(item => item.owned && item.soldierId === gunnerId);
+    assert.ok(gunnerReports.length >= 6, 'held fire produces an individual report for every actual shot');
+    assert.ok(gunnerReports.every(item => item.report === 'machine-gun'),
+      'the player LMG uses isolated recordings, not a rifle report or looping burst');
     const fired = data.rifle.shots;
+    await page.waitForTimeout(350);
+    assert.equal((await snapshot()).rifle.shots, fired, 'release stops firing and adds no source-burst shots');
     await switchTo(0);
     assert.equal((await snapshot()).rifle.ammo, 5, 'the original engineer retains their own rifle');
     await switchTo(10);
@@ -116,6 +122,7 @@ try {
       observations.push({ autonomousFire: (await snapshot()).population.units.map(unit => ({
         id: unit.id, gunner: unit.members.find(actor => actor.role === 'machine-gunner'),
       })) });
+      await wait(() => window.__battle.rifleAudio.history.some(item => item.credit === 'enemy' && item.report === 'machine-gun'));
     }
   }
   assert.deepEqual(errors, []);

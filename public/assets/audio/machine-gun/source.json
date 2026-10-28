@@ -1,0 +1,49 @@
+{
+  "asset": "Shared light-machine-gun single shots selected by the user",
+  "author": "Foisal72",
+  "license": "Pixabay-Content-License",
+  "licenseUrl": "https://pixabay.com/service/license-summary/",
+  "source": "https://pixabay.com/sound-effects/film-special-effects-gun-fire-346766/",
+  "original": {
+    "file": "foisal72-gun-fire-346766.mp3",
+    "sha256": "6d744d3c82244de278f9dac2c6f4792bdfcf4ae15869befef590f6b7844be46b",
+    "bytes": 241580
+  },
+  "licenseEvidence": "User supplied the recording. Indexed asset result identifies Gun fire by Foisal72 under Pixabay Content License. Direct asset and license page requests returned HTTP 403.",
+  "limitations": [
+    "Not CC0. Independent verification of redistribution terms is still required before public release.",
+    "Only use as integrated game audio, not a standalone sound pack.",
+    "Not verified recordings of ZB-26 or Type 11; no independent listening acceptance is claimed."
+  ],
+  "processing": [
+    "FFmpeg mono 24kHz, 16-bit PCM",
+    "Peak bounded to 0.65; 1ms attack and 8ms tail fades",
+    "Three 95ms single-shot excerpts; no burst loop or source pauses"
+  ],
+  "files": [
+    {
+      "file": "shot-0.wav",
+      "take": 0,
+      "startSeconds": 0.674,
+      "duration": 0.095,
+      "bytes": 4604,
+      "sha256": "2a92b5accffe5558b04a5d952879a57abbcc208dcee5c3df4a2ea93ed44f5b67"
+    },
+    {
+      "file": "shot-1.wav",
+      "take": 1,
+      "startSeconds": 0.774,
+      "duration": 0.095,
+      "bytes": 4604,
+      "sha256": "723b1dc4904176374c289a39205ef704d69560fc87ff5cc847917b0b297f0927"
+    },
+    {
+      "file": "shot-2.wav",
+      "take": 2,
+      "startSeconds": 0.874,
+      "duration": 0.095,
+      "bytes": 4604,
+      "sha256": "92eec28de5e404dfa8783124aae7815ab1c419f8a7b9a1f861688d5bf802baf5"
+    }
+  ]
+}

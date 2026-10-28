@@ -24,6 +24,13 @@ test('shot feedback copies original source and geometry values without retaining
   assert.throws(() => { event.source.weaponId = 'another'; }, TypeError);
   assert.throws(() => { event.end.z = 0; }, TypeError);
 });
+test('automatic fire classification is copied and validated at the original shot event', () => {
+  const events = createCombatEvents();
+  assert.equal(events.publish('shot', { ...shot(), automatic: true }, 0).automatic, true);
+  assert.equal(events.publish('shot', shot(), 0).automatic, undefined);
+  assert.throws(() => events.publish('shot', { ...shot(), automatic: 'yes' }, 0), /Invalid shot/);
+  assert.throws(() => events.publish('shot', { ...shot(), weaponType: 'tank', automatic: true }, 0), /Invalid shot/);
+});
 test('shot, impact and explosion render in order exactly once and publishing never requires a live shooter', () => {
   const events = createCombatEvents(), rendered = [], original = source();
   events.publish('shot', shot(), 1);

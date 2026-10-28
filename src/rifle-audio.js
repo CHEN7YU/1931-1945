@@ -35,9 +35,16 @@ function peakSafetyCurve() {
   return curve;
 }
 
-export function createRifleAudio(buffer) {
+export function createRifleAudio(buffer, enemyBuffer = buffer, machineGunBuffers = [buffer]) {
   if (!buffer || !Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > .65) {
     throw new RangeError('Rifle report must be a decoded short audio buffer');
+  }
+  if (!enemyBuffer || !Number.isFinite(enemyBuffer.duration) || enemyBuffer.duration <= 0 || enemyBuffer.duration > 4) {
+    throw new RangeError('Enemy rifle report must be a decoded audio buffer no longer than four seconds');
+  }
+  if (!Array.isArray(machineGunBuffers) || !machineGunBuffers.length || machineGunBuffers.some(clip =>
+    !clip || !Number.isFinite(clip.duration) || clip.duration <= 0 || clip.duration > .65)) {
+    throw new RangeError('Machine-gun reports must be decoded short audio buffers');
   }
   const voices = new Set(), history = [];
   const counts = { played: 0, owned: 0, remote: 0, range: 0, budget: 0, polyphony: 0, suspended: 0, replaced: 0 };
@@ -103,7 +110,9 @@ export function createRifleAudio(buffer) {
         replaced.source.stop(); replaced.release();
       }
       const source = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter(), panner = audio.createStereoPanner();
-      source.buffer = buffer; source.playbackRate.value = [1, .99, 1.015][event.id % 3];
+      const automatic = event.automatic === true, enemy = event.weaponType !== 'tank' && event.source.team === 'enemy';
+      source.buffer = automatic ? machineGunBuffers[event.id % machineGunBuffers.length] : enemy ? enemyBuffer : buffer;
+      source.playbackRate.value = automatic || enemy ? 1 : [1, .99, 1.015][event.id % 3];
       filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
       gain.gain.value = mix.gain; panner.pan.value = mix.pan;
       source.connect(filter).connect(gain).connect(panner).connect(bus);
@@ -124,6 +133,8 @@ export function createRifleAudio(buffer) {
       counts.played++; counts[owned ? 'owned' : 'remote']++;
       peakVoices = Math.max(peakVoices, voices.size);
       history.push({ eventId: event.id, soldierId: event.source.soldierId, credit: event.source.credit, owned,
+        report: automatic ? 'machine-gun' : enemy ? 'enemy-rifle' : 'recorded-rifle',
+        time: event.time ?? null,
         distance: mix.distance, pan: mix.pan, gain: mix.gain, cutoff: mix.cutoff });
       if (history.length > 40) history.shift();
       source.start(audio.currentTime);
@@ -136,6 +147,8 @@ export function createRifleAudio(buffer) {
     },
     get snapshot() {
       return { status: 'recorded', contextState: context?.state ?? 'not-started', duration: buffer.duration, sampleRate: buffer.sampleRate,
+        enemyDuration: enemyBuffer.duration,
+        machineGunDurations: machineGunBuffers.map(clip => clip.duration),
         active: voices.size, peakVoices, counts: { ...counts }, history: history.map(item => ({ ...item })),
         dynamics: { linearBelow: .85, safetyCeiling: .95 },
         limits: { remoteVoices: 8, remotePerBatch: 3, maxDistance: 240, fadeFrom: 180 } };
@@ -147,8 +160,14 @@ export function createRifleAudio(buffer) {
 export async function loadRifleAudio() {
   const Audio = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!Audio) throw new Error('Browser does not provide offline audio decoding');
-  const response = await fetch('/assets/audio/recorded-rifle/report.wav', { signal: AbortSignal.timeout(8000) });
-  if (!response.ok) throw new Error(`Recorded rifle sound: HTTP ${response.status}`);
   const context = new Audio(1, 1, 24000);
-  return createRifleAudio(await context.decodeAudioData(await response.arrayBuffer()));
+  const [buffer, enemyBuffer, ...machineGunBuffers] = await Promise.all([
+    'recorded-rifle/report.wav', 'enemy-rifle/report.wav',
+    ...[0, 1, 2].map(take => `machine-gun/shot-${take}.wav`),
+  ].map(async file => {
+    const response = await fetch(`/assets/audio/${file}`, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error(`${file} sound: HTTP ${response.status}`);
+    return context.decodeAudioData(await response.arrayBuffer());
+  }));
+  return createRifleAudio(buffer, enemyBuffer, machineGunBuffers);
 }
