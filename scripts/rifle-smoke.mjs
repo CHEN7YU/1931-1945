@@ -85,7 +85,7 @@ try {
   assert.ok(data.allies[0].rifle.elapsed > held, 'the former controller now advances its real AI-owned loading action');
   assert.equal(data.ammo, 5, 'each member has an independent magazine');
   assert.equal(data.rifle.action, 'idle', 'another soldier loading does not animate the new controller rifle');
-  for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await press('y');
+  for (let i = 1; i < 11 && (await snapshot()).current !== 0; i++) await press('y');
   data = await snapshot();
   assert.equal(data.current, 0);
   const expected = structuredClone(background.allies[0].rifle);

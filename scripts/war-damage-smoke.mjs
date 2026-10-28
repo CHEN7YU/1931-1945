@@ -35,7 +35,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#deploy').click();
   const initial = await snapshot();
-  assert.equal(initial.friendly.alive, 100); assert.equal(initial.enemy.alive, 100);
+  assert.equal(initial.friendly.alive, 110); assert.equal(initial.enemy.alive, 110);
   assert.equal(initial.damage.craters.length, 5); assert.equal(initial.damage.wrecks.length, 3);
   assert.equal(initial.damage.ruinedShops.length, 3);
   assert.equal(initial.counts.vehicles, 0, 'Scenery wrecks cannot create operable vehicle entities');

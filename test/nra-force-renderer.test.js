@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
+import { createRifleState } from '../src/rifle-action.js';
 import { createCasualtyState } from '../src/casualties.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 
@@ -39,6 +40,7 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   function view() {
     const root = new THREE.Group(), flag = new THREE.Mesh(geometry, material); flag.name = 'corpse-flag';
     root.add(new THREE.Mesh(geometry, material), flag);
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
     return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
       optionalAttachments: [{ mesh: flag, enabled: () => true }],
       bind() {}, update(person) { flag.visible = true; root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
@@ -47,7 +49,7 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   const renderer = createNraForceRenderer(scene, camera, view(), 2);
   const bodies = Array.from({ length: 10 }, (_, index) => {
     const actor = { id: `body-${index}`, unitId: 'old-unit', team: 'friendly', heading: 0, health: 0,
-      position: new THREE.Vector3(index * .1, 0, -50), walkPhase: 0, locomotion: { speed: 0 } };
+      position: new THREE.Vector3(index * .1, 0, -50), walkPhase: 0, locomotion: { speed: 0 }, rifle: createRifleState() };
     actor.nativeMotion = createNraMotion(profile, actor);
     actor.casualty = createCasualtyState(actor, 0, null, { variant: 0, retainGun: false });
     return actor;
@@ -55,8 +57,9 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   renderer.update(bodies, 30, null, 'high');
   assert.equal(renderer.snapshot.far, 10);
   const occupied = renderer.root.children.filter(mesh => mesh.isInstancedMesh && mesh.count > 0);
-  assert.equal(occupied.length, 2);
-  assert.ok(occupied.every(mesh => mesh.count === 10 && mesh.instanceMatrix.count >= 10), 'body and attached flag grow together');
+  assert.equal(occupied.filter(mesh => !mesh.name.startsWith('owned-weapon-')).length, 2);
+  assert.ok(occupied.some(mesh => mesh.name === 'owned-weapon-rifle'));
+  assert.ok(occupied.every(mesh => mesh.count === 10 && mesh.instanceMatrix.count >= 10), 'body, owned firearm and attached flag grow together');
   renderer.update(bodies, 30, null, 'high');
   assert.equal(renderer.snapshot.far, 10);
   for (const mesh of renderer.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }
@@ -71,6 +74,7 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   const geometry = new THREE.BoxGeometry(.4, 1.7, .3), material = new THREE.MeshStandardMaterial();
   function view() {
     const root = new THREE.Group(); root.add(new THREE.Mesh(geometry, material));
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
     let id = null, actor = null;
     return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
       bind(value) { id = value; actor = null; root.visible = false; },
@@ -83,7 +87,8 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   const actors = Array.from({ length: 100 }, (_, index) => {
     const actor = { id: `soldier-${index}`, unitId: 'friendly-0', team: 'friendly', heading: 0, health: 100,
       position: new THREE.Vector3((index % 10 - 5) * 1.5, 0, -5 - Math.floor(index / 10) * 3),
-      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, ammo: 5 };
+      walkPhase: index * .1, locomotion: { speed: 0 }, vehicleId: null, deathTime: 0, ammo: 5,
+      rifle: createRifleState(index % 11 === 10 ? 'zb26' : 'rifle') };
     actor.nativeMotion = createNraMotion(profile, actor); return actor;
   });
   force.update(actors, 1, actors[0].id, 'high');

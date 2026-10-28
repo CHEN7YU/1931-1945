@@ -25,20 +25,20 @@ try {
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
   await page.locator('#menu-quality').selectOption('high');
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.enemyHistoricalForce?.assigned === 100);
+  await page.waitForFunction(() => window.__battle.enemyHistoricalForce?.assigned === 110);
   const initial = await snapshot();
   assert.equal(Boolean(initial.benchmark), !production, 'diagnostic fixtures must remain development-only');
-  assert.equal(initial.population.enemy.alive, 100);
-  assert.equal(initial.population.friendly.alive, 100);
-  assert.equal(initial.entityCounts.soldiers, 200);
-  assert.equal(initial.enemies.length, 100);
-  assert.equal(new Set(initial.force.members.map(actor => actor.id)).size, 100);
+  assert.equal(initial.population.enemy.alive, 110);
+  assert.equal(initial.population.friendly.alive, 110);
+  assert.equal(initial.entityCounts.soldiers, 220);
+  assert.equal(initial.enemies.length, 110);
+  assert.equal(new Set(initial.force.members.map(actor => actor.id)).size, 110);
   assert.equal(initial.force.poseBanks, 44); assert.equal(initial.friendly.poseBanks, 44);
   assert.ok(initial.force.members.every(actor => actor.uniform === 'ija1938' && actor.helmet));
   assert.ok(initial.friendly.members.every(actor => actor.uniform === 'nra88'));
   assert.ok(initial.force.near <= 6 && initial.force.poolSize === 6 && initial.force.far > 0);
   assert.equal(initial.population.renderer.procedural.visible, 0, 'old soldier visuals must not be drawn over the new uniforms');
-  observations.push({ stage: 'all-100-enemies', ...initial });
+  observations.push({ stage: 'all-110-enemies', ...initial });
   if (out) await page.screenshot({ path: join(out, 'ija-full-army-game.png') });
   await page.waitForFunction(time => window.__battle.time > time + 4, initial.time, { timeout: 60000 });
   const moving = await snapshot();
@@ -55,13 +55,13 @@ try {
   await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 0);
   await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 100);
+  await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 110);
   const redeployed = await snapshot();
-  assert.equal(redeployed.population.enemy.alive, 100);
+  assert.equal(redeployed.population.enemy.alive, 110);
   assert.ok(redeployed.force.near <= 3 && redeployed.force.poolSize <= 6);
   assert.ok(redeployed.force.members.every(actor => actor.uniform === 'ija1938'));
   observations.push({ stage: 'low-quality-redeployment', ...redeployed });
-  assert.equal(requests.filter(url => url.endsWith('/ija-1938/character.glb')).length, 1, '100 enemy soldiers share one downloaded asset');
+  assert.equal(requests.filter(url => url.endsWith('/ija-1938/character.glb')).length, 1, '110 enemy soldiers share one downloaded asset');
   assert.ok(!requests.some(url => url.includes('/uniform-study/')), 'game runtime must not build the research mannequin');
   assert.deepEqual(errors, []);
 
@@ -90,8 +90,8 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(production
-    ? 'PASS: production 100-enemy deployment, faction separation, shared asset, low-quality redeployment and enemy movement; development-only duel fixture remains disabled.'
-    : 'PASS: all 100 real enemies, faction separation, shared asset, near/far LOD, low-quality redeployment, enemy movement and displayed rifle alignment.');
+    ? 'PASS: production 110-enemy deployment, faction separation, shared asset, low-quality redeployment and enemy movement; development-only duel fixture remains disabled.'
+    : 'PASS: all 110 real enemies, faction separation, shared asset, near/far LOD, low-quality redeployment, enemy movement and displayed rifle alignment.');
 } finally {
   if (out) {
     observations.push({ stage: 'final-observation', ...await snapshot() });

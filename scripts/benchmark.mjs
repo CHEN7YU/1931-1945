@@ -100,8 +100,8 @@ async function main() {
           const data = window.__battle;
           return { population: data.population, spawnEvents: data.spawnEvents, graphics: data.graphics, time: data.time, position: data.position };
         });
-        assert.equal(initial.population.friendly.alive, scenario === 'duel' ? 5 : 100);
-        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 100);
+        assert.equal(initial.population.friendly.alive, scenario === 'duel' ? 5 : 110);
+        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 110);
         await page.waitForTimeout(warmup * 1000);
         if (scenario === 'full') {
           events.push({ input: 'KeyW down; straight route from registered base to z<=42', wall: Date.now() });

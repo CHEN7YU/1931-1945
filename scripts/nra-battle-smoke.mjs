@@ -25,12 +25,12 @@ try {
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.historicalCharacter?.visible);
   let data = await snapshot();
-  const observed = data.force.views.find(view => data.allies.some(actor => actor.id === view.actorId));
+  const observed = data.force.views.find(view => data.allies.some(actor => actor.id === view.actorId && actor.role !== 'machine-gunner'));
   assert.ok(observed, 'An actual player-squad member must be visible for the control check');
   const id = observed.actorId, initial = data.allies.find(actor => actor.id === id);
-  assert.equal(data.population.friendly.alive, 100); assert.equal(data.population.enemy.alive, 100);
+  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 110);
   await page.keyboard.press('y');
-  for (let attempt = 0; attempt < 10 && (await snapshot()).control.soldierId !== id; attempt++) await page.keyboard.press('y');
+  for (let attempt = 0; attempt < 11 && (await snapshot()).control.soldierId !== id; attempt++) await page.keyboard.press('y');
   await page.waitForFunction(id => window.__battle.control.soldierId === id &&
     window.__battle.historicalForce.members.find(member => member.id === id)?.tier === 'hidden', id);
   data = await snapshot();
@@ -48,7 +48,7 @@ try {
   data = await snapshot();
   assert.equal(data.rifle.ammo, initial.rifle.ammo - 1);
   stages.push({ stage: 'native-personal-rifle-fired', data });
-  for (let attempt = 0; attempt < 10 && (await snapshot()).current !== 0; attempt++) await page.keyboard.press('y');
+  for (let attempt = 0; attempt < 11 && (await snapshot()).current !== 0; attempt++) await page.keyboard.press('y');
   await page.waitForFunction(() => window.__battle.current === 0 && window.__battle.historicalCharacter.visible);
   data = await snapshot();
   const returned = data.allies.find(actor => actor.id === id);

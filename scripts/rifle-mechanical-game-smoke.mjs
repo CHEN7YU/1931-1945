@@ -144,10 +144,10 @@ try {
 
   const full = await open('full');
   await full.locator('#deploy').click();
-  data = await save(full, 'native-100v100-startup');
-  assert.equal(data.population.friendly.alive, 100); assert.equal(data.population.enemy.alive, 100);
+  data = await save(full, 'native-110v110-startup');
+  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 110);
   await shoot(full); await ready(full);
-  data = await save(full, 'native-100v100-personal-cycle');
+  data = await save(full, 'native-110v110-personal-cycle');
   assert.ok(data.mechanicalAudio.history.some(item => item.cue === 'extract'));
   assert.ok(data.mechanicalAudio.history.every(item => item.soldierId === data.control.soldierId));
   assert.ok(data.rifleAudio.counts.owned >= 1);
@@ -169,7 +169,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, stages: observations.map(item => item.stage),
-    limitation: 'Functional main-game playback; not human listening acceptance or 100v100 performance acceptance.' }));
+    limitation: 'Functional main-game playback; not human listening acceptance or 110v110 performance acceptance.' }));
 } finally {
   if (process.env.ARTIFACT_DIR) {
     await mkdir(process.env.ARTIFACT_DIR, { recursive: true });

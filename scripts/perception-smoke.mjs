@@ -43,7 +43,7 @@ try {
   await page.locator('#deploy').click();
   const initial = await snapshot(), crewIds = initial.allies.map(actor => actor.id);
   assert.equal(initial.benchmark?.scenario, 'full');
-  assert.equal(initial.population.enemy.alive, 100);
+  assert.equal(initial.population.enemy.alive, 110);
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 0, null, { timeout: 25000 });
   await page.keyboard.up('w');

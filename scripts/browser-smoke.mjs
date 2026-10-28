@@ -29,7 +29,7 @@ try {
   await page.waitForFunction(() => window.__battle.state === 'playing');
   let data = await snapshot();
   assert.equal(data.type, 'infantry');
-  assert.equal(data.allies.length, 10);
+  assert.equal(data.allies.length, 11);
   assert.equal(data.allies[0].role, 'engineer');
   const engineerId = data.allies[0].id;
   assert.equal(data.spawnId, 'china-base');
@@ -170,7 +170,7 @@ try {
   await key('y');
   assert.equal((await snapshot()).current, 1);
   assert.equal((await snapshot()).ammo, 5);
-  for (let i = 1; i < 10 && (await snapshot()).current !== 0; i++) await key('y');
+  for (let i = 1; i < 11 && (await snapshot()).current !== 0; i++) await key('y');
   assert.equal((await snapshot()).current, 0);
   assert.equal((await snapshot()).ammo, firedAmmo, 'switching retains ammunition');
   await key('r');

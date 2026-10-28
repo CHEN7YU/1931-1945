@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e9e7df">
+    <link rel="icon" href="data:,">
+    <title>钢盔国军 · 衣装重制样件</title>
+  </head>
+  <body>
+    <main>
+      <aside>
+        <p class="eyebrow">CHARACTER ATELIER / 01</p>
+        <h1>钢盔国军<span>衣装重制样件</span></h1>
+        <p class="intro">不换身份，先看衣服。<br>同一张脸、同一站姿、同一束光。</p>
+        <section>
+          <h2>查看方式</h2>
+          <div class="segmented" aria-label="比较模式">
+            <button type="button" data-mode="compare" aria-pressed="true">并排对照</button>
+            <button type="button" data-mode="remake" aria-pressed="false">只看重制</button>
+          </div>
+          <div class="views" aria-label="观察角度">
+            <button type="button" data-view="three-quarter" aria-pressed="true">全身</button>
+            <button type="button" data-view="front" aria-pressed="false">正面</button>
+            <button type="button" data-view="side" aria-pressed="false">侧面</button>
+            <button type="button" data-view="back" aria-pressed="false">背面</button>
+            <button type="button" data-view="detail" aria-pressed="false">衣料近看</button>
+          </div>
+          <label><input id="equipment" type="checkbox" checked> 显示携行装具</label>
+        </section>
+        <section class="design">
+          <h2>这次看什么</h2>
+          <p><b>01 / 衣身</b>腰带上方的松量、腋下与袖肘的局部褶皱，不给全身铺波纹。</p>
+          <p><b>02 / 面料</b>压低黄绿饱和度，保留原衣袋与缝线，分开棉布、皮革和涂漆钢的反光。</p>
+          <p><b>03 / 裤装</b>膝后与绑腿上缘的收束褶皱；钢盔、徽章和原装具形制不变。</p>
+        </section>
+        <p class="disclaimer">第一版静态改制，不是从零制作的完整写实角色。头脸、钢盔与装具沿用现有授权模型；没有布料仿真，未验收历史配发。本页不运行战场；正式游戏按5队A／5队B分配。</p>
+        <a class="source" href="https://booth.pm/ja/items/5625369" target="_blank" rel="noopener noreferrer">原模型：中興コンビニ ↗</a>
+        <p id="status" role="status">正在载入衣装样件…</p>
+      </aside>
+      <div id="viewport" aria-label="可拖动旋转的国军人物对照">
+        <canvas id="stage" aria-label="国军原版与重制版三维预览"></canvas>
+        <div class="stage-heading"><span>FORM / FABRIC / FIELD EQUIPMENT</span><span>1930s · 中国步兵方向</span></div>
+        <div id="labels">
+          <div id="original-label"><small>REFERENCE</small><strong>A · 现有 88 师</strong><span>原衣装与原材质</span></div>
+          <div id="remake-label"><small>GARMENT STUDY</small><strong>B · 钢盔国军改制</strong><span>局部几何褶皱 / 灰橄榄棉布</span></div>
+        </div>
+        <p class="gesture">拖动旋转 · 滚轮缩放 · 右键平移</p>
+        <p id="error" role="alert" hidden></p>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
