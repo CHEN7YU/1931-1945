@@ -116,7 +116,10 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
   limb(group, [.34, 1.1, .05], [.173, 1.325, -.095], .052, uniform);
   sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
   sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
-  if (weapon !== 'rifle') {
+  if (weapon === 'sniper') {
+    const rifle = rifleWorldModel(detail, { model: weapon });
+    rifle.position.set(.13, 1.39, .02); group.add(rifle);
+  } else if (weapon !== 'rifle') {
     const gun = lightMachineGunModel(weapon, detail);
     gun.position.set(.13, 1.39, .02); group.add(gun);
   } else if (friendly) {

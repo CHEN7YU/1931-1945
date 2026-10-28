@@ -15,6 +15,7 @@
     "test:movement": "node scripts/movement-smoke.mjs",
     "test:rifle": "node scripts/rifle-smoke.mjs",
     "test:light-machine-guns": "node scripts/light-machine-guns-smoke.mjs",
+    "test:sniper": "node scripts/sniper-smoke.mjs",
     "test:street": "node scripts/street-smoke.mjs",
     "test:tactics": "node scripts/tactics-smoke.mjs",
     "test:bridge": "node scripts/bridge-smoke.mjs",

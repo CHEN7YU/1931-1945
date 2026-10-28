@@ -39,7 +39,7 @@
         <p class="map-description">穿过残损商铺、石板街与运河，依次夺取三个据点。原创主题布局，非历史地形复原；载具采用简化街机操控。</p>
         <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
         <div id="squad-choices" class="squad-choices">
-          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 含工兵、轻机枪手</small></button>
+          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 工兵、狙击手、机枪手</small></button>
           <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>维克斯六吨B型 / 3人车组</small></button>
           <button class="squad-choice" data-type="mortar" aria-pressed="false"><span class="unit-icon">⌁</span><strong>迫击炮组</strong><small>3人 / 区域压制</small></button>
           <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>伊-15bis双翼机 / 单人飞行员</small></button>
@@ -56,6 +56,10 @@
       <div class="objective-banner"><span id="objective-title">夺取 A · 南街路口</span><small id="objective-help">进入据点范围并清除守军</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="sniper-scope" hidden aria-label="狙击瞄准镜">
+        <div class="scope-lens"><div class="scope-reticle" aria-hidden="true"></div></div>
+        <div class="scope-help"><span>约 4.6× · 左键单发 · R 装填</span><div id="breath-meter" role="progressbar" aria-label="屏息余量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="breath-fill"></div></div><span id="breath-label">按住左 Shift 屏息</span></div>
+      </div>
       <div id="hit-marker">×</div>
       <div id="damage-vignette"></div>
       <div id="death-transfer" hidden><strong id="death-transfer-label"></strong><span>战场仍在继续 · 稍后接管存活队员</span></div>
