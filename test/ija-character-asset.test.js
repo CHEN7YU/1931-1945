@@ -31,6 +31,9 @@ test('production Japanese character has verified provenance, normalized skinning
   assert.equal(manifest.historicalAcceptance, false);
   assert.equal(manifest.sourceClothingTexturesIncluded, false);
   assert.equal(manifest.sourceInsigniaIncluded, false);
+  assert.equal(manifest.proportions.version, 1);
+  assert.equal(manifest.proportions.helmetTopMeters, 1.683);
+  assert.equal(manifest.proportions.historicalAcceptance, false);
   assert.ok(binary.length < 8 * 1024 * 1024);
   assert.ok(gltf.skins.length > 0);
   const joints = gltf.skins[0].joints;

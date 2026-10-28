@@ -1,17 +1,25 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export function createNraAtlas(root) {
+export function createNraAtlas(root, uniformMaterials = new Map()) {
   const materials = new Map(), keys = new Map();
+  const uniformKeys = new Map();
+  const register = material => {
+    const key = `${material.map?.uuid ?? 'solid'}:${material.color.getHex()}`;
+    keys.set(material, key);
+    if (!materials.has(key)) materials.set(key, material);
+    return key;
+  };
   root.traverseVisible(node => {
     if (!node.isMesh) return;
     for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-      const key = `${material.map?.uuid ?? 'solid'}:${material.color.getHex()}`;
-      keys.set(material, key);
-      if (!materials.has(key)) materials.set(key, material);
+      register(material);
+      const variant = uniformMaterials.get(material);
+      if (variant) uniformKeys.set(material, register(variant));
     }
   });
   if (materials.size === 1) return { material: [...materials.values()][0], mapGeometry() {} };
+  const hasUniformVariants = [...uniformKeys].some(([material, key]) => keys.get(material) !== key);
   const canvas = document.createElement('canvas'), tile = 512, padding = 8;
   const columns = Math.ceil(Math.sqrt(materials.size)), size = columns * tile;
   canvas.width = canvas.height = size;
@@ -43,18 +51,24 @@ export function createNraAtlas(root) {
     shader.vertexShader = shader.vertexShader.replace('#include <common>',
       '#include <common>\nattribute vec3 nraSkinTint;\nattribute float nraSkinRegion;\nvarying vec3 vNraSkinTint;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvNraSkinTint = mix(vec3(1.0), nraSkinTint, nraSkinRegion);');
+    if (hasUniformVariants) {
+      shader.vertexShader = shader.vertexShader.replace('#include <common>',
+        '#include <common>\nattribute vec2 nraUniformUv;\nattribute float nraUniformVariant;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv = mix(vMapUv, nraUniformUv, nraUniformVariant);\n#endif');
+    }
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
       '#include <common>\nvarying vec3 vNraSkinTint;')
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vNraSkinTint;');
   };
-  material.customProgramCacheKey = () => 'nra-atlas-skin-v1';
+  material.customProgramCacheKey = () => hasUniformVariants ? 'nra-atlas-squad-uniform-v2' : 'nra-atlas-skin-v1';
   const point = new THREE.Vector2();
   return {
-    material,
+    material, hasUniformVariants,
     mapGeometry(geometry, sourceMaterials) {
       const list = Array.isArray(sourceMaterials) ? sourceMaterials : [sourceMaterials];
       const groups = Array.isArray(sourceMaterials) ? geometry.groups : [{ start: 0, count: geometry.attributes.position.count, materialIndex: 0 }];
       const originalUv = geometry.attributes.uv.clone();
+      const alternateUv = hasUniformVariants ? geometry.attributes.uv.clone() : null;
       for (const group of groups) {
         const source = list[group.materialIndex], placement = placements.get(keys.get(source)), uv = geometry.attributes.uv;
         if (!placement || !uv) throw new Error('Distant uniform atlas material/UV mapping is incomplete');
@@ -64,8 +78,14 @@ export function createNraAtlas(root) {
           else point.set(.5, .5);
           uv.setXY(vertex, (placement.x + padding + .5 + point.x * (tile - 2 * padding - 1)) / size,
             1 - (placement.y + padding + .5 + point.y * (tile - 2 * padding - 1)) / size);
+          if (alternateUv) {
+            const alternate = placements.get(uniformKeys.get(source)) ?? placement;
+            alternateUv.setXY(vertex, (alternate.x + padding + .5 + point.x * (tile - 2 * padding - 1)) / size,
+              1 - (alternate.y + padding + .5 + point.y * (tile - 2 * padding - 1)) / size);
+          }
         }
       }
+      if (alternateUv) geometry.setAttribute('nraUniformUv', alternateUv);
     },
   };
 }
@@ -78,7 +98,7 @@ export function mergeNraPose(parts, atlas) {
     expanded.setAttribute('nraSkinRegion', new THREE.Float32BufferAttribute(
       new Float32Array(expanded.attributes.position.count).fill(skin ? 1 : 0), 1));
     expanded.clearGroups();
-    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion'].includes(name)) expanded.deleteAttribute(name);
+    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv'].includes(name)) expanded.deleteAttribute(name);
     geometries.push(expanded);
   }
   const merged = mergeGeometries(geometries, false);

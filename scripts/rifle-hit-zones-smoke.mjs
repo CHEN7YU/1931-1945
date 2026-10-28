@@ -65,10 +65,30 @@ try {
       assert.equal(result.damage.health, zone === 'limb' ? 60 : 0);
       assert.equal(result.kills, zone === 'limb' ? 0 : 1);
       assert.equal(result.ammo, 4);
+      if (zone === 'head') {
+        const frozen = await page.evaluate(id => ({ time: window.__battle.time,
+          corpse: window.__battle.corpses.members.find(actor => actor.id === id) }), result.targetId);
+        assert.ok(frozen.corpse, 'a real lethal shot registers its original casualty');
+        await page.waitForTimeout(200);
+        assert.deepEqual(await page.evaluate(id => window.__battle.corpses.members.find(actor => actor.id === id), result.targetId),
+          frozen.corpse, 'pause cannot age or remove a corpse');
+        await page.locator('#resume').click();
+        await page.waitForFunction(time => window.__battle.time > time + 13, frozen.time, { timeout: 45000 });
+        const retained = await page.evaluate(id => ({ corpse: window.__battle.corpses.members.find(actor => actor.id === id),
+          displayed: window.__battle.enemyHistoricalForce.members.find(actor => actor.id === id) }), result.targetId);
+        assert.ok(retained.corpse?.age >= 13 && retained.displayed, 'the corpse and its gun survive the former twelve-second cleanup');
+        assert.equal(retained.displayed.casualty.retainGun, retained.corpse.retainGun);
+        observations.push({ stage: 'actual-corpse-retained-after-13-seconds', ...retained });
+        await page.screenshot({ path: join(directory, 'retained-corpse.png') });
+        await page.keyboard.press('Escape');
+        await page.locator('#back-menu').click();
+        assert.equal(await page.evaluate(() => window.__battle.corpses.count), 0);
+      }
     } finally { await page.close(); }
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, cases: observations.map(item => ({ zone: item.zone, damage: item.damage.amount, health: item.damage.health })) }));
+  console.log(JSON.stringify({ passed: true, cases: observations.filter(item => item.zone)
+    .map(item => ({ zone: item.zone, damage: item.damage.amount, health: item.damage.health })), retainedCorpse: true }));
 } finally {
   await writeFile(join(directory, 'observations.json'), JSON.stringify({ observations, errors }, null, 2));
   await browser.close();

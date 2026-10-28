@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createNraAppearance, sculptNraPoint, createNraAppearanceApplicator, NRA_FACE_NAME } from '../src/nra-appearance.js';
+import { createNraAppearance, nraUniformForSquad, sculptNraPoint, createNraAppearanceApplicator, NRA_FACE_NAME } from '../src/nra-appearance.js';
+
+test('five whole squad slots use each uniform and replacement generations retain their squad style', () => {
+  const squads = Array.from({ length: 10 }, (_, index) => ({ index, id: `friendly-${index}` }));
+  assert.deepEqual(squads.map(squad => nraUniformForSquad(squad.index)), ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B']);
+  for (const formation of squads) for (let generation = 0; generation < 3; generation++) {
+    const members = Array.from({ length: 10 }, (_, member) => createNraAppearance({
+      id: `${formation.id}:${generation}:${member}`, unitId: formation.id, formation,
+    }));
+    assert.ok(members.every(member => member.uniform === nraUniformForSquad(formation.index)));
+  }
+  for (const invalid of [-1, 10, 4.5, NaN, undefined]) assert.throws(() => nraUniformForSquad(invalid), /ten squad slots/);
+});
 
 test('individual traits are stable per owned identity and distribute across many combinations', () => {
   const people = Array.from({ length: 100 }, (_, index) => ({ id: `soldier-${index + 1}`, unitId: `friendly-${Math.floor(index / 10)}` }));
@@ -48,4 +60,25 @@ test('pooled views restore neutral assets and reuse cached variants without muta
   apply.apply(appearance); assert.equal(mesh.geometry, variant);
   assert.ok([...mesh.geometry.attributes.normal.array].every(Number.isFinite));
   variant.dispose(); geometry.dispose(); mesh.material.dispose(); material.dispose();
+});
+
+test('detail pool rebind switches complete A/B clothing and restores A without changing either shared source', () => {
+  const original = new THREE.BoxGeometry(1, 1, 1), remade = original.clone().translate(.01, 0, 0);
+  const materialA = new THREE.MeshStandardMaterial({ color: '#808040' }), materialB = materialA.clone();
+  materialB.color.set('#707560');
+  const mesh = new THREE.SkinnedMesh(original, materialA); mesh.name = '衣服';
+  const apply = createNraAppearanceApplicator([mesh], { geometries: new Map(), materials: new Map() },
+    new Map([[mesh.name, { geometry: remade, material: materialB }]]));
+  const sourceA = original.attributes.position.array.slice(), sourceB = remade.attributes.position.array.slice();
+  const person = { id: 'squad-test', unitId: 'friendly-5', formation: { index: 5 } };
+  const appearanceB = { ...createNraAppearance(person), build: 0 };
+  apply.apply(appearanceB); assert.equal(mesh.material, materialB);
+  assert.deepEqual(mesh.geometry.attributes.position.array, sourceB);
+  const cachedB = mesh.geometry;
+  const appearanceA = { ...createNraAppearance({ ...person, formation: { index: 0 } }), build: 0 };
+  apply.apply(appearanceA); assert.equal(mesh.material, materialA);
+  assert.deepEqual(mesh.geometry.attributes.position.array, sourceA);
+  apply.apply(appearanceB); assert.equal(mesh.geometry, cachedB);
+  apply.apply(null); assert.equal(mesh.geometry, original); assert.equal(mesh.material, materialA);
+  assert.deepEqual(original.attributes.position.array, sourceA); assert.deepEqual(remade.attributes.position.array, sourceB);
 });

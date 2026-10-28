@@ -45,6 +45,7 @@ import { createRallyRenderer } from './rally-renderer.js';
 import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
+import { CORPSE_RULES, createCasualtyState, expiredCorpses } from './casualties.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -181,6 +182,8 @@ let allies = [];
 let enemies = [];
 let friendlyAI = [];
 let friendlyForces = [];
+const corpses = new Map();
+let corpseCleanupAt = 0;
 let allForces = [];
 let formations = [];
 let aiCursor = 0;
@@ -697,10 +700,11 @@ function spawnFormation(formation, initial = false) {
   return true;
 }
 
-function clearActors(list) {
-  nraCharacter?.remove(list);
-  ijaCharacter?.remove(list);
-  for (const actor of list) {
+function clearActors(list, preserveCorpses = false) {
+  const removed = list.filter(actor => !preserveCorpses || !corpses.has(actor.id));
+  nraCharacter?.remove(removed);
+  ijaCharacter?.remove(removed);
+  for (const actor of removed) {
     scene.remove(actor.model);
     const transport = occupiedVehicle(entities, actor);
     if (transport) {
@@ -713,6 +717,7 @@ function clearActors(list) {
 }
 
 function clearTransient() {
+  corpseCleanupAt = 0;
   boundaryStates.clear();
   combatEvents.clear();
   rifleReports.length = 0;
@@ -747,6 +752,7 @@ function beginMatch() {
   clearActors(allies);
   clearActors(enemies);
   clearActors(friendlyAI);
+  clearActors([...corpses.values()]); corpses.clear();
   vehicleRenderer.clear();
   resetEntities(entities);
   clearTransient();
@@ -808,7 +814,7 @@ function deploy(squadId, spawnId = null) {
     if (!(error instanceof FormationPlacementError)) throw error;
     $('deployment-error').textContent = error.message; toast(error.message); return;
   }
-  clearActors(allies);
+  clearActors(allies, true);
   if (weapon) {
     camera.remove(weapon);
     // View models own only their hierarchy; their geometry/materials are shared.
@@ -1164,7 +1170,14 @@ function finishActorDeath(actor, source) {
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.deathTime = time;
     actor.deathSource = typeof source === 'object' ? source : null;
-    actor.position.y = world.groundHeight(actor.position.x, actor.position.z) + .3;
+    if (!actor.vehicleId) {
+      actor.position.y = world.groundHeight(actor.position.x, actor.position.z);
+      const dropSide = actor.tactics.id % 2 ? .65 : -.65, c = Math.cos(actor.heading), s = Math.sin(actor.heading);
+      const drop = circleBlocked(actor.position.x + dropSide * c, actor.position.z - dropSide * s, .12,
+        movementObstacles(actor.position.x, actor.position.z)) ? [0, .05, 0] : [dropSide, .05, 0];
+      actor.casualty = createCasualtyState(actor, time, actor.nativeMotion ? sampleNraMotion(actor) : null, { drop });
+      corpses.set(actor.id, actor);
+    }
     if (!actor.friendly) {
       const credit = source?.credit ?? source;
       if (credit === 'player') kills++;
@@ -1489,6 +1502,7 @@ function updatePlayer(dt) {
   }
   if (!actor.vehicleId) position.y = world.groundHeight(position.x, position.z);
   actor.heading = yaw;
+  actor.aimWalking = foot && held.aiming && motion.speed > .06 && !motion.sprinting;
   actor.rifleReady = !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
   if (actor.nativeMotion) advanceNraMotion(actor, dt);
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
@@ -1597,19 +1611,6 @@ function squadCommand(follow) {
 }
 function walkActor(actor, target, speed, dt, sprint = false) {
   const profile = FOOT_SPEEDS[actor.groundType];
-  let pace = 'jog';
-  if (actor.friendly) {
-    const distance = Math.hypot(target.x - actor.position.x, target.z - actor.position.z);
-    pace = chooseAdvancePace({ preference: (actor.tactics.id * .61803398875) % 1, urgent: sprint,
-      threat: Boolean(actor.tactics.lastSeen), distance, exhausted: actor.locomotion.exhausted, stamina: actor.locomotion.stamina,
-      catchUp: actor.playerUnit && actor.order === 'follow' });
-    sprint = pace === 'sprint';
-    if (distance > 1.3) speed = profile[pace];
-  }
-  if (actor.friendly && sprint) {
-    sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > .15;
-    speed = sprint ? profile.sprint : profile.jog;
-  }
   const pos = actor.position;
   if ((!actor.path || !actor.path.length) && time >= (actor.nextPath || 0) ||
       !actor.pathGoal || Math.hypot(actor.pathGoal.x - target.x, actor.pathGoal.z - target.z) > .75 ||
@@ -1636,6 +1637,25 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   const dz = waypoint.z - pos.z;
   const distance = Math.hypot(dx, dz);
   if (distance < .05) return;
+  const obstacles = movementObstacles(pos.x, pos.z);
+  const heading = Math.atan2(-dx, -dz);
+  let space = actor.tactics.movementSpace;
+  if (!space || time >= space.expiresAt || Math.hypot(pos.x - space.x, pos.z - space.z) > .6 ||
+    Math.cos(heading - space.heading) < .9) {
+    space = { x: pos.x, z: pos.z, heading, expiresAt: time + .35,
+      constrained: [-1, 1].some(side => circleBlocked(pos.x - dz / distance * side, pos.z + dx / distance * side, .42, obstacles)) };
+    actor.tactics.movementSpace = space;
+  }
+  let pace = chooseAdvancePace({ preference: (actor.tactics.id * .61803398875) % 1, urgent: sprint,
+    threat: Boolean(actor.tactics.lastSeen), distance: Math.hypot(target.x - pos.x, target.z - pos.z),
+    exhausted: actor.locomotion.exhausted, stamina: actor.locomotion.stamina, constrained: space.constrained,
+    catchUp: actor.playerUnit && actor.order === 'follow' });
+  if (pace === 'aim' && actor.tactics.lastSeen) {
+    const observed = actor.tactics.lastSeen, aimingHeading = Math.atan2(pos.x - observed.x, pos.z - observed.z);
+    if (Math.cos(aimingHeading - heading) <= .8) pace = space.constrained ? 'walk' : 'jog';
+  }
+  sprint = pace === 'sprint';
+  speed = Math.hypot(target.x - pos.x, target.z - pos.z) > 1.3 ? profile[pace] : Math.min(speed, profile[pace]);
   actor.stance = 'standing'; actor.firingPose = null;
   if (!postureReady(actor)) {
     actor.turningThisStep = true;
@@ -1643,7 +1663,7 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     actor.tactics.mode = 'rise-to-move';
     return;
   }
-  const turn = advanceAITurn(actor, Math.atan2(-dx, -dz), dt, true);
+  const turn = advanceAITurn(actor, heading, dt, true);
   actor.turningThisStep = true;
   if (!turn.mayMove) {
     actor.locomotion.mode = 'turn';
@@ -1663,17 +1683,12 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   const step = Math.min(speed * dt, distance);
   const beforeX = pos.x;
   const beforeZ = pos.z;
-  moveGround(pos, dx / distance * step, dz / distance * step, .42, movementObstacles(pos.x, pos.z));
+  moveGround(pos, dx / distance * step, dz / distance * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
     const side = actor.index % 2 ? -1 : 1;
-    moveGround(pos, -dz / distance * step * side, dx / distance * step * side, .42, movementObstacles(pos.x, pos.z));
+    moveGround(pos, -dz / distance * step * side, dx / distance * step * side, .42, obstacles);
   } else actor.stuckTime = 0;
-  if (actor.friendly && pace === 'aim' && actor.tactics.lastSeen) {
-    const observed = actor.tactics.lastSeen;
-    const aimingHeading = Math.atan2(pos.x - observed.x, pos.z - observed.z);
-    if (Math.cos(aimingHeading - actor.heading) <= .7) pace = 'walk';
-  }
   pos.y = world.groundHeight(pos.x, pos.z);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
   actor.walkPoseReady = true;
@@ -1681,6 +1696,7 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog + .1;
   actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : pace;
   actor.aimWalking = pace === 'aim' && actor.locomotion.speed > .06;
+  if (actor.aimWalking) actor.rifleReady = true;
 }
 
 const posturePreviews = new WeakMap();
@@ -1905,7 +1921,7 @@ function fightFromCover(actor, target, dt) {
   const suppressed = time < t.suppressedUntil;
   const solution = Boolean(target && t.threatSense === 'vision' && t.threatId === target.id && mayFire &&
     canWeaponDamageTarget('rifle', t.threatKind) && canRiflemanTrackTarget(t.threatKind));
-  actor.rifleReady = solution && facing && actor.locomotion.speed <= .1 && actor.locomotion.aimRecovery === 0;
+  actor.rifleReady = actor.aimWalking || solution && facing && actor.locomotion.speed <= .1 && actor.locomotion.aimRecovery === 0;
   let muzzle = null, firingOptions = [];
   if (!attemptAIRifleShot(actor, { now: time, targetId: target?.id ?? null, suppressed,
     postureSettled: postureReady(actor) && nativeAimReady(actor),
@@ -2166,16 +2182,16 @@ function updateAI(dt) {
     position.y = world.groundHeight(position.x, position.z);
     if (!['playing', 'transferring', 'dead'].includes(state)) break;
   }
-  for (const actor of friendlyForces) {
-    if (actor === player || actor.health <= 0) continue;
+  for (const actor of allForces) {
+    if (actor === player || actor.health <= 0 || actor.vehicleId) continue;
     advanceStamina(actor.locomotion, dt, actor.locomotion.sprinting, FOOT_SPEEDS[actor.groundType].load);
   }
   aiCursor = (aiCursor + 12) % Math.max(1, allForces.length);
   if (time >= populationRefreshAt) {
     populationRefreshAt = time + 1;
     const retainActor = actor => {
-      if (actor.health > 0 || time - actor.deathTime <= 12) return true;
-      clearActors([actor]);
+      if (actor.health > 0) return true;
+      if (!corpses.has(actor.id)) clearActors([actor]);
       return false;
     };
     enemies = enemies.filter(retainActor);
@@ -2348,7 +2364,7 @@ function updateHUD() {
   const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}`;
-  $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军统一军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
+  $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('scoreboard-stats').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}\n占领据点 ${objectives.filter(p => p.captured).length} / 3　出击 ${deployments}次\n本单位 ${allies.filter(actor => actor.health > 0).length} / ${allies.length}人\n我方 ${china.units}/10单位 ${china.alive}人 ${china.vehicles}/2载具\n日军 ${japan.units}/10单位 ${japan.alive}人 ${japan.vehicles}/2载具`;
   $('section-status').hidden = deployedType !== 'infantry';
   $('section-status').textContent = deployedType === 'infantry' ? `本班 ${allies.filter(actor => actor.health > 0).length}/${allies.length}` : '';
@@ -2396,6 +2412,12 @@ function advanceBattleStep(dt, presentationTime) {
   if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) updateObjectives(dt);
   if (activeStates.has(state)) updateProjectiles(dt);
+  if (corpses.size > CORPSE_RULES.softLimit && time >= corpseCleanupAt) {
+    corpseCleanupAt = time + 1;
+    for (const actor of expiredCorpses(corpses.values(), time)) {
+      corpses.delete(actor.id); clearActors([actor]);
+    }
+  }
   presentCombatEvents(presentationTime);
   if (activeStates.has(state)) updateEffects(dt);
   updateDeathFeedback(dt);
@@ -2451,11 +2473,12 @@ function tick(now) {
   renderBattleBoundary();
   rallyRenderer.update(spawnPoints);
   const instancesStarted = benchmark ? performance.now() : 0;
-  nraCharacter?.update(friendlyForces, time, entities.control.soldierId, graphics.snapshot.preset);
-  ijaCharacter?.update(enemies, time, entities.control.soldierId, graphics.snapshot.preset);
+  const displayed = [...new Set([...allForces.filter(actor => actor.health > 0), ...corpses.values()])];
+  nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, graphics.snapshot.preset);
+  ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, graphics.snapshot.preset);
   uniformExcludedIds.clear();
   for (const force of [nraCharacter, ijaCharacter]) for (const id of force?.excludedIds ?? []) uniformExcludedIds.add(id);
-  soldierRenderer.update(allForces, graphics.snapshot.preset, time, entities.control.soldierId, uniformExcludedIds);
+  soldierRenderer.update(displayed, graphics.snapshot.preset, time, entities.control.soldierId, uniformExcludedIds);
   const renderStarted = benchmark ? performance.now() : 0;
   if (benchmark) telemetry.add('instancesMs', renderStarted - instancesStarted);
   renderer.render(scene, camera);
@@ -2528,6 +2551,7 @@ $('back-menu').addEventListener('click', () => {
   clearActors(allies);
   clearActors(enemies);
   clearActors(friendlyAI);
+  clearActors([...corpses.values()]); corpses.clear();
   vehicleRenderer.clear();
   resetEntities(entities); resetDeathTransfer(deathTransfer);
   playerInput.reset(); controlEvents.clear();
@@ -2703,6 +2727,10 @@ canvas.addEventListener('webglcontextlost', event => {
 
 // A read-only snapshot makes local smoke tests observable without exposing gameplay mutations.
 Object.defineProperty(window, '__battle', { get: () => ({
+  corpses: { rules: CORPSE_RULES, count: corpses.size, members: [...corpses.values()].map(actor => ({
+    id: actor.id, team: actor.team, time: actor.casualty.time, age: time - actor.casualty.time,
+    variant: actor.casualty.variant, retainGun: actor.casualty.retainGun,
+    position: { x: actor.position.x, y: actor.position.y, z: actor.position.z } })) },
   build: { ...buildStamp, development: import.meta.env.DEV },
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
   control: { ...entities.control },

@@ -55,10 +55,15 @@ test('advance pace varies by person, with aimed walking and tactical catch-up ra
   const base = { urgent: false, threat: true, distance: 30, exhausted: false, stamina: 1 };
   assert.equal(chooseAdvancePace({ ...base, preference: .1 }), 'aim');
   assert.equal(chooseAdvancePace({ ...base, preference: .5 }), 'jog');
-  assert.equal(chooseAdvancePace({ ...base, preference: .9 }), 'sprint');
-  assert.equal(chooseAdvancePace({ ...base, preference: .1, threat: false }), 'walk');
+  assert.equal(chooseAdvancePace({ ...base, preference: .9 }), 'jog');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, threat: false }), 'sprint');
   assert.equal(chooseAdvancePace({ ...base, preference: .1, catchUp: true }), 'sprint');
   assert.equal(chooseAdvancePace({ ...base, preference: .9, exhausted: true }), 'jog');
+  assert.equal(chooseAdvancePace({ ...base, preference: .9, constrained: true, urgent: true }), 'walk');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, constrained: true }), 'aim');
+  assert.equal(chooseAdvancePace({ ...base, preference: .9, threat: false, distance: 2 }), 'walk');
+  assert.equal(chooseAdvancePace({ ...base, preference: .5, urgent: true }), 'sprint');
+  assert.throws(() => chooseAdvancePace({ ...base, preference: .2, constrained: 'yes' }), /tactical facts/);
 });
 
 test('owned posture blends lower actual eye, aim and gun height and delay firing until settled', () => {

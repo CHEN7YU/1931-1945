@@ -28,7 +28,7 @@ try {
     console.log(`LMG: ${appearance} deployment`);
     const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
     if (appearance === 'procedural') url.searchParams.set('character', 'procedural');
-    await page.goto(url.href);
+    await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await wait(() => window.__battle?.state === 'menu');
     await page.locator('#menu-quality').selectOption('low');
     await page.locator('#deploy').click();

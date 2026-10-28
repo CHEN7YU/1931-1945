@@ -25,7 +25,7 @@ test('corpse appearance derives from simulation death/seat/time without mutating
   assert.equal(renderer.snapshot.visible, 0);
   actor.vehicleId = null;
   renderer.update([actor], 'high', 13.1);
-  assert.equal(renderer.snapshot.visible, 0, 'the existing twelve-second corpse limit remains intact');
+  assert.equal(renderer.snapshot.visible, 1, 'corpse removal belongs to the shared retention policy, not a twelve-second renderer timer');
   assert.equal(actor.health, 0);
   assert.deepEqual(actor.position, position);
   for (const object of scene.children) if (object.isInstancedMesh) object.dispose();

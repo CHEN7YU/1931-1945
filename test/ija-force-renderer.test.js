@@ -54,7 +54,7 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   const casualty = actors.find(actor => actor.id === renderer.focusedSnapshot.actorId);
   casualty.health = 0; casualty.deathTime = 2;
   renderer.update(actors, 15, null, 'high');
-  assert.equal(renderer.snapshot.members.find(member => member.id === casualty.id).tier, 'hidden');
+  assert.notEqual(renderer.snapshot.members.find(member => member.id === casualty.id).tier, 'hidden', 'corpse expiration is shared policy, not a renderer timer');
   renderer.remove(actors); renderer.update([], 16, null, 'high');
   assert.equal(renderer.excludedIds.size, 0);
   const replacement = { ...actors[0], id: 'enemy-respawn-101', health: 100 };

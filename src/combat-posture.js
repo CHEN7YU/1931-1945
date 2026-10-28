@@ -49,12 +49,16 @@ export function chooseCombatPosture({ distance, moving, covered, exposed, suppre
   return 'crouched';
 }
 
-export function chooseAdvancePace({ preference, urgent, threat, distance, exhausted, stamina, catchUp = false }) {
+export function chooseAdvancePace({ preference, urgent, threat, distance, exhausted, stamina, catchUp = false, constrained = false }) {
   if (!Number.isFinite(preference) || preference < 0 || preference >= 1 || !Number.isFinite(distance) || distance < 0 ||
     !Number.isFinite(stamina) || stamina < 0 || stamina > 1 ||
-    ![urgent, threat, exhausted, catchUp].every(value => typeof value === 'boolean')) throw new RangeError('Advance pace needs bounded personal and tactical facts');
-  if (urgent || catchUp && distance > 14 || preference > .73) return !exhausted && stamina > .2 ? 'sprint' : 'jog';
-  return preference < .3 ? threat ? 'aim' : 'walk' : 'jog';
+    ![urgent, threat, exhausted, catchUp, constrained].every(value => typeof value === 'boolean')) throw new RangeError('Advance pace needs bounded personal and tactical facts');
+  if (constrained) return threat && preference < .3 ? 'aim' : 'walk';
+  if (urgent || catchUp && distance > 14 || !threat && distance > 10 + preference * 6) {
+    return !exhausted && stamina > .2 ? 'sprint' : 'jog';
+  }
+  if (threat) return preference < .3 ? 'aim' : 'jog';
+  return distance < 4 ? 'walk' : 'jog';
 }
 
 export function chooseShotRelocation({ position, threat, preference, blocked, heightAt, canFinish = () => true }) {

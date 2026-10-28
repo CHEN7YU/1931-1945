@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
+import { createCasualtyState } from '../src/casualties.js';
+import { createNativeGaitProfile } from '../src/nra-gait.js';
 
 test('distant shared geometry preserves actual transformed skin vertices, normals, UVs and material groups', () => {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -27,6 +29,41 @@ test('distant shared geometry preserves actual transformed skin vertices, normal
   }
   assert.ok(baked.boundingSphere.radius > .5);
   baked.dispose(); geometry.dispose(); mesh.material.dispose();
+});
+
+test('shared casualty banks grow explicitly when the minimum retention time temporarily exceeds their capacity', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, 0);
+  const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const profile = createNativeGaitProfile(track), geometry = new THREE.BoxGeometry(.4, 1.7, .3);
+  const material = new THREE.MeshStandardMaterial();
+  function view() {
+    const root = new THREE.Group(), flag = new THREE.Mesh(geometry, material); flag.name = 'corpse-flag';
+    root.add(new THREE.Mesh(geometry, material), flag);
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
+    return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
+      optionalAttachments: [{ mesh: flag, enabled: () => true }],
+      bind() {}, update(person) { flag.visible = true; root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
+      get snapshot() { return null; } };
+  }
+  const renderer = createNraForceRenderer(scene, camera, view(), 2);
+  const bodies = Array.from({ length: 10 }, (_, index) => {
+    const actor = { id: `body-${index}`, unitId: 'old-unit', team: 'friendly', heading: 0, health: 0,
+      position: new THREE.Vector3(index * .1, 0, -50), walkPhase: 0, locomotion: { speed: 0 }, rifle: createRifleState() };
+    actor.nativeMotion = createNraMotion(profile, actor);
+    actor.casualty = createCasualtyState(actor, 0, null, { variant: 0, retainGun: false });
+    return actor;
+  });
+  renderer.update(bodies, 30, null, 'high');
+  assert.equal(renderer.snapshot.far, 10);
+  const occupied = renderer.root.children.filter(mesh => mesh.isInstancedMesh && mesh.count > 0);
+  assert.equal(occupied.filter(mesh => !mesh.name.startsWith('owned-weapon-')).length, 2);
+  assert.ok(occupied.some(mesh => mesh.name === 'owned-weapon-rifle'));
+  assert.ok(occupied.every(mesh => mesh.count === 10 && mesh.instanceMatrix.count >= 10), 'body, owned firearm and attached flag grow together');
+  renderer.update(bodies, 30, null, 'high');
+  assert.equal(renderer.snapshot.far, 10);
+  for (const mesh of renderer.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }
+  geometry.dispose(); material.dispose();
 });
 
 test('all friendly identities retain uniforms while detail pooling survives casualties and replacement deployments', async () => {
@@ -67,7 +104,7 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   assert.equal(force.focusedSnapshot.soldier.health, 100);
   assert.ok(actors.every(actor => actor.ammo === 5), 'View substitution cannot refill personal weapons');
   force.update(actors, 14, actors[0].id, 'high');
-  assert.equal(force.snapshot.members.find(member => member.id === observed).tier, 'hidden');
+  assert.notEqual(force.snapshot.members.find(member => member.id === observed).tier, 'hidden', 'rendering must not independently expire corpses after twelve seconds');
   force.remove(actors); force.update([], 14, null, 'high');
   assert.equal(force.snapshot.assigned, 0); assert.equal(force.focusedSnapshot, null);
   const replacement = { ...actors[1], id: 'replacement-101', health: 100 };

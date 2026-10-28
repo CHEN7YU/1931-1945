@@ -22,6 +22,7 @@ try {
     const { loadStudyAppearance } = await import('/uniform-study/skin.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
     const { createRifleState } = await import('/src/rifle-action.js');
+    const { fitIjaPoint } = await import('/uniform-study/proportions.js');
     await configureRifleMaterials();
     const [template, appearance] = await Promise.all([loadIjaCharacter(), loadStudyAppearance()]);
     const study = createUniformStudy({ upperBody: appearance.upperBody });
@@ -29,7 +30,7 @@ try {
     const key = point => point.toArray().map(value => Math.round(value * 10000)).join(',');
     const garment = study.root.getObjectByName('standing-collar-tunic').geometry, panelKeys = new Set(), sleeveKeys = new Set(), tunicKeys = new Set();
     for (let index = 0; index < garment.attributes.position.count; index++) {
-      const point = new THREE.Vector3().fromBufferAttribute(garment.attributes.position, index);
+      const point = fitIjaPoint(new THREE.Vector3().fromBufferAttribute(garment.attributes.position, index));
       tunicKeys.add(key(point));
       if (index < garment.userData.bodyTriangleCount * 3) panelKeys.add(key(point));
       else if (index < (garment.userData.bodyTriangleCount + garment.userData.sleeveTriangleCount) * 3) sleeveKeys.add(key(point));
@@ -137,6 +138,7 @@ try {
         for (let index = 0; index < positions.count; index += step) {
           const point = new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(node.matrixWorld);
           if (strap && (point.y < 1.15 || point.y > 1.44)) continue;
+          fitIjaPoint(point);
           const center = point.toArray().map(value => Math.round(value * 10000));
           let entry;
           for (let x = -1; x <= 1 && !entry; x++) for (let y = -1; y <= 1 && !entry; y++) for (let z = -1; z <= 1 && !entry; z++) {
@@ -154,7 +156,8 @@ try {
       const clothOwnership = { panelVertices: 0, cuffVertices: 0, wrongPanelWeight: 0, wrongCuffWeight: 0 };
       for (let index = 0; index < cloth.geometry.attributes.position.count; index++) {
         const point = new THREE.Vector3().fromBufferAttribute(cloth.geometry.attributes.position, index), id = key(point);
-        const panel = panelKeys.has(id), cuff = !panel && sleeveKeys.has(id) && point.y < 1.10;
+        const panel = panelKeys.has(id), cuff = !panel && sleeveKeys.has(id) &&
+          point.y < fitIjaPoint(new THREE.Vector3(0, 1.10, 0)).y;
         if (!panel && !cuff) continue;
         clothOwnership[panel ? 'panelVertices' : 'cuffVertices']++;
         const side = point.x > 0 ? 'Left' : 'Right';

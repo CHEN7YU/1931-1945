@@ -12,12 +12,12 @@
   },
   "sourcePermissionRecord": "/assets/game/nra-88/PERMISSION.txt",
   "sourceModelSha256": "37408cdb218accc431eb6b28b6b595071e45d9de48b237e428446982d29ae898",
-  "modelSha256": "cb96112503b71ef1cd1de6904d84bcfcedf6e44c6f8b68df01ce426101c790fd",
+  "modelSha256": "ed1e9a53441375813b974c8fc0e903c409312f3b347da4d724cbec836226609d",
   "files": [
     {
       "file": "character.glb",
-      "bytes": 7182368,
-      "sha256": "cb96112503b71ef1cd1de6904d84bcfcedf6e44c6f8b68df01ce426101c790fd"
+      "bytes": 7182312,
+      "sha256": "ed1e9a53441375813b974c8fc0e903c409312f3b347da4d724cbec836226609d"
     }
   ],
   "runtimeMotion": {
@@ -752,5 +752,11 @@
       0,
       -0.891
     ]
+  },
+  "proportions": {
+    "version": 1,
+    "helmetTopMeters": 1.683,
+    "historicalAcceptance": false,
+    "description": "Shorter legs and modestly broader lower torso; unchanged shoulder/head proportions and boot clearance. Art direction, not a population measurement."
   }
 }
