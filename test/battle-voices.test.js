@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { battleVoiceClips, BATTLE_VOICE_PROFILES } from '../src/battle-voice-lines.js';
 import { createBattleVoices, battleVoiceCue, battleVoiceMix, soldierVoiceVariant, createObjectiveVoiceTracker,
   battleClockDirection, findBattleCallout } from '../src/battle-voices.js';
-import { voiceSSML, VOICE_FORMAT } from '../scripts/prepare-battle-voices.mjs';
+import { voiceSSML, voiceSynthesisHash, VOICE_FORMAT } from '../scripts/prepare-battle-voices.mjs';
 import { advanceCapture, makeObjectives } from '../src/core.js';
 
 const listener = { position: { x: 0, y: 1.7, z: 0 }, right: { x: 1, y: 0, z: 0 }, soldierId: 'player' };
@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('264 original clips use three distinct stock male voices per side, with reproducible SSML', () => {
+test('266 clips retain three stock male voices per side, with four reviewed Chinese charge takes', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 264);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 264);
+  assert.equal(clips.length, 266);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 266);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 186 : 78);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 188 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -63,24 +63,94 @@ test('264 original clips use three distinct stock male voices per side, with rep
   assert.equal(soldierVoiceVariant('soldier-42'), soldierVoiceVariant('soldier-42'));
   assert.equal(new Set(Array.from({ length: 20 }, (_, i) => soldierVoiceVariant(`soldier-${i}`))).size, 3);
   assert.throws(() => soldierVoiceVariant(''), /identity/);
+  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 262);
+  const reviewed = clips.filter(clip => clip.delivery);
+  assert.equal(reviewed.length, 4);
+  assert.ok(reviewed.every(clip => clip.team === 'friendly' && clip.id === 'advance-1' && [0, 2].includes(clip.variant)));
+  assert.ok(reviewed.every(clip => clip.rate === '+12%' && clip.pitch === '+2%' &&
+    clip.styledegree === '1.8' && clip.pauseMs === 80));
+  assert.match(voiceSSML(reviewed[0]), /冲啊<break time="80ms"\/>跟我上！/);
+  assert.throws(() => voiceSynthesisHash({ ...reviewed[0], text: '另一句台词！' }), /Reviewed delivery text or voice parameters changed/);
+  assert.throws(() => voiceSynthesisHash({ ...reviewed[0], pitch: '+9%' }), /Reviewed delivery text or voice parameters changed/);
 });
 
-test('all generated MP3s have exact source evidence and cannot be accidentally relabelled CC0', async () => {
+test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabelled CC0', async () => {
   const base = new URL('../public/assets/audio/battle-voices/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 264);
+  assert.equal(manifest.files.length, 266);
+  assert.equal(manifest.format, 'mixed');
+  assert.equal(manifest.defaultFormat, VOICE_FORMAT);
   for (const clip of battleVoiceClips()) {
     const record = manifest.files.find(file => file.file === clip.file);
     const bytes = await readFile(new URL(clip.file, base));
     assert.equal(record.gender, 'Male');
     assert.equal(bytes.length, record.bytes);
     assert.equal(createHash('sha256').update(bytes).digest('hex'), record.sha256);
-    assert.equal(createHash('sha256').update(`${VOICE_FORMAT}\n${voiceSSML(clip)}`).digest('hex'), record.synthesisHash);
+    assert.equal(voiceSynthesisHash(clip), record.synthesisHash);
+    if (clip.delivery) {
+      assert.equal(record.sha256, clip.delivery.sha256, 'never substitute a new synthesis for an approved take');
+      assert.deepEqual(record.delivery, clip.delivery);
+      assert.equal(record.format, 'riff-24khz-16bit-mono-pcm');
+      assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+      assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
+      assert.equal(bytes.readUInt16LE(20), 1);
+      assert.equal(bytes.readUInt16LE(22), 1);
+      assert.equal(bytes.readUInt32LE(24), 24000);
+      assert.equal(bytes.readUInt16LE(34), 16);
+      const duration = (bytes.length - 44) / 48000;
+      assert.ok(duration > 1.2 && duration < 1.72);
+      assert.ok(Math.abs(clip.delivery.ahDuration - clip.delivery.targetAhDuration) < .001);
+      let sum = 0, peak = 0;
+      for (let offset = 44; offset < bytes.length; offset += 2) {
+        const value = bytes.readInt16LE(offset) / 32767;
+        sum += value * value; peak = Math.max(peak, Math.abs(value));
+      }
+      assert.ok(Math.abs(Math.sqrt(sum / ((bytes.length - 44) / 2)) - .06) < .00001);
+      assert.ok(peak <= .7501);
+    } else {
+      assert.equal(createHash('sha256').update(`${VOICE_FORMAT}\n${voiceSSML(clip)}`).digest('hex'), record.synthesisHash);
+    }
     assert.ok(bytes.length > 500);
   }
   assert.doesNotMatch(JSON.stringify(manifest), /Bearer|\/subscriptions\/|accessToken|api[_-]?key/i);
+});
+
+test('charge phrases remain equally likely before selecting short/long takes at 3:1 for A and C', () => {
+  for (const variant of [0, 2]) {
+    const soldier = Array.from({ length: 20 }, (_, i) => actor(`charge-${i}`))
+      .find(soldier => soldierVoiceVariant(soldier.id) === variant);
+    const counts = new Map(), takes = new Map();
+    for (let line = 0; line < 12; line++) for (let take = 0; take < 4; take++) {
+      const draws = [0, 0, (line + .5) / 12, (take + .5) / 4, 0], context = fakeContext();
+      const decoded = buffers(), audio = createBattleVoices(decoded, () => draws.shift() ?? 0);
+      audio.sync(true); audio.update(context, [soldier], listener, 2);
+      const played = battleVoiceClips().find(clip => clip.file === audio.snapshot.history[0].file);
+      assert.equal(context.sources[0].buffer, decoded[played.file]);
+      counts.set(played.id, (counts.get(played.id) ?? 0) + 1);
+      if (played.delivery) takes.set(played.delivery.take, (takes.get(played.delivery.take) ?? 0) + 1);
+      audio.reset();
+    }
+    assert.deepEqual([...counts.entries()], [['advance-1', 16], ['advance-2', 16], ['advance-3', 16]]);
+    assert.deepEqual([...takes.entries()], [['short', 12], ['long', 4]]);
+  }
+});
+
+test('long and short takes share phrase repetition protection and stop immediately on pause', () => {
+  const soldier = Array.from({ length: 20 }, (_, i) => actor(`charge-${i}`))
+    .find(soldier => soldierVoiceVariant(soldier.id) === 0);
+  let draw = 0;
+  const context = fakeContext(), audio = createBattleVoices(buffers(), () => ++draw === 4 ? .99 : 0);
+  audio.sync(true); audio.update(context, [soldier], listener, 2);
+  assert.equal(audio.snapshot.history[0].file, 'friendly-0-advance-1-long.wav');
+  finish(context); audio.update(context, [soldier], listener, 32);
+  assert.equal(audio.snapshot.history[1].file, 'friendly-0-advance-2.mp3');
+  finish(context); audio.update(context, [soldier], listener, 62);
+  assert.equal(audio.snapshot.history[2].file, 'friendly-0-advance-1.wav');
+  audio.sync(false);
+  assert.equal(audio.snapshot.active, 0);
+  assert.ok(context.sources.at(-1).stopped);
 });
 
 test('situational cues use actual live infantry state, prioritizing grenade evasion over reload and contact', () => {

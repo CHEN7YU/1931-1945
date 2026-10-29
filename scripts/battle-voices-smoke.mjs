@@ -8,14 +8,14 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', response => {
-    if (/battle-voices\/.*\.mp3/.test(response.url()) && response.ok()) requests.add(response.url());
+    if (/battle-voices\/.*\.(mp3|wav)/.test(response.url()) && response.ok()) requests.add(response.url());
   });
   const url = new URL(base); url.searchParams.set('benchmark', 'interior'); url.searchParams.set('seed', '1938');
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   const snapshot = () => page.evaluate(() => window.__battle);
   assert.equal((await snapshot()).battleVoices.status, 'ready');
-  assert.equal(requests.size, 264, 'all actual Azure MP3s load and decode');
+  assert.equal(requests.size, 266, 'all actual MP3s and reviewed WAVs load and decode');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.battleVoices.history.some(item => item.cue === 'deploy'));
   for (let i = 0; i < 3; i++) await page.keyboard.press('x');
@@ -77,7 +77,8 @@ try {
   const integration = await browser.newPage();
   await integration.goto(base.href);
   const results = await integration.evaluate(async () => {
-    const { loadBattleVoices, createObjectiveVoiceTracker } = await import('/src/battle-voices.js');
+    const { loadBattleVoices, createBattleVoices, soldierVoiceVariant, createObjectiveVoiceTracker } = await import('/src/battle-voices.js');
+    const { battleVoiceClips } = await import('/src/battle-voice-lines.js');
     const { makeObjectives, advanceCapture } = await import('/src/core.js');
     const { createTactics, observeVisualThreat, visibleTargetPoint } = await import('/src/tactics.js');
     const THREE = await import('/node_modules/three/build/three.module.js');
@@ -139,8 +140,32 @@ try {
       voices.update(context, participants, listener, 3, true, sight);
       callouts.push({ hiddenCount, ...voices.snapshot.history.find(item => item.channel === 'callout') });
     }
-    voices.reset(); await context.close();
-    return { cues, events, ambient, callouts };
+    voices.reset();
+    const clips = battleVoiceClips();
+    const buffers = Object.fromEntries(await Promise.all(clips.map(async clip => {
+      const response = await fetch(`/assets/audio/battle-voices/${clip.file}`);
+      if (!response.ok) throw new Error(`Charge playback audio HTTP ${response.status}: ${clip.file}`);
+      return [clip.file, await context.decodeAudioData(await response.arrayBuffer())];
+    })));
+    const charges = [];
+    for (const variant of [0, 2]) for (const take of ['short', 'long']) {
+      const draws = [0, 0, 0, take === 'short' ? 0 : .99, 0];
+      const charge = createBattleVoices(buffers, () => draws.shift() ?? 0);
+      const soldier = Array.from({ length: 20 }, (_, i) => ({
+        ...actors[0], id: `charge-${i}`,
+      })).find(soldier => soldierVoiceVariant(soldier.id) === variant);
+      charge.sync(true); charge.update(context, [soldier], listener, 2);
+      const file = `friendly-${variant}-advance-1${take === 'long' ? '-long' : ''}.wav`;
+      if (charge.snapshot.history[0]?.file !== file || charge.snapshot.active !== 1) {
+        throw new Error(`Reviewed charge take did not start: ${file}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, buffers[file].duration * 1000 + 150));
+      if (charge.snapshot.active !== 0) throw new Error(`Reviewed charge take did not finish: ${file}`);
+      charges.push({ file, duration: buffers[file].duration });
+      charge.reset();
+    }
+    await context.close();
+    return { cues, events, ambient, callouts, charges };
   });
   assert.deepEqual(results.cues, ['capturing', 'contested', 'setback', 'captured', 'lost', 'captured']);
   assert.deepEqual(results.events.history.map(item => item.cue), [...results.cues, 'rally-lost', 'victory', 'defeat', 'draw']);
@@ -151,11 +176,13 @@ try {
   assert.ok(results.ambient.history[1].voice.startsWith('ja-JP-'));
   assert.deepEqual(results.callouts.map(item => item.cue), ['callout-sniper-3', 'callout-machine-gunner-10', 'callout-tank-12']);
   assert.ok(results.callouts.every(item => item.hiddenCount === 0 && item.soldierId === 'reporter'));
+  assert.equal(results.charges.length, 4);
+  assert.ok(results.charges.every(item => item.duration > 1.2 && item.duration < 1.72));
   assert.deepEqual(errors, []);
   await integration.close();
 
   const failed = await browser.newPage();
-  await failed.route('**/assets/audio/battle-voices/friendly-0-advance-1.mp3', route => route.abort());
+  await failed.route('**/assets/audio/battle-voices/friendly-0-advance-1.wav', route => route.abort());
   await failed.goto(url.href);
   await failed.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   assert.equal((await failed.evaluate(() => window.__battle)).battleVoices.status, 'unavailable');
@@ -163,7 +190,7 @@ try {
   assert.match(await failed.locator('#force-status').textContent(), /战场语音不可用/);
   await failed.close();
   console.log(JSON.stringify({ clips: requests.size, commands: 5, objectiveAndMatchEvents: results.events.history,
-    ambient: results.ambient.history, callouts: results.callouts,
+    ambient: results.ambient.history, callouts: results.callouts, reviewedCharges: results.charges,
     actualObjectiveCapture: true, pauseAndRestart: true, missingAudioWarning: true }, null, 2));
 } finally {
   await browser.close();
