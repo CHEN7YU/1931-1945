@@ -1,0 +1,134 @@
+{
+  "provider": "Azure OpenAI",
+  "license": "Azure-generated-images",
+  "isCC0": false,
+  "source": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e",
+  "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
+  "model": "gpt-image-2.5-flare",
+  "version": "2026-09-08",
+  "generatedAt": "2026-10-29T11:40:27.891769+00:00",
+  "budgetUsd": 50,
+  "conservativeEstimatedTotalUsd": 0.029484,
+  "processing": "Original base-color candidates with restrained contrast and normalized steel/cotton tones. Opposite edges blended before WebP encoding; decoded color seams checked. Low-strength image-derived micro-normals; authored roughness and metalness estimates. Steel bevel roughness follows the actual blade UV, not a painted bright outline. Not measured/scanned PBR, historical evidence, or a generated 3D model.",
+  "cottonMetersPerTile": 0.08,
+  "textures": [
+    {
+      "id": "steel",
+      "sourceSha256": "552ca182e4112a99156963ea5631afd6e4128b2128fb4d6b1c5ccabe35ac37cb",
+      "request": {
+        "prompt": "Create one original photorealistic material BASE COLOR texture, not an object render or concept art. Fill the entire 1024-square frame with a flat surface seen straight on. Neutral even diffuse illumination; no highlights, shadows, ambient occlusion, perspective, gradients, vignette, text, watermarks or border. Opposite edges must tile seamlessly. Fine restrained detail, not stylized. Ordinary old carbon steel for a utilitarian Chinese dadao blade. Subtle neutral gray steel, very fine mostly VERTICAL longitudinal grinding marks, scattered short hairline scratches, faint uneven gray patina and only a few tiny muted brown oxidation freckles. Mostly clean bare metal, no heavy rust, hammered dimples, Damascus waves, wood grain or shiny chrome. The surface covers about 10 cm across and 60 cm vertically, shown compressed into this square. No blade silhouette, cutting edge, handle or weapon. Do not draw a bright stripe: the real 3D bevel and game lighting create it.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "usage": {
+        "input_tokens": 206,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 206
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 645
+      },
+      "created": 1793273832,
+      "conservativeEstimatedUsd": 0.014818,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 1.3421223958333333,
+        "y": 1.2200520833333333
+      }
+    },
+    {
+      "id": "cotton",
+      "sourceSha256": "009c20fdba14d565dec7d47f3f785037e13d9f167f0c2aef9c524fab85bacaec",
+      "request": {
+        "prompt": "Create one original photorealistic material BASE COLOR texture, not an object render or concept art. Fill the entire 1024-square frame with a flat surface seen straight on. Neutral even diffuse illumination; no highlights, shadows, ambient occlusion, perspective, gradients, vignette, text, watermarks or border. Opposite edges must tile seamlessly. Fine restrained detail, not stylized. A flat 8 by 8 centimeter patch of finely plain-woven old cotton tape used to wrap a tool grip. Muted dark olive khaki brown dye, densely woven small threads, fine crosswise fibers, mild rubbed and faded variation. No coarse jute, burlap, rope, knitted loops, large weave, folds, seams, holes, blood, objects or bandage roll. Not a picture of a wrapped handle. The texture will be applied to actual narrow overlapping 3D cotton strips.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "usage": {
+        "input_tokens": 187,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 187
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 626
+      },
+      "created": 1793273896,
+      "conservativeEstimatedUsd": 0.014666,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 1.78125,
+        "y": 1.9713541666666667
+      }
+    }
+  ],
+  "files": [
+    {
+      "file": "steel/color.webp",
+      "bytes": 139526,
+      "sha256": "2643c12353508ff3401e51261be876df5b67e39ce45f730190a3af76c708954d",
+      "width": 512,
+      "height": 2048,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "steel/normal.webp",
+      "bytes": 327960,
+      "sha256": "7f9a66cc099b2b5346b83ea2a4e3175178cbb74f6526f1e94fbd022fdbc9c8b1",
+      "width": 256,
+      "height": 1024,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "steel/roughness.webp",
+      "bytes": 108722,
+      "sha256": "d64510d60db57af32e284afb42d15e836e6d04b5ea948115af538ed5932e58b4",
+      "width": 256,
+      "height": 1024,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "steel/metalness.webp",
+      "bytes": 2826,
+      "sha256": "7e9910eb69d122f2f853669112c0f26f05bea33ff201fec6f5a54268dd4fcaa1",
+      "width": 256,
+      "height": 1024,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "cotton/color.webp",
+      "bytes": 70234,
+      "sha256": "f7f9c017bdbac822f80a5881c69183f4f66ddce11caabfe29c9f7408e246d308",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "cotton/normal.webp",
+      "bytes": 102592,
+      "sha256": "7a7f93fb7e11b4de625dd76925866b159c85f7b34ac1ec78753bc1d0f10e2148",
+      "width": 256,
+      "height": 256,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "cotton/roughness.webp",
+      "bytes": 26506,
+      "sha256": "39a81b1877c88391f29663875c6199a63b85c7920a5e375d9b49681b96fc9c27",
+      "width": 256,
+      "height": 256,
+      "colorSpace": "linear"
+    }
+  ]
+}

@@ -45,6 +45,9 @@ import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './project
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
 import { AI_RIFLE, createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
 import { BAYONET, createBayonetState, cancelBayonet, bayonetDistance, advanceBayonet } from './bayonet.js';
+import { DADAO, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase, selectDadaoTarget } from './dadao.js';
+import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
+import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -175,6 +178,7 @@ let surface;
 try {
   surface = await loadSceneMaterials(renderer, scene);
   await setModelSurfaces(surface, renderer.capabilities.getMaxAnisotropy());
+  await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy());
 } catch (error) {
   $('loading').hidden = true;
   $('fatal').hidden = false;
@@ -330,6 +334,7 @@ let pendingSquad = null;
 let pendingSpawn = null;
 let deploymentRefreshAt = 0;
 let toolEquipped = false;
+let dadaoEquipped = false;
 let grenadeEquipped = false;
 let selectedThrowable = 'grenade';
 let controlBinding = null;
@@ -366,7 +371,7 @@ function mechanicalPlayback() {
   const actor = controlledSoldier(entities);
   const owner = controlOwner(entities);
   return { owner, playing: Boolean(state === 'playing' && actor?.health > 0 &&
-    !actor.vehicleId && actor.groundType === 'infantry' && !toolEquipped && !grenadeEquipped && owner.weaponId === actor.rifle?.id) };
+    !actor.vehicleId && actor.groundType === 'infantry' && !toolEquipped && !dadaoEquipped && !grenadeEquipped && owner.weaponId === actor.rifle?.id) };
 }
 
 function syncMechanicalAudio() {
@@ -514,6 +519,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   actor.targetKind = 'person';
   actor.aiRifle = createAIRifleControl();
   actor.bayonet = createBayonetState();
+  actor.dadao = friendly ? createDadaoState() : null;
   actor.breathControl = createBreathState();
   actor.grenades = createGrenadeInventory();
   actor.explosivePack = { get ammo() { return actor.grenades.packs; } };
@@ -536,6 +542,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   registerWeapon(entities, Object.assign(actor.rifle, { nextShot: 0, reloadUntil: 0 }), `${actor.id}:rifle`, actor.id, 'infantry');
   registerWeapon(entities, actor.grenades, `${actor.id}:grenades`, actor.id, 'grenade');
   registerWeapon(entities, actor.explosivePack, `${actor.id}:explosive-pack`, actor.id, 'explosive-pack');
+  if (actor.dadao) registerWeapon(entities, actor.dadao, `${actor.id}:dadao`, actor.id, 'melee');
   model.position.copy(position);
   model.rotation.y = actor.heading;
   spawnEvents.push({ team: friendly ? 'friendly' : 'enemy', pointId: spawn.id, pointX: spawn.x, pointZ: spawn.z, x, z, time,
@@ -582,6 +589,8 @@ function clearControlInputs() {
 }
 
 function resetControlledSimulation() {
+  for (const actor of entities.soldiers.values()) if (actor.dadao) stowDadao(actor.dadao);
+  dadaoEquipped = false;
   toolEquipped = false;
   grenadeEquipped = false;
   selectedThrowable = 'grenade';
@@ -617,7 +626,7 @@ function primaryViewAvailable() {
 function rifleAimAvailable() {
   const actor = controlledSoldier(entities);
   return Boolean(state === 'playing' && actor?.health > 0 && unit.type === 'infantry' && !actor.vehicleId &&
-    held.aiming && !toolEquipped && !grenadeEquipped && !actor.grenades.action &&
+    held.aiming && !toolEquipped && !dadaoEquipped && !grenadeEquipped && !actor.grenades.action &&
     actor.rifle.action !== 'reload' && (!infantryWeaponProfile(actor.rifle).scoped || actor.rifle.action === 'idle') &&
     !actor.locomotion.sprinting && actor.locomotion.aimRecovery === 0 && weaponObstruction === 0 && obstructionBlend < .03);
 }
@@ -655,7 +664,7 @@ function presentCombatEvents(bornAt = time) {
       if (state === 'playing' && event.source.soldierId === entities.control.soldierId &&
         event.source.weaponId === controlOwner(entities)?.weaponId) {
         recoil = event.recoil;
-        if (unit.type === 'infantry' && !toolEquipped) {
+        if (unit.type === 'infantry' && weapon?.userData.rifle) {
           updateRifleModel(weapon, allies[current].rifle);
           weapon.userData.rifle.flash.visible &&= graphics.snapshot.effects.muzzle;
         }
@@ -753,21 +762,22 @@ function updateControlHelp() {
       ? 'W S 前后 · A D 车体转向 · 鼠标 炮塔 · 右键 放大 · 左键 主炮 · 按住空格 机枪 · R 主炮装填 · Y 换人 · F 地面离车'
       : 'WASD 驾驶 · 鼠标 有限观察（不转炮塔） · 主炮／机枪不可操作 · Y 换人 · F 下车'
     : unit.type === 'mortar'
-      ? 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点 · 左键 发射 · R 装填 · Y 炮组 · X 命令 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷 · B 镜头步态'
+      ? 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点 · 左键 发射 · R 装填 · Y 炮组 · X 命令 · 1 主武器 · 3 大刀 · 5 切换手雷／炸药包 · 左键准备／松开投掷 · B 镜头步态'
       : actor.role === 'sniper'
-        ? 'WASD 移动 · 右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷'
-        : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 5 手榴弹（G兼容选择） · 6 炸药包 · 左键准备／松开投掷 · 按住左键建造 · B 镜头步态';
+        ? 'WASD 移动 · 右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人 · 1 主武器 · 3 大刀 · 5 切换手雷／炸药包 · 左键准备／松开投掷'
+        : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击／挥刀 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 3 大刀 · 5 切换手雷／炸药包（G兼容选择） · 左键准备／松开投掷 · 按住左键建造 · B 镜头步态';
 }
 
 function refreshControlSurface() {
   const actor = controlledSoldier(entities);
   if (weapon) camera.remove(weapon);
-  weapon = weaponModel(toolEquipped ? 'hammer' : unit.type, actor.rifle, occupiedSeat(entities)?.role ?? 'commander');
+  weapon = dadaoEquipped ? dadaoViewModel(nraCharacter?.createGrenadeHand) : weaponModel(toolEquipped ? 'hammer' : unit.type, actor.rifle, occupiedSeat(entities)?.role ?? 'commander');
   weapon.traverse(mesh => { if (mesh.isMesh) { mesh.castShadow = false; mesh.frustumCulled = false; } });
   camera.add(weapon);
   refreshWeaponVisibility();
-  if (unit.type === 'infantry' && !toolEquipped) weapon.position.set(.18, -.22, -.14);
-  $('weapon-name').textContent = toolEquipped ? '工兵建造工具'
+  if (unit.type === 'infantry' && !toolEquipped && !dadaoEquipped) weapon.position.set(.18, -.22, -.14);
+  $('weapon-name').textContent = dadaoEquipped ? '抗战大刀 · 左键挥砍'
+    : toolEquipped ? '工兵建造工具'
     : primaryViewAvailable() ? unit.type === 'infantry' ? infantryWeaponProfile(actor.rifle).name : TYPES[unit.type].weapon : `${occupiedSeat(entities).label}观察 · 主炮不可操作`;
   $('ammo-max').textContent = `/ ${unit.type === 'infantry' ? infantryWeaponProfile(actor.rifle).magazine : TYPES[unit.type].magazine}`;
   $('aim-label').hidden = unit.type !== 'mortar';
@@ -898,6 +908,7 @@ function clearActors(list, preserveCorpses = false) {
     entities.weapons.delete(actor.rifle.id);
     entities.weapons.delete(actor.grenades.id);
     entities.weapons.delete(actor.explosivePack.id);
+    if (actor.dadao) entities.weapons.delete(actor.dadao.id);
   }
 }
 
@@ -1174,6 +1185,7 @@ function equipTool(equipped) {
     return;
   }
   resetConstruction();
+  stowControlledDadao();
   grenadeEquipped = false;
   toolEquipped = equipped;
   held.primary = held.aiming = held.secondary = false;
@@ -1191,6 +1203,7 @@ function equipGrenade(kind = 'grenade') {
     return;
   }
   resetConstruction();
+  stowControlledDadao();
   toolEquipped = false; grenadeEquipped = true;
   selectedThrowable = kind;
   held.primary = held.secondary = held.aiming = false;
@@ -1200,6 +1213,7 @@ function equipGrenade(kind = 'grenade') {
 }
 
 function equipPrimary() {
+  stowControlledDadao();
   grenadeEquipped = false;
   if (unit.type === 'infantry') equipTool(false);
   else {
@@ -1217,6 +1231,46 @@ function renderEquippedTool() {
   refreshWeaponVisibility();
   if (!equipped && unit.type === 'infantry') weapon.position.set(.18, -.22, -.14);
   $('weapon-name').textContent = equipped ? '工兵建造工具' : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).name : TYPES[unit.type].weapon;
+}
+
+function stowControlledDadao() {
+  const actor = controlledSoldier(entities);
+  if (actor?.dadao) stowDadao(actor.dadao);
+  dadaoEquipped = false;
+}
+
+function equipDadao() {
+  const actor = controlledSoldier(entities);
+  if (!actor?.dadao || actor.health <= 0 || actor.vehicleId) {
+    toast('大刀仅供离开载具的我军士兵使用'); return;
+  }
+  resetConstruction();
+  toolEquipped = grenadeEquipped = false;
+  dadaoEquipped = true;
+  drawDadao(actor.dadao, time);
+  held.primary = held.secondary = held.aiming = false;
+  actor.rifleReady = false;
+  refreshControlSurface();
+}
+
+function swingDadao() {
+  const actor = controlledSoldier(entities);
+  if (!dadaoEquipped || actor.vehicleId || actor.health <= 0) return;
+  if (startDadaoSwing(actor.dadao, time, actor.locomotion.stamina)) {
+    actor.locomotion.stamina -= DADAO.stamina;
+    actor.locomotion.regenDelay = 1.4;
+  } else if (actor.locomotion.stamina < DADAO.stamina) toast('体力不足，暂时无法挥刀');
+}
+
+function updatePlayerDadao(actor) {
+  advanceDadao(actor.dadao, time);
+  const origin = camera.position.clone(); origin.y -= .32;
+  const forward = camera.getWorldDirection(new THREE.Vector3());
+  const target = selectDadaoTarget(actor.dadao, time, actor, origin, forward, allForces, targetAimPoint,
+    (from, to) => hasLine(from, to, DADAO.reach + 1));
+  if (!target) return;
+  actor.dadao.connected = true; actor.dadao.hits++;
+  hurt(target, DADAO.damage, captureAttackSource(entities, actor, actor.dadao), 'dadao');
 }
 
 function completeRally(team, position, builderId) {
@@ -1299,10 +1353,11 @@ function changeMember(index) {
 }
 
 function syncRifleUnit() {
-  syncControlledRifleTiming(entities, time, toolEquipped);
+  syncControlledRifleTiming(entities, time, toolEquipped || dadaoEquipped || grenadeEquipped);
 }
 
 function reload() {
+  if (dadaoEquipped) { toast('大刀无需装填；按 1 切回主武器'); return; }
   if (grenadeEquipped) { toast('当前选择投掷装备；按 1 切回主武器'); return; }
   if (allies[current]?.grenades.action) { toast('先完成手榴弹动作再装填'); return; }
   if (unit.type === 'tank' && !occupiedSeat(entities).canFire) {
@@ -1391,6 +1446,7 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
 
 function finishActorDeath(actor, source) {
   if (!actor.deathProcessed) {
+    if (actor.dadao) stowDadao(actor.dadao);
     cancelBayonet(actor.bayonet);
     interruptGrenade(actor);
     actor.deathProcessed = true;
@@ -1688,15 +1744,17 @@ function renderGrenades() {
   const count = pack ? actor?.grenades.packs ?? 0 : actor?.grenades.ammo ?? 0;
   label.textContent = action ? `${name} ${count} · ${action.phase === 'drawing' ? '准备中' :
     action.phase === 'cooking' ? '已拉弦 · 松开左键投掷' : action.phase === 'throwing' ? '投掷中' : '收回手臂'}`
-    : `5 手雷 ${actor?.grenades.ammo ?? 0}/1 · 6 炸药包 ${actor?.grenades.packs ?? 0}/1${grenadeEquipped ? ' · 左键投掷' : ''}`;
+    : `5 手雷栏 · 手榴弹 ${actor?.grenades.ammo ?? 0}/1 · 炸药包 ${actor?.grenades.packs ?? 0}/1${grenadeEquipped ? ' · 再按切换，左键投掷' : ''}`;
   for (const element of document.querySelectorAll('[data-equipment-slot]')) {
     const slot = Number(element.dataset.equipmentSlot);
-    const active = slot === (grenadeEquipped ? selectedThrowable === 'explosive-pack' ? 6 : 5 : toolEquipped ? 2 : 1);
+    const active = slot === (dadaoEquipped ? 3 : grenadeEquipped ? 5 : toolEquipped ? 2 : 1);
     element.classList.toggle('selected', active); element.setAttribute('aria-current', String(active));
-    if (slot === 5 || slot === 6) {
-      const count = (slot === 5 ? actor?.grenades.ammo : actor?.grenades.packs) ?? 0;
+    if (slot === 5) {
+      const packSelected = grenadeEquipped && selectedThrowable === 'explosive-pack';
+      const count = (packSelected ? actor?.grenades.packs : actor?.grenades.ammo) ?? 0;
       element.querySelector('.equipment-count').textContent = String(count);
-      element.setAttribute('aria-label', `${slot} ${slot === 5 ? '手榴弹' : '炸药包'} ${count}/1`);
+      element.querySelector('.equipment-label').textContent = packSelected ? '包' : '雷';
+      element.setAttribute('aria-label', `5 ${packSelected ? '炸药包' : '手榴弹'} ${count}/1，再按切换种类`);
     }
   }
   const eye = actor ? soldierEyePosition(actor) : null;
@@ -1713,7 +1771,7 @@ function renderGrenades() {
 
 function fire() {
   if (state !== 'playing' || allies[current]?.health <= 0) return;
-  if (grenadeEquipped || allies[current].grenades.action) return;
+  if (dadaoEquipped || grenadeEquipped || allies[current].grenades.action) return;
   const transport = occupiedVehicle(entities, allies[current]);
   if (transport && !occupiedSeat(entities).canFire) {
     toast('驾驶员席位不能发射主炮；按 Y 切换车长或炮手');
@@ -1966,7 +2024,7 @@ function updateWeaponSimulation(dt) {
   for (const actor of entities.soldiers.values()) {
     if (actor.health > 0 && (actor !== controlledSoldier(entities) || state !== 'playing')) advanceBreath(actor.breathControl, dt, false, false);
   }
-  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped && !grenadeEquipped, true);
+  const cues = advanceOwnedWeapons(entities, dt, time, state === 'playing' && !toolEquipped && !dadaoEquipped && !grenadeEquipped, true);
   for (const cue of cues) emitControlEvent('weapon.mechanical', cue);
   if (state === 'playing') syncRifleUnit();
 }
@@ -2023,7 +2081,9 @@ function updatePlayer(dt) {
       sprint: keys.has('ShiftLeft') && !actor.grenades.action && !wading, walking: keys.has('KeyC'),
       speedScale: wading ? RIVER.infantrySpeed : 1,
       grounded: jumpHeight === 0 && jumpVelocity === 0,
-      busy: Boolean(actor.grenades.action) || unit.reloadUntil > time || (unit.type === 'infantry' && actor.rifle.action !== 'idle') || construction.blueprint || held.primary,
+      busy: Boolean(actor.grenades.action) || unit.reloadUntil > time ||
+        (!dadaoEquipped && unit.type === 'infantry' && actor.rifle.action !== 'idle') ||
+        dadaoEquipped && actor.dadao.startedAt !== null || construction.blueprint || held.primary,
     }, movementObstacles(position.x, position.z), dt, world.moveInfantry);
     for (let i = 0; i < steps; i++) emitFootstep(position, motion.speed);
   }
@@ -2041,7 +2101,7 @@ function updatePlayer(dt) {
   if (!actor.vehicleId) position.y = world.walkHeight(position.x, position.z, position.y);
   actor.heading = yaw;
   actor.aimWalking = foot && held.aiming && motion.speed > .06 && !motion.sprinting;
-  actor.rifleReady = !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
+  actor.rifleReady = !dadaoEquipped && !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
   advanceBreath(actor.breathControl, dt, keys.has('ShiftLeft'),
     rifleAimAvailable() && motion.speed < .1 && jumpHeight === 0 && jumpVelocity === 0);
   if (actor.nativeMotion) advanceNraMotion(actor, dt);
@@ -2053,7 +2113,8 @@ function updatePlayer(dt) {
     if (shot) fireTankMachineGun(transport, shot);
   }
   if (actor.grenades.action) return;
-  if (toolEquipped) updateConstruction(dt);
+  if (dadaoEquipped) updatePlayerDadao(actor);
+  else if (toolEquipped) updateConstruction(dt);
   else if (held.primary) fire();
 }
 
@@ -2083,7 +2144,7 @@ function updateCamera(dt) {
   camera.rotation.set(pitch + recoil + sway.pitch, yaw + sway.yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
   recoil = Math.max(0, recoil - dt * .3);
   const rifleReloading = unit.type === 'infantry' && allies[current].rifle.action === 'reload';
-  const effectiveAim = unit.type === 'infantry' ? rifleAimAvailable() : held.aiming && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
+  const effectiveAim = unit.type === 'infantry' ? rifleAimAvailable() : held.aiming && !dadaoEquipped && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
   const desiredFov = observation?.fov ?? (effectiveAim && unit.type === 'infantry' ? profile.aimFov ?? 48 : unit.type === 'plane' ? 82 : 72);
   camera.fov = observation ? desiredFov : THREE.MathUtils.lerp(camera.fov, desiredFov, Math.min(1, dt * 12));
   camera.updateProjectionMatrix();
@@ -2091,7 +2152,10 @@ function updateCamera(dt) {
   if (weapon && !grenadeEquipped && !allies[current].grenades.action) {
     const aim = effectiveAim && unit.type === 'infantry';
     const response = 1 - Math.exp(-dt * 15);
-    if (unit.type === 'infantry' && !toolEquipped) {
+    if (dadaoEquipped) {
+      weaponObstruction = obstructionBlend = 0;
+      updateDadaoView(weapon, dadaoPhase(allies[current].dadao, time), motion, camera);
+    } else if (unit.type === 'infantry' && !toolEquipped) {
       const pose = updateRifleModel(weapon, allies[current].rifle);
       weapon.userData.rifle.flash.visible &&= graphics.snapshot.effects.muzzle;
       const swayScale = aim ? .025 : 1;
@@ -3196,9 +3260,9 @@ function updateHUD() {
   $('capture-fill').style.width = `${Math.abs(active.control) * 100}%`;
   $('capture-fill').style.background = active.control < 0 ? '#ed9d8b' : '#9aaa78';
   $('timer').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.floor(remaining % 60)).padStart(2, '0')}`;
-  $('ammo').textContent = grenadeEquipped ? String(selectedThrowable === 'explosive-pack' ? allies[current].grenades.packs : allies[current].grenades.ammo) : unit.reloadUntil ? '装填' : String(unit.ammo);
-  $('ammo-max').textContent = `/ ${grenadeEquipped ? GRENADE.count : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).magazine : TYPES[unit.type].magazine}`;
-  $('ammo').style.fontSize = !grenadeEquipped && unit.reloadUntil ? '25px' : '';
+  $('ammo').textContent = dadaoEquipped ? '近战' : grenadeEquipped ? String(selectedThrowable === 'explosive-pack' ? allies[current].grenades.packs : allies[current].grenades.ammo) : unit.reloadUntil ? '装填' : String(unit.ammo);
+  $('ammo-max').textContent = dadaoEquipped ? '3 · 大刀' : `/ ${grenadeEquipped ? GRENADE.count : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).magazine : TYPES[unit.type].magazine}`;
+  $('ammo').style.fontSize = dadaoEquipped || !grenadeEquipped && unit.reloadUntil ? '25px' : '';
   const health = occupiedVehicle(entities, allies[current])?.health ?? allies[current].health;
   $('health-fill').style.width = `${health / TYPES[unit.type].health * 100}%`;
   $('health-text').textContent = deathTransfer.active && !deathTransfer.handedOff
@@ -3484,8 +3548,17 @@ function performControlCommand(command) {
     return;
   }
   if (action === 'prepareGrenade') { prepareGrenade(); return; }
-  if (action === 'equipGrenade') { equipGrenade(); return; }
+  if (action === 'equipGrenade') {
+    const actor = controlledSoldier(entities);
+    const next = grenadeEquipped && selectedThrowable === 'grenade' ? 'explosive-pack' : 'grenade';
+    const kind = throwableStock(actor.grenades, next) ? next : next === 'grenade' ? 'explosive-pack' : 'grenade';
+    equipGrenade(kind); return;
+  }
   if (action === 'equipExplosivePack') { equipGrenade('explosive-pack'); return; }
+  if (action === 'equipMelee') { equipDadao(); return; }
+  if (action === 'equipSidearm') { toast('当前士兵未配备手枪'); return; }
+  if (action === 'equipSpecial') { toast('尚未配备遥控 TNT；反坦克炸药包在 5 号手雷栏'); return; }
+  if (action === 'callArtillery') { toast('当前未实现通讯兵呼叫炮击'); return; }
   if (action === 'releaseGrenade') { grenades.release(entities.control.soldierId, time); return; }
   if (action === 'interact') {
     updateCamera(0);
@@ -3518,13 +3591,14 @@ function performControlCommand(command) {
     squadCommand(payload.now - held.orderStarted > 450);
     held.orderStarted = null;
   } else if (action === 'pressFire') {
-    if (grenadeEquipped) prepareGrenade();
+    if (dadaoEquipped) swingDadao();
+    else if (grenadeEquipped) prepareGrenade();
     else held.primary = true;
   }
   else if (action === 'pressAim') {
     held.secondary = true;
     if (toolEquipped) selectConstructionBlueprint(construction, entities.control.soldierId);
-    else if (!grenadeEquipped) held.aiming = true;
+    else if (!dadaoEquipped && !grenadeEquipped) held.aiming = true;
   } else if (action === 'look') {
     const sensitivity = sniperScopeActive() ? infantryWeaponProfile(allies[current].rifle).aimSensitivity : held.aiming ? .6 : 1;
     controlPose.yaw -= payload.x * .0022 * sensitivity;
@@ -3541,7 +3615,8 @@ function dispatchControlCommand(action, payload) {
 }
 
 const keyActions = { KeyF: 'interact', KeyR: 'reload', Digit1: 'equipRifle', Digit2: 'equipTool', KeyY: 'cycleMember',
-  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', Digit5: 'equipGrenade', Digit6: 'equipExplosivePack', KeyG: 'equipGrenade' };
+  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', Digit3: 'equipMelee', Digit4: 'equipSidearm',
+  Digit5: 'equipGrenade', Digit6: 'equipSpecial', Digit7: 'callArtillery', KeyG: 'equipGrenade' };
 document.addEventListener('wheel', event => {
   if ($('scoreboard').hidden) return;
   const panel = event.target.closest('.score-table-wrap') ?? document.querySelector('.score-table-wrap');
@@ -3666,7 +3741,13 @@ Object.defineProperty(window, '__battle', { get: () => ({
   squadScores: battleStats.snapshot,
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
-  controlSimulation: { toolEquipped, grenadeEquipped, selectedThrowable, jumpHeight, jumpVelocity },
+  controlSimulation: { toolEquipped, dadaoEquipped, grenadeEquipped, selectedThrowable, jumpHeight, jumpVelocity },
+  dadaoMaterials: dadaoSurfaceSnapshot(),
+  dadao: controlledSoldier(entities)?.dadao ? { ...controlledSoldier(entities).dadao,
+    ...dadaoPhase(controlledSoldier(entities).dadao, time), viewVisible: Boolean(weapon?.visible && weapon?.userData.dadaoHand),
+    handSource: dadaoEquipped ? weapon?.userData.handSource : null,
+    materialSource: dadaoEquipped ? weapon?.userData.materialSource : null,
+    arm: dadaoEquipped && weapon?.userData.dadaoArm.armSnapshot ? { ...weapon.userData.dadaoArm.armSnapshot } : null } : null,
   historicalCharacter: nraCharacter?.focusedSnapshot ?? null,
   historicalForce: nraCharacter?.snapshot ?? null,
   enemyHistoricalCharacter: ijaCharacter?.focusedSnapshot ?? null,
@@ -3783,6 +3864,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     cameraHeight: camera.position.y, cameraRoll: camera.rotation.z,
     weaponOffset: weapon ? { x: weapon.position.x, y: weapon.position.y, z: weapon.position.z, pitch: weapon.rotation.x } : null } : null,
   allies: allies.map(actor => ({ id: actor.id, unitId: actor.unitId, vehicleId: actor.vehicleId, seatId: actor.seatId,
+    dadao: actor.dadao ? { ...actor.dadao } : null,
     weaponId: actor.rifle.id, health: actor.health, eyeHeight: soldierPostureHeight(actor),
     deathSource: actor.deathSource ? { ...actor.deathSource } : null,
     x: actor.position.x, y: actor.position.y, z: actor.position.z, stance: actor.stance, manualStance: actor.manualStance,

@@ -126,7 +126,7 @@ def verify_deployment_and_prices(endpoint, deployment):
             raise ValueError("Azure retail rates changed or are unavailable; revise the budget before generation.")
 
 
-def generate(args):
+def generate(args, names=NAMES, prompts=PROMPTS, prior_estimate_usd=0.014442):
     directory = args.source_dir
     directory.mkdir(parents=True, exist_ok=True)
     if args.reuse_plaster:
@@ -150,22 +150,23 @@ def generate(args):
     ledger_path = directory / "generation-ledger.json"
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {
         "budgetUsd": 50, "reservedUsdPerAttempt": 10, "attempts": [],
-        "priorPlasterEstimateUsd": 0.014442,
+        "priorSourceEstimateUsd": prior_estimate_usd,
         "note": "Reservations are conservative workflow allocations, not an Azure billing hard cap. Failed/uncertain requests retain their full reservation. Never retries automatically.",
     }
     last_request = None
-    for name in NAMES:
+    for name in names:
         image_path, record_path = directory / f"{name}.png", directory / f"{name}.json"
         if image_path.exists() and record_path.exists():
             record = json.loads(record_path.read_text())
             if checksum(image_path)["sha256"] != record["sha256"]:
                 raise ValueError(f"Corrupted saved source: {name}")
             continue
-        if name not in PROMPTS:
+        if name not in prompts:
             raise ValueError("Supply the saved plaster sample with --reuse-plaster.")
         if any(attempt["name"] == name for attempt in ledger["attempts"]):
             raise ValueError(f"Prior uncertain/failed request for {name}; inspect ledger before spending again.")
-        reserved = ledger["priorPlasterEstimateUsd"] + sum(item["reservedUsd"] for item in ledger["attempts"])
+        reserved = ledger.get("priorSourceEstimateUsd", ledger.get("priorPlasterEstimateUsd", 0)) + \
+            sum(item["reservedUsd"] for item in ledger["attempts"])
         if reserved + 10 > min(args.budget_usd, 50):
             raise ValueError("Insufficient conservatively reserved budget; refusing generation.")
         if last_request is not None:
@@ -177,7 +178,7 @@ def generate(args):
         ).stdout.strip()
         if not token:
             raise ValueError("Azure CLI did not return a token.")
-        body = {"prompt": PROMPTS[name], "n": 1, "size": "1024x1024",
+        body = {"prompt": prompts[name], "n": 1, "size": "1024x1024",
                 "quality": "medium", "output_format": "png"}
         attempt = {"name": name, "status": "pending", "reservedUsd": 10,
                    "startedAt": datetime.now(timezone.utc).isoformat()}

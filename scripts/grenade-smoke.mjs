@@ -38,8 +38,17 @@ async function reset() {
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.state === 'playing');
 }
-async function prime(slot = '5') {
-  await page.keyboard.press(slot);
+async function selectThrowable(kind) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const data = await snapshot();
+    if (data.grenades.equipped && data.grenades.selected === kind) return;
+    await page.keyboard.press('5');
+  }
+  const data = await snapshot();
+  assert.ok(data.grenades.equipped && data.grenades.selected === kind);
+}
+async function prime(kind = 'grenade') {
+  await selectThrowable(kind);
   await page.waitForFunction(() => window.__battle.grenades.renderer.handVisible);
   await page.waitForTimeout(150);
   await page.mouse.move(720, 450);
@@ -47,8 +56,8 @@ async function prime(slot = '5') {
   await page.waitForFunction(() => window.__battle.grenades.inventory.phase === 'cooking');
   return snapshot();
 }
-async function tapGrenade(slot = '5') {
-  await page.keyboard.press(slot);
+async function tapGrenade(kind = 'grenade') {
+  await selectThrowable(kind);
   await page.waitForFunction(() => window.__battle.grenades.renderer.handVisible);
   await page.waitForTimeout(150);
   await page.mouse.move(720, 450); await page.mouse.click(720, 450);
@@ -90,7 +99,7 @@ try {
   let data = await snapshot();
   assert.equal(data.benchmark?.scenario, 'interior', 'Grenade geometry checks require the development server; production disables diagnostic query parameters');
   assert.ok(data.allies.every(actor => actor.grenades.ammo === 1 && actor.grenades.packs === 1));
-  assert.match(await page.locator('#grenade-status').textContent(), /手雷 1\/1/);
+  assert.match(await page.locator('#grenade-status').textContent(), /手榴弹 1\/1/);
   stage = 'number slot selects an unprimed grenade without spending inventory';
   await page.keyboard.press('5'); await waitSeconds(.8);
   data = await snapshot();
@@ -161,7 +170,10 @@ try {
   assert.equal(data.weaponVisible, true, 'the exhausted throwable returns to the primary after recovery');
   assert.equal(data.grenades.equipped, false);
   await page.keyboard.press('5');
-  assert.equal((await snapshot()).grenades.equipped, false, 'an empty slot cannot replace the primary with empty hands');
+  assert.equal((await snapshot()).grenades.equipped, true, 'the grenade inventory skips the empty fragmentation stock');
+  assert.equal((await snapshot()).grenades.selected, 'explosive-pack');
+  assert.equal((await snapshot()).grenades.inventory.packs, 1, 'selecting the remaining pack never primes or spends it');
+  await page.keyboard.press('1');
   observations.push({ stage, cooked: cooked.grenades, impact });
 
   stage = 'live grenades cannot be picked up or thrown back, even at reachable distance with an empty own inventory';
@@ -189,7 +201,9 @@ try {
   assert.equal(data.grenades.active[0].holderId, null);
   assert.deepEqual(data.grenades.active[0].source, original.source);
   assert.equal(data.grenades.history.filter(event => event.type === 'throw').length, 1);
-  assert.equal(data.grenades.equipped, false);
+  assert.equal(data.grenades.equipped, true);
+  assert.equal(data.grenades.selected, 'explosive-pack', 'selection can only equip the owned unused pack, never the nearby live grenade');
+  assert.equal(data.grenades.inventory.packs, 1);
   assert.equal(data.grenades.inventory.ammo, 0);
   await page.waitForFunction(() => window.__battle.grenades.history.some(event => event.type === 'explosion'));
   observations.push({ stage, original, result: (await snapshot()).grenades });
@@ -297,15 +311,15 @@ try {
   assert.equal(data.grenades.inventory.ammo, 0);
   observations.push({ stage, construction: data.construction, inventory: data.grenades.inventory });
 
-  stage = 'one timed explosive pack is selected with 6, is distinct from the grenade, and preserves its own identity/count';
-  await reset(); await page.keyboard.press('6'); await waitSeconds(.8);
+  stage = '5 cycles to a timed explosive pack, distinct from special TNT, preserving its own identity/count';
+  await reset(); await selectThrowable('explosive-pack'); await waitSeconds(.8);
   data = await snapshot();
   assert.equal(data.grenades.selected, 'explosive-pack');
   assert.equal(data.grenades.renderer.heldKind, 'explosive-pack');
   assert.equal(data.grenades.active.length, 0);
   assert.equal(data.grenades.inventory.ammo, 1); assert.equal(data.grenades.inventory.packs, 1);
   if (process.env.ARTIFACT_DIR) await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'selected-explosive-pack.png') });
-  await aim(.2); const packPrimed = await prime('6');
+  await aim(.2); const packPrimed = await prime('explosive-pack');
   assert.equal(packPrimed.grenades.inventory.ammo, 1); assert.equal(packPrimed.grenades.inventory.packs, 0);
   assert.equal(packPrimed.grenades.active[0].kind, 'explosive-pack');
   await page.mouse.up();
@@ -323,9 +337,10 @@ try {
   assert.equal(data.grenades.inventory.packs, 0); assert.equal(data.grenades.inventory.ammo, 1);
   assert.equal(data.grenades.equipped, false);
   await page.keyboard.press('6'); assert.equal((await snapshot()).grenades.equipped, false);
+  assert.match(await page.locator('#toast').textContent(), /TNT/);
   await page.keyboard.press('5');
   await page.waitForFunction(() => window.__battle.grenades.renderer.heldKind === 'grenade');
-  await page.keyboard.press('6');
+  await page.keyboard.press('5');
   assert.equal((await snapshot()).grenades.selected, 'grenade', 'empty pack slot preserves the currently selected grenade');
   observations.push({ stage, inventory: data.grenades.inventory, history: data.grenades.history });
 
