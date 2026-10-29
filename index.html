@@ -46,12 +46,19 @@
         </div>
         <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>可在暂停菜单分别调整效果</small></label>
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
+        <a id="shop-art-entry" class="text-button shop-art-entry" href="?benchmark=shop-art&amp;seed=1938" hidden>美术样例区 ↗ 直接看首街两店</a>
         <p class="deployment-note">仅中国阵营可玩 <span>·</span> 无养成 <span>·</span> 整队阵亡后换队</p>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </aside>
       <footer class="menu-footer"><span><i></i> 原创场景 / 扫描与 Azure AI 材质 / 美术迭代版</span><span>WASD 移动 <b>·</b> 右键举枪瞄准 <b>·</b> Y 切换队员 <b>·</b> X 小队命令</span><span>谨记历史，珍视和平</span></footer>
     </main>
     <section id="hud" hidden>
+      <aside id="shop-art-tour" hidden aria-label="美术样例导览">
+        <strong>首街美术样例区 · 单人非战斗诊断</strong>
+        <span>右键拖动看景 · WASD 行走 · 按钮或 F1–F3 返回样例起点</span>
+        <div><button data-shop-view="grain">① 粮行（F1）</button><button data-shop-view="cloth">② 布庄（F2）</button><button data-shop-view="ground">③ 门前积尘（F3）</button></div>
+        <a href="./">返回正常战场大厅</a>
+      </aside>
       <div class="hud-top"><div id="objectives" aria-label="三点控制情况"></div><div class="battle-time"><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
       <div class="hud-notices"><small id="hud-notice" role="status" hidden></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div>
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
@@ -124,7 +131,7 @@
           <button id="confirm-deploy" class="primary-button" disabled>选择小队后出击 <span>↗</span></button>
         </div>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
-        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength"><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>B 可在战斗中切换；不改变移速和枪械操作。</small></label>
+        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength"><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>在此调整镜头步态；不改变移速和枪械操作。</small></label>
         <fieldset id="quality-settings" hidden>
           <legend>图形设置 · 手动</legend>
           <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>

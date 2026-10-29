@@ -3,6 +3,15 @@ export const DAYLIGHT = Object.freeze({
   cool: Object.freeze({ sun: 0xe7edf2, sunIntensity: 1.75, sky: 0xcbd6df, ground: 0x747978, fill: .95, environment: .9, background: .55, fog: 0xb5bec2 }),
 });
 
+export function configureSunShadow(sun) {
+  sun.shadow.mapSize.set(4096, 4096);
+  Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 100, bottom: -100, near: 1, far: 240 });
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.shadow.bias = -.00015;
+  sun.shadow.normalBias = .025;
+  sun.shadow.radius = 2;
+}
+
 export function createDaylight(scene, sun, hemisphere, fog) {
   return {
     setEnabled(enabled) {

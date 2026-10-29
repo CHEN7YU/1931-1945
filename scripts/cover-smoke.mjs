@@ -111,12 +111,13 @@ try {
   observations.push({ stage: 'magazine-insertion', data: await snapshot() });
   await capture('lmg-hand-insertion.png');
   await wait(() => window.__battle.rifle.model.reloadContact?.stage === 'press');
-  await capture('lmg-hand-press.png');
   await page.keyboard.press('Escape');
   data = await snapshot();
   assert.equal(data.rifle.action, 'reload');
   assert.ok(data.rifle.ammo < 20);
+  assert.equal(data.rifle.model.reloadContact.stage, 'press');
   observations.push({ stage: 'magazine-press', data });
+  await capture('lmg-hand-press-paused.png');
   await page.waitForTimeout(200);
   assert.deepEqual((await snapshot()).rifle.model.reloadContact, data.rifle.model.reloadContact);
   await page.locator('#resume').click();

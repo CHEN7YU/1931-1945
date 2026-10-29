@@ -4,9 +4,11 @@ import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { infantryWeaponProfile } from './rifle-action.js';
 import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
+import { hasBayonet } from './bayonet.js';
 
 export function nativePoseIntent(actor) {
-  return actor.grenades?.action ? 'grenade' : actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
+  return actor.grenades?.action ? 'grenade' : actor.health > 0 && hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle'
+    ? 'bayonet' : actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
 }
 
 function sample(track, time) {
@@ -234,7 +236,9 @@ export function sampleNraMotion(actor, includeHead = true) {
     blendedPosition.sub(pivot).applyQuaternion(lean).add(pivot);
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
-  const lowReady = profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
+  const bayonet = nativePoseIntent(actor) === 'bayonet' && upright > .999;
+  const lowReady = bayonet ? 1
+    : profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
   const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
     (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
   if (lowReady) {
@@ -268,6 +272,12 @@ export function sampleNraMotion(actor, includeHead = true) {
     }
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
+  }
+  if (bayonet) {
+    // Both hands are solved against this forward carry, including the short thrust.
+    blendedPosition.set(.13, 1.35, -.06 - actor.bayonet.extension * .1);
+    quaternion.identity();
+    stockContact = null;
   }
   const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
     1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;

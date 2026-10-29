@@ -11,6 +11,7 @@ import { machineGunReloadPose } from './machine-gun-reload.js';
 let template;
 let distantTemplate;
 let automaticHands;
+let bayonetTemplate;
 const scopeTemplates = new Map();
 const materials = {};
 function texture(canvas, color = false) {
@@ -359,7 +360,29 @@ export function rifleModel(weaponState = null) {
   return model;
 }
 
-export function rifleWorldModel(detail = 'near', weaponState = null) {
+function bayonetModel() {
+  if (!bayonetTemplate) {
+    bayonetTemplate = new THREE.Group(); bayonetTemplate.name = 'fixed-bayonet';
+    const steel = materials.edge ?? new THREE.MeshStandardMaterial({ color: 0x92999b, metalness: .8, roughness: .38 });
+    const dark = materials.steel ?? new THREE.MeshStandardMaterial({ color: 0x454947, metalness: .7, roughness: .55 });
+    const blade = new THREE.BufferGeometry();
+    const base = [[-.014, -.045, -.95], [0, -.041, -.95], [.014, -.045, -.95], [0, -.049, -.95]];
+    const tip = [0, -.045, -1.35], vertices = [];
+    for (let i = 0; i < 4; i++) vertices.push(...base[i], ...base[(i + 1) % 4], ...tip);
+    vertices.push(...base[0], ...base[3], ...base[2], ...base[0], ...base[2], ...base[1]);
+    blade.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const uv = [];
+    for (let i = 0; i < vertices.length; i += 3) uv.push(vertices[i] / .028 + .5, (-vertices[i + 2] - .95) / .4);
+    blade.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); blade.computeVertexNormals();
+    add(bayonetTemplate, blade, steel, 0, 0, 0, 'bayonet-blade');
+    add(bayonetTemplate, new THREE.BoxGeometry(.025, .026, .13), dark, 0, -.045, -.855);
+    add(bayonetTemplate, new THREE.BoxGeometry(.06, .065, .012), dark, 0, -.023, -.93);
+    batch(bayonetTemplate);
+  }
+  return bayonetTemplate.clone(true);
+}
+
+export function rifleWorldModel(detail = 'near', weaponState = null, { bayonet = false } = {}) {
   if (!template) template = buildTemplate();
   if (detail === 'far' && !distantTemplate) distantTemplate = buildTemplate('far');
   const source = detail === 'far' ? distantTemplate : template;
@@ -368,6 +391,8 @@ export function rifleWorldModel(detail = 'near', weaponState = null) {
   model.userData.referenceLength = RIFLE.length;
   model.userData.personalWeapon = true;
   model.userData.detail = detail;
+  model.userData.bayonetEquipped = bayonet;
+  if (bayonet) model.add(bayonetModel());
   if (weaponState) syncWorldWeapon(model, weaponState);
   return model;
 }
@@ -375,6 +400,8 @@ export function rifleWorldModel(detail = 'near', weaponState = null) {
 export function syncWorldWeapon(model, state) {
   const profile = infantryWeaponProfile(state);
   const key = state.model ?? 'rifle';
+  const bayonet = model.getObjectByName('fixed-bayonet');
+  if (bayonet) bayonet.visible = key === 'rifle';
   if (model.userData.weaponModel !== key) {
     model.getObjectByName('rifleBody').visible = !profile.automatic;
     model.getObjectByName('bolt').visible = !profile.automatic;

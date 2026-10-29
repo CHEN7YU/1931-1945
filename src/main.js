@@ -16,7 +16,7 @@ import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, poi
   assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
-import { createDaylight } from './lighting.js';
+import { createDaylight, configureSunShadow } from './lighting.js';
 import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
 import { SpatialGrid, obstacleLookup } from './spatial.js';
@@ -31,6 +31,7 @@ import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
+import { SHOP_ART_VIEWS } from './shop-art.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
   damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat,
@@ -43,6 +44,7 @@ import { createControlEvents } from './control-events.js';
 import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './projectiles.js';
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
 import { AI_RIFLE, createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
+import { BAYONET, createBayonetState, cancelBayonet, bayonetDistance, advanceBayonet } from './bayonet.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -169,11 +171,7 @@ scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xffefd5, 2.5);
 sun.position.set(-55, 70, 38);
 sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
-Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 100, bottom: -100, near: 1, far: 240 });
-sun.shadow.bias = -.00015;
-sun.shadow.normalBias = .025;
-sun.shadow.radius = 2;
+configureSunShadow(sun);
 scene.add(sun);
 let surface;
 try {
@@ -518,6 +516,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
   const actor = { model, health: 100, friendly, index, spawnId: spawn.id, role: loadout.role, nextFire: time + 1 + battleRandom() * 2, nextThink: 0, target: null, walkPhase: battleRandom() * 6, walkPoseReady: false, deathTime: 0, buildProgress: 0, locomotion: createLocomotion(), rifle: createRifleState(loadout.model) };
   actor.targetKind = 'person';
   actor.aiRifle = createAIRifleControl();
+  actor.bayonet = createBayonetState();
   actor.breathControl = createBreathState();
   actor.grenades = createGrenadeInventory();
   actor.explosivePack = { get ammo() { return actor.grenades.packs; } };
@@ -1095,7 +1094,7 @@ function deploy(squadId, spawnId = null) {
   hudAt = 0;
   initAudio();
   battleVoiceEvent('deploy');
-  lockMouse();
+  if (benchmark?.scenario !== 'shop-art') lockMouse();
   updateCamera(0);
   renderConstruction();
   toast(type === 'plane' ? '从南侧空中入场点进入战场 · 飞机损失后可换其他小队' : `${TYPES[type].name}从${spawn.name}出击`, 5);
@@ -1399,13 +1398,14 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
-    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
+    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
 
 function finishActorDeath(actor, source) {
   if (!actor.deathProcessed) {
+    cancelBayonet(actor.bayonet);
     interruptGrenade(actor);
     releaseWeaponMount(actor.weaponMount);
     actor.traversal.kind = 'grounded'; actor.traversal.velocity = 0; actor.traversal.plan = null;
@@ -2742,6 +2742,51 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   }
 }
 
+function tryAIBayonet(actor, target, dt) {
+  const distance = bayonetDistance(actor, target);
+  const limit = actor.bayonet.targetId === target?.id && actor.bayonet.mode !== 'idle'
+    ? BAYONET.disengageRange : BAYONET.chargeRange;
+  if (distance === null || distance > limit) { cancelBayonet(actor.bayonet); return false; }
+  const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
+  const observed = observeVisualThreat(actor.tactics, target, time, point => hasLine(origin, point, limit + 2));
+  const visible = Boolean(observed && hasLine(actor.position.clone().add(new THREE.Vector3(0, 1.1, 0)),
+    targetAimPoint(target), limit + 2));
+  if (!visible) { cancelBayonet(actor.bayonet); return false; }
+  actor.stance = 'standing'; actor.firingPose = null;
+  const turn = advanceAITurn(actor, Math.atan2(actor.position.x - target.position.x, actor.position.z - target.position.z), dt, true);
+  actor.turningThisStep = true;
+  const action = advanceBayonet(actor, target, { now: time, visible, facing: turn.facing, settled: postureReady(actor) });
+  if (!action.active) return false;
+  resetAIRifleAim(actor.aiRifle, 'bayonet');
+  actor.rifleReady = false; actor.buildProgress = 0;
+  const tactics = actor.tactics;
+  if (tactics.cover) coverClaims.delete(tactics.cover.id);
+  tactics.cover = null; tactics.enteredCover = false; tactics.armorEscort = null;
+  actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
+  tactics.mode = `bayonet-${actor.bayonet.mode}`;
+  if (action.hit) hurt(target, BAYONET.damage, captureAttackSource(entities, actor, actor.rifle), 'bayonet');
+  if (actor.bayonet.mode !== 'charge' || !turn.mayMove || !postureReady(actor)) return true;
+  const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
+  const obstacles = movementObstacles(position.x, position.z);
+  const steering = infantrySteering(actor, actorGrid.near(position.x, position.z, 3.2).filter(other => other !== target),
+    { x: dx, z: dz }, { spacing: 1, constrained: false,
+      blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) });
+  const profile = FOOT_SPEEDS[actor.groundType];
+  const wet = world.waterDepth(position.x, position.z, position.y) > .05;
+  const sprint = !wet && !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
+  const speed = wet ? profile.jog * RIVER.infantrySpeed : sprint ? profile.sprint : profile.jog;
+  const step = Math.min(distance - BAYONET.reach + .05, speed * dt * steering.speed);
+  const beforeX = position.x, beforeZ = position.z;
+  world.moveInfantry(position, steering.x * step, steering.z * step, .42, obstacles);
+  position.y = world.walkHeight(position.x, position.z, position.y);
+  actor.locomotion.speed = Math.hypot(position.x - beforeX, position.z - beforeZ) / dt;
+  actor.locomotion.sprinting = sprint && actor.locomotion.speed > profile.jog;
+  actor.locomotion.mode = actor.locomotion.speed < .06 ? 'idle' : actor.locomotion.sprinting ? 'sprint' : 'jog';
+  actor.walkPhase += actor.locomotion.speed * dt * 2.5;
+  actor.walkPoseReady = actor.locomotion.speed > .06;
+  return true;
+}
+
 function formationObjective(actor, fallback) {
   return objectives.find(point => point.id === (actor.playerUnit ? actor.orderObjectiveId : actor.formation.objectiveId)) ?? fallback;
 }
@@ -2811,8 +2856,9 @@ function updateAI(dt) {
       tactics.shotMoveGoal = null; tactics.shotMovePending = false; tactics.wallContact = null;
       if (previousCover) coverClaims.delete(previousCover.id);
     }
-    if (actor.vehicleId) { resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
+    if (actor.vehicleId) { cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
     if (actor.grenades.action) {
+      cancelBayonet(actor.bayonet);
       const action = actor.grenades.action;
       actor.tactics.mode = action.kind === 'explosive-pack' ? 'throw-explosive-pack' : 'throw-grenade';
       resetAIRifleAim(actor.aiRifle, 'throwable');
@@ -2827,6 +2873,7 @@ function updateAI(dt) {
       const danger = dangers.find(grenade => hasLine(origin,
         new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 3));
       if (danger) {
+        cancelBayonet(actor.bayonet);
         resetAIRifleAim(actor.aiRifle, 'moving');
         const distance = Math.hypot(actor.position.x - danger.position.x, actor.position.z - danger.position.z);
         const dx = distance > .01 ? actor.position.x - danger.position.x : Math.sin(actor.tactics.id);
@@ -2852,6 +2899,7 @@ function updateAI(dt) {
     if (actor.traversal.kind !== 'grounded') continue;
     const escape = position.y < 1 ? world.doorSystem.swingEscape(position) : null;
     if (escape) {
+      cancelBayonet(actor.bayonet);
       const dx = escape.x - position.x, dz = escape.z - position.z, distance = Math.max(.01, Math.hypot(dx, dz));
       moveInfantry(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
       settleActorSupport(actor);
@@ -2914,6 +2962,7 @@ function updateAI(dt) {
       if (benchmark) telemetry.add('sensingMs', performance.now() - sensingStarted);
     }
     const target = actor.target?.health > 0 ? actor.target : null;
+    if (tryAIBayonet(actor, target, dt)) continue;
     if (tryAIThrowable(actor, target, dt)) continue;
     const oldEscort = tactics.armorEscort;
     if (oldEscort) escortClaims.delete(`${oldEscort.vehicleId}:${oldEscort.slot}`);
@@ -3290,7 +3339,7 @@ function updateHUD() {
     return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
   }).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
-  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
+  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
@@ -3852,7 +3901,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   combatEffects: combatEffects.snapshot,
   rifleTextures: rifleTextureSnapshot(),
   sceneArt: { ...world.sceneArt },
-  daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity },
+  daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity,
+    shadowProjection: { width: 2 / sun.shadow.camera.projectionMatrix.elements[0],
+      height: 2 / sun.shadow.camera.projectionMatrix.elements[5] } },
   look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
   bridgeSurfaces: { ...world.bridgeSurfaces },
   river: { ...RIVER, surfaces: { ...world.riverSurfaces },
@@ -3928,6 +3979,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     stance: actor.stance, firingPose: ownedFiringPose(actor), enteredCover: actor.tactics.enteredCover,
     cover: actor.tactics.cover ? { id: actor.tactics.cover.id, kind: actor.tactics.cover.kind,
       x: actor.tactics.cover.x, z: actor.tactics.cover.z, peek: { ...actor.tactics.cover.peek } } : null,
+    bayonet: { ...actor.bayonet },
     armorEscort: actor.tactics.armorEscort ? { ...actor.tactics.armorEscort } : null,
     formationId: actor.formation.id, objectiveId: actor.formation.objectiveId ?? null,
     pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
@@ -3965,3 +4017,21 @@ try {
 $('loading').hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame(tick);
+$('shop-art-entry').hidden = !import.meta.env.DEV;
+if (benchmark?.scenario === 'shop-art') {
+  const showShopView = name => {
+    setGameState('menu');
+    beginMatch();
+    controlPose.yaw = SHOP_ART_VIEWS[name].yaw; controlPose.pitch = SHOP_ART_VIEWS[name].pitch;
+  };
+  $('shop-art-tour').hidden = false;
+  for (const button of document.querySelectorAll('[data-shop-view]')) {
+    button.addEventListener('click', () => showShopView(button.dataset.shopView));
+  }
+  document.addEventListener('keydown', event => {
+    const name = { F1: 'grain', F2: 'cloth', F3: 'ground' }[event.code];
+    if (!name || event.repeat) return;
+    event.preventDefault(); showShopView(name);
+  });
+  showShopView('grain');
+}

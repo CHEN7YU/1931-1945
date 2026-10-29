@@ -41,7 +41,7 @@ try {
         photographed.add(pose); await page.screenshot({ path: join(directory, `actual-enemy-${pose}.png`) });
       }
     }
-    assert.equal(data.poseBanks, 44);
+    assert.equal(data.poseBanks, 53, '44 shared original poses plus the preserved nine bayonet poses');
     assert.deepEqual(errors, []);
     if (data.time >= 140 || ['victory', 'defeat', 'draw'].includes(data.state)) break;
     await page.waitForTimeout(500);

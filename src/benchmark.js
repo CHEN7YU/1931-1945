@@ -3,7 +3,7 @@ export function benchmarkConfig(search, development) {
   const params = new URLSearchParams(search);
   if (!params.has('benchmark')) return null;
   const scenario = params.get('benchmark');
-  if (!['duel', 'full', 'bridge', 'interior', 'control', 'ford', 'cover'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
+  if (!['duel', 'full', 'bridge', 'interior', 'control', 'ford', 'cover', 'shop-art'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
   const value = params.get('seed') ?? '1938';
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > 0xffffffff) throw new RangeError('Benchmark seed must be an unsigned 32-bit integer');
   return Object.freeze({ scenario, seed: Number(value), diagnostic: scenario !== 'full' });
@@ -15,10 +15,14 @@ export function seededRandom(seed) {
 }
 
 export function diagnosticRoster(scenario = 'duel') {
-  if (!['duel', 'bridge', 'interior', 'control', 'ford', 'cover'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
+  if (!['duel', 'bridge', 'interior', 'control', 'ford', 'cover', 'shop-art'].includes(scenario)) throw new RangeError('Unknown diagnostic roster');
   if (scenario === 'cover') return [
     { id: 'friendly-0', team: 'friendly', index: 0, type: 'infantry', player: true,
       members: [], memberCount: 11, generation: 0, respawnAt: null, spawnId: 'diagnostic-cover' },
+  ];
+  if (scenario === 'shop-art') return [
+    { id: 'friendly-0', team: 'friendly', index: 0, type: 'infantry', player: true, members: [], memberCount: 1,
+      generation: 0, respawnAt: null, spawnId: 'diagnostic-shop-art' },
   ];
   if (scenario === 'ford') return [
     { id: 'friendly-0', team: 'friendly', index: 0, type: 'tank', player: true, members: [], memberCount: 3,
@@ -38,6 +42,9 @@ export function diagnosticRoster(scenario = 'duel') {
 export function diagnosticSpawns(scenario = 'duel') {
   if (scenario === 'cover') return [
     { id: 'diagnostic-cover', name: '正式地图沙袋交互诊断点', team: 'friendly', kind: 'base', x: -12, z: 27, altitude: 0 },
+  ];
+  if (scenario === 'shop-art') return [
+    { id: 'diagnostic-shop-art', name: '首街美术样例区', team: 'friendly', kind: 'base', x: 0, z: 64, altitude: 0 },
   ];
   if (scenario === 'ford') return [
     { id: 'diagnostic-ford', name: '浅河坦克通行诊断点', team: 'friendly', kind: 'garage', x: -48, z: -6, altitude: 0 },

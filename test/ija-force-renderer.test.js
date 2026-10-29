@@ -64,4 +64,23 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   renderer.update([replacement], 17, null, 'high');
   assert.equal(renderer.snapshot.assigned, 1); assert.equal(renderer.snapshot.members[0].uniform, 'ija1938');
   assert.throws(() => renderer.update([{ ...replacement, team: 'friendly' }], 18, null, 'high'), /cannot use the enemy/);
+
+  replacement.groundType = 'infantry';
+  replacement.position.set(0, 0, -40);
+  replacement.bayonet = { mode: 'charge', extension: 0 };
+  replacement.nativeMotion.weight = 1;
+  replacement.nativeMotion.speed = 4.8;
+  renderer.update([replacement], 19, null, 'high');
+  const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint);
+  assert.equal(banks.length, 16, 'seven original poses plus six charge phases and three thrust poses');
+  assert.ok(banks.slice(7, 13).some(mesh => mesh.count === 1), 'far charging actors use a melee body pose, not their firing pose');
+  const weaponParts = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
+  const weaponBounds = new THREE.Box3();
+  for (const mesh of weaponParts) {
+    mesh.geometry.computeBoundingBox(); weaponBounds.union(mesh.geometry.boundingBox);
+  }
+  assert.ok(weaponBounds.min.z < -1.34, 'the instanced enemy rifle includes the fixed blade');
+  replacement.bayonet = { mode: 'thrust', extension: 1 };
+  renderer.update([replacement], 19.2, null, 'high');
+  assert.equal(banks[15].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
 });

@@ -87,10 +87,18 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     root.localToWorld(local);
     const floor = groundAt(local.x, local.z), lift = walk.lift + (run.lift - walk.lift) * motion.jog;
     target.set(local.x, floor + restFeet[side].y + lift, local.z);
-    const reach = origin.distanceTo(bend) + bend.distanceTo(source) - 1e-5;
+    const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);
+    const reach = upperLength + lowerLength - 1e-5, minimum = Math.abs(upperLength - lowerLength) + 1e-5;
     const horizontal = Math.hypot(target.x - origin.x, target.z - origin.z);
     const lowest = origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal));
     target.y = Math.max(lowest, target.y);
+    if (origin.distanceTo(target) < minimum) {
+      // Rising from a folded pose can put the planted foot inside the two-bone inner reach.
+      const outward = new Vector3(target.x - origin.x, 0, target.z - origin.z);
+      if (outward.lengthSq() < 1e-10) outward.set(side === 'Left' ? -1 : 1, 0, 0).applyQuaternion(facing);
+      outward.normalize().multiplyScalar(Math.sqrt(Math.max(0, minimum * minimum - (target.y - origin.y) ** 2)));
+      target.x = origin.x + outward.x; target.z = origin.z + outward.z;
+    }
     const solved = solveArm(upper, knee, foot, target, new Vector3(0, 0, -1).applyQuaternion(facing));
     if (!solved.reachable || solved.error > .01) throw new Error(`Native low-step foot is unreachable: ${side}, ` +
       `target=${target.toArray()}, origin=${origin.toArray()}, reach=${reach}, error=${solved.error}`);

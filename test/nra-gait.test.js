@@ -42,6 +42,28 @@ test('low-step gait leaves stationary and static combat postures unchanged', () 
   }
 });
 
+test('rising folded legs keep grounded targets outside inner reach without stretching bones', () => {
+  for (const yaw of [0, 1.3]) {
+    const { root, bones } = legs();
+    root.rotation.y = yaw;
+    for (const side of ['Left', 'Right']) {
+      bones.get(`${side}Leg`).position.set(0, -.55, 0);
+      bones.get(`${side}Foot`).position.set(0, -.25, 0);
+    }
+    root.updateMatrixWorld(true);
+    const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
+      [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new Vector3()))]));
+    const result = applyNativeFootCycle(root, bones, { weight: 1, upright: 1, hipDrop: .75,
+      jog: 0, legLift: .55, walkPhase: .26, runPhase: .26, walkStride: .1, runStride: .1 }, restFeet, () => 0);
+    for (const side of ['Left', 'Right']) {
+      assert.ok(result[side.toLowerCase()].error < 1e-5);
+      assert.ok(bones.get(`${side}Foot`).getWorldPosition(new Vector3()).y >= restFeet[side].y - 1e-5);
+      assert.equal(bones.get(`${side}Leg`).position.y, -.55);
+      assert.equal(bones.get(`${side}Foot`).position.y, -.25);
+    }
+  }
+});
+
 test('running has rear-heel recovery distinct from low walking without high forward foot lifts', () => {
   const samples = Array.from({ length: 100 }, (_, index) => runningStepTarget(index / 100, 2.4, .24));
   assert.ok(samples.some(point => point.stage === 'rear-recovery' && point.z > .1 && point.lift > .18));
