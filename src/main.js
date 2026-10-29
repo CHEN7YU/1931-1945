@@ -608,7 +608,7 @@ function presentCombatEvents(bornAt = time) {
       if (event.kind) combatEffects.hit(event, bornAt);
       else renderImpact(position(event.position), bornAt);
     } else if (event.type === 'explosion') {
-      combatEffects.explosion(position(event.position), bornAt, event.radius);
+      combatEffects.explosion(position(event.position), bornAt, event.radius, event.style);
       if (event.sound) sound('blast');
     } else {
       if (event.type === 'damage') {
@@ -1367,7 +1367,7 @@ function damageVehicle(transport, damage, source, weaponKind) {
   if (result.destroyed) {
     transport.destroyedAt = time;
     combatEvents.publish('explosion', { position: transport.position.clone().add(new THREE.Vector3(0, 1.5, 0)),
-      source, sound: false }, time);
+      source, sound: transport.type === 'tank', style: transport.type === 'tank' ? 'tank-destruction' : 'default' }, time);
   }
 }
 
@@ -1414,7 +1414,8 @@ function renderDeathFeedback() {
 }
 
 function explode(position, damage, radius, source, weaponKind = 'explosion') {
-  combatEvents.publish('explosion', { position, source, sound: true, radius }, time);
+  combatEvents.publish('explosion', { position, source, sound: true, radius,
+    style: weaponKind === 'explosive-pack' ? 'explosive-pack' : 'default' }, time);
   for (const transport of entities.vehicles.values()) {
     if (transport.health <= 0) continue;
     if (weaponKind === 'grenade') continue;
@@ -2770,7 +2771,7 @@ function updateProjectiles(dt) {
 }
 
 function updateEffects(dt) {
-  combatEffects.update(dt, time);
+  combatEffects.update(dt, time, entities.vehicles.values());
   for (const effect of [...effects]) {
     if (time >= effect.end) {
       removeEffect(effect);

@@ -317,6 +317,9 @@ try {
   await page.waitForFunction(() => window.__battle.grenades.history.some(item => item.type === 'explosion' && item.kind === 'explosive-pack'));
   data = await snapshot();
   assert.equal(data.grenades.history.find(item => item.type === 'explosion').source.weaponId, `${packPrimed.control.soldierId}:explosive-pack`);
+  assert.ok(data.combatEvents.history.some(event => event.type === 'explosion' && event.style === 'explosive-pack'),
+    'the actual timed pack selects its larger explosion presentation');
+  assert.ok(data.combatEffects.fireClouds > 0, 'the real pack detonation renders a fireball');
   assert.equal(data.grenades.inventory.packs, 0); assert.equal(data.grenades.inventory.ammo, 1);
   assert.equal(data.grenades.equipped, false);
   await page.keyboard.press('6'); assert.equal((await snapshot()).grenades.equipped, false);

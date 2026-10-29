@@ -88,3 +88,43 @@ test('explosions have a short flash, ballistic fragments, outward dust and linge
     assert.equal(state.fragments.length + state.clouds.length + state.lights.length, 0);
   }
 });
+
+test('packs and tank destruction are visibly larger than grenades without changing the pool budgets', () => {
+  const grenade = createParticleState();
+  emitExplosionParticles(grenade, position, 0);
+  const flash = grenade.clouds.find(cloud => cloud.kind === 'blast-flash');
+  for (const style of ['explosive-pack', 'tank-destruction']) for (const low of [false, true]) {
+    const state = createParticleState();
+    emitExplosionParticles(state, position, 0, { style, low, radius: style === 'explosive-pack' ? 9 : 7 });
+    assert.ok(state.clouds.find(cloud => cloud.kind === 'blast-flash').size > flash.size * 4);
+    assert.equal(state.fragments.length, low ? 16 : 48);
+    assert.equal(state.clouds.filter(cloud => cloud.kind === 'blast-fire').length, low ? 1 : 6);
+    assert.equal(state.clouds.filter(cloud => cloud.kind === 'blast-wave').length, 1);
+    assert.ok(state.fragments.every(particle => Math.hypot(particle.vx, particle.vz) >= 3));
+    assert.ok(state.clouds.length <= (low ? 6 : 18));
+    advanceCombatParticles(state, .3, () => .45, .3);
+    assert.ok(!state.clouds.some(cloud => cloud.kind === 'blast-flash'));
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-fire'));
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-wave'));
+    advanceCombatParticles(state, 1.8, () => .45, 2.1);
+    assert.ok(!state.clouds.some(cloud => ['blast-fire', 'blast-wave'].includes(cloud.kind)));
+    if (style === 'tank-destruction') {
+      assert.ok(state.clouds.every(cloud => cloud.kind === 'blast-soot'));
+      advanceCombatParticles(state, 2, () => .45, 4.1);
+      assert.ok(state.clouds.length > 0, 'black smoke persists after the initial tank fireball');
+    }
+    advanceCombatParticles(state, 6, () => .45, 8.1);
+    assert.equal(state.fragments.length + state.clouds.length + state.lights.length, 0);
+    for (let i = 0; i < 80; i++) emitExplosionParticles(state, position, 8.1, { style, low });
+    for (const [name, cap] of Object.entries(PARTICLE_LIMITS)) assert.equal(state[name].length + state.free[name].length, cap);
+    clearCombatParticles(state);
+    assert.equal(state.fragments.length + state.clouds.length + state.lights.length, 0);
+  }
+});
+
+test('invalid explosion styles are rejected before mutating the particle pool', () => {
+  const state = createParticleState();
+  assert.throws(() => emitExplosionParticles(state, position, 0, { style: 'unknown' }), RangeError);
+  assert.equal(state.serial, 0);
+  assert.equal(state.emitted, 0);
+});

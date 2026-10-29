@@ -1,3 +1,5 @@
+import { EXPLOSION_STYLES } from './combat-particles.js';
+
 export const COMBAT_EVENT_LIMIT = 1024;
 export const COMBAT_HISTORY_LIMIT = 64;
 
@@ -53,7 +55,9 @@ export function createCombatEvents() {
       } else if (type === 'explosion') {
         if (typeof data.sound !== 'boolean') throw new RangeError('Explosion feedback requires an explicit sound policy');
         if (data.radius != null && (!Number.isFinite(data.radius) || data.radius <= 0)) throw new RangeError('Explosion radius must be positive');
-        payload = { source, position: point(data.position), sound: data.sound, radius: data.radius ?? 7 };
+        const style = data.style ?? 'default';
+        if (!EXPLOSION_STYLES.includes(style)) throw new RangeError('Invalid explosion style');
+        payload = { source, position: point(data.position), sound: data.sound, radius: data.radius ?? 7, style };
       } else if (type === 'damage') {
         if (!Number.isFinite(data.amount) || data.amount <= 0 || !Number.isFinite(data.health) || data.health < 0 ||
           (data.observerId != null && (typeof data.observerId !== 'string' || !data.observerId))) throw new RangeError('Invalid applied damage feedback');

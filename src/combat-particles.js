@@ -1,4 +1,5 @@
 export const PARTICLE_LIMITS = Object.freeze({ fragments: 96, clouds: 18, lights: 2 });
+export const EXPLOSION_STYLES = Object.freeze(['default', 'explosive-pack', 'tank-destruction']);
 const valid = point => point && ['x', 'y', 'z'].every(axis => Number.isFinite(point[axis]));
 
 export function createParticleState() {
@@ -51,33 +52,53 @@ export function emitCombatParticles(state, position, normal, kind, options) {
   state.emitted++;
 }
 
-export function emitExplosionParticles(state, position, time, { low = false, radius = 7, lights = true } = {}) {
+export function emitExplosionParticles(state, position, time, { low = false, radius = 7, lights = true, style = 'default' } = {}) {
   if (!valid(position) || !Number.isFinite(time) || time < 0 || !Number.isFinite(radius) || radius <= 0 ||
-    typeof low !== 'boolean' || typeof lights !== 'boolean') throw new RangeError('Explosion effects require finite position, size and simulation time');
+    typeof low !== 'boolean' || typeof lights !== 'boolean' || !EXPLOSION_STYLES.includes(style)) throw new RangeError('Explosion effects require finite position, size, style and simulation time');
   let seed = ++state.serial * 2654435761;
   const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
-  const scale = Math.min(1.7, Math.max(.7, radius / 7)), fragmentLimit = low ? 32 : PARTICLE_LIMITS.fragments;
+  const tank = style === 'tank-destruction', heavy = style !== 'default';
+  const scale = Math.min(1.7, Math.max(.7, radius / 7)) * (tank ? 2 : heavy ? 1.65 : 1);
+  const fragmentLimit = low ? 32 : PARTICLE_LIMITS.fragments;
   const cloudLimit = low ? 6 : PARTICLE_LIMITS.clouds;
-  for (let i = 0; i < (low ? 8 : 24); i++) {
+  for (let i = 0; i < (low ? heavy ? 16 : 8 : heavy ? 48 : 24); i++) {
     const angle = random() * Math.PI * 2, speed = (2 + random() * 5) * scale;
     Object.assign(take(state, 'fragments', fragmentLimit), { x: position.x, y: position.y + .08, z: position.z,
       vx: Math.cos(angle) * speed, vy: (1.5 + random() * 4) * scale, vz: Math.sin(angle) * speed,
-      age: 0, life: .8 + random() * .9, size: .012 + random() * .028, kind: 'soil', spin: random() * 6.28, bornAt: time });
+      age: 0, life: .8 + random() * (heavy ? 1.6 : .9), size: (.012 + random() * .028) * (heavy ? 2.5 : 1),
+      kind: tank ? 'generic' : 'soil', spin: random() * 6.28, bornAt: time });
   }
-  const count = low ? 5 : 12;
+  const count = low ? heavy ? 3 : 5 : heavy ? 9 : 12;
   for (let i = 0; i < count; i++) {
-    const dust = i < count / 2, angle = i * 2.399963, spread = dust ? .35 * scale : .15 * scale;
+    const dust = i < (heavy ? low ? 1 : 4 : count / 2), angle = i * 2.399963;
+    const spread = (dust ? .35 : tank ? .5 : .15) * scale;
     Object.assign(take(state, 'clouds', cloudLimit), { x: position.x + Math.cos(angle) * spread,
       y: position.y + (dust ? .08 : .25) * scale, z: position.z + Math.sin(angle) * spread,
       vx: Math.cos(angle) * (dust ? 1.1 : .15) * scale, vy: (dust ? .12 : .55 + random() * .3) * scale,
       vz: Math.sin(angle) * (dust ? 1.1 : .15) * scale, age: 0,
-      life: dust ? 1.1 + random() * .5 : 1.8 + random() * .6,
-      size: (dust ? .55 : .65) * scale, kind: dust ? 'blast-dust' : 'blast-smoke', rotation: random() * 6.28, bornAt: time });
+      life: dust ? 1.1 + random() * .5 : (tank ? 5 : heavy ? 2.5 : 1.8) + random() * .6,
+      size: (dust ? .55 : tank ? 1 : .65) * scale,
+      kind: dust ? 'blast-dust' : tank ? 'blast-soot' : 'blast-smoke', rotation: random() * 6.28, bornAt: time });
+  }
+  if (heavy) {
+    for (let i = 0; i < (low ? 1 : 6); i++) {
+      const angle = i * 2.399963, spread = (i ? .45 : 0) * scale;
+      Object.assign(take(state, 'clouds', cloudLimit), { x: position.x + Math.cos(angle) * spread,
+        y: position.y + .2 + (i % 3) * .3 * scale, z: position.z + Math.sin(angle) * spread,
+        vx: Math.cos(angle) * .5 * scale, vy: (tank ? .8 : .6) * scale, vz: Math.sin(angle) * .5 * scale,
+        age: 0, life: (tank ? 1.6 : .7) + random() * .35, size: (tank ? 1.25 : 1) * scale,
+        kind: 'blast-fire', rotation: random() * 6.28, bornAt: time });
+    }
+    Object.assign(take(state, 'clouds', cloudLimit), { x: position.x, y: position.y, z: position.z,
+      vx: 0, vy: 0, vz: 0, age: 0, life: .6, size: 2.4 * scale,
+      kind: 'blast-wave', rotation: 0, bornAt: time });
   }
   Object.assign(take(state, 'clouds', cloudLimit), { x: position.x, y: position.y + .12, z: position.z,
-    vx: 0, vy: .2, vz: 0, age: 0, life: .10, size: .7 * scale, kind: 'blast-flash', rotation: random() * 6.28, bornAt: time });
+    vx: 0, vy: .2, vz: 0, age: 0, life: heavy ? .14 : .10, size: (heavy ? 2 : .7) * scale,
+    kind: 'blast-flash', rotation: random() * 6.28, bornAt: time });
   if (!low && lights) Object.assign(take(state, 'lights', PARTICLE_LIMITS.lights),
-    { x: position.x, y: position.y + .2, z: position.z, age: 0, life: .09, intensity: 22 * scale, distance: 5 * scale, bornAt: time });
+    { x: position.x, y: position.y + .2, z: position.z, age: 0, life: heavy ? .18 : .09,
+      intensity: (heavy ? 65 : 22) * scale, distance: (heavy ? 9 : 5) * scale, bornAt: time });
   state.emitted++;
 }
 

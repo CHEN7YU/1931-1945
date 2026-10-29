@@ -76,6 +76,20 @@ test('new battle clears pending feedback, history and counts, while crash source
   assert.deepEqual(events.snapshot, { pending: 0, history: [], published: emptyCounts(), presented: emptyCounts() });
   assert.equal(events.publish('shot', shot(), 0).id, 1);
 });
+test('explosion events preserve presentation styles without altering their gameplay radius or ownership', () => {
+  const events = createCombatEvents();
+  for (const style of ['default', 'explosive-pack', 'tank-destruction']) {
+    const event = events.publish('explosion', { source: source(), position: { x: 0, y: 1.5, z: 0 },
+      sound: true, radius: 9, style }, 1);
+    assert.equal(event.style, style);
+    assert.equal(event.radius, 9);
+    assert.equal(event.source.weaponId, 's1:rifle');
+  }
+  assert.equal(events.publish('explosion', { source: source(), position: { x: 0, y: 0, z: 0 }, sound: false }, 1).style, 'default');
+  assert.throws(() => events.publish('explosion', { source: source(), position: { x: 0, y: 0, z: 0 },
+    sound: true, style: 'unknown' }, 1), /Invalid explosion style/);
+  assert.equal(events.snapshot.pending, 4);
+});
 test('invalid feedback is explicit and cannot poison the event stream', () => {
   const events = createCombatEvents();
   for (const data of [{ ...shot(), source: null }, { ...shot(), weaponType: 'unknown' }, { ...shot(), color: -1 },
