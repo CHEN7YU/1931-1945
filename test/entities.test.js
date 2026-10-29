@@ -6,6 +6,7 @@ import { createEntityRegistry, registerUnit, registerWeapon, registerSoldier, cr
   soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT } from '../src/entities.js';
 import { circleBlocked, segmentClear } from '../src/core.js';
 import { createRifleState } from '../src/rifle-action.js';
+import { TANK_OBSERVATION } from '../src/player-tank.js';
 
 function fixture() {
   const world = createEntityRegistry();
@@ -168,9 +169,9 @@ test('tank aiming belongs to the original vehicle while foot pitch belongs to it
   pose.yaw = 1.1; pose.pitch = -.6;
   assert.equal(vehicle.turretYaw, 1.1); assert.equal(vehicle.turretPitch, -.6);
   assert.equal(actors[0].lookPitch, 0);
-  assert.equal(pose.eyeHeight, 2.7);
+  assert.equal(pose.eyeHeight, 1.88);
   selectControlledSoldier(world, actors[1]);
-  assert.equal(pose.eyeHeight, 1.9);
+  assert.equal(pose.eyeHeight, 1.72);
   assert.equal(pose.pitch, -.6);
   selectControlledSoldier(world, actors[2]);
   assert.equal(pose.eyeHeight, 1.3);
@@ -237,7 +238,7 @@ test('driver observation is hull-relative and cannot steer the cannon or overwri
   assert.equal(pose.pitch, 0);
   pose.yaw = -.2; pose.pitch = .3;
   assert.ok(Math.abs(driver.viewYaw + .6) < 1e-10);
-  assert.equal(driver.viewPitch, .3);
+  assert.equal(driver.viewPitch, TANK_OBSERVATION.driver.pitchLimit);
   assert.equal(vehicle.turretYaw, 1.8);
   assert.equal(vehicle.turretPitch, -.6);
   assert.equal(actors[2].lookPitch, 0);
@@ -248,7 +249,7 @@ test('driver observation is hull-relative and cannot steer the cannon or overwri
   pose.yaw = 1.6; pose.pitch = -.25;
   selectControlledSoldier(world, actors[2]);
   assert.ok(Math.abs(pose.yaw - .1) < 1e-10);
-  assert.equal(pose.pitch, .3);
+  assert.equal(pose.pitch, TANK_OBSERVATION.driver.pitchLimit);
   const before = structuredClone(world);
   for (let i = 0; i < 100; i++) void [pose.yaw, pose.pitch, occupiedSeat(world)];
   assert.deepEqual(world, before);
@@ -260,9 +261,9 @@ test('driver seat observation survives exit/reboard and is isolated from another
   const driver = vehicle.seats[2];
   leaveGroundVehicle(world, actors[2], { x: 4, y: 0, z: 0 });
   pose.yaw = -1; pose.pitch = .4;
-  assert.equal(driver.viewYaw, .8); assert.equal(driver.viewPitch, -.2);
+  assert.equal(driver.viewYaw, TANK_OBSERVATION.driver.yawLimit); assert.equal(driver.viewPitch, -.2);
   assert.equal(seatSoldier(world, actors[2], vehicle, driver.id), null);
-  assert.equal(pose.yaw, .8); assert.equal(pose.pitch, -.2);
+  assert.equal(pose.yaw, TANK_OBSERVATION.driver.yawLimit); assert.equal(pose.pitch, -.2);
   assert.equal(actors[2].lookPitch, .4);
   assert.equal(vehicle.turretYaw, 0); assert.equal(vehicle.turretPitch, 0);
   const other = createVehicleEntity(world, { id: 'tank-b', unitId: 'bravo', type: 'tank', team: 'friendly', position: { x: 20, y: 0, z: 0 } });
@@ -270,7 +271,7 @@ test('driver seat observation survives exit/reboard and is isolated from another
   world.control.unitId = 'bravo'; selectControlledSoldier(world, actors[3]);
   assert.equal(pose.yaw, 0); assert.equal(pose.pitch, 0);
   pose.yaw = -.9; pose.pitch = -.5;
-  assert.equal(driver.viewYaw, .8); assert.equal(driver.viewPitch, -.2);
+  assert.equal(driver.viewYaw, TANK_OBSERVATION.driver.yawLimit); assert.equal(driver.viewPitch, -.2);
   assert.equal(other.turretYaw, 0); assert.equal(other.turretPitch, 0);
 });
 test('driver takeover after crew casualties retains observation without inheriting cannon control', () => {
@@ -283,10 +284,28 @@ test('driver takeover after crew casualties retains observation without inheriti
   damageVehicleEntity(world, vehicle, 120);
   assert.equal(actors[1].health, 0);
   assert.equal(selectControlledSoldier(world, actors[2]), true);
-  assert.equal(pose.yaw, .9); assert.equal(pose.pitch, -.15);
+  assert.equal(pose.yaw, TANK_OBSERVATION.driver.yawLimit); assert.equal(pose.pitch, -.15);
   assert.equal(occupiedSeat(world).canFire, false);
   assert.equal(vehicle.turretYaw, -.6); assert.equal(vehicle.turretPitch, -.8);
   assert.equal(vehicle.health, 110);
+});
+test('driver limits wrap at north, cannot accumulate a full turn, and move only with the hull', () => {
+  const { world, actors, vehicle } = fixture(), pose = createControlPoseView(world);
+  selectControlledSoldier(world, actors[2]);
+  const { yawLimit, pitchLimit } = TANK_OBSERVATION.driver;
+  for (const heading of [0, Math.PI - .1, -Math.PI + .1, Math.PI * 4]) {
+    vehicle.heading = heading;
+    for (let step = 0; step < 100; step++) pose.yaw += .1;
+    assert.ok(Math.abs(pose.yaw - heading - yawLimit) < 1e-10);
+    for (let step = 0; step < 100; step++) pose.yaw -= .1;
+    assert.ok(Math.abs(pose.yaw - heading + yawLimit) < 1e-10);
+    pose.yaw = heading + 2 * Math.PI + .1;
+    assert.ok(Math.abs(pose.yaw - heading - .1) < 1e-10);
+    pose.pitch = 9; assert.equal(pose.pitch, pitchLimit);
+    pose.pitch = -9; assert.equal(pose.pitch, -pitchLimit);
+  }
+  assert.equal(vehicle.turretYaw, 0); assert.equal(vehicle.turretPitch, 0);
+  assert.equal(actors[2].lookPitch, 0);
 });
 test('AI rifle origins preserve both original local offsets across headings and bridge support', () => {
   for (const team of ['friendly', 'enemy']) for (const heading of [-Math.PI, -.8, 0, Math.PI / 2, 2.1]) {

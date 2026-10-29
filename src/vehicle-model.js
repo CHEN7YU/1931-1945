@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export const VEHICLE_PROFILES = Object.freeze({
   tank: Object.freeze({ model: 'vickers-e-b', name: '维克斯六吨坦克B型', length: 4.88, width: 2.41, height: 2.16 }),
@@ -19,8 +18,6 @@ const materials = {
   underside: paint(0x9caead), steel: paint(0x41463f), rubber: paint(0x252822),
   dark: paint(0x171d1a), leather: paint(0x503b28),
   blue: paint(0x183e80), white: paint(0xe4e4d3),
-  viewMetal: new THREE.MeshStandardMaterial({ color: 0x29332c, roughness: .68, metalness: .45 }),
-  viewEdge: new THREE.MeshStandardMaterial({ color: 0x788174, roughness: .52, metalness: .6 }),
   glass: new THREE.MeshStandardMaterial({ color: 0xb1d1cb, roughness: .18, metalness: .05,
     transparent: true, opacity: .28, depthWrite: false, side: THREE.DoubleSide }),
 };
@@ -35,8 +32,6 @@ function mesh(parent, geometry, material, position = [0, 0, 0], scale = [1, 1, 1
   return object;
 }
 const block = (parent, material, position, scale) => mesh(parent, box, material, position, scale);
-const viewBlock = (parent, material, position, dimensions, radius = .008) =>
-  mesh(parent, new RoundedBoxGeometry(...dimensions, 2, radius), material, position);
 const oval = (parent, material, position, scale) => mesh(parent, sphere, material, position, scale);
 function tube(parent, material, from, to, radius) {
   const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to), delta = b.clone().sub(a);
@@ -368,63 +363,14 @@ export function vehicleWeaponView(type, seat = 'commander') {
         tube(group, materials.edge, [side * .33, .2, -1.3], [0, .3, -1.3], .018);
       }
       block(group, materials.glass, [0, -.1, -1.31], [.63, .71, .015]).rotation.x = -.16;
-    } else if (seat === 'commander') {
-      const rim = new THREE.TorusGeometry(.56, .035, 8, 64); rim.rotateX(Math.PI / 2);
-      mesh(group, rim, materials.edge, [0, -.53, -.60]);
-      for (const sign of [-1, 1]) {
-        tube(group, materials.steel, [sign * .42, -.52, -.74], [sign * .42, -.43, -.74], .018);
-        tube(group, materials.edge, [sign * .42, -.43, -.74], [sign * .42, -.43, -.56], .018);
-      }
-      rivets(group, [-.32, -.50, -1.05], [.32, -.50, -1.05], 9);
-    } else {
-      for (const sign of [-1, 1]) {
-        viewBlock(group, materials.viewMetal, [sign * .62, -.04, -.75], [.12, .92, .10]);
-        viewBlock(group, materials.viewEdge, [sign * .55, -.02, -.69], [.018, .70, .025], .004);
-        for (let index = 0; index < 7; index++) {
-          const y = -.34 + index * .10;
-          const head = mesh(group, cylinder, materials.viewEdge, [sign * .60, y, -.692], [.006, .004, .006]);
-          head.rotation.x = Math.PI / 2;
-          block(group, materials.dark, [sign * .60, y, -.688], [.007, .0012, .001]);
-        }
-      }
-      viewBlock(group, materials.viewMetal, [0, .39, -.75], [1.38, .08, .10]);
-      viewBlock(group, materials.viewMetal, [0, -.44, -.72], [1.38, .18, .18]);
-      viewBlock(group, materials.dark, [0, -.345, -.67], [1.12, .018, .035], .003);
-      for (const x of seat === 'driver' ? [-.24, -.09, .08] : [-.30]) {
-        mesh(group, disk, materials.viewEdge, [x, -.385, -.615], [.048, .048, 1]);
-        mesh(group, disk, materials.dark, [x, -.385, -.609], [.040, .040, 1]);
-        tube(group, materials.white, [x, -.385, -.604], [x + .018, -.359, -.604], .002);
-        for (let tick = 0; tick < 8; tick++) {
-          const angle = tick * Math.PI / 4;
-          tube(group, materials.viewEdge, [x + Math.sin(angle) * .032, -.385 + Math.cos(angle) * .032, -.604],
-            [x + Math.sin(angle) * .037, -.385 + Math.cos(angle) * .037, -.604], .0015);
-        }
-      }
-      if (seat === 'driver') for (const sign of [-1, 1]) {
-        tube(group, materials.viewEdge, [sign * .42, -.65, -.59], [sign * .38, -.40, -.57], .008);
-        oval(group, materials.leather, [sign * .38, -.38, -.57], [.016, .045, .016]);
-      }
-      if (seat === 'gunner') {
-        mesh(group, new THREE.TorusGeometry(.065, .005, 8, 32), materials.viewEdge, [-.37, -.45, -.64]);
-        for (let spoke = 0; spoke < 3; spoke++) {
-          const angle = spoke * Math.PI * 2 / 3;
-          tube(group, materials.viewEdge, [-.37, -.45, -.64],
-            [-.37 + Math.cos(angle) * .065, -.45 + Math.sin(angle) * .065, -.64], .003);
-        }
-      }
     }
     batch(group);
-    if (type === 'tank' && seat === 'gunner') {
-      const breech = new THREE.Group(); breech.name = 'breech';
-      viewBlock(breech, materials.viewMetal, [.30, -.45, -.66], [.20, .16, .29]);
-      tube(breech, materials.viewEdge, [.38, -.43, -.51], [.38, -.35, -.51], .008);
-      batch(breech); group.add(breech);
-    }
     templates.set(key, group);
   }
   const view = templates.get(key).clone(true);
   view.userData.profile = VEHICLE_PROFILES[type];
   view.userData.observationSeat = type === 'tank' ? seat : 'pilot';
+  view.userData.optical = type === 'tank';
   view.userData.breech = view.getObjectByName('breech') ?? null;
   return view;
 }

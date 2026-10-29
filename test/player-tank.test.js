@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier, captureAttackSource } from '../src/entities.js';
-import { TANK_MACHINE_GUN, advanceTankMachineGun, tankMachineGunPose, tankCannonPose, tankHeading } from '../src/player-tank.js';
+import { TANK_MACHINE_GUN, advanceTankMachineGun, tankMachineGunPose, tankCannonPose, tankHeading,
+  TANK_OBSERVATION, tankObservationPose } from '../src/player-tank.js';
 import { historicalVehicleModel } from '../src/vehicle-model.js';
 
 function fixture() {
@@ -15,6 +16,26 @@ function fixture() {
   });
   return { registry, vehicle, crew, gun: vehicle.machineGuns[0] };
 }
+test('closed commander and gunner eyes stay inside the turret; optics and driver do not share an exterior camera', () => {
+  const { vehicle } = fixture();
+  for (const heading of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    vehicle.heading = heading; vehicle.position.set(13, 3, -9);
+    for (const role of ['commander', 'gunner', 'driver']) {
+      const normal = tankObservationPose(vehicle, role, false), zoom = tankObservationPose(vehicle, role, true);
+      assert.equal(normal.y, vehicle.position.y + TANK_OBSERVATION[role].eyeHeight);
+      assert.ok(normal.y < vehicle.position.y + 2.16);
+      assert.deepEqual({ x: normal.x, y: normal.y, z: normal.z }, { x: zoom.x, y: zoom.y, z: zoom.z });
+      assert.ok(normal.fov >= zoom.fov);
+      if (role === 'driver') assert.equal(Math.hypot(normal.x - 13, normal.z + 9), 0);
+      else assert.ok(Math.abs(Math.hypot(normal.x - 13, normal.z + 9) - Math.hypot(.3, .38)) < 1e-12);
+    }
+  }
+  assert.equal(tankObservationPose(vehicle, 'commander', false).aperture, 'slit');
+  assert.equal(tankObservationPose(vehicle, 'gunner', false).aperture, 'scope');
+  assert.equal(tankObservationPose(vehicle, 'gunner', false).fov, 40);
+  assert.equal(tankObservationPose(vehicle, 'gunner', true).fov, 24);
+  assert.throws(() => tankObservationPose(vehicle, 'outside', false), RangeError);
+});
 test('friendly coax fires repeatedly from a registered secondary weapon without consuming or refilling the cannon', () => {
   const { registry, vehicle, crew, gun } = fixture(), cannon = { ...vehicle.weapon };
   for (let shot = 0; shot < 100; shot++) assert.ok(advanceTankMachineGun(vehicle, crew[0], .01, shot * .101, true));

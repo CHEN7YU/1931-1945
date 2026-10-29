@@ -153,6 +153,7 @@ export function advancePosition(state, position, objective) {
 
 export function assignAssaultObjectives(formations, objectives) {
   if (!objectives.length) throw new RangeError('Assault assignments require objectives');
+  const previous = new Map(formations.map(formation => [formation, formation.objectiveId]));
   for (const team of ['friendly', 'enemy']) {
     const units = formations.filter(item => item.team === team && !item.player).map(formation => {
       const alive = formation.members.filter(actor => actor.health > 0 && !actor.vehicleId);
@@ -192,13 +193,27 @@ export function assignAssaultObjectives(formations, objectives) {
       quotas.set(point.id, quotas.get(point.id) - 1);
     }
   }
+  return formations.filter(formation => formation.objectiveId !== previous.get(formation));
+}
+
+export function resetObjectiveMovement(actor, objectiveId) {
+  if (!actor?.tactics || typeof objectiveId !== 'string' || !objectiveId) throw new RangeError('Objective handoff needs an owned actor and objective identity');
+  const state = actor.tactics;
+  state.objectiveId = objectiveId;
+  state.cover = state.wallContact = state.personalSlot = null;
+  state.enteredCover = false;
+  state.shotMovePending = false; state.shotMoveGoal = null;
+  state.relocatedFireUntil = state.coverMoveUntil = state.postureUntil = state.postureDecisionAt = 0;
+  state.mode = 'formation-advance';
+  actor.path = actor.pathGoal = null; actor.nextPath = 0; actor.stuckTime = 0;
+  actor.rifleReady = false;
 }
 
 export function assaultDestination(actor, objective) {
   return objectiveDestination({ squad: actor.formation.index, slot: actor.index }, actor.position, { ...objective, radius: objective.radius - .6 });
 }
 
-export function enemyAssaultAction(state, position, objective, now, hasTarget) {
+export function formationAssaultAction(state, position, objective, now, hasTarget) {
   if (!validPoint(position) || !validPoint(objective) || !Number.isFinite(now) || now < 0) {
     throw new RangeError('Assault decisions require finite positions and simulation time');
   }
@@ -213,6 +228,8 @@ export function enemyAssaultAction(state, position, objective, now, hasTarget) {
   // Half a section covers for a bounded interval while the other half closes on its objective.
   return Math.floor((now + state.squad * .37) / 4) % 2 === state.slot % 2 ? 'advance' : 'cover';
 }
+
+export const enemyAssaultAction = formationAssaultAction;
 
 export function pointSegmentDistance(point, start, end) {
   const dx = end.x - start.x, dz = end.z - start.z, length2 = dx * dx + dz * dz;

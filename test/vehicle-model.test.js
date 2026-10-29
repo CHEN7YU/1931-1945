@@ -85,7 +85,8 @@ test('first-person views use matching vehicle profiles and shared buffers withou
   for (const type of ['tank', 'plane']) {
     const first = weaponModel(type), second = vehicleWeaponView(type);
     assert.equal(first.userData.profile.model, VEHICLE_PROFILES[type].model);
-    assert.equal(first.children[0].geometry, second.children[0].geometry);
+    if (type === 'plane') assert.equal(first.children[0].geometry, second.children[0].geometry);
+    else assert.equal(first.children.length, 0, 'closed optics do not add a floating hatch or large window model');
     assert.ok(geometryStats(first).calls <= 7);
     const opaqueCenter = contacts(first, [0, 0, 0], [0, 0, -1]).filter(hit => !hit.object.material.transparent);
     assert.equal(opaqueCenter.length, 0, 'pilot and gunner retain an unobstructed center sightline');
@@ -94,15 +95,18 @@ test('first-person views use matching vehicle profiles and shared buffers withou
   assert.throws(() => vehicleWeaponView('unknown'), /Unknown vehicle view/);
 });
 
-test('tank seats have independent detailed observation frames with an unobstructed center and bounded shared geometry', () => {
+test('all tank seats use closed apertures without floating hatch rims or large open windows', () => {
   const views = ['commander', 'gunner', 'driver'].map(seat => vehicleWeaponView('tank', seat));
   for (const [index, seat] of ['commander', 'gunner', 'driver'].entries()) {
     const view = views[index], other = vehicleWeaponView('tank', seat), stats = geometryStats(view);
     assert.equal(view.userData.observationSeat, seat);
-    assert.equal(view.children[0].geometry, other.children[0].geometry);
+    assert.equal(view.userData.optical, true);
+    assert.equal(view.children.length, 0);
+    assert.equal(other.children.length, 0);
+    assert.equal(stats.calls, 0, 'no open-hatch rim, gauges or cannon breech in an optical view');
     assert.ok(stats.calls <= 7 && stats.triangles < 12000, `${seat}: ${JSON.stringify(stats)}`);
     assert.equal(contacts(view, [0, 0, 0], [0, 0, -1]).filter(hit => !hit.object.material.transparent).length, 0);
   }
-  assert.ok(views[1].userData.breech);
+  assert.equal(views[1].userData.breech, null);
   assert.equal(views[2].userData.breech, null);
 });

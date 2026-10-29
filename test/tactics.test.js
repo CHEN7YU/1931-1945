@@ -2,9 +2,50 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, enemyAssaultAction } from '../src/tactics.js';
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement } from '../src/tactics.js';
 import { makeObjectives, advanceCapture } from '../src/core.js';
 import { battleRoster } from '../src/battle-roster.js';
+
+test('capture frees every surplus friendly guard and invalidates the old firing and navigation task', () => {
+  const formations = battleRoster(), points = makeObjectives();
+  for (const formation of formations) formation.members = [{ health: 100, position: { x: 0, z: 48 },
+    tactics: createTactics(formation.index, formation.index, 0), path: [{ x: 0, z: 48 }], nextPath: 99 }];
+  assignAssaultObjectives(formations, points);
+  const attackers = formations.filter(unit => unit.team === 'friendly' && !unit.player && unit.objectiveId === 'A');
+  for (const unit of attackers) {
+    const state = unit.members[0].tactics;
+    state.cover = { id: 'old-point-cover' }; state.enteredCover = true;
+    state.personalSlot = { objectiveId: 'A', point: { x: 0, z: 48 } };
+    state.shotMovePending = true; state.relocatedFireUntil = 90;
+    state.lastSeen = { x: 20, y: 1.4, z: 48 };
+  }
+  advanceCapture(points[0], 12, true, false);
+  const changed = assignAssaultObjectives(formations, points);
+  assert.equal(attackers.filter(unit => unit.objectiveId === 'A').length, 1);
+  for (const formation of attackers.filter(unit => unit.objectiveId !== 'A')) {
+    assert.ok(changed.includes(formation));
+    const actor = formation.members[0], position = { ...actor.position };
+    resetObjectiveMovement(actor, formation.objectiveId);
+    assert.equal(actor.tactics.cover, null); assert.equal(actor.tactics.personalSlot, null);
+    assert.equal(actor.tactics.shotMovePending, false); assert.equal(actor.tactics.relocatedFireUntil, 0);
+    assert.equal(actor.path, null); assert.equal(actor.nextPath, 0);
+    assert.equal(actor.tactics.objectiveId, formation.objectiveId);
+    assert.deepEqual(actor.position, position, 'handoff cannot teleport soldiers');
+    assert.deepEqual(actor.tactics.lastSeen, { x: 20, y: 1.4, z: 48 }, 'known threats remain known');
+  }
+  assert.ok(changed.every(formation => !formation.player), 'autonomous assignment does not overwrite explicit player orders');
+  assert.throws(() => resetObjectiveMovement(null, 'B'), RangeError);
+});
+
+test('friendly covering elements also advance instead of permanently pinning the same soldiers to old cover', () => {
+  const point = makeObjectives()[1], position = { x: 0, z: 42 };
+  for (let slot = 0; slot < 11; slot++) {
+    const state = createTactics(slot + 1, 100, slot), decisions = new Set();
+    for (let time = 0; time < 12; time += .25) decisions.add(formationAssaultAction(state, position, point, time, true));
+    assert.ok(decisions.has('advance') && decisions.has('cover'), `slot ${slot} alternates with its covering element`);
+    assert.equal(formationAssaultAction(state, position, point, 13, false), 'advance');
+  }
+});
 
 test('both armies distribute real formations across three simultaneous goals and retask after ownership changes', () => {
   const formations = battleRoster(), points = makeObjectives();

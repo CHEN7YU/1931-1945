@@ -3,8 +3,9 @@ import { nativeMuzzleLocal, nativeGaitDrop, nativeEyeLocal, syncNativeAimGoal } 
 import { FIRING_POSES } from './combat-posture.js';
 import { infantryWeaponProfile } from './rifle-action.js';
 import { CHI_HA, CHI_HA_SEATS, CHI_HA_MG, CHI_HA_MG_MOUNTS } from './chi-ha.js';
-import { TANK_MACHINE_GUN } from './player-tank.js';
+import { TANK_MACHINE_GUN, TANK_OBSERVATION } from './player-tank.js';
 import { attackCategory } from './battle-stats.js';
+import { headingError } from './ai-turning.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -35,8 +36,8 @@ export function soldierEyePosition(actor) {
   return { x: actor.position.x, y: actor.position.y + soldierPostureHeight(actor), z: actor.position.z };
 }
 export const TANK_SEATS = Object.freeze([
-  Object.freeze({ role: 'commander', label: '车长', eyeHeight: 2.7, canFire: true, controlsTurret: true }),
-  Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: 1.9, canFire: true, controlsTurret: true }),
+  Object.freeze({ role: 'commander', label: '车长', eyeHeight: TANK_OBSERVATION.commander.eyeHeight, canFire: true, controlsTurret: true }),
+  Object.freeze({ role: 'gunner', label: '炮手', eyeHeight: TANK_OBSERVATION.gunner.eyeHeight, canFire: true, controlsTurret: true }),
   Object.freeze({ role: 'driver', label: '驾驶员', eyeHeight: 1.3, canFire: false, controlsTurret: false }),
 ]);
 
@@ -220,7 +221,10 @@ export function createControlPoseView(registry) {
       else {
         const seat = vehicle.seats.find(seat => seat.id === actor.seatId);
         if (seat.controlsTurret) vehicle.turretYaw = value;
-        else seat.viewYaw = value - vehicle.heading;
+        else if (seat.role === 'driver') {
+          const limit = TANK_OBSERVATION.driver.yawLimit;
+          seat.viewYaw = Math.max(-limit, Math.min(limit, headingError(vehicle.heading, value)));
+        } else seat.viewYaw = value - vehicle.heading;
       }
     },
     get pitch() {
@@ -233,7 +237,9 @@ export function createControlPoseView(registry) {
     set pitch(value) {
       if (!Number.isFinite(value)) throw new RangeError('Look pitch must be finite');
       const actor = selected(), vehicle = occupiedVehicle(registry, actor);
-      const min = vehicle?.type === 'plane' ? -.7 : -1.25, max = vehicle?.type === 'plane' ? .65 : 1.25;
+      const driver = vehicle?.type === 'tank' && vehicle.seats.find(seat => seat.id === actor.seatId).role === 'driver';
+      const min = vehicle?.type === 'plane' ? -.7 : driver ? -TANK_OBSERVATION.driver.pitchLimit : -1.25;
+      const max = vehicle?.type === 'plane' ? .65 : driver ? TANK_OBSERVATION.driver.pitchLimit : 1.25;
       const pitch = Math.max(min, Math.min(max, value));
       if (!vehicle) actor.lookPitch = pitch;
       else if (vehicle.type === 'plane') vehicle.pitch = pitch;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tankCannonPose } from '../src/player-tank.js';
+import { tankCannonPose, TANK_OBSERVATION } from '../src/player-tank.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -39,6 +39,12 @@ try {
   const id = data.controlInput.owner.vehicleId;
   const vehicle = () => snapshot().then(data => data.vehicles.find(vehicle => vehicle.id === id));
   const initial = await vehicle(), primary = { ...initial.weapon }, gunId = initial.machineGuns[0].id;
+  assert.equal(data.tankObservation.role, 'commander');
+  assert.equal(data.tankObservation.aperture, 'slit');
+  assert.equal(data.tankObservation.closed, true);
+  assert.equal(data.tankObservation.fov, 66);
+  assert.equal(data.weaponVisible, false, 'closed optics do not draw an exposed hatch-rim model');
+  assert.ok(data.tankObservation.eye.y < initial.position.y + 2.16);
   assert.equal(await page.locator('#tank-orientation').isVisible(), true);
   await page.keyboard.down('Space'); await elapsed(.65); await page.keyboard.up('Space');
   let current = await vehicle();
@@ -62,6 +68,8 @@ try {
   await levelView(); await capture('commander-machine-gun');
   await page.mouse.move(720, 450); await page.mouse.down({ button: 'right' });
   await page.locator('#tank-optics').waitFor({ state: 'visible' }); await capture('commander-optics');
+  assert.equal((await snapshot()).fov, 48);
+  assert.equal(await page.locator('.tank-sight').isVisible(), false, 'commander remains at the observation slit');
   await page.mouse.up({ button: 'right' });
   const before = await vehicle();
   await page.keyboard.down('a'); await elapsed(.65); await page.keyboard.up('a'); await elapsed(.2);
@@ -76,9 +84,39 @@ try {
   const dx = current.position.x - position.x, dz = current.position.z - position.z;
   assert.ok(dx * -Math.sin(heading) + dz * -Math.cos(heading) > .3, 'W drives the hull nose, not the camera');
   await page.keyboard.press('y'); await elapsed(.3); await levelView(); await capture('gunner-view');
+  data = await snapshot();
+  assert.equal(data.tankObservation.aperture, 'scope');
+  assert.equal(data.tankObservation.closed, true, 'gunner optics are present without holding RMB');
+  assert.equal(data.fov, 40);
+  assert.equal(await page.locator('.tank-visor').isVisible(), false);
+  await page.mouse.down({ button: 'right' }); await elapsed(.2); await capture('gunner-zoom');
+  assert.equal((await snapshot()).fov, 24);
+  const image = (await page.screenshot()).toString('base64');
+  const sidePixel = await page.evaluate(async image => {
+    const picture = new Image(); picture.src = `data:image/png;base64,${image}`; await picture.decode();
+    const canvas = document.createElement('canvas'); canvas.width = picture.width; canvas.height = picture.height;
+    const context = canvas.getContext('2d'); context.drawImage(picture, 0, 0);
+    return [...context.getImageData(12, Math.floor(picture.height / 2), 1, 1).data];
+  }, image);
+  assert.ok(sidePixel.slice(0, 3).every(value => value <= 12), 'actual gunner image outside the circular optical field is opaque black');
+  await page.mouse.up({ button: 'right' });
   await page.keyboard.press('y'); await elapsed(.3);
   data = await snapshot();
   assert.equal(data.vehicles.find(vehicle => vehicle.id === id).seats.find(seat => seat.id === data.controlInput.owner.seatId).role, 'driver');
+  assert.equal(data.tankObservation.closed, true);
+  assert.equal(data.tankObservation.aperture, 'driver');
+  const driverAim = { yaw: (await vehicle()).turretYaw, pitch: (await vehicle()).turretPitch };
+  await page.mouse.down({ button: 'right' });
+  for (const x of [4000, 4000, -4000, -4000]) {
+    await page.evaluate(x => document.dispatchEvent(new MouseEvent('mousemove', { movementX: x, movementY: x / 2 })), x);
+    await elapsed(.1); data = await snapshot();
+    const transport = data.vehicles.find(vehicle => vehicle.id === id);
+    assert.ok(Math.abs(data.look.yaw - transport.heading) <= TANK_OBSERVATION.driver.yawLimit + 1e-9);
+    assert.ok(Math.abs(data.look.pitch) <= TANK_OBSERVATION.driver.pitchLimit);
+    assert.equal(data.fov, 72, 'driver RMB does not turn a vision slit into a gun scope');
+    assert.deepEqual({ yaw: transport.turretYaw, pitch: transport.turretPitch }, driverAim);
+  }
+  await page.mouse.up({ button: 'right' }); await levelView();
   const driverShots = (await vehicle()).machineGuns[0].shots;
   await page.keyboard.down('Space'); await elapsed(.3); await page.keyboard.up('Space');
   assert.equal((await vehicle()).machineGuns[0].shots, driverShots, 'driver cannot operate a gun');
@@ -115,6 +153,9 @@ try {
   await page.keyboard.down('Tab');
   await page.waitForFunction(() => document.querySelectorAll('.score-team.friendly tbody tr').length === 10);
   assert.equal(await page.locator('.score-team.enemy tbody tr').count(), 10);
+  const labels = await page.locator('#squad-score-table tbody th').allTextContents();
+  assert.ok(labels.some(label => label.includes('第31师')) && labels.some(label => label.includes('第27师')));
+  assert.ok(labels.some(label => label.includes('濑谷')) && labels.some(label => label.includes('坂本')));
   const panel = await page.locator('#scoreboard').boundingBox();
   assert.ok(panel.width > 1440 * .74 && panel.width < 1440 * .86, 'dual-team panel follows the confirmed central overlay layout');
   await capture('full-army-icon-scoreboard'); await page.keyboard.up('Tab');

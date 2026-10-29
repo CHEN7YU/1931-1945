@@ -83,7 +83,7 @@ try {
   data = await snapshot();
   assert.equal(data.type, 'tank'); assert.equal(data.current, 1);
   assert.equal(data.look.pitch, initial.vehicles[0].turretPitch, 'ground rifle look cannot overwrite the original cannon aim');
-  assert.equal(data.locomotion.eyeHeight, 1.9);
+  assert.equal(data.locomotion.eyeHeight, 1.72);
   assert.equal(data.ammo, 0, 'Y returns to shared primary ammo rather than the dismounted rifle');
   assert.equal(data.vehicles[0].seats[1].occupantId, data.control.soldierId);
   assert.equal(data.controlInput.held.primary, false);
@@ -142,7 +142,8 @@ try {
   await page.keyboard.press('y');
   data = await snapshot();
   assert.equal(data.look.yaw, cannon.yaw); assert.equal(data.look.pitch, cannon.pitch);
-  assert.equal(data.weaponVisible, true);
+  assert.equal(data.weaponVisible, false);
+  await wait(() => window.__battle.vehicleObservationVisible);
   await page.keyboard.press('y');
   data = await snapshot();
   assert.deepEqual(data.look, driverLook, 'returning to the driver seat restores its observation, not cannon aim');
@@ -234,7 +235,8 @@ try {
   await wait(() => window.__battle.state === 'playing');
   data = await snapshot();
   assert.equal(data.current, 1);
-  assert.equal(data.weaponVisible, true);
+  assert.equal(data.weaponVisible, false);
+  await wait(() => window.__battle.vehicleObservationVisible);
   assert.equal(data.control.soldierId, ownIds[1]);
   assert.equal(data.vehicles[0].id, id); assert.equal(data.vehicles[0].weapon.id, weaponId);
   assert.equal(data.vehicles[0].health, firstDeath.health);
