@@ -61,6 +61,15 @@ test('interior geometry fixture retains real squad AI but is isolated from auton
   assert.equal(points[0].z, 78);
   assert.equal(roster[0].spawnId, points[0].id);
 });
+test('cover fixture uses the real map and a complete player squad without changing production', () => {
+  assert.equal(benchmarkConfig('?benchmark=cover', true).diagnostic, true);
+  assert.equal(benchmarkConfig('?benchmark=cover', false), null);
+  const roster = diagnosticRoster('cover'), spawns = diagnosticSpawns('cover');
+  assert.equal(roster.length, 1);
+  assert.equal(roster[0].memberCount, 11);
+  assert.equal(roster[0].spawnId, spawns[0].id);
+  assert.deepEqual([spawns[0].x, spawns[0].z], [-12, 27]);
+});
 test('bounded raw timing ring retains exact frame intervals, simulation time and independent snapshots', () => {
   const telemetry = createFrameTelemetry(true, 2);
   for (let i = 1; i <= 3; i++) {

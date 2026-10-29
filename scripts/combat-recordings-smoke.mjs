@@ -14,7 +14,7 @@ try {
   await page.locator('button').click();
   const result = await page.evaluate(async () => {
     const { loadRifleAudio } = await import('/src/rifle-audio.js');
-    const { loadBattleReactions, createBattleReactions, reactionClips } = await import('/src/battle-reactions.js');
+    const { loadBattleReactions, createBattleReactions, reactionClips, ADDITIONAL_REACTION_CLIPS } = await import('/src/battle-reactions.js');
     const context = new AudioContext(); await context.resume();
     const rifles = await loadRifleAudio(), decoded = {};
     for (const clip of reactionClips()) {
@@ -35,6 +35,22 @@ try {
     reactions.update(context, [soldier], listener, 1, true);
     const interrupted = reactions.snapshot.active;
     reactions.sync(false); reactions.reset();
+    const extraPlaybacks = [];
+    for (const clip of ADDITIONAL_REACTION_CLIPS) {
+      const index = ADDITIONAL_REACTION_CLIPS.indexOf(clip);
+      const preceding = 2 + ADDITIONAL_REACTION_CLIPS.slice(0, index).reduce((sum, item) => sum + item.selectionWeight, 0);
+      let calls = 0;
+      const voice = createBattleReactions(decoded, () => calls++ % 2 === 0 ? 0 : (preceding + clip.selectionWeight / 2) / 24);
+      voice.sync(true);
+      const actor = { ...soldier, id: `hurt-${clip.auditionNumber}`, team: clip.auditionNumber % 2 ? 'friendly' : 'enemy' };
+      const started = voice.damage(context, { ...event, target: { kind: 'soldier', id: actor.id } }, actor, listener);
+      const selected = voice.snapshot.history[0]?.file;
+      await new Promise(done => setTimeout(done, 20));
+      voice.update(context, [actor], listener, 1, true);
+      extraPlaybacks.push({ file: selected, expected: clip.file, started, activeAfterPriority: voice.snapshot.active,
+        team: actor.team, duration: decoded[clip.file].duration });
+      voice.reset();
+    }
     for (const [id, team, automatic] of [[1, 'friendly', false], [2, 'enemy', false], [3, 'friendly', true], [4, 'enemy', true]]) {
       rifles.playBatch(context, [{ id, time: id * .12, automatic, weaponType: 'infantry',
         source: { team, soldierId: 'player', weaponId: 'player:rifle', credit: team === 'enemy' ? 'enemy' : 'player' },
@@ -44,13 +60,18 @@ try {
     rifles.reset();
     await context.close();
     return { reports, immediate, playing, interrupted, loader: loader.snapshot.status,
-      reset: reactions.snapshot, durations: Object.values(decoded).map(buffer => buffer.duration) };
+      reset: reactions.snapshot, extraPlaybacks,
+      durations: reactionClips().map(clip => ({ duration: decoded[clip.file].duration, maximum: clip.maxDuration ?? 2 })) };
   });
   assert.equal(result.loader, 'recorded');
   assert.equal(result.immediate, true);
   assert.equal(result.playing.active, 1); assert.equal(result.interrupted, 0);
   assert.equal(result.reset.history.length, 0);
-  assert.ok(result.durations.length === 18 && result.durations.every(value => value >= .08 && value <= 2));
+  assert.ok(result.durations.length === 30 && result.durations.every(item => item.duration >= .08 && item.duration <= item.maximum));
+  assert.equal(result.extraPlaybacks.length, 12);
+  assert.ok(result.extraPlaybacks.every(item => item.started && item.file === item.expected && item.activeAfterPriority === 0));
+  assert.ok(result.extraPlaybacks.some(item => item.duration > 3));
+  assert.deepEqual([...new Set(result.extraPlaybacks.map(item => item.team))].sort(), ['enemy', 'friendly']);
   assert.deepEqual(result.reports.history.map(item => item.report),
     ['recorded-rifle', 'enemy-rifle', 'machine-gun', 'machine-gun']);
   assert.ok(result.reports.enemyDuration > 3 && result.reports.enemyDuration < 3.2);
@@ -58,7 +79,7 @@ try {
   await page.close();
 
   const failed = await browser.newPage();
-  await failed.route('**/assets/audio/battle-reactions/0-hurt-0.wav', route => route.abort());
+  await failed.route('**/assets/audio/battle-reactions/hurt-extra-12.wav', route => route.abort());
   const url = new URL(base); url.search = '?benchmark=interior&character=procedural';
   await failed.goto(url.href);
   await failed.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
@@ -69,7 +90,8 @@ try {
   assert.match(await failed.locator('#force-status').textContent(), /真人战斗反应不可用/);
   await failed.close();
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ decodedReactions: result.durations.length, reports: result.reports.history.map(item => item.report),
+  console.log(JSON.stringify({ decodedReactions: result.durations.length, additionalPlayed: result.extraPlaybacks.length,
+    reports: result.reports.history.map(item => item.report),
     immediateReaction: true, priorityInterruption: true, missingReactionWarning: true }));
 } finally {
   await browser.close();

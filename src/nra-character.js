@@ -13,7 +13,7 @@ import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } f
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
-import { createCasualtyPose } from './casualties.js';
+import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
 import { createNraGrenadeHand } from './nra-hand.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
@@ -161,7 +161,7 @@ export async function loadNraCharacter() {
       root.visible = Boolean(actor && !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId));
       if (!actor) return;
       if (!collision) appearance.apply(actor.avatarAppearance ?? null);
-      motion = actor.casualty?.motion ?? sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
+      motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime;
       const upright = motion.upright;
       actions.idle.setEffectiveWeight(upright);

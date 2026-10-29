@@ -95,6 +95,7 @@ try {
   url.searchParams.set('benchmark', 'interior'); url.searchParams.set('seed', '1938');
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu');
+  await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
   let data = await snapshot();
   assert.equal(data.benchmark?.scenario, 'interior', 'Grenade geometry checks require the development server; production disables diagnostic query parameters');
@@ -348,6 +349,7 @@ try {
   url.searchParams.set('benchmark', 'control');
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu');
+  await page.locator('#menu-quality').selectOption('low');
   await page.locator('#squad-choices [data-type="tank"]').click();
   await page.locator('#deploy').click();
   const seated = await snapshot();

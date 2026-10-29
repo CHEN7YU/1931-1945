@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Vector3 } from 'three';
+import { Vector3, Euler } from 'three';
 import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier, captureAttackSource } from '../src/entities.js';
 import { TANK_MACHINE_GUN, advanceTankMachineGun, tankMachineGunPose, tankCannonPose, tankHeading,
-  TANK_OBSERVATION, tankObservationPose } from '../src/player-tank.js';
+  TANK_OBSERVATION, tankObservationPose, tankConvergedDirection } from '../src/player-tank.js';
+import { shotState } from '../src/core.js';
+import { advanceOwnedWeapons } from '../src/weapon-simulation.js';
 import { historicalVehicleModel } from '../src/vehicle-model.js';
 
 function fixture() {
@@ -22,12 +24,12 @@ test('closed commander and gunner eyes stay inside the turret; optics and driver
     vehicle.heading = heading; vehicle.position.set(13, 3, -9);
     for (const role of ['commander', 'gunner', 'driver']) {
       const normal = tankObservationPose(vehicle, role, false), zoom = tankObservationPose(vehicle, role, true);
-      assert.equal(normal.y, vehicle.position.y + TANK_OBSERVATION[role].eyeHeight);
+      assert.ok(Math.abs(normal.y - vehicle.position.y - TANK_OBSERVATION[role].eyeHeight) < 1e-12);
       assert.ok(normal.y < vehicle.position.y + 2.16);
       assert.deepEqual({ x: normal.x, y: normal.y, z: normal.z }, { x: zoom.x, y: zoom.y, z: zoom.z });
       assert.ok(normal.fov >= zoom.fov);
       if (role === 'driver') assert.equal(Math.hypot(normal.x - 13, normal.z + 9), 0);
-      else assert.ok(Math.abs(Math.hypot(normal.x - 13, normal.z + 9) - Math.hypot(.3, .38)) < 1e-12);
+      else if (role === 'commander') assert.ok(Math.abs(Math.hypot(normal.x - 13, normal.z + 9) - Math.hypot(.3, .38)) < 1e-12);
     }
   }
   assert.equal(tankObservationPose(vehicle, 'commander', false).aperture, 'slit');
@@ -35,6 +37,46 @@ test('closed commander and gunner eyes stay inside the turret; optics and driver
   assert.equal(tankObservationPose(vehicle, 'gunner', false).fov, 40);
   assert.equal(tankObservationPose(vehicle, 'gunner', true).fov, 24);
   assert.throws(() => tankObservationPose(vehicle, 'outside', false), RangeError);
+});
+test('gunner optics follow the trunnion and keep the real coax muzzle below the sight at every elevation', () => {
+  const { vehicle } = fixture(), model = historicalVehicleModel('tank');
+  for (const heading of [0, .8, -2]) for (const yaw of [-1, 0, 2]) for (const pitch of [-1.25, -.3, 0, .3, 1.25]) {
+    Object.assign(vehicle, { heading, turretYaw: yaw, turretPitch: pitch });
+    const eye = tankObservationPose(vehicle, 'gunner', false), shot = tankMachineGunPose(vehicle);
+    model.rotation.y = heading; model.userData.turret.rotation.y = yaw - heading;
+    model.userData.gun.rotation.x = pitch; model.updateMatrixWorld(true);
+    assert.ok(model.getObjectByName('gunner-sight').getWorldPosition(new Vector3()).distanceTo(new Vector3(eye.x, eye.y, eye.z)) < 1e-10);
+    const up = new Vector3(0, 1, 0).applyEuler(new Euler(pitch, yaw, 0, 'YXZ'));
+    const relative = new Vector3(shot.start.x - eye.x, shot.start.y - eye.y, shot.start.z - eye.z);
+    assert.ok(Math.abs(relative.dot(up) + .115) < 1e-10);
+    assert.ok(eye.y < vehicle.position.y + 2.16);
+    const direction = new Vector3(0, 0, -1).applyEuler(new Euler(pitch, yaw, 0, 'YXZ'));
+    const target = new Vector3(eye.x, eye.y, eye.z).addScaledVector(direction, 35);
+    const aim = tankConvergedDirection(shot, target);
+    const ray = new Vector3(aim.x, aim.y, aim.z);
+    const hit = new Vector3(shot.start.x, shot.start.y, shot.start.z).addScaledVector(ray,
+      new Vector3(shot.start.x, shot.start.y, shot.start.z).distanceTo(target));
+    assert.ok(hit.distanceTo(target) < 1e-10);
+  }
+});
+
+test('crew automatically load the original cannon on its simulation clock without firing or touching the coax', () => {
+  const { registry, vehicle, gun } = fixture(), coax = { ...gun };
+  assert.equal(shotState(vehicle.weapon, 1, true), true);
+  assert.equal(vehicle.weapon.ammo, 0);
+  assert.equal(vehicle.weapon.reloadUntil, 4.8);
+  const deadline = vehicle.weapon.reloadUntil;
+  for (let frame = 0; frame < 100; frame++) advanceOwnedWeapons(registry, 0, 9);
+  assert.equal(vehicle.weapon.reloadUntil, deadline, 'paused or repeated polling cannot restart loading');
+  assert.equal(shotState(vehicle.weapon, 4.79, true), false);
+  assert.equal(vehicle.weapon.reloadUntil, deadline);
+  advanceOwnedWeapons(registry, .01, 4.8);
+  assert.equal(vehicle.weapon.ammo, 1); assert.equal(vehicle.weapon.reloadUntil, 0);
+  assert.deepEqual(gun, coax);
+  assert.equal(shotState(vehicle.weapon, 4.8, true), true);
+  vehicle.health = 0;
+  advanceOwnedWeapons(registry, .1, 10);
+  assert.equal(vehicle.weapon.ammo, 0, 'a destroyed tank does not receive loaded ammunition');
 });
 test('friendly coax fires repeatedly from a registered secondary weapon without consuming or refilling the cannon', () => {
   const { registry, vehicle, crew, gun } = fixture(), cannon = { ...vehicle.weapon };

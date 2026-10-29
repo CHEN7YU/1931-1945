@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty } from '../src/casualties.js';
+import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion } from '../src/casualties.js';
 import { circleBlocked } from '../src/core.js';
 
 function corpse(index, time = 0) {
@@ -68,4 +68,23 @@ test('falling body envelopes select a clear direction and bounded floor slide be
     }
     assert.deepEqual(actor.position, position, 'presentation correction does not move the registered death/hit location');
   }
+});
+
+test('a constrained casualty uses a folded death pose instead of returning to a living idle bank', () => {
+  const actor = corpse(5), before = actor.position.clone();
+  const bounds = () => ({ min: [-.35, 0, -.5], max: [.35, .6, .5], footprint: [[-.3, -.4], [.3, .4], [0, 0]] });
+  const constrained = placeCasualty(actor, actor.casualty, bounds, () => true);
+  assert.equal(constrained.wallLimited, true);
+  assert.equal(constrained.variant, 3);
+  assert.equal(constrained.retainGun, false);
+  assert.ok(Math.hypot(constrained.offset.x, constrained.offset.z) <= 2.001);
+  assert.deepEqual(actor.position, before);
+  const motion = { upright: 1, bodyLean: .2, hipDrop: .1, weight: 1, prone: 0,
+    postures: { kneeling: 0, crouched: 0, prone: 0, wallLeft: 0, wallRight: 0 }, headAim: null };
+  const state = Object.freeze({ ...constrained, motion }), snapshot = JSON.stringify(state);
+  const first = sampleCasualtyMotion(state, state.time), last = sampleCasualtyMotion(state, state.time + 5);
+  assert.equal(first.upright, 1);
+  assert.equal(last.upright, 0); assert.equal(last.kneeling, 1);
+  assert.equal(last.bodyLean, 0);
+  assert.equal(JSON.stringify(state), snapshot, 'sampling never mutates the immutable death snapshot');
 });

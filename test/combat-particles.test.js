@@ -128,3 +128,33 @@ test('invalid explosion styles are rejected before mutating the particle pool', 
   assert.equal(state.serial, 0);
   assert.equal(state.emitted, 0);
 });
+
+test('tank shells emit visible surface-facing fragments and a short flash rather than a long fuel fireball', () => {
+  for (const low of [false, true]) {
+    const state = createParticleState(), wall = { x: 0, y: 0, z: 1 }, point = { x: 2, y: 3, z: 10 };
+    emitExplosionParticles(state, point, 0, { low, radius: 11, style: 'tank-shell', normal: wall, material: 'stone' });
+    assert.ok(state.fragments.every(particle => particle.z > point.z && particle.vz > 0 && particle.kind === 'stone'));
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-flash'));
+    const wave = state.clouds.find(cloud => cloud.kind === 'blast-wave');
+    assert.deepEqual(wave.normal, wall);
+    assert.ok(state.clouds.filter(cloud => cloud.kind === 'blast-fire').every(cloud => cloud.life <= .35));
+    advanceCombatParticles(state, .5, () => 0, .5);
+    assert.ok(state.clouds.some(cloud => cloud.kind === 'blast-smoke'));
+    assert.ok(!state.clouds.some(cloud => cloud.kind === 'blast-flash' || cloud.kind === 'blast-fire'));
+    emitExplosionParticles(state, point, .5, { low, style: 'explosive-pack' });
+    assert.equal(state.clouds.find(cloud => cloud.kind === 'blast-wave' && cloud.style === 'explosive-pack').normal, null);
+    for (const [name, cap] of Object.entries(PARTICLE_LIMITS)) assert.equal(state[name].length + state.free[name].length, cap);
+  }
+});
+
+test('shell smoke and light remain outside an inclined roof underside rather than rising inside the solid', () => {
+  const state = createParticleState(), n = { x: -.315, y: -.949, z: 0 };
+  const length = Math.hypot(n.x, n.y, n.z); n.x /= length; n.y /= length;
+  emitExplosionParticles(state, position, 0, { style: 'tank-shell', normal: n, material: 'stone' });
+  for (const cloud of state.clouds) {
+    assert.ok((cloud.x - position.x) * n.x + (cloud.y - position.y) * n.y + (cloud.z - position.z) * n.z >= .14 - 1e-10);
+    assert.ok(cloud.vx * n.x + cloud.vy * n.y + cloud.vz * n.z >= .1 - 1e-10);
+  }
+  const light = state.lights[0];
+  assert.ok((light.x - position.x) * n.x + (light.y - position.y) * n.y >= .34);
+});

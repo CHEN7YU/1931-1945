@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { SCENE_ART_MATERIALS } from '../src/scene-art.js';
 
 const baseline = process.env.BASELINE === '1';
 const url = process.env.GAME_URL || 'http://127.0.0.1:5183/?benchmark=interior&seed=1938';
@@ -109,7 +110,7 @@ try {
   await capture('sandbags', 0, -.34);
   const state = await snapshot();
   if (!baseline) {
-    assert.equal(assets.size, 13, 'four color/normal/roughness sets and one grime atlas loaded');
+    assert.equal(assets.size, Object.keys(SCENE_ART_MATERIALS).length * 3 + 1, 'all scene and nature material sets and the grime atlas loaded');
     const dimensions = await page.evaluate(async paths => {
       return Promise.all(paths.map(async path => {
         const response = await fetch(path);

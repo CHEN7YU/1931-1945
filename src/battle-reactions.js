@@ -1,8 +1,21 @@
 import { battleVoiceMix, soldierVoiceVariant } from './battle-voices.js';
+import { ADDITIONAL_REACTION_CLIPS, reactionClips } from './battle-reaction-clips.js';
+
+export { ADDITIONAL_REACTION_CLIPS, reactionClips } from './battle-reaction-clips.js';
 
 export const REACTION_LIMITS = Object.freeze({ interval: 1.5, soldierCooldown: 8, distance: 35, stateAge: 1 });
-export const reactionClips = () => [0, 1, 2].flatMap(variant => ['hurt', 'cover', 'charge'].flatMap(cue =>
-  [0, 1].map(take => ({ variant, cue, take, file: `${variant}-${cue}-${take}.wav` }))));
+
+export function selectHurtReaction(variant, value, previousFile = null) {
+  if (!Number.isFinite(value) || value < 0 || value >= 1) throw new RangeError('Invalid reaction selection value');
+  const candidates = [0, 1].map(take => ({ file: `${variant}-hurt-${take}.wav`, selectionWeight: 1 }))
+    .concat(ADDITIONAL_REACTION_CLIPS).filter(clip => clip.file !== previousFile);
+  let remaining = value * candidates.reduce((sum, clip) => sum + clip.selectionWeight, 0);
+  for (const clip of candidates) {
+    if (remaining < clip.selectionWeight) return clip.file;
+    remaining -= clip.selectionWeight;
+  }
+  throw new Error('Unable to select a combat reaction');
+}
 
 export function battleReactionCue(actor, time) {
   if (actor.health <= 0 || actor.vehicleId || actor.groundType !== 'infantry') return null;
@@ -16,12 +29,13 @@ export function battleReactionCue(actor, time) {
 export function createBattleReactions(buffers, random = Math.random, occluded = () => false) {
   for (const clip of reactionClips()) {
     const buffer = buffers[clip.file];
-    if (!buffer || buffer.numberOfChannels !== 1 || !Number.isFinite(buffer.duration) || buffer.duration < .08 || buffer.duration > 2) {
+    if (!buffer || buffer.numberOfChannels !== 1 || !Number.isFinite(buffer.duration) ||
+      buffer.duration < .08 || buffer.duration > (clip.maxDuration ?? 2)) {
       throw new Error(`Invalid combat reaction buffer: ${clip.file}`);
     }
   }
   const states = new Map(), cooldowns = new Map(), takes = new Map(), history = [];
-  let enabled = false, active = null, next = 0;
+  let enabled = false, active = null, next = 0, lastHurtFile = null;
   const counts = { hurt: 0, cover: 0, charge: 0 };
   function mixAt(position, listener) {
     const mix = battleVoiceMix(position, listener);
@@ -40,8 +54,9 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
       time < (cooldowns.get(actor.id) ?? 0) || actor.vehicleId || actor.groundType !== 'infantry') return false;
     const mix = mixAt(actor.position, listener);
     if (mix.distance >= REACTION_LIMITS.distance) return false;
-    const key = `${soldierVoiceVariant(actor.id)}-${cue}`, take = ((takes.get(key) ?? -1) + 1) % 2;
-    const file = `${key}-${take}.wav`, source = audio.createBufferSource(), gain = audio.createGain();
+    const variant = soldierVoiceVariant(actor.id), key = `${variant}-${cue}`, take = ((takes.get(key) ?? -1) + 1) % 2;
+    const file = cue === 'hurt' ? selectHurtReaction(variant, random(), lastHurtFile) : `${key}-${take}.wav`;
+    const source = audio.createBufferSource(), gain = audio.createGain();
     const filter = audio.createBiquadFilter(), panner = audio.createStereoPanner();
     source.buffer = buffers[file]; filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
     gain.gain.value = mix.gain * .8; panner.pan.value = mix.pan;
@@ -55,7 +70,9 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
         source.disconnect(); gain.disconnect(); filter.disconnect(); panner.disconnect();
       } };
     source.onended = voice.release; active = voice;
-    takes.set(key, take); cooldowns.set(actor.id, time + REACTION_LIMITS.soldierCooldown);
+    if (cue === 'hurt') lastHurtFile = file;
+    else takes.set(key, take);
+    cooldowns.set(actor.id, time + REACTION_LIMITS.soldierCooldown);
     next = time + REACTION_LIMITS.interval; counts[cue]++;
     history.push({ cue, file, soldierId: actor.id, team: actor.team, time, distance: mix.distance });
     if (history.length > 64) history.shift();
@@ -97,7 +114,7 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
       }
     },
     reset() {
-      stop(); states.clear(); cooldowns.clear(); takes.clear(); history.length = 0; next = 0;
+      stop(); states.clear(); cooldowns.clear(); takes.clear(); history.length = 0; next = 0; lastHurtFile = null;
       for (const cue of Object.keys(counts)) counts[cue] = 0;
     },
     get snapshot() { return { status: 'recorded', active: Number(Boolean(active)), counts: { ...counts },

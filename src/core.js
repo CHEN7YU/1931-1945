@@ -298,5 +298,6 @@ export function shotState(unit, now, firing) {
   }
   unit.ammo--;
   unit.nextShot = now + settings.interval;
+  if (unit.type === 'tank' && settings.magazine === 1 && unit.ammo === 0) unit.reloadUntil = now + settings.reload;
   return true;
 }

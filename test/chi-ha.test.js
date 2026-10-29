@@ -139,12 +139,12 @@ test('both machine-gun rays follow their own rendered muzzle, including the rear
 test('AI turns and aims before firing, uses original gun ownership and model-specific reload time', () => {
   const { registry, vehicle, crew } = fixture(), ctx = context(crew);
   vehicle.turretYaw = Math.PI;
-  let shot;
+  let shot, firedAt;
   for (let i = 0; i < 80; i++) {
     advanceOwnedWeapons(registry, .1, i / 10);
     const result = advanceChiHaAI(vehicle, .1, i / 10, ctx);
     if (i < 50) assert.equal(result, null, 'cannot fire before turning through a rear target');
-    if (result) { shot = result; break; }
+    if (result) { shot = result; firedAt = i / 10; break; }
   }
   assert.ok(shot); assert.equal(shot.targetId, target.id);
   assert.equal(vehicle.ai.shots, 1); assert.equal(vehicle.weapon.ammo, 0);
@@ -152,10 +152,10 @@ test('AI turns and aims before firing, uses original gun ownership and model-spe
   advanceChiHaAI(vehicle, 0, 8, ctx);
   assert.equal(JSON.stringify(vehicle), before, 'paused AI leaves all owned state untouched');
   advanceChiHaAI(vehicle, .1, 8, ctx);
-  assert.equal(vehicle.weapon.reloadUntil, 8 + CHI_HA.reload);
-  advanceOwnedWeapons(registry, .1, 8 + CHI_HA.reload - .01);
+  assert.equal(vehicle.weapon.reloadUntil, firedAt + CHI_HA.reload);
+  advanceOwnedWeapons(registry, .1, firedAt + CHI_HA.reload - .01);
   assert.equal(vehicle.weapon.ammo, 0);
-  advanceOwnedWeapons(registry, .1, 8 + CHI_HA.reload);
+  advanceOwnedWeapons(registry, .1, firedAt + CHI_HA.reload);
   assert.equal(vehicle.weapon.ammo, 1);
 });
 test('walls, blocked fire lanes, friendly blast risk, dead crew and missing gunners prevent fire', () => {

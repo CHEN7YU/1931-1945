@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { groundHeight, riverBedHeight } from '../src/ground.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -43,17 +44,29 @@ async function capture(name) {
 try {
   await load('bridge');
   const surfaces = (await snapshot()).river.surfaces;
-  assert.ok(Math.abs(surfaces.bed + .885) < .001, 'actual rendered riverbed is recessed, not capped by the old flat ground');
+  assert.ok(Math.abs(surfaces.bed - (riverBedHeight(-48, -16) - .035)) < .012,
+    'actual rendered dry bed follows the irregular recessed terrain');
   assert.ok(surfaces.bed < surfaces.southBank && surfaces.southBank < surfaces.street);
   assert.ok(surfaces.bed < surfaces.northBank && surfaces.northBank < surfaces.street);
   await walkTo(8, -8.1); await walkTo(-48, -8.1); await walkTo(-48, -16);
   let data = await snapshot();
-  assert.ok(Math.abs(data.position.y + .85) < .001);
-  assert.ok(Math.abs(data.river.depth - .5) < .001);
-  assert.ok(data.locomotion.cameraHeight > data.river.waterHeight);
-  assert.equal(await page.locator('#pace-label').textContent(), '浅水涉渡');
+  assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < .001);
+  assert.equal(data.river.dry, true);
+  assert.equal(Object.hasOwn(data.river, 'waterHeight'), false);
+  assert.notEqual(await page.locator('#pace-label').textContent(), '浅水涉渡');
   observations.push({ infantry: data.position, river: data.river });
-  await capture('infantry-ford.png');
+  await capture('infantry-dry-river.png');
+  await page.mouse.down({ button: 'right' });
+  await page.evaluate(() => {
+    const delta = Math.atan2(Math.sin(Math.PI / 2 - window.__battle.look.yaw), Math.cos(Math.PI / 2 - window.__battle.look.yaw));
+    document.dispatchEvent(new MouseEvent('mousemove', { movementX: -delta / .00132 }));
+  });
+  await page.mouse.up({ button: 'right' });
+  await page.keyboard.down('ShiftLeft'); await page.keyboard.down('w');
+  await page.waitForFunction(() => window.__battle.locomotion.speed > 4.6, null, { timeout: 5000 });
+  assert.equal((await snapshot()).locomotion.sprinting, true, 'dry bed no longer imposes wading speed or disables sprint');
+  await page.keyboard.up('w'); await page.keyboard.up('ShiftLeft');
+  await page.waitForTimeout(300);
   await walkTo(-48, -25.5);
   assert.equal((await snapshot()).position.y, 0);
   await walkTo(-48, -16); await walkTo(-48, -8.1);
@@ -66,11 +79,11 @@ try {
   await page.waitForFunction(() => window.__battle.position.z < -15.5, null, { timeout: 20000 });
   await page.keyboard.up('w');
   data = await snapshot();
-  assert.ok(Math.abs(data.position.y + .85) < .001);
+  assert.ok(Math.abs(data.position.y - groundHeight(data.position.x, data.position.z)) < .001);
   assert.equal(data.vehicles[0].id, vehicle.id);
-  assert.equal(data.vehicles[0].health, vehicle.health, 'ordinary shallow fording does not destroy the tank');
-  observations.push({ tank: data.position, depth: data.river.depth });
-  await capture('tank-ford.png');
+  assert.equal(data.vehicles[0].health, vehicle.health, 'the dry riverbed remains traversable by tanks');
+  observations.push({ tank: data.position, dry: data.river.dry });
+  await capture('tank-dry-river.png');
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z < -24.5, null, { timeout: 20000 });
   await page.keyboard.up('w');
@@ -83,7 +96,7 @@ try {
   assert.equal(data.vehicles[0].health, vehicle.health);
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'river.json'), JSON.stringify(observations, null, 2));
-  console.log('PASS: visible depressed riverbed, sloping banks, infantry and real tank cross off-bridge both ways. Isolated geometry fixtures, not a population benchmark.');
+  console.log('PASS: irregular dry riverbed, normal infantry sprint and real tank crossing off-bridge both ways. Isolated geometry fixtures, not a population benchmark.');
 } finally {
   await browser.close();
 }

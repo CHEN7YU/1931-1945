@@ -6,6 +6,7 @@ import { lightMachineGunModel, configureLightMachineGunMaterials } from './light
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
 import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
+import { machineGunReloadPose } from './machine-gun-reload.js';
 
 let template;
 let distantTemplate;
@@ -417,9 +418,21 @@ export function syncWorldWeapon(model, state) {
   const pose = riflePose(state), bolt = model.getObjectByName('bolt');
   if (bolt) { bolt.rotation.z = pose.boltLift; bolt.position.z = pose.boltTravel; }
   const feed = model.getObjectByName('feed');
-  if (feed) feed.position.y = pose.lower * .07;
+  if (feed) applyMachineGunFeed(model, machineGunReloadPose(state));
   const muzzle = model.getObjectByName('owned-muzzle');
   if (muzzle) muzzle.position.set(profile.muzzleX ?? 0, 0, profile.muzzleZ);
+}
+
+function applyMachineGunFeed(model, reload) {
+  const feed = model.getObjectByName('feed');
+  feed.position.fromArray(reload.feed); feed.visible = reload.feedVisible;
+  const lid = model.getObjectByName('hopper-lid-pivot');
+  if (lid) lid.rotation.z = reload.lidAngle;
+  const clip = model.getObjectByName('loading-clip');
+  if (clip) {
+    clip.position.fromArray(reload.clip); clip.visible = reload.clipVisible;
+    for (const mesh of feed.children) if (mesh.isInstancedMesh) mesh.count = reload.loadedClips;
+  }
 }
 
 export function updateRifleModel(model, state) {
@@ -428,9 +441,15 @@ export function updateRifleModel(model, state) {
     parts.clip.visible = false;
     parts.flash.visible = state.action === 'cycle' && state.elapsed < .045;
     parts.casing.visible = false;
-    model.getObjectByName('feed').position.y = pose.lower * .18;
+    const reload = machineGunReloadPose(state);
+    applyMachineGunFeed(model, reload);
     parts.rightHand.position.set(0, 0, 0);
-    parts.leftHand.position.set(0, -pose.lower * .06, pose.lower * .08);
+    parts.rightHand.rotation.set(0, 0, 0);
+    parts.leftHand.rotation.set(reload.handRotation, 0, 0);
+    const palm = new THREE.Vector3(-.029, -.101, -.386).applyEuler(parts.leftHand.rotation);
+    parts.leftHand.position.fromArray(reload.palm).sub(palm);
+    model.userData.reloadContact = { stage: reload.stage, palm: [...reload.palm],
+      feed: [...reload.feed], press: reload.press, handWeight: reload.handWeight };
     return pose;
   }
   parts.bolt.rotation.z = pose.boltLift;

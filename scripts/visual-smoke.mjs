@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { SCENE_ART_MATERIALS } from '../src/scene-art.js';
 
 const sources = JSON.parse(await readFile(new URL('../public/assets/sources.json', import.meta.url), 'utf8'));
 assert.equal(sources.license, 'CC0-1.0');
@@ -39,7 +40,7 @@ try {
   await page.waitForTimeout(1000);
   await capture('scene-after.png');
   for (const asset of sources.files) assert.ok(loadedAssets.has(`/assets/${asset.file}`));
-  assert.equal([...loadedAssets].filter(path => path.startsWith('/assets/materials/ai-scene/')).length, 13,
+  assert.equal([...loadedAssets].filter(path => path.startsWith('/assets/materials/ai-scene/')).length, Object.keys(SCENE_ART_MATERIALS).length * 3 + 1,
     'all generated material maps load alongside the original PBR maps');
   assert.ok(requests.every(request => !/^https?:/.test(request) || new URL(request).origin === new URL(url).origin), 'gameplay never requests third-party assets');
   await page.keyboard.down('w');

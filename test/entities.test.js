@@ -73,6 +73,21 @@ test('blocked exits are atomic and cannot create infantry inside a vehicle or re
   assert.equal(exit.y, .45); assert.ok(exit.x > 2.5);
   assert.equal(leaveGroundVehicle(world, actors[0], exit), null);
 });
+test('only successful vehicle entry clears the original soldier traversal and weapon support', () => {
+  const { world, actors, vehicle } = fixture(), actor = actors[0];
+  leaveGroundVehicle(world, actor, { x: 3.2, y: 1, z: 0 });
+  Object.assign(actor.traversal, { kind: 'jumping', velocity: 2, baseY: 0, elapsed: .2 });
+  Object.assign(actor.weaponMount, { active: true, blend: 1, eyeOffset: -.3, contact: { x: 0, y: 1, z: 0 } });
+  const traversal = structuredClone(actor.traversal), support = structuredClone(actor.weaponMount);
+  assert.notEqual(seatSoldier(world, actor, vehicle, vehicle.seats[1].id), null);
+  assert.deepEqual(actor.traversal, traversal);
+  assert.deepEqual(actor.weaponMount, support);
+  assert.equal(seatSoldier(world, actor, vehicle, vehicle.seats[0].id), null);
+  assert.equal(actor.traversal.kind, 'grounded');
+  assert.equal(actor.traversal.velocity, 0);
+  assert.equal(actor.weaponMount.active, false);
+  assert.equal(actor.weaponMount.blend, 0);
+});
 test('hull damage is independent of the selected member; destruction kills only seated crew', () => {
   const { world, actors, vehicle } = fixture();
   leaveGroundVehicle(world, actors[0], { x: 3.2, y: 0, z: 0 });
@@ -171,7 +186,7 @@ test('tank aiming belongs to the original vehicle while foot pitch belongs to it
   assert.equal(actors[0].lookPitch, 0);
   assert.equal(pose.eyeHeight, 1.88);
   selectControlledSoldier(world, actors[1]);
-  assert.equal(pose.eyeHeight, 1.72);
+  assert.equal(pose.eyeHeight, TANK_OBSERVATION.gunner.eyeHeight);
   assert.equal(pose.pitch, -.6);
   selectControlledSoldier(world, actors[2]);
   assert.equal(pose.eyeHeight, 1.3);
