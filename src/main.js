@@ -12,6 +12,8 @@ import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
 import { createWeaponHands } from './weapon-hands.js';
+import { createOcclusionQuery } from './occlusion-query.js';
+import { createGrenadeSupport } from './grenade-support.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
   assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
@@ -190,6 +192,10 @@ try {
 }
 const world = makeWorld(scene, surface);
 const solidIndex = createSolidIndex(world.solids);
+const occluded = createOcclusionQuery();
+const grenadeSupport = createGrenadeSupport(world.solids, world.groundHeight, (point, radius) =>
+  !world.doorSystem.doors.some(door => Math.hypot(point.x - door.x, point.z - door.z) < door.width * 2 + radius + .1) &&
+  ![...entities.vehicles.values()].some(vehicle => Math.hypot(point.x - vehicle.position.x, point.z - vehicle.position.z) < 5 + radius));
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
 const rallyRenderer = createRallyRenderer(scene);
 const vehicleRenderer = createVehicleRenderer(scene);
@@ -1399,7 +1405,7 @@ function hasLine(from, to, maxDistance = 120, ignoreVehicleId = null) {
   ray.set(from, vector.normalize());
   ray.far = Math.max(0, distance - .04);
   const transports = vehicleSolids(ignoreVehicleId, from);
-  const blocked = ray.intersectObjects([...solidIndex.candidates(from, ray.ray.direction, distance), ...transports], true).length > 0;
+  const blocked = occluded(ray, [...solidIndex.candidates(from, ray.ray.direction, distance), ...transports]);
   ray.far = Infinity;
   return !blocked;
 }
@@ -1598,7 +1604,7 @@ function explode(position, damage, radius, source, weaponKind = 'explosion', sur
   }
 }
 
-function traceGrenade(from, to, radius) {
+function traceGrenade(from, to, radius, checkingSupport = false) {
   const start = new THREE.Vector3(from.x, from.y, from.z), delta = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
   const length = delta.length();
   if (length < 1e-8) return null;
@@ -1612,7 +1618,8 @@ function traceGrenade(from, to, radius) {
     if (hit && hit.distance < distance) {
       distance = hit.distance;
       closest = { position: start.clone().addScaledVector(travel, distance), normal: captureImpact(hit, travel).normal,
-        vehicleId: hit.object.userData.vehicleId ?? null };
+        vehicleId: hit.object.userData.vehicleId ?? null,
+        ...(checkingSupport ? { staticSupport: grenadeSupport.mesh(hit.object, from, radius) } : {}) };
     }
   }
   ray.far = Infinity;
@@ -1631,7 +1638,8 @@ function traceGrenade(from, to, radius) {
       position.y = world.groundHeight(position.x, position.z) + radius;
       const slopeX = (world.groundHeight(position.x + .02, position.z) - world.groundHeight(position.x - .02, position.z)) / .04;
       const slopeZ = (world.groundHeight(position.x, position.z + .02) - world.groundHeight(position.x, position.z - .02)) / .04;
-      closest = { position, normal: new THREE.Vector3(-slopeX, 1, -slopeZ).normalize() };
+      closest = { position, normal: new THREE.Vector3(-slopeX, 1, -slopeZ).normalize(),
+        ...(checkingSupport ? { staticSupport: grenadeSupport.ground(from, radius) } : {}) };
     }
   }
   return closest;
@@ -2106,7 +2114,7 @@ function renderBattleBoundary() {
 
 function probeWeaponSupport(point, depth) {
   const supportRay = new THREE.Raycaster(new THREE.Vector3(point.x, point.y, point.z), new THREE.Vector3(0, -1, 0), 0, depth);
-  const hit = supportRay.intersectObjects(world.solids, false)[0];
+  const hit = supportRay.intersectObjects(solidIndex.candidates(supportRay.ray.origin, supportRay.ray.direction, depth), false)[0];
   if (!hit?.face || hit.object.userData.doorIds || hit.object.userData.doorId) return null;
   const matrix = hit.object.matrixWorld.clone();
   if (hit.instanceId != null) {
@@ -2268,10 +2276,10 @@ function updateCamera(dt) {
       const intendedMuzzle = weapon.userData.rifle.muzzle.position.clone().add(new THREE.Vector3(targetX, targetY, targetZ)).applyMatrix4(camera.matrixWorld);
       const length = start.distanceTo(intendedMuzzle);
       ray.set(start, intendedMuzzle.clone().sub(start).normalize()); ray.far = length + .08;
-      const blocked = ray.intersectObjects(world.solids, false)[0];
+      const blocked = ray.intersectObjects(solidIndex.candidates(ray.ray.origin, ray.ray.direction, ray.far), false)[0];
       // A parallel camera ray prevents a lateral stock offset from missing a corner.
       ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3())); ray.far = length + .18;
-      const centerBlocked = ray.intersectObjects(world.solids, false)[0];
+      const centerBlocked = ray.intersectObjects(solidIndex.candidates(ray.ray.origin, ray.ray.direction, ray.far), false)[0];
       const nearest = Math.min(blocked?.distance ?? Infinity, centerBlocked?.distance ?? Infinity);
       weaponObstruction = Math.max(0, Math.min(1, (length + .08 - nearest) / .75));
       obstructionBlend = THREE.MathUtils.lerp(obstructionBlend, weaponObstruction, 1 - Math.exp(-dt * 20));

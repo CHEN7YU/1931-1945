@@ -95,6 +95,12 @@ try {
   await observe('visually-reacquired');
   assert.deepEqual(errors, []);
   console.log('PASS: actual tank movement, copied tactical knowledge, physical occlusion and visual reacquisition without state mutation.');
+} catch (error) {
+  const data = await snapshot();
+  observations.push({ stage: 'failed', error: error.message, state: data?.state, time: data?.time,
+    position: data?.position, clock: data?.simulationClock, health: data?.health,
+    vehicles: data?.vehicles, errors: [...errors] });
+  throw error;
 } finally {
   try {
     if (process.env.ARTIFACT_DIR) {

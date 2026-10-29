@@ -63,14 +63,17 @@ async function main() {
   const repeats = integer('BENCH_REPEATS', 2, 1, 5), seconds = integer('BENCH_SECONDS', 18, 5, 60);
   const warmup = integer('BENCH_WARMUP', 3, 1, 15), seed = integer('BENCH_SEED', 1938, 0, 0xffffffff);
   const minimumTime = integer('BENCH_MIN_TIME', 0, 0, 180);
-  if (process.env.BENCH_BASELINE_POSE && process.env.BENCH_BASELINE_COLLISION) throw new Error('Choose one isolated baseline comparison');
+  if ([process.env.BENCH_BASELINE_POSE, process.env.BENCH_BASELINE_COLLISION, process.env.BENCH_BASELINE_QUERY].filter(Boolean).length > 1) {
+    throw new Error('Choose one isolated baseline comparison');
+  }
   const collisionComparison = Boolean(process.env.BENCH_BASELINE_COLLISION);
-  const baselinePath = process.env.BENCH_BASELINE_COLLISION || process.env.BENCH_BASELINE_POSE;
-  const poseModules = collisionComparison ? ['src/solid-index.js'] : ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
+  const queryComparison = Boolean(process.env.BENCH_BASELINE_QUERY);
+  const baselinePath = process.env.BENCH_BASELINE_QUERY || process.env.BENCH_BASELINE_COLLISION || process.env.BENCH_BASELINE_POSE;
+  const poseModules = queryComparison ? ['src/occlusion-query.js'] : collisionComparison ? ['src/solid-index.js'] : ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
   const baselineSources = baselinePath ? JSON.parse(await readFile(resolve(baselinePath), 'utf8')) : null;
   if (baselinePath) {
     for (const name of poseModules) assert.equal(typeof baselineSources[name], 'string', `baseline snapshot must contain ${name}`);
-    await writeFile(join(directory, 'baseline-pose-sources.json'), JSON.stringify(
+    await writeFile(join(directory, queryComparison ? 'baseline-query-sources.json' : collisionComparison ? 'baseline-collision-sources.json' : 'baseline-pose-sources.json'), JSON.stringify(
       Object.fromEntries(poseModules.map(name => [name, baselineSources[name]])), null, 2));
   }
   const scenarios = (process.env.BENCH_SCENARIOS || 'duel,full').split(',');
@@ -85,8 +88,9 @@ async function main() {
     gpu: system.gpu.devices, gpuFeatures: system.gpu.featureStatus,
     viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, quality, seed, warmupSeconds: warmup,
     sampleSeconds: seconds, minimumSimulationTime: minimumTime, cpuSampleIntervalUs: 1000, repeats,
-    baselinePoseSource: baselinePath && !collisionComparison ? resolve(baselinePath) : null,
+    baselinePoseSource: baselinePath && !collisionComparison && !queryComparison ? resolve(baselinePath) : null,
     baselineCollisionSource: baselinePath && collisionComparison ? resolve(baselinePath) : null,
+    baselineQuerySource: baselinePath && queryComparison ? resolve(baselinePath) : null,
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     dirtyFiles: execFileSync('git', ['status', '--short'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean),
     limitation: 'Seed fixes random choices, not exact per-frame scheduling. Frame intervals include renderer/browser/OS work; CPU renderMs is submission, not GPU timing. Inclusive CPU entries overlap.' };
@@ -98,7 +102,7 @@ async function main() {
       const context = await browser.newContext({ viewport: metadata.viewport, deviceScaleFactor: 1 });
       const page = await context.newPage(), errors = [], events = [];
       const poseRequests = new Set();
-      if (baselineSources) await page.route(collisionComparison ? /\/src\/solid-index\.js(?:\?|$)/ : /\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
+      if (baselineSources) await page.route(queryComparison ? /\/src\/occlusion-query\.js(?:\?|$)/ : collisionComparison ? /\/src\/solid-index\.js(?:\?|$)/ : /\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
         const response = await route.fetch(), current = await response.text();
         const name = new URL(route.request().url()).pathname.slice(1), original = baselineSources[name];
         const three = current.match(/from\s+["']([^"']*\/three\.js[^"']*)["']/)?.[1];
