@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { DADAO_ART_ROOT, DADAO_ART_MAPS } from '../src/dadao-surface.js';
+import { DADAO } from '../src/dadao.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const directory = process.env.ARTIFACT_DIR, errors = [];
+const observations = [];
 try {
   if (directory) await mkdir(directory, { recursive: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 },
@@ -59,9 +61,27 @@ try {
   assert.ok(decoded['steel/roughnessMap'].left - decoded['steel/roughnessMap'].right > 20, 'real bevel has lower roughness');
   assert.ok(decoded['steel/metalnessMap'].mean > 210, 'bare steel remains predominantly metallic');
   assert.ok(decoded['cotton/roughnessMap'].mean > 218, 'cloth stays matte rather than shiny');
+  await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
   await page.keyboard.press('3');
   await page.waitForFunction(() => window.__battle.dadao?.phase === 'ready');
+  const captureStroke = (phase, minimum, maximum) => page.evaluate(({ phase, minimum, maximum }) => new Promise((resolve, reject) => {
+    const deadline = performance.now() + 8000;
+    const canvas = document.querySelector('canvas');
+    const observe = () => {
+      const { dadao, time } = window.__battle;
+      if (performance.now() > deadline) { reject(new Error(`Missed actual ${phase} pose`)); return; }
+      if (dadao.phase === phase && dadao.progress >= minimum) {
+        if (dadao.progress > maximum) { reject(new Error(`Skipped ${phase} keyframe: ${dadao.progress}`)); return; }
+        resolve({ time, ...dadao, image: canvas.toDataURL('image/jpeg', .92) });
+        return;
+      }
+      requestAnimationFrame(observe);
+    };
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+    requestAnimationFrame(observe);
+  }), { phase, minimum, maximum });
   for (const [name, viewport] of [
     ['wide', { width: 1440, height: 900 }], ['narrow', { width: 450, height: 1100 }],
     ['sidebar', { width: 360, height: 1000 }],
@@ -75,11 +95,19 @@ try {
     assert.ok(data.dadao.arm.reachable && data.dadao.arm.error < 1e-6);
     if (directory) await page.screenshot({ path: join(directory, `${name}.png`) });
     const before = data.rifle.shots;
-    await page.locator('canvas').first().dispatchEvent('mousedown', { button: 0 });
-    await page.locator('canvas').first().dispatchEvent('mouseup', { button: 0 });
-    await page.waitForFunction(swings => window.__battle.dadao.swings > swings, data.dadao.swings);
+    for (const [phase, minimum, maximum] of [['windup', .7, 1], ['cut', .35, .65], ['recover', 0, .2]]) {
+      await page.waitForFunction(cost => window.__battle.dadao.phase === 'ready' &&
+        window.__battle.time >= window.__battle.dadao.nextAttackAt && window.__battle.locomotion.stamina >= cost, DADAO.stamina);
+      const { image, ...sample } = await captureStroke(phase, minimum, maximum);
+      assert.equal(sample.viewVisible, true, 'capture the rendered weapon, not a pause-menu frame that hides it');
+      assert.ok(sample.arm.reachable && sample.arm.error < 1e-6, `${name}/${sample.phase}: original arm cannot reach the stroke`);
+      observations.push({ viewport: name, ...sample });
+      if (directory) await writeFile(join(directory, `${name}-${sample.phase}.jpg`), Buffer.from(image.split(',')[1], 'base64'));
+    }
     await page.waitForFunction(() => window.__battle.dadao.phase === 'ready');
-    assert.equal((await page.evaluate(() => window.__battle)).rifle.shots, before);
+    const after = await page.evaluate(() => window.__battle);
+    assert.equal(after.rifle.shots, before);
+    assert.equal(after.dadao.swings, data.dadao.swings + 3, 'one mouse press per captured swing, not held auto-repeat');
   }
   await page.keyboard.press('1');
   await page.waitForFunction(() => window.__battle.rifle.model !== null);
@@ -94,7 +122,8 @@ try {
   assert.match(await missing.locator('#fatal-message').textContent(), /Dadao material failed to load:.*steel\/color\.webp/);
   assert.equal(await missing.evaluate(() => window.__battle?.state), undefined, 'missing art must not silently launch an untextured game');
   await missing.close();
-  console.log('PASS: seven local decoded material maps, steel bevel and matte cloth, visible missing-map failure, native closed grip, three viewports, actual swings and re-equipping.');
+  if (directory) await writeFile(join(directory, 'stroke-observations.json'), JSON.stringify(observations, null, 2));
+  console.log('PASS: seven local decoded material maps, steel bevel and matte cloth, visible missing-map failure, native closed grip, three viewports, low-quality continuous swings, exact windup/middle-cut/early-recovery frames and re-equipping.');
 } finally {
   await browser.close();
 }
