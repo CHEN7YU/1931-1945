@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tankCannonPose, TANK_OBSERVATION } from '../src/player-tank.js';
+import { tankCannonPose, tankMachineGunPose, TANK_OBSERVATION } from '../src/player-tank.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -10,6 +10,16 @@ const errors = [], observations = [], directory = process.env.ARTIFACT_DIR;
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 const snapshot = () => page.evaluate(() => window.__battle);
+function assertMachineGunBelowView(data, tank) {
+  const start = tank.machineGuns[0].lastShot.start, physical = tankMachineGunPose(tank).start;
+  assert.ok(Math.hypot(start[0] - physical.x, start[1] - physical.y, start[2] - physical.z) < 1e-8);
+  const eye = data.tankObservation.eye, { yaw, pitch } = data.look;
+  const dx = start[0] - eye.x, dy = start[1] - eye.y, dz = start[2] - eye.z;
+  const right = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+  const up = dx * Math.sin(yaw) * Math.sin(pitch) + dy * Math.cos(pitch) + dz * Math.cos(yaw) * Math.sin(pitch);
+  assert.ok(Math.abs(right) < 1e-6, 'neither crew view places the muzzle to the right of the port');
+  assert.ok(Math.abs(up + .265) < 1e-6, 'the real muzzle stays below both observation ports');
+}
 async function elapsed(seconds) {
   const started = (await snapshot()).time;
   await page.waitForFunction(({ started, seconds }) => window.__battle.time >= started + seconds, { started, seconds });
@@ -52,6 +62,7 @@ try {
   assert.ok(current.machineGuns[0].ammo < 100);
   assert.equal(current.weapon.ammo, primary.ammo);
   assert.equal(current.weapon.reloadUntil, primary.reloadUntil);
+  assertMachineGunBelowView(await snapshot(), current);
   const shots = current.machineGuns[0].shots;
   await elapsed(.3); assert.equal((await vehicle()).machineGuns[0].shots, shots);
   data = await snapshot();
@@ -89,6 +100,10 @@ try {
   assert.equal(data.tankObservation.closed, true, 'gunner optics are present without holding RMB');
   assert.equal(data.fov, 40);
   assert.equal(await page.locator('.tank-visor').isVisible(), false);
+  await page.keyboard.down('Space'); await elapsed(.2);
+  await capture('gunner-machine-gun');
+  await page.keyboard.up('Space');
+  assertMachineGunBelowView(await snapshot(), await vehicle());
   await page.mouse.down({ button: 'right' }); await elapsed(.2); await capture('gunner-zoom');
   assert.equal((await snapshot()).fov, 24);
   const image = (await page.screenshot()).toString('base64');

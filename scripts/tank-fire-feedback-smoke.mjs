@@ -118,7 +118,7 @@ try {
   const dx = mg.start[0] - eye.x, dy = mg.start[1] - eye.y, dz = mg.start[2] - eye.z;
   const projectedY = dx * Math.sin(data.look.yaw) * Math.sin(data.look.pitch) + dy * Math.cos(data.look.pitch) +
     dz * Math.cos(data.look.yaw) * Math.sin(data.look.pitch);
-  assert.ok(Math.abs(projectedY + .115) < 1e-5, 'actual coax starts below the optical axis, not from an invented camera point');
+  assert.ok(Math.abs(projectedY + .265) < 1e-5, 'actual coax starts below the optical axis, not from an invented camera point');
   await shell('distant-wall', [3, 7.8, -90], 140);
   await shell('near-ground', [2.4, 0, 53], 15);
   await page.mouse.up({ button: 'right' });
