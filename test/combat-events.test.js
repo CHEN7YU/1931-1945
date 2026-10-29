@@ -10,6 +10,15 @@ const shot = () => ({ source: source(), weaponType: 'infantry', start: { x: 0, y
 const target = () => ({ kind: 'soldier', id: 'enemy-1', unitId: 'bravo', team: 'enemy' });
 const emptyCounts = () => ({ shot: 0, impact: 0, explosion: 0, damage: 0, casualty: 0 });
 
+test('analytical body hits provide an explicit blast normal without requiring a nonexistent mesh face', () => {
+  const body = new THREE.Object3D(); body.userData.actor = { id: 'enemy-body' };
+  const hit = { object: body, point: new THREE.Vector3(1, 1.2, 3) };
+  const impact = captureImpact(hit, new THREE.Vector3(0, 0, -1));
+  assert.equal(impact.kind, 'generic');
+  assert.ok(new THREE.Vector3(impact.normal.x, impact.normal.y, impact.normal.z).distanceTo(new THREE.Vector3(0, 0, 1)) < 1e-12);
+  assert.throws(() => captureImpact({ ...hit, object: new THREE.Object3D() }, new THREE.Vector3(0, 0, -1)), /face normal/);
+});
+
 test('shot feedback copies original source and geometry values without retaining model or actor references', () => {
   const events = createCombatEvents(), data = shot();
   data.source.actor = { health: 100 };

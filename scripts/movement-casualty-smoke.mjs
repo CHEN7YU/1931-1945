@@ -23,6 +23,7 @@ try {
     const { createCasualtyState } = await import('/src/casualties.js');
     const { createRifleState } = await import('/src/rifle-action.js');
     const { hasIjaRifleFlag } = await import('/src/ija-rifle-flag.js');
+    const { createIjaForceRenderer } = await import('/src/ija-character.js');
     const { groundHeight } = await import('/src/ground.js');
     const { configureRifleMaterials } = await import('/src/rifle-model.js');
     await configureRifleMaterials();
@@ -110,9 +111,10 @@ try {
         for (const stance of ['standing', 'kneeling', 'prone']) for (let variant = 0; variant < 4; variant++) for (const retainGun of [false, true]) {
           const actor = actorFor(team, factory, `${team}-${stance}-${variant}-${retainGun}`);
           actor.rifleReady = true; actor.nativeMotion.lowReady = 0; actor.nativeMotion.cheekWeight = 1;
-          actor.nativeMotion.posture[stance] = stance === 'standing' ? 0 : 1;
+          if (stance !== 'standing') actor.nativeMotion.posture[stance] = 1;
           syncNativeAimGoal(actor);
           actor.health = 0; actor.casualty = createCasualtyState(actor, 1, sampleNraMotion(actor), { variant, retainGun });
+          if (stance === 'standing' && variant === 3 && !retainGun) actor.casualty = Object.freeze({ ...actor.casualty, wallLimited: true });
           view.bind(actor.id);
           for (const time of [1, 1.2, 1.6, 3, 20]) {
             const before = JSON.stringify(actor.casualty);
@@ -138,11 +140,29 @@ try {
         }
         if (gallery.length) {
           camera.position.set(6, 7.5, -8); camera.lookAt(0, 0, 1);
-          image(`${team}-casualties.png`, `${team}: four fall directions / dropped gun (front), retained gun (back) — procedural pose inspection`);
+          image(`${team}-casualties.png`, `${team}: flat falls and compact collapse / dropped gun (front), retained gun (back) — pose inspection`);
           gallery.forEach(root => scene.remove(root));
         }
       }
     }
+    const force = createIjaForceRenderer(scene, camera, factories.enemy);
+    const actor = actorFor('enemy', factories.enemy, 'forced-compact-lod');
+    actor.health = 0;
+    actor.casualty = Object.freeze({ ...createCasualtyState(actor, 0, sampleNraMotion(actor), { variant: 3, retainGun: false }), wallLimited: true });
+    camera.position.set(0, 1.4, -40); camera.lookAt(0, .3, 0);
+    force.update([actor], 3, null, 'high');
+    const bounds = new T.Box3(), matrix = new T.Matrix4(), world = new T.Matrix4();
+    force.root.updateMatrixWorld(true);
+    force.root.traverse(mesh => {
+      if (!mesh.isInstancedMesh || !mesh.count) return;
+      mesh.geometry.computeBoundingBox();
+      for (let index = 0; index < mesh.count; index++) {
+        mesh.getMatrixAt(index, matrix); world.multiplyMatrices(mesh.matrixWorld, matrix);
+        bounds.union(mesh.geometry.boundingBox.clone().applyMatrix4(world));
+      }
+    });
+    if (force.snapshot.far !== 1 || bounds.max.y >= 1) throw new Error(`Constrained distant casualty is standing: ${bounds.max.y}`);
+    image('enemy-constrained-far.png', 'Wall-constrained corpse uses a collapsed death bank, not a living idle pose — LOD diagnostic');
     return { gaits, casualties, images, videos };
   });
   for (const image of result.images) await writeFile(join(directory, image.name), Buffer.from(image.data.split(',')[1], 'base64'));

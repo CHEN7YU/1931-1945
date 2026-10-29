@@ -21,6 +21,9 @@ try {
   await page.locator('#deploy').click(); await page.waitForFunction(() => window.__battle.state === 'playing');
   const initial = await page.evaluate(() => window.__battle);
   assert.equal(initial.population.friendly.alive, 110); assert.equal(initial.population.enemy.alive, 96);
+  await page.keyboard.down('w');
+  await page.waitForFunction(() => window.__battle.position.z <= 61 || window.__battle.state !== 'playing');
+  await page.keyboard.up('w');
   const deadline = Date.now() + 300000;
   while (Date.now() < deadline) {
     const data = await page.evaluate(() => {
@@ -33,7 +36,7 @@ try {
     for (const view of data.near.filter(view => view.visible && view.soldier.health > 0)) {
       assert.equal(view.issue, null);
       assert.ok(view.riflePose.left.error < .015 && view.riflePose.right.error < .015);
-      const pose = view.soldier.firingPose;
+      const pose = view.firingPose;
       if (pose && pose !== 'standing' && !photographed.has(pose)) {
         photographed.add(pose); await page.screenshot({ path: join(directory, `actual-enemy-${pose}.png`) });
       }

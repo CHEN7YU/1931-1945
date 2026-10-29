@@ -124,7 +124,7 @@ try {
   assert.deepEqual((await snapshot()).rifle.model.feedPosition, [0, 0, 0]);
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'cover-smoke.json'), JSON.stringify(observations, null, 2));
-  console.log('PASS: V support and real shots, movement release, real-map sandbag vault, pause, physical jump/Y landing, hand-carried LMG insertion and press.');
+  console.log('PASS: B support, V not bound, real shots, movement release, real-map sandbag vault, pause, physical jump/Y landing, hand-carried LMG insertion and press.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ errors, state: data?.state, position: data?.position, look: data?.look,

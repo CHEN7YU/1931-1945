@@ -225,7 +225,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
           const posture = postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
-          const index = actor.casualty?.wallLimited ? 0 : actor.health <= 0 && actor.casualty && deathBanks
+          const index = actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
             : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)

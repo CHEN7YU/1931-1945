@@ -7,12 +7,12 @@ import { sampleNraMotion } from './nra-motion.js';
 import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer } from './nra-force-renderer.js';
-import { FIRING_POSES } from './combat-posture.js';
+import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
-import { createCasualtyPose } from './casualties.js';
+import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 
@@ -99,7 +99,7 @@ export async function loadIjaCharacter() {
         flag.visible = hasIjaRifleFlag(actor);
         updateIjaRifleFlagTime(now);
         root.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
-        motion = actor.casualty?.motion ?? sampleNraMotion(actor);
+        motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor);
         active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
         actions.idle.time = motion.idleTime; actions.idle.setEffectiveWeight(motion.upright);
         for (const stance of Object.keys(FIRING_POSES)) { actions[stance].time = 0; actions[stance].setEffectiveWeight(motion[stance]); }
@@ -120,6 +120,7 @@ export async function loadIjaCharacter() {
       get snapshot() {
         const point = name => bones.get(name).getWorldPosition(new THREE.Vector3()).toArray();
         return { actorId, uniform: 'ija1938', level, active, visible: root.visible, stance: actor?.stance ?? 'standing',
+          firingPose: actor ? ownedFiringPose(actor) : null,
           rifleFlag: flag.visible, proportions: source.proportions,
           animationSources: Object.values(actions).map(action => action.getClip().name),
           gait: motion ? { source: 'native-foot-cycle', style: motion.travelStyle, runStride: motion.runStride,

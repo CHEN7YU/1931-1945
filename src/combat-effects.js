@@ -27,7 +27,13 @@ export function impactKind(object) {
 }
 
 export function captureImpact(hit, incoming) {
-  if (!hit.face) throw new Error('Mesh impact is missing its face normal');
+  if (!hit.face) {
+    if (!hit.object.userData.actor) throw new Error(`Mesh impact is missing its face normal: ${hit.object.type}`);
+    if (!Number.isFinite(incoming.lengthSq()) || incoming.lengthSq() < 1e-10) throw new RangeError('Analytical body impact requires a finite incoming direction');
+    const normal = incoming.clone().normalize().negate();
+    return { kind: 'generic', position: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+      normal: { x: normal.x, y: normal.y, z: normal.z } };
+  }
   const matrix = hit.object.matrixWorld.clone();
   if (hit.instanceId !== undefined) {
     const instance = new THREE.Matrix4(); hit.object.getMatrixAt(hit.instanceId, instance); matrix.multiply(instance);

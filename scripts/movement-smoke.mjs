@@ -70,7 +70,8 @@ try {
   assert.ok(Math.max(...sprinting.map(frame => frame.cameraHeight)) - Math.min(...sprinting.map(frame => frame.cameraHeight)) > .05, 'sprint has visible but bounded vertical weight shift');
   assert.ok(sprinting.at(-1).stamina < .85);
   assert.equal(stopping.at(-1).speed, 0);
-  assert.ok(stopping.at(-1).cameraHeight > 1.669 && stopping.at(-1).cameraHeight < 1.671);
+  assert.ok(Math.abs(stopping.at(-1).cameraHeight - stopping.at(-1).eyeHeight) < .001,
+    'stopping settles to the current soldier eye height, not a fixed generic body height');
 
   // Remaining checks use normal keys/mouse in a separate page, without mutation hooks.
   controlsContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -119,9 +120,9 @@ try {
   assert.equal(Math.abs(data.locomotion.cameraRoll), 0);
   assert.ok(data.locomotion.speed > 3);
   await controls.keyboard.up('w');
-  await controls.keyboard.press('b');
-  assert.equal((await controls.evaluate(() => window.__battle)).locomotion.motionStrength, 1);
   await controls.keyboard.press('Escape');
+  await controls.locator('#motion-strength').selectOption('1');
+  assert.equal((await controls.evaluate(() => window.__battle)).locomotion.motionStrength, 1);
   await controls.locator('#back-menu').click();
   await controls.locator('#deploy').click();
   await controls.keyboard.down('s');
@@ -146,10 +147,19 @@ try {
   const spent = data.locomotion.stamina;
   assert.ok(spent < .05);
   assert.equal(data.current, 0);
+  const beforeSwitch = data;
+  const incomingIndex = data.allies.findIndex((actor, index) => index > 0 && actor.health > 0);
+  assert.ok(incomingIndex > 0);
   await controls.keyboard.press('y');
-  assert.equal((await controls.evaluate(() => window.__battle)).locomotion.stamina, 1);
+  await controls.waitForFunction(index => window.__battle.current === index, incomingIndex);
+  data = await controls.evaluate(() => window.__battle);
+  const switchElapsed = data.time - beforeSwitch.time;
+  const staminaChange = data.locomotion.stamina - beforeSwitch.allies[incomingIndex].stamina;
+  assert.ok(staminaChange >= -.14 * switchElapsed - .00001 && staminaChange <= .1 * switchElapsed + .00001,
+    'taking over a moving AI member retains their stamina rather than refilling it');
   await controls.evaluate(() => {
-    for (let i = 1; i < 10; i++) for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'KeyY' }));
+    const alive = window.__battle.allies.filter(actor => actor.health > 0).length;
+    for (let i = 1; i < alive; i++) for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'KeyY' }));
   });
   data = await controls.evaluate(() => window.__battle);
   assert.equal(data.current, 0);

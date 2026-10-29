@@ -27,7 +27,7 @@ export function corpseFootprint(geometry) {
 export function placeCasualty(actor, casualty, boundsFor, blocked) {
   if (typeof boundsFor !== 'function' || typeof blocked !== 'function') throw new TypeError('Casualty placement needs body bounds and collision queries');
   const variants = [casualty.variant, ...[0, 1, 2, 3].filter(value => value !== casualty.variant)]
-    .filter(value => !(casualty.motion?.prone > .5) || value >= 2);
+    .filter(value => !(casualty.motion?.prone > .5) || value === 2);
   const offsets = [{ x: 0, z: 0 }];
   for (const radius of [.15, .3, .5, .75, 1, 1.5, 2]) for (let side = 0; side < 8; side++) {
     offsets.push({ x: Math.cos(side * Math.PI / 4) * radius, z: Math.sin(side * Math.PI / 4) * radius });
@@ -62,7 +62,24 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
     }
     if (clear) return Object.freeze({ ...casualty, variant, yaw, offset: Object.freeze(offset), wallLimited: false });
   }
-  return Object.freeze({ ...casualty, yaw: 0, offset: Object.freeze({ x: 0, z: 0 }), wallLimited: true });
+  const variant = casualty.motion?.prone > .5 ? 2 : 3;
+  const compact = boundsFor(variant, false);
+  const points = compact.footprint ?? [[compact.min[0], compact.min[2]], [compact.max[0], compact.max[2]], [0, 0]];
+  let best = null;
+  for (const offset of offsets) for (const heading of [actor.heading, cardinal, cardinal + Math.PI / 2, cardinal + Math.PI, cardinal - Math.PI / 2]) {
+    const c = Math.cos(heading), s = Math.sin(heading);
+    let contacts = 0;
+    for (const [x, z] of points) {
+      const hit = blocked({ x: actor.position.x + offset.x + x * c + z * s, y: actor.position.y,
+        z: actor.position.z + offset.z - x * s + z * c }, .13, .75);
+      if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
+      contacts += Number(hit);
+    }
+    const score = contacts * 100 + Math.hypot(offset.x, offset.z);
+    if (!best || score < best.score) best = { score, contacts, offset, yaw: Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading)) };
+  }
+  return Object.freeze({ ...casualty, variant, retainGun: false, yaw: best.yaw,
+    offset: Object.freeze(best.offset), wallLimited: true });
 }
 
 function seedFor(id) {
@@ -105,6 +122,17 @@ export function casualtyProgress(casualty, now) {
   return t * t * (3 - 2 * t);
 }
 
+export function sampleCasualtyMotion(casualty, now) {
+  const motion = casualty.motion;
+  if (!motion || casualty.variant !== 3 || motion.prone > .5) return motion;
+  const progress = casualtyProgress(casualty, now), remaining = 1 - progress;
+  const postures = Object.fromEntries(Object.entries(motion.postures).map(([name, weight]) =>
+    [name, weight * remaining + (name === 'kneeling' ? progress : 0)]));
+  return { ...motion, ...postures, postures, upright: motion.upright * remaining,
+    bodyLean: motion.bodyLean * remaining, hipDrop: motion.hipDrop * remaining,
+    weight: motion.weight * remaining, headAim: progress ? null : motion.headAim };
+}
+
 export function casualtyRotation(casualty, progress) {
   const axes = [[0, 0, 1], [0, 0, -1], [-1, 0, 0], [1, 0, 0]];
   return new Quaternion().setFromAxisAngle(new Vector3(...axes[casualty.variant]), Math.PI / 2 * progress);
@@ -128,13 +156,14 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
     root.updateMatrixWorld(true);
     const pivot = root.worldToLocal(bones.get('Hips').getWorldPosition(new Vector3()));
     const prone = c.motion?.prone ?? 0;
-    const fall = casualtyRotation(c, c.wallLimited ? 0 : progress * (1 - .85 * prone));
+    const fall = casualtyRotation(c, progress * (1 - .85 * prone));
     const facing = new Quaternion().setFromAxisAngle(Y, actor.heading + (c.yaw ?? 0) * progress);
     root.quaternion.copy(facing).multiply(fall);
     root.position.copy(actor.position).add(pivot.clone().sub(pivot.clone().applyQuaternion(fall)).applyQuaternion(facing));
     root.position.x += (c.offset?.x ?? 0) * Math.sqrt(progress);
     root.position.z += (c.offset?.z ?? 0) * Math.sqrt(progress);
     for (const [index, side] of ['Left', 'Right'].entries()) {
+      if (c.variant === 3 && !(c.motion?.prone > .5)) continue;
       const sign = index ? 1 : -1;
       for (const [part, bend] of [['UpLeg', sign * .15 * c.fold], ['Leg', (index ? .3 : .65) * c.fold], ['Foot', .1]]) {
         const name = side + part;
@@ -169,7 +198,7 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
       const origin = upper.getWorldPosition(new Vector3()), elbow = lower.getWorldPosition(new Vector3()), wrist = hand.getWorldPosition(new Vector3());
       const held = c.retainGun && side === 'Right', sign = index ? 1 : -1;
       const target = hips.clone().addScaledVector(along, .12 + c.fold * .15)
-        .addScaledVector(across, sign * (held ? .18 : .35 + c.fold * .12));
+        .addScaledVector(across, sign * (c.variant === 3 ? .18 : held ? .18 : .35 + c.fold * .12));
       target.y = groundAt(target.x, target.z) + (held ? .12 : .07);
       const delta = target.sub(origin).clampLength(Math.abs(origin.distanceTo(elbow) - elbow.distanceTo(wrist)) + .005,
         origin.distanceTo(elbow) + elbow.distanceTo(wrist) - .005);

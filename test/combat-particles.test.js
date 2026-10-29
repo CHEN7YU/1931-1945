@@ -146,3 +146,15 @@ test('tank shells emit visible surface-facing fragments and a short flash rather
     for (const [name, cap] of Object.entries(PARTICLE_LIMITS)) assert.equal(state[name].length + state.free[name].length, cap);
   }
 });
+
+test('shell smoke and light remain outside an inclined roof underside rather than rising inside the solid', () => {
+  const state = createParticleState(), n = { x: -.315, y: -.949, z: 0 };
+  const length = Math.hypot(n.x, n.y, n.z); n.x /= length; n.y /= length;
+  emitExplosionParticles(state, position, 0, { style: 'tank-shell', normal: n, material: 'stone' });
+  for (const cloud of state.clouds) {
+    assert.ok((cloud.x - position.x) * n.x + (cloud.y - position.y) * n.y + (cloud.z - position.z) * n.z >= .14 - 1e-10);
+    assert.ok(cloud.vx * n.x + cloud.vy * n.y + cloud.vz * n.z >= .1 - 1e-10);
+  }
+  const light = state.lights[0];
+  assert.ok((light.x - position.x) * n.x + (light.y - position.y) * n.y >= .34);
+});

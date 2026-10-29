@@ -1320,10 +1320,10 @@ function reload() {
   if (grenadeEquipped) { toast('当前选择投掷装备；按 1 切回主武器'); return; }
   if (allies[current]?.grenades.action) { toast('先完成手榴弹动作再装填'); return; }
   if (unit.type === 'tank') {
-    toast('主炮射击后自动装填，无需按 R');
+    toast(occupiedSeat(entities).canFire ? '主炮射击后自动装填，无需按 R'
+      : '驾驶员席位不能装填主炮；射击后由车组自动装填');
     return;
   }
-  if (unit.type === 'tank') { toast('车组会在射击后自动装填主炮，无需按 R'); return; }
   if (unit.type === 'infantry') {
     if (toolEquipped) { toast('先按 1 收起工具再装填步枪'); return; }
     if (reloadRifle(allies[current].rifle)) emitControlEvent('weapon.reload-requested', {
@@ -1424,7 +1424,7 @@ function finishActorDeath(actor, source) {
         const obstacles = movementObstacles(actor.position.x, actor.position.z);
         actor.casualty = placeCasualty(actor, actor.casualty, (variant, retain) => factory.casualtyBounds(variant, retain),
           (point, radius, height) => circleBlocked(point.x, point.z, radius, obstacles, point.y, height));
-        if (actor.casualty.wallLimited) console.warn(`No collision-free falling pose for ${actor.id}; retaining a wall-constrained casualty pose`);
+        if (actor.casualty.wallLimited) console.warn(`No fully clear falling path for ${actor.id}; using a bounded compact collapse`);
       }
       corpses.set(actor.id, actor);
     }
@@ -2170,7 +2170,7 @@ function updateCamera(dt) {
   const safeLean = foot && circleBlocked(eyePoint.x + offsetX, eyePoint.z + offsetZ, .35, world.obstacles, position.y) ? 0 : desiredLean;
   lean = THREE.MathUtils.lerp(lean, safeLean, Math.min(1, dt * 12));
   const cameraSway = foot ? motion.cameraX * motionStrength : 0;
-  camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + mount.eyeOffset * mount.blend + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
+  camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + (foot ? mount.eyeOffset * mount.blend + (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
   if (observation) camera.position.set(observation.x, observation.y, observation.z);
   const profile = infantryWeaponProfile(allies[current].rifle);
   const sway = rifleAimAvailable() ? aimSway(time, { scoped: Boolean(profile.scoped),

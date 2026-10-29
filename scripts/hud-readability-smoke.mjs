@@ -14,7 +14,7 @@ const labels = ['#hud-notice', '#objective-title', '#objective-help', '#timer',
   '#stamina-label', '#battle-controls', '#minimap span', '#pause-button', '#members .member',
   '#interaction-prompt', '#toast', '#simulation-status', '#aim-label', '.feed-entry',
   '.control-count', '.squad-heading kbd', '.hud-label', '.ammo small', '.objective-chip',
-  '#tank-machine-gun', '#tank-orientation span'];
+  '#tank-machine-gun', '#tank-orientation span', '#weapon-support', '#tank-reload span'];
 if (artifacts) await mkdir(artifacts, { recursive: true });
 
 async function loadMenu(page, address) {
@@ -102,11 +102,13 @@ async function capture(page, name) {
         textRects };
     }));
     const panels = ['.battle-time', '#objectives', '.objective-banner',
-      '.squad-status', '.weapon-status', '#tank-orientation', '#minimap', '#pause-button', '.hud-notices', '#kill-feed']
+      '.squad-status', '.weapon-status', '#tank-orientation', '#minimap', '#pause-button', '.hud-notices', '#kill-feed',
+      '#weapon-support', '#tank-reload', '#interaction-prompt']
       .flatMap(selector => [...document.querySelectorAll(selector)].filter(visible)
         .map(element => ({ selector, rect: rect(element) })))
       .filter(panel => panel.rect.width > 0 && panel.rect.height > 0);
-    const persistent = panels.filter(panel => !['.hud-notices', '#kill-feed', '.objective-banner'].includes(panel.selector));
+    const persistent = panels.filter(panel => !['.hud-notices', '#kill-feed', '.objective-banner',
+      '#weapon-support', '#tank-reload', '#interaction-prompt'].includes(panel.selector));
     const persistentCoverage = persistent.reduce((area, panel) => area + panel.rect.width * panel.rect.height, 0) / (innerWidth * innerHeight);
     const battle = window.__battle;
     return { text, panels, persistentCoverage, position: battle.position, look: battle.look, inside: battle.town.inside,
@@ -140,8 +142,10 @@ async function capture(page, name) {
       assert.ok(width <= 0 || height <= 0, `${name}: ${a.selector} does not overlap ${b.selector}`);
     }
     const { width, height } = measurement.viewport;
-    assert.ok(a.rect.x + a.rect.width <= width / 2 - 80 || a.rect.x >= width / 2 + 80
-      || a.rect.y + a.rect.height <= height / 2 - 80 || a.rect.y >= height / 2 + 80,
+    // Interaction/loading cues sit near the reticle; permanent panels retain the larger clear area.
+    const clearance = ['#tank-reload', '#interaction-prompt'].includes(a.selector) ? 32 : 80;
+    assert.ok(a.rect.x + a.rect.width <= width / 2 - clearance || a.rect.x >= width / 2 + clearance
+      || a.rect.y + a.rect.height <= height / 2 - clearance || a.rect.y >= height / 2 + clearance,
     `${name}: ${a.selector} leaves the central aiming area clear`);
   }
 }

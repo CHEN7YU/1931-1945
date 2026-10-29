@@ -68,6 +68,12 @@ async function shell(stage, target, minimumDistance = 0) {
   const burstImage = await capture(`${stage}-birth`);
   if (minimumDistance >= 140) {
     const changed = await page.evaluate(async ({ before, after }) => {
+      const excluded = ['#tank-reload', '#interaction-prompt', '#toast', '#hit-marker'].flatMap(selector => {
+        const element = document.querySelector(selector);
+        if (!element.getClientRects().length || Number(getComputedStyle(element).opacity) === 0) return [];
+        const box = element.getBoundingClientRect();
+        return [{ left: box.left, right: box.right, top: box.top, bottom: box.bottom }];
+      });
       const read = async source => {
         const image = new Image(); image.src = `data:image/png;base64,${source}`; await image.decode();
         const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
@@ -76,7 +82,11 @@ async function shell(stage, target, minimumDistance = 0) {
       };
       const [a, b] = await Promise.all([read(before), read(after)]);
       let changed = 0;
-      for (let i = 0; i < a.length; i += 4) if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) >= 24) changed++;
+      for (let i = 0; i < a.length; i += 4) {
+        const x = innerWidth / 2 - 60 + i / 4 % 120, y = innerHeight / 2 - 60 + Math.floor(i / 4 / 120);
+        if (excluded.some(box => x >= box.left && x < box.right && y >= box.top && y < box.bottom)) continue;
+        if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) >= 24) changed++;
+      }
       return changed;
     }, { before: beforeImage.toString('base64'), after: burstImage.toString('base64') });
     observations.push({ stage: `${stage}-visible-pixels`, changed });
