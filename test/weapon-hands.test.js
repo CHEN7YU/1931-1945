@@ -124,3 +124,37 @@ test('native weapon hands preserve distinct finger bones and source skin while s
   const pinky = view.snapshot.left.grip.fingerLengths.Pinky.reduce((sum, value) => sum + value, 0);
   assert.ok(middle - pinky > .01, 'real middle and pinky fingers cannot become equal-length rods');
 });
+
+test('LMG reload elbows follow the loading palm continuously without folding above a raised wrist', () => {
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  for (const weapon of ['zb26', 'type11']) {
+    const state = { ...createRifleState(weapon), action: 'reload', ammo: 0 }, gun = rifleModel(state);
+    for (const placement of [[.18, -.22, -.14], [.18, -.265, -.14]]) {
+      gun.position.fromArray(placement);
+      let previous = null;
+      for (let frame = 0; frame <= 720; frame++) {
+        state.elapsed = infantryWeaponProfile(state).reloadSeconds * frame / 720;
+        const pose = updateRifleModel(gun, state);
+        gun.rotation.set(-pose.lower * .14, 0, -pose.lower * .08);
+        view.update(gun, state);
+        const sample = view.snapshot.left, { shoulder, elbow, wrist, lengths } = sample.arm;
+        const context = `${weapon} at ${placement}, frame ${frame}`;
+        assert.ok(sample.arm.reachable && sample.arm.error < .002, context);
+        assert.ok(Math.abs(new T.Vector3(...shoulder).distanceTo(new T.Vector3(...elbow)) - lengths[0]) < 1e-6, context);
+        assert.ok(Math.abs(new T.Vector3(...elbow).distanceTo(new T.Vector3(...wrist)) - lengths[1]) < 1e-6, context);
+        const down = new T.Vector3(0, -1, 0).transformDirection(gun.matrix.clone().invert());
+        const clearance = new T.Vector3(...elbow).sub(new T.Vector3(...wrist)).dot(down);
+        if (sample.elbowConstraint.requested > 0) assert.ok(
+          clearance >= Math.min(sample.elbowConstraint.available, sample.elbowConstraint.requested) - 1e-5, context);
+        if (previous && weapon === 'zb26') assert.ok(new T.Vector3(...elbow).distanceTo(previous) < .04,
+          `${context}: elbow step ${new T.Vector3(...elbow).distanceTo(previous)}, ${previous.toArray()} -> ${elbow}`);
+        previous = new T.Vector3(...elbow);
+        if (weapon === 'zb26' && frame >= .12 * 720 && frame <= .86 * 720 &&
+            gun.getObjectByName('feed').position.y >= 0) {
+          assert.ok(sample.wristAngle < 35 * Math.PI / 180,
+            `${context}: raised magazine/press wrist bends ${sample.wristAngle * 180 / Math.PI} degrees`);
+        }
+      }
+    }
+  }
+});
