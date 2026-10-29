@@ -195,7 +195,8 @@ const solidIndex = createSolidIndex(world.solids);
 const occluded = createOcclusionQuery();
 const grenadeSupport = createGrenadeSupport(world.solids, world.groundHeight, (point, radius) =>
   !world.doorSystem.doors.some(door => Math.hypot(point.x - door.x, point.z - door.z) < door.width * 2 + radius + .1) &&
-  ![...entities.vehicles.values()].some(vehicle => Math.hypot(point.x - vehicle.position.x, point.z - vehicle.position.z) < 5 + radius));
+  ![...entities.vehicles.values()].some(vehicle =>
+    Math.hypot(point.x - vehicle.position.x, point.z - vehicle.position.z) < (vehicle.type === 'plane' ? 15 : 5) + radius));
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
 const rallyRenderer = createRallyRenderer(scene);
 const vehicleRenderer = createVehicleRenderer(scene);

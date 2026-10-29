@@ -58,6 +58,7 @@ test('static support tokens reject mesh/geometry/transform/side/range changes an
     f => { f.floor.geometry.setAttribute('position', f.floor.geometry.attributes.position.clone()); },
     f => { f.floor.geometry.index.needsUpdate = true; },
     f => { f.floor.geometry.setDrawRange(0, 3); },
+    f => { f.floor.geometry.groups[0].materialIndex = 5; },
     f => { f.floor.material.side = THREE.DoubleSide; },
     f => { f.floor.material = f.floor.material.clone(); },
     f => { f.floor.geometry.dispose(); },
