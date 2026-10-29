@@ -7,6 +7,31 @@ import * as THREE from 'three';
 import { createDoorWorld } from '../src/door-world.js';
 
 const makeDoor = () => makeDoors(makeTownLayout()).find(door => door.id === 'west-0-east-door');
+test('a dedicated door texture leaves trim, instancing, transforms and collision unchanged', () => {
+  const town = makeTownLayout();
+  const wood = new THREE.MeshStandardMaterial(), iron = new THREE.MeshStandardMaterial();
+  const textured = new THREE.MeshStandardMaterial({ color: 0xd5c8b5 });
+  const originalScene = new THREE.Scene(), changedScene = new THREE.Scene();
+  const originalObstacles = [], changedObstacles = [], originalSolids = [], changedSolids = [];
+  const original = createDoorWorld(originalScene, town, originalObstacles, originalSolids, wood, iron);
+  const changed = createDoorWorld(changedScene, town, changedObstacles, changedSolids, wood, iron, textured);
+  assert.equal(changedScene.children.length, originalScene.children.length);
+  assert.equal(changedSolids[0].material, textured);
+  assert.equal(changedScene.children[1].material, wood, 'horizontal bands keep their separate timber material');
+  assert.equal(changedScene.children[2].material, iron);
+  assert.equal(changedSolids[0].count, 93);
+  assert.deepEqual(changedSolids[0].instanceMatrix.array, originalSolids[0].instanceMatrix.array);
+  assert.deepEqual(changedObstacles, originalObstacles);
+  const open = world => {
+    const door = world.doors.find(item => item.id === 'west-0-east-door');
+    world.interact(door, { x: -2, z: 64 });
+    world.update(1, []);
+  };
+  open(original); open(changed);
+  assert.deepEqual(changed.doors, original.doors);
+  assert.deepEqual(changedObstacles, originalObstacles);
+  assert.deepEqual(changedSolids[0].instanceMatrix.array, originalSolids[0].instanceMatrix.array);
+});
 test('new courtyard gate leaves match their authored openings and stay clear when open', () => {
   const town = makeTownLayout(), doors = makeDoors(town);
   assert.equal(doors.length, 93);

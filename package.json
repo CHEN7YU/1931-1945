@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "prepare:battle-voices": "node scripts/prepare-battle-voices.mjs",
+    "prepare:scene-art": "python scripts/prepare-scene-art.py",
+    "test:scene-art": "node scripts/scene-art-smoke.mjs",
     "prepare:battle-reactions": "node scripts/prepare-combat-recordings.mjs reactions",
     "prepare:machine-gun-audio": "node scripts/prepare-combat-recordings.mjs machine-gun",
     "prepare:enemy-rifle-audio": "node scripts/prepare-enemy-rifle-audio.mjs",

@@ -23,6 +23,19 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.ok(mechanical.every(file => file.use === 'runtime'), 'main-game mechanical recordings must not remain diagnostic-only');
   assert.match(report.permissions[0].limitation, /not CC0/);
   assert.ok(report.warnings.some(warning => /verify redistribution terms before public release/.test(warning)));
+  const generated = report.files.filter(file => file.file.startsWith('materials/ai-scene/'));
+  assert.equal(generated.length, 14);
+  assert.ok(generated.every(file => file.use === 'runtime'));
+  assert.ok(report.permissions.some(permission => permission.basis === 'Azure-generated-images' && /not CC0/.test(permission.limitation)));
+});
+
+test('generated scene art cannot be relabelled as CC0', async t => {
+  const { root } = await fixture(t);
+  const path = join(root, 'materials', 'ai-scene', 'source.json');
+  const metadata = JSON.parse(await readFile(path, 'utf8'));
+  metadata.license = 'CC0-1.0';
+  await writeFile(path, JSON.stringify(metadata));
+  await assert.rejects(auditAssets({ root }), /Generated scene image provenance requires review/);
 });
 
 test('an unlisted archive or a corrupted existing file blocks the audit', async t => {
