@@ -64,6 +64,11 @@ export function createCombatEvents() {
         const style = data.style ?? 'default';
         if (!EXPLOSION_STYLES.includes(style)) throw new RangeError('Invalid explosion style');
         payload = { source, position: point(data.position), sound: data.sound, radius: data.radius ?? 7, style };
+        if (data.surface != null) {
+          if (!['stone', 'soil', 'wood', 'generic'].includes(data.surface.kind) ||
+            !data.surface.normal || Math.hypot(data.surface.normal.x, data.surface.normal.y, data.surface.normal.z) < .001) throw new RangeError('Invalid explosion surface');
+          payload.surface = Object.freeze({ kind: data.surface.kind, normal: point(data.surface.normal) });
+        }
       } else if (type === 'damage') {
         if (!Number.isFinite(data.amount) || data.amount <= 0 || !Number.isFinite(data.health) || data.health < 0 ||
           (data.observerId != null && (typeof data.observerId !== 'string' || !data.observerId))) throw new RangeError('Invalid applied damage feedback');

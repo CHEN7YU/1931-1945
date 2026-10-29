@@ -163,3 +163,19 @@ test('one soldier switches between charge, quick short steps and aimed slow move
   const wrapped = sampleNraMotion(person);
   assert.ok(wrapped.runPhase >= 0 && wrapped.runPhase < 1 && wrapped.walkPhase >= 0 && wrapped.walkPhase < 1);
 });
+
+test('fast actual movement cannot retain an upright walk even when its mode label lags behind', () => {
+  const person = actor();
+  person.nativeMotion = createNraMotion({ ...createNativeGaitProfile(data.motion.idle), leanPivot: [0, 1, 0] }, person);
+  person.locomotion = { mode: 'walk', speed: 4.8 };
+  for (let frame = 0; frame < 120; frame++) {
+    person.position.z -= 4.8 / 60; advanceNraMotion(person, 1 / 60);
+  }
+  const fast = sampleNraMotion(person);
+  assert.equal(fast.travelStyle, 'charge');
+  assert.ok(fast.bodyLean >= .49 && fast.bodyLean <= .6);
+  assert.ok(fast.hipDrop > .13);
+  person.locomotion = { mode: 'walk', speed: 0 };
+  for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
+  assert.ok(sampleNraMotion(person).bodyLean < .001);
+});

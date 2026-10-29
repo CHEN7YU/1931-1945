@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNraMotion, sampleNraMotion, syncNativeAimGoal, nativeGaitParameters } from './nra-motion.js';
+import { createNraMotion, sampleNraMotion, syncNativeAimGoal, nativeGaitParameters, nativeTravelLean } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
@@ -98,7 +98,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.nativeMotion.gaitCharge = mode === 'charge' ? 1 : 0;
     sampleActor.nativeMotion.gaitAim = mode === 'aim' ? 1 : 0;
     sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
-    sampleActor.nativeMotion.bodyLean = mode === 'charge' ? .34 : ['short', 'run'].includes(mode) ? .21 : mode === 'walk' ? .075 : mode === 'aim' ? .045 : 0;
+    sampleActor.nativeMotion.bodyLean = mode === 'idle' ? 0 : nativeTravelLean(sampleActor.nativeMotion);
     const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
       (gait ? gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog : mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);

@@ -25,6 +25,16 @@ const validPosition = position => position && ['x', 'y', 'z'].every(axis => Numb
 const cycleFraction = phase => ((phase % 1) + 1) % 1;
 const eyeSamples = new WeakMap();
 
+const smoothSpeed = (speed, start, end) => {
+  const t = Math.max(0, Math.min(1, (speed - start) / (end - start)));
+  return t * t * (3 - 2 * t);
+};
+
+export function nativeTravelLean(motion) {
+  const jog = smoothSpeed(motion.speed, 1.5, 3.3), fast = smoothSpeed(motion.speed, 3.2, 4.8);
+  return (.045 + (motion.runLean * 1.5 - .045) * jog + .17 * fast) * (1 - .82 * motion.gaitAim);
+}
+
 export function nativeGaitParameters(motion) {
   const { profile } = motion;
   const charge = motion.gaitCharge, aimed = motion.gaitAim;
@@ -55,7 +65,7 @@ export function nativeGaitDrop(actor) {
   const flightTime = gait.runStride * (.5 - gait.runContact) / Math.max(2.1, motion.speed);
   const rise = Math.min(.04, 9.81 * flightTime * flightTime / 8) * Math.sin(Math.PI * flight) ** 2;
   const walkDrop = (.09 - .02 * gait.aimed) + .005 * (1 - .7 * gait.aimed) * Math.sin(phase * Math.PI * 4);
-  const drop = walkDrop * (1 - gait.jog) + (.105 - rise) * gait.jog;
+  const drop = walkDrop * (1 - gait.jog) + (.13 + .045 * smoothSpeed(motion.speed, 3.2, 4.8) - rise) * gait.jog;
   return drop * motion.weight * upright;
 }
 
@@ -130,7 +140,7 @@ export function advanceNraMotion(actor, dt) {
   motion.speed += (actor.locomotion.speed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
   const pace = actor.locomotion.mode;
-  motion.gaitCharge += ((pace === 'sprint' ? 1 : 0) - motion.gaitCharge) * (1 - Math.exp(-dt / .22));
+  motion.gaitCharge += ((smoothSpeed(motion.speed, 3.2, 4.8) * (1 - motion.gaitAim)) - motion.gaitCharge) * (1 - Math.exp(-dt / .22));
   motion.gaitAim += ((actor.aimWalking || pace === 'aim' ? 1 : 0) - motion.gaitAim) * (1 - Math.exp(-dt / .18));
   if (motion.profile.footCycleGait) {
     const afterGait = nativeGaitParameters(motion);
@@ -144,7 +154,7 @@ export function advanceNraMotion(actor, dt) {
     if (motion.lowReady > .999) motion.lowReady = 1;
   }
   const leanTarget = !motion.profile.leanPivot ? 0 : actor.locomotion.speed > .2
-    ? motion.runLean * (pace === 'walk' ? .3 : (.85 + .55 * motion.gaitCharge) * (1 - .8 * motion.gaitAim))
+    ? nativeTravelLean(motion)
     : actor.tactics?.lastSeen ? motion.fireLean : 0;
   motion.bodyLean += (leanTarget - motion.bodyLean) * (1 - Math.exp(-dt / .18));
   const target = motion.speed > .15 ? 1 : 0;

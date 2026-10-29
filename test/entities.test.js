@@ -171,7 +171,7 @@ test('tank aiming belongs to the original vehicle while foot pitch belongs to it
   assert.equal(actors[0].lookPitch, 0);
   assert.equal(pose.eyeHeight, 1.88);
   selectControlledSoldier(world, actors[1]);
-  assert.equal(pose.eyeHeight, 1.72);
+  assert.equal(pose.eyeHeight, TANK_OBSERVATION.gunner.eyeHeight);
   assert.equal(pose.pitch, -.6);
   selectControlledSoldier(world, actors[2]);
   assert.equal(pose.eyeHeight, 1.3);

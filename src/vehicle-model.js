@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TANK_GUN_MOUNT } from './player-tank.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 
@@ -202,12 +203,13 @@ function tankTemplate() {
   tube(gun, materials.steel, [-.08, 0, -.05], [-.08, 0, -.42], .09);
   tube(gun, materials.steel, [-.08, 0, -.4], [-.08, 0, -1.12], .047);
   mesh(gun, disk, materials.dark, [-.08, 0, -1.122], [.027, .027, 1]).rotation.y = Math.PI;
-  tube(gun, materials.steel, [.19, .035, -.08], [.19, .035, -.55], .025);
+  tube(gun, materials.steel, [TANK_GUN_MOUNT.coax[0], TANK_GUN_MOUNT.coax[1], -.08], TANK_GUN_MOUNT.coax, .025);
   batch(hull); batch(turret); batch(gun);
-  turret.name = 'turret'; turret.position.set(-.3, 1.36, -.38);
-  gun.name = 'gun'; gun.position.set(0, .37, -.62);
-  const coax = new THREE.Object3D(); coax.name = 'coax-muzzle'; coax.position.set(.19, .035, -.55); gun.add(coax);
-  const cannon = new THREE.Object3D(); cannon.name = 'cannon-muzzle'; cannon.position.set(-.08, 0, -1.122); gun.add(cannon);
+  turret.name = 'turret'; turret.position.fromArray(TANK_GUN_MOUNT.turret);
+  gun.name = 'gun'; gun.position.fromArray(TANK_GUN_MOUNT.pivot);
+  const coax = new THREE.Object3D(); coax.name = 'coax-muzzle'; coax.position.fromArray(TANK_GUN_MOUNT.coax); gun.add(coax);
+  const cannon = new THREE.Object3D(); cannon.name = 'cannon-muzzle'; cannon.position.fromArray(TANK_GUN_MOUNT.cannon); gun.add(cannon);
+  const sight = new THREE.Object3D(); sight.name = 'gunner-sight'; sight.position.fromArray(TANK_GUN_MOUNT.sight); gun.add(sight);
   turret.add(gun); hull.add(turret);
   return hull;
 }

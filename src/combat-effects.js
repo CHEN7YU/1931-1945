@@ -51,22 +51,28 @@ export function createCombatEffects(scene, camera, groundHeight) {
   gradient.addColorStop(0, 'rgba(255,255,255,.55)'); gradient.addColorStop(.35, 'rgba(255,255,255,.3)'); gradient.addColorStop(1, 'rgba(255,255,255,0)');
   context.fillStyle = gradient; context.fillRect(0, 0, 128, 128);
   const texture = new THREE.CanvasTexture(canvas);
-  const blastPixels = new Uint8Array(128 * 128 * 4), firePixels = new Uint8Array(128 * 128 * 4);
-  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
-    const nx = (x - 63.5) / 64, ny = (y - 63.5) / 64, r = Math.hypot(nx, ny);
+  const blastSize = 256, blastPixels = new Uint8Array(blastSize * blastSize * 4), firePixels = new Uint8Array(blastSize * blastSize * 4);
+  const shellPixels = new Uint8Array(blastSize * blastSize * 4);
+  for (let y = 0; y < blastSize; y++) for (let x = 0; x < blastSize; x++) {
+    const sx = x * 128 / blastSize, sy = y * 128 / blastSize;
+    const nx = (x + .5 - blastSize / 2) / (blastSize / 2), ny = (y + .5 - blastSize / 2) / (blastSize / 2), r = Math.hypot(nx, ny);
     const lobes = .10 * Math.sin(Math.atan2(ny, nx) * 7 + .7) + .05 * Math.sin(Math.atan2(ny, nx) * 11);
-    const noise = .45 + .35 * cloudNoise(x * .06, y * .06) +
-      .18 * cloudNoise(x * .13 + 19, y * .13) + .12 * cloudNoise(x * .27, y * .27 + 31);
+    const noise = .45 + .35 * cloudNoise(sx * .06, sy * .06) +
+      .18 * cloudNoise(sx * .13 + 19, sy * .13) + .12 * cloudNoise(sx * .27, sy * .27 + 31) +
+      .04 * cloudNoise(sx * .57 + 47, sy * .57);
     const edge = Math.max(0, Math.min(1, (.98 - r) * 8));
     const density = Math.max(0, Math.min(1, (1 + lobes - r) * 3)) * noise * edge;
-    const i = (y * 128 + x) * 4, shade = 190 + Math.round(noise * 55);
+    const i = (y * blastSize + x) * 4, shade = Math.min(255, 190 + Math.round(noise * 55));
     blastPixels.set([shade, shade, shade, Math.round(density * 195)], i);
-    const heat = Math.max(0, 1 - r * 1.5) * noise;
+    shellPixels.set([shade, shade, shade, Math.min(255, Math.round(Math.max(0, density) ** .7 * 245))], i);
+    const heat = Math.max(0, Math.min(1, (1 - r * 1.5) * noise));
     firePixels.set([255, Math.round(95 + heat * 160), Math.round(12 + heat * 200), Math.round(density * 220)], i);
   }
-  const blastTexture = new THREE.DataTexture(blastPixels, 128, 128);
+  const blastTexture = new THREE.DataTexture(blastPixels, blastSize, blastSize);
   blastTexture.magFilter = THREE.LinearFilter; blastTexture.needsUpdate = true;
-  const fireTexture = new THREE.DataTexture(firePixels, 128, 128);
+  const shellTexture = new THREE.DataTexture(shellPixels, blastSize, blastSize);
+  shellTexture.magFilter = THREE.LinearFilter; shellTexture.needsUpdate = true;
+  const fireTexture = new THREE.DataTexture(firePixels, blastSize, blastSize);
   fireTexture.magFilter = THREE.LinearFilter; fireTexture.needsUpdate = true;
   const tankFire = createTankFireEffects(scene, camera, blastTexture);
   const clouds = Array.from({ length: PARTICLE_LIMITS.clouds }, () => {
@@ -83,7 +89,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     const light = new THREE.PointLight(0xffc68b, 0, 3, 2);
     light.castShadow = false; light.visible = false; scene.add(light); return light;
   });
-  let settings = null, lastImpact = null;
+  let settings = null, lastImpact = null, lastExplosion = null;
   const display = () => {
     fragments.count = state.fragments.length;
     state.fragments.forEach((particle, index) => {
@@ -103,19 +109,24 @@ export function createCombatEffects(scene, camera, groundHeight) {
       if (!cloud) return;
       const t = cloud.age / cloud.life;
       if (shockwave) {
-        wave.position.set(cloud.x, groundHeight(cloud.x, cloud.z) + .06, cloud.z);
+        wave.position.set(cloud.x, cloud.normal ? cloud.y : groundHeight(cloud.x, cloud.z) + .06, cloud.z);
+        if (cloud.normal) wave.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(cloud.normal.x, cloud.normal.y, cloud.normal.z));
+        else wave.rotation.set(-Math.PI / 2, 0, 0);
         wave.scale.setScalar(cloud.size * (.25 + t * 1.8));
-        wave.material.opacity = .36 * (1 - t) ** 2;
+        wave.material.opacity = (cloud.baseOpacity ?? .36) * (1 - t) ** 2;
         return;
       }
       const blast = cloud.kind.startsWith('blast-');
+      const shell = blast && cloud.style === 'tank-shell';
       const fire = cloud.kind === 'blast-fire', smoke = cloud.kind === 'blast-smoke' || cloud.kind === 'blast-soot';
-      sprite.material.map = fire ? fireTexture : blast ? blastTexture : texture;
+      sprite.material.map = fire ? fireTexture : shell ? shellTexture : blast ? blastTexture : texture;
       sprite.position.set(cloud.x, cloud.y, cloud.z);
       sprite.scale.set(cloud.size * (1 + t * (fire ? 1.3 : blast ? 3.2 : 2)),
         cloud.size * (1 + t * (fire ? 1.7 : cloud.kind === 'blast-dust' ? 1.1 : 2.4)), 1);
       sprite.material.color.setHex(colors[cloud.kind]);
-      sprite.material.opacity = (blast ? .62 : .28) * (1 - t) * (smoke ? Math.min(1, .2 + t * 7) : 1);
+      if (shell && smoke) sprite.material.color.setHex(0x454239);
+      sprite.material.opacity = (shell ? .96 : blast ? .62 : .28) * (1 - t) * (smoke ? Math.min(1, (shell ? .35 : .2) + t * 7) : 1);
       const flash = cloud.kind === 'muzzle' && cloud.age < .05 || cloud.kind === 'blast-flash';
       sprite.material.blending = flash || fire ? THREE.AdditiveBlending : THREE.NormalBlending;
       if (flash) { sprite.material.color.setHex(cloud.kind === 'muzzle' ? 0xffdfa0 : 0xffc575); sprite.material.opacity = .85 * (1 - t); }
@@ -167,9 +178,13 @@ export function createCombatEffects(scene, camera, groundHeight) {
       lastImpact = { kind: impact.kind, position: position.toArray(), normal: normal.toArray() };
       emit(position, normal, impact.kind, time);
     },
-    explosion(position, time, radius = 7, style = 'default') {
-      if (!settings.effects.hitParticles || camera.position.distanceTo(position) > 140) return;
-      emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style });
+    explosion(position, time, radius = 7, style = 'default', surface = null) {
+      const visible = settings.effects.hitParticles && camera.position.distanceTo(position) <= (style === 'tank-shell' ? 200 : 140);
+      lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
+        surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };
+      if (!visible) return;
+      emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style,
+        ...(surface ? { material: surface.kind, normal: surface.normal } : {}) });
       display();
     },
     update(dt, time, vehicles = []) {
@@ -177,13 +192,17 @@ export function createCombatEffects(scene, camera, groundHeight) {
       tankFire.update(vehicles, time);
       display();
     },
-    clear() { clearCombatParticles(state); tankFire.clear(); lastImpact = null; display(); },
+    clear() { clearCombatParticles(state); tankFire.clear(); lastImpact = lastExplosion = null; display(); },
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length + waves.filter(mesh => mesh.visible).length,
         blastClouds: state.clouds.filter(cloud => cloud.kind.startsWith('blast-')).length,
         fireClouds: state.clouds.filter(cloud => cloud.kind === 'blast-fire').length,
         sootClouds: state.clouds.filter(cloud => cloud.kind === 'blast-soot').length,
+        shellClouds: state.clouds.filter(cloud => cloud.kind.startsWith('blast-') && cloud.style === 'tank-shell').length,
+        lastExplosion: lastExplosion ? { ...lastExplosion, position: [...lastExplosion.position],
+          projected: new THREE.Vector3(...lastExplosion.position).project(camera).toArray(),
+          surface: lastExplosion.surface ? { kind: lastExplosion.surface.kind, normal: { ...lastExplosion.surface.normal } } : null } : null,
         shockwaves: waves.filter(mesh => mesh.visible).length,
         tankFire: tankFire.snapshot,
         visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
