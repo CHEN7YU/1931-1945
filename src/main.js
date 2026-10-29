@@ -14,7 +14,7 @@ import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle
 import { createWeaponHands } from './weapon-hands.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
+  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement, followGuardAction } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight, configureSunShadow } from './lighting.js';
@@ -61,7 +61,7 @@ import { CORPSE_RULES, createCasualtyState, expiredCorpses, placeCasualty } from
 import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
-import { infantrySteering } from './infantry-spacing.js';
+import { infantrySteering, advanceInfantryPath } from './infantry-spacing.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription } from './battle-units.js';
 import { chooseAIThrowable, planAIThrow } from './ai-throwables.js';
@@ -210,6 +210,8 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
   }
 }
 const actorGrid = new SpatialGrid();
+const trafficGrid = new SpatialGrid();
+const trafficReservations = new Map();
 const soldierHits = createSoldierHitSystem((actor, now) => {
   const character = actor.friendly ? nraCharacter : ijaCharacter;
   if (!character) throw new Error('Native soldier has no anatomical pose factory');
@@ -976,7 +978,7 @@ function beginMatch() {
   enemies = [];
   allies = [];
   friendlyAI = []; friendlyForces = []; allForces = [];
-  pathRequests.clear(); aiCursor = 0;
+  pathRequests.clear(); trafficReservations.clear(); trafficGrid.clear(); aiCursor = 0;
   resetSpawns();
   pendingSquad = pendingSpawn = null;
   objectives = makeObjectives();
@@ -2337,7 +2339,8 @@ function squadCommand(follow) {
     actor.orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
       { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100) }, world.town.buildings);
     actor.orderObjectiveId = attack && !follow ? objective.id : null;
-    actor.path = null;
+    actor.path = actor.pathGoal = null; pathRequests.delete(actor.tactics.id);
+    actor.tactics.traffic = actor.tactics.followGuard = null;
     actor.tactics.decisionAt = 0;
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.tactics.cover = null;
@@ -2399,8 +2402,15 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     pathRequests.set(actor.tactics.id, { actor, target: { ...target }, requestedAt: pathRequests.get(actor.tactics.id)?.requestedAt ?? time });
   }
   if (!actor.path) return;
-  while (actor.path.length && Math.hypot(actor.path[0].x - pos.x, actor.path[0].z - pos.z) < .1) actor.path.shift();
-  const waypoint = actor.path[0];
+  const waypoint = advanceInfantryPath(pos, actor.path, point => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(point.x - pos.x, point.z - pos.z) / .2));
+    for (let step = 1; step <= steps; step++) {
+      const x = pos.x + (point.x - pos.x) * step / steps, z = pos.z + (point.z - pos.z) * step / steps;
+      if (circleBlocked(x, z, .46, movementObstacles(x, z), pos.y) ||
+        Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3) return false;
+    }
+    return true;
+  });
   if (!waypoint) return;
   const waitingDoor = pos.y < 1 ? world.doorSystem.openAhead(pos, waypoint) : null;
   if (waitingDoor) {
@@ -2438,13 +2448,15 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   sprint = pace === 'sprint';
   speed = Math.hypot(target.x - pos.x, target.z - pos.z) > 1.3 ? profile[pace] : Math.min(speed, profile[pace]);
   const inCaptureArea = objectives.some(point => Math.hypot(pos.x - point.x, pos.z - point.z) < point.radius);
-  const steering = infantrySteering(actor, actorGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
+  const steering = infantrySteering(actor, trafficGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
     spacing: inCaptureArea ? 1.45 : 2.2, constrained: space.constrained,
+    dt, now: time, reservations: trafficReservations,
     blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), pos.y),
   });
   speed *= steering.speed;
   actor.tactics.blockedBy = steering.waitingFor;
   if (speed < .05) {
+    actor.stuckTime = (actor.stuckTime || 0) + dt;
     actor.tactics.mode = 'wait-for-spacing'; actor.locomotion.mode = 'idle';
     return;
   }
@@ -2468,8 +2480,6 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
-    const side = actor.index % 2 ? -1 : 1;
-    moveInfantry(pos, -dz / distance * step * side, dx / distance * step * side, .42, obstacles);
   } else actor.stuckTime = 0;
   settleActorSupport(actor);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
@@ -2815,9 +2825,17 @@ function tryAIBayonet(actor, target, dt) {
     targetAimPoint(target), limit + 2));
   if (!visible) { cancelBayonet(actor.bayonet); return false; }
   actor.stance = 'standing'; actor.firingPose = null;
-  const turn = advanceAITurn(actor, Math.atan2(actor.position.x - target.position.x, actor.position.z - target.position.z), dt, true);
+  const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
+  const targetHeading = Math.atan2(-dx, -dz);
+  const steering = distance > BAYONET.reach ? infantrySteering(actor,
+    trafficGrid.near(position.x, position.z, 3.2).filter(other => other.id !== target.id),
+    { x: dx, z: dz }, { spacing: 1, constrained: false,
+      dt, now: time, reservations: trafficReservations,
+      blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) }) : null;
+  const turn = advanceAITurn(actor, steering ? Math.atan2(-steering.x, -steering.z) : targetHeading, dt, true);
   actor.turningThisStep = true;
-  const action = advanceBayonet(actor, target, { now: time, visible, facing: turn.facing, settled: postureReady(actor) });
+  const action = advanceBayonet(actor, target, { now: time, visible,
+    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) });
   if (!action.active) return false;
   resetAIRifleAim(actor.aiRifle, 'bayonet');
   actor.rifleReady = false; actor.buildProgress = 0;
@@ -2827,12 +2845,8 @@ function tryAIBayonet(actor, target, dt) {
   actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
   tactics.mode = `bayonet-${actor.bayonet.mode}`;
   if (action.hit) hurt(target, BAYONET.damage, captureAttackSource(entities, actor, actor.rifle), 'bayonet');
-  if (actor.bayonet.mode !== 'charge' || !turn.mayMove || !postureReady(actor)) return true;
-  const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
+  if (actor.bayonet.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
   const obstacles = movementObstacles(position.x, position.z);
-  const steering = infantrySteering(actor, actorGrid.near(position.x, position.z, 3.2).filter(other => other !== target),
-    { x: dx, z: dz }, { spacing: 1, constrained: false,
-      blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) });
   const profile = FOOT_SPEEDS[actor.groundType];
   const sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
   const speed = sprint ? profile.sprint : profile.jog;
@@ -2874,6 +2888,19 @@ function updateAI(dt) {
     assaultAssignmentAt = time + 5;
   }
   actorGrid.rebuild(allForces);
+  trafficReservations.clear();
+  trafficGrid.rebuild(allForces.map(actor => {
+    const previous = actor.tactics.trafficPosition;
+    const waypoint = actor.path?.[0], dx = waypoint ? waypoint.x - actor.position.x : 0,
+      dz = waypoint ? waypoint.z - actor.position.z : 0, length = Math.hypot(dx, dz);
+    const snapshot = { id: actor.id, health: actor.health, vehicleId: actor.vehicleId,
+      position: { x: actor.position.x, y: actor.position.y, z: actor.position.z }, heading: actor.heading,
+      tactics: { id: actor.tactics.id }, locomotion: { speed: actor.locomotion.speed },
+      velocity: previous && dt > 0 ? { x: (actor.position.x - previous.x) / dt, z: (actor.position.z - previous.z) / dt } : { x: 0, z: 0 },
+      intent: length > .01 ? { x: dx / length, z: dz / length } : null };
+    actor.tactics.trafficPosition = { x: actor.position.x, z: actor.position.z };
+    return snapshot;
+  }));
   sensorBudget = 12; coverBudget = 1; postureBudget = 4;
   let completedPaths = 0;
   for (const [id, request] of pathRequests) {
@@ -2881,6 +2908,7 @@ function updateAI(dt) {
     if (request.actor.health <= 0 || request.actor === player) continue;
     const pathStarted = benchmark ? performance.now() : 0;
     request.actor.path = multistoryPath(request.actor.position, request.target, world.town.buildings, navigate);
+    request.actor.tactics.pathReason = request.actor.path.length ? 'ready' : navigate.stats.reason;
     if (benchmark) telemetry.add('pathMs', performance.now() - pathStarted);
     request.actor.pathGoal = request.target;
     request.actor.nextPath = time + (request.actor.path.length ? 1.8 : 3);
@@ -2899,8 +2927,12 @@ function updateAI(dt) {
   for (let index = 0; index < allForces.length; index++) {
     const actor = allForces[(index + aiCursor) % allForces.length];
     if (actor.health <= 0) continue;
-    if (actor === player) { resetAIRifleAim(actor.aiRifle, 'controlled'); continue; }
+    if (actor === player) {
+      actor.tactics.traffic = actor.tactics.followGuard = null;
+      resetAIRifleAim(actor.aiRifle, 'controlled'); continue;
+    }
     if (actor.traversal.kind !== 'grounded') {
+      actor.tactics.traffic = actor.tactics.followGuard = null;
       resetAIRifleAim(actor.aiRifle, 'traversing');
       actor.rifleReady = false;
       continue;
@@ -2909,6 +2941,7 @@ function updateAI(dt) {
     actor.aimWalking = false;
     actor.rifleReady = false; actor.turningThisStep = false;
     const tactics = actor.tactics, previousCover = tactics.cover;
+    if (actor.order !== 'follow' || tactics.lastSeen) tactics.followGuard = null;
     if (expireThreat(tactics, time)) {
       actor.target = null;
       actor.path = actor.pathGoal = null;
@@ -2917,7 +2950,10 @@ function updateAI(dt) {
       tactics.shotMoveGoal = null; tactics.shotMovePending = false; tactics.wallContact = null;
       if (previousCover) coverClaims.delete(previousCover.id);
     }
-    if (actor.vehicleId) { cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
+    if (actor.vehicleId) {
+      tactics.traffic = tactics.followGuard = null;
+      cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
+    }
     if (actor.grenades.action) {
       cancelBayonet(actor.bayonet);
       const action = actor.grenades.action;
@@ -2954,7 +2990,7 @@ function updateAI(dt) {
         continue;
       }
     }
-    if (actor.nativeMotion && !tactics.lastSeen && actor.firingPose) { actor.stance = 'standing'; actor.firingPose = null; }
+    if (actor.nativeMotion && !tactics.lastSeen && actor.firingPose && tactics.mode !== 'guard') { actor.stance = 'standing'; actor.firingPose = null; }
     const position = actor.position;
     settleActorSupport(actor);
     if (actor.traversal.kind !== 'grounded') continue;
@@ -3103,11 +3139,25 @@ function updateAI(dt) {
         const goal = formationDestination(actor, objective);
         if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7) walkActor(actor, goal, 3, dt);
       } else {
-        const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
-        const goal = floorDestination(player.position,
-          { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
-            z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }, world.town.buildings);
-        if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65) walkActor(actor, goal, 3.5, dt);
+        const guard = followGuardAction(actor, player, assaultObjective);
+        if (guard) {
+          tactics.mode = 'guard';
+          actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
+          actor.turningToPath = false;
+          tactics.traffic = tactics.personalSlot = tactics.blockedBy = null;
+          if (tactics.cover) coverClaims.delete(tactics.cover.id);
+          tactics.cover = null; tactics.enteredCover = false;
+          const turn = advanceAITurn(actor, guard.heading, dt);
+          actor.stance = turn.facing ? guard.stance : 'standing';
+          actor.firingPose = actor.stance === 'crouched' ? 'crouched' : null;
+          actor.rifleReady = turn.facing && postureReady(actor) && actor.locomotion.aimRecovery === 0;
+        } else {
+          const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
+          const goal = floorDestination(player.position,
+            { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
+              z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }, world.town.buildings);
+          if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65) walkActor(actor, goal, 3.5, dt);
+        }
       }
     } else if (buildingRally) {
       tactics.mode = 'engineer';
@@ -3135,7 +3185,8 @@ function updateAI(dt) {
       const dx = position.x - other.position.x;
       const dz = position.z - other.position.z;
       const distance = Math.hypot(dx, dz);
-      const spacing = other === player ? 1.75 : actor.tactics.cover ? .92 : atObjective ? 1.1 : 1.45;
+      const walking = actor.turningThisStep || actor.path?.length || tactics.mode === 'wait-for-spacing';
+      const spacing = walking ? .9 : other === player ? 1.75 : tactics.mode === 'guard' ? 2.2 : actor.tactics.cover ? .92 : atObjective ? 1.1 : 1.45;
       if (distance < spacing) {
         const angle = distance > .01 ? Math.atan2(dz, dx) : tactics.id * 2;
         const push = Math.min(.06, (spacing - distance) * dt * 3);
@@ -3144,6 +3195,7 @@ function updateAI(dt) {
         if (actor.locomotion.speed < .1 && Math.hypot(position.x - beforeX, position.z - beforeZ) / dt > .1) {
           actor.locomotion.speed = Math.hypot(position.x - beforeX, position.z - beforeZ) / dt;
           actor.locomotion.mode = 'walk'; actor.rifleReady = false;
+          if (tactics.mode === 'guard') { actor.stance = 'standing'; actor.firingPose = null; }
         }
       }
     }
@@ -4041,6 +4093,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
     formationId: actor.formation.id, pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
+    pathWaypoint: actor.path?.[0] ? { ...actor.path[0] } : null, pathReason: actor.tactics.pathReason ?? null,
+    traffic: actor.tactics.traffic ? { waitSeconds: actor.tactics.traffic.waitSeconds,
+      reason: actor.tactics.traffic.reason, yieldPoint: actor.tactics.traffic.yieldPoint ? { ...actor.tactics.traffic.yieldPoint } : null } : null,
     heading: actor.heading, rifleReady: actor.rifleReady, lowReady: actor.nativeMotion?.lowReady ?? null,
     bodyLean: actor.nativeMotion?.bodyLean ?? null,
     turningToPath: Boolean(actor.turningToPath), lastHit: actor.lastHit ? { ...actor.lastHit } : null,
