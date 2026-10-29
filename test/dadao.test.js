@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DADAO, DADAO_GRIP, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase, selectDadaoTarget } from '../src/dadao.js';
+import { DADAO, DADAO_GRIP, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase,
+  dadaoStroke, dadaoSweepDirection, selectDadaoTarget } from '../src/dadao.js';
 import { DADAO_DIMENSIONS, dadaoModel, dadaoViewModel, updateDadaoView } from '../src/dadao-model.js';
 import { damageForTarget } from '../src/combat-targets.js';
 import { createBattleStats, attackCategory } from '../src/battle-stats.js';
@@ -71,11 +72,50 @@ test('a swing hits the nearest exposed enemy only, during the actual sweep, neve
   assert.equal(select(state, [victim]), null);
 });
 
-test('blade sweep reaches both sides without treating the whole forward cone as an instant hit', () => {
+test('blade sweep travels from high right to low left, not across a horizontal instant-hit cone', () => {
   for (const [x, progress] of [[.5, .15], [-.5, .85]]) {
     const state = swinging(), target = enemy('side', x);
-    assert.equal(select(state, [target], .4 + DADAO.windup + DADAO.active * progress), target);
-    assert.equal(select(state, [target], .4 + DADAO.windup + DADAO.active * (1 - progress)), null);
+    const now = .4 + DADAO.windup + DADAO.active * progress;
+    const point = candidate => ({ ...aimPoint(candidate), y: origin.y + x });
+    const hit = (at, aim = point) => selectDadaoTarget(state, at, actor, origin, forward, [target], aim, () => true);
+    assert.equal(hit(now), target);
+    assert.equal(hit(.4 + DADAO.windup + DADAO.active * (1 - progress)), null);
+    assert.equal(hit(now, candidate => ({ ...point(candidate), y: origin.y - x })), null, 'opposite diagonal is outside the blade');
+  }
+});
+
+test('strike direction follows the same eased 45-degree stroke under yaw and pitch', () => {
+  for (const yaw of [0, .8, -2]) for (const pitch of [-.65, 0, .65]) {
+    const facing = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+    const right = { x: Math.cos(yaw), y: 0, z: -Math.sin(yaw) };
+    const up = { x: Math.sin(yaw) * Math.sin(pitch), y: Math.cos(pitch), z: Math.cos(yaw) * Math.sin(pitch) };
+    let previousSide = Infinity, previousHeight = Infinity;
+    for (let frame = 0; frame <= 100; frame++) {
+      const direction = dadaoSweepDirection(frame / 100, facing);
+      const side = direction.x * right.x + direction.z * right.z;
+      const height = direction.x * up.x + direction.y * up.y + direction.z * up.z;
+      assert.ok(Math.abs(Math.hypot(direction.x, direction.y, direction.z) - 1) < 1e-12);
+      assert.ok(Math.abs(side - height) < 1e-12, 'stroke lies in the diagonal plane of the current view');
+      assert.ok(side <= previousSide && height <= previousHeight);
+      previousSide = side; previousHeight = height;
+      if (frame === 50) for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(direction[axis] - facing[axis]) < 1e-12);
+    }
+  }
+  assert.equal(dadaoSweepDirection(.5, { x: 0, y: 1, z: 0 }), null);
+  assert.deepEqual(dadaoStroke({ phase: 'windup', progress: 1 }), dadaoStroke({ phase: 'cut', progress: 0 }));
+  assert.deepEqual(dadaoStroke({ phase: 'recover', progress: 1 }), dadaoStroke({ phase: 'ready', progress: 0 }));
+});
+
+test('pitched and rotated strikes hit their current diagonal sample, not the opposite height', () => {
+  for (const yaw of [0, .8, -2]) for (const pitch of [-.65, 0, .65]) for (const progress of [.15, .85]) {
+    const facing = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+    const direction = dadaoSweepDirection(progress, facing);
+    const point = { x: origin.x + direction.x * 1.3, y: origin.y + direction.y * 1.3, z: origin.z + direction.z * 1.3 };
+    const target = enemy('diagonal', point.x, point.z), state = swinging();
+    const now = .4 + DADAO.windup + DADAO.active * progress;
+    const hit = aim => selectDadaoTarget(state, now, actor, origin, facing, [target], aim, () => true);
+    assert.equal(hit(() => point), target);
+    assert.equal(hit(() => ({ ...point, y: point.y + (progress < .5 ? -1.4 : 1.4) })), null);
   }
 });
 

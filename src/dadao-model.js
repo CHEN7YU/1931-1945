@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { grenadeHand, poseGrenadeHand, grenadeSleeve, alignGrenadeSleeve } from './grenade-model.js';
 import { createStudySurface } from './uniform-surfaces.js';
 import { dadaoSurfaces, DADAO_ART_ROOT, DADAO_CLOTH_TILE_METERS } from './dadao-surface.js';
-import { DADAO_GRIP } from './dadao.js';
+import { DADAO, DADAO_GRIP, dadaoStroke } from './dadao.js';
 
 export const DADAO_DIMENSIONS = Object.freeze({ bladeLength: .575, maxWidth: .093, gripLength: DADAO_GRIP.length,
   spineThickness: .006, edgeThickness: .00025, gripCenter: DADAO_GRIP.centerY });
@@ -11,7 +11,22 @@ const bladeProfile = [
   [.51, -.014, .079], [.555, .005, .083], [.595, .055, .074], [.62, .071, .071],
 ];
 let template;
-const views = new Map(), handToBlade = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -.6, Math.PI / 2, 'YXZ'));
+const views = new Map(), gripRoll = 3.8;
+const handToBlade = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gripRoll, Math.PI / 2, 'YXZ'));
+// Preserve the carry fist orientation without changing the grip during the stroke.
+const carryGrip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -.6 - gripRoll);
+// Wrist travel and blade rotation share a plane, preventing a face-first slap.
+const cutDown = new THREE.Vector3(-1, -DADAO.diagonalSlope, 0).normalize();
+const cutNormal = new THREE.Vector3(DADAO.diagonalSlope, -1, 0).normalize().setZ(-1.2).normalize();
+const cutForward = new THREE.Vector3().crossVectors(cutNormal, cutDown);
+
+function chopRotation(angle) {
+  const axis = cutDown.clone().multiplyScalar(Math.sin(angle)).addScaledVector(cutForward, Math.cos(angle));
+  const edge = cutDown.clone().multiplyScalar(Math.cos(angle)).addScaledVector(cutForward, -Math.sin(angle));
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(edge, axis, cutNormal));
+}
+
+const raisedRotation = chopRotation(-1.2), followRotation = chopRotation(1.6);
 
 export function dadaoBladeGeometry() {
   const positions = [], uv = [], indices = [], sections = [];
@@ -136,14 +151,12 @@ export function dadaoViewModel(createHand = null) {
 
 export function updateDadaoView(root, pose, motion, camera = null) {
   const blade = root.userData.dadaoHand, hand = root.userData.dadaoArm;
-  const wind = pose.phase === 'windup' ? Math.sin(pose.progress * Math.PI / 2)
-    : pose.phase === 'cut' ? 1 - pose.progress : 0;
-  const cut = pose.phase === 'cut' ? Math.sin(pose.progress * Math.PI / 2)
-    : pose.phase === 'recover' ? 1 - pose.progress : 0;
+  const { raise, cut } = dadaoStroke(pose);
   const draw = pose.phase === 'draw' ? 1 - pose.progress : 0;
   const aspect = camera?.aspect ?? 1.6, narrow = THREE.MathUtils.clamp((1.1 - aspect) / .75, 0, 1);
-  const carry = new THREE.Vector3(.23, -.16, -.50 + narrow * .04);
-  const carryRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30 + narrow * .12));
+  const viewDepth = .15, armDepth = narrow * .14;
+  const carry = new THREE.Vector3(.23, -.16, -.50 - viewDepth + narrow * .04);
+  const carryRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30 + narrow * .12)).multiply(carryGrip);
   const tangent = Math.tan(THREE.MathUtils.degToRad((camera?.fov ?? 72) / 2));
   let left = -Infinity, right = Infinity;
   for (const x of [-.09, .12]) for (const y of [-.225, .62]) for (const z of [-.03, .03]) {
@@ -152,18 +165,20 @@ export function updateDadaoView(root, pose, motion, camera = null) {
     left = Math.max(left, -limit - point.x); right = Math.min(right, limit - point.x);
   }
   carry.x = left <= right ? THREE.MathUtils.clamp(carry.x, left, right) : (left + right) / 2;
-  const position = carry.add(new THREE.Vector3(wind * .04 - cut * (.26 - narrow * .15) + motion.weaponX,
-    wind * .025 - cut * .06 - draw * .15 + motion.weaponY, wind * .08 + cut * .14 + draw * .12));
-  const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08 + wind * .25 - cut * .55,
-    -.28 - wind * .2 + cut * .65, -.30 + narrow * .12 - wind * .5 + cut * .9));
-  const handRotation = rotation.clone().multiply(handToBlade);
   const grip = new THREE.Vector3().fromArray(hand.userData.throwableGrips?.dadao ?? [-.012, .073, DADAO_GRIP.palmDepth]);
-  const wrist = new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(rotation).add(position)
-    .sub(grip.clone().applyQuaternion(handRotation));
-  const shoulder = new THREE.Vector3(.2, -.25, -.03);
-  // Choose the elbow plane behind the hand's forward axis, minimizing wrist flexion.
+  const carryHand = carryRotation.clone().multiply(handToBlade);
+  const wrist = new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(carryRotation).add(carry)
+    .sub(grip.clone().applyQuaternion(carryHand))
+    .lerp(new THREE.Vector3(.19, .01, -.40 - armDepth), raise)
+    .lerp(new THREE.Vector3(.05, -.13, -.40 - armDepth), cut);
+  const drawOffset = new THREE.Vector3(0, -draw * .15, draw * .12);
+  wrist.add(new THREE.Vector3(motion.weaponX, motion.weaponY, 0)).add(drawOffset);
+  const rotation = carryRotation.clone().slerp(raisedRotation, raise).slerp(followRotation, cut);
+  const handRotation = rotation.clone().multiply(handToBlade);
+  const shoulder = new THREE.Vector3(.25, -.28, -.44 - armDepth).add(drawOffset);
+  // Keep the right elbow outboard while the forearm rolls through the cut.
   const pole = new THREE.Vector3(0, -1, 0).applyQuaternion(handRotation)
-    .lerp(new THREE.Vector3(.7, -.3, .15), .35 * (1 - cut)).add(new THREE.Vector3(.1, -.02, .02));
+    .lerp(new THREE.Vector3(.7, -.3, .15), .35 * (1 - Math.max(raise, cut))).add(new THREE.Vector3(.3, -.02, .02));
   if (hand.poseArm) {
     hand.poseArm(shoulder, wrist, handRotation, pole);
     hand.poseGrip(1, 0, 'dadao');

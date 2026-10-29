@@ -25,7 +25,7 @@ source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y 
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
 
 test('dadao uses the authorized skin, reachable original arm bones and the actual solved wrist attachment', () => {
-  const view = dadaoViewModel(side => createNraGrenadeHand(source, side, { fullArm: true }));
+  const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
   const camera = new T.PerspectiveCamera(72, 1.6, .025, 20);
   camera.position.set(1, 2, 3); camera.rotation.set(.3, -.5, .2); camera.add(view); camera.updateMatrixWorld(true);
   const hand = view.userData.dadaoArm, sword = view.userData.dadaoHand, bones = [];
@@ -62,18 +62,27 @@ test('dadao fingers wrap back around the grip and the thumb opposes the curled i
   assert.ok(point('Thumb4').distanceTo(opposed) < .02, 'thumb pad closes across the curled upper fingers');
 });
 
-test('dadao carry shows the whole fist on wide and narrow viewports without a backwards-folded wrist', () => {
+test('dadao shows the whole carry fist and keeps its right elbow outboard without wrist folding or pole flips', () => {
   for (const aspect of [1.6, 450 / 1100, 360 / 1000]) {
-    const camera = new T.PerspectiveCamera(72, aspect, .07, 20), view = dadaoViewModel(side =>
-      createNraGrenadeHand(source, side, { fullArm: true }));
+    const camera = new T.PerspectiveCamera(72, aspect, .07, 20), view = dadaoViewModel((side, options) =>
+      createNraGrenadeHand(source, side, { fullArm: true, ...options }));
     camera.add(view); camera.updateMatrixWorld(true);
     const arm = view.userData.dadaoArm;
-    for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 20; frame++) {
-      updateDadaoView(view, { phase, progress: frame / 20 }, { weaponX: 0, weaponY: 0 }, camera);
+    let previousElbow = null;
+    for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 100; frame++) {
+      updateDadaoView(view, { phase, progress: frame / 100 }, { weaponX: 0, weaponY: 0 }, camera);
       assert.ok(arm.armSnapshot.reachable && arm.armSnapshot.error < 1e-6, `${aspect}/${phase}/${frame}: ${JSON.stringify(arm.armSnapshot)}`);
       const wrist = new T.Vector3(...arm.armSnapshot.wrist), elbow = new T.Vector3(...arm.armSnapshot.elbow);
+      if (previousElbow) assert.ok(elbow.distanceTo(previousElbow) < .025, `${aspect}/${phase}/${frame}: elbow snaps between IK solutions`);
+      previousElbow = elbow.clone();
+      assert.ok(elbow.z < -.12, `${aspect}/${phase}/${frame}: elbow approaches the camera near plane`);
       const forward = new T.Vector3(0, 1, 0).applyQuaternion(arm.attachmentFrame.getWorldQuaternion(new T.Quaternion()));
       assert.ok(wrist.clone().sub(elbow).normalize().dot(forward) > .65, `${aspect}/${phase}/${frame}: wrist flexes too far`);
+      if (['windup', 'cut', 'recover'].includes(phase)) {
+        assert.ok(elbow.x > wrist.x + .03, `${aspect}/${phase}/${frame}: right elbow folds inward across the grip`);
+        assert.ok(elbow.x / -elbow.z > wrist.x / -wrist.z + .025,
+          `${aspect}/${phase}/${frame}: elbow must appear to the right of the wrist, not just be farther away`);
+      }
       if (phase === 'ready') {
         for (const name of ['RightHand', ...['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'].flatMap(finger =>
           [1, 2, 3, 4].map(index => `RightHand${finger}${index}`))]) {
@@ -92,6 +101,133 @@ test('dadao carry shows the whole fist on wide and narrow viewports without a ba
         assert.ok(fistSpan / bladeSpan > .09 && fistSpan / bladeSpan < .23,
           `${aspect}: perspective makes the fist disproportionate to the blade (${fistSpan / bladeSpan})`);
       }
+    }
+  }
+});
+
+test('dadao keeps cropped native sleeve edges out of sight', () => {
+  const originals = new Map();
+  source.traverse(mesh => { if (mesh.isSkinnedMesh) originals.set(mesh.name, mesh.geometry); });
+  for (const aspect of [1.6, 450 / 1100, 360 / 1000]) {
+    const camera = new T.PerspectiveCamera(72, aspect, .07, 20);
+    const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
+    camera.add(view); camera.updateMatrixWorld(true);
+    const cuts = [], sleeves = [];
+    view.userData.dadaoArm.traverse(mesh => {
+      if (!mesh.isSkinnedMesh || !mesh.visible || !['衣服', '臂章'].includes(mesh.name)) return;
+      mesh.material = mesh.material.clone(); mesh.material.side = T.DoubleSide; sleeves.push(mesh);
+      const original = originals.get(mesh.name), geometry = mesh.geometry;
+      const key = index => new T.Vector3().fromBufferAttribute(geometry.attributes.position, index)
+        .toArray().map(value => value.toFixed(4)).join(',');
+      const retained = new Map([...geometry.index.array].map(index => [key(index), index]));
+      const triangles = new Set();
+      for (let at = 0; at < geometry.index.count; at += 3) {
+        triangles.add([0, 1, 2].map(corner => geometry.index.getX(at + corner)).join(','));
+      }
+      const boundary = new Set();
+      for (let at = 0; at < (original.index?.count ?? original.attributes.position.count); at += 3) {
+        const ids = [0, 1, 2].map(corner => original.index ? original.index.getX(at + corner) : at + corner);
+        if (triangles.has(ids.join(','))) continue;
+        for (const index of ids) if (retained.has(key(index))) boundary.add(retained.get(key(index)));
+      }
+      for (const index of boundary) cuts.push({ mesh, index });
+    });
+    assert.ok(cuts.length > 0, 'inspect actual cropped edges, not the original open wrist cuff');
+    let closest = { margin: Infinity };
+    for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 20; frame++) {
+      updateDadaoView(view, { phase, progress: frame / 20 }, { weaponX: 0, weaponY: 0 }, camera);
+      for (const sleeve of sleeves) {
+        sleeve.skeleton.update(); sleeve.computeBoundingSphere(); sleeve.computeBoundingBox();
+      }
+      for (const { mesh, index } of cuts) {
+        const world = mesh.localToWorld(mesh.getVertexPosition(index, new T.Vector3()));
+        const point = world.clone().project(camera), eye = camera.getWorldPosition(new T.Vector3());
+        const direction = world.sub(eye);
+        const ray = new T.Raycaster(eye, direction.clone().normalize(), camera.near, direction.length() - .002);
+        if (ray.intersectObjects(sleeves, false).length > 0) continue;
+        const margin = Math.max(Math.abs(point.x), Math.abs(point.y));
+        if (Math.abs(point.z) <= 1 && margin < closest.margin) {
+          closest = { margin, phase, frame, point: point.toArray(), mesh: mesh.name, index,
+            weights: [0, 1, 2, 3].map(slot => [
+              mesh.skeleton.bones[mesh.geometry.attributes.skinIndex.getComponent(index, slot)].name,
+              mesh.geometry.attributes.skinWeight.getComponent(index, slot)]) };
+        }
+      }
+    }
+    assert.ok(closest.margin > 1.02, `${aspect}: cropped sleeve edge enters the frame (${JSON.stringify(closest)})`);
+  }
+});
+
+test('the real blade cuts in its own plane, exposes curled fingers at the finish and has continuous phases', () => {
+  for (const aspect of [1.6, 450 / 1100, 360 / 1000]) {
+    const camera = new T.PerspectiveCamera(72, aspect, .07, 20), view = dadaoViewModel((side, options) =>
+      createNraGrenadeHand(source, side, { fullArm: true, ...options }));
+    camera.add(view); camera.updateMatrixWorld(true);
+    const blade = view.userData.dadaoHand, arm = view.userData.dadaoArm, motion = { weaponX: 0, weaponY: 0 };
+    const sleeves = [];
+    arm.traverse(node => {
+      if (!node.isSkinnedMesh || !node.visible || !['衣服', '臂章'].includes(node.name)) return;
+      node.material = node.material.clone();
+      node.material.side = T.DoubleSide;
+      sleeves.push(node);
+    });
+    assert.ok(sleeves.length > 0, 'test the retained sleeve, not an empty occluder list');
+    const pose = (phase, progress) => {
+      updateDadaoView(view, { phase, progress }, motion, camera);
+      return { tip: blade.localToWorld(new T.Vector3(.071, .62, 0)),
+        edgePoints: [.3, .45, .6].map(y => blade.localToWorld(new T.Vector3(.04, y, 0))),
+        elbow: new T.Vector3(...arm.armSnapshot.elbow),
+        rotation: blade.quaternion.clone() };
+    };
+    for (const [before, after] of [['draw', 'ready'], ['windup', 'cut'], ['cut', 'recover'], ['recover', 'ready']]) {
+      const end = pose(before, 1), start = pose(after, 0);
+      assert.ok(end.tip.distanceTo(start.tip) < 1e-6, `${aspect}/${before}: tip teleports at the phase boundary`);
+      assert.ok(end.elbow.distanceTo(start.elbow) < 1e-6, `${aspect}/${before}: elbow jumps at the phase boundary`);
+      const angle = end.rotation.normalize().angleTo(start.rotation.normalize());
+      assert.ok(angle < 1e-6, `${aspect}/${before}: wrist snaps at the phase boundary (${angle})`);
+    }
+    const raised = pose('cut', 0).tip, lowered = pose('cut', 1).tip;
+    assert.ok(raised.x - lowered.x > .5 && raised.y - lowered.y > .8, 'tip travels right-high to left-low, not horizontally');
+    for (const progress of [.7, .8, .9, 1]) {
+      pose('windup', progress);
+      assert.ok(new T.Vector3(1, 0, 0).applyQuaternion(blade.quaternion).z < -.35, 'raised cutting edge faces forward');
+    }
+    let crosshairDistance = Infinity;
+    for (let frame = 20; frame <= 80; frame++) {
+      const before = pose('cut', (frame - 1) / 100);
+      const current = pose('cut', frame / 100);
+      const edge = new T.Vector3(1, 0, 0).applyQuaternion(blade.quaternion);
+      const face = new T.Vector3(0, 0, 1).applyQuaternion(blade.quaternion);
+      for (const [section, point] of current.edgePoints.entries()) {
+        const velocity = point.clone().sub(before.edgePoints[section]).normalize();
+        assert.ok(edge.dot(velocity) > .9, `${aspect}/${frame}/${section}: blade edge must follow the cut, not merely have a positive component (${edge.dot(velocity)})`);
+        assert.ok(Math.abs(face.dot(velocity)) < .1, `${aspect}/${frame}/${section}: broad face leads a slap rather than a cut`);
+      }
+      for (let section = 0; frame >= 40 && frame <= 60 && section <= 20; section++) {
+        const point = blade.localToWorld(new T.Vector3(.04, .1 + .52 * section / 20, 0)).project(camera);
+        crosshairDistance = Math.min(crosshairDistance, Math.hypot(point.x * aspect, point.y));
+      }
+    }
+    assert.ok(crosshairDistance < .15, `${aspect}: visible blade misses the crosshair (${crosshairDistance})`);
+    const joint = name => arm.getObjectByName(`RightHand${name}`).getWorldPosition(new T.Vector3());
+    for (const progress of [0, .05, .1, .2]) {
+      pose('recover', progress);
+      for (const sleeve of sleeves) {
+        sleeve.skeleton.update();
+        sleeve.computeBoundingSphere(); sleeve.computeBoundingBox();
+      }
+      const wrist = joint(''), middle = joint('Middle1'), across = joint('Index1').sub(joint('Pinky1'));
+      const palm = across.cross(middle.clone().sub(wrist)).normalize();
+      const toEye = camera.getWorldPosition(new T.Vector3()).sub(wrist.clone().lerp(middle, .5)).normalize();
+      assert.ok(palm.dot(toEye) > .3, `${aspect}/${progress}: show the curled-finger side, not the back of the hand`);
+      assert.ok(new T.Vector3(1, 0, 0).applyQuaternion(blade.quaternion).z > .35, 'recovery cutting edge turns inward with the hand');
+      const visible = ['Index', 'Middle', 'Ring', 'Pinky'].filter(finger => {
+        const point = joint(`${finger}2`), projected = point.clone().project(camera);
+        const origin = camera.getWorldPosition(new T.Vector3()), direction = point.sub(origin);
+        const ray = new T.Raycaster(origin, direction.clone().normalize(), camera.near, direction.length() - .01);
+        return Math.abs(projected.x) < .95 && Math.abs(projected.y) < .95 && ray.intersectObjects(sleeves, false).length === 0;
+      });
+      assert.ok(visible.length >= 3, `${aspect}/${progress}: curled fingers are clipped or sleeve-occluded (${visible})`);
     }
   }
 });
