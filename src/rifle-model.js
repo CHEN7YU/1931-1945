@@ -5,8 +5,8 @@ import { RIFLE, riflePose, infantryWeaponProfile } from './rifle-action.js';
 import { lightMachineGunModel, configureLightMachineGunMaterials } from './light-machine-gun-model.js';
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
-import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
-import { machineGunReloadPose } from './machine-gun-reload.js';
+import { RIFLE_STOCK_SECTIONS, rifleStockSection, BOLT_HANDLE } from './rifle-contacts.js';
+import { machineGunReloadPose, ZB26_HAND } from './machine-gun-reload.js';
 
 let template;
 let distantTemplate;
@@ -154,12 +154,17 @@ function makeHand(parent, side) {
   const hand = new THREE.Group(); hand.name = `${side}Hand`; parent.add(hand);
   const right = side === 'right';
   const z = right ? -.115 : -.45, x = right ? .043 : -.03, y = -.065;
-  sphere(hand, x, y, z, .018, .031, .044, materials.skin);
+  sphere(hand, right ? .038 : x, right ? -.05 : y, right ? -.105 : z,
+    right ? .0155 : .018, right ? .027 : .031, right ? .032 : .044, materials.skin);
+  const readyContacts = [];
   for (let i = 0; i < 4; i++) {
     const fz = z - .034 + i * .018;
+    const [center, width, height] = right ? rifleStockSection(fz) : [0, 0, 0];
     const points = right
-      ? [[.043, -.048, fz], [.037, -.084, fz], [.005, -.094, fz], [-.015, -.075, fz]]
+      ? [-.1, -.8, -1.45, -2.1, -2.65].map(angle =>
+        [Math.cos(angle) * (width + .006), center + Math.sin(angle) * (height + .006), fz])
       : [[-.035, -.064, fz], [-.035, -.027, fz], [-.005, -.013, fz], [.022, -.035, fz]];
+    if (right) readyContacts.push([Math.cos(-2.1) * width, center + Math.sin(-2.1) * height, fz]);
     tube(hand, points, .006, materials.skin, 18);
     const tip = points.at(-1);
     sphere(hand, ...tip, .006, .006, .006, materials.skin);
@@ -168,7 +173,80 @@ function makeHand(parent, side) {
   tube(hand, right ? [[.046, -.043, z + .022], [.033, -.024, z + .034], [.005, -.024, z + .017]] :
     [[-.041, -.063, z + .025], [-.017, -.086, z + .05], [.008, -.071, z + .035]], .008, materials.skin);
   batch(hand);
+  if (right) {
+    const normal = new THREE.Group(); normal.name = 'normal-grip';
+    for (const mesh of [...hand.children]) normal.add(mesh);
+    normal.userData.contacts = readyContacts;
+    hand.add(normal);
+    const grip = new THREE.Group(); grip.name = 'bolt-grip';
+    sphere(grip, .027, -.003, .023, .016, .027, .026, materials.skin);
+    sphere(grip, .035, -.029, .045, .016, .019, .021, materials.skin);
+    const contacts = [];
+    for (const [i, z] of [-.009, .004, .018, .031].entries()) {
+      const radius = i < 2 ? Math.sqrt(BOLT_HANDLE.radius ** 2 - z ** 2) + .006 : .015;
+      const theta = -2.2, tip = [radius * Math.cos(theta), radius * Math.sin(theta), z];
+      tube(grip, [[.028, .014, z], [.009, .021, z], [-.012, .012, z], tip], .0052, materials.skin, 18);
+      sphere(grip, ...tip, .0052, .0052, .0052, materials.skin);
+      sphere(grip, .009, .020, z, .006, .006, .0055, materials.skin);
+      if (i < 2) contacts.push([tip[0] - Math.cos(theta) * .0052, tip[1] - Math.sin(theta) * .0052, z]);
+    }
+    const thumbRadius = Math.sqrt(BOLT_HANDLE.radius ** 2 - .006 ** 2) + .0065;
+    const thumb = [Math.cos(.75) * thumbRadius, Math.sin(.75) * thumbRadius, .006];
+    tube(grip, [[.033, -.018, .018], [.034, -.003, .011], thumb], .0057, materials.skin, 18);
+    sphere(grip, ...thumb, .0057, .0057, .0057, materials.skin);
+    contacts.push([thumb[0] - Math.cos(.75) * .0057, thumb[1] - Math.sin(.75) * .0057, .006]);
+    batch(grip);
+    grip.position.set(.043, -.065, -.115);
+    grip.userData.contacts = contacts;
+    grip.visible = false; hand.add(grip);
+  }
   return hand;
+}
+
+function magazineHandPoses(hand, skin) {
+  const normal = new THREE.Group(); normal.name = 'normal-grip';
+  for (const mesh of [...hand.children]) normal.add(mesh);
+  hand.add(normal);
+  const reference = new THREE.Vector3(-.029, -.101, -.386);
+  const grip = new THREE.Group(); grip.name = 'magazine-grip';
+  sphere(grip, .031, .127, -.247, .018, .035, .027, skin);
+  sphere(grip, .018, .105, -.22, .017, .021, .025, skin);
+  const contacts = [];
+  for (let i = 0; i < 4; i++) {
+    const y = .156 - i * .015;
+    tube(grip, [[.033, y, -.223], [.041, y, -.203], [.069, y, -.201],
+      [.087, y, -.208], [.087, y, -.221]], .0048 - i * .0002, skin, 18);
+    sphere(grip, .087, y, -.221, .0048 - i * .0002, .0048 - i * .0002, .0048 - i * .0002, skin);
+    sphere(grip, .069, y, -.201, .006, .0055 - i * .0002, .0055, skin);
+    contacts.push([.087 - (.0048 - i * .0002), y, -.221]);
+  }
+  tube(grip, [[.029, .105, -.267], [.038, .117, -.296], [.059, .132, -.297],
+    [.076, .143, -.29]], .006, skin, 18);
+  sphere(grip, .076, .143, -.29, .006, .006, .006, skin);
+  contacts.push([.059, .132, -.291]);
+  batch(grip);
+  grip.position.copy(reference).sub(new THREE.Vector3(...ZB26_HAND.grip));
+  grip.userData.contacts = contacts;
+  grip.userData.wrist = reference.clone().add(new THREE.Vector3(.006, .095, -.205))
+    .sub(new THREE.Vector3(...ZB26_HAND.grip)).toArray();
+  const press = new THREE.Group(); press.name = 'magazine-press';
+  sphere(press, .065, .221, -.247, .028, .013, .028, skin);
+  sphere(press, .027, .225, -.209, .022, .015, .023, skin);
+  const pads = [];
+  for (let i = 0; i < 4; i++) {
+    const x = .044 + i * .014;
+    tube(press, [[x, .223, -.264], [x, .215, -.279], [x, .213, -.285]], .005, skin, 18);
+    sphere(press, x, .213, -.285, .005, .005, .005, skin);
+    if (i === 1 || i === 2) pads.push([x, .208, -.279]);
+  }
+  tube(press, [[.043, .221, -.23], [.028, .211, -.239], [.032, .194, -.255]], .006, skin, 18);
+  batch(press);
+  press.position.copy(reference).sub(new THREE.Vector3(...ZB26_HAND.press));
+  press.userData.contacts = pads;
+  press.userData.wrist = reference.clone().add(new THREE.Vector3(-.005, .217, -.225))
+    .sub(new THREE.Vector3(...ZB26_HAND.press)).toArray();
+  grip.visible = press.visible = false;
+  hand.add(grip, press);
 }
 
 function machineGunHands(model) {
@@ -203,6 +281,7 @@ function machineGunHands(model) {
         sphere(hand, -.046, -.106, -.382, .018, .017, .029, skin);
       }
       batch(hand);
+      if (side === 'left') magazineHandPoses(hand, skin);
     }
   }
   for (const side of ['right', 'left']) {
@@ -262,12 +341,14 @@ function buildTemplate(detail = 'near') {
   axial(bolt, 0, 0, -.173, .0125, .195, edge);
   const handle = axial(bolt, .045, .001, -.086, .0045, .074, steel);
   handle.rotation.y = Math.PI / 2;
-  sphere(bolt, .082, .001, -.086, .012, .012, .012, steel);
+  sphere(bolt, ...BOLT_HANDLE.center, BOLT_HANDLE.radius, BOLT_HANDLE.radius, BOLT_HANDLE.radius, steel);
   rounded(bolt, 0, .02, -.075, .006, .027, .015, steel, .002);
   batch(body);
   const bodyBounds = new THREE.Box3().setFromObject(body);
   root.userData.dimensions = { length: bodyBounds.max.z - bodyBounds.min.z, referenceLength: RIFLE.length };
   batch(bolt);
+  const contact = new THREE.Object3D(); contact.name = 'bolt-handle-contact';
+  contact.position.fromArray(BOLT_HANDLE.center); bolt.add(contact);
   const clip = new THREE.Group(); clip.name = 'clip'; root.add(clip);
   rounded(clip, 0, .102, -.18, .058, .006, .009, steel, .001).name = 'charger';
   for (let i = 0; i < 5; i++) {
@@ -448,6 +529,17 @@ export function updateRifleModel(model, state) {
     parts.leftHand.rotation.set(reload.handRotation, 0, 0);
     const palm = new THREE.Vector3(-.029, -.101, -.386).applyEuler(parts.leftHand.rotation);
     parts.leftHand.position.fromArray(reload.palm).sub(palm);
+    if (state.model === 'zb26') {
+      const t = state.action === 'reload' ? state.elapsed / infantryWeaponProfile(state).reloadSeconds : 0;
+      const poseName = state.action !== 'reload' || t < .08 || t > .94 ? 'normal-grip'
+        : t >= .74 ? 'magazine-press' : 'magazine-grip';
+      for (const child of parts.leftHand.children) child.visible = child.name === poseName;
+      const variant = parts.leftHand.getObjectByName(poseName);
+      model.getObjectByName('leftSleeve').userData.wrist = variant.userData.wrist ?? [-.05, -.106, -.38];
+      model.userData.handContact = { side: 'left', pose: poseName,
+        points: (variant.userData.contacts ?? []).map(point => new THREE.Vector3(...point)
+          .add(variant.position).add(parts.leftHand.position).toArray()) };
+    }
     model.userData.reloadContact = { stage: reload.stage, palm: [...reload.palm],
       feed: [...reload.feed], press: reload.press, handWeight: reload.handWeight };
     return pose;
@@ -472,7 +564,25 @@ export function updateRifleModel(model, state) {
   parts.casing.position.set(.025 + ejection * .3, .015 + Math.sin(ejection * Math.PI) * .12, -.16 + ejection * .14);
   parts.casing.rotation.set(ejection * 8, ejection * 6, ejection * 10);
   parts.rightHand.position.set(pose.hand * (.035 - pose.loading * .06), pose.hand * .07 + pose.loading * .08, pose.boltTravel - pose.loading * .06);
-  parts.rightHand.rotation.z = -pose.hand * .25;
+  parts.rightHand.rotation.set(0, 0, 0);
+  const gripWeight = pose.hand * (1 - pose.loading), reference = new THREE.Vector3(.043, -.065, -.115);
+  const boltRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), pose.boltLift);
+  const boltCenter = new THREE.Vector3(...BOLT_HANDLE.center).applyQuaternion(boltRotation);
+  boltCenter.z += pose.boltTravel;
+  const target = boltCenter.clone().sub(reference.clone().applyQuaternion(boltRotation));
+  parts.rightHand.position.lerp(target, gripWeight);
+  parts.rightHand.quaternion.slerp(boltRotation, gripWeight);
+  parts.rightHand.getObjectByName('normal-grip').visible = gripWeight < .5;
+  parts.rightHand.getObjectByName('bolt-grip').visible = gripWeight >= .5;
+  const wrist = new THREE.Vector3(.048, -.074, -.047).lerp(reference.clone().add(new THREE.Vector3(.035, -.04, .052)), gripWeight);
+  model.getObjectByName('rightSleeve').userData.wrist = wrist.toArray();
+  parts.rightHand.updateMatrix();
+  const grip = parts.rightHand.getObjectByName('bolt-grip');
+  const shown = gripWeight >= .5 ? grip : parts.rightHand.getObjectByName('normal-grip');
+  model.userData.handContact = { side: 'right', pose: gripWeight >= .5 ? 'bolt-grip' : 'normal-grip',
+    weight: gripWeight, target: gripWeight >= .5 ? boltCenter.toArray() : null,
+    points: shown.userData.contacts.map(point => new THREE.Vector3(...point).add(shown.position)
+      .applyMatrix4(parts.rightHand.matrix).toArray()) };
   parts.leftHand.position.set(0, 0, 0);
   return pose;
 }

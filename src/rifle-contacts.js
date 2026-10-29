@@ -1,5 +1,7 @@
 import { Vector3 } from 'three';
 
+export const BOLT_HANDLE = Object.freeze({ center: Object.freeze([.082, .001, -.086]), radius: .012 });
+
 export const RIFLE_STOCK_SECTIONS = Object.freeze([
   [.22, -.095, .025, .068], [.19, -.094, .027, .071], [.08, -.076, .025, .061],
   [-.025, -.052, .018, .027], [-.09, -.049, .019, .026], [-.16, -.045, .028, .037],

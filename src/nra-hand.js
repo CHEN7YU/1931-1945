@@ -3,7 +3,49 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { solveArm } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
 
-export function createNraGrenadeHand(source, side, { fullArm = false } = {}) {
+function trimSleeveAtShoulder(mesh, upper, lower) {
+  const origin = upper.getWorldPosition(new THREE.Vector3()), axis = lower.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
+  const geometry = mesh.geometry, source = geometry.attributes, output = Object.fromEntries(Object.keys(source).map(name => [name, []]));
+  const read = index => Object.fromEntries(Object.entries(source).map(([name, attribute]) =>
+    [name, Array.from({ length: attribute.itemSize }, (_, slot) => attribute.getComponent(index, slot))]));
+  const distance = vertex => new THREE.Vector3(...vertex.position).applyMatrix4(mesh.matrixWorld).sub(origin).dot(axis) - .025;
+  const between = (a, b, t) => {
+    const vertex = {};
+    for (const [name, attribute] of Object.entries(source)) {
+      if (name === 'skinIndex' || name === 'skinWeight') continue;
+      vertex[name] = Array.from({ length: attribute.itemSize }, (_, slot) => a[name][slot] + (b[name][slot] - a[name][slot]) * t);
+    }
+    const weights = new Map();
+    for (const [v, factor] of [[a, 1 - t], [b, t]]) for (let slot = 0; slot < 4; slot++) {
+      const joint = v.skinIndex[slot];
+      weights.set(joint, (weights.get(joint) ?? 0) + v.skinWeight[slot] * factor);
+    }
+    const influences = [...weights].sort((a, b) => b[1] - a[1]).slice(0, 4), total = influences.reduce((sum, [, w]) => sum + w, 0);
+    vertex.skinIndex = Array.from({ length: 4 }, (_, slot) => influences[slot]?.[0] ?? 0);
+    vertex.skinWeight = Array.from({ length: 4 }, (_, slot) => (influences[slot]?.[1] ?? 0) / total);
+    return vertex;
+  };
+  for (let triangle = 0; triangle < geometry.index.count; triangle += 3) {
+    const polygon = [0, 1, 2].map(corner => read(geometry.index.getX(triangle + corner))), clipped = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const a = polygon[i], b = polygon[(i + 1) % polygon.length], da = distance(a), db = distance(b);
+      if (da >= 0) clipped.push(a);
+      if ((da >= 0) !== (db >= 0)) clipped.push(between(a, b, da / (da - db)));
+    }
+    for (let corner = 1; corner + 1 < clipped.length; corner++) for (const vertex of [clipped[0], clipped[corner], clipped[corner + 1]]) {
+      for (const name of Object.keys(output)) output[name].push(...vertex[name]);
+    }
+  }
+  const trimmed = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(source)) {
+    const array = new attribute.array.constructor(output[name]);
+    trimmed.setAttribute(name, new THREE.BufferAttribute(array, attribute.itemSize, attribute.normalized));
+  }
+  trimmed.computeBoundingBox(); trimmed.computeBoundingSphere();
+  mesh.geometry = trimmed; geometry.dispose();
+}
+
+export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig = false } = {}) {
   if (!['left', 'right'].includes(side)) throw new Error('Inspected hand requires its side');
   const prefix = side === 'right' ? 'Right' : 'Left', root = new THREE.Group(), alignment = new THREE.Group(), avatar = clone(source);
   root.name = `${side}-grenade-hand`; root.add(alignment); alignment.add(avatar); root.updateMatrixWorld(true);
@@ -14,11 +56,13 @@ export function createNraGrenadeHand(source, side, { fullArm = false } = {}) {
   const geometry = handMesh.geometry.clone(), attributes = geometry.attributes, kept = [];
   const owned = index => [0, 1, 2, 3].some(slot => attributes.skinWeight.getComponent(index, slot) > .05 &&
     (handMesh.skeleton.bones[attributes.skinIndex.getComponent(index, slot)].name.startsWith(prefix + 'Hand') ||
-      fullArm && handMesh.skeleton.bones[attributes.skinIndex.getComponent(index, slot)].name === prefix + 'ForeArm'));
+      fullArm && (weaponRig
+        ? new RegExp(`^${prefix}(Arm|ForeArm)$`).test(handMesh.skeleton.bones[attributes.skinIndex.getComponent(index, slot)].name)
+        : handMesh.skeleton.bones[attributes.skinIndex.getComponent(index, slot)].name === prefix + 'ForeArm')));
   const count = geometry.index?.count ?? attributes.position.count;
   for (let at = 0; at < count; at += 3) {
     const ids = [0, 1, 2].map(corner => geometry.index ? geometry.index.getX(at + corner) : at + corner);
-    if (ids.every(owned)) kept.push(...ids);
+    if (weaponRig ? ids.some(owned) : ids.every(owned)) kept.push(...ids);
   }
   if (kept.length < 60) throw new Error('Inspected hand has no isolated finger surface');
   geometry.clearGroups(); geometry.setIndex(kept); handMesh.geometry = geometry;
@@ -34,14 +78,29 @@ export function createNraGrenadeHand(source, side, { fullArm = false } = {}) {
             weight += skin.skinWeight.getComponent(index, slot);
           }
         }
-        return weight > .5;
+        return weight > (weaponRig ? .05 : .5);
       };
       for (let at = 0; at < (original.index?.count ?? skin.position.count); at += 3) {
         const ids = [0, 1, 2].map(corner => original.index ? original.index.getX(at + corner) : at + corner);
-        if (ids.every(belongs)) indices.push(...ids);
+        if (weaponRig ? ids.some(belongs) : ids.every(belongs)) indices.push(...ids);
       }
       if (!indices.length) continue;
       mesh.geometry = original.clone(); mesh.geometry.clearGroups(); mesh.geometry.setIndex(indices);
+      if (weaponRig) {
+        const weights = mesh.geometry.attributes.skinWeight.clone(), joints = mesh.geometry.attributes.skinIndex.clone();
+        const upperIndex = mesh.skeleton.bones.findIndex(bone => bone.name === prefix + 'Arm');
+        const handIndex = mesh.skeleton.bones.findIndex(bone => bone.name === prefix + 'Hand');
+        for (let vertex = 0; vertex < weights.count; vertex++) {
+          for (let slot = 0; slot < 4; slot++) {
+            const name = mesh.skeleton.bones[joints.getComponent(vertex, slot)].name;
+            if (name.startsWith(prefix + 'Hand')) joints.setComponent(vertex, slot, handIndex);
+            else if (!new RegExp(`^${prefix}(Arm|ForeArm)$`).test(name)) joints.setComponent(vertex, slot, upperIndex);
+          }
+        }
+        mesh.geometry.setAttribute('skinWeight', weights); mesh.geometry.setAttribute('skinIndex', joints);
+        mesh.normalizeSkinWeights();
+        trimSleeveAtShoulder(mesh, bones.get(prefix + 'Arm'), bones.get(prefix + 'ForeArm'));
+      }
       if (Array.isArray(mesh.material)) mesh.material = mesh.material[0];
       sleeves.push(mesh);
     }
@@ -91,6 +150,105 @@ export function createNraGrenadeHand(source, side, { fullArm = false } = {}) {
   root.userData.throwableGrips = Object.freeze({ grenade: Object.freeze(gripCenter.toArray()),
     'explosive-pack': Object.freeze([gripCenter.x, gripCenter.y, .056]) });
   root.userData.fingerCount = 5;
+  const weaponGrips = new Map();
+  root.prepareWeaponGrip = (name, { center, depth, thickness, round = false }) => {
+    if (!Array.isArray(center) || center.length !== 3 || !center.every(Number.isFinite) ||
+      ![depth, thickness].every(value => Number.isFinite(value) && value > 0) || root.armSnapshot) {
+      throw new RangeError('Weapon grips need finite dimensions in the unposed wrist frame');
+    }
+    for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
+    root.updateMatrixWorld(true);
+    if (weaponRig) {
+      const curls = name === 'press' ? [.18, .24, .20] : name === 'bolt' ? [.35, .85, .55]
+        : name === 'magazine' ? [.55, .95, .55] : [.5, .85, .5];
+      const limits = [1.25, 1.5, 1.05], adjustments = [0, .06, .09, .16];
+      for (const [index, finger] of fingerNames.entries()) {
+        const chain = chains.get(finger);
+        for (let joint = 0; joint < 3; joint++) {
+          const bone = chain[joint], original = rest.get(bone.name);
+          const euler = new THREE.Euler().setFromQuaternion(original, 'XYZ');
+          const angle = Math.min(limits[joint], curls[joint] + adjustments[index]);
+          euler.x = angle;
+          if (joint > 0) { euler.y = 0; euler.z = 0; }
+          bone.quaternion.setFromEuler(euler);
+        }
+      }
+      const thumb = chains.get('Thumb');
+      for (let joint = 0; joint < 3; joint++) {
+        const bone = thumb[joint], euler = new THREE.Euler().setFromQuaternion(rest.get(bone.name), 'XYZ');
+        euler.x = name === 'press' ? .12 : side === 'left' ? joint === 0 ? -.25 : .15 : joint === 0 ? .25 : .45;
+        if (joint === 0) euler.z += side === 'left' ? -.22 : .22;
+        bone.quaternion.setFromEuler(euler);
+      }
+      weaponGrips.set(name, { center: [...center], rotations: new Map([...rest.keys()]
+        .filter(name => name !== prefix + 'Hand').map(name => [name, bones.get(name).quaternion.clone()])) });
+      return;
+    }
+    const facing = root.getWorldQuaternion(new THREE.Quaternion()), sign = root.userData.palmFacingAxis;
+    const contact = (angle, x) => {
+      const curve = value => Math.sign(value) * Math.abs(value) ** (round ? 1 : .5);
+      return new THREE.Vector3(x, center[1] + (depth + .005) * curve(Math.cos(angle)),
+        center[2] - sign * (thickness + .005) * curve(Math.sin(angle)));
+    };
+    for (const [index, finger] of fingerNames.entries()) {
+      const [first, second, third, end] = chains.get(finger), base = localPoint(first);
+      const a = fingerLengths[finger][0], b = fingerLengths[finger][1];
+      const x = round && index < 2 ? center[0] + (index ? -.006 : .006) : base.x;
+      const angles = [-.2, ...Array.from({ length: 60 }, (_, i) => -.175 + i * .025),
+        ...Array.from({ length: 108 }, (_, i) => -.225 - i * .025)];
+      const angle = angles.find(angle => {
+        const desired = root.localToWorld(contact(angle, x));
+        const distance = desired.distanceTo(first.getWorldPosition(new THREE.Vector3()));
+        return distance < a + b - .001 && distance > Math.abs(a - b) + .001;
+      });
+      if (angle === undefined) throw new Error(`Native ${side} ${finger} cannot reach ${name}`);
+      const desired = root.localToWorld(contact(angle, x));
+      const solved = solveArm(first, second, third, desired,
+        new THREE.Vector3(0, 1, -sign * .7).applyQuaternion(facing));
+      if (!solved.reachable || solved.error > .001) throw new Error(`Native ${name} finger solve failed`);
+      const dip = localPoint(third), length = fingerLengths[finger][2];
+      let low = 0, high = 2.4;
+      if (contact(angle - high, x).distanceTo(dip) < length) throw new Error(`Native ${name} fingertip arc is too short`);
+      for (let step = 0; step < 24; step++) {
+        const turn = (low + high) / 2;
+        if (contact(angle - turn, x).distanceTo(dip) < length) low = turn;
+        else high = turn;
+      }
+      rotateEnd(third, end, root.localToWorld(contact(angle - (low + high) / 2, x)));
+    }
+    const [first, second, third, end] = chains.get('Thumb');
+    const tip = contact(1.5, center[0] + (round ? .006 : .014));
+    const direction = new THREE.Vector3(0, .8, sign * .6);
+    const desired = root.localToWorld(tip.clone().addScaledVector(direction, -fingerLengths.Thumb[2]));
+    const solved = solveArm(first, second, third, desired,
+      new THREE.Vector3(.8, .4, -sign * .8).applyQuaternion(facing));
+    if (!solved.reachable || solved.error > .001) throw new Error(`Native ${name} thumb cannot oppose the fingers`);
+    rotateEnd(third, end, root.localToWorld(tip));
+    weaponGrips.set(name, { center: [...center], rotations: new Map([...rest.keys()]
+      .filter(name => name !== prefix + 'Hand').map(name => [name, bones.get(name).quaternion.clone()])) });
+  };
+  root.poseWeaponGrip = weights => {
+    const selected = Object.entries(weights).filter(([, weight]) => weight > 0);
+    if (!selected.length || Object.values(weights).some(weight => !Number.isFinite(weight) || weight < 0) ||
+      selected.some(([name]) => !weaponGrips.has(name))) throw new RangeError('Invalid native weapon grip weights');
+    for (const name of rest.keys()) {
+      if (name === prefix + 'Hand') continue;
+      let total = 0;
+      for (const [grip, weight] of selected) {
+        const target = weaponGrips.get(grip).rotations.get(name);
+        if (!total) bones.get(name).quaternion.copy(target);
+        else bones.get(name).quaternion.slerp(target, weight / (total + weight));
+        total += weight;
+      }
+    }
+    root.updateMatrixWorld(true);
+    const frame = root.attachmentFrame ?? root;
+    root.weaponGripSnapshot = { weights: { ...weights }, fingerLengths,
+      curls: weaponRig ? Object.fromEntries([...chains].map(([finger, chain]) =>
+        [finger, chain.slice(0, 3).map(bone => new THREE.Euler().setFromQuaternion(bone.quaternion, 'XYZ').x)])) : null,
+      joints: Object.fromEntries([...chains].map(([finger, chain]) =>
+        [finger, chain.map(bone => frame.worldToLocal(bone.getWorldPosition(new THREE.Vector3())).toArray())])) };
+  };
   root.poseGrip = (closure, pinPull = 0, kind = 'grenade') => {
     if (![closure, pinPull].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) throw new RangeError('Invalid native finger pose');
     if (!['grenade', 'explosive-pack'].includes(kind)) throw new RangeError('Hand contact needs a supported throwable');
@@ -185,6 +343,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false } = {}) {
     const wristOffset = attachment.quaternion.clone().invert();
     const lengths = [upper.getWorldPosition(new THREE.Vector3()).distanceTo(lower.getWorldPosition(new THREE.Vector3())),
       lower.getWorldPosition(new THREE.Vector3()).distanceTo(wrist.getWorldPosition(new THREE.Vector3()))];
+    root.userData.armLengths = Object.freeze([...lengths]);
     root.attachmentFrame = attachment;
     root.userData.armSource = 'nra-authorized-skinned-sleeve';
     root.poseArm = (origin, target, facing, pole) => {

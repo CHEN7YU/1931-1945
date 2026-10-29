@@ -3,6 +3,10 @@ import { infantryWeaponProfile } from './rifle-action.js';
 const smooth = value => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 const mix = (a, b, t) => a.map((value, i) => value + (b[i] - value) * smooth(t));
 const ready = [-.029, -.101, -.386];
+export const ZB26_HAND = Object.freeze({
+  grip: Object.freeze([.031, .127, -.247]),
+  press: Object.freeze([.065, .221, -.247]),
+});
 
 export function machineGunReloadPose(state) {
   const profile = infantryWeaponProfile(state);
@@ -13,7 +17,7 @@ export function machineGunReloadPose(state) {
     loadedClips: Math.ceil(state.ammo / 5) };
   if (state.action !== 'reload') return result;
   if (state.model === 'zb26') {
-    const grip = [.029, .13, -.25], top = [.065, .225, -.247];
+    const grip = ZB26_HAND.grip, top = ZB26_HAND.press;
     let feed = [0, 0, 0];
     if (t < .12) {
       result.stage = 'grip'; result.palm = mix(ready, grip, t / .12);
@@ -31,16 +35,17 @@ export function machineGunReloadPose(state) {
         : mix([0, .11, 0], [0, 0, 0], (t - .59) / .11);
       result.palm = grip.map((value, i) => value + feed[i]);
     } else if (t < .78) {
-      result.stage = 'reach-press'; result.palm = mix(grip, top, (t - .7) / .08);
-      result.handRotation = Math.PI * smooth((t - .7) / .08);
+      result.stage = 'reach-press';
+      result.palm = t < .74 ? mix(grip, [.031, .247, -.247], (t - .7) / .04)
+        : mix([.031, .247, -.247], top, (t - .74) / .04);
     } else if (t < .86) {
       result.stage = 'press'; result.press = Math.sin((t - .78) / .08 * Math.PI) * .012;
-      result.handRotation = Math.PI;
       result.palm = [top[0], top[1] - result.press, top[2]];
       feed = [0, -result.press, 0];
     } else {
-      result.stage = 'return'; result.palm = mix(top, ready, (t - .86) / .14);
-      result.handRotation = Math.PI * (1 - smooth((t - .86) / .14));
+      result.stage = 'return';
+      result.palm = t < .91 ? mix(top, [-.045, .23, -.247], (t - .86) / .05)
+        : mix([-.045, .23, -.247], ready, (t - .91) / .09);
     }
     result.feed = feed;
   } else {

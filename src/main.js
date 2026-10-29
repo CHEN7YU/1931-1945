@@ -11,6 +11,7 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
+import { createWeaponHands } from './weapon-hands.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
   assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
@@ -215,6 +216,7 @@ const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
 const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
 const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.createGrenadeHand);
+const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHand) : null;
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain') });
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.obstacles);
@@ -2220,6 +2222,10 @@ function updateCamera(dt) {
       weapon.position.y -= retract * .12;
       weapon.rotation.x -= retract * .55;
       updateRifleArms(weapon);
+      // Vault/obstruction lowering stows the shorter native arms rather than stretching them.
+      weaponHands?.update(weapon, allies[current].rifle, {
+        stowed: vaultLower > 0 || weapon.position.y < -.32, appearance: allies[current].avatarAppearance,
+      });
       weapon.updateMatrixWorld(true);
       ray.far = Infinity;
     } else {
@@ -3922,11 +3928,15 @@ Object.defineProperty(window, '__battle', { get: () => ({
       clipVisible: weapon.userData.rifle.clip.visible, chargerVisible: weapon.userData.rifle.clip.getObjectByName('charger').visible,
       cartridges: weapon.userData.rifle.clip.children.filter(child => child.name.startsWith('cartridge') && child.visible).length,
       reloadContact: weapon.userData.reloadContact ? { ...weapon.userData.reloadContact } : null,
+      handContact: weapon.userData.handContact ? structuredClone(weapon.userData.handContact) : null,
+      nativeHands: weaponHands?.snapshot ?? null,
       feedPosition: weapon.getObjectByName('feed')?.position.toArray() ?? null,
       leftHandPosition: weapon.userData.rifle.leftHand.position.toArray(),
       flashVisible: weapon.userData.rifle.flash.visible,
       dimensions: { ...weapon.userData.dimensions },
-      arms: weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
+      arms: weaponHands?.snapshot ? Object.fromEntries(['left', 'right'].map(side =>
+        [side, { upper: weaponHands.snapshot[side].arm.lengths[0], forearm: weaponHands.snapshot[side].arm.lengths[1] }]))
+        : weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
     } : null,
     muzzle: weapon?.userData.rifle ? weapon.userData.rifle.muzzle.getWorldPosition(new THREE.Vector3()).toArray() : null,
     sights: weapon?.userData.rifle ? ['rearSight', 'frontSight'].map(name => {

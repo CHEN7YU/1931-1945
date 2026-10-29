@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { createRifleState, infantryWeaponProfile, advanceRifle, reloadRifle } from '../src/rifle-action.js';
 import { rifleModel, updateRifleModel, updateRifleArms, rifleWorldModel, syncWorldWeapon } from '../src/rifle-model.js';
-import { machineGunReloadPose } from '../src/machine-gun-reload.js';
+import { machineGunReloadPose, ZB26_HAND } from '../src/machine-gun-reload.js';
+import { BOLT_HANDLE } from '../src/rifle-contacts.js';
 
 for (const model of ['zb26', 'type11']) {
   test(`${model} reload hand, feed and sleeves remain synchronized throughout the entire owned action`, () => {
@@ -26,7 +27,7 @@ for (const model of ['zb26', 'type11']) {
         assert.ok(Math.abs(lengths.forearm - .34) < .002, `${model} ${side}: forearm in ${pose.stage}: ${lengths.forearm}`);
       }
       if (model === 'zb26' && ['remove', 'insert'].includes(pose.stage)) {
-        assert.ok(palm.distanceTo(new Vector3(.029, .13, -.25).add(feed.position)) < 1e-8,
+        assert.ok(palm.distanceTo(new Vector3(...ZB26_HAND.grip).add(feed.position)) < 1e-8,
           'magazine and gripping hand share a fixed contact while carried');
       }
       if (model === 'type11') {
@@ -51,8 +52,53 @@ test('ZB-26 seating includes a distinct hand press after insertion and before re
   const pressed = machineGunReloadPose(state);
   assert.equal(pressed.stage, 'press');
   assert.ok(pressed.press > .011);
-  assert.equal(pressed.palm[1], .225 - pressed.press);
+  assert.equal(pressed.palm[1], ZB26_HAND.press[1] - pressed.press);
   assert.equal(pressed.feed[1], -pressed.press);
+});
+
+test('ZB-26 uses opposed finger/thumb contacts and a separate downward seating palm', () => {
+  const state = { ...createRifleState('zb26'), action: 'reload', ammo: 0 };
+  const gun = rifleModel(state);
+  for (const fraction of [.14, .2, .28, .45, .6, .69, .8, .83]) {
+    state.elapsed = 3.8 * fraction;
+    updateRifleModel(gun, state);
+    const contact = gun.userData.handContact, offset = gun.getObjectByName('feed').position;
+    assert.equal(contact.pose, fraction < .7 ? 'magazine-grip' : 'magazine-press');
+    const points = contact.points.map(point => new Vector3(...point).sub(offset));
+    if (fraction < .7) {
+      assert.equal(points.length, 5);
+      assert.ok(points.slice(0, 4).every(point => point.x > .081 && point.x < .085 && point.z > -.23));
+      assert.ok(points[4].z < -.289, 'thumb opposes the four fingers across the magazine depth');
+    } else {
+      assert.ok(points.every(point => Math.abs(point.y - .207) < .002));
+    }
+  }
+});
+
+test('rifle cycling grips the actual moving bolt sphere rather than a free-floating generic hand', () => {
+  for (const model of ['rifle', 'sniper']) {
+    const state = { ...createRifleState(model), action: 'cycle' }, gun = rifleModel(state);
+    for (const elapsed of [.2, .27, .34, .4, .49, .54]) {
+      state.elapsed = elapsed;
+      updateRifleModel(gun, state);
+      updateRifleArms(gun);
+      const contact = gun.userData.handContact;
+      assert.equal(contact.pose, 'bolt-grip');
+      assert.equal(contact.weight, 1);
+      for (const point of contact.points) {
+        const distance = new Vector3(...point).distanceTo(new Vector3(...contact.target));
+        assert.ok(distance >= BOLT_HANDLE.radius && distance < BOLT_HANDLE.radius + .002);
+      }
+      for (const lengths of Object.values(gun.userData.armLengths)) {
+        assert.ok(Math.abs(lengths.upper - .35) < .002);
+        assert.ok(Math.abs(lengths.forearm - .34) < .002);
+      }
+    }
+    state.action = 'idle'; state.elapsed = 0;
+    updateRifleModel(gun, state);
+    assert.equal(gun.userData.handContact.pose, 'normal-grip');
+    assert.equal(gun.getObjectByName('bolt-grip').visible, false);
+  }
 });
 
 test('separate view/world instances and paused action times never share hand or magazine transforms', () => {

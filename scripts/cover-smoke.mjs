@@ -2,10 +2,13 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Vector3, Quaternion } from 'three';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-const errors = [], observations = [];
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 },
+  ...(process.env.ARTIFACT_DIR ? { recordVideo: { dir: join(process.env.ARTIFACT_DIR, 'video'), size: { width: 1440, height: 900 } } } : {}) });
+const recordingStarted = Date.now();
+const errors = [], observations = [], phaseImages = new Map();
 page.on('pageerror', error => errors.push(error.message));
 const snapshot = () => page.evaluate(() => window.__battle);
 const wait = (fn, arg = null) => page.waitForFunction(fn, arg, { timeout: 60000 });
@@ -32,10 +35,28 @@ async function walkTo(x, z) {
   const data = await snapshot();
   assert.ok(Math.hypot(data.position.x - x, data.position.z - z) < .3, `walk to real sandbags: ${JSON.stringify(data.position)}`);
 }
-async function capture(name) {
+async function capture(name, phase = null) {
   if (!process.env.ARTIFACT_DIR) return;
   await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
-  await page.screenshot({ path: join(process.env.ARTIFACT_DIR, name) });
+  if (phase) await writeFile(join(process.env.ARTIFACT_DIR, name), Buffer.from(phaseImages.get(phase).split(',')[1], 'base64'));
+  else await page.screenshot({ path: join(process.env.ARTIFACT_DIR, name) });
+}
+async function pauseAtContact(kind) {
+  const image = await wait(kind => {
+    const data = window.__battle, rifle = data.rifle;
+    const ready = kind === 'bolt' ? rifle.action === 'cycle' && rifle.elapsed >= .2 && rifle.elapsed <= .5
+      : kind === 'insert' ? rifle.action === 'reload' && rifle.elapsed / 3.8 >= .60 && rifle.elapsed / 3.8 <= .68
+      : rifle.action === 'reload' && rifle.model.reloadContact?.stage === 'press';
+    if (!ready) return false;
+    // Capture the rendered frame before pause hides first-person equipment.
+    const image = document.querySelector('#world').toDataURL('image/png');
+    for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'Escape', key: 'Escape', bubbles: true }));
+    return image;
+  }, kind);
+  phaseImages.set(kind, await image.jsonValue());
+  const data = await snapshot();
+  observations.push({ stage: `${kind}-contact-paused`, data });
+  return data;
 }
 try {
   const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5187');
@@ -60,10 +81,45 @@ try {
   observations.push({ stage: 'supported', data });
   assert.ok(data.controlSimulation.weaponMount.stability.recoil <= .301);
   assert.ok(data.controlSimulation.weaponMount.contact.y > .9);
+  assert.equal(data.rifle.action, 'idle');
+  await capture('cover-supported-idle.png');
   const ammo = data.ammo;
   await page.mouse.down(); await page.waitForTimeout(100); await page.mouse.up();
   await wait(ammo => window.__battle.ammo < ammo, ammo);
+  data = await pauseAtContact('bolt');
+  assert.equal(data.rifle.model.nativeHands.source, 'nra-authorized-skinned-weapon-hands');
+  assert.equal(data.rifle.model.nativeHands.right.grip.weights.bolt, 1);
+  for (const side of ['left', 'right']) {
+    const hand = data.rifle.model.nativeHands[side];
+    assert.ok(hand.arm.reachable && hand.arm.error < .002);
+    assert.equal(Object.keys(hand.grip.joints).length, 5);
+  }
+  assert.equal(data.rifle.model.handContact.pose, 'bolt-grip');
+  assert.equal(data.rifle.model.handContact.weight, 1);
+  const nativeRight = data.rifle.model.nativeHands.right;
+  for (const finger of ['Index', 'Thumb']) {
+    const tip = new Vector3(...nativeRight.grip.joints[finger].at(-1))
+      .applyQuaternion(new Quaternion(...nativeRight.rotation)).add(new Vector3(...nativeRight.wrist));
+    const distance = tip.distanceTo(new Vector3(...data.rifle.model.handContact.target));
+    assert.ok(distance >= .012 && distance < .022, 'actual skinned finger tips wrap the moving bolt with pad clearance');
+  }
+  await capture('cover-bolt-grip-paused.png', 'bolt');
+  await page.locator('#resume').click();
+  await wait(() => window.__battle.rifle.action === 'idle');
+  if (!(await snapshot()).controlSimulation.weaponMount.active) await page.keyboard.press('b');
+  await wait(() => window.__battle.controlSimulation.weaponMount.active && window.__battle.controlSimulation.weaponMount.blend === 1);
+  await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
+  await wait(() => window.__battle.fov < 49);
   await capture('cover-supported-fire.png');
+  const boltClipStart = (Date.now() - recordingStarted) / 1000;
+  const beforeCycle = (await snapshot()).rifle.shots;
+  await page.mouse.down();
+  await wait(before => window.__battle.rifle.shots > before, beforeCycle);
+  await page.mouse.up();
+  await wait(() => window.__battle.rifle.action === 'idle');
+  await page.waitForTimeout(500);
+  observations.push({ stage: 'continuous-bolt-video', startSeconds: boltClipStart,
+    endSeconds: (Date.now() - recordingStarted) / 1000, data: await snapshot() });
   await page.mouse.up({ button: 'right' });
   await page.keyboard.press('b');
   await wait(() => !window.__battle.controlSimulation.weaponMount.active);
@@ -106,23 +162,37 @@ try {
   await page.mouse.down();
   await wait(() => window.__battle.rifle.shots >= 3);
   await page.mouse.up(); await page.keyboard.press('r');
-  await wait(() => window.__battle.rifle.action === 'reload' && window.__battle.rifle.model.reloadContact?.stage === 'insert'
-    && window.__battle.rifle.elapsed > 3.8 * .59);
+  data = await pauseAtContact('insert');
+  assert.equal(data.rifle.model.nativeHands.left.grip.weights.magazine, 1);
+  assert.equal(data.rifle.model.handContact.pose, 'magazine-grip');
   observations.push({ stage: 'magazine-insertion', data: await snapshot() });
-  await capture('lmg-hand-insertion.png');
-  await wait(() => window.__battle.rifle.model.reloadContact?.stage === 'press');
-  await page.keyboard.press('Escape');
-  data = await snapshot();
+  await capture('lmg-hand-insertion.png', 'insert');
+  await page.locator('#resume').click();
+  data = await pauseAtContact('press');
   assert.equal(data.rifle.action, 'reload');
   assert.ok(data.rifle.ammo < 20);
   assert.equal(data.rifle.model.reloadContact.stage, 'press');
+  assert.equal(data.rifle.model.nativeHands.left.grip.weights.press, 1);
   observations.push({ stage: 'magazine-press', data });
-  await capture('lmg-hand-press-paused.png');
+  assert.equal(data.rifle.model.handContact.pose, 'magazine-press');
+  await capture('lmg-hand-press-paused.png', 'press');
   await page.waitForTimeout(200);
   assert.deepEqual((await snapshot()).rifle.model.reloadContact, data.rifle.model.reloadContact);
   await page.locator('#resume').click();
   await wait(() => window.__battle.rifle.action === 'idle' && window.__battle.rifle.ammo === 20);
   assert.deepEqual((await snapshot()).rifle.model.feedPosition, [0, 0, 0]);
+  const continuousStart = (Date.now() - recordingStarted) / 1000;
+  const shots = (await snapshot()).rifle.shots;
+  await page.mouse.down();
+  await wait(shots => window.__battle.rifle.shots >= shots + 3, shots);
+  await page.mouse.up();
+  await wait(() => window.__battle.rifle.action === 'idle');
+  await page.keyboard.press('r');
+  await wait(() => window.__battle.rifle.action === 'reload');
+  await wait(() => window.__battle.rifle.action === 'idle' && window.__battle.rifle.ammo === 20);
+  await page.waitForTimeout(500);
+  observations.push({ stage: 'continuous-reload-video', startSeconds: continuousStart,
+    endSeconds: (Date.now() - recordingStarted) / 1000, data: await snapshot() });
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'cover-smoke.json'), JSON.stringify(observations, null, 2));
   console.log('PASS: B support, V not bound, real shots, movement release, real-map sandbag vault, pause, physical jump/Y landing, hand-carried LMG insertion and press.');
