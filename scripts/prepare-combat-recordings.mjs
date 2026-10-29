@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
+import { ADDITIONAL_REACTION_CLIPS } from '../src/battle-reaction-clips.js';
 
 const hash = data => createHash('sha256').update(data).digest('hex');
 const kind = process.argv[2], input = process.argv[3] && resolve(process.argv[3]);
@@ -41,9 +42,9 @@ function wave(data, trim) {
   return { bytes, duration: samples.length / 24000 };
 }
 const files = [];
-async function save(file, data, selection, trim = null) {
+async function save(file, data, selection, trim = null, maxDuration = 2) {
   const result = wave(data, trim);
-  if (result.duration < .08 || result.duration > 2) throw new Error(`Invalid short recording: ${file}`);
+  if (result.duration < .08 || result.duration > maxDuration) throw new Error(`Invalid combat recording: ${file}`);
   await writeFile(join(output, file), result.bytes);
   files.push({ file, ...selection, duration: result.duration, bytes: result.bytes.length, sha256: hash(result.bytes) });
 }
@@ -62,14 +63,23 @@ if (kind === 'reactions') {
       await save(`${variant}-${cue}-${take}.wav`, data, { variant, cue, original: `${name}.wav`, originalSha256: hash(data) });
     }
   }
+  for (const clip of ADDITIONAL_REACTION_CLIPS) {
+    const data = execFileSync('python', ['-c',
+      'import sys,zipfile; sys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]))',
+      input, `yelling sounds/${clip.original}`], { maxBuffer: 4 * 1024 * 1024 });
+    await save(clip.file, data, { ...clip, originalSha256: hash(data) }, null, clip.maxDuration);
+  }
   metadata = { asset: 'Wordless male combat reactions', author: 'HaelDB', license: 'CC0-1.0',
     source: 'https://opengameart.org/content/male-gruntyelling-sounds',
     licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
     archive: { url: 'https://opengameart.org/sites/default/files/yelling%20sounds.zip', sha256: originalHash },
     licenseEvidence: 'Author page offers OGA-BY 3.0 and CC0 as alternative licenses; CC0 selected.',
     limitations: ['Wordless human vocals shared across factions, not Chinese/Japanese spoken performances or historical recordings.',
-      'Three source performer groups, two takes per cue; cue assignments are game-design choices.',
-      'Listening quality and emotional suitability need human acceptance; no independent listening acceptance is claimed.'] };
+      'The original 18 clips use three performer groups and two takes per cue. Twelve extra hurt takes are shared across both factions and voice variants, including a fourth performer group.',
+      'All twelve audition candidates retained by the user; 08-12 preferred. This does not independently establish a pain/fear/despair classification or historical authenticity.'],
+    selection: { trigger: 'Actual infantry damage only; existing probability, range and cooldowns unchanged.',
+      originalVariantHurtWeight: 1, additionalWeights: '01-07: 1 each; 08-12: 3 each.',
+      noImmediateHurtRepeat: true, maximumExtraDuration: 4.5 } };
 } else {
   // The source fires approximately every 100ms. Each excerpt ends before the next report.
   for (const [take, start] of [.674, .774, .874].entries()) {

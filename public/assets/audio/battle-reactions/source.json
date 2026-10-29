@@ -11,9 +11,16 @@
   "licenseEvidence": "Author page offers OGA-BY 3.0 and CC0 as alternative licenses; CC0 selected.",
   "limitations": [
     "Wordless human vocals shared across factions, not Chinese/Japanese spoken performances or historical recordings.",
-    "Three source performer groups, two takes per cue; cue assignments are game-design choices.",
-    "Listening quality and emotional suitability need human acceptance; no independent listening acceptance is claimed."
+    "The original 18 clips use three performer groups and two takes per cue. Twelve extra hurt takes are shared across both factions and voice variants, including a fourth performer group.",
+    "All twelve audition candidates retained by the user; 08-12 preferred. This does not independently establish a pain/fear/despair classification or historical authenticity."
   ],
+  "selection": {
+    "trigger": "Actual infantry damage only; existing probability, range and cooldowns unchanged.",
+    "originalVariantHurtWeight": 1,
+    "additionalWeights": "01-07: 1 each; 08-12: 3 each.",
+    "noImmediateHurtRepeat": true,
+    "maximumExtraDuration": 4.5
+  },
   "processing": [
     "FFmpeg mono 24kHz, 16-bit PCM",
     "Peak bounded to 0.65; 1ms attack and 8ms tail fades",
@@ -199,6 +206,150 @@
       "duration": 0.8545416666666666,
       "bytes": 41062,
       "sha256": "ebac1cdcd7847674a4224fe9349f26153440d08436bcbdab88f5f31a16f5759f"
+    },
+    {
+      "file": "hurt-extra-01.wav",
+      "cue": "hurt",
+      "auditionNumber": 1,
+      "selectionWeight": 1,
+      "original": "1yell3.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "a2cf791abecb62affff1d2691f2b883f61b1558e9fe3e80a10765add5006ba6d",
+      "duration": 0.695125,
+      "bytes": 33410,
+      "sha256": "7579088768108df1e566542eb0f5496faad6486c59952d254ef93279586f1891"
+    },
+    {
+      "file": "hurt-extra-02.wav",
+      "cue": "hurt",
+      "auditionNumber": 2,
+      "selectionWeight": 1,
+      "original": "1yell11.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "6195032b5b49d46b4f21a5ab01e970afa223c26735fe4b7d6a796e25f4840a66",
+      "duration": 0.5740833333333333,
+      "bytes": 27600,
+      "sha256": "1b920ca4b800a5e20b0423c434096965d0425a628f28c27b812f16e6783dac02"
+    },
+    {
+      "file": "hurt-extra-03.wav",
+      "cue": "hurt",
+      "auditionNumber": 3,
+      "selectionWeight": 1,
+      "original": "2yell4.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "5ca6b2e5cf2558857e7f852684672103d92989aac7ec145573532917bf0366b5",
+      "duration": 1.2773333333333334,
+      "bytes": 61356,
+      "sha256": "9493edbdd760cc6292662e140af4ea64ebfdba4462e140f993fd7c2364bd2477"
+    },
+    {
+      "file": "hurt-extra-04.wav",
+      "cue": "hurt",
+      "auditionNumber": 4,
+      "selectionWeight": 1,
+      "original": "2yell6.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "05d4bd5c0863f4dceae54f3434a8dc55ddbcad73921561eb1d9073edb756e570",
+      "duration": 2.1169583333333333,
+      "bytes": 101658,
+      "sha256": "1c683f4b4a16d3691f9c7f83f698445420439c5d9ee316291ae9cf6d760217ee"
+    },
+    {
+      "file": "hurt-extra-05.wav",
+      "cue": "hurt",
+      "auditionNumber": 5,
+      "selectionWeight": 1,
+      "original": "3grunt1.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "57b3a59c39ffe74a1706bcb85c451443c3b388d1f6423827b2af4af508c8416b",
+      "duration": 0.33566666666666667,
+      "bytes": 16156,
+      "sha256": "423785e936099f318b12f65f78040209ccb5029688c191b4c144d772e00a71b9"
+    },
+    {
+      "file": "hurt-extra-06.wav",
+      "cue": "hurt",
+      "auditionNumber": 6,
+      "selectionWeight": 1,
+      "original": "3grunt2.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "a377c43f2151000713a45c18223c94e1de2e2393ad10569a391c1b9f96898544",
+      "duration": 0.6045416666666666,
+      "bytes": 29062,
+      "sha256": "e5a16f2922f85a0545f9d9e13b360dc5edd182822bb6feeeecfb1b25201ac6ba"
+    },
+    {
+      "file": "hurt-extra-07.wav",
+      "cue": "hurt",
+      "auditionNumber": 7,
+      "selectionWeight": 1,
+      "original": "3grunt6.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "c334b34e7a64d67f226cd0a54fb237b8fbcc09e5ac6258a32fafcecc2c2e0857",
+      "duration": 1.0994166666666667,
+      "bytes": 52816,
+      "sha256": "5aec6a7b2ccb949f859af9a1fbe094d271b37a5113234ef6f41480b98350a481"
+    },
+    {
+      "file": "hurt-extra-08.wav",
+      "cue": "hurt",
+      "auditionNumber": 8,
+      "selectionWeight": 3,
+      "original": "3yell13.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "b8838d5dd7ea7f6c069774545b460223ca17327998251f76b99b82455177420f",
+      "duration": 3.4908333333333332,
+      "bytes": 167604,
+      "sha256": "5a78eee366f75a503ac6b40e5a4228f6fb9e2daa2ee0069ac0fa9f900615bae1"
+    },
+    {
+      "file": "hurt-extra-09.wav",
+      "cue": "hurt",
+      "auditionNumber": 9,
+      "selectionWeight": 3,
+      "original": "3yell16.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "be7e239898dd275f15a9877002bc893d31406059fd4c14923d0fa3685028fbd1",
+      "duration": 2.9615416666666667,
+      "bytes": 142198,
+      "sha256": "d5f86c843cb00be181b1214e322c19b18d844e0c663fc582264ad563e298bce5"
+    },
+    {
+      "file": "hurt-extra-10.wav",
+      "cue": "hurt",
+      "auditionNumber": 10,
+      "selectionWeight": 3,
+      "original": "yell1.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "ce6ddb412e2c562be70f7cd1ca8f5c8cdb8cc321d9f23d596bf796c6d2da1a16",
+      "duration": 1.1709583333333333,
+      "bytes": 56250,
+      "sha256": "3ba2437751a0ff9a2663d8a12892c90dbe45015e6d0b8dd4ff61b4a0ebb5fcd2"
+    },
+    {
+      "file": "hurt-extra-11.wav",
+      "cue": "hurt",
+      "auditionNumber": 11,
+      "selectionWeight": 3,
+      "original": "yell2.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "7bd946b5858450313327f2c3c351d2cb79d7e6a82369a93a15be625adcf5cbb3",
+      "duration": 1.3027083333333334,
+      "bytes": 62574,
+      "sha256": "3532f5bde044a2418bca72e8fe1910e7512af9d8ba26c45c24a8382c633c80f4"
+    },
+    {
+      "file": "hurt-extra-12.wav",
+      "cue": "hurt",
+      "auditionNumber": 12,
+      "selectionWeight": 3,
+      "original": "yell5.wav",
+      "maxDuration": 4.5,
+      "originalSha256": "39808573744040c5740bc451a037a4523b28a642d0bf635a0705dcc5f453c9c1",
+      "duration": 1.194875,
+      "bytes": 57398,
+      "sha256": "7c3577bd5698dc100aec505b8cdcbe98743e0edaf17127cee9d0079cb0c301b0"
     }
   ]
 }
