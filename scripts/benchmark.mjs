@@ -63,8 +63,10 @@ async function main() {
   const repeats = integer('BENCH_REPEATS', 2, 1, 5), seconds = integer('BENCH_SECONDS', 18, 5, 60);
   const warmup = integer('BENCH_WARMUP', 3, 1, 15), seed = integer('BENCH_SEED', 1938, 0, 0xffffffff);
   const minimumTime = integer('BENCH_MIN_TIME', 0, 0, 180);
-  const baselinePath = process.env.BENCH_BASELINE_POSE;
-  const poseModules = ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
+  if (process.env.BENCH_BASELINE_POSE && process.env.BENCH_BASELINE_COLLISION) throw new Error('Choose one isolated baseline comparison');
+  const collisionComparison = Boolean(process.env.BENCH_BASELINE_COLLISION);
+  const baselinePath = process.env.BENCH_BASELINE_COLLISION || process.env.BENCH_BASELINE_POSE;
+  const poseModules = collisionComparison ? ['src/solid-index.js'] : ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
   const baselineSources = baselinePath ? JSON.parse(await readFile(resolve(baselinePath), 'utf8')) : null;
   if (baselinePath) {
     for (const name of poseModules) assert.equal(typeof baselineSources[name], 'string', `baseline snapshot must contain ${name}`);
@@ -83,7 +85,8 @@ async function main() {
     gpu: system.gpu.devices, gpuFeatures: system.gpu.featureStatus,
     viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, quality, seed, warmupSeconds: warmup,
     sampleSeconds: seconds, minimumSimulationTime: minimumTime, cpuSampleIntervalUs: 1000, repeats,
-    baselinePoseSource: baselinePath ? resolve(baselinePath) : null,
+    baselinePoseSource: baselinePath && !collisionComparison ? resolve(baselinePath) : null,
+    baselineCollisionSource: baselinePath && collisionComparison ? resolve(baselinePath) : null,
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     dirtyFiles: execFileSync('git', ['status', '--short'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean),
     limitation: 'Seed fixes random choices, not exact per-frame scheduling. Frame intervals include renderer/browser/OS work; CPU renderMs is submission, not GPU timing. Inclusive CPU entries overlap.' };
@@ -95,7 +98,7 @@ async function main() {
       const context = await browser.newContext({ viewport: metadata.viewport, deviceScaleFactor: 1 });
       const page = await context.newPage(), errors = [], events = [];
       const poseRequests = new Set();
-      if (baselineSources) await page.route(/\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
+      if (baselineSources) await page.route(collisionComparison ? /\/src\/solid-index\.js(?:\?|$)/ : /\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
         const response = await route.fetch(), current = await response.text();
         const name = new URL(route.request().url()).pathname.slice(1), original = baselineSources[name];
         const three = current.match(/from\s+["']([^"']*\/three\.js[^"']*)["']/)?.[1];
@@ -116,15 +119,16 @@ async function main() {
         await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000, polling: 250 });
         await page.locator('#deploy').waitFor({ state: 'visible', timeout: 90000 });
         assert.equal(await page.evaluate(() => window.__battle.benchmark?.scenario), scenario, 'benchmarks must not silently run against a production build without overrides');
-        if (baselineSources) assert.ok(poseModules.every(name => poseRequests.has(name)), 'paired run must load all three selected pose modules');
+        if (baselineSources) assert.ok(poseModules.every(name => poseRequests.has(name)), 'paired run must load every selected baseline module');
         await page.locator('#menu-quality').selectOption(quality);
         await page.locator('#deploy').click();
         const initial = await page.evaluate(() => {
           const data = window.__battle;
-          return { population: data.population, spawnEvents: data.spawnEvents, graphics: data.graphics, time: data.time, position: data.position };
+          return { population: data.population, spawnEvents: data.spawnEvents, graphics: data.graphics, time: data.time, position: data.position,
+            collisionAcceleration: data.collisionAcceleration ?? null };
         });
         assert.equal(initial.population.friendly.alive, scenario === 'duel' ? 5 : 110);
-        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 110);
+        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 96);
         await page.waitForTimeout(warmup * 1000);
         if (scenario === 'full') {
           events.push({ input: 'KeyW down; straight route from registered base to z<=42', wall: Date.now() });
@@ -145,9 +149,11 @@ async function main() {
         await cdp.send('Profiler.start'); profileStarted = true;
         await page.waitForTimeout(seconds * 1000);
         const { profile } = await cdp.send('Profiler.stop'); profileStarted = false;
+        await writeFile(join(directory, `${name}.cpuprofile`), JSON.stringify(profile));
         const result = await page.evaluate(() => ({ now: performance.now(), frames: window.__battleTelemetry.frames,
           final: { time: window.__battle.time, state: window.__battle.state, combat: window.__battle.combatStats, population: window.__battle.population,
-            corpses: window.__battle.corpses, position: window.__battle.position, graphics: window.__battle.graphics, simulationClock: window.__battle.simulationClock } }));
+            corpses: window.__battle.corpses, position: window.__battle.position, graphics: window.__battle.graphics,
+            collisionAcceleration: window.__battle.collisionAcceleration ?? null, simulationClock: window.__battle.simulationClock } }));
         const frames = result.frames.filter(frame => frame.serial > sampleStart.serial && frame.now <= result.now);
         assert.ok(frames.length >= 60, 'raw sample needs enough active/deployment frames, not a menu/paused scene');
         assert.equal(result.frames.some(frame => frame.serial === sampleStart.serial + 1), true, 'raw frame buffer did not overwrite the sample');
@@ -158,6 +164,7 @@ async function main() {
           shotsBefore: sampleStart.shots, shotsAfter: result.final.combat.aiRifleShots,
           initialAlive: { friendly: initial.population.friendly.alive, enemy: initial.population.enemy.alive },
           finalAlive: { friendly: result.final.population.friendly.alive, enemy: result.final.population.enemy.alive },
+          collisionAcceleration: result.final.collisionAcceleration,
           metrics, maxQueuedPaths: Math.max(...frames.map(frame => frame.queuedPaths)),
           maxPathWaitSeconds: Math.max(...frames.map(frame => frame.oldestPathWaitSeconds)),
           initialGenerations: initial.population.units.map(unit => unit.generation),
@@ -169,7 +176,6 @@ async function main() {
             maxConservationErrorSeconds: Math.max(...frames.map(frame =>
               Math.abs(frame.activeSeconds - frame.simulationTime - frame.simulationBacklogSeconds))) },
           finalState: result.final.state, errors, cpu: summarizeProfile(profile) };
-        await writeFile(join(directory, `${name}.cpuprofile`), JSON.stringify(profile));
         await writeFile(join(directory, `${name}-frames.json`), JSON.stringify({ seed, initial, sampleStart, events, frames, final: result.final }, null, 2));
         await writeFile(join(directory, `${name}-summary.json`), JSON.stringify(summary, null, 2));
         await page.screenshot({ path: join(directory, `${name}.png`) });

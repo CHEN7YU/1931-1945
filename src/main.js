@@ -4089,6 +4089,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   objectives: objectives.map(point => ({ ...point })),
   conquest: { ...conquest },
   drawCalls: renderer.info.render.calls,
+  collisionAcceleration: solidIndex.acceleration,
 }), configurable: false });
 
 if (benchmark) Object.defineProperty(window, '__battleTelemetry', { get: () => telemetry.snapshot, configurable: false });

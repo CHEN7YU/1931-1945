@@ -33,6 +33,21 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.equal(dadaoArt.length, 8);
   assert.ok(dadaoArt.every(file => file.use === 'runtime'));
   assert.ok(report.permissions.some(permission => permission.basis === 'Azure-generated-images' && /not CC0/.test(permission.limitation)));
+  assert.ok(report.files.some(file => file.file === 'dependencies/three-mesh-bvh/LICENSE.txt' && file.use === 'runtime'));
+  assert.ok(report.permissions.some(permission => permission.directory === 'dependencies/three-mesh-bvh' && permission.basis === 'MIT'));
+});
+
+test('collision dependency license cannot be relabelled or silently corrupted', async t => {
+  const { root } = await fixture(t);
+  const manifest = join(root, 'dependencies', 'three-mesh-bvh', 'source.json');
+  const metadata = JSON.parse(await readFile(manifest, 'utf8'));
+  metadata.license = 'CC0-1.0';
+  await writeFile(manifest, JSON.stringify(metadata));
+  await assert.rejects(auditAssets({ root }), /dependency license provenance/);
+  metadata.license = 'MIT';
+  await writeFile(manifest, JSON.stringify(metadata));
+  await writeFile(join(root, 'dependencies', 'three-mesh-bvh', 'LICENSE.txt'), 'unreviewed');
+  await assert.rejects(auditAssets({ root }), /size mismatch/);
 });
 
 test('generated rifle permission cannot become CC0, verified redistribution, or an unquoted grant', async t => {
