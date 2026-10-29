@@ -25,6 +25,10 @@ test('all public resources have exact size/hash evidence and permission is not r
   const generated = report.permissions.find(item => item.directory === 'audio/friendly-rifle-generated');
   assert.equal(generated.basis, 'user-supplied-generated-audio-project-use');
   assert.match(generated.limitation, /redistribution rights have not been independently verified/);
+  const generatedArt = report.files.filter(file => file.file.startsWith('materials/ai-scene/'));
+  assert.equal(generatedArt.length, 14);
+  assert.ok(generatedArt.every(file => file.use === 'runtime'));
+  assert.ok(report.permissions.some(permission => permission.basis === 'Azure-generated-images' && /not CC0/.test(permission.limitation)));
 });
 
 test('generated rifle permission cannot become CC0, verified redistribution, or an unquoted grant', async t => {
@@ -48,6 +52,15 @@ test('generated rifle permission cannot become CC0, verified redistribution, or 
   await writeFile(manifest, JSON.stringify(original));
   await writeFile(join(root, 'audio', 'friendly-rifle-generated', 'PERMISSION.txt'), 'No user request here.');
   await assert.rejects(auditAssets({ root }), /generated rifle audio permission/);
+});
+
+test('generated scene art cannot be relabelled as CC0', async t => {
+  const { root } = await fixture(t);
+  const path = join(root, 'materials', 'ai-scene', 'source.json');
+  const metadata = JSON.parse(await readFile(path, 'utf8'));
+  metadata.license = 'CC0-1.0';
+  await writeFile(path, JSON.stringify(metadata));
+  await assert.rejects(auditAssets({ root }), /Generated scene image provenance requires review/);
 });
 
 test('an unlisted archive or a corrupted existing file blocks the audit', async t => {

@@ -1,0 +1,290 @@
+{
+  "provider": "Azure OpenAI",
+  "license": "Azure-generated-images",
+  "isCC0": false,
+  "source": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e",
+  "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
+  "model": "gpt-image-2.5-flare",
+  "version": "2026-09-08",
+  "generatedAt": "2026-10-28T21:08:02.759755+00:00",
+  "processing": "Material sets: 32px opposite-edge crossfade; 1024px WebP color Q86; 512px lossless WebP high-pass micro-normal and near-matte roughness estimates. Grime: four tinted alpha masks in one lossless 1024px atlas with transparent cell borders. No measured height, AO, metalness or historical reconstruction is claimed.",
+  "budgetUsd": 50,
+  "conservativeEstimatedTotalUsd": 0.073522,
+  "pricing": {
+    "currency": "USD",
+    "source": "https://prices.azure.com/api/retail/prices",
+    "checkedAt": "2026-10-28",
+    "region": "eastus2",
+    "sku": "GlobalStandard",
+    "perMillionTextInputTokens": 5,
+    "perMillionImageInputTokens": 8,
+    "perMillionImageOutputTokens": 30,
+    "estimateMethod": "All input tokens charged at image-input rate, output at image-output rate; conservative estimate, not final Azure invoice."
+  },
+  "textures": [
+    {
+      "id": "weathered-plaster",
+      "sourceSha256": "e6d1c54b28f452f8a2e6830bb7a18a339d6894deb15c352bb09ab0bf397440e8",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic game environment base-color texture: aged warm grey lime plaster of an ordinary northern Chinese town wall circa the 1930s. Full-frame material surface, orthographic front view, uniform diffuse illumination, no perspective, no directional shadows, no ambient occlusion, no highlights, no vignette. Fine gritty plaster, subtle rain streaks, small irregular patches of flaking limewash exposing muted grey-brown brick underneath. Restrained weathering, believable human-scale surface representing about two meters square. Consistent detail across the entire square, suitable for a physically based game material. No people, text, signage, symbols, doors, windows, border, watermark, dramatic lighting or cinematic composition. Make opposite edges match for seamless tiling.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793219875,
+      "usage": {
+        "input_tokens": 159,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 159
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 598
+      },
+      "conservativeEstimatedUsd": 0.014442,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.3310546875,
+        "y": 2.30078125
+      }
+    },
+    {
+      "id": "door-timber",
+      "sourceSha256": "aa386843919c62f255d1b0d00195b68919eaf1b99796f6a0409392236fcc79cd",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Weathered unpainted wooden door boards in an ordinary northern Chinese town circa the 1930s. Five or six parallel VERTICAL wide planks filling the square, warm desaturated brown aged timber, fine vertical grain, a few subtle knots, small natural splits, faint pale wear and dirt. Narrow straight vertical joins only, no deep black gaps. No outer door frame, handles, nails, hinges or horizontal crossbars: those are separate 3D geometry in the game. The square covers about 1.9 meters horizontally and 2.45 meters vertically. No dramatic rot, no moss, no peeling paint, not a finished rendered doorway.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793220149,
+      "usage": {
+        "input_tokens": 215,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 215
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 654
+      },
+      "conservativeEstimatedUsd": 0.01489,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.0550130208333335,
+        "y": 2.2701822916666665
+      }
+    },
+    {
+      "id": "burlap",
+      "sourceSha256": "a2665ea43374fb3b55af380cec3d689c39deaac7c6292710ec5dc17145469ce7",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. A close, evenly lit patch of old coarse natural jute sack cloth, muted khaki tan, finely interwoven horizontal and vertical fibers, subtle irregular threads, mild dusty variation and occasional dark fibers. Flat woven fabric only, not a sack or sandbag object, no folds, no stitching, no seams, no holes. The square represents only 35 centimeters of cloth; individual threads must be fine enough not to look like rope or a wicker basket.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793220217,
+      "usage": {
+        "input_tokens": 174,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 174
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 613
+      },
+      "conservativeEstimatedUsd": 0.014562,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.4007161458333335,
+        "y": 2.4947916666666665
+      }
+    },
+    {
+      "id": "crate-timber",
+      "sourceSha256": "c6b3715c6b005d9e82c387519751c378a7a691f0e76175e837b19f58167ae9af",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Unpainted rough-sawn pine boards for ordinary wooden shipping crates and barrel staves in a 1930s Chinese town. Four broad parallel boards, wood grain running VERTICALLY, warm muted brown with sun-bleached fibers, worn wood grain, small knots, subtle scratches, uneven old surface. Narrow straight board joints, not black cracks. Not polished furniture, not dark burnt timber, no metal bands, no nails, no labels, no framing or corner battens: those are separate geometry. Surface only, not a rendering of a crate. The square represents about 80 centimeters.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793221138,
+      "usage": {
+        "input_tokens": 204,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 204
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 643
+      },
+      "conservativeEstimatedUsd": 0.014802,
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.1546223958333335,
+        "y": 2.3264973958333335
+      }
+    },
+    {
+      "id": "wall-grime",
+      "sourceSha256": "640220cba4a53127bbda7ff91509a82bef39889cdb3a0f0a2039893b3d2b713e",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create an original grayscale game decal MASK atlas on a pure white 1024x1024 background, arranged as four separate 512x512 square cells in a clean 2 by 2 layout. No labels, grid lines, color, wall texture, lighting, people, letters, borders, or watermark. Black represents opaque grime and white represents empty space. Every stain must fade smoothly to pure WHITE on ALL FOUR edges of its own cell, leaving a white margin. Top-left: broad irregular low wall damp patch, denser near its lower middle, thin vertical rising moisture marks. Top-right: several narrow vertical rain runoff trails, stronger in the upper middle and tapering down unevenly, for below a windowsill. Bottom-left: sparse mud splash specks and faint soil stains concentrated low. Bottom-right: soft irregular mottled mildew patch, scattered tiny spots with gaps, not a solid rectangle. Restrained weathered surfaces of ordinary old buildings; no cracks, bullets, craters or holes.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793221205,
+      "usage": {
+        "input_tokens": 207,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 207
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 646
+      },
+      "conservativeEstimatedUsd": 0.014826,
+      "processing": "White-background grayscale masks converted to tinted alpha; each 512px cell has a 24px transparent feather and decoded transparent border check."
+    }
+  ],
+  "files": [
+    {
+      "file": "weathered-plaster/color.webp",
+      "bytes": 382038,
+      "sha256": "e9d6d832229c9f2cb6a0f9202b669e7a3f0370eedaa047f337fa116b3da9961c",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "weathered-plaster/normal.webp",
+      "bytes": 499354,
+      "sha256": "4f7add4720239ed345a7550919517f27ff92eb52ff462349d03fdde74461eead",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "weathered-plaster/roughness.webp",
+      "bytes": 79132,
+      "sha256": "018b4a869fcd1ec6a88473395eee15c00ec1e2882a60d16d6ce29afe324d137a",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "door-timber/color.webp",
+      "bytes": 272786,
+      "sha256": "b8f59b4257ac6be67af86644630ab3134e0231ca954df36e11d028b52b937c25",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "door-timber/normal.webp",
+      "bytes": 424582,
+      "sha256": "f91bb5e425c8ba37febe32d151844258955c77553642a6bfd02d6a1d76e3b3b3",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "door-timber/roughness.webp",
+      "bytes": 70996,
+      "sha256": "9cbd6418f5d1cbd1328059304058cbdb7fe8df370a6c0d01c92240db2ba93724",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "burlap/color.webp",
+      "bytes": 387036,
+      "sha256": "11bdd887e25bcbee23e01ec6755d6ef305dc0f67b9e4d15f69ce64cf37aad518",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "burlap/normal.webp",
+      "bytes": 589604,
+      "sha256": "700982d567b107bfda529fb6c67b140cee200df96a26eab499ece26a2d1e094a",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "burlap/roughness.webp",
+      "bytes": 99174,
+      "sha256": "24b54395faecb91ca1fe2597bae3063cd184bb7fb1244208af49d30104e1425f",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "crate-timber/color.webp",
+      "bytes": 321992,
+      "sha256": "0f9c4ef1255b501efc2dfcf4f8f6deda21b3c6b35f04d3536694498002fedbd0",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "crate-timber/normal.webp",
+      "bytes": 450724,
+      "sha256": "ad094d879193a4283e1bbc71d8fef75ed5a42c21791fa159983e53f607d67229",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "crate-timber/roughness.webp",
+      "bytes": 75808,
+      "sha256": "b1f93b2300c127036ef3e73b56ec7dbae23b4928bf788e39cb3a7a8936480c0f",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "wall-grime/atlas.webp",
+      "bytes": 233868,
+      "sha256": "073f7926b5c4e231dfacf563affd84bc8b6e10f4cb587c5864d1d0e475b8e29b",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB",
+      "transparentCellBorders": true
+    }
+  ]
+}

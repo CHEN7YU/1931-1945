@@ -8,6 +8,8 @@ import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js
 import { damagedSurfaceGeometry, craterGeometry, addStaticWrecks } from './war-damage.js';
 import { makeOutskirtsLayout, outskirtsObstacles } from './outskirts-layout.js';
 import { BATTLE_AREA } from './battle-boundary.js';
+import { weatheredWallPiece } from './scene-art.js';
+import { streetGrimePatches, grimePatchGeometry, sandbagGeometry, sandbagCollisionProxy } from './scene-details.js';
 
 export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
   [4, -4, 17, 12], [0, 52.5, 87, 4], [-16, 62, 7, 14],
@@ -51,11 +53,19 @@ export function makeWorld(scene, surface) {
   const roofMat = surface('tiles', 0xb7bec0, 2.5);
   roofMat.side = THREE.DoubleSide;
   const timber = surface('timber', 0x82705b, 2);
+  const doorTimber = surface('door-timber', 0xd5c8b5);
+  const weatheredPlaster = surface('weathered-plaster', 0xe3dbc9);
+  const crateTimber = surface('crate-timber', 0xb5a28a);
+  const crateTrim = surface('crate-timber', 0x96846b);
+  const wallGrime = surface('wall-grime');
   const charred = surface('timber', 0x302e2a, 2);
   const stone = surface('paving', 0xa6a49b, 2.5);
   const earth = surface('earth', 0xb8a88c, 4);
   const paving = surface('paving', 0xb8b0a0, 3);
-  const sand = surface('plaster', 0x9e8e66, .8);
+  const sand = surface('burlap', 0xc3b28e);
+  sand.vertexColors = true;
+  const sceneArt = { wallPieces: 0, doorLeaves: 0, sandbagMaterial: 'burlap',
+    grimeDecals: 0, detailedCargo: 0, detailedSandbags: 0 };
   const iron = new THREE.MeshStandardMaterial({ color: 0x4d514e, roughness: .76, metalness: .65 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x202925, roughness: .35, metalness: .3 });
   const canvasMat = plain(0x665d47);
@@ -338,8 +348,18 @@ export function makeWorld(scene, surface) {
   }
   const townMaterials = { plaster: plaster[0], brick, timber, charred, stone, floor: timber };
   for (const piece of town.pieces) {
-    const mat = piece.material === 'plaster' ? plaster[town.buildings.findIndex(item => piece.id.startsWith(`${item.id}-`)) % plaster.length] || plaster[0] : townMaterials[piece.material];
+    let mat = piece.material === 'plaster' ? plaster[town.buildings.findIndex(item => piece.id.startsWith(`${item.id}-`)) % plaster.length] || plaster[0] : townMaterials[piece.material];
+    if (weatheredWallPiece(piece, town.buildings)) {
+      mat = weatheredPlaster;
+      sceneArt.wallPieces++;
+    }
     box(piece.x, piece.y, piece.z, piece.w, piece.h, piece.d, mat, true);
+  }
+  for (const patch of streetGrimePatches(town)) {
+    const decal = mesh(grimePatchGeometry(patch), wallGrime, patch.x, patch.y, patch.z);
+    decal.rotation.y = patch.normal * Math.PI / 2;
+    decal.userData.keepUV = true;
+    sceneArt.grimeDecals++;
   }
   obstacles.push(...town.obstacles);
   for (const shop of town.buildings) {
@@ -432,15 +452,32 @@ export function makeWorld(scene, surface) {
   }
 
   const bagGeometry = new THREE.SphereGeometry(1, 10, 6);
+  bagGeometry.setAttribute('color', new THREE.Float32BufferAttribute(
+    new Float32Array(bagGeometry.attributes.position.count * 3).fill(1), 3));
+  const detailedBagGeometry = sandbagGeometry();
+  const bagUV = bagGeometry.attributes.uv;
+  for (let i = 0; i < bagUV.count; i++) {
+    bagUV.setXY(i, bagUV.getX(i) * 2 * Math.PI * .5 / .35, bagUV.getY(i) * Math.PI * .23 / .35);
+  }
   function sandbags(x, z, count, rotate = false) {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
     group.rotation.y = rotate ? Math.PI / 2 : 0;
     scene.add(group);
     for (let row = 0; row < 3; row++) for (let i = 0; i < count; i++) {
-      const bag = mesh(bagGeometry, sand, (i - (count - 1) / 2) * 1.05 + (row % 2) * .3, .21 + row * .36, (random() - .5) * .1, true, group);
+      const detailed = x === -13 && z === 70;
+      const bag = mesh(detailed ? detailedBagGeometry : bagGeometry, sand,
+        (i - (count - 1) / 2) * 1.05 + (row % 2) * .3, .21 + row * .36, (random() - .5) * .1, !detailed, group);
+      bag.userData.keepUV = true;
       bag.scale.set(.59, .23, .44);
       bag.rotation.y = (random() - .5) * .15;
+      if (detailed) {
+        // Keep the original invisible raycast surface as well as the unchanged movement collider.
+        const collision = sandbagCollisionProxy(bag, bagGeometry);
+        group.add(collision);
+        solids.push(collision);
+        sceneArt.detailedSandbags++;
+      }
     }
     obstacle(x, z, rotate ? .8 : count * 1.05 + .5, rotate ? count * 1.05 + .5 : .8, 1.2);
   }
@@ -449,15 +486,24 @@ export function makeWorld(scene, surface) {
   sandbags(-13, 70, 4, true); sandbags(12, 2, 4, true);
 
   function crate(x, z, size = 1) {
-    box(x, size * .45, z, size, size * .9, size * .8, timber, true);
+    const detailed = x >= -15.1 && x <= -13.9 && z >= 58 && z <= 58.2;
+    box(x, size * .45, z, size, size * .9, size * .8, detailed ? crateTimber : timber, true);
     for (const side of [-1, 1]) {
-      box(x + side * size * .37, size * .45, z + size * .42, .08, size * .9, .09, charred);
-      box(x, size * .45 + side * size * .32, z + size * .42, size, .08, .09, charred);
+      box(x + side * size * .37, size * .45, z + size * .42, .08, size * .9, .09, detailed ? crateTrim : charred);
+      box(x, size * .45 + side * size * .32, z + size * .42, size, .08, .09, detailed ? crateTrim : charred);
+    }
+    if (detailed) {
+      for (const side of [-1, 1]) for (const height of [.13, .77]) {
+        cylinder(x + side * size * .37, size * height, z + size * .42 + .05, .012, .012, iron).rotation.x = Math.PI / 2;
+      }
+      sceneArt.detailedCargo++;
     }
     obstacle(x, z, size, size * .8, size * .9);
   }
   function barrel(x, z) {
-    const object = mesh(new THREE.CylinderGeometry(.33, .29, 1, 14, 2), timber, x, .5, z, true);
+    const detailed = Math.abs(x + 13.8) < .01 && Math.abs(z - 59.2) < .01;
+    const object = mesh(new THREE.CylinderGeometry(.33, .29, 1, 14, 2), detailed ? crateTimber : timber, x, .5, z, true);
+    if (detailed) sceneArt.detailedCargo++;
     for (const y of [.16, .51, .85]) {
       const hoop = mesh(new THREE.TorusGeometry(.334, .024, 4, 14), iron, x, y, z);
       hoop.rotation.x = Math.PI / 2;
@@ -643,8 +689,9 @@ export function makeWorld(scene, surface) {
     probe.far = 5;
     riverSurfaces[name] = probe.intersectObjects(solids, false)[0]?.point.y;
   }
-  const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron);
+  const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron, doorTimber);
+  sceneArt.doorLeaves = doorSystem.doors.length;
   return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, waterDepth, walkHeight,
-    moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem,
+    moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem, sceneArt,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { makeDoors, doorCollider, requestDoor, advanceDoor, resetDoors } from './doors.js';
 import { circleBlocked } from './core.js';
 
-export function createDoorWorld(scene, town, obstacles, solids, wood, iron) {
+export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leafMaterial = wood) {
   const doors = makeDoors(town), navigationObstacles = [...obstacles];
-  const leaf = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wood, doors.length);
+  const leaf = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), leafMaterial, doors.length);
   const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wood, doors.length * 3);
   const handles = new THREE.InstancedMesh(new THREE.TorusGeometry(.055, .01, 8, 16), iron, doors.length * 2);
   leaf.userData.doorIds = doors.map(door => door.id);

@@ -3700,6 +3700,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
   combatEffects: combatEffects.snapshot,
   rifleTextures: rifleTextureSnapshot(),
+  sceneArt: { ...world.sceneArt },
   daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity },
   look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
   bridgeSurfaces: { ...world.bridgeSurfaces },

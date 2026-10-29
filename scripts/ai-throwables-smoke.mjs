@@ -39,9 +39,9 @@ function collect(data, phase) {
     audioWindow = Math.floor(data.time / 10); audioSamples.push({ time: data.time, audio: data.rifleAudio });
   }
 }
-function crowding(records) {
+function crowding(records, until = 150) {
   let people = 0, touching = 0, close = 0;
-  for (const sample of records.filter(sample => sample.time >= 20 && sample.time <= 150 && (!sample.phase || sample.phase === 'full'))) {
+  for (const sample of records.filter(sample => sample.time >= 20 && sample.time <= until && (!sample.phase || sample.phase === 'full'))) {
     for (const team of ['friendly', 'enemies']) {
       const actors = sample[team].filter(actor => !['enemy-8', 'enemy-9'].includes(actor.formationId) &&
         !OBJECTIVES.some(point => Math.hypot(actor.x - point.x, actor.z - point.z) < point.radius));
@@ -51,7 +51,8 @@ function crowding(records) {
       }
     }
   }
-  return { observations: people, touching: touching / people, close: close / people };
+  if (!people) throw new Error('Crowding observation has no eligible infantry samples');
+  return { observations: people, from: 20, until, touching: touching / people, close: close / people };
 }
 async function driveTo(x, z) {
   const began = Date.now();
@@ -100,9 +101,10 @@ try {
     const moving = samples.flatMap(sample => sample.friendly).filter(actor => actor.movement?.speed > 2.5 && actor.bodyLean > .15);
     assert.ok(moving.length > 10, 'actual moving soldiers use a visible combat lean');
     assert.ok(data.corpses.count > 0);
-    density = crowding(samples);
+    const until = Math.min(150, data.time);
+    density = crowding(samples, until);
     if (process.env.CROWD_BASELINE) {
-      baseline = crowding(JSON.parse(await readFile(process.env.CROWD_BASELINE, 'utf8')).samples);
+      baseline = crowding(JSON.parse(await readFile(process.env.CROWD_BASELINE, 'utf8')).samples, until);
       assert.ok(density.touching < baseline.touching && density.close < baseline.close,
         `non-objective crowding must improve against the actual saved battle: ${JSON.stringify({ density, baseline })}`);
     }

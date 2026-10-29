@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { SCENE_ART_MATERIALS, SCENE_GRIME_ATLAS } from './scene-art.js';
 
 export async function loadSceneMaterials(renderer, scene) {
   const loader = new THREE.TextureLoader();
@@ -16,6 +17,24 @@ export async function loadSceneMaterials(renderer, scene) {
     map.colorSpace = THREE.SRGBColorSpace;
     surfaces[name] = { map, normalMap, aoMap: arm, roughnessMap: arm, metalnessMap: arm };
   }));
+  await Promise.all(Object.keys(SCENE_ART_MATERIALS).map(async name => {
+    const [map, normalMap, roughnessMap] = await Promise.all(
+      ['color', 'normal', 'roughness'].map(kind => loader.loadAsync(`/assets/materials/ai-scene/${name}/${kind}.webp`)),
+    );
+    for (const texture of [map, normalMap, roughnessMap]) {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.anisotropy = anisotropy;
+    }
+    map.colorSpace = THREE.SRGBColorSpace;
+    surfaces[name] = { map, normalMap, roughnessMap };
+  }));
+  const grime = await loader.loadAsync(SCENE_GRIME_ATLAS);
+  grime.colorSpace = THREE.SRGBColorSpace;
+  grime.anisotropy = anisotropy;
+  surfaces['wall-grime'] = {
+    map: grime, transparent: true, depthWrite: false, alphaTest: .015,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  };
   const sky = await new HDRLoader().loadAsync('/assets/sky.hdr');
   sky.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = sky;
@@ -28,13 +47,16 @@ export async function loadSceneMaterials(renderer, scene) {
   scene.environmentIntensity = .8;
   pmrem.dispose();
 
-  return (name, color = 0xffffff, metersPerTile = 3) => {
+  return (name, color = 0xffffff, metersPerTile = SCENE_ART_MATERIALS[name]?.metersPerTile ?? 3) => {
+    if (!surfaces[name]) throw new RangeError(`Unknown scene surface: ${name}`);
+    const normalStrength = SCENE_ART_MATERIALS[name]?.normalStrength ?? .65;
     const material = new THREE.MeshStandardMaterial({
       ...surfaces[name], color, roughness: 1, metalness: 0,
-      normalScale: new THREE.Vector2(.65, .65), aoMapIntensity: .8,
+      normalScale: new THREE.Vector2(normalStrength, normalStrength), aoMapIntensity: .8,
     });
     material.userData.metersPerTile = metersPerTile;
-    material.userData.surface = name;
+    material.userData.surface = SCENE_ART_MATERIALS[name]?.surface ?? name;
+    material.userData.source = name;
     return material;
   };
 }

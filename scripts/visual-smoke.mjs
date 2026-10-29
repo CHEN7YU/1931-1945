@@ -38,7 +38,9 @@ try {
   await page.waitForFunction(() => window.__battle.state === 'playing');
   await page.waitForTimeout(1000);
   await capture('scene-after.png');
-  assert.equal(loadedAssets.size, 19, 'all PBR maps and the photographic sky load before deployment');
+  for (const asset of sources.files) assert.ok(loadedAssets.has(`/assets/${asset.file}`));
+  assert.equal([...loadedAssets].filter(path => path.startsWith('/assets/materials/ai-scene/')).length, 13,
+    'all generated material maps load alongside the original PBR maps');
   assert.ok(requests.every(request => !/^https?:/.test(request) || new URL(request).origin === new URL(url).origin), 'gameplay never requests third-party assets');
   await page.keyboard.down('w');
   await page.waitForTimeout(1800);
@@ -63,7 +65,7 @@ try {
   assert.match(await missingAssetPage.locator('#fatal-message').textContent(), /场景材质加载失败/, 'missing assets show a real error instead of falling back to flat surfaces');
   assert.equal(await missingAssetPage.locator('#menu').isVisible(), false, 'incomplete scenes cannot be deployed');
   await missingAssetPage.close();
-  console.log(`PASS: 19 local asset checksums, complete offline scene loading, real first-person captures, traversable street and ${snapshot.drawCalls} draw calls.`);
+  console.log(`PASS: 19 original local asset checksums, 13 generated material/decal maps, complete offline scene loading, real first-person captures, traversable street and ${snapshot.drawCalls} draw calls.`);
 } finally {
   await browser.close();
 }

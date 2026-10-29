@@ -18,6 +18,7 @@ const groups = [
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
   { manifest: 'game/ija-1938/source.json', directory: 'game/ija-1938', use: 'runtime', evidence: [] },
+  { manifest: 'materials/ai-scene/source.json', directory: 'materials/ai-scene', use: 'runtime', evidence: [] },
 ];
 
 function assetPath(root, name) {
@@ -111,6 +112,15 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'User-supplied recording; not CC0. Source/license pages returned HTTP 403; verify redistribution terms before public release.' });
+    } else if (group.directory === 'materials/ai-scene') {
+      if (metadata.provider !== 'Azure OpenAI' || metadata.license !== 'Azure-generated-images' ||
+        metadata.isCC0 !== false || metadata.model !== 'gpt-image-2.5-flare' ||
+        metadata.source !== 'https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e' ||
+        metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA') {
+        throw new Error('Generated scene image provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: metadata.license,
+        limitation: 'Original AI-generated material candidates; subject to the Azure agreement, not CC0. Normal and roughness maps are image-derived estimates, not measured PBR or historical evidence.' });
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }
