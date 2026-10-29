@@ -2,9 +2,70 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement } from '../src/tactics.js';
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement, followGuardAction } from '../src/tactics.js';
 import { makeObjectives, advanceCapture } from '../src/core.js';
 import { battleRoster } from '../src/battle-roster.js';
+
+function followingPair(range = 3, speed = 0) {
+  return {
+    actor: { friendly: true, playerUnit: true, order: 'follow', position: { x: range, y: 0, z: 0 },
+      tactics: createTactics(2, 100, 1) },
+    player: { id: 'leader', position: { x: 0, y: 0, z: 0 }, heading: 0, locomotion: { speed } },
+    objective: { x: 0, z: -50 },
+  };
+}
+
+test('followers within three metres guard even while the player moves, with stable sectors and stances', () => {
+  const { actor, player, objective } = followingPair(3, 2);
+  const guard = followGuardAction(actor, player, objective);
+  assert.equal(guard.stance, 'crouched');
+  assert.ok(Math.cos(guard.heading) > .7, 'watch the known front, not the rear follow slot');
+  player.heading = 2;
+  actor.position.x = 3.01;
+  assert.equal(followGuardAction(actor, player, objective), guard, 'distance noise and looking around do not retask guards');
+  actor.position.x = 4.5;
+  assert.equal(followGuardAction(actor, player, objective), guard);
+  actor.position.x = 4.51;
+  assert.equal(followGuardAction(actor, player, objective), null);
+  assert.equal(actor.tactics.followGuard, null);
+  actor.position.x = 3.01;
+  assert.equal(followGuardAction(actor, player, objective), null, 'must close to three metres before guarding again');
+});
+
+test('a stopped player lets the local squad spread and guard, but cannot strand distant or upstairs followers', () => {
+  const { actor, player, objective } = followingPair(8);
+  assert.ok(followGuardAction(actor, player, objective));
+  player.locomotion.speed = .11;
+  assert.equal(followGuardAction(actor, player, objective), null, 'follow again when the leader walks away');
+  player.locomotion.speed = 0;
+  actor.position.x = 8.01;
+  assert.equal(followGuardAction(actor, player, objective), null);
+  actor.position.x = 2; actor.position.y = 3.2;
+  assert.equal(followGuardAction(actor, player, objective), null, 'same horizontal coordinates on another floor still require a path');
+});
+
+test('guarding does not replace explicit orders or autonomous formations and resets on leader changes', () => {
+  for (const patch of [{ order: 'hold' }, { order: 'advance' }, { playerUnit: false }, { friendly: false }]) {
+    const { actor, player, objective } = followingPair();
+    followGuardAction(actor, player, objective);
+    Object.assign(actor, patch);
+    assert.equal(followGuardAction(actor, player, objective), null);
+    assert.equal(actor.tactics.followGuard, null);
+  }
+  const { actor, player, objective } = followingPair();
+  const previous = followGuardAction(actor, player, objective);
+  player.id = 'replacement';
+  assert.notEqual(followGuardAction(actor, player, objective), previous);
+  const sectors = new Set(), stances = new Set();
+  for (let slot = 0; slot < 11; slot++) {
+    actor.tactics = createTactics(slot + 1, 100, slot);
+    const guard = followGuardAction(actor, player, objective);
+    sectors.add(guard.heading); stances.add(guard.stance);
+  }
+  assert.equal(sectors.size, 11);
+  assert.deepEqual([...stances].sort(), ['crouched', 'standing']);
+  assert.throws(() => followGuardAction(actor, player, null), RangeError);
+});
 
 test('capture frees every surplus friendly guard and invalidates the old firing and navigation task', () => {
   const formations = battleRoster(), points = makeObjectives();
