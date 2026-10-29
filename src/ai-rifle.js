@@ -39,6 +39,7 @@ export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettl
   }
   const control = actor.aiRifle, rifle = actor.rifle;
   const blocked = actor.health <= 0 || actor.vehicleId ? 'inactive'
+    : actor.bayonet && actor.bayonet.mode !== 'idle' ? 'bayonet'
     : !mayFire || targetId === null ? 'no-fire-solution'
     : actor.locomotion.sprinting || actor.locomotion.speed > AI_RIFLE.stationarySpeed ? 'moving'
     : actor.locomotion.aimRecovery > 0 ? 'recovering'

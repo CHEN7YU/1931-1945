@@ -65,7 +65,7 @@ export async function loadIjaCharacter() {
       [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
-    const gun = rifleWorldModel(), pose = createNraRiflePose(root, bones, gun);
+    const gun = rifleWorldModel(level, null, { bayonet: true }), pose = createNraRiflePose(root, bones, gun);
     const groundAt = (x, z) => walkHeight(x, z, root.position.y);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
     const flag = createIjaRifleFlag(); gun.add(flag);
@@ -120,7 +120,7 @@ export async function loadIjaCharacter() {
       get snapshot() {
         const point = name => bones.get(name).getWorldPosition(new THREE.Vector3()).toArray();
         return { actorId, uniform: 'ija1938', level, active, visible: root.visible, stance: actor?.stance ?? 'standing',
-          rifleFlag: flag.visible, proportions: source.proportions,
+          rifleFlag: flag.visible, bayonet: gun.getObjectByName('fixed-bayonet').visible, proportions: source.proportions,
           animationSources: Object.values(actions).map(action => action.getClip().name),
           gait: motion ? { source: 'native-foot-cycle', style: motion.travelStyle, runStride: motion.runStride,
             walkStride: motion.walkStride, runContact: motion.runContact, weight: motion.weight, speed: motion.speed, bodyLean: motion.bodyLean, legPose } : null,

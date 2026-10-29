@@ -127,8 +127,9 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
     rifle.position.set(.13, 1.39, .02);
     group.add(rifle);
   } else {
-    part(group, .13, 1.29, -.32, .062, .085, .86, actorMaterials.wood);
-    cylinder(group, .13, 1.39, -.89, .014, .36, actorMaterials.dark).rotation.x = Math.PI / 2;
+    const rifle = rifleWorldModel(detail, null, { bayonet: true });
+    rifle.position.set(.13, 1.39, -.179);
+    group.add(rifle);
   }
   part(group, 0, .96, 0, .51, .07, .34, actorMaterials.leather);
   part(group, -.16, 1.07, -.19, .13, .17, .08, actorMaterials.leather);

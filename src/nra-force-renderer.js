@@ -7,6 +7,7 @@ import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
 import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
+import { hasBayonet } from './bayonet.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -48,7 +49,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const weaponMatrix = new THREE.Matrix4();
   function weaponGroupFor(key) {
     if (!weaponGroups.has(key)) {
-      const gun = rifleWorldModel('far', createRifleState(key)), batches = new Map();
+      const gun = rifleWorldModel('far', createRifleState(key), { bayonet: team === 'enemy' && key === 'rifle' }), batches = new Map();
       gun.updateMatrixWorld(true);
       gun.traverseVisible(mesh => {
         if (!mesh.isMesh) return;
@@ -70,7 +71,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const profile = template.motionProfile;
   const sampleActor = { id: 'pose-bake', team, unitId: 'pose-bake-unit', heading: 0,
     position: new THREE.Vector3(), walkPhase: 0, health: 100, deathTime: 0, vehicleId: null,
-    locomotion: { speed: 0 }, rifle: { ...createRifleState(), id: 'pose-bake:rifle' } };
+    groundType: 'infantry', locomotion: { speed: 0 }, rifle: { ...createRifleState(), id: 'pose-bake:rifle' } };
   sampleActor.nativeMotion = createNraMotion(profile, sampleActor);
   const bankTemplate = template.createFarView?.() ?? template;
   bankTemplate.bind(sampleActor.id);
@@ -82,12 +83,17 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
-  const livingBanks = baseBanks + readyBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
+  const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : 0;
+  const livingBanks = meleeStart + meleeBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
   for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
     const dead = bank >= livingBanks;
-    const firingBank = !dead && bank >= baseBanks;
-    const posture = dead ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
-    const mode = bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    const melee = !dead && bank >= meleeStart;
+    const firingBank = !dead && !melee && bank >= baseBanks;
+    const posture = dead || melee ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const mode = melee ? bank < meleeStart + phases ? 'charge' : 'idle'
+      : bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    sampleActor.bayonet = melee ? { mode: mode === 'charge' ? 'charge' : 'thrust',
+      extension: mode === 'charge' ? 0 : (bank - meleeStart - phases) / 2 } : null;
     const ready = firingBank || mode === 'aim';
     sampleActor.rifleReady = ready;
     if (profile.lowReadyCarry) sampleActor.nativeMotion.lowReady = ready ? 0 : 1;
@@ -100,7 +106,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
     sampleActor.nativeMotion.bodyLean = mode === 'charge' ? .34 : ['short', 'run'].includes(mode) ? .21 : mode === 'walk' ? .075 : mode === 'aim' ? .045 : 0;
     const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
-    sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((bank - 1) % phases) / phases *
+    sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((melee ? bank - meleeStart : bank - 1) % phases) / phases *
       (gait ? gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog : mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
     syncNativeAimGoal(sampleActor);
     sampleActor.health = dead ? 0 : 100;
@@ -108,7 +114,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       { variant: Math.floor((bank - livingBanks) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
     bankTemplate.update(sampleActor, dead ? 2 : 0, null);
     for (const attachment of optionalAttachments) attachment.mesh.visible = false;
-    if (bankTemplate.issue) throw new Error(`Distant uniform pose is unreachable: ${bankTemplate.issue}`);
+    if (bankTemplate.issue) throw new Error(`Distant ${uniform} pose ${bank} (${mode}) is unreachable: ${bankTemplate.issue}`);
     const baked = [];
     let gunMatrix = null;
     bankTemplate.root.traverse(mesh => {
@@ -225,8 +231,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
           const posture = postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
+          const melee = meleeBanks && actor.health > 0 && pose.upright > .999 &&
+            hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle';
           const index = actor.casualty?.wallLimited ? 0 : actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
+            : melee ? meleeStart + (actor.bayonet.mode === 'charge' && pose.weight > .45 ? Math.round(phase * phases) % phases
+              : phases + Math.round(actor.bayonet.extension * 2))
             : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
             : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
