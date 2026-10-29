@@ -30,7 +30,7 @@ const pressFrame = frame([0, 0, 1], [1, 0, 0]);
 const boltFrame = frame([0, 0, 1], [-.8, .6, 0]);
 const magazineFrame = frame([0, -1, 0], [1, 0, 0]);
 
-function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist) {
+function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, outward = null) {
   const axis = wrist.clone().sub(shoulder), distance = axis.length(), [upper, lower] = lengths;
   axis.normalize();
   const along = (upper * upper - lower * lower + distance * distance) / (2 * distance);
@@ -40,6 +40,11 @@ function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist) {
   desired.addScaledVector(axis, -desired.dot(axis));
   const downInPlane = down.clone().addScaledVector(axis, -down.dot(axis));
   if (desired.lengthSq() < 1e-10) desired.copy(downInPlane);
+  if (outward) {
+    const lateral = outward.clone().addScaledVector(axis, -outward.dot(axis)).normalize();
+    // Keep the loading elbow on the outside branch, including while the palm turns.
+    desired.addScaledVector(lateral, Math.max(0, outward.length() - desired.dot(lateral)));
+  }
   desired.normalize();
   let limited = false;
   const available = center.clone().sub(wrist).dot(down) + radius * downInPlane.length();
@@ -96,10 +101,12 @@ export function createWeaponHands(createHand) {
     const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
     const down = new THREE.Vector3(0, -1, 0).transformDirection(inverse);
     const elbow = alignedElbowPole(shoulder, wrist, forward, hand.userData.armLengths, down,
-      supportWeight > .999 ? .05 : 0);
+      loading > 0 ? .05 * smooth(shoulder.clone().sub(wrist).dot(down), -.05, .1) : supportWeight > .999 ? .05 : 0,
+      loading > 0 ? new THREE.Vector3(-1, -.5, .1).transformDirection(inverse)
+        .multiplyScalar(.1 * smooth(loading, 0, .2) + .8 * loading * (1 - loading)) : null);
     // Choose the elbow on its two-bone circle to align the forearm with the palm,
     // rather than solving a hand target with an unrelated, fixed elbow direction.
-    elbow.pole.lerp(defaultPole.clone().multiplyScalar(.25), 1 - Math.max(supportWeight, triggerWeight));
+    elbow.pole.lerp(defaultPole.clone().multiplyScalar(.25), 1 - Math.max(supportWeight + loading, triggerWeight));
     hand.poseArm(shoulder, wrist, rotation, elbow.pole);
     if (!hand.armSnapshot.reachable || hand.armSnapshot.error > .002) {
       throw new Error(`Native ${side} weapon arm cannot reach its owned contact: ` +
