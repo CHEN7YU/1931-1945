@@ -7,12 +7,12 @@ export const TANK_MACHINE_GUN = Object.freeze({ magazine: 100, reload: 4, interv
 export const TANK_GUN_MOUNT = Object.freeze({
   turret: Object.freeze([-.3, 1.36, -.38]), pivot: Object.freeze([0, .37, -.62]),
   coax: Object.freeze([.19, .035, -.55]), cannon: Object.freeze([-.08, 0, -1.122]),
-  sight: Object.freeze([0, .15, .4]),
+  sight: Object.freeze([.19, .3, .25]),
 });
 
 export const TANK_OBSERVATION = Object.freeze({
-  commander: Object.freeze({ eyeHeight: 1.88, fov: 66, aimFov: 48, aperture: 'slit' }),
-  gunner: Object.freeze({ eyeHeight: 1.88, fov: 40, aimFov: 24, aperture: 'scope' }),
+  commander: Object.freeze({ eyeHeight: 2.03, fov: 66, aimFov: 48, aperture: 'slit' }),
+  gunner: Object.freeze({ eyeHeight: 2.03, fov: 40, aimFov: 24, aperture: 'scope' }),
   driver: Object.freeze({ eyeHeight: 1.3, fov: 72, aimFov: 72, aperture: 'driver',
     yawLimit: 35 * Math.PI / 180, pitchLimit: .2 }),
 });
@@ -21,11 +21,9 @@ export function tankObservationPose(vehicle, role, aiming) {
   const view = TANK_OBSERVATION[role], p = vehicle?.position;
   if (!view || vehicle.type !== 'tank' || typeof aiming !== 'boolean' || !p ||
     ![p.x, p.y, p.z, vehicle.heading].every(Number.isFinite)) throw new RangeError('Tank observation needs a finite vehicle and supported crew role');
-  const c = Math.cos(vehicle.heading), s = Math.sin(vehicle.heading);
-  if (role === 'gunner') return { ...tankGunPose(vehicle, TANK_GUN_MOUNT.sight).start,
+  if (role !== 'driver') return { ...tankGunPose(vehicle, TANK_GUN_MOUNT.sight).start,
     fov: aiming ? view.aimFov : view.fov, aperture: view.aperture };
-  return { x: p.x + (role === 'driver' ? 0 : -.3 * c - .38 * s), y: p.y + view.eyeHeight,
-    z: p.z + (role === 'driver' ? 0 : .3 * s - .38 * c),
+  return { x: p.x, y: p.y + view.eyeHeight, z: p.z,
     fov: aiming ? view.aimFov : view.fov, aperture: view.aperture };
 }
 

@@ -89,7 +89,7 @@ try {
   data = await snapshot();
   assert.equal(data.type, 'tank'); assert.equal(data.current, 1);
   assert.equal(data.look.pitch, initial.vehicles[0].turretPitch, 'ground rifle look cannot overwrite the original cannon aim');
-  assert.ok(Math.abs(data.locomotion.eyeHeight - 1.88) < 1e-8);
+  assert.ok(Math.abs(data.locomotion.eyeHeight - data.vehicles[0].seats[1].eyeHeight) < 1e-8);
   assertCannonReload(data, reloadDeadline);
   assert.equal(data.ammo, data.vehicles[0].weapon.ammo, 'Y returns to the shared primary rather than the dismounted rifle');
   assert.equal(data.vehicles[0].seats[1].occupantId, data.control.soldierId);

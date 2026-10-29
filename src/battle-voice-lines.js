@@ -80,10 +80,36 @@ export const BATTLE_VOICE_LINES = Object.freeze({
   ],
 });
 
+export const CHINESE_CHARGE_DELIVERIES = Object.freeze([
+  { variant: 0, speaker: 'yunjian', ahStartSample: 6643, ahEndSample: 11732,
+    sourceSynthesisHash: '6f7029b366f542ede911aef8773f58a79632afe667ec45e5ffafb9321ea9a88c',
+    shortHash: 'dbab7d6e1a2936498d07ec952fe1e9c058cdac5533341366dd6d1d518c407b52',
+    longHash: '64f43dd260254f6925b7cc2da25f3174fff0a234d73c69455f42e311dd8270ac' },
+  { variant: 2, speaker: 'yunfeng', ahStartSample: 7688, ahEndSample: 12777,
+    sourceSynthesisHash: 'dc00f1d0d3967dfec37334a2d09dca7a9ebfac34a42d1ba8fc089e10dc1d46d3',
+    shortHash: '63f779b22be5155929a318f0f8dc6ab269f4ebdd94366fa49cb32393efadd340',
+    longHash: '4e0df56f15536957a3f0847c701550d9ab64f2fdb1fe533f71158cf3db6efe66' },
+].flatMap(source => ['short', 'long'].map(take => ({
+  variant: source.variant, take, selectionWeight: take === 'short' ? 3 : 1,
+  sourceFile: `${source.speaker}-advance-1-ah-${take}.wav`,
+  sha256: take === 'short' ? source.shortHash : source.longHash,
+  sourceSynthesisHash: source.sourceSynthesisHash,
+  ahStartSample: source.ahStartSample, ahEndSample: source.ahEndSample,
+  originalAhDuration: (source.ahEndSample - source.ahStartSample) / 24000,
+  targetAhDuration: take === 'short' ? .4 : .7,
+  ahDuration: take === 'short' ? .4 : 16793 / 24000,
+}))));
+
 export function battleVoiceClips() {
   return Object.entries(BATTLE_VOICE_LINES).flatMap(([team, lines]) =>
-    BATTLE_VOICE_PROFILES[team].flatMap((profile, variant) => lines.map(line => ({
-      ...line, ...profile, team, variant,
-      file: `${team}-${variant}-${line.id}.mp3`,
-    }))));
+    BATTLE_VOICE_PROFILES[team].flatMap((profile, variant) => lines.flatMap(line => {
+      const clip = { ...line, ...profile, team, variant, file: `${team}-${variant}-${line.id}.mp3` };
+      const deliveries = team === 'friendly' && line.id === 'advance-1'
+        ? CHINESE_CHARGE_DELIVERIES.filter(delivery => delivery.variant === variant) : [];
+      return deliveries.length ? deliveries.map(delivery => ({
+        ...clip, rate: '+12%', pitch: '+2%', styledegree: '1.8', pauseMs: 80,
+        selectionWeight: delivery.selectionWeight, delivery,
+        file: `${team}-${variant}-${line.id}${delivery.take === 'long' ? '-long' : ''}.wav`,
+      })) : [clip];
+    })));
 }

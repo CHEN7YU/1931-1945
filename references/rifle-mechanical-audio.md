@@ -1,5 +1,10 @@
 # Rifle mechanical audio integration
 
+Status checked during the 2026-10-29 local integration: the loader, personal
+event mixer and explicit failure fallback remain connected in `main.js`.
+This contract is implemented; period authenticity, NPC spatial mechanics and
+user listening acceptance are not implied. No new recordings were generated.
+
 The four recordings now replace synthetic mechanical feedback for the controlled
 personal rifle in `main.js`. Rifle actions, simulation, characters, damage,
 dependencies and game controls are unchanged. Synthetic mechanical feedback
@@ -108,6 +113,6 @@ a listening acceptance test.
 The separate game smoke requires a development server. It verifies the native
 character game path, original action event identity, recorded-only cycle/reload,
 pause/resume, Y transfer, tool stowing, crew switching, new-match serial reset,
-100v100 startup and personal fire, and explicit HTTP/decode-error fallback with
+normal-roster startup (currently 110 friendly / 96 enemy) and personal fire, and explicit HTTP/decode-error fallback with
 actual synthetic playback. `ARTIFACT_DIR` preserves the observations. These are
 functional checks, not a population performance or human listening acceptance.

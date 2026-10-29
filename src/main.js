@@ -11,9 +11,12 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
+import { createWeaponHands } from './weapon-hands.js';
+import { createOcclusionQuery } from './occlusion-query.js';
+import { createGrenadeSupport } from './grenade-support.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
+  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement, followGuardAction } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight, configureSunShadow } from './lighting.js';
@@ -60,7 +63,7 @@ import { CORPSE_RULES, createCasualtyState, expiredCorpses, placeCasualty } from
 import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
-import { infantrySteering } from './infantry-spacing.js';
+import { infantrySteering, advanceInfantryPath } from './infantry-spacing.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription } from './battle-units.js';
 import { chooseAIThrowable, planAIThrow } from './ai-throwables.js';
@@ -189,6 +192,10 @@ try {
 }
 const world = makeWorld(scene, surface);
 const solidIndex = createSolidIndex(world.solids);
+const occluded = createOcclusionQuery();
+const grenadeSupport = createGrenadeSupport(world.solids, world.groundHeight, (point, radius) =>
+  !world.doorSystem.doors.some(door => Math.hypot(point.x - door.x, point.z - door.z) < door.width * 2 + radius + .1) &&
+  ![...entities.vehicles.values()].some(vehicle => Math.hypot(point.x - vehicle.position.x, point.z - vehicle.position.z) < 5 + radius));
 const soldierRenderer = createSoldierRenderer(scene, camera, BATTLE_RULES.unitsPerTeam * TYPES.infantry.members + TYPES.infantry.members);
 const rallyRenderer = createRallyRenderer(scene);
 const vehicleRenderer = createVehicleRenderer(scene);
@@ -209,6 +216,8 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
   }
 }
 const actorGrid = new SpatialGrid();
+const trafficGrid = new SpatialGrid();
+const trafficReservations = new Map();
 const soldierHits = createSoldierHitSystem((actor, now) => {
   const character = actor.friendly ? nraCharacter : ijaCharacter;
   if (!character) throw new Error('Native soldier has no anatomical pose factory');
@@ -219,6 +228,7 @@ const groundCollision = obstacleLookup(world.obstacles, 2.5);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
 const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
 const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.createGrenadeHand);
+const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHand) : null;
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain') });
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.obstacles);
@@ -974,7 +984,7 @@ function beginMatch() {
   enemies = [];
   allies = [];
   friendlyAI = []; friendlyForces = []; allForces = [];
-  pathRequests.clear(); aiCursor = 0;
+  pathRequests.clear(); trafficReservations.clear(); trafficGrid.clear(); aiCursor = 0;
   resetSpawns();
   pendingSquad = pendingSpawn = null;
   objectives = makeObjectives();
@@ -1397,7 +1407,7 @@ function hasLine(from, to, maxDistance = 120, ignoreVehicleId = null) {
   ray.set(from, vector.normalize());
   ray.far = Math.max(0, distance - .04);
   const transports = vehicleSolids(ignoreVehicleId, from);
-  const blocked = ray.intersectObjects([...solidIndex.candidates(from, ray.ray.direction, distance), ...transports], true).length > 0;
+  const blocked = occluded(ray, [...solidIndex.candidates(from, ray.ray.direction, distance), ...transports]);
   ray.far = Infinity;
   return !blocked;
 }
@@ -1596,7 +1606,7 @@ function explode(position, damage, radius, source, weaponKind = 'explosion', sur
   }
 }
 
-function traceGrenade(from, to, radius) {
+function traceGrenade(from, to, radius, checkingSupport = false) {
   const start = new THREE.Vector3(from.x, from.y, from.z), delta = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
   const length = delta.length();
   if (length < 1e-8) return null;
@@ -1610,7 +1620,8 @@ function traceGrenade(from, to, radius) {
     if (hit && hit.distance < distance) {
       distance = hit.distance;
       closest = { position: start.clone().addScaledVector(travel, distance), normal: captureImpact(hit, travel).normal,
-        vehicleId: hit.object.userData.vehicleId ?? null };
+        vehicleId: hit.object.userData.vehicleId ?? null,
+        ...(checkingSupport ? { staticSupport: grenadeSupport.mesh(hit.object, from, radius) } : {}) };
     }
   }
   ray.far = Infinity;
@@ -1629,7 +1640,8 @@ function traceGrenade(from, to, radius) {
       position.y = world.groundHeight(position.x, position.z) + radius;
       const slopeX = (world.groundHeight(position.x + .02, position.z) - world.groundHeight(position.x - .02, position.z)) / .04;
       const slopeZ = (world.groundHeight(position.x, position.z + .02) - world.groundHeight(position.x, position.z - .02)) / .04;
-      closest = { position, normal: new THREE.Vector3(-slopeX, 1, -slopeZ).normalize() };
+      closest = { position, normal: new THREE.Vector3(-slopeX, 1, -slopeZ).normalize(),
+        ...(checkingSupport ? { staticSupport: grenadeSupport.ground(from, radius) } : {}) };
     }
   }
   return closest;
@@ -2104,7 +2116,7 @@ function renderBattleBoundary() {
 
 function probeWeaponSupport(point, depth) {
   const supportRay = new THREE.Raycaster(new THREE.Vector3(point.x, point.y, point.z), new THREE.Vector3(0, -1, 0), 0, depth);
-  const hit = supportRay.intersectObjects(world.solids, false)[0];
+  const hit = supportRay.intersectObjects(solidIndex.candidates(supportRay.ray.origin, supportRay.ray.direction, depth), false)[0];
   if (!hit?.face || hit.object.userData.doorIds || hit.object.userData.doorId) return null;
   const matrix = hit.object.matrixWorld.clone();
   if (hit.instanceId != null) {
@@ -2266,10 +2278,10 @@ function updateCamera(dt) {
       const intendedMuzzle = weapon.userData.rifle.muzzle.position.clone().add(new THREE.Vector3(targetX, targetY, targetZ)).applyMatrix4(camera.matrixWorld);
       const length = start.distanceTo(intendedMuzzle);
       ray.set(start, intendedMuzzle.clone().sub(start).normalize()); ray.far = length + .08;
-      const blocked = ray.intersectObjects(world.solids, false)[0];
+      const blocked = ray.intersectObjects(solidIndex.candidates(ray.ray.origin, ray.ray.direction, ray.far), false)[0];
       // A parallel camera ray prevents a lateral stock offset from missing a corner.
       ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3())); ray.far = length + .18;
-      const centerBlocked = ray.intersectObjects(world.solids, false)[0];
+      const centerBlocked = ray.intersectObjects(solidIndex.candidates(ray.ray.origin, ray.ray.direction, ray.far), false)[0];
       const nearest = Math.min(blocked?.distance ?? Infinity, centerBlocked?.distance ?? Infinity);
       weaponObstruction = Math.max(0, Math.min(1, (length + .08 - nearest) / .75));
       obstructionBlend = THREE.MathUtils.lerp(obstructionBlend, weaponObstruction, 1 - Math.exp(-dt * 20));
@@ -2279,6 +2291,10 @@ function updateCamera(dt) {
       weapon.position.y -= retract * .12;
       weapon.rotation.x -= retract * .55;
       updateRifleArms(weapon);
+      // Vault/obstruction lowering stows the shorter native arms rather than stretching them.
+      weaponHands?.update(weapon, allies[current].rifle, {
+        stowed: vaultLower > 0 || weapon.position.y < -.32, appearance: allies[current].avatarAppearance,
+      });
       weapon.updateMatrixWorld(true);
       ray.far = Infinity;
     } else {
@@ -2331,7 +2347,8 @@ function squadCommand(follow) {
     actor.orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
       { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100) }, world.town.buildings);
     actor.orderObjectiveId = attack && !follow ? objective.id : null;
-    actor.path = null;
+    actor.path = actor.pathGoal = null; pathRequests.delete(actor.tactics.id);
+    actor.tactics.traffic = actor.tactics.followGuard = null;
     actor.tactics.decisionAt = 0;
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.tactics.cover = null;
@@ -2393,8 +2410,15 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     pathRequests.set(actor.tactics.id, { actor, target: { ...target }, requestedAt: pathRequests.get(actor.tactics.id)?.requestedAt ?? time });
   }
   if (!actor.path) return;
-  while (actor.path.length && Math.hypot(actor.path[0].x - pos.x, actor.path[0].z - pos.z) < .1) actor.path.shift();
-  const waypoint = actor.path[0];
+  const waypoint = advanceInfantryPath(pos, actor.path, point => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(point.x - pos.x, point.z - pos.z) / .2));
+    for (let step = 1; step <= steps; step++) {
+      const x = pos.x + (point.x - pos.x) * step / steps, z = pos.z + (point.z - pos.z) * step / steps;
+      if (circleBlocked(x, z, .46, movementObstacles(x, z), pos.y) ||
+        Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3) return false;
+    }
+    return true;
+  });
   if (!waypoint) return;
   const waitingDoor = pos.y < 1 ? world.doorSystem.openAhead(pos, waypoint) : null;
   if (waitingDoor) {
@@ -2432,13 +2456,15 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   sprint = pace === 'sprint';
   speed = Math.hypot(target.x - pos.x, target.z - pos.z) > 1.3 ? profile[pace] : Math.min(speed, profile[pace]);
   const inCaptureArea = objectives.some(point => Math.hypot(pos.x - point.x, pos.z - point.z) < point.radius);
-  const steering = infantrySteering(actor, actorGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
+  const steering = infantrySteering(actor, trafficGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
     spacing: inCaptureArea ? 1.45 : 2.2, constrained: space.constrained,
+    dt, now: time, reservations: trafficReservations,
     blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), pos.y),
   });
   speed *= steering.speed;
   actor.tactics.blockedBy = steering.waitingFor;
   if (speed < .05) {
+    actor.stuckTime = (actor.stuckTime || 0) + dt;
     actor.tactics.mode = 'wait-for-spacing'; actor.locomotion.mode = 'idle';
     return;
   }
@@ -2462,8 +2488,6 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
-    const side = actor.index % 2 ? -1 : 1;
-    moveInfantry(pos, -dz / distance * step * side, dx / distance * step * side, .42, obstacles);
   } else actor.stuckTime = 0;
   settleActorSupport(actor);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
@@ -2809,9 +2833,17 @@ function tryAIBayonet(actor, target, dt) {
     targetAimPoint(target), limit + 2));
   if (!visible) { cancelBayonet(actor.bayonet); return false; }
   actor.stance = 'standing'; actor.firingPose = null;
-  const turn = advanceAITurn(actor, Math.atan2(actor.position.x - target.position.x, actor.position.z - target.position.z), dt, true);
+  const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
+  const targetHeading = Math.atan2(-dx, -dz);
+  const steering = distance > BAYONET.reach ? infantrySteering(actor,
+    trafficGrid.near(position.x, position.z, 3.2).filter(other => other.id !== target.id),
+    { x: dx, z: dz }, { spacing: 1, constrained: false,
+      dt, now: time, reservations: trafficReservations,
+      blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) }) : null;
+  const turn = advanceAITurn(actor, steering ? Math.atan2(-steering.x, -steering.z) : targetHeading, dt, true);
   actor.turningThisStep = true;
-  const action = advanceBayonet(actor, target, { now: time, visible, facing: turn.facing, settled: postureReady(actor) });
+  const action = advanceBayonet(actor, target, { now: time, visible,
+    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) });
   if (!action.active) return false;
   resetAIRifleAim(actor.aiRifle, 'bayonet');
   actor.rifleReady = false; actor.buildProgress = 0;
@@ -2821,12 +2853,8 @@ function tryAIBayonet(actor, target, dt) {
   actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
   tactics.mode = `bayonet-${actor.bayonet.mode}`;
   if (action.hit) hurt(target, BAYONET.damage, captureAttackSource(entities, actor, actor.rifle), 'bayonet');
-  if (actor.bayonet.mode !== 'charge' || !turn.mayMove || !postureReady(actor)) return true;
-  const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
+  if (actor.bayonet.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
   const obstacles = movementObstacles(position.x, position.z);
-  const steering = infantrySteering(actor, actorGrid.near(position.x, position.z, 3.2).filter(other => other !== target),
-    { x: dx, z: dz }, { spacing: 1, constrained: false,
-      blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) });
   const profile = FOOT_SPEEDS[actor.groundType];
   const sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
   const speed = sprint ? profile.sprint : profile.jog;
@@ -2868,6 +2896,19 @@ function updateAI(dt) {
     assaultAssignmentAt = time + 5;
   }
   actorGrid.rebuild(allForces);
+  trafficReservations.clear();
+  trafficGrid.rebuild(allForces.map(actor => {
+    const previous = actor.tactics.trafficPosition;
+    const waypoint = actor.path?.[0], dx = waypoint ? waypoint.x - actor.position.x : 0,
+      dz = waypoint ? waypoint.z - actor.position.z : 0, length = Math.hypot(dx, dz);
+    const snapshot = { id: actor.id, health: actor.health, vehicleId: actor.vehicleId,
+      position: { x: actor.position.x, y: actor.position.y, z: actor.position.z }, heading: actor.heading,
+      tactics: { id: actor.tactics.id }, locomotion: { speed: actor.locomotion.speed },
+      velocity: previous && dt > 0 ? { x: (actor.position.x - previous.x) / dt, z: (actor.position.z - previous.z) / dt } : { x: 0, z: 0 },
+      intent: length > .01 ? { x: dx / length, z: dz / length } : null };
+    actor.tactics.trafficPosition = { x: actor.position.x, z: actor.position.z };
+    return snapshot;
+  }));
   sensorBudget = 12; coverBudget = 1; postureBudget = 4;
   let completedPaths = 0;
   for (const [id, request] of pathRequests) {
@@ -2875,6 +2916,7 @@ function updateAI(dt) {
     if (request.actor.health <= 0 || request.actor === player) continue;
     const pathStarted = benchmark ? performance.now() : 0;
     request.actor.path = multistoryPath(request.actor.position, request.target, world.town.buildings, navigate);
+    request.actor.tactics.pathReason = request.actor.path.length ? 'ready' : navigate.stats.reason;
     if (benchmark) telemetry.add('pathMs', performance.now() - pathStarted);
     request.actor.pathGoal = request.target;
     request.actor.nextPath = time + (request.actor.path.length ? 1.8 : 3);
@@ -2893,8 +2935,12 @@ function updateAI(dt) {
   for (let index = 0; index < allForces.length; index++) {
     const actor = allForces[(index + aiCursor) % allForces.length];
     if (actor.health <= 0) continue;
-    if (actor === player) { resetAIRifleAim(actor.aiRifle, 'controlled'); continue; }
+    if (actor === player) {
+      actor.tactics.traffic = actor.tactics.followGuard = null;
+      resetAIRifleAim(actor.aiRifle, 'controlled'); continue;
+    }
     if (actor.traversal.kind !== 'grounded') {
+      actor.tactics.traffic = actor.tactics.followGuard = null;
       resetAIRifleAim(actor.aiRifle, 'traversing');
       actor.rifleReady = false;
       continue;
@@ -2903,6 +2949,7 @@ function updateAI(dt) {
     actor.aimWalking = false;
     actor.rifleReady = false; actor.turningThisStep = false;
     const tactics = actor.tactics, previousCover = tactics.cover;
+    if (actor.order !== 'follow' || tactics.lastSeen) tactics.followGuard = null;
     if (expireThreat(tactics, time)) {
       actor.target = null;
       actor.path = actor.pathGoal = null;
@@ -2911,7 +2958,10 @@ function updateAI(dt) {
       tactics.shotMoveGoal = null; tactics.shotMovePending = false; tactics.wallContact = null;
       if (previousCover) coverClaims.delete(previousCover.id);
     }
-    if (actor.vehicleId) { cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue; }
+    if (actor.vehicleId) {
+      tactics.traffic = tactics.followGuard = null;
+      cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
+    }
     if (actor.grenades.action) {
       cancelBayonet(actor.bayonet);
       const action = actor.grenades.action;
@@ -2948,7 +2998,7 @@ function updateAI(dt) {
         continue;
       }
     }
-    if (actor.nativeMotion && !tactics.lastSeen && actor.firingPose) { actor.stance = 'standing'; actor.firingPose = null; }
+    if (actor.nativeMotion && !tactics.lastSeen && actor.firingPose && tactics.mode !== 'guard') { actor.stance = 'standing'; actor.firingPose = null; }
     const position = actor.position;
     settleActorSupport(actor);
     if (actor.traversal.kind !== 'grounded') continue;
@@ -3097,11 +3147,25 @@ function updateAI(dt) {
         const goal = formationDestination(actor, objective);
         if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7) walkActor(actor, goal, 3, dt);
       } else {
-        const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
-        const goal = floorDestination(player.position,
-          { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
-            z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }, world.town.buildings);
-        if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65) walkActor(actor, goal, 3.5, dt);
+        const guard = followGuardAction(actor, player, assaultObjective);
+        if (guard) {
+          tactics.mode = 'guard';
+          actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
+          actor.turningToPath = false;
+          tactics.traffic = tactics.personalSlot = tactics.blockedBy = null;
+          if (tactics.cover) coverClaims.delete(tactics.cover.id);
+          tactics.cover = null; tactics.enteredCover = false;
+          const turn = advanceAITurn(actor, guard.heading, dt);
+          actor.stance = turn.facing ? guard.stance : 'standing';
+          actor.firingPose = actor.stance === 'crouched' ? 'crouched' : null;
+          actor.rifleReady = turn.facing && postureReady(actor) && actor.locomotion.aimRecovery === 0;
+        } else {
+          const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
+          const goal = floorDestination(player.position,
+            { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
+              z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }, world.town.buildings);
+          if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65) walkActor(actor, goal, 3.5, dt);
+        }
       }
     } else if (buildingRally) {
       tactics.mode = 'engineer';
@@ -3129,7 +3193,8 @@ function updateAI(dt) {
       const dx = position.x - other.position.x;
       const dz = position.z - other.position.z;
       const distance = Math.hypot(dx, dz);
-      const spacing = other === player ? 1.75 : actor.tactics.cover ? .92 : atObjective ? 1.1 : 1.45;
+      const walking = actor.turningThisStep || actor.path?.length || tactics.mode === 'wait-for-spacing';
+      const spacing = walking ? .9 : other === player ? 1.75 : tactics.mode === 'guard' ? 2.2 : actor.tactics.cover ? .92 : atObjective ? 1.1 : 1.45;
       if (distance < spacing) {
         const angle = distance > .01 ? Math.atan2(dz, dx) : tactics.id * 2;
         const push = Math.min(.06, (spacing - distance) * dt * 3);
@@ -3138,6 +3203,7 @@ function updateAI(dt) {
         if (actor.locomotion.speed < .1 && Math.hypot(position.x - beforeX, position.z - beforeZ) / dt > .1) {
           actor.locomotion.speed = Math.hypot(position.x - beforeX, position.z - beforeZ) / dt;
           actor.locomotion.mode = 'walk'; actor.rifleReady = false;
+          if (tactics.mode === 'guard') { actor.stance = 'standing'; actor.firingPose = null; }
         }
       }
     }
@@ -3998,11 +4064,15 @@ Object.defineProperty(window, '__battle', { get: () => ({
       clipVisible: weapon.userData.rifle.clip.visible, chargerVisible: weapon.userData.rifle.clip.getObjectByName('charger').visible,
       cartridges: weapon.userData.rifle.clip.children.filter(child => child.name.startsWith('cartridge') && child.visible).length,
       reloadContact: weapon.userData.reloadContact ? { ...weapon.userData.reloadContact } : null,
+      handContact: weapon.userData.handContact ? structuredClone(weapon.userData.handContact) : null,
+      nativeHands: weaponHands?.snapshot ?? null,
       feedPosition: weapon.getObjectByName('feed')?.position.toArray() ?? null,
       leftHandPosition: weapon.userData.rifle.leftHand.position.toArray(),
       flashVisible: weapon.userData.rifle.flash.visible,
       dimensions: { ...weapon.userData.dimensions },
-      arms: weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
+      arms: weaponHands?.snapshot ? Object.fromEntries(['left', 'right'].map(side =>
+        [side, { upper: weaponHands.snapshot[side].arm.lengths[0], forearm: weaponHands.snapshot[side].arm.lengths[1] }]))
+        : weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
     } : null,
     muzzle: weapon?.userData.rifle ? weapon.userData.rifle.muzzle.getWorldPosition(new THREE.Vector3()).toArray() : null,
     sights: weapon?.userData.rifle ? ['rearSight', 'frontSight'].map(name => {
@@ -4031,6 +4101,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
     formationId: actor.formation.id, pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
+    pathWaypoint: actor.path?.[0] ? { ...actor.path[0] } : null, pathReason: actor.tactics.pathReason ?? null,
+    traffic: actor.tactics.traffic ? { waitSeconds: actor.tactics.traffic.waitSeconds,
+      reason: actor.tactics.traffic.reason, yieldPoint: actor.tactics.traffic.yieldPoint ? { ...actor.tactics.traffic.yieldPoint } : null } : null,
     heading: actor.heading, rifleReady: actor.rifleReady, lowReady: actor.nativeMotion?.lowReady ?? null,
     bodyLean: actor.nativeMotion?.bodyLean ?? null,
     turningToPath: Boolean(actor.turningToPath), lastHit: actor.lastHit ? { ...actor.lastHit } : null,
@@ -4079,6 +4152,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   objectives: objectives.map(point => ({ ...point })),
   conquest: { ...conquest },
   drawCalls: renderer.info.render.calls,
+  collisionAcceleration: solidIndex.acceleration,
 }), configurable: false });
 
 if (benchmark) Object.defineProperty(window, '__battleTelemetry', { get: () => telemetry.snapshot, configurable: false });

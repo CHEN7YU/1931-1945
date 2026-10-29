@@ -173,6 +173,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         footprint: banks[livingBanks + variant * 2 + Number(retainGun)].footprint };
     },
     createGrenadeHand: template.createGrenadeHand,
+    createWeaponHand: template.createWeaponHand,
     async prepare(renderer) {
       for (let index = 0; index < 6; index++) {
         const view = template.createView(); root.add(view.root);

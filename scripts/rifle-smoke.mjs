@@ -33,8 +33,14 @@ try {
   await wait(() => window.__battle.fov < 48.01);
   let data = await snapshot();
   assert.ok(Math.abs(data.rifle.model.dimensions.length - 1.11) < .002, 'authored gun body, not just metadata, measures 111 cm within 2 mm');
-  for (const arm of Object.values(data.rifle.model.arms)) {
-    assert.ok(Math.abs(arm.upper - .35) < .002 && arm.forearm > .3 && arm.forearm < .37, 'two-segment arms keep anatomical lengths instead of long straight tubes');
+  for (const [side, arm] of Object.entries(data.rifle.model.arms)) {
+    const native = data.rifle.model.nativeHands?.[side];
+    if (native) {
+      assert.equal(arm.upper, native.arm.lengths[0]);
+      assert.equal(arm.forearm, native.arm.lengths[1]);
+      assert.ok(native.arm.reachable && native.arm.error < .002);
+    } else assert.ok(Math.abs(arm.upper - .35) < .002 && arm.forearm > .3 && arm.forearm < .37,
+      'diagnostic two-segment arms keep their original lengths');
   }
   const sharedGeometry = await page.evaluate(async () => {
     const { rifleModel, rifleWorldModel } = await import('/src/rifle-model.js');

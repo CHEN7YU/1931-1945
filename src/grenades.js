@@ -6,6 +6,7 @@ export const GRENADE = Object.freeze({ count: 1, fuse: 4, draw: .45, windup: .22
 export const EXPLOSIVE_PACK = Object.freeze({ ...GRENADE, fuse: 5, draw: .6, windup: .3, recovery: .5,
   speed: 11, lift: 2.4, bounce: .18, friction: .5, size: .18, radius: 9, damage: 240,
   armorRadius: 4, armorDamage: 720 });
+const restingSupports = new WeakMap();
 export function throwableProfile(kind = 'grenade') {
   if (!['grenade', 'explosive-pack'].includes(kind)) throw new RangeError(`Unknown throwable: ${kind}`);
   return kind === 'grenade' ? GRENADE : EXPLOSIVE_PACK;
@@ -117,12 +118,35 @@ export function grenadePose(action, eyeHeight = 1.67) {
 export function advanceGrenadeFlight(grenade, dt, trace) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Invalid grenade flight timestep');
   const profile = throwableProfile(grenade.kind);
+  if (dt === 0) return;
+  const cached = restingSupports.get(grenade);
+  if (cached) {
+    const unchanged = grenade.resting && cached.trace === trace && cached.kind === grenade.kind &&
+      ['x', 'y', 'z'].every(axis => grenade.position[axis] === cached.position[axis] && grenade.velocity[axis] === 0);
+    if (unchanged) {
+      const valid = cached.valid();
+      if (typeof valid !== 'boolean') throw new TypeError('Static grenade support validity must be explicit');
+      if (valid) return;
+    }
+    restingSupports.delete(grenade);
+  }
   for (let remaining = dt; remaining > 1e-9;) {
     const step = Math.min(remaining, profile.step);
     remaining -= step;
     if (grenade.resting) {
-      const support = trace(grenade.position, { ...grenade.position, y: grenade.position.y - .005 }, profile.size);
-      if (support && support.normal.y > .6) continue;
+      const support = trace(grenade.position, { ...grenade.position, y: grenade.position.y - .005 }, profile.size, true);
+      if (support && support.normal.y > .6) {
+        if (support.staticSupport != null) {
+          if (typeof support.staticSupport !== 'function') throw new TypeError('Static grenade support needs a validity function');
+          const valid = support.staticSupport();
+          if (typeof valid !== 'boolean') throw new TypeError('Static grenade support validity must be explicit');
+          if (valid && ['x', 'y', 'z'].every(axis => grenade.velocity[axis] === 0)) {
+            restingSupports.set(grenade, { trace, kind: grenade.kind, position: point(grenade.position), valid: support.staticSupport });
+            return;
+          }
+        }
+        continue;
+      }
       grenade.resting = false;
     }
     const from = point(grenade.position), to = {};

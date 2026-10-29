@@ -5,7 +5,28 @@ const validPoint = point => point && Number.isFinite(point.x) && Number.isFinite
 
 export function createTactics(id, squad, slot) {
   return { id, squad, slot: slot % 11, mode: 'advance', lastSeen: null, threatKind: 'person', threatSense: null, threatId: null,
-    observedAt: null, engagementPoint: null, lastSightCheck: null, forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null };
+    observedAt: null, engagementPoint: null, lastSightCheck: null, forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null, followGuard: null };
+}
+
+export function followGuardAction(actor, player, objective) {
+  if (!actor?.tactics || !validPoint(actor.position) || !validPoint(player?.position) ||
+    ![actor.position.y, player.position.y, player.heading, player.locomotion?.speed].every(Number.isFinite) ||
+    !validPoint(objective)) throw new RangeError('Follow guarding requires owned positions, player movement and a known objective');
+  const state = actor.tactics, previous = state.followGuard;
+  const range = distance(actor.position, player.position), sameFloor = Math.abs(actor.position.y - player.position.y) <= 1.5;
+  const nearby = range <= (previous?.playerId === player.id ? 4.5 : 3);
+  if (!actor.friendly || !actor.playerUnit || actor.order !== 'follow' || !sameFloor ||
+    !(nearby || player.locomotion.speed <= .1 && range <= 8)) {
+    state.followGuard = null;
+    return null;
+  }
+  if (!previous || previous.playerId !== player.id) {
+    const dx = actor.position.x - objective.x, dz = actor.position.z - objective.z;
+    const heading = Math.hypot(dx, dz) > .1 ? Math.atan2(dx, dz) : player.heading;
+    state.followGuard = { playerId: player.id, heading: heading + (state.slot % 11 - 5) * .12,
+      stance: state.slot % 2 ? 'crouched' : 'standing' };
+  }
+  return state.followGuard;
 }
 
 export function rememberThreat(state, position, now, kind = 'person', sense = 'vision', targetId = null) {
@@ -206,6 +227,7 @@ export function resetObjectiveMovement(actor, objectiveId) {
   state.relocatedFireUntil = state.coverMoveUntil = state.postureUntil = state.postureDecisionAt = 0;
   state.mode = 'formation-advance';
   actor.path = actor.pathGoal = null; actor.nextPath = 0; actor.stuckTime = 0;
+  state.traffic = state.followGuard = null;
   actor.rifleReady = false;
 }
 

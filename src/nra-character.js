@@ -144,6 +144,7 @@ export async function loadNraCharacter() {
     },
     createView,
     createGrenadeHand: side => createNraGrenadeHand(normalized, side, { fullArm: true }),
+    createWeaponHand: side => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig: true }),
     bind(id) {
       actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; casualtyPose = null; resets++;
       mixer.stopAllAction();

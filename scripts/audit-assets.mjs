@@ -20,6 +20,7 @@ const groups = [
   { manifest: 'game/ija-1938/source.json', directory: 'game/ija-1938', use: 'runtime', evidence: [] },
   { manifest: 'materials/ai-scene/source.json', directory: 'materials/ai-scene', use: 'runtime', evidence: [] },
   { manifest: 'materials/ai-dadao/source.json', directory: 'materials/ai-dadao', use: 'runtime', evidence: [] },
+  { manifest: 'dependencies/three-mesh-bvh/source.json', directory: 'dependencies/three-mesh-bvh', use: 'runtime', evidence: [] },
 ];
 
 function assetPath(root, name) {
@@ -122,6 +123,14 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Original AI-generated material candidates; subject to the Azure agreement, not CC0. Normal and roughness maps are image-derived estimates, not measured PBR or historical evidence.' });
+    } else if (group.directory === 'dependencies/three-mesh-bvh') {
+      if (metadata.license !== 'MIT' || metadata.author !== 'Garrett Johnson' || metadata.version !== '0.9.16' ||
+        metadata.source !== 'https://github.com/gkjohnson/three-mesh-bvh' ||
+        metadata.files.length !== 1 || metadata.files[0].file !== 'LICENSE.txt') {
+        throw new Error('Collision dependency license provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: 'MIT',
+        limitation: 'Third-party library; copyright and MIT license notice are included with the build.' });
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }

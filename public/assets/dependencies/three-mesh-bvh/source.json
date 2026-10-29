@@ -1,0 +1,16 @@
+{
+  "asset": "three-mesh-bvh dependency license notice",
+  "version": "0.9.16",
+  "author": "Garrett Johnson",
+  "license": "MIT",
+  "source": "https://github.com/gkjohnson/three-mesh-bvh",
+  "licenseUrl": "https://github.com/gkjohnson/three-mesh-bvh/blob/master/LICENSE",
+  "processing": "License distributed with the installed npm package, preceded by its name and source URL. Library code is bundled by Vite; package-lock.json records the package integrity.",
+  "files": [
+    {
+      "file": "LICENSE.txt",
+      "bytes": 1156,
+      "sha256": "5420b3e1eda94f89bca64bcd80fea1ccedead865fb4b2059302827d5867bf2e4"
+    }
+  ]
+}
