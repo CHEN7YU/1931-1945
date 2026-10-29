@@ -1,23 +1,12 @@
 import * as THREE from 'three';
 import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
 import { createTankFireEffects } from './tank-fire.js';
+import { valueNoise2D as cloudNoise } from './value-noise.js';
 
 const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0,
   'blast-dust': 0x9b8a6e, 'blast-smoke': 0x666560, 'blast-flash': 0xffc575,
   'blast-fire': 0xff8a24, 'blast-soot': 0x292724, 'blast-wave': 0xc9b58e };
 const fragmentColors = Object.fromEntries(Object.entries(colors).map(([name, value]) => [name, new THREE.Color(value)]));
-function cloudNoise(x, y) {
-  const hash = (a, b) => {
-    let value = Math.imul(a, 374761393) + Math.imul(b, 668265263);
-    value = Math.imul(value ^ value >>> 13, 1274126177);
-    return ((value ^ value >>> 16) >>> 0) / 4294967295;
-  };
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-  const a = hash(ix, iy) * (1 - u) + hash(ix + 1, iy) * u;
-  const b = hash(ix, iy + 1) * (1 - u) + hash(ix + 1, iy + 1) * u;
-  return a * (1 - v) + b * v;
-}
 export function impactKind(object) {
   const surface = object.material?.userData.surface;
   if (surface === 'earth') return 'soil';

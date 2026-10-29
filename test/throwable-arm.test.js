@@ -11,6 +11,10 @@ import { createNraRiflePose, solveArm } from '../src/nra-rifle-pose.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNativePosturePoses } from '../src/nra-posture-pose.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
+import { DADAO_DIMENSIONS, dadaoViewModel, updateDadaoView } from '../src/dadao-model.js';
+import { loadDadaoSurfaces } from '../src/dadao-surface.js';
+
+await loadDadaoSurfaces(1, { async loadAsync(url) { return new T.Texture({ src: url }); } });
 
 const manager = new T.LoadingManager();
 manager.addHandler(/\.(png|jpe?g|dds)$/i, { setPath() { return this; }, load() { return new T.Texture(); } });
@@ -19,6 +23,78 @@ const model = new FBXLoader(manager).parse(bytes.buffer.slice(bytes.byteOffset, 
 const rig = prepareNraRig(model), source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
+
+test('dadao uses the authorized skin, reachable original arm bones and the actual solved wrist attachment', () => {
+  const view = dadaoViewModel(side => createNraGrenadeHand(source, side, { fullArm: true }));
+  const camera = new T.PerspectiveCamera(72, 1.6, .025, 20);
+  camera.position.set(1, 2, 3); camera.rotation.set(.3, -.5, .2); camera.add(view); camera.updateMatrixWorld(true);
+  const hand = view.userData.dadaoArm, sword = view.userData.dadaoHand, bones = [];
+  hand.traverse(node => { if (node.isBone) bones.push([node, node.position.clone(), node.scale.clone()]); });
+  assert.equal(view.userData.handSource, 'nra-authorized-skinned-hand');
+  for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 40; frame++) {
+    updateDadaoView(view, { phase, progress: frame / 40 }, { weaponX: .005, weaponY: -.004 });
+    const wrist = new T.Vector3(...hand.armSnapshot.frame);
+    assert.ok(hand.armSnapshot.reachable && hand.armSnapshot.error < 1e-6, `${phase}/${frame}: ${JSON.stringify(hand.armSnapshot)}`);
+    const expected = hand.attachmentFrame.localToWorld(new T.Vector3(...hand.userData.throwableGrips.dadao));
+    const actual = sword.localToWorld(new T.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0));
+    assert.ok(actual.distanceTo(expected) < 1e-6, 'grip remains attached to the real wrist, even under a rotated camera');
+    assert.equal(hand.gripSnapshot.kind, 'dadao');
+    const index = sword.worldToLocal(hand.getObjectByName('RightHandIndex1').getWorldPosition(new T.Vector3()));
+    const pinky = sword.worldToLocal(hand.getObjectByName('RightHandPinky1').getWorldPosition(new T.Vector3()));
+    assert.ok(index.y > pinky.y + .05, 'index and thumb must face the guard, not the pommel');
+    assert.ok(.023 - index.y < .025 && index.y < .023, 'the upper hand sits just below the guard');
+    assert.ok(wrist.z < -.15, 'wrist stays in front of the camera');
+    for (const [bone, position, scale] of bones) { assert.deepEqual(bone.position, position); assert.deepEqual(bone.scale, scale); }
+  }
+});
+
+test('dadao fingers wrap back around the grip and the thumb opposes the curled index and middle fingers', () => {
+  const arm = createNraGrenadeHand(source, 'right', { fullArm: true });
+  arm.poseGrip(1, 0, 'dadao');
+  const point = name => arm.worldToLocal(arm.getObjectByName(`RightHand${name}`).getWorldPosition(new T.Vector3()));
+  for (const finger of ['Index', 'Middle', 'Ring', 'Pinky']) {
+    const [base, pip, dip, tip] = [1, 2, 3, 4].map(index => point(finger + index));
+    const proximal = pip.clone().sub(base).normalize(), middle = dip.clone().sub(pip).normalize();
+    assert.ok(proximal.dot(middle) < .8, `${finger}: proximal joint must visibly bend, not form a straight bar`);
+    assert.ok(tip.y < dip.y - .005, `${finger}: fingertip turns back around the handle`);
+  }
+  const opposed = point('Index2').add(point('Middle2')).multiplyScalar(.5);
+  assert.ok(point('Thumb4').distanceTo(opposed) < .02, 'thumb pad closes across the curled upper fingers');
+});
+
+test('dadao carry shows the whole fist on wide and narrow viewports without a backwards-folded wrist', () => {
+  for (const aspect of [1.6, 450 / 1100, 360 / 1000]) {
+    const camera = new T.PerspectiveCamera(72, aspect, .07, 20), view = dadaoViewModel(side =>
+      createNraGrenadeHand(source, side, { fullArm: true }));
+    camera.add(view); camera.updateMatrixWorld(true);
+    const arm = view.userData.dadaoArm;
+    for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 20; frame++) {
+      updateDadaoView(view, { phase, progress: frame / 20 }, { weaponX: 0, weaponY: 0 }, camera);
+      assert.ok(arm.armSnapshot.reachable && arm.armSnapshot.error < 1e-6, `${aspect}/${phase}/${frame}: ${JSON.stringify(arm.armSnapshot)}`);
+      const wrist = new T.Vector3(...arm.armSnapshot.wrist), elbow = new T.Vector3(...arm.armSnapshot.elbow);
+      const forward = new T.Vector3(0, 1, 0).applyQuaternion(arm.attachmentFrame.getWorldQuaternion(new T.Quaternion()));
+      assert.ok(wrist.clone().sub(elbow).normalize().dot(forward) > .65, `${aspect}/${phase}/${frame}: wrist flexes too far`);
+      if (phase === 'ready') {
+        for (const name of ['RightHand', ...['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'].flatMap(finger =>
+          [1, 2, 3, 4].map(index => `RightHand${finger}${index}`))]) {
+          const projected = arm.getObjectByName(name).getWorldPosition(new T.Vector3()).project(camera);
+          assert.ok(Math.abs(projected.x) < .95 && Math.abs(projected.y) < .95, `${aspect}/${name}: fist is clipped ${projected.toArray()}`);
+        }
+        const project = point => {
+          const value = point.project(camera);
+          return new T.Vector2(value.x * aspect, value.y);
+        };
+        const fistSpan = project(arm.getObjectByName('RightHandIndex1').getWorldPosition(new T.Vector3()))
+          .distanceTo(project(arm.getObjectByName('RightHandPinky1').getWorldPosition(new T.Vector3())));
+        const sword = view.userData.dadaoHand;
+        const bladeSpan = project(sword.localToWorld(new T.Vector3(.071, .62, 0)))
+          .distanceTo(project(sword.localToWorld(new T.Vector3(0, .045, 0))));
+        assert.ok(fistSpan / bladeSpan > .09 && fistSpan / bladeSpan < .23,
+          `${aspect}: perspective makes the fist disproportionate to the blade (${fistSpan / bladeSpan})`);
+      }
+    }
+  }
+});
 
 test('native throwable arms isolate authorized sleeve/skin, preserve source resources and solve a full unstretched chain', () => {
   const original = [...rig.canonical.values()].map(bone => [bone, bone.position.clone(), bone.quaternion.clone()]);

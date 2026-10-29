@@ -125,6 +125,15 @@ try {
   await wait(() => !window.__battle.controlSimulation.weaponMount.active);
   await page.keyboard.press('b');
   await wait(() => window.__battle.controlSimulation.weaponMount.active);
+  await page.keyboard.press('3');
+  await wait(() => window.__battle.dadao.phase === 'ready');
+  assert.equal((await snapshot()).controlSimulation.weaponMount.active, false, 'drawing the dadao releases rifle support');
+  await page.keyboard.press('b');
+  assert.equal((await snapshot()).controlSimulation.weaponMount.active, false, 'a sword cannot mount as a rifle at the same support point');
+  await page.keyboard.press('1');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('b');
+  await wait(() => window.__battle.controlSimulation.weaponMount.active);
   await page.keyboard.down('s'); await page.waitForTimeout(80); await page.keyboard.up('s');
   await wait(() => !window.__battle.controlSimulation.weaponMount.active);
   await walkTo(-12, 21.98); await turn(0);
@@ -195,7 +204,7 @@ try {
     endSeconds: (Date.now() - recordingStarted) / 1000, data: await snapshot() });
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'cover-smoke.json'), JSON.stringify(observations, null, 2));
-  console.log('PASS: B support, V not bound, real shots, movement release, real-map sandbag vault, pause, physical jump/Y landing, hand-carried LMG insertion and press.');
+  console.log('PASS: B support, V not bound, dadao releases and cannot mount, real shots, movement release, real-map sandbag vault, pause, physical jump/Y landing, hand-carried LMG insertion and press.');
 } catch (error) {
   const data = await snapshot();
   console.error(JSON.stringify({ errors, state: data?.state, position: data?.position, look: data?.look,

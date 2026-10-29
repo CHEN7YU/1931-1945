@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { solveArm } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
+import { DADAO_GRIP } from './dadao.js';
 
 function trimSleeveAtShoulder(mesh, upper, lower) {
   const origin = upper.getWorldPosition(new THREE.Vector3()), axis = lower.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
@@ -148,7 +149,8 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   root.userData.palmFacingAxis = side === 'left' ? -1 : 1;
   root.userData.grenadeGrip = gripCenter.toArray();
   root.userData.throwableGrips = Object.freeze({ grenade: Object.freeze(gripCenter.toArray()),
-    'explosive-pack': Object.freeze([gripCenter.x, gripCenter.y, .056]) });
+    'explosive-pack': Object.freeze([gripCenter.x, gripCenter.y, .056]),
+    dadao: Object.freeze([gripCenter.x, gripCenter.y, DADAO_GRIP.palmDepth]) });
   root.userData.fingerCount = 5;
   const weaponGrips = new Map();
   root.prepareWeaponGrip = (name, { center, depth, thickness, round = false }) => {
@@ -251,20 +253,26 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   };
   root.poseGrip = (closure, pinPull = 0, kind = 'grenade') => {
     if (![closure, pinPull].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) throw new RangeError('Invalid native finger pose');
-    if (!['grenade', 'explosive-pack'].includes(kind)) throw new RangeError('Hand contact needs a supported throwable');
+    if (!['grenade', 'explosive-pack', 'dadao'].includes(kind)) throw new RangeError('Hand contact needs a supported held object');
     if (solutions.has(kind)) { applySolution(solutions.get(kind), closure, pinPull, kind); return; }
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
     const facing = root.getWorldQuaternion(new THREE.Quaternion()), pack = kind === 'explosive-pack';
     const center = new THREE.Vector3().fromArray(root.userData.throwableGrips[kind]);
+    // The cylindrical grip includes finger-pad clearance: bones cannot lie on the handle surface.
+    const surface = (x, angle) => kind === 'dadao'
+      ? new THREE.Vector3(x, Math.sin(angle) * (DADAO_GRIP.radiusX + DADAO_GRIP.fingerPad),
+        -Math.cos(angle) * (DADAO_GRIP.radiusZ + DADAO_GRIP.fingerPad))
+      : throwableGripPoint(kind, x, angle);
     let reachAdjustment = 0;
     for (const [index, finger] of fingerNames.entries()) {
       const [first, second, third, end] = chains.get(finger), base = localPoint(first);
       const x = pack ? base.x : THREE.MathUtils.clamp(base.x, center.x - .030, center.x + .030);
-      let angle = (pack ? [1.0, 1.15, 1.2, .7] : [1.4, 1.55, 1.55, .8])[index];
+      let angle = (kind === 'dadao' ? [2.45, 2.6, 2.6, 2.3]
+        : pack ? [1.0, 1.15, 1.2, .7] : [1.4, 1.55, 1.55, .8])[index];
       const origin = first.getWorldPosition(new THREE.Vector3()), elbow = second.getWorldPosition(new THREE.Vector3()), dip = third.getWorldPosition(new THREE.Vector3());
       const a = origin.distanceTo(elbow), b = elbow.distanceTo(dip);
-      const contact = theta => throwableGripPoint(kind, x - center.x, theta).add(center);
+      const contact = theta => surface(x - center.x, theta).add(center);
       let desired = root.localToWorld(contact(angle));
       while (desired.distanceTo(origin) >= a + b - .001 && angle > .35) {
         angle -= .05; desired = root.localToWorld(contact(angle));
@@ -283,18 +291,18 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
       rotateEnd(third, end, root.localToWorld(contact((low + high) / 2)));
     }
     const [first, second, third, end] = chains.get('Thumb');
-    const target = root.localToWorld(throwableGripPoint(kind, .032, -.45).add(center));
+    const target = root.localToWorld(surface(kind === 'dadao' ? .04 : .032, kind === 'dadao' ? -.2 : -.45).add(center));
     const delta = target.sub(first.getWorldPosition(new THREE.Vector3()));
     const a = first.getWorldPosition(new THREE.Vector3()).distanceTo(second.getWorldPosition(new THREE.Vector3()));
     const b = second.getWorldPosition(new THREE.Vector3()).distanceTo(third.getWorldPosition(new THREE.Vector3()));
     delta.clampLength(Math.abs(a - b) + .001, a + b - .001).add(first.getWorldPosition(new THREE.Vector3()));
     solveArm(first, second, third, delta, new THREE.Vector3(1, .3, -.25).applyQuaternion(facing));
-    rotateEnd(third, end, root.localToWorld(throwableGripPoint(kind, .006, .02).add(center)));
+    rotateEnd(third, end, root.localToWorld(surface(kind === 'dadao' ? .014 : .006, kind === 'dadao' ? 1.05 : .02).add(center)));
     const solution = { reachAdjustment, rotations: new Map([...rest.keys()].map(name => [name, bones.get(name).quaternion.clone()])) };
     solutions.set(kind, solution); applySolution(solution, closure, pinPull, kind);
   };
   // Cache in the normalized wrist frame, before the independent arm rig is posed.
-  for (const kind of ['grenade', 'explosive-pack']) root.poseGrip(1, 0, kind);
+  for (const kind of ['grenade', 'explosive-pack', 'dadao']) root.poseGrip(1, 0, kind);
   const pinch = new THREE.Vector3(.025, .137, .025), pinchRotations = new Map();
   root.poseGrip(.3);
   for (const finger of ['Index', 'Thumb']) {

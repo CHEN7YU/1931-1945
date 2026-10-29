@@ -47,7 +47,7 @@ export function diagnosticSpawns(scenario = 'duel') {
     { id: 'diagnostic-shop-art', name: '首街美术样例区', team: 'friendly', kind: 'base', x: 0, z: 64, altitude: 0 },
   ];
   if (scenario === 'ford') return [
-    { id: 'diagnostic-ford', name: '浅河坦克通行诊断点', team: 'friendly', kind: 'garage', x: -48, z: -6, altitude: 0 },
+    { id: 'diagnostic-ford', name: '干河床坦克通行诊断点', team: 'friendly', kind: 'garage', x: -48, z: -6, altitude: 0 },
   ];
   if (scenario === 'interior') return [
     { id: 'diagnostic-friendly', name: '门与室内几何诊断点', team: 'friendly', kind: 'base', x: 0, z: 78, altitude: 0 },

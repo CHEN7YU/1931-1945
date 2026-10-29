@@ -1,6 +1,6 @@
 export const KILL_COLUMNS = Object.freeze([
   ['rifle', '步枪'], ['sniper', '狙击枪'], ['machine-gun', '轻机枪'], ['grenade', '手雷'],
-  ['explosive-pack', '炸药包'], ['tank', '坦克主炮'], ['tank-machine-gun', '坦克机枪'],
+  ['explosive-pack', '炸药包'], ['melee', '近战'], ['tank', '坦克主炮'], ['tank-machine-gun', '坦克机枪'],
   ['mortar', '迫击炮'], ['plane', '航空'],
 ].map(Object.freeze));
 

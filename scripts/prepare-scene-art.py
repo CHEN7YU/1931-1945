@@ -21,7 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "public" / "assets" / "materials" / "ai-scene"
 MODEL = "gpt-image-2.5-flare"
 VERSION = "2026-09-08"
-NAMES = ("weathered-plaster", "door-timber", "burlap", "crate-timber", "wall-grime")
+SCENE_NAMES = ("weathered-plaster", "door-timber", "burlap", "crate-timber", "wall-grime")
+NATURE_NAMES = ("bark-elm", "bark-poplar", "bark-willow", "root-litter", "dry-silt")
+NAMES = SCENE_NAMES + NATURE_NAMES
 COMMON = (
     "Create one original photorealistic base-color material texture for a browser game. "
     "Full-frame flat material surface, orthographic front view, even diffuse lighting, "
@@ -30,6 +32,45 @@ COMMON = (
     "or cinematic composition. Make opposite edges match for seamless repeating. "
 )
 PROMPTS = {
+    "bark-elm": COMMON + (
+        "Mature elm tree bark, not cut timber or wooden boards. Neutral warm grey-brown, "
+        "interlocking irregular vertical ridges and shallow broken fissures, small "
+        "flaking scales, subtle pale dust in recesses. The square represents 80 cm "
+        "of bark surface. Medium-light albedo, restrained contrast, fine tactile grain. "
+        "No trunk silhouette, roots, leaves, knots, plank joins, moss or deep black grooves."
+    ),
+    "bark-poplar": COMMON + (
+        "Living poplar tree bark, not cut wood or boards. Pale grey with a faint "
+        "warm olive cast, mostly smooth weathered surface, sparse narrow broken "
+        "vertical fissures and small dark lenticels. The square represents 80 cm "
+        "of surface. Natural subtle variation, not birch paper, no horizontal stripes, "
+        "no trunk silhouette, roots, leaves, knots, plank joins or green moss."
+    ),
+    "bark-willow": COMMON + (
+        "Old willow bark, not cut timber or boards. Desaturated warm grey-brown, "
+        "irregular narrow meandering vertical furrows and soft interwoven corky "
+        "ridges. The square represents 80 cm of surface. Medium-light albedo "
+        "and restrained shallow fissure contrast, no black channels, planks, "
+        "trunk silhouette, roots, leaves, moss or dramatic decay."
+    ),
+    "root-litter": COMMON + (
+        "Top-down ground material under a deciduous tree in a dry northern Chinese "
+        "town. Mostly exposed dusty muted reddish grey-brown compact earth, "
+        "small scattered curled dry tan leaves and broken leaf fragments in "
+        "irregular sparse clusters, a little fine humus and tiny grit. The square "
+        "represents 1.6 meters; whole leaves only 3 to 7 cm long, no dense leaf carpet. "
+        "Earth must remain visible over at least 75 percent of the surface. "
+        "No tree, trunk, roots, grass, rocks, circular stain, border or contact shadow."
+    ),
+    "dry-silt": COMMON + (
+        "Top-down fine dry alluvial sediment from an abandoned shallow river channel. "
+        "Light desaturated grey-tan dusty silt, small discontinuous drying cracks, "
+        "sandy speckles and a few tiny rounded grains. The square represents "
+        "2 meters of flat ground; details have no preferred direction and irregular "
+        "sizes. Mostly fine uncracked powder with isolated small cracked mud islands. "
+        "No long grooves, tracks, tire marks, parallel bands, ripples, ridges, "
+        "uniform polygon grid, grass, large stones, wet mud or water."
+    ),
     "door-timber": COMMON + (
         "Weathered unpainted wooden door boards in an ordinary northern Chinese town "
         "circa the 1930s. Five or six parallel VERTICAL wide planks filling the square, "
@@ -126,7 +167,7 @@ def verify_deployment_and_prices(endpoint, deployment):
             raise ValueError("Azure retail rates changed or are unavailable; revise the budget before generation.")
 
 
-def generate(args):
+def generate(args, names=None, prompts=PROMPTS, prior_estimate_usd=None):
     directory = args.source_dir
     directory.mkdir(parents=True, exist_ok=True)
     if args.reuse_plaster:
@@ -150,22 +191,24 @@ def generate(args):
     ledger_path = directory / "generation-ledger.json"
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {
         "budgetUsd": 50, "reservedUsdPerAttempt": 10, "attempts": [],
-        "priorPlasterEstimateUsd": 0.014442,
+        "priorSourceEstimateUsd": prior_estimate_usd if prior_estimate_usd is not None else
+            (0.014442 if args.reuse_plaster else 0),
         "note": "Reservations are conservative workflow allocations, not an Azure billing hard cap. Failed/uncertain requests retain their full reservation. Never retries automatically.",
     }
     last_request = None
-    for name in NAMES:
+    for name in names if names is not None else args.materials:
         image_path, record_path = directory / f"{name}.png", directory / f"{name}.json"
         if image_path.exists() and record_path.exists():
             record = json.loads(record_path.read_text())
             if checksum(image_path)["sha256"] != record["sha256"]:
                 raise ValueError(f"Corrupted saved source: {name}")
             continue
-        if name not in PROMPTS:
+        if name not in prompts:
             raise ValueError("Supply the saved plaster sample with --reuse-plaster.")
         if any(attempt["name"] == name for attempt in ledger["attempts"]):
             raise ValueError(f"Prior uncertain/failed request for {name}; inspect ledger before spending again.")
-        reserved = ledger["priorPlasterEstimateUsd"] + sum(item["reservedUsd"] for item in ledger["attempts"])
+        reserved = ledger.get("priorSourceEstimateUsd", ledger.get("priorPlasterEstimateUsd", 0)) + \
+            sum(item["reservedUsd"] for item in ledger["attempts"])
         if reserved + 10 > min(args.budget_usd, 50):
             raise ValueError("Insufficient conservatively reserved budget; refusing generation.")
         if last_request is not None:
@@ -177,12 +220,13 @@ def generate(args):
         ).stdout.strip()
         if not token:
             raise ValueError("Azure CLI did not return a token.")
-        body = {"prompt": PROMPTS[name], "n": 1, "size": "1024x1024",
+        body = {"prompt": prompts[name], "n": 1, "size": "1024x1024",
                 "quality": "medium", "output_format": "png"}
         attempt = {"name": name, "status": "pending", "reservedUsd": 10,
                    "startedAt": datetime.now(timezone.utc).isoformat()}
         ledger["attempts"].append(attempt)
         save_json(ledger_path, ledger)
+        print(f"Generating {name}; reserved USD {reserved + 10:.2f} / {min(args.budget_usd, 50):.2f}; no automatic retries.", flush=True)
         request = urllib.request.Request(
             f"{args.endpoint}/openai/deployments/{args.deployment}/images/generations?api-version=2025-04-01-preview",
             data=json.dumps(body).encode(), method="POST",
@@ -197,6 +241,7 @@ def generate(args):
             save_json(ledger_path, ledger)
             raise RuntimeError(f"Azure image generation HTTP {error.code}: {error.read().decode()}") from error
         record = {"model": MODEL, "version": VERSION, "deployment": args.deployment,
+                  "pricingVerifiedAt": datetime.now(timezone.utc).date().isoformat(),
                   "request": body, "created": payload.get("created"), "usage": payload.get("usage")}
         save_json(record_path, record)
         if len(payload.get("data", [])) != 1:
@@ -265,10 +310,37 @@ def grime_atlas(image, target):
             "colorSpace": "sRGB", "transparentCellBorders": True}
 
 
-def process(directory):
+def merge_material_records(previous, records, files):
+    textures_by_id = {record["id"]: record for record in previous.get("textures", [])}
+    files_by_name = {file["file"]: file for file in previous.get("files", [])}
+    textures_by_id.update({record["id"]: record for record in records})
+    files_by_name.update({file["file"]: file for file in files})
+    return list(textures_by_id.values()), list(files_by_name.values())
+
+
+def sparse_litter_color(color):
+    alpha = []
+    pixels = color.tobytes()
+    for i in range(0, len(pixels), 3):
+        r, g, b = pixels[i:i + 3]
+        light = max(0, min(1, (.2126 * r + .7152 * g + .0722 * b - 120) / 35))
+        warm = max(0, min(1, (r - b - 40) / 30))
+        alpha.append(round(255 * (.04 + .96 * light * warm)))
+    mask = Image.new("L", color.size)
+    mask.putdata(alpha)
+    result = color.convert("RGBA")
+    result.putalpha(mask)
+    return result
+
+
+def process(directory, names=SCENE_NAMES, budget_usd=50):
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    manifest_path = OUTPUT / "source.json"
+    previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    if previous and (previous["model"] != MODEL or previous["version"] != VERSION or previous["isCC0"]):
+        raise ValueError("Existing manifest has incompatible provenance; refusing to overwrite it.")
     records, files = [], []
-    for name in NAMES:
+    for name in names:
         record = json.loads((directory / f"{name}.json").read_text(encoding="utf-8"))
         if record["model"] != MODEL or record["version"] != VERSION:
             raise ValueError(f"Unexpected source model/version: {name}")
@@ -280,6 +352,8 @@ def process(directory):
                       "request": record["request"], "created": record["created"],
                       "usage": record["usage"],
                       "conservativeEstimatedUsd": record["conservativeEstimatedUsd"]}
+        if "pricingVerifiedAt" in record:
+            provenance["pricingVerifiedAt"] = record["pricingVerifiedAt"]
         target = OUTPUT / name
         target.mkdir(exist_ok=True)
         with Image.open(source) as image:
@@ -291,7 +365,11 @@ def process(directory):
                 records.append(provenance)
                 continue
             color = periodic(image.convert("RGB"))
-        color.save(target / "color.webp", quality=86, method=6)
+        if name == "root-litter":
+            sparse_litter_color(color).save(target / "color.webp", quality=86, method=6)
+            provenance["processing"] = "Warm/light color selection retains sparse pale leaf details over a 4% soil veil; not semantic segmentation. Separate runtime feather mask preserves the original ground instead of an opaque soil circle."
+        else:
+            color.save(target / "color.webp", quality=86, method=6)
         # These are subtle image-derived microdetail estimates, not measured PBR height.
         gray = color.resize((512, 512), Image.Resampling.LANCZOS).convert("L")
         blurred = gray.filter(ImageFilter.GaussianBlur(2))
@@ -325,16 +403,19 @@ def process(directory):
             raise ValueError(f"Decoded color edge discontinuity too large: {name}")
         provenance["decodedColorEdgeMeanAbsoluteDifference"] = {"x": edge_x, "y": edge_y}
         records.append(provenance)
+    records, files = merge_material_records(previous, records, files)
+    checked_at = max([previous.get("pricing", {}).get("checkedAt", "2026-10-28")] +
+                     [record.get("pricingVerifiedAt", "2026-10-28") for record in records])
     manifest = {
         "provider": "Azure OpenAI", "license": "Azure-generated-images", "isCC0": False,
         "source": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e",
         "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
         "model": MODEL, "version": VERSION, "generatedAt": datetime.now(timezone.utc).isoformat(),
         "processing": "Material sets: 32px opposite-edge crossfade; 1024px WebP color Q86; 512px lossless WebP high-pass micro-normal and near-matte roughness estimates. Grime: four tinted alpha masks in one lossless 1024px atlas with transparent cell borders. No measured height, AO, metalness or historical reconstruction is claimed.",
-        "budgetUsd": 50,
+        "budgetUsd": budget_usd,
         "conservativeEstimatedTotalUsd": sum(record["conservativeEstimatedUsd"] for record in records),
         "pricing": {"currency": "USD", "source": "https://prices.azure.com/api/retail/prices",
-                    "checkedAt": "2026-10-28", "region": "eastus2", "sku": "GlobalStandard",
+                    "checkedAt": checked_at, "region": "eastus2", "sku": "GlobalStandard",
                     "perMillionTextInputTokens": 5, "perMillionImageInputTokens": 8,
                     "perMillionImageOutputTokens": 30,
                     "estimateMethod": "All input tokens charged at image-input rate, output at image-output rate; conservative estimate, not final Azure invoice."},
@@ -350,6 +431,8 @@ def process(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-dir", type=Path, required=True)
+    parser.add_argument("--materials", nargs="+", choices=NAMES, default=SCENE_NAMES,
+                        help="Process only these materials; keep all other manifest entries and files.")
     parser.add_argument("--generate", action="store_true", help="Makes paid Azure requests for missing sources only.")
     parser.add_argument("--reuse-plaster", type=Path)
     parser.add_argument("--endpoint", default=os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/"))
@@ -367,7 +450,7 @@ def main():
             generate(args)
         finally:
             lock.unlink()
-    process(args.source_dir)
+    process(args.source_dir, args.materials, args.budget_usd)
 
 
 if __name__ == "__main__":

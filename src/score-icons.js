@@ -1,4 +1,5 @@
 export const SCORE_ICON_PATHS = Object.freeze({
+  melee: 'M8 21l4-7 M9 13l6 4 M12 14L21 2l6 1-3 7-9 7z',
   rifle: 'M3 19l5-6 4 2 14-10 2 2-14 10-1 4-4-2-3 3z M14 13l3 3',
   sniper: 'M3 19l5-6 4 2 14-10 2 2-14 10-1 4-4-2-3 3z M16 6l7-4 2 3-7 4z M17 8l1 3',
   'machine-gun': 'M3 17h7l5-7 13-2v3l-12 2-4 7H8v-3 M15 10V5h6v5 M23 12l-3 9 M23 12l5 8',

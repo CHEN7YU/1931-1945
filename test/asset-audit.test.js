@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, cp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { auditAssets } from '../scripts/audit-assets.mjs';
+import { SCENE_ART_MATERIALS } from '../src/scene-art.js';
 
 const source = new URL('../public/assets/', import.meta.url);
 async function fixture(t) {
@@ -26,8 +27,11 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.equal(generated.basis, 'user-supplied-generated-audio-project-use');
   assert.match(generated.limitation, /redistribution rights have not been independently verified/);
   const generatedArt = report.files.filter(file => file.file.startsWith('materials/ai-scene/'));
-  assert.equal(generatedArt.length, 14);
+  assert.equal(generatedArt.length, Object.keys(SCENE_ART_MATERIALS).length * 3 + 2);
   assert.ok(generatedArt.every(file => file.use === 'runtime'));
+  const dadaoArt = report.files.filter(file => file.file.startsWith('materials/ai-dadao/'));
+  assert.equal(dadaoArt.length, 8);
+  assert.ok(dadaoArt.every(file => file.use === 'runtime'));
   assert.ok(report.permissions.some(permission => permission.basis === 'Azure-generated-images' && /not CC0/.test(permission.limitation)));
 });
 
@@ -61,6 +65,15 @@ test('generated scene art cannot be relabelled as CC0', async t => {
   metadata.license = 'CC0-1.0';
   await writeFile(path, JSON.stringify(metadata));
   await assert.rejects(auditAssets({ root }), /Generated scene image provenance requires review/);
+});
+
+test('generated dadao art cannot be relabelled as CC0', async t => {
+  const { root } = await fixture(t);
+  const path = join(root, 'materials', 'ai-dadao', 'source.json');
+  const metadata = JSON.parse(await readFile(path, 'utf8'));
+  metadata.isCC0 = true;
+  await writeFile(path, JSON.stringify(metadata));
+  await assert.rejects(auditAssets({ root }), /Generated dadao image provenance requires review/);
 });
 
 test('an unlisted archive or a corrupted existing file blocks the audit', async t => {
