@@ -109,7 +109,10 @@ export function createBattleVoices(buffers, random = Math.random) {
   function select(team, cue, variant) {
     const key = `${team}:${cue}`, candidates = clips.filter(clip => clip.team === team && clip.cue === cue && clip.variant === variant);
     if (!candidates.length) throw new Error(`Unknown battle voice cue: ${team}/${cue}/${variant}`);
-    const fresh = candidates.filter(clip => clip.id !== lastLine.get(key)), clip = choose(fresh.length ? fresh : candidates);
+    const fresh = candidates.filter(clip => clip.id !== lastLine.get(key)), pool = fresh.length ? fresh : candidates;
+    const id = choose([...new Set(pool.map(clip => clip.id))]);
+    const takes = pool.filter(clip => clip.id === id);
+    const clip = takes.length === 1 ? takes[0] : choose(takes.flatMap(take => Array(take.selectionWeight).fill(take)));
     lastLine.set(key, clip.id);
     return clip;
   }
