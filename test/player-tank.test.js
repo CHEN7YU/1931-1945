@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Vector3, Euler } from 'three';
+import { Vector3, Euler, PerspectiveCamera } from 'three';
 import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier, captureAttackSource } from '../src/entities.js';
 import { TANK_MACHINE_GUN, advanceTankMachineGun, tankMachineGunPose, tankCannonPose, tankHeading,
   TANK_OBSERVATION, tankObservationPose, tankConvergedDirection } from '../src/player-tank.js';
@@ -29,7 +29,7 @@ test('closed commander and gunner eyes stay inside the turret; optics and driver
       assert.deepEqual({ x: normal.x, y: normal.y, z: normal.z }, { x: zoom.x, y: zoom.y, z: zoom.z });
       assert.ok(normal.fov >= zoom.fov);
       if (role === 'driver') assert.equal(Math.hypot(normal.x - 13, normal.z + 9), 0);
-      else if (role === 'commander') assert.ok(Math.abs(Math.hypot(normal.x - 13, normal.z + 9) - Math.hypot(.3, .38)) < 1e-12);
+      else assert.deepEqual(normal.y, tankObservationPose(vehicle, 'gunner', false).y);
     }
   }
   assert.equal(tankObservationPose(vehicle, 'commander', false).aperture, 'slit');
@@ -38,17 +38,27 @@ test('closed commander and gunner eyes stay inside the turret; optics and driver
   assert.equal(tankObservationPose(vehicle, 'gunner', true).fov, 24);
   assert.throws(() => tankObservationPose(vehicle, 'outside', false), RangeError);
 });
-test('gunner optics follow the trunnion and keep the real coax muzzle below the sight at every elevation', () => {
+test('both crew optics keep the physical muzzle centered below the view through traverse, elevation and zoom', () => {
   const { vehicle } = fixture(), model = historicalVehicleModel('tank');
-  for (const heading of [0, .8, -2]) for (const yaw of [-1, 0, 2]) for (const pitch of [-1.25, -.3, 0, .3, 1.25]) {
+  vehicle.position.set(13, 3, -9);
+  for (const heading of [0, .8, -2]) for (const yaw of [-1, 0, 2]) for (const pitch of [-1.25, -.3, 0, .3, 1.25])
+  for (const role of ['commander', 'gunner']) for (const aiming of [false, true]) {
     Object.assign(vehicle, { heading, turretYaw: yaw, turretPitch: pitch });
-    const eye = tankObservationPose(vehicle, 'gunner', false), shot = tankMachineGunPose(vehicle);
+    const eye = tankObservationPose(vehicle, role, aiming), shot = tankMachineGunPose(vehicle);
+    model.position.copy(vehicle.position);
     model.rotation.y = heading; model.userData.turret.rotation.y = yaw - heading;
     model.userData.gun.rotation.x = pitch; model.updateMatrixWorld(true);
     assert.ok(model.getObjectByName('gunner-sight').getWorldPosition(new Vector3()).distanceTo(new Vector3(eye.x, eye.y, eye.z)) < 1e-10);
     const up = new Vector3(0, 1, 0).applyEuler(new Euler(pitch, yaw, 0, 'YXZ'));
     const relative = new Vector3(shot.start.x - eye.x, shot.start.y - eye.y, shot.start.z - eye.z);
-    assert.ok(Math.abs(relative.dot(up) + .115) < 1e-10);
+    assert.ok(Math.abs(relative.dot(up) + .265) < 1e-10);
+    const camera = new PerspectiveCamera(eye.fov, 1.6, .05, 200);
+    camera.position.set(eye.x, eye.y, eye.z);
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    camera.updateMatrixWorld(true);
+    const projected = new Vector3(shot.start.x, shot.start.y, shot.start.z).project(camera);
+    assert.ok(Math.abs(projected.x) < 1e-10, 'the flash does not float to the right of either observation port');
+    assert.ok(projected.y < -.5, 'the physical muzzle stays well below the optical center, even without zoom');
     assert.ok(eye.y < vehicle.position.y + 2.16);
     const direction = new Vector3(0, 0, -1).applyEuler(new Euler(pitch, yaw, 0, 'YXZ'));
     const target = new Vector3(eye.x, eye.y, eye.z).addScaledVector(direction, 35);
