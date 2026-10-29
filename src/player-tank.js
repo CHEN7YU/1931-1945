@@ -1,4 +1,4 @@
-import { shotState, TYPES } from './core.js';
+import { shotState } from './core.js';
 import { headingError } from './ai-turning.js';
 
 export const TANK_MACHINE_GUN = Object.freeze({ magazine: 100, reload: 4, interval: .1,
@@ -52,18 +52,6 @@ export function tankConvergedDirection(shot, target) {
   if (dx * bore.x + dy * bore.y + dz * bore.z <= 0) return bore;
   const length = Math.hypot(dx, dy, dz);
   return { x: dx / length, y: dy / length, z: dz / length };
-}
-
-export function advanceTankCannon(vehicle, now, firing = false) {
-  if (vehicle?.type !== 'tank' || vehicle.variant !== null || !Number.isFinite(now) || now < 0 ||
-    typeof firing !== 'boolean') throw new RangeError('Automatic crew loading requires a supported tank and simulation time');
-  const gun = vehicle.weapon;
-  if (gun?.ownerId !== vehicle.id || gun.type !== 'tank') throw new Error('Tank cannon has broken ownership');
-  if (vehicle.health <= 0) return false;
-  shotState(gun, now, false);
-  const fired = firing && shotState(gun, now, true);
-  if (gun.ammo === 0 && !gun.reloadUntil) gun.reloadUntil = now + TYPES.tank.reload;
-  return fired;
 }
 
 export function advanceTankMachineGun(vehicle, operator, dt, now, trigger) {

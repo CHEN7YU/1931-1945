@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { Vector3, Euler } from 'three';
 import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier, captureAttackSource } from '../src/entities.js';
 import { TANK_MACHINE_GUN, advanceTankMachineGun, tankMachineGunPose, tankCannonPose, tankHeading,
-  TANK_OBSERVATION, tankObservationPose, tankConvergedDirection, advanceTankCannon } from '../src/player-tank.js';
+  TANK_OBSERVATION, tankObservationPose, tankConvergedDirection } from '../src/player-tank.js';
+import { shotState } from '../src/core.js';
+import { advanceOwnedWeapons } from '../src/weapon-simulation.js';
 import { historicalVehicleModel } from '../src/vehicle-model.js';
 
 function fixture() {
@@ -59,21 +61,21 @@ test('gunner optics follow the trunnion and keep the real coax muzzle below the 
 });
 
 test('crew automatically load the original cannon on its simulation clock without firing or touching the coax', () => {
-  const { vehicle, gun } = fixture(), coax = { ...gun };
-  assert.equal(advanceTankCannon(vehicle, 1, true), true);
+  const { registry, vehicle, gun } = fixture(), coax = { ...gun };
+  assert.equal(shotState(vehicle.weapon, 1, true), true);
   assert.equal(vehicle.weapon.ammo, 0);
   assert.equal(vehicle.weapon.reloadUntil, 4.8);
   const deadline = vehicle.weapon.reloadUntil;
-  for (let frame = 0; frame < 100; frame++) advanceTankCannon(vehicle, 1);
+  for (let frame = 0; frame < 100; frame++) advanceOwnedWeapons(registry, 0, 9);
   assert.equal(vehicle.weapon.reloadUntil, deadline, 'paused or repeated polling cannot restart loading');
-  assert.equal(advanceTankCannon(vehicle, 4.79, true), false);
+  assert.equal(shotState(vehicle.weapon, 4.79, true), false);
   assert.equal(vehicle.weapon.reloadUntil, deadline);
-  advanceTankCannon(vehicle, 4.8);
+  advanceOwnedWeapons(registry, .01, 4.8);
   assert.equal(vehicle.weapon.ammo, 1); assert.equal(vehicle.weapon.reloadUntil, 0);
   assert.deepEqual(gun, coax);
-  assert.equal(advanceTankCannon(vehicle, 4.8, true), true);
+  assert.equal(shotState(vehicle.weapon, 4.8, true), true);
   vehicle.health = 0;
-  advanceTankCannon(vehicle, 10);
+  advanceOwnedWeapons(registry, .1, 10);
   assert.equal(vehicle.weapon.ammo, 0, 'a destroyed tank does not receive loaded ammunition');
 });
 test('friendly coax fires repeatedly from a registered secondary weapon without consuming or refilling the cannon', () => {

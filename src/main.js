@@ -54,7 +54,7 @@ import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, adva
 import { CORPSE_RULES, createCasualtyState, expiredCorpses, placeCasualty } from './casualties.js';
 import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
-import { advanceTankMachineGun, advanceTankCannon, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
+import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
 import { infantrySteering } from './infantry-spacing.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription } from './battle-units.js';
@@ -761,10 +761,10 @@ function updateControlHelp() {
       ? 'W S 前后 · A D 车体转向 · 鼠标 炮塔 · 右键 放大 · 左键 主炮（车组自动装填） · 按住空格 机枪 · Y 换人 · F 地面离车'
       : 'WASD 驾驶 · 鼠标 有限观察（不转炮塔） · 主炮／机枪不可操作 · Y 换人 · F 下车'
     : unit.type === 'mortar'
-      ? 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点 · 左键 发射 · R 装填 · Y 炮组 · X 命令 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷 · B 镜头步态'
+      ? 'WASD 搬运 · C 慢走 · Shift 短时冲刺 · 鼠标 弹着点 · 左键 发射 · R 装填 · Y 炮组 · X 命令 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷'
       : actor.role === 'sniper'
         ? 'WASD 移动 · 右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷'
-        : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 5 手榴弹（G兼容选择） · 6 炸药包 · 左键准备／松开投掷 · 按住左键建造 · B 镜头步态';
+        : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 5 手榴弹（G兼容选择） · 6 炸药包 · 左键准备／松开投掷 · 按住左键建造';
   if (!transport) $('battle-controls').textContent += unit.type === 'infantry'
     ? ' · B 架枪／解除 · Space 跳跃／翻越低障碍（蹲卧时先起身）'
     : ' · Space 跳跃／翻越低障碍（蹲卧时先起身）';
@@ -1319,8 +1319,8 @@ function syncRifleUnit() {
 function reload() {
   if (grenadeEquipped) { toast('当前选择投掷装备；按 1 切回主武器'); return; }
   if (allies[current]?.grenades.action) { toast('先完成手榴弹动作再装填'); return; }
-  if (unit.type === 'tank' && !occupiedSeat(entities).canFire) {
-    toast('驾驶员席位不能装填主炮；按 Y 切换车长或炮手');
+  if (unit.type === 'tank') {
+    toast('主炮射击后自动装填，无需按 R');
     return;
   }
   if (unit.type === 'tank') { toast('车组会在射击后自动装填主炮，无需按 R'); return; }
@@ -1746,7 +1746,7 @@ function fire() {
     if (!shootRifle(allies[current].rifle)) { syncRifleUnit(); return; }
     if (infantryWeaponProfile(allies[current].rifle).scoped) held.primary = false;
     syncRifleUnit();
-  } else if (unit.type === 'tank' ? !advanceTankCannon(transport, time, true) : !shotState(unit, time, true)) return;
+  } else if (!shotState(unit, time, true)) return;
   if (unit.type === 'tank') emitControlEvent('weapon.reload-requested', { weaponId: transport.weapon.id, duration: TYPES.tank.reload });
   const source = captureAttackSource(entities, allies[current]);
   combatSounds.push({ id: ++soundSerial, friendly: true, x: camera.position.x, y: camera.position.y, z: camera.position.z, time, radius: unit.type === 'infantry' ? 55 : 85 });
@@ -1968,7 +1968,6 @@ function updateVehicles(dt) {
       }
       continue;
     }
-    if (transport.type === 'tank') advanceTankCannon(transport, time);
     const actor = allies[current];
     const controlled = state === 'playing' && actor?.health > 0 && actor.vehicleId === transport.id;
     const forward = controlled ? Number(keys.has('KeyW')) - Number(keys.has('KeyS')) : 0;
@@ -3206,6 +3205,20 @@ function drawRadar(ctx = radarContext) {
   }
 }
 
+function renderTankReload() {
+  const tankReload = $('tank-reload');
+  const remaining = unit.type === 'tank' ? Math.max(0, unit.reloadUntil - time) : 0;
+  tankReload.hidden = remaining === 0;
+  if (remaining > 0) {
+    const duration = occupiedVehicle(entities, allies[current]).weapon.settings?.reload ?? TYPES.tank.reload;
+    const progress = Math.max(0, Math.min(1, 1 - remaining / duration));
+    tankReload.setAttribute('aria-valuenow', String(Math.round(progress * 100)));
+    tankReload.setAttribute('aria-valuetext', `装填剩余 ${remaining.toFixed(1)} 秒`);
+    $('tank-reload-progress').style.strokeDashoffset = String(100 * (1 - progress));
+    $('tank-reload-time').textContent = `${remaining.toFixed(1)}s`;
+  }
+}
+
 function updateHUD() {
   renderSquadScores();
   const transport = occupiedVehicle(entities, allies[current]);
@@ -3393,6 +3406,7 @@ function tick(now) {
     }
     const started = benchmark ? performance.now() : 0;
     if (time >= hudAt) { updateHUD(); hudAt = time + .12; }
+    renderTankReload();
     if (state === 'dead' && time >= deploymentRefreshAt) { refreshDeployment(); deploymentRefreshAt = time + .25; }
     if (benchmark) telemetry.add('hudMs', performance.now() - started);
   }

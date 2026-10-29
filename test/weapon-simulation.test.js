@@ -4,7 +4,7 @@ import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, cr
   selectControlledSoldier, releaseSupportWeapon } from '../src/entities.js';
 import { createRifleState, shootRifle, reloadRifle, advanceRifle, RIFLE } from '../src/rifle-action.js';
 import { advanceOwnedWeapons, syncControlledRifleTiming } from '../src/weapon-simulation.js';
-import { TYPES } from '../src/core.js';
+import { TYPES, shotState } from '../src/core.js';
 
 function fixture() {
   const registry = createEntityRegistry();
@@ -79,6 +79,27 @@ test('zero simulation time freezes all weapons and seated/dead members cannot ad
   assert.equal(actors[0].rifle.elapsed, 0);
   assert.equal(tank.weapon.ammo, 0);
   assert.equal(support.supportWeapon.ammo, 1);
+});
+test('a fired cannon reloads without input across seat changes, ground exit and pause', () => {
+  const { registry, actors, tank } = fixture();
+  seatSoldier(registry, actors[0], tank, tank.seats[0].id);
+  seatSoldier(registry, actors[1], tank, tank.seats[1].id);
+  assert.equal(shotState(tank.weapon, 1, true), true);
+  const deadline = 1 + TYPES.tank.reload;
+  assert.equal(tank.weapon.reloadUntil, deadline);
+  selectControlledSoldier(registry, actors[1]);
+  advanceOwnedWeapons(registry, .5, 1.5);
+  assert.equal(tank.weapon.reloadUntil, deadline);
+  releaseSeat(registry, actors[1]);
+  advanceOwnedWeapons(registry, 0, deadline + 1);
+  assert.equal(tank.weapon.ammo, 0, 'pause does not finish reloading');
+  assert.equal(tank.weapon.reloadUntil, deadline);
+  advanceOwnedWeapons(registry, .1, deadline - .01);
+  assert.equal(tank.weapon.ammo, 0);
+  advanceOwnedWeapons(registry, .01, deadline);
+  assert.equal(tank.weapon.ammo, 1);
+  assert.equal(tank.weapon.reloadUntil, 0);
+  assert.equal(actors[1].rifle.ammo, 4, 'cannon loading does not refill the personal rifle');
 });
 test('30/60/144Hz retain queued reload timing and emit each mechanical cue once', () => {
   for (const fps of [30, 60, 144]) {

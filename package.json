@@ -35,6 +35,7 @@
     "test:doors": "node scripts/door-smoke.mjs",
     "test:quality": "node scripts/quality-smoke.mjs",
     "test:armor": "node scripts/armor-smoke.mjs",
+    "test:tank-reload": "node scripts/tank-reload-smoke.mjs",
     "test:chi-ha": "node scripts/chi-ha-smoke.mjs",
     "test:chi-ha-route": "node scripts/chi-ha-route-smoke.mjs",
     "test:historical-vehicles": "node scripts/historical-vehicles-smoke.mjs",

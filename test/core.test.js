@@ -187,6 +187,17 @@ test('all weapon types respect cadence, magazine and automatic reload', () => {
     assert.equal(shotState(unit, 0, true), true);
     assert.equal(unit.ammo, settings.magazine - 1);
     assert.equal(shotState(unit, .01, true), false);
+    if (type === 'tank') {
+      assert.equal(unit.reloadUntil, settings.reload, 'the cannon reload starts on the shot, not on the next trigger');
+      assert.equal(shotState(unit, settings.reload - .001, false), false);
+      assert.equal(unit.ammo, 0);
+      assert.equal(shotState(unit, settings.reload, false), false);
+      assert.equal(unit.ammo, 1);
+      assert.equal(unit.reloadUntil, 0);
+      assert.equal(shotState(unit, settings.reload, true), true);
+      assert.equal(unit.reloadUntil, settings.reload * 2);
+      continue;
+    }
     unit.ammo = 0;
     assert.equal(shotState(unit, 1, true), false);
     assert.equal(unit.reloadUntil, 1 + settings.reload);
