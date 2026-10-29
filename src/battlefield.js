@@ -10,6 +10,8 @@ import { makeOutskirtsLayout, outskirtsObstacles } from './outskirts-layout.js';
 import { BATTLE_AREA } from './battle-boundary.js';
 import { weatheredWallPiece } from './scene-art.js';
 import { streetGrimePatches, grimePatchGeometry, sandbagGeometry, sandbagCollisionProxy } from './scene-details.js';
+import { SHOP_ART_STYLES, shopAwningGeometry, shopAwningFrame, shopNoticeGeometry, shopPrintMaterial,
+  shopContactMaterial, shopContactPatches } from './shop-art.js';
 
 export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
   [4, -4, 17, 12], [0, 52.5, 87, 4], [-16, 62, 7, 14],
@@ -65,7 +67,16 @@ export function makeWorld(scene, surface) {
   const sand = surface('burlap', 0xc3b28e);
   sand.vertexColors = true;
   const sceneArt = { wallPieces: 0, doorLeaves: 0, sandbagMaterial: 'burlap',
-    grimeDecals: 0, detailedCargo: 0, detailedSandbags: 0 };
+    grimeDecals: 0, detailedCargo: 0, detailedSandbags: 0,
+    shopAwnings: 0, shopNotices: 0, contactPatches: 0, shopSamples: Object.freeze(Object.keys(SHOP_ART_STYLES)) };
+  const awningGeometry = shopAwningGeometry();
+  const noticeGeometry = shopNoticeGeometry();
+  const shopCloth = new Map(Object.entries(SHOP_ART_STYLES).map(([id, style]) => {
+    const material = surface('burlap', style.cloth);
+    material.side = THREE.DoubleSide; material.vertexColors = true;
+    return [id, material];
+  }));
+  const contactDust = shopContactMaterial(wallGrime.map.image);
   const iron = new THREE.MeshStandardMaterial({ color: 0x4d514e, roughness: .76, metalness: .65 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x202925, roughness: .35, metalness: .3 });
   const canvasMat = plain(0x665d47);
@@ -208,7 +219,7 @@ export function makeWorld(scene, surface) {
   const grimeMap = new THREE.CanvasTexture(grimeCanvas);
   grimeMap.colorSpace = THREE.SRGBColorSpace;
   const grime = new THREE.MeshStandardMaterial({ map: grimeMap, transparent: true, depthWrite: false, roughness: 1 });
-  function sign(text, x, y, z, width, parent = scene) {
+  function sign(text, x, y, z, width, parent = scene, style = null) {
     if (!signs.has(text)) {
       const canvas = document.createElement('canvas');
       canvas.width = 1024; canvas.height = 256;
@@ -225,8 +236,14 @@ export function makeWorld(scene, surface) {
       map.colorSpace = THREE.SRGBColorSpace;
       signs.set(text, new THREE.MeshStandardMaterial({ map, roughness: .92 }));
     }
-    box(x, y, z - .04, width + .15, width / 4 + .15, .14, timber, false, parent);
-    mesh(new THREE.PlaneGeometry(width, width / 4), signs.get(text), x, y, z + .04, false, parent);
+    const key = style ? `${text}:shop-art` : text;
+    if (style && !signs.has(key)) signs.set(key, shopPrintMaterial(style, text, crateTimber.map.image, weatheredPlaster.map.image));
+    box(x, y, z - .04, width + .15, width / 4 + .15, .14, style ? crateTrim : timber, false, parent);
+    mesh(new THREE.PlaneGeometry(width, width / 4), signs.get(key), x, y, z + .04, false, parent);
+    if (style) for (const dx of [-1, 1]) for (const dy of [-1, 1]) {
+      const fixing = cylinder(x + dx * width * .46, y + dy * width * .092, z + .05, .012, .012, iron, parent);
+      fixing.rotation.x = Math.PI / 2;
+    }
   }
 
   const eaveTile = new THREE.CylinderGeometry(.095, .095, .8, 6, 1, true, 0, Math.PI);
@@ -394,11 +411,39 @@ export function makeWorld(scene, surface) {
     group.position.set(shop.x + shop.facing * shop.w / 2, 0, shop.doorZ);
     group.rotation.y = shop.facing * Math.PI / 2;
     scene.add(group);
-    sign(shop.name, 0, 2.98, .18, 2.85, group);
-    if (!shop.ruined && shop.kind === 'shop') {
-      box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
-      for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05], [side * 1.22, 2.58, 1.05], .025, timber, group);
+    const style = SHOP_ART_STYLES[shop.id];
+    sign(shop.name, 0, 2.98, .18, 2.85, group, style);
+    if (style) {
+      const notice = mesh(noticeGeometry,
+        shopPrintMaterial(style, shop.name, crateTimber.map.image, weatheredPlaster.map.image, true),
+        -1.85, 1.5, .13, false, group);
+      notice.userData.keepUV = true;
+      for (const x of [-.245, .245]) {
+        const fixing = cylinder(-1.85 + x, 1.825, .143, .007, .01, iron, group);
+        fixing.rotation.x = Math.PI / 2;
+      }
+      sceneArt.shopNotices++;
     }
+    if (!shop.ruined && shop.kind === 'shop') {
+      if (style) {
+        mesh(awningGeometry, shopCloth.get(shop.id), 0, 0, .02, false, group).userData.keepUV = true;
+        for (const part of shopAwningFrame()) {
+          const support = beam(part.start, part.end, part.radius, timber, group);
+          support.position.z += .02;
+        }
+        for (const side of [-1, 1]) {
+          box(side * 1.4, 2.62, .15, .055, .1, .018, iron, false, group);
+        }
+        sceneArt.shopAwnings++;
+      } else box(0, 2.6, .56, 2.8, .07, 1.12, fadedCanvas, false, group);
+      if (!style) for (const side of [-1, 1]) beam([side * 1.22, 2.2, .05],
+        [side * 1.22, 2.58, 1.05], .025, timber, group);
+    }
+  }
+  for (const patch of shopContactPatches(town)) {
+    const dust = mesh(new THREE.PlaneGeometry(patch.w, patch.d), contactDust, patch.x, .03, patch.z);
+    dust.rotation.x = -Math.PI / 2; dust.userData.keepUV = true; dust.castShadow = false;
+    sceneArt.contactPatches++;
   }
   const wrecks = addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber: charred });
   for (const z of [69, 44, 12, -38, -69]) {

@@ -10,6 +10,8 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 const snapshot = () => page.evaluate(() => window.__battle);
+const assertShadowCoverage = data => assert.deepEqual(data.daylight.shadowProjection, { width: 200, height: 200 },
+  'actual projection must match the configured 200m bounds, not the default 10m projection');
 const settled = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const capture = async name => {
   if (!process.env.ARTIFACT_DIR) return;
@@ -22,11 +24,13 @@ try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu' && window.__battle.drawCalls > 0, null, { timeout: 60000 });
   let data = await snapshot();
+  assertShadowCoverage(data);
   assert.equal(data.graphics.pixelRatio, 1.6);
   assert.equal(data.graphics.canvasWidth, 2304, 'high profile caps actual retina drawing buffer at 1.6x');
   await page.locator('#menu-quality').selectOption('low');
   await page.waitForFunction(() => window.__battle.graphics.shadowMapWidth === 1024);
   data = await snapshot();
+  assertShadowCoverage(data);
   assert.equal(data.graphics.canvasWidth, 1440);
   assert.equal(data.graphics.visibleSmoke, 10);
   assert.equal(data.graphics.postProcessing, false, 'no fake enabled postprocessing toggle before a pipeline exists');
@@ -53,10 +57,12 @@ try {
     await page.waitForFunction(() => window.__battle.graphics.shadowMapWidth === 4096);
   }
   await settled();
+  assertShadowCoverage(await snapshot());
   assert.equal((await snapshot()).graphics.textureCount, textureCount, 'shadow render targets are disposed, not leaked on repeated switching');
   for (const effect of QUALITY_EFFECTS) await page.locator(`#quality-${effect}`).uncheck();
   await settled();
   data = await snapshot();
+  assertShadowCoverage(data);
   assert.equal(data.graphics.shadowMapWidth, 0);
   assert.equal(data.graphics.shadowsEnabled, false);
   assert.equal(data.graphics.fogEnabled, false);
@@ -78,6 +84,7 @@ try {
   await page.waitForFunction(time => window.__battle.time > time + .1, battle.time);
   await capture('quality-high.png');
   assert.equal((await snapshot()).state, 'playing');
+  assertShadowCoverage(await snapshot());
   assert.deepEqual(errors, []);
   console.log('PASS: real high/low DPR and shadow targets, smoke budgets, independent effects, no texture leaks, resize and unchanged battle state.');
 } finally {
