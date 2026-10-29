@@ -32,6 +32,7 @@
     "test:bridge": "node scripts/bridge-smoke.mjs",
     "test:multistory": "node scripts/multistory-smoke.mjs",
     "test:river": "node scripts/river-smoke.mjs",
+    "test:scenery": "node scripts/scenery-smoke.mjs",
     "test:boundary": "node scripts/boundary-smoke.mjs",
     "test:doors": "node scripts/door-smoke.mjs",
     "test:quality": "node scripts/quality-smoke.mjs",

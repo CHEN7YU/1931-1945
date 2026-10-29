@@ -15,16 +15,13 @@ try {
   const result = await page.evaluate(async () => {
     const THREE = await import('/node_modules/three/build/three.module.js');
     const { makeWorld } = await import('/src/battlefield.js');
+    const { loadSceneMaterials } = await import('/src/materials.js');
     const { createTankNavigation } = await import('/src/tank-navigation.js');
     const { advanceChiHaAI } = await import('/src/chi-ha-ai.js');
     const { CHI_HA, japaneseArmorSpawns, chiHaObjectiveDestination } = await import('/src/chi-ha.js');
-    const { RIVER } = await import('/src/ground.js');
     const { OBJECTIVES, circleBlocked } = await import('/src/core.js');
-    const world = makeWorld(new THREE.Scene(), (surface, color, metersPerTile = 2) => {
-      const material = new THREE.MeshStandardMaterial({ color });
-      Object.assign(material.userData, { surface, metersPerTile });
-      return material;
-    });
+    const scene = new THREE.Scene(), renderer = new THREE.WebGLRenderer();
+    const world = makeWorld(scene, await loadSceneMaterials(renderer, scene));
     const navigation = createTankNavigation(world.obstacles);
     const vehicles = japaneseArmorSpawns().map((spawn, index) => ({
       id: `route-${index}`, variant: CHI_HA.id, type: 'tank', team: 'enemy',
@@ -42,10 +39,7 @@ try {
           visible: () => false, safeToFire: () => false,
           pathTo: (from, to) => navigation.pathTo(vehicle, to, vehicles),
           canTravel: (from, to) => navigation.canTravel(vehicle, from, to, vehicles),
-          move: (p, dx, dz) => {
-            const scale = world.waterDepth(p.x, p.z) > .05 ? RIVER.tankSpeed : 1;
-            return navigation.move(vehicle, dx * scale, dz * scale, vehicles);
-          },
+          move: (p, dx, dz) => navigation.move(vehicle, dx, dz, vehicles),
         });
         vehicle.position.y = world.groundHeight(vehicle.position.x, vehicle.position.z);
         if (circleBlocked(vehicle.position.x, vehicle.position.z, CHI_HA.clearance, world.obstacles)) {
@@ -65,6 +59,7 @@ try {
         ai: { ...vehicle.ai, path: vehicle.ai.path.map(point => ({ ...point })) }, navigation: navigation.stats(vehicle),
       })) });
     }
+    renderer.dispose();
     return { obstacleCount: world.obstacles.length, samples, reached, stationed, collisions };
   });
   if (out) {

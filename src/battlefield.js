@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
-import { BRIDGE, RIVER, groundHeight, riverBedHeight, waterDepth, walkHeight, configureWalkSupport } from './ground.js';
+import { BRIDGE, RIVER, groundHeight, riverBedHeight, walkHeight, configureWalkSupport } from './ground.js';
+import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
+import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
 import { createDoorWorld } from './door-world.js';
 import { bakeSurfaceGeometry } from './surface-uv.js';
 import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
@@ -118,14 +120,40 @@ export function makeWorld(scene, surface) {
     }
   };
   drySurface(0, 0, 800, 800, earth, -.035);
-  const riverbed = new THREE.PlaneGeometry(800, RIVER.bankHalfWidth * 2, 1, 28);
-  riverbed.rotateX(-Math.PI / 2);
-  for (let i = 0; i < riverbed.attributes.position.count; i++) {
-    const positions = riverbed.attributes.position;
-    positions.setY(i, riverBedHeight(positions.getZ(i) + RIVER.centerZ) - .035);
+  const sediment = surface('dry-silt');
+  sediment.vertexColors = true;
+  mesh(dryRiverGeometry(), sediment, 0, 0, 0, true);
+  const riverDetails = dryRiverDetails();
+  const pebbles = new THREE.MeshStandardMaterial({ color: 0x716753, roughness: 1, vertexColors: true, flatShading: true });
+  const pebbleGeometry = new THREE.IcosahedronGeometry(1, 1);
+  for (const pebble of riverDetails.stones) {
+    const geometry = pebbleGeometry.clone(), colors = [];
+    for (let i = 0; i < geometry.attributes.position.count; i++) {
+      const shade = .6 + pebble.shade * .6;
+      colors.push(shade, shade * .97, shade * .91);
+    }
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const object = mesh(geometry, pebbles, pebble.x, pebble.y + pebble.size * .18, pebble.z);
+    object.scale.set(pebble.size * pebble.stretch, pebble.size * .34, pebble.size);
+    object.rotation.set(pebble.shade * .3, pebble.angle, pebble.shade * .2);
   }
-  riverbed.computeVertexNormals();
-  mesh(riverbed, earth, 0, 0, RIVER.centerZ, true);
+  const dryGrass = new THREE.MeshStandardMaterial({ color: 0x857754, roughness: 1, side: THREE.DoubleSide });
+  const blade = new THREE.BufferGeometry();
+  blade.setAttribute('position', new THREE.Float32BufferAttribute([-.018, 0, 0, .018, 0, 0, .09, 1, .07], 3));
+  blade.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, .5, 1], 2));
+  blade.computeVertexNormals();
+  for (const tuft of riverDetails.grass) for (let i = 0; i < 5; i++) {
+    const object = mesh(blade, dryGrass, tuft.x + Math.sin(i * 2.4) * .06, tuft.y, tuft.z + Math.cos(i * 2.4) * .06);
+    object.scale.set(1, tuft.height * (.6 + i * .12), 1);
+    object.rotation.y = tuft.angle + i * 2.4;
+  }
+  const cracks = new THREE.MeshStandardMaterial({
+    map: crackedSiltTexture(), roughness: 1, transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  for (const patch of riverDetails.silt) mesh(siltPatchGeometry(patch), cracks, 0, 0, 0);
+  sceneArt.dryRiver = { stones: riverDetails.stones.length, grassTufts: riverDetails.grass.length,
+    siltPatches: riverDetails.silt.length, material: sediment.userData.source };
   const pavedAreas = PAVED_AREAS;
   for (const [x, z, w, d] of pavedAreas.slice(0, -1)) {
     drySurface(x, z, w, d, paving, .0125);
@@ -149,23 +177,6 @@ export function makeWorld(scene, surface) {
     }
   }
 
-  const waterHalfWidth = RIVER.bankHalfWidth - RIVER.waterHeight / RIVER.bedHeight *
-    (RIVER.bankHalfWidth - RIVER.bedHalfWidth);
-  const waterGeometry = new THREE.PlaneGeometry(800, waterHalfWidth * 2, 100, 10);
-  waterGeometry.rotateX(-Math.PI / 2);
-  const water = new THREE.Mesh(waterGeometry, new THREE.MeshStandardMaterial({
-    color: 0x536c66, roughness: .24, metalness: .35,
-    normalMap: earth.normalMap, normalScale: new THREE.Vector2(.13, .13),
-    transparent: true, opacity: .8,
-  }));
-  for (let i = 0; i < waterGeometry.attributes.position.count; i++) {
-    const p = waterGeometry.attributes.position;
-    p.setY(i, Math.sin(p.getX(i) * 1.7 + p.getZ(i) * 3.4) * .018);
-  }
-  waterGeometry.computeVertexNormals();
-  water.position.set(0, RIVER.waterHeight, RIVER.centerZ);
-  water.receiveShadow = true;
-  scene.add(water);
   box(8, (BRIDGE.height - .05) / 2, -16, BRIDGE.maxX - BRIDGE.minX, BRIDGE.height + .05, BRIDGE.maxZ - BRIDGE.minZ, stone, true);
   for (const [startZ, descending] of [[BRIDGE.minZ - BRIDGE.rampLength, false], [BRIDGE.maxZ, true]]) {
     const geometry = new THREE.BoxGeometry(16, 1, BRIDGE.rampLength);
@@ -617,32 +628,39 @@ export function makeWorld(scene, surface) {
     }
   }
 
-  const leafCanvas = document.createElement('canvas');
-  leafCanvas.width = leafCanvas.height = 128;
-  const leafContext = leafCanvas.getContext('2d');
-  for (let i = 0; i < 100; i++) {
-    leafContext.fillStyle = ['#59634a', '#727457', '#8b8764', '#414c36'][i % 4];
-    leafContext.beginPath();
-    leafContext.ellipse(20 + random() * 88, 15 + random() * 100, 4 + random() * 8, 2 + random() * 5, random() * Math.PI, 0, Math.PI * 2);
-    leafContext.fill();
+  const species = Object.keys(WOODLAND_SPECIES);
+  const bark = Object.fromEntries(species.map(kind => {
+    const material = surface(`bark-${kind}`);
+    material.vertexColors = true;
+    return [kind, material];
+  }));
+  const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .92 });
+  const treeContact = surface('root-litter', 0xd5c8b4);
+  treeContact.alphaMap = woodlandGroundContactMask();
+  treeContact.alphaMap.channel = 1;
+  Object.assign(treeContact, { transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const trees = woodlandLayout(outskirts.buildings), treeMaterials = new Map();
+  for (const tree of trees) {
+    // Separate stands retain frustum culling after static material batching.
+    const stand = `${tree.x < 0 ? 'west' : 'east'}-${tree.z < 0 ? 'north' : 'south'}`;
+    if (!treeMaterials.has(stand)) treeMaterials.set(stand, { bark: new Map(), leaves: leaves.clone() });
+    const materials = treeMaterials.get(stand);
+    if (!materials.bark.has(tree.species)) materials.bark.set(tree.species, bark[tree.species].clone());
+    const geometry = woodlandTreeGeometry(tree), y = groundHeight(tree.x, tree.z);
+    mesh(geometry.bark, materials.bark.get(tree.species), tree.x, y, tree.z, true).userData.keepUV = true;
+    if (geometry.foliage) mesh(geometry.foliage, materials.leaves, tree.x, y, tree.z);
+    mesh(woodlandGroundContactGeometry(tree), treeContact, 0, 0, 0).castShadow = false;
+    obstacle(tree.x, tree.z, tree.radius * 2, tree.radius * 2, tree.height * .8);
   }
-  const leafTexture = new THREE.CanvasTexture(leafCanvas);
-  leafTexture.colorSpace = THREE.SRGBColorSpace;
-  const leaves = new THREE.MeshStandardMaterial({ map: leafTexture, alphaTest: .5, side: THREE.DoubleSide, roughness: 1 });
-  for (let i = 0; i < 34; i++) {
-    const x = (i % 2 ? -1 : 1) * (83 + random() * 24), z = (random() - .5) * 230;
-    if (outskirts.buildings.some(house => Math.abs(x - house.x) < house.w / 2 + 3 &&
-      Math.abs(z - house.z) < house.d / 2 + 3)) continue;
-    cylinder(x, 3, z, .18 + random() * .1, 6, timber);
-    for (let b = 0; b < 5; b++) {
-      const a = random() * 6.28, bx = x + Math.cos(a) * 2, bz = z + Math.sin(a) * 2, y = 5 + random() * 2;
-      beam([x, 3.7, z], [bx, y, bz], .055, timber);
-      for (let k = 0; k < 3; k++) {
-        const leaf = mesh(new THREE.PlaneGeometry(4, 3.6), leaves, bx, y + .5, bz);
-        leaf.rotation.set(.2 + random(), a + k * Math.PI / 3, 0);
-      }
-    }
-  }
+  sceneArt.woodland = { trees: trees.length, stands: treeMaterials.size, leafStyle: 'individual-folded-leaves',
+    barkBatches: [...treeMaterials.values()].reduce((sum, materials) => sum + materials.bark.size, 0),
+    barkSources: Object.fromEntries(species.map(kind => [kind, bark[kind].userData.source])),
+    groundContact: treeContact.userData.source,
+    species: Object.fromEntries(['elm', 'poplar', 'willow'].map(species => [species, trees.filter(tree => tree.species === species).length])),
+    saplings: trees.filter(tree => tree.age === 'sapling').length, deadTrees: trees.filter(tree => tree.dead).length,
+    groundedTrees: trees.length,
+    minHeight: Math.min(...trees.map(tree => tree.height)), maxHeight: Math.max(...trees.map(tree => tree.height)) };
   const smokeCanvas = document.createElement('canvas');
   smokeCanvas.width = smokeCanvas.height = 128;
   const ctx = smokeCanvas.getContext('2d');
@@ -709,7 +727,7 @@ export function makeWorld(scene, surface) {
     geometries.forEach(geometry => geometry.dispose());
   }
   const groundSurface = (x, z) => {
-    if (riverBedHeight(z) < 0 && groundHeight(x, z) <= 0) return 'earth';
+    if (riverBedHeight(x, z) < 0 && groundHeight(x, z) <= 0) return 'earth';
     if (SHELL_CRATERS.some(crater => Math.hypot(x - crater.x, z - crater.z) < crater.radius * CRATER_EDGE)) return 'earth';
     if (town.buildings.some(building => Math.abs(x - building.x) < building.w / 2 - .12 && Math.abs(z - building.z) < building.d / 2 - .12)) return 'wood';
     if (groundHeight(x, z) > 0) return 'stone';
@@ -736,7 +754,7 @@ export function makeWorld(scene, surface) {
   }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron, doorTimber);
   sceneArt.doorLeaves = doorSystem.doors.length;
-  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, waterDepth, walkHeight,
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,
     moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem, sceneArt,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

@@ -9,13 +9,17 @@ const manifest = JSON.parse(await readFile(new URL('../public/assets/materials/a
 test('generated maps have original-source, usage, budget and processing evidence, not CC0 claims', () => {
   assert.equal(manifest.license, 'Azure-generated-images');
   assert.equal(manifest.isCC0, false);
-  assert.equal(manifest.files.length, 13);
-  assert.equal(manifest.textures.length, 5);
-  assert.deepEqual(manifest.textures.map(texture => texture.id), [...Object.keys(SCENE_ART_MATERIALS), 'wall-grime']);
+  const names = Object.keys(SCENE_ART_MATERIALS);
+  assert.equal(manifest.files.length, names.length * 3 + 1);
+  assert.equal(manifest.textures.length, names.length + 1);
+  assert.deepEqual(manifest.textures.map(texture => texture.id).sort(), [...names, 'wall-grime'].sort());
   assert.ok(manifest.conservativeEstimatedTotalUsd > 0 && manifest.conservativeEstimatedTotalUsd < 50);
   assert.equal(manifest.conservativeEstimatedTotalUsd,
     manifest.textures.reduce((sum, texture) => sum + texture.conservativeEstimatedUsd, 0));
-  assert.ok(manifest.files.reduce((sum, file) => sum + file.bytes, 0) < 4 * 1024 * 1024);
+  const original = new Set(['weathered-plaster', 'door-timber', 'burlap', 'crate-timber', 'wall-grime']);
+  const bytes = files => files.reduce((sum, file) => sum + file.bytes, 0);
+  assert.ok(bytes(manifest.files.filter(file => original.has(file.file.split('/')[0]))) < 4 * 1024 * 1024);
+  assert.ok(bytes(manifest.files.filter(file => !original.has(file.file.split('/')[0]))) < 6 * 1024 * 1024);
   assert.match(manifest.processing, /No measured height/);
   for (const texture of manifest.textures) {
     assert.match(texture.sourceSha256, /^[a-f0-9]{64}$/);
@@ -32,6 +36,17 @@ test('generated maps have original-source, usage, budget and processing evidence
     assert.equal(file.colorSpace, color ? 'sRGB' : 'linear');
     if (file.file.endsWith('/atlas.webp')) assert.equal(file.transparentCellBorders, true);
   }
+});
+
+test('nature materials keep world scale, restrained normals, and distinct bark sources', () => {
+  for (const name of ['bark-elm', 'bark-poplar', 'bark-willow']) {
+    assert.equal(SCENE_ART_MATERIALS[name].metersPerTile, .8);
+    assert.equal(SCENE_ART_MATERIALS[name].surface, 'timber');
+    assert.ok(SCENE_ART_MATERIALS[name].normalStrength <= .35);
+  }
+  assert.equal(new Set(manifest.textures.filter(texture => texture.id.startsWith('bark-')).map(texture => texture.sourceSha256)).size, 3);
+  assert.equal(SCENE_ART_MATERIALS['root-litter'].metersPerTile, 1.6);
+  assert.equal(SCENE_ART_MATERIALS['dry-silt'].metersPerTile, 2);
 });
 
 test('weathering is confined to five existing exterior frontages, not partitions or all walls', () => {

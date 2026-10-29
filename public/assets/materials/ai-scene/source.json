@@ -6,14 +6,14 @@
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
   "model": "gpt-image-2.5-flare",
   "version": "2026-09-08",
-  "generatedAt": "2026-10-28T21:08:02.759755+00:00",
+  "generatedAt": "2026-10-29T11:18:22.387753+00:00",
   "processing": "Material sets: 32px opposite-edge crossfade; 1024px WebP color Q86; 512px lossless WebP high-pass micro-normal and near-matte roughness estimates. Grime: four tinted alpha masks in one lossless 1024px atlas with transparent cell borders. No measured height, AO, metalness or historical reconstruction is claimed.",
   "budgetUsd": 50,
-  "conservativeEstimatedTotalUsd": 0.073522,
+  "conservativeEstimatedTotalUsd": 0.14626,
   "pricing": {
     "currency": "USD",
     "source": "https://prices.azure.com/api/retail/prices",
-    "checkedAt": "2026-10-28",
+    "checkedAt": "2026-10-29",
     "region": "eastus2",
     "sku": "GlobalStandard",
     "perMillionTextInputTokens": 5,
@@ -178,6 +178,172 @@
       },
       "conservativeEstimatedUsd": 0.014826,
       "processing": "White-background grayscale masks converted to tinted alpha; each 512px cell has a 24px transparent feather and decoded transparent border check."
+    },
+    {
+      "id": "bark-elm",
+      "sourceSha256": "5914b381fc89eda56ae3869a3a3884d84efbcb7e10f40dfaa9ca438e77551e70",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Mature elm tree bark, not cut timber or wooden boards. Neutral warm grey-brown, interlocking irregular vertical ridges and shallow broken fissures, small flaking scales, subtle pale dust in recesses. The square represents 80 cm of bark surface. Medium-light albedo, restrained contrast, fine tactile grain. No trunk silhouette, roots, leaves, knots, plank joins, moss or deep black grooves.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793272112,
+      "usage": {
+        "input_tokens": 166,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 166
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 605
+      },
+      "conservativeEstimatedUsd": 0.014498,
+      "pricingVerifiedAt": "2026-10-29",
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.3212890625,
+        "y": 2.2194010416666665
+      }
+    },
+    {
+      "id": "bark-poplar",
+      "sourceSha256": "8a0acbd9a30f85f5d0a9bb70ee0ba579ac61b9f01a9ad439abf14eca03eef534",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Living poplar tree bark, not cut wood or boards. Pale grey with a faint warm olive cast, mostly smooth weathered surface, sparse narrow broken vertical fissures and small dark lenticels. The square represents 80 cm of surface. Natural subtle variation, not birch paper, no horizontal stripes, no trunk silhouette, roots, leaves, knots, plank joins or green moss.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793272179,
+      "usage": {
+        "input_tokens": 161,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 161
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 600
+      },
+      "conservativeEstimatedUsd": 0.014458,
+      "pricingVerifiedAt": "2026-10-29",
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.0188802083333335,
+        "y": 2.1783854166666665
+      }
+    },
+    {
+      "id": "bark-willow",
+      "sourceSha256": "1ecc6f9b346d6a76c320943cbe25109549dc9d5d4c9a98d07f4eeddc86147610",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Old willow bark, not cut timber or boards. Desaturated warm grey-brown, irregular narrow meandering vertical furrows and soft interwoven corky ridges. The square represents 80 cm of surface. Medium-light albedo and restrained shallow fissure contrast, no black channels, planks, trunk silhouette, roots, leaves, moss or dramatic decay.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793272245,
+      "usage": {
+        "input_tokens": 155,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 155
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 594
+      },
+      "conservativeEstimatedUsd": 0.01441,
+      "pricingVerifiedAt": "2026-10-29",
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.322265625,
+        "y": 2.3043619791666665
+      }
+    },
+    {
+      "id": "root-litter",
+      "sourceSha256": "3293b82106801f1df312722b8f508822af5f441c1f24acc127dcf227751b3fdf",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Top-down ground material under a deciduous tree in a dry northern Chinese town. Mostly exposed dusty muted reddish grey-brown compact earth, small scattered curled dry tan leaves and broken leaf fragments in irregular sparse clusters, a little fine humus and tiny grit. The square represents 1.6 meters; whole leaves only 3 to 7 cm long, no dense leaf carpet. Earth must remain visible over at least 75 percent of the surface. No tree, trunk, roots, grass, rocks, circular stain, border or contact shadow.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793272312,
+      "usage": {
+        "input_tokens": 192,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 192
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 631
+      },
+      "conservativeEstimatedUsd": 0.014706,
+      "pricingVerifiedAt": "2026-10-29",
+      "processing": "Warm/light color selection retains sparse pale leaf details over a 4% soil veil; not semantic segmentation. Separate runtime feather mask preserves the original ground instead of an opaque soil circle.",
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.5654296875,
+        "y": 2.6451822916666665
+      }
+    },
+    {
+      "id": "dry-silt",
+      "sourceSha256": "9c8b8a9837844621c7ffdf880c039852a05294196089e0920338d62c9f779cea",
+      "model": "gpt-image-2.5-flare",
+      "version": "2026-09-08",
+      "request": {
+        "prompt": "Create one original photorealistic base-color material texture for a browser game. Full-frame flat material surface, orthographic front view, even diffuse lighting, no directional shadows, no highlights, no ambient occlusion, no perspective, no vignette. No text, numbers, symbols, people, border, watermark, modern objects or cinematic composition. Make opposite edges match for seamless repeating. Top-down fine dry alluvial sediment from an abandoned shallow river channel. Light desaturated grey-tan dusty silt, small discontinuous drying cracks, sandy speckles and a few tiny rounded grains. The square represents 2 meters of flat ground; details have no preferred direction and irregular sizes. Mostly fine uncracked powder with isolated small cracked mud islands. No long grooves, tracks, tire marks, parallel bands, ripples, ridges, uniform polygon grid, grass, large stones, wet mud or water.",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "created": 1793272379,
+      "usage": {
+        "input_tokens": 187,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 187
+        },
+        "output_tokens": 439,
+        "output_tokens_details": {
+          "image_tokens": 439,
+          "text_tokens": 0
+        },
+        "total_tokens": 626
+      },
+      "conservativeEstimatedUsd": 0.014666,
+      "pricingVerifiedAt": "2026-10-29",
+      "decodedColorEdgeMeanAbsoluteDifference": {
+        "x": 2.3232421875,
+        "y": 2.30859375
+      }
     }
   ],
   "files": [
@@ -285,6 +451,126 @@
       "height": 1024,
       "colorSpace": "sRGB",
       "transparentCellBorders": true
+    },
+    {
+      "file": "bark-elm/color.webp",
+      "bytes": 400748,
+      "sha256": "49e0dc039d26f5b27e1178b0a6d72fbe6ae76a34ad8e7bee8548d0c998fdbc41",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "bark-elm/normal.webp",
+      "bytes": 563588,
+      "sha256": "61ddbb956624289b1381188a55b9b10c2840ceb9a01d4be9d1d1bdae263ddc46",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "bark-elm/roughness.webp",
+      "bytes": 91160,
+      "sha256": "7083e2c01ee7f26939fba88bb5db9b230898f5519e3afea5dadbf6baf0b41b91",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "bark-poplar/color.webp",
+      "bytes": 321620,
+      "sha256": "71a5820a8a9c99632f4e134477508b753be4b790df2450a6c12bf054a0a60335",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "bark-poplar/normal.webp",
+      "bytes": 449512,
+      "sha256": "17450c6b43ea9d90503fe53c661702e51f32a526e04fc2e0f013c1d43e9a5e0e",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "bark-poplar/roughness.webp",
+      "bytes": 67494,
+      "sha256": "9c2eba0f13fae01bfffab8badddc484bdcf1dc36b89e59534318270315b430e9",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "bark-willow/color.webp",
+      "bytes": 363664,
+      "sha256": "5e71f26d2c06e25177ebab572380affa03abb02d44c0196cb3926dc1d1fec4c3",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "bark-willow/normal.webp",
+      "bytes": 525706,
+      "sha256": "0a617c79a23d501729dc992f3d2a71e883e79551805bade0f443180ae0f29ace",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "bark-willow/roughness.webp",
+      "bytes": 80298,
+      "sha256": "7bd70ba79d52e396cfad5594d752b2edd8127f6e9eb9eeb5660bf629566ae02e",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "root-litter/color.webp",
+      "bytes": 737962,
+      "sha256": "942f0c788a2e8852dd1e0e5876f9b303617475cfcb714027648bee926235ccf0",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "root-litter/normal.webp",
+      "bytes": 542276,
+      "sha256": "4687c79304f7b8dd383124f84e4e9b7bd4df617a7c37755f84d9ef391afcdebf",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "root-litter/roughness.webp",
+      "bytes": 89518,
+      "sha256": "29ad3a1216f77997655f319aedd8826864ab3730aea56a0b25d8b17eea1c72da",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "dry-silt/color.webp",
+      "bytes": 394456,
+      "sha256": "7b6df0d85231757faef0631eb3c18cbd0e3bc2539f43e74cd96e9db955d184fd",
+      "width": 1024,
+      "height": 1024,
+      "colorSpace": "sRGB"
+    },
+    {
+      "file": "dry-silt/normal.webp",
+      "bytes": 512870,
+      "sha256": "21eda0a2bc07aea7fae132ab02dd00cd580e0c10827a9199f653ebe8ae8f0cc5",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
+    },
+    {
+      "file": "dry-silt/roughness.webp",
+      "bytes": 83320,
+      "sha256": "c88bed591c8eeada1d1663f04a37f4b04ed588571684c2bcb191d3884aac3f06",
+      "width": 512,
+      "height": 512,
+      "colorSpace": "linear"
     }
   ]
 }

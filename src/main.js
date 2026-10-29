@@ -5,7 +5,7 @@ import { makeWorld } from './battlefield.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, DOMINATION_SECONDS, makeObjectives, advanceCapture, createConquest, advanceConquest, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
 import { floorDestination, multistoryPath } from './multistory.js';
-import { RIVER } from './ground.js';
+import { RIVER, riverSectionAt } from './ground.js';
 import { SPAWN_RULES, SQUADS, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, createRallyPoint, replaceTeamRally, damageRallyPoint } from './spawns.js';
 import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopLocomotion, landLocomotion } from './locomotion.js';
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile } from './rifle-action.js';
@@ -1864,10 +1864,7 @@ function updateJapaneseArmor(transport, dt) {
         pointSegmentDistance(actor.position, from, to).distance < 1.2)),
     pathTo: (from, to) => armorNavigate.pathTo(transport, to, vehicles),
     canTravel: (from, to) => armorNavigate.canTravel(transport, from, to, vehicles),
-    move: (position, dx, dz) => {
-      const scale = world.waterDepth(position.x, position.z) > .05 ? RIVER.tankSpeed : 1;
-      return armorNavigate.move(transport, dx * scale, dz * scale, vehicles);
-    },
+    move: (position, dx, dz) => armorNavigate.move(transport, dx, dz, vehicles),
   });
   transport.position.y = world.groundHeight(transport.position.x, transport.position.z);
   const machineGunShots = advanceChiHaMachineGuns(transport, dt, time, {
@@ -1990,7 +1987,7 @@ function updateVehicles(dt) {
       if (position.y < 1.8 || colliding) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
     } else {
       transport.heading -= sideways * dt * .8;
-      const speed = TYPES.tank.speed * forward * (world.waterDepth(position.x, position.z) > .05 ? RIVER.tankSpeed : 1);
+      const speed = TYPES.tank.speed * forward;
       moveGround(position, -Math.sin(transport.heading) * speed * dt, -Math.cos(transport.heading) * speed * dt, 1.9,
         movementObstacles(position.x, position.z, transport.id));
       position.y = world.groundHeight(position.x, position.z);
@@ -2112,12 +2109,10 @@ function updatePlayer(dt) {
   const traversal = actor.traversal, mount = actor.weaponMount;
   if (forward || sideways || keys.has('KeyQ') || keys.has('KeyE')) releaseWeaponMount(mount);
   const wasVaulting = traversal.kind === 'vaulting';
-  const wading = world.waterDepth(position.x, position.z, position.y) > .05;
   if (!actor.vehicleId && !wasVaulting) {
     const steps = advanceLocomotion(motion, position, {
       type: unit.type, forward, sideways, yaw, stance, aiming: held.aiming,
-      sprint: keys.has('ShiftLeft') && !actor.grenades.action && !wading, walking: keys.has('KeyC'),
-      speedScale: wading ? RIVER.infantrySpeed : 1,
+      sprint: keys.has('ShiftLeft') && !actor.grenades.action, walking: keys.has('KeyC'),
       grounded: traversal.kind === 'grounded',
       busy: Boolean(actor.grenades.action) || unit.reloadUntil > time || (unit.type === 'infantry' && actor.rifle.action !== 'idle') || construction.blueprint || held.primary,
     }, movementObstacles(position.x, position.z), dt,
@@ -2382,9 +2377,6 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   if (speed < .05) {
     actor.tactics.mode = 'wait-for-spacing'; actor.locomotion.mode = 'idle';
     return;
-  }
-  if (world.waterDepth(pos.x, pos.z, pos.y) > .05) {
-    sprint = false; pace = 'walk'; speed = profile.jog * RIVER.infantrySpeed;
   }
   actor.stance = 'standing'; actor.firingPose = null;
   if (!postureReady(actor)) {
@@ -2772,9 +2764,8 @@ function tryAIBayonet(actor, target, dt) {
     { x: dx, z: dz }, { spacing: 1, constrained: false,
       blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) });
   const profile = FOOT_SPEEDS[actor.groundType];
-  const wet = world.waterDepth(position.x, position.z, position.y) > .05;
-  const sprint = !wet && !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
-  const speed = wet ? profile.jog * RIVER.infantrySpeed : sprint ? profile.sprint : profile.jog;
+  const sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
+  const speed = sprint ? profile.sprint : profile.jog;
   const step = Math.min(distance - BAYONET.reach + .05, speed * dt * steering.speed);
   const beforeX = position.x, beforeZ = position.z;
   world.moveInfantry(position, steering.x * step, steering.z * step, .42, obstacles);
@@ -3200,8 +3191,15 @@ function drawRadar(ctx = radarContext) {
   for (let i = 0; i < size; i += 22) {
     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
   }
-  ctx.fillStyle = '#5a6c66';
-  ctx.fillRect(0, map(0, -21)[1], size, 8);
+  ctx.fillStyle = '#88785c';
+  ctx.beginPath();
+  for (const side of [-1, 1]) for (let i = 0; i <= 55; i++) {
+    const x = side < 0 ? -110 + i * 4 : 110 - i * 4, section = riverSectionAt(x);
+    const [px, pz] = map(x, section.centerZ + side * section.bankHalfWidth);
+    if (side < 0 && i === 0) ctx.moveTo(px, pz);
+    else ctx.lineTo(px, pz);
+  }
+  ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#abb39744';
   for (const b of world.obstacles) {
     if (b.height < 2) continue;
@@ -3298,8 +3296,7 @@ function updateHUD() {
   $('movement-status').hidden = !foot || motion.stamina >= .999 && !motion.exhausted;
   if (foot) {
     const names = { idle: '站定', walk: '慢走', jog: '慢跑', sprint: '负重冲刺', crouch: '蹲行', prone: '匍匐', aim: '谨慎移动', turn: '转向' };
-    $('pace-label').textContent = world.waterDepth(allies[current].position.x, allies[current].position.z, allies[current].position.y) > .05
-      ? '浅水涉渡' : motion.aimRecovery > 0 && !motion.sprinting ? '收枪恢复中' : names[motion.mode];
+    $('pace-label').textContent = motion.aimRecovery > 0 && !motion.sprinting ? '收枪恢复中' : names[motion.mode];
     $('stamina-fill').style.width = `${motion.stamina * 100}%`;
     $('stamina-meter').setAttribute('aria-valuenow', String(Math.round(motion.stamina * 100)));
     $('stamina-label').textContent = `${motion.exhausted ? '体力不足 · 恢复中' : '体力'} ${Math.round(motion.stamina * 100)}%`;
@@ -3339,7 +3336,7 @@ function updateHUD() {
     return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
   }).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
-  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
+  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '干河床坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
@@ -3906,8 +3903,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
       height: 2 / sun.shadow.camera.projectionMatrix.elements[5] } },
   look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
   bridgeSurfaces: { ...world.bridgeSurfaces },
-  river: { ...RIVER, surfaces: { ...world.riverSurfaces },
-    depth: allies[current] ? world.waterDepth(allies[current].position.x, allies[current].position.z, allies[current].position.y) : 0 },
+  river: { ...RIVER, surfaces: { ...world.riverSurfaces } },
   staticDamage: { craters: world.staticDamage.craters.map(crater => ({ ...crater })),
     ruinedShops: [...world.staticDamage.ruinedShops], wrecks: world.staticDamage.wrecks.map(wreck => ({ ...wreck })) },
   doors: world.doorSystem.doors.map(({ id, x, z, angle, targetAngle, state, blocked }) => ({ id, x, z, angle, targetAngle, state, blocked })),
