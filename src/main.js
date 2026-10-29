@@ -16,7 +16,7 @@ import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, poi
   assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
-import { createDaylight } from './lighting.js';
+import { createDaylight, configureSunShadow } from './lighting.js';
 import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
 import { SpatialGrid, obstacleLookup } from './spatial.js';
@@ -31,6 +31,7 @@ import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from './benchmark.js';
+import { SHOP_ART_VIEWS } from './shop-art.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, occupiedVehicle, seatSoldier,
   leaveGroundVehicle, selectControlledSoldier, controlledSoldier, createControlView, vehicleCollider, groundExit,
   damageVehicleEntity, resetEntities, controlOwner, captureAttackSource, releaseSupportWeapon, createControlPoseView, occupiedSeat,
@@ -168,11 +169,7 @@ scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xffefd5, 2.5);
 sun.position.set(-55, 70, 38);
 sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
-Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 100, bottom: -100, near: 1, far: 240 });
-sun.shadow.bias = -.00015;
-sun.shadow.normalBias = .025;
-sun.shadow.radius = 2;
+configureSunShadow(sun);
 scene.add(sun);
 let surface;
 try {
@@ -1087,7 +1084,7 @@ function deploy(squadId, spawnId = null) {
   hudAt = 0;
   initAudio();
   battleVoiceEvent('deploy');
-  lockMouse();
+  if (benchmark?.scenario !== 'shop-art') lockMouse();
   updateCamera(0);
   renderConstruction();
   toast(type === 'plane' ? '从南侧空中入场点进入战场 · 飞机损失后可换其他小队' : `${TYPES[type].name}从${spawn.name}出击`, 5);
@@ -3215,7 +3212,7 @@ function updateHUD() {
     return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
   }).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
-  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
+  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
@@ -3753,7 +3750,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   combatEffects: combatEffects.snapshot,
   rifleTextures: rifleTextureSnapshot(),
   sceneArt: { ...world.sceneArt },
-  daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity },
+  daylight: { sunIntensity: sun.intensity, fillIntensity: hemisphere.intensity, environmentIntensity: scene.environmentIntensity,
+    shadowProjection: { width: 2 / sun.shadow.camera.projectionMatrix.elements[0],
+      height: 2 / sun.shadow.camera.projectionMatrix.elements[5] } },
   look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
   bridgeSurfaces: { ...world.bridgeSurfaces },
   river: { ...RIVER, surfaces: { ...world.riverSurfaces },
@@ -3861,3 +3860,21 @@ try {
 $('loading').hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame(tick);
+$('shop-art-entry').hidden = !import.meta.env.DEV;
+if (benchmark?.scenario === 'shop-art') {
+  const showShopView = name => {
+    setGameState('menu');
+    beginMatch();
+    controlPose.yaw = SHOP_ART_VIEWS[name].yaw; controlPose.pitch = SHOP_ART_VIEWS[name].pitch;
+  };
+  $('shop-art-tour').hidden = false;
+  for (const button of document.querySelectorAll('[data-shop-view]')) {
+    button.addEventListener('click', () => showShopView(button.dataset.shopView));
+  }
+  document.addEventListener('keydown', event => {
+    const name = { F1: 'grain', F2: 'cloth', F3: 'ground' }[event.code];
+    if (!name || event.repeat) return;
+    event.preventDefault(); showShopView(name);
+  });
+  showShopView('grain');
+}
