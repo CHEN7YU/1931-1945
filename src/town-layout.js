@@ -176,7 +176,7 @@ export function makeTownLayout() {
     building.stairs = upper.flights;
   }
   const damagedPieces = damagedTownPieces(pieces, buildings);
-  const obstacles = damagedPieces.filter(p => p.collision).map(p => ({
+  const obstacles = damagedPieces.filter(p => p.collision || p.wall).map(p => ({
     id: p.id, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2,
     minY: p.y - p.h / 2, height: p.y + p.h / 2, stair: Boolean(p.stair), walkable: Boolean(p.walkable),
   }));

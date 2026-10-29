@@ -65,6 +65,8 @@ import { advanceChiHaAI } from './chi-ha-ai.js';
 import { advanceChiHaMachineGuns } from './chi-ha-machine-guns.js';
 import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
+import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, landingHeight } from './infantry-traversal.js';
+import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -579,7 +581,11 @@ function battleSummary(team) {
 function clearControlInputs() {
   playerInput.block();
   const actor = controlledSoldier(entities);
-  if (actor) actor.breathControl.holding = false;
+  if (actor) {
+    actor.breathControl.holding = false;
+    releaseWeaponMount(actor.weaponMount);
+    actor.weaponMount.blend = 0;
+  }
   resetConstruction();
 }
 
@@ -619,7 +625,7 @@ function primaryViewAvailable() {
 function rifleAimAvailable() {
   const actor = controlledSoldier(entities);
   return Boolean(state === 'playing' && actor?.health > 0 && unit.type === 'infantry' && !actor.vehicleId &&
-    held.aiming && !toolEquipped && !grenadeEquipped && !actor.grenades.action &&
+    held.aiming && actor.traversal.kind !== 'vaulting' && !toolEquipped && !grenadeEquipped && !actor.grenades.action &&
     actor.rifle.action !== 'reload' && (!infantryWeaponProfile(actor.rifle).scoped || actor.rifle.action === 'idle') &&
     !actor.locomotion.sprinting && actor.locomotion.aimRecovery === 0 && weaponObstruction === 0 && obstructionBlend < .03);
 }
@@ -759,6 +765,9 @@ function updateControlHelp() {
       : actor.role === 'sniper'
         ? 'WASD 移动 · 右键 开镜 · 左 Shift 屏息 · 左键 单发 · R 装填 · Ctrl 蹲姿 · Z 卧姿 · Y 换人 · 1 主武器 · 5 手榴弹 · 6 炸药包 · 左键准备／松开投掷'
         : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 2 工兵工具 · 5 手榴弹（G兼容选择） · 6 炸药包 · 左键准备／松开投掷 · 按住左键建造 · B 镜头步态';
+  if (!transport) $('battle-controls').textContent += unit.type === 'infantry'
+    ? ' · B 架枪／解除 · Space 跳跃／翻越低障碍（蹲卧时先起身）'
+    : ' · Space 跳跃／翻越低障碍（蹲卧时先起身）';
 }
 
 function refreshControlSurface() {
@@ -1285,7 +1294,10 @@ function switchMember(index) {
   stopLocomotion(allies[current].locomotion);
   current = index;
   selectControlledSoldier(entities, allies[current]);
-  if (!allies[current].vehicleId) allies[current].position.y = world.walkHeight(allies[current].position.x, allies[current].position.z, allies[current].position.y);
+  if (!allies[current].vehicleId && allies[current].traversal.kind === 'grounded') {
+    const position = allies[current].position;
+    position.y = landingHeight(position, position.y, movementObstacles(position.x, position.z), world.walkHeight);
+  }
   if (allies[current].tactics.cover) coverClaims.delete(allies[current].tactics.cover.id);
   allies[current].tactics.cover = null;
   stopLocomotion(allies[current].locomotion);
@@ -1395,6 +1407,8 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
 function finishActorDeath(actor, source) {
   if (!actor.deathProcessed) {
     interruptGrenade(actor);
+    releaseWeaponMount(actor.weaponMount);
+    actor.traversal.kind = 'grounded'; actor.traversal.velocity = 0; actor.traversal.plan = null;
     actor.deathProcessed = true;
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.deathTime = time;
@@ -1571,8 +1585,8 @@ function grenadeThrowPose(id, action) {
   const eye = soldierEyePosition(actor), pose = grenadePose(action, soldierPostureHeight(actor));
   const c = Math.cos(actor.heading), s = Math.sin(actor.heading), [x, y, z] = pose.position;
   const position = new THREE.Vector3(actor.position.x + x * c + z * s,
-    actor.position.y + y + (actor === controlledSoldier(entities) ? jumpHeight : 0), actor.position.z - x * s + z * c);
-  const origin = new THREE.Vector3(eye.x, eye.y + (actor === controlledSoldier(entities) ? jumpHeight : 0), eye.z);
+    actor.position.y + y, actor.position.z - x * s + z * c);
+  const origin = new THREE.Vector3(eye.x, eye.y, eye.z);
   const hit = traceGrenade(origin, position, throwableProfile(action.kind).size);
   if (hit) position.copy(hit.position).addScaledVector(new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z), .002);
   const direction = actor === controlledSoldier(entities) ? camera.getWorldDirection(new THREE.Vector3())
@@ -1717,6 +1731,7 @@ function renderGrenades() {
 function fire() {
   if (state !== 'playing' || allies[current]?.health <= 0) return;
   if (grenadeEquipped || allies[current].grenades.action) return;
+  if (allies[current].traversal.kind === 'vaulting') return;
   const transport = occupiedVehicle(entities, allies[current]);
   if (transport && !occupiedSeat(entities).canFire) {
     toast('驾驶员席位不能发射主炮；按 Y 切换车长或炮手');
@@ -1784,7 +1799,8 @@ function fire() {
     }
     combatEvents.publish('shot', { source, weaponType: unit.type, start: muzzle, end, muzzle: ['infantry', 'tank'].includes(unit.type),
       automatic: unit.type === 'infantry' && infantryWeaponProfile(allies[current].rifle).automatic,
-      sound: unit.type === 'tank' ? 'blast' : 'shot', recoil: unit.type === 'tank' ? .04 : .05 }, time);
+      sound: unit.type === 'tank' ? 'blast' : 'shot', recoil: unit.type === 'tank' ? .04 :
+        .05 * mountStability(allies[current].weaponMount, Boolean(infantryWeaponProfile(allies[current].rifle).automatic)).recoil }, time);
     const hitRally = rallyFromHit(hit);
     for (const enemy of enemies) {
       if (enemy.health > 0 && pointSegmentDistance(enemy.position, muzzle, end).distance < 2.2) {
@@ -2032,6 +2048,58 @@ function renderBattleBoundary() {
     ? `正在损失生命（${BOUNDARY_RULES.damagePerSecond}/秒）` : `${Math.ceil(boundary.remaining)} 秒后开始掉血`}`;
 }
 
+function probeWeaponSupport(point, depth) {
+  const supportRay = new THREE.Raycaster(new THREE.Vector3(point.x, point.y, point.z), new THREE.Vector3(0, -1, 0), 0, depth);
+  const hit = supportRay.intersectObjects(world.solids, false)[0];
+  if (!hit?.face || hit.object.userData.doorIds || hit.object.userData.doorId) return null;
+  const matrix = hit.object.matrixWorld.clone();
+  if (hit.instanceId != null) {
+    const instance = new THREE.Matrix4();
+    hit.object.getMatrixAt(hit.instanceId, instance); matrix.multiply(instance);
+  }
+  const normal = hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix));
+  return { x: hit.point.x, y: hit.point.y, z: hit.point.z, normalY: normal.y };
+}
+
+function weaponSupportAvailable(actor) {
+  return Boolean(actor.health > 0 && !actor.vehicleId && unit?.type === 'infantry' &&
+    actor.traversal.kind === 'grounded' && !toolEquipped && !grenadeEquipped && !actor.grenades.action &&
+    actor.rifle.action !== 'reload' && !actor.locomotion.sprinting && actor.locomotion.aimRecovery === 0);
+}
+
+function currentMountCandidate(actor) {
+  return mountCandidate(actor.position, soldierPostureHeight(actor), controlPose.yaw, probeWeaponSupport);
+}
+
+function updateActorTraversal(actor, dt) {
+  const impact = advanceTraversal(actor.traversal, actor.position, dt,
+    movementObstacles(actor.position.x, actor.position.z), world.walkHeight);
+  if (impact !== null) {
+    landLocomotion(actor.locomotion, impact);
+    actor.locomotion.aimRecovery = Math.max(actor.locomotion.aimRecovery, .2);
+    if (actor === controlledSoldier(entities)) emitFootstep(actor.position, actor.locomotion.speed, true);
+  }
+  if (actor.traversal.blocked && actor === controlledSoldier(entities)) {
+    toast('翻越路径受阻 · 已停止翻越');
+    actor.traversal.blocked = false;
+  }
+}
+
+function moveInfantry(position, dx, dz, radius, obstacles, bodyHeight = TRAVERSAL.bodyHeight) {
+  const move = position.y > world.walkHeight(position.x, position.z, position.y) + .025
+    ? moveAirborne : world.moveInfantry;
+  return move(position, dx, dz, radius, obstacles, bodyHeight);
+}
+
+function settleActorSupport(actor) {
+  if (actor.traversal.kind !== 'grounded') return;
+  const position = actor.position;
+  const floor = landingHeight(position, position.y, movementObstacles(position.x, position.z), world.walkHeight);
+  if (position.y - floor > .25) {
+    beginTraversal(actor.traversal, position); actor.traversal.velocity = 0;
+  } else position.y = floor;
+}
+
 function updatePlayer(dt) {
   const actor = allies[current];
   const { yaw, stance } = controlPose;
@@ -2042,34 +2110,34 @@ function updatePlayer(dt) {
   if (forward || sideways) actor.firingPose = null;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = actor.locomotion;
+  const traversal = actor.traversal, mount = actor.weaponMount;
+  if (forward || sideways || keys.has('KeyQ') || keys.has('KeyE')) releaseWeaponMount(mount);
+  const wasVaulting = traversal.kind === 'vaulting';
   const wading = world.waterDepth(position.x, position.z, position.y) > .05;
-  if (!actor.vehicleId) {
+  if (!actor.vehicleId && !wasVaulting) {
     const steps = advanceLocomotion(motion, position, {
       type: unit.type, forward, sideways, yaw, stance, aiming: held.aiming,
       sprint: keys.has('ShiftLeft') && !actor.grenades.action && !wading, walking: keys.has('KeyC'),
       speedScale: wading ? RIVER.infantrySpeed : 1,
-      grounded: jumpHeight === 0 && jumpVelocity === 0,
+      grounded: traversal.kind === 'grounded',
       busy: Boolean(actor.grenades.action) || unit.reloadUntil > time || (unit.type === 'infantry' && actor.rifle.action !== 'idle') || construction.blueprint || held.primary,
-    }, movementObstacles(position.x, position.z), dt, world.moveInfantry);
+    }, movementObstacles(position.x, position.z), dt,
+    traversal.kind !== 'grounded' ? moveAirborne : moveInfantry);
     for (let i = 0; i < steps; i++) emitFootstep(position, motion.speed);
   }
-  if (foot) {
-    if (jumpHeight > 0 || jumpVelocity > 0) {
-      jumpVelocity -= 15 * dt;
-      jumpHeight = Math.max(0, jumpHeight + jumpVelocity * dt);
-      if (!jumpHeight) {
-        landLocomotion(motion, jumpVelocity);
-        emitFootstep(position, motion.speed, true);
-        jumpVelocity = 0;
-      }
-    }
+  if (!actor.vehicleId) {
+    settleActorSupport(actor);
+    updateActorTraversal(actor, dt);
   }
-  if (!actor.vehicleId) position.y = world.walkHeight(position.x, position.z, position.y);
+  jumpHeight = traversal.kind === 'grounded' ? 0 : Math.max(0, position.y - traversal.baseY);
+  jumpVelocity = traversal.velocity;
+  advanceWeaponMount(mount, dt, position, stance,
+    mount.active && weaponSupportAvailable(actor) && Boolean(currentMountCandidate(actor)), probeWeaponSupport);
   actor.heading = yaw;
   actor.aimWalking = foot && held.aiming && motion.speed > .06 && !motion.sprinting;
-  actor.rifleReady = !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
+  actor.rifleReady = !wasVaulting && !grenadeEquipped && !actor.grenades.action && !toolEquipped && (held.aiming || held.primary) && !motion.sprinting && motion.aimRecovery === 0;
   advanceBreath(actor.breathControl, dt, keys.has('ShiftLeft'),
-    rifleAimAvailable() && motion.speed < .1 && jumpHeight === 0 && jumpVelocity === 0);
+    rifleAimAvailable() && motion.speed < .1 && traversal.kind === 'grounded');
   if (actor.nativeMotion) advanceNraMotion(actor, dt);
   // Movement, stance, lean and mouse aim must be current before muzzle clearance/fire.
   updateCamera(dt);
@@ -2078,7 +2146,7 @@ function updatePlayer(dt) {
     const shot = advanceTankMachineGun(transport, actor, dt, time, keys.has('Space'));
     if (shot) fireTankMachineGun(transport, shot);
   }
-  if (actor.grenades.action) return;
+  if (actor.grenades.action || wasVaulting) return;
   if (toolEquipped) updateConstruction(dt);
   else if (held.primary) fire();
 }
@@ -2089,6 +2157,7 @@ function updateCamera(dt) {
   const position = allies[current].position;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = allies[current].locomotion;
+  const mount = allies[current].weaponMount, stability = mountStability(mount);
   const eyePoint = foot && !allies[current].vehicleId ? soldierEyePosition(allies[current]) : position;
   const desiredHeight = controlPose.eyeHeight;
   const tank = occupiedVehicle(entities, allies[current]), seat = occupiedSeat(entities);
@@ -2096,18 +2165,18 @@ function updateCamera(dt) {
   eyeHeight = tank?.type === 'tank' || !allies[current].vehicleId && allies[current].nativeMotion?.profile.headAim
     ? desiredHeight : THREE.MathUtils.lerp(eyeHeight, desiredHeight, 1 - Math.exp(-dt * 12));
   if (observation) eyeHeight = observation.y - tank.position.y;
-  const desiredLean = foot ? (Number(keys.has('KeyE')) - Number(keys.has('KeyQ'))) * .23 : 0;
+  const desiredLean = foot && !mount.active ? (Number(keys.has('KeyE')) - Number(keys.has('KeyQ'))) * .23 : 0;
   const offsetX = Math.cos(yaw) * desiredLean;
   const offsetZ = -Math.sin(yaw) * desiredLean;
   const safeLean = foot && circleBlocked(eyePoint.x + offsetX, eyePoint.z + offsetZ, .35, world.obstacles, position.y) ? 0 : desiredLean;
   lean = THREE.MathUtils.lerp(lean, safeLean, Math.min(1, dt * 12));
   const cameraSway = foot ? motion.cameraX * motionStrength : 0;
-  camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + jumpHeight + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
+  camera.position.set(eyePoint.x + Math.cos(yaw) * (lean + cameraSway), unit.altitude + eyeHeight + mount.eyeOffset * mount.blend + (foot ? (motion.cameraY + motion.landing) * motionStrength : 0), eyePoint.z - Math.sin(yaw) * (lean + cameraSway));
   if (observation) camera.position.set(observation.x, observation.y, observation.z);
   const profile = infantryWeaponProfile(allies[current].rifle);
   const sway = rifleAimAvailable() ? aimSway(time, { scoped: Boolean(profile.scoped),
     holding: allies[current].breathControl.holding, moving: motion.speed > .1, stance: controlPose.stance }) : { pitch: 0, yaw: 0 };
-  camera.rotation.set(pitch + recoil + sway.pitch, yaw + sway.yaw, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
+  camera.rotation.set(pitch + recoil + sway.pitch * stability.sway, yaw + sway.yaw * stability.sway, -lean * .35 + (foot ? motion.cameraRoll * motionStrength : 0));
   recoil = Math.max(0, recoil - dt * .3);
   const rifleReloading = unit.type === 'infantry' && allies[current].rifle.action === 'reload';
   const effectiveAim = unit.type === 'infantry' ? rifleAimAvailable() : held.aiming && !grenadeEquipped && !allies[current].grenades.action && primaryViewAvailable() && !toolEquipped && !rifleReloading && weaponObstruction === 0 && obstructionBlend < .03 && (!foot || motion.aimRecovery === 0);
@@ -2122,8 +2191,10 @@ function updateCamera(dt) {
       const pose = updateRifleModel(weapon, allies[current].rifle);
       weapon.userData.rifle.flash.visible &&= graphics.snapshot.effects.muzzle;
       const swayScale = aim ? .025 : 1;
-      const targetX = (aim ? 0 : .18) + motion.weaponX * swayScale;
-      const targetY = (aim ? -RIFLE.sightHeight : -.22) + motion.weaponY * swayScale - pose.lower * .045;
+      const supportAim = Math.max(aim ? 1 : 0, mount.blend);
+      const targetX = .18 * (1 - supportAim) + motion.weaponX * swayScale * stability.sway;
+      const vaultLower = allies[current].traversal.kind === 'vaulting' ? .3 : 0;
+      const targetY = -.22 * (1 - supportAim) - RIFLE.sightHeight * supportAim + motion.weaponY * swayScale * stability.sway - pose.lower * .045 - vaultLower;
       const targetZ = (aim ? -.2 : -.14) + pose.recoil * .035 + motion.sprintBlend * .08;
       const base = weapon.userData.basePosition ??= weapon.position.clone();
       base.x = THREE.MathUtils.lerp(base.x, targetX, response);
@@ -2275,7 +2346,7 @@ function walkActor(actor, target, speed, dt, sprint = false) {
       const hx = waitingDoor.x - (waitingDoor.axis === 'x' ? waitingDoor.width / 2 : 0);
       const hz = waitingDoor.z - (waitingDoor.axis === 'z' ? waitingDoor.width / 2 : 0);
       const dx = pos.x - hx, dz = pos.z - hz, distance = Math.max(.01, Math.hypot(dx, dz));
-      world.moveInfantry(pos, dx / distance * dt * 1.8, dz / distance * dt * 1.8, .42, movementObstacles(pos.x, pos.z));
+      moveInfantry(pos, dx / distance * dt * 1.8, dz / distance * dt * 1.8, .42, movementObstacles(pos.x, pos.z));
     }
     return;
   }
@@ -2333,13 +2404,13 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   const step = Math.min(speed * dt, distance);
   const beforeX = pos.x;
   const beforeZ = pos.z;
-  world.moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
+  moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
     const side = actor.index % 2 ? -1 : 1;
-    world.moveInfantry(pos, -dz / distance * step * side, dx / distance * step * side, .42, obstacles);
+    moveInfantry(pos, -dz / distance * step * side, dx / distance * step * side, .42, obstacles);
   } else actor.stuckTime = 0;
-  pos.y = world.walkHeight(pos.x, pos.z, pos.y);
+  settleActorSupport(actor);
   actor.walkPhase += Math.hypot(pos.x - beforeX, pos.z - beforeZ) * 2.5;
   actor.walkPoseReady = true;
   actor.locomotion.speed = Math.hypot(pos.x - beforeX, pos.z - beforeZ) / dt;
@@ -2724,6 +2795,11 @@ function updateAI(dt) {
     const actor = allForces[(index + aiCursor) % allForces.length];
     if (actor.health <= 0) continue;
     if (actor === player) { resetAIRifleAim(actor.aiRifle, 'controlled'); continue; }
+    if (actor.traversal.kind !== 'grounded') {
+      resetAIRifleAim(actor.aiRifle, 'traversing');
+      actor.rifleReady = false;
+      continue;
+    }
     actor.locomotion.speed = 0; actor.locomotion.sprinting = false; actor.locomotion.mode = 'idle';
     actor.aimWalking = false;
     actor.rifleReady = false; actor.turningThisStep = false;
@@ -2760,10 +2836,10 @@ function updateAI(dt) {
         actor.stance = 'standing'; actor.firingPose = null; actor.tactics.mode = 'evade-grenade';
         const beforeX = actor.position.x, beforeZ = actor.position.z;
         const turn = advanceAITurn(actor, Math.atan2(-dx, -dz), dt, true);
-        if (turn.mayMove && postureReady(actor)) world.moveInfantry(actor.position,
+        if (turn.mayMove && postureReady(actor)) moveInfantry(actor.position,
           dx / length * dt * FOOT_SPEEDS[actor.groundType].jog, dz / length * dt * FOOT_SPEEDS[actor.groundType].jog, .42,
           movementObstacles(actor.position.x, actor.position.z));
-        actor.position.y = world.walkHeight(actor.position.x, actor.position.z, actor.position.y);
+        settleActorSupport(actor);
         actor.locomotion.speed = Math.hypot(actor.position.x - beforeX, actor.position.z - beforeZ) / dt;
         actor.locomotion.mode = actor.locomotion.speed > .06 ? 'jog' : 'idle';
         actor.walkPhase += actor.locomotion.speed * dt * 2.5;
@@ -2773,12 +2849,13 @@ function updateAI(dt) {
     }
     if (actor.nativeMotion && !tactics.lastSeen && actor.firingPose) { actor.stance = 'standing'; actor.firingPose = null; }
     const position = actor.position;
-    position.y = world.walkHeight(position.x, position.z, position.y);
+    settleActorSupport(actor);
+    if (actor.traversal.kind !== 'grounded') continue;
     const escape = position.y < 1 ? world.doorSystem.swingEscape(position) : null;
     if (escape) {
       const dx = escape.x - position.x, dz = escape.z - position.z, distance = Math.max(.01, Math.hypot(dx, dz));
-      world.moveInfantry(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
-      position.y = world.walkHeight(position.x, position.z, position.y);
+      moveInfantry(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
+      settleActorSupport(actor);
       tactics.mode = 'yield-door'; tactics.blockedBy = 'door';
       resetAIRifleAim(actor.aiRifle, 'moving');
       continue;
@@ -2954,14 +3031,14 @@ function updateAI(dt) {
         const angle = distance > .01 ? Math.atan2(dz, dx) : tactics.id * 2;
         const push = Math.min(.06, (spacing - distance) * dt * 3);
         const beforeX = position.x, beforeZ = position.z;
-        world.moveInfantry(position, Math.cos(angle) * push, Math.sin(angle) * push, .42, movementObstacles(position.x, position.z));
+        moveInfantry(position, Math.cos(angle) * push, Math.sin(angle) * push, .42, movementObstacles(position.x, position.z));
         if (actor.locomotion.speed < .1 && Math.hypot(position.x - beforeX, position.z - beforeZ) / dt > .1) {
           actor.locomotion.speed = Math.hypot(position.x - beforeX, position.z - beforeZ) / dt;
           actor.locomotion.mode = 'walk'; actor.rifleReady = false;
         }
       }
     }
-    position.y = world.walkHeight(position.x, position.z, position.y);
+    settleActorSupport(actor);
     if (!['playing', 'transferring', 'dead'].includes(state)) break;
   }
   for (const actor of allForces) {
@@ -3148,6 +3225,14 @@ function updateHUD() {
   }
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const motion = allies[current].locomotion;
+  const actor = allies[current], mount = actor.weaponMount;
+  const support = $('weapon-support');
+  const canMount = state === 'playing' && weaponSupportAvailable(actor);
+  support.hidden = !canMount && !mount.active && actor.traversal.kind !== 'vaulting';
+  support.textContent = actor.traversal.kind === 'vaulting' ? '翻越中 · 暂时无法射击'
+    : mount.active ? '已架枪 · B 解除 · 移动自动解除'
+    : canMount && currentMountCandidate(actor) ? 'B 架枪 · 依托掩体稳定射击' : '';
+  if (!support.textContent) support.hidden = true;
   $('movement-status').hidden = !foot || motion.stamina >= .999 && !motion.exhausted;
   if (foot) {
     const names = { idle: '站定', walk: '慢走', jog: '慢跑', sprint: '负重冲刺', crouch: '蹲行', prone: '匍匐', aim: '谨慎移动', turn: '转向' };
@@ -3192,7 +3277,7 @@ function updateHUD() {
     return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
   }).join('');
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
-  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
+  const diagnosticLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'ford' ? '浅河坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const audioLabel = audioUnsupported ? '音效不可用　'
     : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
@@ -3252,6 +3337,8 @@ function advanceBattleStep(dt, presentationTime) {
   vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
   updateWeaponSimulation(dt);
   if (state === 'playing') updatePlayer(dt);
+  for (const actor of allForces) if (actor.health > 0 && !actor.vehicleId &&
+    actor !== controlledSoldier(entities) && actor.traversal.kind !== 'grounded') updateActorTraversal(actor, dt);
   for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
     (state !== 'playing' || actor !== controlledSoldier(entities))) advanceNraMotion(actor, dt);
   if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
@@ -3458,6 +3545,13 @@ syncQualityControls();
 function performControlCommand(command) {
   const { action, payload } = command;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
+  const actor = allies[current];
+  if (actor.traversal.kind === 'vaulting' && !['look', 'cycleMember'].includes(action)) {
+    toast('正在翻越 · 落地后再操作武器或交互');
+    return;
+  }
+  if (['reload', 'equipRifle', 'equipTool', 'equipGrenade', 'equipExplosivePack', 'prepareGrenade',
+    'crouch', 'prone', 'jump', 'interact'].includes(action)) releaseWeaponMount(actor.weaponMount);
   if (allies[current]?.grenades.action && !['look', 'cycleMember', 'releaseGrenade'].includes(action)) {
     if (action === 'pressFire') return;
     toast('正在操作投掷装备；松开左键投掷，换人会丢下已启动的投掷物');
@@ -3486,13 +3580,26 @@ function performControlCommand(command) {
     if (next >= 0) changeMember(next);
   } else if (action === 'crouch' && foot) controlPose.stance = controlPose.stance === 'crouched' ? 'standing' : 'crouched';
   else if (action === 'prone' && foot) controlPose.stance = controlPose.stance === 'prone' ? 'standing' : 'prone';
-  else if (action === 'jump' && foot && jumpHeight === 0) {
+  else if (action === 'mountWeapon') {
+    if (actor.weaponMount.active) { releaseWeaponMount(actor.weaponMount); return; }
+    if (!weaponSupportAvailable(actor) || actor.locomotion.speed > .1) { toast('先站定、收起工具或投掷物，再靠近掩体架枪'); return; }
+    const candidate = currentMountCandidate(actor);
+    if (!candidate) { toast('没有合适的支撑面 · 靠近沙袋、矮墙或窗台，并调整姿态'); return; }
+    beginWeaponMount(actor.weaponMount, candidate, actor.position, controlPose.yaw, controlPose.pitch, controlPose.stance);
+  }
+  else if (action === 'jump' && foot && !actor.vehicleId && actor.traversal.kind === 'grounded') {
     if (controlPose.stance !== 'standing') controlPose.stance = 'standing';
-    else if (allies[current].locomotion.stamina >= .1) {
-      jumpVelocity = 5;
-      allies[current].locomotion.stamina -= .08;
-      allies[current].locomotion.regenDelay = 1.4;
-    } else toast('体力不足，暂时无法起跳');
+    else {
+      const plan = findVault(actor.position, controlPose.yaw,
+        deploymentObstacles(), world.walkHeight);
+      const cost = plan ? TRAVERSAL.vaultCost : TRAVERSAL.jumpCost;
+      if (actor.locomotion.stamina < (plan ? cost : .1)) { toast('体力不足，暂时无法跳跃或翻越'); return; }
+      beginTraversal(actor.traversal, actor.position, plan);
+      if (plan) { stopLocomotion(actor.locomotion); held.primary = held.aiming = held.secondary = false; }
+      jumpVelocity = actor.traversal.velocity;
+      actor.locomotion.stamina -= cost;
+      actor.locomotion.regenDelay = 1.4;
+    }
   } else if (action === 'startOrder') held.orderStarted = payload.now;
   else if (action === 'finishOrder' && held.orderStarted !== null) {
     squadCommand(payload.now - held.orderStarted > 450);
@@ -3509,6 +3616,8 @@ function performControlCommand(command) {
     const sensitivity = sniperScopeActive() ? infantryWeaponProfile(allies[current].rifle).aimSensitivity : held.aiming ? .6 : 1;
     controlPose.yaw -= payload.x * .0022 * sensitivity;
     controlPose.pitch -= payload.y * .0022 * sensitivity;
+    const look = mountedLook(actor.weaponMount, controlPose.yaw, controlPose.pitch);
+    controlPose.yaw = look.yaw; controlPose.pitch = look.pitch;
   }
 }
 
@@ -3521,7 +3630,8 @@ function dispatchControlCommand(action, payload) {
 }
 
 const keyActions = { KeyF: 'interact', KeyR: 'reload', Digit1: 'equipRifle', Digit2: 'equipTool', KeyY: 'cycleMember',
-  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', Digit5: 'equipGrenade', Digit6: 'equipExplosivePack', KeyG: 'equipGrenade' };
+  ControlLeft: 'crouch', KeyZ: 'prone', Space: 'jump', KeyB: 'mountWeapon',
+  Digit5: 'equipGrenade', Digit6: 'equipExplosivePack', KeyG: 'equipGrenade' };
 document.addEventListener('wheel', event => {
   if ($('scoreboard').hidden) return;
   const panel = event.target.closest('.score-table-wrap') ?? document.querySelector('.score-table-wrap');
@@ -3555,11 +3665,6 @@ document.addEventListener('keydown', event => {
     if (document.pointerLockElement) document.exitPointerLock();
   }
   if (event.code === 'KeyM') $('minimap').classList.toggle('expanded');
-  if (event.code === 'KeyB') {
-    const levels = [1, .35, 0];
-    setMotionStrength(levels[(levels.indexOf(motionStrength) + 1) % levels.length]);
-    toast(`镜头步态：${motionStrength === 1 ? '标准' : motionStrength ? '减弱' : '关闭'} · 不影响移动速度`);
-  }
   if (event.code === 'Escape') showOverlay();
 });
 document.addEventListener('keyup', event => {
@@ -3646,7 +3751,10 @@ Object.defineProperty(window, '__battle', { get: () => ({
   squadScores: battleStats.snapshot,
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
-  controlSimulation: { toolEquipped, grenadeEquipped, selectedThrowable, jumpHeight, jumpVelocity },
+  controlSimulation: { toolEquipped, grenadeEquipped, selectedThrowable, jumpHeight, jumpVelocity,
+    traversal: allies[current] ? { ...allies[current].traversal } : null,
+    weaponMount: allies[current] ? { ...allies[current].weaponMount, stability: mountStability(allies[current].weaponMount,
+      Boolean(infantryWeaponProfile(allies[current].rifle).automatic)) } : null },
   historicalCharacter: nraCharacter?.focusedSnapshot ?? null,
   historicalForce: nraCharacter?.snapshot ?? null,
   enemyHistoricalCharacter: ijaCharacter?.focusedSnapshot ?? null,
@@ -3748,6 +3856,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
       boltLift: weapon.userData.rifle.bolt.rotation.z, boltTravel: weapon.userData.rifle.bolt.position.z,
       clipVisible: weapon.userData.rifle.clip.visible, chargerVisible: weapon.userData.rifle.clip.getObjectByName('charger').visible,
       cartridges: weapon.userData.rifle.clip.children.filter(child => child.name.startsWith('cartridge') && child.visible).length,
+      reloadContact: weapon.userData.reloadContact ? { ...weapon.userData.reloadContact } : null,
+      feedPosition: weapon.getObjectByName('feed')?.position.toArray() ?? null,
+      leftHandPosition: weapon.userData.rifle.leftHand.position.toArray(),
       flashVisible: weapon.userData.rifle.flash.visible,
       dimensions: { ...weapon.userData.dimensions },
       arms: weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
