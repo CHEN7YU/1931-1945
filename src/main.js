@@ -52,6 +52,7 @@ import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './project
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
 import { AI_RIFLE, createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
 import { BAYONET, createBayonetState, cancelBayonet, bayonetDistance, advanceBayonet } from './bayonet.js';
+import { dadaoCombatDistance, advanceAIDadao } from './ai-dadao.js';
 import { DADAO, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase, selectDadaoTarget } from './dadao.js';
 import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
 import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
@@ -81,6 +82,11 @@ import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
 import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, landingHeight } from './infantry-traversal.js';
 import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
+import { createFatalReporter } from './fatal-report.js';
+import { createPlayerPreferences, lookSensitivity } from './player-preferences.js';
+import { AUDIO_CHANNELS, createAudioMixer, defaultAudioSettings } from './audio-mixer.js';
+import { weaponRestriction } from './weapon-feedback.js';
+import { applyCloseWeaponPose } from './weapon-close-pose.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -164,6 +170,19 @@ let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
 const $ = id => document.getElementById(id);
 const canvas = $('world');
+let fatal = false;
+let readFailureContext = () => ({ state: 'loading' });
+let stopAfterFailure = () => {
+  playerInput.block();
+  if (document.pointerLockElement) document.exitPointerLock();
+};
+const fatalReporter = createFatalReporter({ document, window,
+  build: { ...buildStamp, development: import.meta.env.DEV },
+  getContext: () => readFailureContext(),
+  onFatal: () => { fatal = true; stopAfterFailure(); },
+});
+const preferences = createPlayerPreferences();
+let preferenceValues = preferences.snapshot;
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 650);
@@ -175,9 +194,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 } catch (error) {
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `无法创建 WebGL 渲染器。请使用支持硬件加速的桌面浏览器。${error.message}`;
+  fatalReporter.show(error, { stage: 'webgl-renderer' });
   throw error;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
@@ -201,9 +218,7 @@ try {
   await setModelSurfaces(surface, renderer.capabilities.getMaxAnisotropy());
   await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy());
 } catch (error) {
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `场景材质加载失败：${error.message}。请重新加载，并检查本地 assets 文件是否完整。`;
+  fatalReporter.show(error, { stage: 'scene-materials' });
   throw error;
 }
 const world = makeWorld(scene, surface);
@@ -227,8 +242,7 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     const { loadIjaCharacter, createIjaForceRenderer } = await import('./ija-character.js');
     ijaCharacter = createIjaForceRenderer(scene, camera, await loadIjaCharacter());
   } catch (error) {
-    $('loading').hidden = true; $('fatal').hidden = false;
-    $('fatal-message').textContent = `人物适配试验加载失败：${error.message}。未静默回退。`;
+    fatalReporter.show(error, { stage: 'character-loading' });
     throw error;
   }
 }
@@ -247,7 +261,8 @@ const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
 const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
 const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.createGrenadeHand);
 const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHand) : null;
-const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain') });
+const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain'),
+  initialPreset: preferenceValues.quality.preset, initialEffects: preferenceValues.quality.effects });
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.obstacles);
 world.doorSystem.onNavigationChanged = bounds => { navigate.refresh(bounds); armorNavigate.refresh(bounds); groundCollision.rebuild(); };
@@ -306,6 +321,7 @@ let hudAt = 0;
 let lastFrame = performance.now();
 const frameTimes = [];
 let audioContext;
+let audioMixer = null;
 let noiseBuffer;
 let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audioUnsupported = false;
 let footstepAudio = null, footstepAudioFailure = null;
@@ -350,7 +366,7 @@ let lean = 0;
 let jumpHeight = 0;
 let jumpVelocity = 0;
 let eyeHeight = 1.67;
-let motionStrength = 1;
+let motionStrength = preferenceValues.motionStrength;
 let playerFootsteps = 0;
 let lastFootSurface = null;
 let weaponObstruction = 0;
@@ -368,7 +384,19 @@ let grenadeEquipped = false;
 let selectedThrowable = 'grenade';
 let controlBinding = null;
 const construction = createConstructionState();
-let fatal = false;
+readFailureContext = () => ({
+  state, time, type: unit?.type ?? null, control: { ...entities.control },
+  stance: controlPose.stance, position: allies[current]?.position.toArray() ?? null,
+  look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
+  equipment: { toolEquipped, dadaoEquipped, grenadeEquipped, selectedThrowable },
+  rifle: allies[current] ? { model: allies[current].rifle.model ?? 'rifle', action: allies[current].rifle.action,
+    ammo: allies[current].rifle.ammo } : null,
+  obstruction: weaponObstruction, obstructionBlend,
+  weaponView: weapon ? { position: weapon.position.toArray(), rotation: weapon.quaternion.toArray(),
+    handsVisible: weaponHands?.snapshot?.visible ?? false,
+    reachLimited: weaponHands?.snapshot?.reachLimited ?? false } : null,
+});
+stopAfterFailure = releaseMouse;
 const mortarTarget = new THREE.Vector3();
 const rallyPreview = rallyPointModel('friendly', true);
 rallyPreview.visible = false;
@@ -419,7 +447,8 @@ function sound(kind) {
   const gain = audioContext.createGain();
   gain.gain.setValueAtTime(kind === 'blast' ? .22 : .09, t);
   gain.gain.exponentialRampToValueAtTime(.001, t + (kind === 'blast' ? .65 : .13));
-  source.connect(filter).connect(gain).connect(audioContext.destination);
+  source.connect(filter).connect(gain).connect(audioMixer.output('weapons'));
+  audioMixer.track(source, [filter, gain], 'weapons');
   source.start(t);
   source.stop(t + .7);
 }
@@ -438,7 +467,8 @@ function mechanicalSound(event) {
   source.buffer = noiseBuffer;
   filter.type = 'bandpass'; filter.frequency.value = cue === 'load' ? 2400 : cue === 'close' ? 1250 : 3200; filter.Q.value = 2;
   gain.gain.setValueAtTime(.045, now); gain.gain.exponentialRampToValueAtTime(.001, now + length);
-  source.connect(filter).connect(gain).connect(audioContext.destination);
+  source.connect(filter).connect(gain).connect(audioMixer.output('weapons'));
+  audioMixer.track(source, [filter, gain], 'weapons');
   source.start(now, .3, length);
 }
 
@@ -456,7 +486,8 @@ function playDoorSound(event) {
   const panner = audioContext.createStereoPanner();
   const local = camera.worldToLocal(new THREE.Vector3(event.position.x, camera.position.y, event.position.z));
   panner.pan.value = THREE.MathUtils.clamp(local.x / Math.max(1, distance), -.9, .9);
-  oscillator.connect(gain).connect(panner).connect(audioContext.destination);
+  oscillator.connect(gain).connect(panner).connect(audioMixer.output('effects'));
+  audioMixer.track(oscillator, [gain, panner], 'effects');
   oscillator.start(now); oscillator.stop(now + .46);
 }
 
@@ -465,6 +496,12 @@ function initAudio() {
   if (!Audio) { audioUnsupported = true; return; }
   if (!audioContext) {
     audioContext = new Audio();
+    audioMixer = createAudioMixer(audioContext, preferenceValues.audio);
+    rifleAudio?.setOutput(audioMixer.output('weapons'));
+    mechanicalAudio?.setOutput(audioMixer.output('weapons'));
+    footstepAudio?.setOutput(audioMixer.output('footsteps'));
+    battleVoices?.setOutput(audioMixer.output('voices'));
+    battleReactions?.setOutput(audioMixer.output('voices'));
     noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
@@ -501,7 +538,8 @@ function playFootstep(event) {
   const force = (.035 + Math.min(speed, 5) * .008) * (landing ? 1.8 : crawling ? .45 : 1);
   gain.gain.setValueAtTime(force, t);
   gain.gain.exponentialRampToValueAtTime(.001, t + .13);
-  source.connect(filter).connect(gain).connect(audioContext.destination);
+  source.connect(filter).connect(gain).connect(audioMixer.output('footsteps'));
+  audioMixer.track(source, [filter, gain], 'footsteps');
   source.start(t, Math.random() * .5, .15);
   if (crawling) return;
   const thud = audioContext.createOscillator();
@@ -510,11 +548,13 @@ function playFootstep(event) {
   const thudGain = audioContext.createGain();
   thudGain.gain.setValueAtTime(force * .65, t);
   thudGain.gain.exponentialRampToValueAtTime(.001, t + .12);
-  thud.connect(thudGain).connect(audioContext.destination);
+  thud.connect(thudGain).connect(audioMixer.output('footsteps'));
+  audioMixer.track(thud, [thudGain], 'footsteps');
   thud.start(t); thud.stop(t + .14);
 }
 
 function lockMouse() {
+  if (fatal) return;
   if (document.pointerLockElement === canvas) return;
   if (!canvas.requestPointerLock) {
     toast('当前浏览器不支持鼠标捕获：按住右键拖动瞄准', 6);
@@ -622,7 +662,12 @@ function clearControlInputs() {
 }
 
 function resetControlledSimulation() {
-  for (const actor of entities.soldiers.values()) if (actor.dadao) stowDadao(actor.dadao);
+  const ids = new Set([playerInput.snapshot.owner?.soldierId, controlBinding?.soldierId, entities.control.soldierId]);
+  for (const id of ids) {
+    const actor = entities.soldiers.get(id);
+    if (actor?.dadao) stowDadao(actor.dadao);
+    if (actor?.bayonet) cancelBayonet(actor.bayonet);
+  }
   dadaoEquipped = false;
   toolEquipped = false;
   grenadeEquipped = false;
@@ -666,6 +711,25 @@ function rifleAimAvailable() {
 
 function sniperScopeActive() {
   return rifleAimAvailable() && Boolean(infantryWeaponProfile(allies[current].rifle).scoped);
+}
+
+function currentWeaponRestriction(action = 'fire') {
+  const actor = controlledSoldier(entities);
+  if (!actor || state !== 'playing') return null;
+  const infantry = unit.type === 'infantry', foot = infantry || unit.type === 'mortar';
+  return weaponRestriction({
+    firearm: !toolEquipped && !dadaoEquipped && !grenadeEquipped && !actor.grenades.action,
+    vaulting: actor.traversal.kind === 'vaulting',
+    canFire: !actor.vehicleId || occupiedSeat(entities)?.canFire,
+    sprinting: foot && actor.locomotion.sprinting, recovery: foot ? actor.locomotion.aimRecovery : 0,
+    obstruction: infantry ? weaponObstruction : 0, obstructionBlend: infantry ? obstructionBlend : 0,
+    reloading: infantry ? actor.rifle.action === 'reload' : time < unit.reloadUntil,
+    cycling: infantry && actor.rifle.action === 'cycle',
+    scoped: infantry && infantryWeaponProfile(actor.rifle).scoped,
+    readying: time < unit.nextShot,
+    ammo: unit.ammo, magazine: infantry ? infantryWeaponProfile(actor.rifle).magazine : TYPES[unit.type].magazine,
+    shellLimit: unit.type === 'mortar' && shells.length >= PROJECTILE_LIMIT,
+  }, action);
 }
 
 function refreshWeaponVisibility() {
@@ -960,6 +1024,7 @@ function clearTransient() {
   battleStats.clear(); scoreboardRevision = -1;
   rifleReports.length = 0;
   rifleAudio?.reset();
+  audioMixer?.reset();
   battleVoices?.reset();
   battleReactions?.reset();
   objectiveVoiceTracker.reset();
@@ -1172,6 +1237,8 @@ function showOverlay(kind = 'pause') {
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
   $('motion-settings').hidden = kind !== 'pause';
+  $('control-settings').hidden = kind !== 'pause';
+  $('audio-settings').hidden = kind !== 'pause';
   $('quality-settings').hidden = kind !== 'pause';
   pendingSquad = pendingSpawn = null;
   $('deployment-error').textContent = '';
@@ -1412,12 +1479,18 @@ function reload() {
   }
   if (unit.type === 'infantry') {
     if (toolEquipped) { toast('先按 1 收起工具再装填步枪'); return; }
+    const reason = currentWeaponRestriction('reload');
+    if (reason) { toast(reason.text); return; }
     if (reloadRifle(allies[current].rifle)) emitControlEvent('weapon.reload-requested', {
       weaponId: allies[current].rifle.id, duration: infantryWeaponProfile(allies[current].rifle).reloadSeconds, queued: allies[current].rifle.action === 'cycle' });
     syncRifleUnit();
     return;
   }
-  if (unit.reloadUntil || unit.ammo === TYPES[unit.type].magazine) return;
+  if (unit.reloadUntil || unit.ammo === TYPES[unit.type].magazine) {
+    const reason = currentWeaponRestriction('reload');
+    if (reason) toast(reason.text);
+    return;
+  }
   unit.reloadUntil = time + TYPES[unit.type].reload;
   emitControlEvent('weapon.reload-requested', { weaponId: controlOwner(entities).weaponId, duration: TYPES[unit.type].reload });
 }
@@ -1487,7 +1560,8 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
-    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
+    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺'
+      : weaponKind === 'dadao' ? '大刀斩击' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
@@ -2309,16 +2383,14 @@ function updateCamera(dt) {
       const nearest = Math.min(blocked?.distance ?? Infinity, centerBlocked?.distance ?? Infinity);
       weaponObstruction = Math.max(0, Math.min(1, (length + .08 - nearest) / .75));
       obstructionBlend = THREE.MathUtils.lerp(obstructionBlend, weaponObstruction, 1 - Math.exp(-dt * 20));
-      // Retract immediately on approach; smooth the release without pushing through a wall.
-      const retract = Math.max(weaponObstruction, obstructionBlend);
-      weapon.position.z += retract * .72;
-      weapon.position.y -= retract * .12;
-      weapon.rotation.x -= retract * .55;
+      // The intended muzzle still blocks fire immediately; presentation follows a bounded high-ready arc.
+      applyCloseWeaponPose(weapon, obstructionBlend);
       updateRifleArms(weapon);
-      // Vault/obstruction lowering stows the shorter native arms rather than stretching them.
+      // Traversal stows the native arms; unexpected unreachable contacts retain the explicit safety guard.
       weaponHands?.update(weapon, allies[current].rifle, {
-        stowed: vaultLower > 0 || weapon.position.y < -.32, appearance: allies[current].avatarAppearance,
+        stowed: vaultLower > 0, appearance: allies[current].avatarAppearance,
       });
+      if (weaponHands?.snapshot?.reachLimited) weapon.visible = false;
       weapon.updateMatrixWorld(true);
       ray.far = Infinity;
     } else {
@@ -2506,10 +2578,21 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     actor.tactics.mode = 'turn-to-path';
     return;
   }
-  const step = Math.min(speed * dt, distance);
+  const step = Math.min(speed * turn.moveScale * dt, distance);
+  const travel = turn.direction;
+  const destination = { x: pos.x + travel.x * step, z: pos.z + travel.z * step };
+  const arcClear = !circleBlocked(destination.x, destination.z, .43, movementObstacles(destination.x, destination.z), pos.y) &&
+    actorGrid.near(pos.x, pos.z, 1.5).every(other => other === actor || other.health <= 0 || other.vehicleId ||
+      Math.abs(other.position.y - pos.y) >= 1.5 ||
+      Math.hypot(destination.x - other.position.x, destination.z - other.position.z) >=
+        Math.min(.9, Math.hypot(pos.x - other.position.x, pos.z - other.position.z) - .01));
+  if (!arcClear && turn.remaining > AI_TURN.resumeAngle) {
+    actor.locomotion.mode = 'turn'; actor.tactics.mode = 'turn-to-path';
+    return;
+  }
   const beforeX = pos.x;
   const beforeZ = pos.z;
-  moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
+  moveInfantry(pos, (arcClear ? travel.x : steering.x) * step, (arcClear ? travel.z : steering.z) * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
   } else actor.stuckTime = 0;
@@ -2844,43 +2927,57 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   }
 }
 
-function tryAIBayonet(actor, target, dt) {
-  const distance = bayonetDistance(actor, target);
-  const limit = actor.bayonet.targetId === target?.id && actor.bayonet.mode !== 'idle'
+function cancelAIMelee(actor) {
+  cancelBayonet(actor.bayonet);
+  if (actor.dadao) stowDadao(actor.dadao);
+}
+
+function tryAIMelee(actor, target, dt) {
+  const sword = actor.team === 'friendly' && Boolean(actor.dadao);
+  const state = sword ? actor.dadao : actor.bayonet, reach = sword ? DADAO.reach : BAYONET.reach;
+  const distance = sword ? dadaoCombatDistance(actor, target) : bayonetDistance(actor, target);
+  const limit = state.targetId === target?.id && state.mode !== 'idle'
     ? BAYONET.disengageRange : BAYONET.chargeRange;
-  if (distance === null || distance > limit) { cancelBayonet(actor.bayonet); return false; }
+  if (distance === null || distance > limit) { cancelAIMelee(actor); return false; }
   const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
   const observed = observeVisualThreat(actor.tactics, target, time, point => hasLine(origin, point, limit + 2));
   const visible = Boolean(observed && hasLine(actor.position.clone().add(new THREE.Vector3(0, 1.1, 0)),
     targetAimPoint(target), limit + 2));
-  if (!visible) { cancelBayonet(actor.bayonet); return false; }
+  if (!visible) { cancelAIMelee(actor); return false; }
   actor.stance = 'standing'; actor.firingPose = null;
   const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
   const targetHeading = Math.atan2(-dx, -dz);
-  const steering = distance > BAYONET.reach ? infantrySteering(actor,
+  const steering = distance > reach ? infantrySteering(actor,
     trafficGrid.near(position.x, position.z, 3.2).filter(other => other.id !== target.id),
     { x: dx, z: dz }, { spacing: 1, constrained: false,
       dt, now: time, reservations: trafficReservations,
       blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) }) : null;
   const turn = advanceAITurn(actor, steering ? Math.atan2(-steering.x, -steering.z) : targetHeading, dt, true);
   actor.turningThisStep = true;
-  const action = advanceBayonet(actor, target, { now: time, visible,
-    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) });
+  const facts = { now: time, visible,
+    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) };
+  const action = sword ? advanceAIDadao(actor, target, { ...facts,
+    origin: position.clone().add(new THREE.Vector3(0, 1.1, 0)),
+    forward: new THREE.Vector3(-Math.sin(actor.heading), 0, -Math.cos(actor.heading)),
+    aimPoint: targetAimPoint, clear: (from, to) => hasLine(from, to, DADAO.reach + 1) })
+    : advanceBayonet(actor, target, facts);
   if (!action.active) return false;
-  resetAIRifleAim(actor.aiRifle, 'bayonet');
+  const kind = sword ? 'dadao' : 'bayonet';
+  resetAIRifleAim(actor.aiRifle, kind);
   actor.rifleReady = false; actor.buildProgress = 0;
   const tactics = actor.tactics;
   if (tactics.cover) coverClaims.delete(tactics.cover.id);
   tactics.cover = null; tactics.enteredCover = false; tactics.armorEscort = null;
   actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
-  tactics.mode = `bayonet-${actor.bayonet.mode}`;
-  if (action.hit) hurt(target, BAYONET.damage, captureAttackSource(entities, actor, actor.rifle), 'bayonet');
-  if (actor.bayonet.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
+  tactics.mode = `${kind}-${state.mode}`;
+  if (action.hit) hurt(target, sword ? DADAO.damage : BAYONET.damage,
+    captureAttackSource(entities, actor, sword ? actor.dadao : actor.rifle), kind);
+  if (state.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
   const obstacles = movementObstacles(position.x, position.z);
   const profile = FOOT_SPEEDS[actor.groundType];
   const sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
   const speed = sprint ? profile.sprint : profile.jog;
-  const step = Math.min(distance - BAYONET.reach + .05, speed * dt * steering.speed);
+  const step = Math.min(distance - reach + .05, speed * dt * steering.speed);
   const beforeX = position.x, beforeZ = position.z;
   world.moveInfantry(position, steering.x * step, steering.z * step, .42, obstacles);
   position.y = world.walkHeight(position.x, position.z, position.y);
@@ -2978,6 +3075,7 @@ function updateAI(dt) {
       resetAIRifleAim(actor.aiRifle, 'controlled'); continue;
     }
     if (actor.traversal.kind !== 'grounded') {
+      cancelAIMelee(actor);
       actor.tactics.traffic = actor.tactics.followGuard = null;
       resetAIRifleAim(actor.aiRifle, 'traversing');
       actor.rifleReady = false;
@@ -2998,10 +3096,10 @@ function updateAI(dt) {
     }
     if (actor.vehicleId) {
       tactics.traffic = tactics.followGuard = null;
-      cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
     }
     if (actor.grenades.action) {
-      cancelBayonet(actor.bayonet);
+      cancelAIMelee(actor);
       const action = actor.grenades.action;
       actor.tactics.mode = action.kind === 'explosive-pack' ? 'throw-explosive-pack' : 'throw-grenade';
       resetAIRifleAim(actor.aiRifle, 'throwable');
@@ -3016,7 +3114,7 @@ function updateAI(dt) {
       const danger = dangers.find(grenade => hasLine(origin,
         new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 3));
       if (danger) {
-        cancelBayonet(actor.bayonet);
+        cancelAIMelee(actor);
         resetAIRifleAim(actor.aiRifle, 'moving');
         const distance = Math.hypot(actor.position.x - danger.position.x, actor.position.z - danger.position.z);
         const dx = distance > .01 ? actor.position.x - danger.position.x : Math.sin(actor.tactics.id);
@@ -3042,7 +3140,7 @@ function updateAI(dt) {
     if (actor.traversal.kind !== 'grounded') continue;
     const escape = position.y < 1 ? world.doorSystem.swingEscape(position) : null;
     if (escape) {
-      cancelBayonet(actor.bayonet);
+      cancelAIMelee(actor);
       const dx = escape.x - position.x, dz = escape.z - position.z, distance = Math.max(.01, Math.hypot(dx, dz));
       moveInfantry(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
       settleActorSupport(actor);
@@ -3104,7 +3202,7 @@ function updateAI(dt) {
       if (benchmark) telemetry.add('sensingMs', performance.now() - sensingStarted);
     }
     const target = actor.target?.health > 0 ? actor.target : null;
-    if (tryAIBayonet(actor, target, dt)) continue;
+    if (tryAIMelee(actor, target, dt)) continue;
     if (tryAIThrowable(actor, target, dt)) continue;
     const oldEscort = tactics.armorEscort;
     if (oldEscort) escortClaims.delete(`${oldEscort.vehicleId}:${oldEscort.slot}`);
@@ -3434,6 +3532,11 @@ function renderTankReload() {
 
 function updateHUD() {
   renderSquadScores();
+  const reason = currentWeaponRestriction(held.primary ? 'fire' : 'aim');
+  const actionStatus = $('action-status');
+  actionStatus.hidden = !reason || !(held.primary || held.aiming || reason.code === 'reload');
+  actionStatus.textContent = actionStatus.hidden ? '' : reason.text;
+  actionStatus.dataset.reason = actionStatus.hidden ? '' : reason.code;
   const transport = occupiedVehicle(entities, allies[current]);
   const tank = transport?.type === 'tank' ? transport : null;
   $('tank-orientation').hidden = !tank;
@@ -3771,10 +3874,71 @@ $('back-menu').addEventListener('click', () => {
 });
 
 function setMotionStrength(value) {
-  motionStrength = value;
-  $('motion-strength').value = String(value);
+  preferences.update({ motionStrength: value });
+  syncPreferenceControls();
 }
-$('motion-strength').addEventListener('change', event => setMotionStrength(Number(event.target.value)));
+const audioLabels = { master: '总音量', weapons: '枪炮与装填', voices: '战斗语音与喊声', footsteps: '脚步与落地', effects: '交互音效' };
+for (const container of document.querySelectorAll('[data-audio-controls]')) {
+  for (const channel of AUDIO_CHANNELS) {
+    const row = document.createElement('div'); row.className = 'audio-control-row';
+    const label = document.createElement('label'), output = document.createElement('output');
+    const input = document.createElement('input'), id = `${container.dataset.audioControls}-audio-volume-${channel}`;
+    label.htmlFor = id; label.append(document.createTextNode(audioLabels[channel]), output);
+    input.id = id; input.type = 'range'; input.min = '0'; input.max = '1'; input.step = '.05';
+    input.dataset.audioVolume = channel; output.htmlFor = id; label.append(input);
+    const mute = document.createElement('label'), checkbox = document.createElement('input');
+    mute.className = 'audio-mute'; checkbox.type = 'checkbox'; checkbox.dataset.audioMute = channel;
+    mute.append(checkbox, document.createTextNode(`${audioLabels[channel]}静音`));
+    row.append(label, mute); container.append(row);
+  }
+}
+for (const selector of document.querySelectorAll('[data-motion-strength]')) {
+  selector.addEventListener('change', event => setMotionStrength(Number(event.target.value)));
+}
+
+function syncPreferenceControls() {
+  preferenceValues = preferences.snapshot;
+  motionStrength = preferenceValues.motionStrength;
+  audioMixer?.configure(preferenceValues.audio);
+  for (const input of document.querySelectorAll('[data-sensitivity]')) {
+    const value = preferenceValues[input.dataset.sensitivity];
+    input.value = String(value);
+    input.parentElement.querySelector('output').value = `${Math.round(value * 100)}%`;
+  }
+  for (const selector of document.querySelectorAll('[data-motion-strength]')) selector.value = String(motionStrength);
+  for (const element of document.querySelectorAll('[data-preferences-status]')) {
+    element.textContent = preferences.status.message;
+    element.classList.toggle('preferences-warning', preferences.status.problem);
+  }
+  for (const input of document.querySelectorAll('[data-audio-volume]')) {
+    input.value = String(preferenceValues.audio[input.dataset.audioVolume].volume);
+    input.parentElement.querySelector('output').value = `${Math.round(Number(input.value) * 100)}%`;
+  }
+  for (const input of document.querySelectorAll('[data-audio-mute]')) {
+    input.checked = preferenceValues.audio[input.dataset.audioMute].muted;
+  }
+}
+for (const input of document.querySelectorAll('[data-sensitivity]')) input.addEventListener('input', () => {
+  preferences.update({ [input.dataset.sensitivity]: Number(input.value) });
+  syncPreferenceControls();
+});
+for (const button of document.querySelectorAll('[data-reset-controls]')) button.addEventListener('click', () => {
+  preferences.update({ mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1 });
+  syncPreferenceControls();
+});
+for (const input of document.querySelectorAll('[data-audio-volume], [data-audio-mute]')) {
+  const volume = Boolean(input.dataset.audioVolume), channel = input.dataset.audioVolume ?? input.dataset.audioMute;
+  if (!AUDIO_CHANNELS.includes(channel)) throw new RangeError('Unknown audio control');
+  input.addEventListener(volume ? 'input' : 'change', () => {
+    const audio = preferences.snapshot.audio;
+    audio[channel][volume ? 'volume' : 'muted'] = volume ? Number(input.value) : input.checked;
+    preferences.update({ audio }); syncPreferenceControls();
+  });
+}
+for (const button of document.querySelectorAll('[data-reset-audio]')) button.addEventListener('click', () => {
+  preferences.update({ audio: defaultAudioSettings() }); syncPreferenceControls();
+});
+syncPreferenceControls();
 
 function syncQualityControls() {
   const settings = graphics.snapshot;
@@ -3791,11 +3955,17 @@ function syncQualityControls() {
 }
 for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.addEventListener('change', () => {
   graphics.setPreset(selector.value);
+  const { preset, effects } = graphics.snapshot;
+  preferences.update({ quality: { preset, effects } });
+  syncPreferenceControls();
   syncQualityControls();
 });
 for (const checkbox of document.querySelectorAll('[data-quality-effect]')) checkbox.addEventListener('change', () => {
   if (!QUALITY_EFFECTS.includes(checkbox.dataset.qualityEffect)) throw new RangeError('Unknown graphics effect control');
   graphics.setEffect(checkbox.dataset.qualityEffect, checkbox.checked);
+  const { preset, effects } = graphics.snapshot;
+  preferences.update({ quality: { preset, effects } });
+  syncPreferenceControls();
   syncQualityControls();
 });
 syncQualityControls();
@@ -3874,16 +4044,21 @@ function performControlCommand(command) {
   } else if (action === 'pressFire') {
     if (dadaoEquipped) swingDadao();
     else if (grenadeEquipped) prepareGrenade();
-    else held.primary = true;
+    else {
+      held.primary = true;
+      const reason = currentWeaponRestriction('fire');
+      if (reason) toast(reason.text, 1.5);
+    }
   }
   else if (action === 'pressAim') {
     held.secondary = true;
     if (toolEquipped) selectConstructionBlueprint(construction, entities.control.soldierId);
     else if (!dadaoEquipped && !grenadeEquipped) held.aiming = true;
   } else if (action === 'look') {
-    const sensitivity = sniperScopeActive() ? infantryWeaponProfile(allies[current].rifle).aimSensitivity : held.aiming ? .6 : 1;
-    controlPose.yaw -= payload.x * .0022 * sensitivity;
-    controlPose.pitch -= payload.y * .0022 * sensitivity;
+    const sensitivity = lookSensitivity(preferenceValues, { aiming: held.aiming,
+      scopeSensitivity: sniperScopeActive() ? infantryWeaponProfile(allies[current].rifle).aimSensitivity : null });
+    controlPose.yaw -= payload.x * sensitivity;
+    controlPose.pitch -= payload.y * sensitivity;
     const look = mountedLook(actor.weaponMount, controlPose.yaw, controlPose.pitch);
     controlPose.yaw = look.yaw; controlPose.pitch = look.pitch;
   }
@@ -3891,7 +4066,7 @@ function performControlCommand(command) {
 
 function dispatchControlCommand(action, payload) {
   const command = playerInput.capture(action, payload);
-  const result = playerInput.execute(command, controlOwner(entities), state === 'playing' && controlledSoldier(entities)?.health > 0, performControlCommand);
+  const result = playerInput.execute(command, controlOwner(entities), !fatal && state === 'playing' && controlledSoldier(entities)?.health > 0, performControlCommand);
   if (result.status === 'rejected') toast(result.reason === 'stale-owner' ? '控制对象已改变，旧操作已取消' : '当前操作已取消');
   presentControlEvents();
   return result;
@@ -3912,7 +4087,9 @@ document.addEventListener('wheel', event => {
 }, { passive: false });
 
 document.addEventListener('keydown', event => {
-  if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
+  if (fatal) return;
+  if (['playing', 'transferring'].includes(state) &&
+      ['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   if (event.code === 'Escape' && state === 'transferring' && !event.repeat) { showOverlay(); return; }
   if (event.repeat || state !== 'playing') return;
   keys.add(event.code);
@@ -3936,6 +4113,7 @@ document.addEventListener('keydown', event => {
   if (event.code === 'Escape') showOverlay();
 });
 document.addEventListener('keyup', event => {
+  if (fatal) return;
   keys.delete(event.code);
   if (event.code === 'Tab') {
     $('scoreboard').hidden = true;
@@ -3954,7 +4132,7 @@ document.addEventListener('keyup', event => {
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 canvas.addEventListener('mousedown', event => {
-  if (state !== 'playing' || !$('scoreboard').hidden) return;
+  if (fatal || state !== 'playing' || !$('scoreboard').hidden) return;
   if (event.button === 0) {
     if (document.pointerLockElement !== canvas && !held.secondary) lockMouse();
     dispatchControlCommand('pressFire');
@@ -3971,7 +4149,7 @@ document.addEventListener('mouseup', event => {
   if (event.button === 2) { held.secondary = false; held.aiming = false; }
 });
 document.addEventListener('mousemove', event => {
-  if (state !== 'playing' || !$('scoreboard').hidden || (document.pointerLockElement !== canvas && !held.secondary)) return;
+  if (fatal || state !== 'playing' || !$('scoreboard').hidden || (document.pointerLockElement !== canvas && !held.secondary)) return;
   dispatchControlCommand('look', { x: event.movementX, y: event.movementY });
 });
 document.addEventListener('pointerlockchange', () => {
@@ -3991,21 +4169,6 @@ window.addEventListener('resize', () => {
   graphics.resize(innerWidth, innerHeight);
   syncQualityControls();
 });
-window.addEventListener('error', event => {
-  fatal = true;
-  releaseMouse();
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `运行时发生错误：${event.message}。请重新加载；若仍出现，请保留浏览器控制台信息。`;
-});
-canvas.addEventListener('webglcontextlost', event => {
-  event.preventDefault();
-  fatal = true;
-  releaseMouse();
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = '显卡上下文已丢失。请关闭占用显存的其他页面后重新加载。';
-});
-
 if (queryDiagnostics) {
   collisionDiagnostics.setCollisionDiagnostics(queryDiagnostics);
   movementObstacles = queryDiagnostics.wrap('movementCandidates', movementObstacles);
@@ -4029,6 +4192,12 @@ Object.defineProperty(window, '__battle', { get: () => ({
     yaw: actor.casualty.yaw ?? 0, wallLimited: actor.casualty.wallLimited ?? false,
     position: { x: actor.position.x, y: actor.position.y, z: actor.position.z } })) },
   build: { ...buildStamp, development: import.meta.env.DEV },
+  preferences: { ...preferences.snapshot, persistence: preferences.status },
+  audioMix: audioMixer?.snapshot ?? { contextState: 'not-started', settings: preferenceValues.audio, activeSynthetic: 0 },
+  resources: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+    programs: renderer.info.programs?.length ?? 0, sceneChildren: scene.children.length,
+    cameraChildren: camera.children.length, transientEffects: effects.length, shells: shells.length,
+    projectileViews: shellViews.size, pathRequests: pathRequests.size, corpses: corpses.size },
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
   squadScores: battleStats.snapshot,
   control: { ...entities.control },
@@ -4038,6 +4207,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     weaponMount: allies[current] ? { ...allies[current].weaponMount, stability: mountStability(allies[current].weaponMount,
       Boolean(infantryWeaponProfile(allies[current].rifle).automatic)) } : null },
   dadaoMaterials: dadaoSurfaceSnapshot(),
+  actionFeedback: { fire: currentWeaponRestriction('fire'), aim: currentWeaponRestriction('aim'),
+    displayed: $('action-status').hidden ? null : $('action-status').dataset.reason },
   dadao: controlledSoldier(entities)?.dadao ? { ...controlledSoldier(entities).dadao,
     ...dadaoPhase(controlledSoldier(entities).dadao, time), viewVisible: Boolean(weapon?.visible && weapon?.userData.dadaoHand),
     handSource: dadaoEquipped ? weapon?.userData.handSource : null,
@@ -4154,11 +4325,12 @@ Object.defineProperty(window, '__battle', { get: () => ({
       reloadContact: weapon.userData.reloadContact ? { ...weapon.userData.reloadContact } : null,
       handContact: weapon.userData.handContact ? structuredClone(weapon.userData.handContact) : null,
       nativeHands: weaponHands?.snapshot ?? null,
+      closePose: { blend: obstructionBlend, position: weapon.position.toArray(), rotation: weapon.quaternion.toArray() },
       feedPosition: weapon.getObjectByName('feed')?.position.toArray() ?? null,
       leftHandPosition: weapon.userData.rifle.leftHand.position.toArray(),
       flashVisible: weapon.userData.rifle.flash.visible,
       dimensions: { ...weapon.userData.dimensions },
-      arms: weaponHands?.snapshot ? Object.fromEntries(['left', 'right'].map(side =>
+      arms: weaponHands?.snapshot?.visible ? Object.fromEntries(['left', 'right'].map(side =>
         [side, { upper: weaponHands.snapshot[side].arm.lengths[0], forearm: weaponHands.snapshot[side].arm.lengths[1] }]))
         : weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
     } : null,
@@ -4187,6 +4359,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   spawnEvents: spawnEvents.map(event => ({ ...event })),
   enemies: enemies.filter(actor => actor.health > 0).length,
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
+    dadao: actor.dadao ? { ...actor.dadao, pose: { ...actor.dadao.pose } } : null,
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
     formationId: actor.formation.id, pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
     pathWaypoint: actor.path?.[0] ? { ...actor.path[0] } : null, pathReason: actor.tactics.pathReason ?? null,
@@ -4246,14 +4419,41 @@ Object.defineProperty(window, '__battle', { get: () => ({
 
 if (benchmark) Object.defineProperty(window, '__battleTelemetry', { get: () => telemetry.snapshot, configurable: false });
 
+Object.defineProperty(window, '__battleResourceInventory', { get: () => {
+  const textures = new Map(), geometries = new Set(), skeletons = new Set();
+  const addTexture = (texture, owner, kind) => {
+    if (!texture?.isTexture) return;
+    const item = textures.get(texture.uuid) ?? { id: texture.uuid, kind, owners: [] };
+    if (!item.owners.includes(owner)) item.owners.push(owner);
+    textures.set(texture.uuid, item);
+  };
+  const scan = (root, label) => root?.traverse(node => {
+    if (node.geometry) geometries.add(node.geometry.uuid);
+    if (node.skeleton) skeletons.add(node.skeleton.uuid);
+    const owner = `${label}:${node.name || node.type}`;
+    for (const material of node.material ? Array.isArray(node.material) ? node.material : [node.material] : []) {
+      for (const value of Object.values(material)) if (value?.isTexture) addTexture(value, owner, 'surface');
+    }
+    addTexture(node.skeleton?.boneTexture, owner, 'skeleton');
+  });
+  addTexture(scene.background, 'scene-background', 'environment');
+  addTexture(scene.environment, 'scene-environment', 'environment');
+  scan(scene, 'scene'); scan(nraCharacter?.root, 'friendly-force'); scan(ijaCharacter?.root, 'enemy-force');
+  scan(weaponHands?.root, 'reusable-weapon-hands');
+  return { geometries: [...geometries], textures: [...textures.values()],
+    skeletons: [...skeletons], appearance: nraCharacter?.appearanceResources ?? null,
+    skeletonTextures: [...textures.values()].filter(item => item.kind === 'skeleton').length };
+}, configurable: false });
+
 try {
   await nraCharacter?.prepare(renderer);
   await ijaCharacter?.prepare(renderer);
 } catch (error) {
-  $('loading').hidden = true; $('fatal').hidden = false;
-  $('fatal-message').textContent = `人物渲染初始化失败：${error.message}。未静默回退。`;
+  fatalReporter.show(error, { stage: 'character-rendering' });
   throw error;
 }
+if (fatalReporter.failed) throw new Error('Initialization interrupted; see the original fatal diagnostic');
+fatalReporter.ready();
 $('loading').hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame(tick);

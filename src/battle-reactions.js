@@ -36,6 +36,7 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
   }
   const states = new Map(), cooldowns = new Map(), takes = new Map(), history = [];
   let enabled = false, active = null, next = 0, lastHurtFile = null;
+  let output = null;
   const counts = { hurt: 0, cover: 0, charge: 0 };
   function mixAt(position, listener) {
     const mix = battleVoiceMix(position, listener);
@@ -60,7 +61,7 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
     const filter = audio.createBiquadFilter(), panner = audio.createStereoPanner();
     source.buffer = buffers[file]; filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
     gain.gain.value = mix.gain * .8; panner.pan.value = mix.pan;
-    source.connect(filter).connect(gain).connect(panner).connect(audio.destination);
+    source.connect(filter).connect(gain).connect(panner).connect(output ?? audio.destination);
     let released = false;
     const voice = { source, gain, filter, panner, cue, actorId: actor.id, position: { ...actor.position },
       release() {
@@ -80,6 +81,7 @@ export function createBattleReactions(buffers, random = Math.random, occluded = 
     return true;
   }
   return {
+    setOutput(node) { output = node; },
     sync(value) { enabled = value; if (!value) stop(); },
     damage(audio, event, actor, listener, priority = false) {
       if (event.type !== 'damage' || event.target.kind !== 'soldier' || event.source.credit === 'environment' ||

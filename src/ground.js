@@ -44,14 +44,18 @@ export function riverBedHeight(x, z) {
 }
 
 export function groundHeight(x, z) {
+  return bridgeGroundHeight(x, z, BRIDGE);
+}
+
+export function bridgeGroundHeight(x, z, bridge) {
   const terrain = riverBedHeight(x, z) + craterHeight(x, z);
-  if (x < BRIDGE.minX || x > BRIDGE.maxX) return terrain;
-  if (z >= BRIDGE.minZ && z <= BRIDGE.maxZ) return BRIDGE.height;
-  if (z > BRIDGE.maxZ && z < BRIDGE.maxZ + BRIDGE.rampLength) {
-    return BRIDGE.height * (BRIDGE.maxZ + BRIDGE.rampLength - z) / BRIDGE.rampLength;
+  if (x < bridge.minX || x > bridge.maxX) return terrain;
+  if (z >= bridge.minZ && z <= bridge.maxZ) return bridge.height;
+  if (z > bridge.maxZ && z < bridge.maxZ + bridge.rampLength) {
+    return bridge.height * (bridge.maxZ + bridge.rampLength - z) / bridge.rampLength;
   }
-  if (z < BRIDGE.minZ && z > BRIDGE.minZ - BRIDGE.rampLength) {
-    return BRIDGE.height * (z - BRIDGE.minZ + BRIDGE.rampLength) / BRIDGE.rampLength;
+  if (z < bridge.minZ && z > bridge.minZ - bridge.rampLength) {
+    return bridge.height * (z - bridge.minZ + bridge.rampLength) / bridge.rampLength;
   }
   return terrain;
 }

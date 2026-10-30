@@ -62,8 +62,19 @@ export function runningStepTarget(phase, stride, heelHeight, duty = .27) {
     stage: t < .55 ? 'rear-recovery' : 'forward-swing' };
 }
 
+export function turningStepTarget(phase, direction) {
+  if (!Number.isFinite(phase) || phase < 0 || phase >= 1 || ![-1, 1].includes(direction)) {
+    throw new RangeError('Turning steps require a bounded phase and signed turn direction');
+  }
+  const duty = .55, angle = Math.PI / 3;
+  if (phase < duty) return { yaw: -direction * angle * phase, lift: 0 };
+  const swing = (phase - duty) / (1 - duty), smooth = swing * swing * (3 - 2 * swing);
+  return { yaw: direction * angle * (smooth - phase), lift: .055 * Math.sin(Math.PI * swing) ** 2 };
+}
+
 export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
-  const weight = motion.weight * motion.upright;
+  const turning = (motion.turn?.weight ?? 0) * (1 - motion.weight);
+  const weight = Math.max(motion.weight, turning) * motion.upright;
   if (!Number.isFinite(weight) || weight < 0 || weight > 1 || typeof groundAt !== 'function') throw new Error('Invalid owned low-step gait');
   if (weight < .001) return { kind: 'native-foot-cycle', weight };
   const hips = bones.get('Hips'), hipPosition = hips.getWorldPosition(new Vector3());
@@ -83,9 +94,12 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     const run = runningStepTarget((motion.runPhase + offset) % 1, motion.runStride,
       motion.heelHeight ?? .20 + .06 * motion.legLift, motion.runContact);
     const local = restFeet[side].clone();
-    local.z += walk.z + (run.z - walk.z) * motion.jog;
+    const turn = turningStepTarget(((motion.turn?.phase ?? 0) + offset) % 1, motion.turn?.direction ?? 1);
+    const travelZ = walk.z + (run.z - walk.z) * motion.jog;
+    local.z += travelZ * (1 - turning);
+    local.applyAxisAngle(new Vector3(0, 1, 0), turn.yaw * turning);
     root.localToWorld(local);
-    const floor = groundAt(local.x, local.z), lift = walk.lift + (run.lift - walk.lift) * motion.jog;
+    const floor = groundAt(local.x, local.z), lift = (walk.lift + (run.lift - walk.lift) * motion.jog) * (1 - turning) + turn.lift * turning;
     target.set(local.x, floor + restFeet[side].y + lift, local.z);
     const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);
     const reach = upperLength + lowerLength - 1e-5, minimum = Math.abs(upperLength - lowerLength) + 1e-5;
@@ -106,13 +120,14 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     knee.quaternion.copy(kneeBefore.slerp(knee.quaternion, weight));
     upper.updateMatrixWorld(true);
     const pitch = run.pitch * motion.jog * weight;
-    const footRotation = facing.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), pitch))
+    const footRotation = facing.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), turn.yaw * turning))
+      .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), pitch))
       .multiply(facing.clone().invert()).multiply(rotation);
     foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert().multiply(footRotation));
     foot.updateMatrixWorld(true);
     result[side.toLowerCase()] = { floor, lift: foot.getWorldPosition(new Vector3()).y - floor - restFeet[side].y,
       requestedLift: lift * weight, localZ: walk.z + (run.z - walk.z) * motion.jog,
-      phase: motion.jog > .5 ? run.stage : 'walk', error: solved.error };
+      phase: turning > .5 ? turn.lift > 0 ? 'turn-swing' : 'turn-support' : motion.jog > .5 ? run.stage : 'walk', error: solved.error };
   }
   return result;
 }

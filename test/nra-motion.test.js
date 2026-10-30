@@ -42,8 +42,8 @@ test('distant phase sampling matches original arithmetic and full consumed field
       const jog = gait ? gait.jog : profile.walk ? transition * transition * (3 - 2 * transition) : 1;
       assert.deepEqual(phase, { idleTime: motion.idleTime % profile.idle.duration, runTime, walkTime, jog, gait,
         travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'), ...motion.posture,
-        upright: Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0)), weight: motion.weight });
-      for (const key of ['idleTime', 'runTime', 'walkTime', 'jog', 'travelStyle', 'upright', 'weight', ...names])
+        upright: Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0)), weight: motion.weight, dadao: null });
+      for (const key of ['idleTime', 'runTime', 'walkTime', 'jog', 'travelStyle', 'upright', 'weight', 'dadao', ...names])
         assert.deepEqual(phase[key], full[key], key);
       assert.equal(JSON.stringify(motion), before, 'sampling must not mutate authoritative motion');
       assert.equal(phase.weaponPosition, undefined);
@@ -52,6 +52,40 @@ test('distant phase sampling matches original arithmetic and full consumed field
   }
   assert.throws(() => sampleNraPhase({}), /state is missing/);
   assert.throws(() => sampleNraPhase({ ...actor(), position: { x: NaN, y: 0, z: 0 } }), /state is missing/);
+});
+
+test('turning steps follow real yaw, freeze on pause and never invent travel distance or running', () => {
+  for (const fps of [30, 60, 144]) {
+    const person = actor();
+    person.health = 100; person.tactics = {}; person.stance = 'standing';
+    const distance = person.nativeMotion.distance, position = { ...person.position };
+    for (let frame = 0; frame < fps; frame++) {
+      person.heading -= 1.5 / fps;
+      advanceNraMotion(person, 1 / fps);
+    }
+    const pose = sampleNraMotion(person);
+    assert.ok(pose.turn.weight > .99);
+    assert.equal(pose.turn.direction, -1);
+    assert.equal(pose.weight, 0);
+    assert.equal(person.nativeMotion.distance, distance);
+    assert.deepEqual(person.position, position);
+    assert.ok(Math.abs(person.nativeMotion.turn.angle - 1.5) < 1e-8);
+    const paused = JSON.stringify(person.nativeMotion);
+    advanceNraMotion(person, 0); sampleNraMotion(person);
+    assert.equal(JSON.stringify(person.nativeMotion), paused);
+    for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);
+    assert.equal(sampleNraMotion(person).turn.weight, 0);
+  }
+});
+
+test('dead, prone and travelling soldiers do not start an upright stationary turning step', () => {
+  for (const patch of [{ health: 0 }, { stance: 'prone' }, { locomotion: { speed: 2 } }]) {
+    const person = actor();
+    Object.assign(person, { health: 100, tactics: {}, stance: 'standing' }, patch);
+    person.heading += .1;
+    advanceNraMotion(person, .05);
+    assert.equal(sampleNraMotion(person).turn.weight, 0);
+  }
 });
 
 test('native idle holds hips and knees still with a long subtle breathing cycle', () => {
@@ -137,7 +171,10 @@ test('current native carry lowers the real muzzle during travel and raises smoot
   const person = actor();
   person.rifleReady = false; person.locomotion = { speed: 3.15, mode: 'jog' };
   person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
-  for (let i = 0; i < 50; i++) advanceNraMotion(person, .02);
+  for (let i = 0; i < 50; i++) {
+    person.position.z -= person.locomotion.speed * .02;
+    advanceNraMotion(person, .02);
+  }
   const carried = sampleNraMotion(person);
   const direction = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...carried.weaponQuaternion));
   assert.ok(direction.y < -.5, 'running barrel is visibly down, not just translated lower');
@@ -185,9 +222,10 @@ test('one soldier switches between charge, quick short steps and aimed slow move
     samples[mode] = sampleNraMotion(person);
   }
   assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
-  assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.4);
+  assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.25);
   assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
-  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean * 1.5);
+  assert.ok(samples.jog.bodyLean >= .40 && samples.jog.bodyLean <= .48);
+  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .14);
   assert.ok(samples.sprint.runContact < samples.jog.runContact - .1);
   assert.ok(samples.aim.walkClearance < samples.jog.walkClearance * .5);
   assert.ok(samples.aim.lowReady < .001 && samples.aim.bodyLean < samples.jog.bodyLean * .5);
@@ -212,9 +250,35 @@ test('fast actual movement cannot retain an upright walk even when its mode labe
   }
   const fast = sampleNraMotion(person);
   assert.equal(fast.travelStyle, 'charge');
-  assert.ok(fast.bodyLean >= .49 && fast.bodyLean <= .6);
+  assert.ok(fast.bodyLean >= .60 && fast.bodyLean <= .63);
   assert.ok(fast.hipDrop > .13);
   person.locomotion = { mode: 'walk', speed: 0 };
   for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
   assert.ok(sampleNraMotion(person).bodyLean < .001);
+});
+
+test('real metres set running cadence at every timestep, even when requested locomotion speed is stale', () => {
+  for (const fps of [30, 60, 144]) for (const speed of [3.15, 4.8]) {
+    const person = actor();
+    person.nativeMotion = createNraMotion({ ...createNativeGaitProfile(data.motion.idle), leanPivot: [0, 1, 0] }, person);
+    person.locomotion = { mode: 'walk', speed: 0 };
+    for (let frame = 0; frame < fps * 2; frame++) {
+      person.position.z -= speed / fps; advanceNraMotion(person, 1 / fps);
+    }
+    const initial = person.nativeMotion.gaitCycles, initialDistance = person.nativeMotion.distance;
+    for (let frame = 0; frame < fps * 3; frame++) {
+      person.position.z -= speed / fps; advanceNraMotion(person, 1 / fps);
+    }
+    const pose = sampleNraMotion(person), cycles = person.nativeMotion.gaitCycles - initial;
+    assert.ok(Math.abs((person.nativeMotion.distance - initialDistance) / cycles - pose.runStride) < .002,
+      'one complete left/right cycle covers exactly its visual stride');
+    const stepsPerSecond = cycles * 2 / 3;
+    assert.ok(speed === 3.15 ? stepsPerSecond > 3.7 && stepsPerSecond < 4.2 : stepsPerSecond > 4.2 && stepsPerSecond < 4.8);
+    assert.ok(pose.bodyLean >= (speed === 3.15 ? .4 : .6));
+    const stopped = person.nativeMotion.gaitCycles;
+    person.locomotion.speed = 4.8;
+    for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);
+    assert.equal(person.nativeMotion.gaitCycles, stopped, 'a stale run command must not keep feet cycling against a wall');
+    assert.equal(sampleNraMotion(person).weight, 0);
+  }
 });

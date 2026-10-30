@@ -188,6 +188,22 @@ test('eye-only reuse preserves immutable local results, world projection and the
   assert.throws(() => nativeEyeLocal(f.actor), /calibrated motion state/);
 });
 
+test('unaimed eye reuse retains main sword carry semantics and invalidates when its pose appears or disappears', () => {
+  const f = fixture();
+  f.project('standing', false);
+  f.actor.health = 100;
+  f.actor.nativeMotion.profile = { ...f.profile, lowReadyCarry: true };
+  f.actor.nativeMotion.lowReady = .2;
+  f.actor.dadao = { equipped: false, pose: { phase: 'ready', progress: 0 } };
+  for (const [equipped, pose] of [[false, null], [true, null], [true, { phase: 'ready', progress: 0 }],
+    [true, { phase: 'cut', progress: .5 }], [true, null], [false, null]]) {
+    Object.assign(f.actor.dadao, { equipped, pose });
+    const before = JSON.stringify(f.actor.nativeMotion);
+    assert.deepEqual(nativeEyeLocal(f.actor), sampleNraMotion(f.actor).headAim.eye);
+    assert.equal(JSON.stringify(f.actor.nativeMotion), before);
+  }
+});
+
 test('eye reuse invalidates on every mutable local pose input and is isolated from unseen soldiers', () => {
   const f = fixture();
   f.project('standing', true);

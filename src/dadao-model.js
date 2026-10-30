@@ -12,7 +12,8 @@ const bladeProfile = [
 ];
 let template;
 const views = new Map(), gripRoll = 3.8;
-const handToBlade = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gripRoll, Math.PI / 2, 'YXZ'));
+export const DADAO_HAND_TO_BLADE = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gripRoll, Math.PI / 2, 'YXZ'));
+const handToBlade = DADAO_HAND_TO_BLADE;
 // Preserve the carry fist orientation without changing the grip during the stroke.
 const carryGrip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -.6 - gripRoll);
 // Wrist travel and blade rotation share a plane, preventing a face-first slap.
@@ -27,6 +28,17 @@ function chopRotation(angle) {
 }
 
 const raisedRotation = chopRotation(-1.2), followRotation = chopRotation(1.6);
+
+export function dadaoWorldStroke(pose) {
+  const { raise, cut } = dadaoStroke(pose);
+  const draw = pose.phase === 'draw' ? 1 - pose.progress : 0;
+  return {
+    wristOffset: new THREE.Vector3(.08, -.22, -.24).lerp(new THREE.Vector3(.13, .08, -.25), raise)
+      .lerp(new THREE.Vector3(-.18, -.20, -.26), cut).add(new THREE.Vector3(0, -draw * .08, 0)),
+    rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30)).multiply(carryGrip)
+      .slerp(raisedRotation, raise).slerp(followRotation, cut),
+  };
+}
 
 export function dadaoBladeGeometry() {
   const positions = [], uv = [], indices = [], sections = [];

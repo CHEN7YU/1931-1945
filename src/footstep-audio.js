@@ -34,6 +34,7 @@ export function createFootstepAudio(buffers) {
   const voices = new Set(), history = [];
   const counts = { played: 0, stale: 0, suspended: 0, budget: 0, replaced: 0 };
   let owner = null, active = false, batch = 0, context = null, peakVoices = 0;
+  let output = null;
   function stop() {
     for (const voice of [...voices]) { voice.source.stop(); voice.release(); }
   }
@@ -45,6 +46,7 @@ export function createFootstepAudio(buffers) {
     owner = soldierId; active = playing;
   }
   return {
+    setOutput(node) { output = node; },
     sync,
     beginBatch(soldierId, playing) {
       sync(soldierId, playing);
@@ -74,7 +76,7 @@ export function createFootstepAudio(buffers) {
       filter.frequency.value = event.landing ? Math.min(sample.cutoff, 2400) : sample.cutoff;
       const volume = (.12 + Math.min(event.speed, 5) * .022) * (event.landing ? 1.4 : event.stance === 'crouched' ? .65 : 1);
       gain.gain.value = volume;
-      source.connect(filter).connect(gain).connect(audio.destination);
+      source.connect(filter).connect(gain).connect(output ?? audio.destination);
       let ended = false;
       const voice = { source, release() {
         if (ended) return;

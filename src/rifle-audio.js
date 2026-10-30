@@ -74,7 +74,12 @@ export function createRifleAudio(buffer, enemyBuffer = buffer, machineGunBuffers
   const voices = new Set(), history = [];
   const counts = { played: 0, owned: 0, remote: 0, range: 0, budget: 0, polyphony: 0, suspended: 0, replaced: 0 };
   let context = null, bus = null, safety = null, ownVoice = null, batchRemote = 0, peakVoices = 0;
+  let output = null;
   const audioMixer = {
+    setOutput(node) {
+      output = node;
+      if (safety) { safety.disconnect(); safety.connect(output); }
+    },
     beginBatch() { batchRemote = 0; },
     update(listener) {
       requireOwnedWeaponIds(listener);
@@ -137,7 +142,7 @@ export function createRifleAudio(buffer, enemyBuffer = buffer, machineGunBuffers
         context = audio; bus = audio.createGain(); bus.gain.value = .7;
         safety = audio.createWaveShaper(); safety.curve = peakSafetyCurve();
         safety.oversample = 'none';
-        bus.connect(safety).connect(audio.destination);
+        bus.connect(safety).connect(output ?? audio.destination);
       }
       if (owned && ownVoice) {
         const replaced = ownVoice;

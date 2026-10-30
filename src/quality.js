@@ -11,8 +11,13 @@ export function qualityProfile(preset, deviceRatio, maxTextureSize) {
   return { ...profile, pixelRatio: Math.min(deviceRatio, profile.pixelRatioCap), shadowSize: Math.min(profile.shadowSize, maxTextureSize) };
 }
 
-export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio }) {
-  const state = { preset: 'high', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) };
+export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio,
+  initialPreset = 'high', initialEffects = {} }) {
+  qualityProfile(initialPreset, deviceRatio(), renderer.capabilities.maxTextureSize);
+  for (const [effect, enabled] of Object.entries(initialEffects)) {
+    if (!QUALITY_EFFECTS.includes(effect) || typeof enabled !== 'boolean') throw new RangeError('Unknown initial graphics effect or invalid enabled flag');
+  }
+  const state = { preset: initialPreset, effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, initialEffects[effect] ?? true])) };
   const fog = scene.fog;
   const invalidateMaterials = () => scene.traverse(object => {
     if (!object.material) return;

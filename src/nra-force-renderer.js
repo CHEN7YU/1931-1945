@@ -9,6 +9,8 @@ import { rifleWorldModel } from './rifle-model.js';
 import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
 import { createDistantPoseGeometry, useDistantPose } from './distant-pose-lod.js';
+import { createDadaoState } from './dadao.js';
+import { dadaoModel } from './dadao-model.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -54,12 +56,16 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     .filter(attribute => !attribute.isInstancedBufferAttribute).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
   function weaponGroupFor(key) {
     if (!weaponGroups.has(key)) {
-      const gun = rifleWorldModel('far', createRifleState(key), { bayonet: team === 'enemy' && key === 'rifle' }), batches = new Map();
+      const gun = key === 'dadao' ? dadaoModel()
+        : rifleWorldModel('far', createRifleState(key), { bayonet: team === 'enemy' && key === 'rifle' });
+      const batches = new Map();
       gun.updateMatrixWorld(true);
       gun.traverseVisible(mesh => {
         if (!mesh.isMesh) return;
         if (!batches.has(mesh.material)) batches.set(mesh.material, []);
-        batches.get(mesh.material).push(mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+        const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+        batches.get(mesh.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
+        if (geometry.index) geometry.dispose();
       });
       const parts = [...batches].map(([material, geometries]) => {
         const mesh = new THREE.InstancedMesh(mergeGeometries(geometries), material, capacity);
@@ -88,7 +94,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
-  const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : 0;
+  const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : phases + 10;
   const livingBanks = meleeStart + meleeBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
   for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
     const dead = bank >= livingBanks;
@@ -97,8 +103,14 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     const posture = dead || melee ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = melee ? bank < meleeStart + phases ? 'charge' : 'idle'
       : bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
-    sampleActor.bayonet = melee ? { mode: mode === 'charge' ? 'charge' : 'thrust',
+    sampleActor.bayonet = melee && team === 'enemy' ? { mode: mode === 'charge' ? 'charge' : 'thrust',
       extension: mode === 'charge' ? 0 : (bank - meleeStart - phases) / 2 } : null;
+    const swordFrame = bank - meleeStart - phases;
+    sampleActor.dadao = melee && team === 'friendly' ? { ...createDadaoState(), equipped: true,
+      mode: mode === 'charge' ? 'charge' : 'cut',
+      pose: mode === 'charge' || swordFrame === 0 ? { phase: 'ready', progress: 0 }
+        : { phase: swordFrame <= 3 ? 'windup' : swordFrame <= 6 ? 'cut' : 'recover',
+          progress: ((swordFrame - 1) % 3 + 1) / 3 } } : null;
     const ready = firingBank || mode === 'aim';
     sampleActor.rifleReady = ready;
     if (profile.lowReadyCarry) sampleActor.nativeMotion.lowReady = ready ? 0 : 1;
@@ -122,7 +134,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     if (bankTemplate.issue) throw new Error(`Distant ${uniform} pose ${bank} (${mode}) is unreachable: ${bankTemplate.issue}`);
     const baked = [];
     let gunMatrix = null;
-    bankTemplate.root.traverse(mesh => {
+    bankTemplate.root.traverseVisible(mesh => {
       if (mesh.userData.personalWeapon) gunMatrix = mesh.matrixWorld.clone();
     });
     bankTemplate.root.traverseVisible(mesh => {
@@ -171,6 +183,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   }
   return {
     root, motionProfile: profile, excludedIds,
+    get appearanceResources() { return template.appearanceResources; },
     casualtyBounds(variant, retainGun) {
       const bounds = banks[livingBanks + variant * 2 + Number(retainGun)]?.bounds;
       if (!bounds) throw new RangeError('Casualty bank does not exist');
@@ -254,12 +267,18 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
           const posture = postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
-          const melee = meleeBanks && actor.health > 0 && pose.upright > .999 &&
-            hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle';
+          const sword = team === 'friendly' && Boolean(pose.dadao);
+          const melee = actor.health > 0 && pose.upright > .999 &&
+            (sword || hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle');
+          const swordPose = actor.dadao?.pose;
+          const swordFrame = !swordPose || ['ready', 'draw', 'stowed'].includes(swordPose.phase) ? 0
+            : 1 + ['windup', 'cut', 'recover'].indexOf(swordPose.phase) * 3 +
+              Math.min(2, Math.floor(swordPose.progress * 3));
+          const charging = sword ? actor.dadao.mode === 'charge' : actor.bayonet?.mode === 'charge';
           const index = actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
-            : melee ? meleeStart + (actor.bayonet.mode === 'charge' && pose.weight > .45 ? Math.round(phase * phases) % phases
-              : phases + Math.round(actor.bayonet.extension * 2))
+            : melee ? meleeStart + (charging && pose.weight > .45 ? Math.round(phase * phases) % phases
+              : phases + (sword ? swordFrame : Math.round(actor.bayonet.extension * 2)))
             : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
             : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
@@ -288,7 +307,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           if (actor.casualty?.offset) {
             matrix.elements[12] += actor.casualty.offset.x; matrix.elements[14] += actor.casualty.offset.z;
           }
-          const weapons = weaponGroupFor(actor.rifle.model ?? 'rifle');
+          const weapons = weaponGroupFor(sword ? 'dadao' : actor.rifle.model ?? 'rifle');
           if (weapons.count >= weapons.capacity) {
             if (actor.health > 0) throw new Error('Distant weapon instance capacity exceeded');
             weapons.capacity *= 2;

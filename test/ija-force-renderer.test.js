@@ -71,9 +71,13 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   replacement.nativeMotion.weight = 1;
   replacement.nativeMotion.speed = 4.8;
   renderer.update([replacement], 19, null, 'high');
-  const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint);
-  assert.equal(banks.length, 16, 'seven original poses plus six charge phases and three thrust poses');
-  assert.ok(banks.slice(7, 13).some(mesh => mesh.count === 1), 'far charging actors use a melee body pose, not their firing pose');
+  const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
+  const coarseBanks = renderer.root.children.filter(mesh => mesh.name === 'distant-coarse-body');
+  assert.equal(renderer.snapshot.poseBanks, 16, 'seven original poses plus six charge phases and three thrust poses');
+  assert.equal(banks.length, 16);
+  assert.equal(coarseBanks.length, 16, 'each logical pose retains both original and coarse geometry');
+  assert.equal(banks.slice(7, 13).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 7].count, 0), 1,
+    'the far charging actor uses exactly one melee body pose across both geometry tiers');
   const weaponParts = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
   const weaponBounds = new THREE.Box3();
   for (const mesh of weaponParts) {
@@ -82,5 +86,5 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   assert.ok(weaponBounds.min.z < -1.34, 'the instanced enemy rifle includes the fixed blade');
   replacement.bayonet = { mode: 'thrust', extension: 1 };
   renderer.update([replacement], 19.2, null, 'high');
-  assert.equal(banks[15].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
+  assert.equal(banks[15].count + coarseBanks[15].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
 });

@@ -9,6 +9,8 @@ import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { readFile } from 'node:fs/promises';
 import { createBayonetState } from '../src/bayonet.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
+import { createDadaoState } from '../src/dadao.js';
+import { loadDadaoSurfaces } from '../src/dadao-surface.js';
 
 test('distant shared geometry preserves actual transformed skin vertices, normals, UVs and material groups', () => {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -34,7 +36,8 @@ test('distant shared geometry preserves actual transformed skin vertices, normal
   baked.dispose(); geometry.dispose(); mesh.material.dispose();
 });
 
-test('phase-only selection and empty-batch visibility preserve body, weapon and flag instances across transitions and casualties', async () => {
+for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-batch visibility preserve ${team} body, weapon and flag instances across transitions and casualties`, async () => {
+  if (team === 'friendly') await loadDadaoSurfaces(1, { async loadAsync() { return new THREE.Texture({ width: 1, height: 1 }); } });
   const moduleUrl = new URL('../src/nra-force-renderer.js', import.meta.url);
   const current = await readFile(moduleUrl, 'utf8');
   assert.equal((current.match(/sampleNraPhase\(actor\)/g) ?? []).length, 1, 'reference must replace the actual far-only call');
@@ -65,13 +68,13 @@ test('phase-only selection and empty-batch visibility preserve body, weapon and 
       get snapshot() { return null; } };
   }
   const forces = [createReference, createNraForceRenderer].map(create =>
-    create(new THREE.Scene(), camera, view(), 24, { team: 'enemy', uniform: 'enemy' }));
+    create(new THREE.Scene(), camera, view(), 24, { team, uniform: team === 'enemy' ? 'enemy' : 'nra88' }));
   for (const force of forces) await force.prepare({ async compileAsync() {} });
   const actors = Array.from({ length: 20 }, (_, index) => {
-    const actor = { id: `phase-${index}`, unitId: 'enemy-unit', team: 'enemy', groundType: 'infantry', heading: 0, health: 100,
+    const actor = { id: `phase-${index}`, unitId: `${team}-unit`, team, groundType: 'infantry', heading: 0, health: 100,
       position: new THREE.Vector3(index - 10, 0, -20), walkPhase: index * .1,
       avatarAppearance: { build: index % 3 - 1, skin: index % 2 ? '#c3a78a' : '#9d7959' },
-      locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState(), bayonet: createBayonetState() };
+      locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState(), bayonet: createBayonetState(), dadao: createDadaoState() };
     actor.nativeMotion = createNraMotion(profile, actor);
     return actor;
   });
@@ -79,6 +82,7 @@ test('phase-only selection and empty-batch visibility preserve body, weapon and 
     name: mesh.name, count: mesh.count, matrices: Array.from(mesh.instanceMatrix.array.subarray(0, mesh.count * 16)),
     tint: mesh.geometry.attributes.nraSkinTint ? Array.from(mesh.geometry.attributes.nraSkinTint.array.subarray(0, mesh.count * 3)) : null,
   }));
+  let swordRendered = false;
   for (let frame = 0; frame < 60; frame++) {
     for (const [index, actor] of actors.entries()) {
       const motion = actor.nativeMotion, names = Object.keys(motion.posture).filter(name => profile[name]);
@@ -92,6 +96,9 @@ test('phase-only selection and empty-batch visibility preserve body, weapon and 
       if (frame % 6 === 2) motion.posture[names[index % names.length]] = .75;
       if (frame % 6 === 3) { motion.posture[names[0]] = .35; motion.posture[names[1]] = .4; }
       actor.bayonet.mode = ['idle', 'charge', 'thrust', 'recover'][frame % 4]; actor.bayonet.extension = (frame % 3) / 2;
+      actor.dadao.equipped = team === 'friendly' && index % 4 === 0 && frame % 5 !== 0;
+      actor.dadao.mode = frame % 5 === 1 ? 'charge' : 'ready';
+      actor.dadao.pose = { phase: ['ready', 'windup', 'cut', 'recover'][frame % 4], progress: (frame % 3) / 2 };
       if (frame === 30 && index < 3) {
         actor.health = 0; actor.casualty = createCasualtyState(actor, frame, null, { variant: 0, retainGun: index % 2 === 0 });
       }
@@ -103,12 +110,14 @@ test('phase-only selection and empty-batch visibility preserve body, weapon and 
     const before = actors.map(actor => JSON.stringify(actor.nativeMotion));
     for (const force of forces) force.update(actors, frame, frame % 2 ? actors[4].id : null, frame % 2 ? 'high' : 'low');
     assert.deepEqual(capture(forces[1]), capture(forces[0]), `bank occupancy and instance buffers at frame ${frame}`);
+    swordRendered ||= forces[1].root.children.some(mesh => mesh.name.startsWith('owned-weapon-dadao') && mesh.count > 0);
     for (const mesh of forces[1].root.children.filter(child => child.isInstancedMesh)) {
       assert.equal(mesh.visible, mesh.count > 0, `empty-only visibility at frame ${frame}: ${mesh.name}`);
     }
     assert.deepEqual(forces[1].snapshot.members, forces[0].snapshot.members);
     assert.deepEqual(actors.map(actor => JSON.stringify(actor.nativeMotion)), before);
   }
+  if (team === 'friendly') assert.equal(swordRendered, true, 'the short path must retain the integrated main sword selection');
   for (const force of forces) force.update([], 61, null, 'high');
   assert.deepEqual(capture(forces[1]), capture(forces[0]));
   assert.ok(forces[1].root.children.filter(child => child.isInstancedMesh).every(mesh => !mesh.visible && mesh.count === 0));

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { soldierModel } from '../src/world.js';
 import { createSoldierRenderer, syncSoldierModelPose } from '../src/soldier-renderer.js';
+import { loadDadaoSurfaces } from '../src/dadao-surface.js';
 
 test('corpse appearance derives from simulation death/seat/time without mutating health or physical position', () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
@@ -51,6 +52,7 @@ test('idle models retain neutral legs and near/far batches project the same simu
     assert.equal(actor.health, 100);
     assert.deepEqual(actor.position, position);
     assert.equal(renderer.snapshot[distance === 5 ? 'near' : 'far'], 1);
+    assert.equal(renderer.snapshot.melee, 0);
     const batch = scene.children.find(object => object.isInstancedMesh && object.count > 0);
     const actual = new THREE.Matrix4(); batch.getMatrixAt(0, actual);
     const expected = new THREE.Matrix4().multiplyMatrices(actor.model.matrix, left.matrix);
@@ -133,5 +135,32 @@ test('diagnostic batch hiding preserves pose updates and physical proxies, inclu
   assert.equal(actor.model.position.z, -7, 'hidden batches still synchronise the physical proxy');
   renderer.update([actor], 'high', 3);
   assert.ok(scene.children.filter(object => object.isInstancedMesh).every(object => object.visible));
+  for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
+});
+
+test('procedural near/far melee batches follow personal sword phases and restore the owned rifle without changing hit proxies', async () => {
+  await loadDadaoSurfaces(1, { async loadAsync(url) { return new THREE.Texture({ src: url, width: 1, height: 1 }); } });
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, 0);
+  const renderer = createSoldierRenderer(scene, camera, 16);
+  const actor = { id: 'friendly-melee', friendly: true, health: 100, position: new THREE.Vector3(0, 0, -5),
+    heading: .4, model: soldierModel(true), walkPhase: 1, walkPoseReady: true, vehicleId: null,
+    rifle: { model: 'rifle' }, dadao: { equipped: true, pose: { phase: 'ready', progress: 0 } } };
+  const proxy = actor.model, children = [...proxy.children];
+  for (const distance of [5, 70]) for (const phase of ['ready', 'windup', 'cut', 'recover']) for (const progress of [0, .5, 1]) {
+    actor.position.z = -distance; actor.dadao.pose = { phase, progress };
+    renderer.update([actor], 'high', 1);
+    assert.ok(scene.children.filter(mesh => mesh.count > 0).every(mesh => mesh.name.startsWith(`procedural-dadao-${phase}-`)));
+    assert.equal(renderer.snapshot[distance === 5 ? 'near' : 'far'], 1);
+    assert.equal(renderer.snapshot.melee, 1);
+    assert.equal(actor.model, proxy); assert.deepEqual(proxy.children, children);
+  }
+  actor.dadao.equipped = false;
+  renderer.update([actor], 'high', 2);
+  assert.ok(scene.children.filter(mesh => mesh.count > 0).every(mesh => mesh.name === 'procedural-rifle'));
+  assert.equal(renderer.snapshot.melee, 0);
+  actor.dadao.equipped = true; actor.health = 0;
+  renderer.update([actor], 'high', 3);
+  assert.ok(scene.children.filter(mesh => mesh.count > 0).every(mesh => mesh.name === 'procedural-rifle'));
   for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
 });

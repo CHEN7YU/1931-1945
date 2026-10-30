@@ -8,7 +8,7 @@ export const STREET_BLOCK = Object.freeze({
   rows: [62, 43, 10, -38, -68],
 });
 
-export function makeTownLayout() {
+export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS } = {}) {
   const buildings = [], pieces = [], covers = [], passages = [];
   const add = (id, x, y, z, w, h, d, material, extra = {}) => {
     const piece = { id, x, y, z, w, h, d, material, ...extra };
@@ -55,7 +55,7 @@ export function makeTownLayout() {
     segment(cursor, to, 0, height);
   }
   function shop(id, x, z, facing, name, { kind = 'shop', height = 3.6, w = 8, d = 14, riverSide = 0 } = {}) {
-    const storeys = TOWN_STOREYS[id] ?? 1;
+    const storeys = storeyOverrides[id] ?? 1;
     const building = { id, x, z, w, d, height: storeys > 1 ? storeys * STOREY_HEIGHT : height,
       storeys, facing, name, kind, riverSide, doorZ: z + 2 };
     buildings.push(building);

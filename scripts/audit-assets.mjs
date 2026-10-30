@@ -157,7 +157,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
       if (createHash('sha256').update(data).digest('hex') !== item.sha256) throw new Error(`Published asset differs: ${item.file}`);
     }
     for (const file of await filesUnder(resolve(buildRoot))) {
-      if (file === 'index.html' || inventory.has(file.replace(/^assets\//, '')) && file.startsWith('assets/')) continue;
+      if (['index.html', 'town-preview.html'].includes(file) || inventory.has(file.replace(/^assets\//, '')) && file.startsWith('assets/')) continue;
       if (/^assets\/[^/]+-[\w-]{8,}\.(js|css)$/.test(file)) continue;
       throw new Error(`Unreviewed build payload: ${file}`);
     }

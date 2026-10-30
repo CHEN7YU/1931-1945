@@ -104,6 +104,7 @@ export function createBattleVoices(buffers, random = Math.random) {
     }
   }
   let enabled = false, nextAmbient = 2, nextScan = 0, nextCallout = 0, nextCalloutScan = 0, context = null;
+  let output = null;
   const counts = { ambient: 0, callout: 0, command: 0, announcement: 0, interrupted: 0, queuePressure: 0 };
   const choose = items => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
   function select(team, cue, variant) {
@@ -132,7 +133,7 @@ export function createBattleVoices(buffers, random = Math.random) {
     source.buffer = buffers[request.clip.file];
     filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
     gain.gain.value = mix.gain; panner.pan.value = mix.pan;
-    source.connect(filter).connect(gain).connect(panner).connect(context.destination);
+    source.connect(filter).connect(gain).connect(panner).connect(output ?? context.destination);
     let ended = false;
     const voice = { source, gain, filter, panner, request, release() {
       if (ended) return;
@@ -158,6 +159,7 @@ export function createBattleVoices(buffers, random = Math.random) {
     }
   }
   return {
+    setOutput(node) { output = node; },
     sync(active) {
       enabled = active;
       if (!active) {
