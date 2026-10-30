@@ -18,6 +18,40 @@ const source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
 
+test('reported near-wall retraction stows an unreachable presentation and recovers without ending combat', () => {
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  const state = createRifleState(), gun = rifleModel(state);
+  const before = structuredClone(state);
+  gun.position.set(.2030264526370948, -.3163574034258855, .45708560393959285);
+  gun.rotation.set(-.55, 0, 0);
+  updateRifleModel(gun, state);
+  view.update(gun, state);
+  assert.equal(view.root.visible, false);
+  assert.equal(view.snapshot.reachLimited, true);
+  assert.equal(view.snapshot.reason, 'weapon-outside-arm-workspace');
+  assert.ok(view.snapshot.contacts.some(contact => contact.side === 'left'));
+  assert.deepEqual(state, before, 'presentation limits cannot change health, ammo or weapon action');
+  for (const weapon of ['rifle', 'sniper', 'zb26', 'type11']) {
+    const owned = createRifleState(weapon), model = rifleModel(owned);
+    for (let frame = 0; frame <= 60; frame++) {
+      const retract = frame / 60;
+      model.position.set(.18, -.22 - .12 * retract, -.14 + .72 * retract);
+      model.rotation.set(-.55 * retract, 0, 0);
+      updateRifleModel(model, owned);
+      view.update(model, owned);
+      if (view.snapshot.visible) for (const side of ['left', 'right']) {
+        assert.ok(view.snapshot[side].arm.reachable && view.snapshot[side].arm.error < .002);
+      }
+    }
+    model.position.set(.18, -.22, -.14); model.rotation.set(0, 0, 0);
+    updateRifleModel(model, owned); view.update(model, owned);
+    assert.equal(view.snapshot.visible, true);
+    assert.equal(view.snapshot.reachLimited, false, 'walking away restores the actual hand view');
+  }
+  gun.position.x = NaN;
+  assert.throws(() => view.update(gun, state), /finite/);
+});
+
 test('native weapon hands preserve distinct finger bones and source skin while sharing one reusable pair', () => {
   const sourceSkin = source.getObjectByName('\u624b\u90e8').material;
   const originalMaterial = Array.isArray(sourceSkin) ? sourceSkin[0] : sourceSkin;

@@ -8,7 +8,8 @@ import { hasBayonet } from './bayonet.js';
 import { headingError } from './ai-turning.js';
 
 export function nativePoseIntent(actor) {
-  return actor.grenades?.action ? 'grenade' : actor.health > 0 && hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle'
+  return actor.grenades?.action ? 'grenade' : actor.health > 0 && actor.dadao?.equipped ? 'dadao'
+    : actor.health > 0 && hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle'
     ? 'bayonet' : actor.rifle?.action === 'reload' ? 'reload' : actor.rifleReady === true ? 'aim' : 'travel';
 }
 
@@ -250,7 +251,8 @@ export function sampleNraMotion(actor, includeHead = true) {
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
   const bayonet = nativePoseIntent(actor) === 'bayonet' && upright > .999;
-  const lowReady = bayonet ? 1
+  const dadao = nativePoseIntent(actor) === 'dadao' && upright > .999 ? actor.dadao.pose : null;
+  const lowReady = bayonet || dadao ? 1
     : profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
   const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
     (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
@@ -294,7 +296,7 @@ export function sampleNraMotion(actor, includeHead = true) {
   }
   const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
     1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
-  const result = { intent: nativePoseIntent(actor), grenade, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+  const result = { intent: nativePoseIntent(actor), grenade, dadao, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,
     walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,

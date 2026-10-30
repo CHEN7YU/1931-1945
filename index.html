@@ -154,7 +154,7 @@
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>
-    <div id="fatal" class="overlay" hidden><div class="dialog"><h2>战场未能加载</h2><p id="fatal-message"></p><button onclick="location.reload()" class="primary-button">重新加载</button></div></div>
+    <div id="fatal" class="overlay" role="alertdialog" aria-modal="true" aria-labelledby="fatal-title" hidden><div class="dialog"><h2 id="fatal-title">战场未能加载</h2><p id="fatal-message"></p><label for="fatal-details">本页诊断信息</label><textarea id="fatal-details" readonly spellcheck="false" aria-label="可复制的错误与构建信息"></textarea><button id="fatal-copy" class="text-button">复制诊断信息</button><p id="fatal-copy-status" role="status"></p><button onclick="location.reload()" class="primary-button">重新加载</button></div></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
