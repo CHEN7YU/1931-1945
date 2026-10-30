@@ -2483,10 +2483,21 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     actor.tactics.mode = 'turn-to-path';
     return;
   }
-  const step = Math.min(speed * dt, distance);
+  const step = Math.min(speed * turn.moveScale * dt, distance);
+  const travel = turn.direction;
+  const destination = { x: pos.x + travel.x * step, z: pos.z + travel.z * step };
+  const arcClear = !circleBlocked(destination.x, destination.z, .43, movementObstacles(destination.x, destination.z), pos.y) &&
+    actorGrid.near(pos.x, pos.z, 1.5).every(other => other === actor || other.health <= 0 || other.vehicleId ||
+      Math.abs(other.position.y - pos.y) >= 1.5 ||
+      Math.hypot(destination.x - other.position.x, destination.z - other.position.z) >=
+        Math.min(.9, Math.hypot(pos.x - other.position.x, pos.z - other.position.z) - .01));
+  if (!arcClear && turn.remaining > AI_TURN.resumeAngle) {
+    actor.locomotion.mode = 'turn'; actor.tactics.mode = 'turn-to-path';
+    return;
+  }
   const beforeX = pos.x;
   const beforeZ = pos.z;
-  moveInfantry(pos, steering.x * step, steering.z * step, .42, obstacles);
+  moveInfantry(pos, (arcClear ? travel.x : steering.x) * step, (arcClear ? travel.z : steering.z) * step, .42, obstacles);
   if (Math.hypot(pos.x - beforeX, pos.z - beforeZ) < step * .3) {
     actor.stuckTime = (actor.stuckTime || 0) + dt;
   } else actor.stuckTime = 0;

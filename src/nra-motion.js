@@ -5,6 +5,7 @@ import { infantryWeaponProfile } from './rifle-action.js';
 import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
 import { hasBayonet } from './bayonet.js';
+import { headingError } from './ai-turning.js';
 
 export function nativePoseIntent(actor) {
   return actor.grenades?.action ? 'grenade' : actor.health > 0 && hasBayonet(actor) && actor.bayonet && actor.bayonet.mode !== 'idle'
@@ -113,7 +114,8 @@ export function createNraMotion(profile, actor) {
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
     idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
     gaitCharge: 0, gaitAim: 0, gaitCycles: seed / 2.5 / profile.strideMeters, phaseDistance: seed / 2.5,
-    position: { x: actor.position.x, z: actor.position.z } };
+    position: { x: actor.position.x, z: actor.position.z },
+    turn: { heading: actor.heading ?? 0, angle: 0, direction: 1, weight: 0 } };
   if (profile.headAim && ready) syncNativeAimGoal({ ...actor, nativeMotion: motion });
   return motion;
 }
@@ -126,6 +128,17 @@ export function advanceNraMotion(actor, dt) {
   }
   if (dt === 0) return;
   const traveled = Math.hypot(actor.position.x - motion.position.x, actor.position.z - motion.position.z);
+  const turn = motion.turn, heading = actor.heading ?? 0;
+  const angularStep = headingError(turn.heading, heading);
+  turn.heading = heading;
+  const stepping = actor.health > 0 && actor.tactics && actor.locomotion.speed < .2 &&
+    (actor.stance ?? 'standing') === 'standing' && Math.abs(angularStep) / dt > .12;
+  if (stepping) {
+    turn.angle += Math.abs(angularStep);
+    turn.direction = Math.sign(angularStep);
+  }
+  turn.weight += ((stepping ? 1 : 0) - turn.weight) * (1 - Math.exp(-dt / .08));
+  if (turn.weight < .001) { turn.weight = 0; turn.angle = 0; }
   const beforeGait = motion.profile.footCycleGait ? nativeGaitParameters(motion) : null;
   motion.distance += traveled;
   motion.position = { x: actor.position.x, z: actor.position.z };
@@ -289,6 +302,7 @@ export function sampleNraMotion(actor, includeHead = true) {
     walkClearance: gait?.walkClearance,
     travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'),
     gaitCharge: motion.gaitCharge, gaitAim: motion.gaitAim,
+    turn: { weight: motion.turn.weight, phase: cycleFraction(motion.turn.angle / (Math.PI / 3)), direction: motion.turn.direction },
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };

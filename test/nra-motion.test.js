@@ -15,6 +15,40 @@ function actor() {
   return person;
 }
 
+test('turning steps follow real yaw, freeze on pause and never invent travel distance or running', () => {
+  for (const fps of [30, 60, 144]) {
+    const person = actor();
+    person.health = 100; person.tactics = {}; person.stance = 'standing';
+    const distance = person.nativeMotion.distance, position = { ...person.position };
+    for (let frame = 0; frame < fps; frame++) {
+      person.heading -= 1.5 / fps;
+      advanceNraMotion(person, 1 / fps);
+    }
+    const pose = sampleNraMotion(person);
+    assert.ok(pose.turn.weight > .99);
+    assert.equal(pose.turn.direction, -1);
+    assert.equal(pose.weight, 0);
+    assert.equal(person.nativeMotion.distance, distance);
+    assert.deepEqual(person.position, position);
+    assert.ok(Math.abs(person.nativeMotion.turn.angle - 1.5) < 1e-8);
+    const paused = JSON.stringify(person.nativeMotion);
+    advanceNraMotion(person, 0); sampleNraMotion(person);
+    assert.equal(JSON.stringify(person.nativeMotion), paused);
+    for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);
+    assert.equal(sampleNraMotion(person).turn.weight, 0);
+  }
+});
+
+test('dead, prone and travelling soldiers do not start an upright stationary turning step', () => {
+  for (const patch of [{ health: 0 }, { stance: 'prone' }, { locomotion: { speed: 2 } }]) {
+    const person = actor();
+    Object.assign(person, { health: 100, tactics: {}, stance: 'standing' }, patch);
+    person.heading += .1;
+    advanceNraMotion(person, .05);
+    assert.equal(sampleNraMotion(person).turn.weight, 0);
+  }
+});
+
 test('native idle holds hips and knees still with a long subtle breathing cycle', () => {
   assert.equal(data.idle.duration, 6);
   for (const name of ['Hips', 'LeftLeg', 'RightLeg', 'LeftUpLeg', 'RightUpLeg']) {
