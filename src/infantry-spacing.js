@@ -32,8 +32,13 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     return true;
   };
   const peers = neighbors.filter(other => other.id !== actor.id && other.health > 0 && !other.vehicleId &&
-    Math.abs(other.position.y - actor.position.y) < 1.5 && distance(actor.position, other.position) < 3.2 &&
-    sweepTerrain(other.position));
+    Math.abs(other.position.y - actor.position.y) < 1.5 && distance(actor.position, other.position) < 3.2);
+  // Check terrain only when a peer could affect steering; reuse it within this decision, never across steps.
+  const connections = new Map();
+  const connected = other => {
+    if (!connections.has(other)) connections.set(other, sweepTerrain(other.position));
+    return connections.get(other);
+  };
   const traffic = actor.tactics.traffic ??= { waitSeconds: 0, side: 1, yieldPoint: null, until: 0,
     progress: { x: actor.position.x, z: actor.position.z }, reason: null };
   if (traffic.direction && traffic.direction.x * forward.x + traffic.direction.z * forward.z < .5) {
@@ -56,12 +61,12 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
         const initial = distance(actor.position, other.position);
         const predicted = { x: other.position.x + (other.velocity?.x ?? 0) * .2 * step / steps,
           z: other.position.z + (other.velocity?.z ?? 0) * .2 * step / steps };
-        if (distance(p, predicted) < Math.min(.9, initial - .01)) return false;
+        if (distance(p, predicted) < Math.min(.9, initial - .01) && connected(other)) return false;
       }
     }
     return peers.every(other => {
       const entry = reservations.get(other.id);
-      return !entry || distance(destination, entry) >= .9;
+      return !entry || distance(destination, entry) >= .9 || !connected(other);
     });
   };
   const result = (x, z, speed, waitingFor, reason) => {
@@ -69,7 +74,7 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     if (speed > 0) reservations.set(actor.id, { ...point(x, z, .65 * speed), y: actor.position.y });
     return { x, z, speed, waitingFor };
   };
-  if (traffic.yieldPoint && (!traffic.blockerId || peers.some(other => other.id === traffic.blockerId)) &&
+  if (traffic.yieldPoint && (!traffic.blockerId || peers.some(other => other.id === traffic.blockerId && connected(other))) &&
     now < traffic.until && distance(actor.position, traffic.yieldPoint) > .2) {
     const dx = traffic.yieldPoint.x - actor.position.x, dz = traffic.yieldPoint.z - actor.position.z, norm = Math.hypot(dx, dz);
     if (clear(point(dx / norm, dz / norm, Math.min(.65, norm)))) {
@@ -81,7 +86,7 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
   for (const other of peers) {
     const dx = other.position.x - actor.position.x, dz = other.position.z - actor.position.z;
     const along = dx * forward.x + dz * forward.z, across = Math.abs(dx * right.x + dz * right.z);
-    if (along > 0 && along < spacing + .6 && across < .95 && (!ahead || along < ahead.along)) ahead = { other, along, across };
+    if (along > 0 && along < spacing + .6 && across < .95 && (!ahead || along < ahead.along) && connected(other)) ahead = { other, along, across };
   }
   const directClear = clear(point(forward.x, forward.z, .65));
   if (!ahead && directClear) return result(forward.x, forward.z, 1, null, null);

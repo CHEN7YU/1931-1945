@@ -12,6 +12,72 @@ test('open-ground soldiers keep a consistent passing side instead of running int
   assert.ok(result.x > 0 && result.z < 0 && result.speed < 1);
   assert.ok(Math.atan2(result.x, -result.z) < Math.PI / 6, 'bounded steering does not snap soldiers sideways');
 });
+
+test('irrelevant neighbors behind a clear route do not trigger swept terrain queries', () => {
+  const actor = person(100, 0, 0);
+  const neighbors = Array.from({ length: 20 }, (_, i) => person(i, (i % 5 - 2) * .2, 2.5 + Math.floor(i / 5) * .15));
+  let queries = 0;
+  const result = infantrySteering(actor, neighbors, { x: 0, z: -1 }, {
+    spacing: 2.2, constrained: false, blocked: () => { queries++; return false; },
+  });
+  assert.deepEqual(result, { x: 0, z: -1, speed: 1, waitingFor: null });
+  assert.equal(queries, 5, 'only the unchanged five samples along the actual 0.65m route are needed');
+});
+
+test('reservations across a wall remain irrelevant and terrain connections are not cached across calls', () => {
+  const other = person(1, .8, -.3);
+  const reservations = new Map([[other.id, { x: 0, z: -.65 }]]);
+  const run = wall => infantrySteering(person(2, 0, 0), [other], { x: 0, z: -1 }, {
+    spacing: 2.2, constrained: false, reservations,
+    blocked: point => wall && point.x > .3 && point.x < .5,
+  });
+  assert.equal(run(true).speed, 1, 'a reservation through a wall cannot block the lane');
+  const open = run(false);
+  assert.ok(open.x !== 0 || open.speed !== 1, 'opening the passage restores peer avoidance immediately');
+  assert.equal(run(true).speed, 1, 'closing the passage cannot reuse an old connection');
+});
+
+test('lazy peer connections preserve eager terrain filtering across seeded crowd, floor and reservation cases', () => {
+  let seed = 1938;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let index = 0; index < 500; index++) {
+    const actor = person(100, 0, 0), direction = { x: random() * 2 - 1, z: random() * 2 - 1 };
+    if (index % 2) actor.tactics.traffic = { waitSeconds: random() * 3, side: index % 3 ? 1 : -1,
+      yieldPoint: { x: random() * 2 - 1, z: random() * 2 - 1 }, blockerId: 'person-1', until: 11,
+      progress: { x: .1, z: .1 }, direction: { x: .1, z: -1 }, reason: null };
+    const neighbors = Array.from({ length: 20 }, (_, i) => ({
+      ...person(i + 1, random() * 6 - 3, random() * 6 - 3, random() * 7),
+      health: i % 9 ? 100 : 0, vehicleId: i % 11 ? null : 'tank',
+      locomotion: { speed: random() * 4 }, velocity: { x: random() * 6 - 3, z: random() * 6 - 3 },
+      intent: { x: random() * 2 - 1, z: random() * 2 - 1 },
+    }));
+    neighbors[0].position.y = 3.2;
+    const walls = Array.from({ length: 4 }, () => {
+      const x = random() * 6 - 3, z = random() * 6 - 3;
+      return { minX: x, maxX: x + .12, minZ: z, maxZ: z + 1.5, height: 4 };
+    });
+    const blocked = point => circleBlocked(point.x, point.z, .43, walls);
+    const eager = neighbors.filter(other => {
+      const length = Math.hypot(other.position.x, other.position.z);
+      if (other.health <= 0 || other.vehicleId || Math.abs(other.position.y) >= 1.5 || length >= 3.2) return false;
+      const steps = Math.max(1, Math.ceil(length / .16));
+      for (let step = 1; step <= steps; step++) {
+        if (blocked({ x: other.position.x * step / steps, z: other.position.z * step / steps })) return false;
+      }
+      return true;
+    });
+    const reservations = new Map(neighbors.filter((_, i) => i % 3 === 0)
+      .map(other => [other.id, { x: random() * 3 - 1.5, z: random() * 3 - 1.5 }]));
+    const original = structuredClone(actor), expectedReservations = structuredClone(reservations);
+    const options = { spacing: index % 2 ? 2.2 : 1.45, constrained: index % 3 === 0,
+      dt: 1 / [30, 60, 144][index % 3], now: 10, blocked };
+    const expected = infantrySteering(original, eager, direction, { ...options, reservations: expectedReservations });
+    const actual = infantrySteering(actor, neighbors, direction, { ...options, reservations });
+    assert.deepEqual(actual, expected, `steering case ${index}`);
+    assert.deepEqual(actor, original, `traffic case ${index}`);
+    assert.deepEqual(reservations, expectedReservations, `reservation case ${index}`);
+  }
+});
 test('a narrow bottleneck waits or yields backward, rather than trying to pass through a wall or another body', () => {
   const actor = person(2, 0, 0), other = person(1, 0, -1.2, Math.PI);
   const options = { spacing: 2.2, constrained: true, blocked: () => false };

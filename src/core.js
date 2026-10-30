@@ -63,23 +63,48 @@ export function advanceConquest(match, points, dt, remaining) {
   return match.winner;
 }
 
+let collisionDiagnostics = null;
+export function setCollisionDiagnostics(diagnostics) {
+  collisionDiagnostics = diagnostics;
+}
+
 export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1.75) {
-  if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) return true;
-  return obstacles.some(b => {
+  const probe = collisionDiagnostics?.current;
+  if (probe) {
+    probe.circleCalls++; probe.candidates += obstacles.length;
+    const count = obstacles.length;
+    probe.candidateHistogram[count === 0 ? 0 : count <= 8 ? 1 : count <= 32 ? 2 : count <= 128 ? 3 : count <= 512 ? 4 : 5]++;
+  }
+  if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) {
+    if (probe) { probe.boundaryHits++; probe.blocked++; }
+    return true;
+  }
+  // Match Array.some: snapshot length, skip holes, and still visit inherited entries.
+  for (let i = 0, length = obstacles.length; i < length; i++) {
+    if (!(i in obstacles)) continue;
+    const b = obstacles[i];
+    if (probe) probe.checked++;
     if ((b.minY ?? -Infinity) >= feetY + bodyHeight ||
-      (b.height ?? Infinity) <= feetY + .025) return false;
-    if (b.circular) return (x - b.cx) ** 2 + (z - b.cz) ** 2 < (radius + b.radius) ** 2;
-    if (b.door || b.oriented) {
+      (b.height ?? Infinity) <= feetY + .025) continue;
+    let blocked;
+    if (b.circular) blocked = (x - b.cx) ** 2 + (z - b.cz) ** 2 < (radius + b.radius) ** 2;
+    else if (b.door || b.oriented) {
       const c = b.cos ?? Math.cos(b.angle), s = b.sin ?? Math.sin(b.angle);
       const dx = x - b.cx, dz = z - b.cz;
       const lx = c * dx - s * dz, lz = s * dx + c * dz;
       const nx = Math.max(-b.hx, Math.min(b.hx, lx)), nz = Math.max(-b.hz, Math.min(b.hz, lz));
-      return (lx - nx) ** 2 + (lz - nz) ** 2 < radius ** 2;
+      blocked = (lx - nx) ** 2 + (lz - nz) ** 2 < radius ** 2;
+    } else {
+      const nx = Math.max(b.minX, Math.min(b.maxX, x));
+      const nz = Math.max(b.minZ, Math.min(b.maxZ, z));
+      blocked = (x - nx) ** 2 + (z - nz) ** 2 < radius ** 2;
     }
-    const nx = Math.max(b.minX, Math.min(b.maxX, x));
-    const nz = Math.max(b.minZ, Math.min(b.maxZ, z));
-    return (x - nx) ** 2 + (z - nz) ** 2 < radius ** 2;
-  });
+    if (blocked) {
+      if (probe) probe.blocked++;
+      return true;
+    }
+  }
+  return false;
 }
 
 export function moveGround(position, dx, dz, radius, obstacles) {

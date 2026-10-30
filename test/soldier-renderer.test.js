@@ -115,3 +115,23 @@ test('a separate skinned view excludes only its procedural batch while retaining
   assert.equal(renderer.snapshot.visible, 1, 'the baseline procedural route remains available');
   for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
 });
+test('diagnostic batch hiding preserves pose updates and physical proxies, including newly created groups', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  const renderer = createSoldierRenderer(scene, camera, 16);
+  const actor = { id: 'hidden-body', health: 100, friendly: false, position: new THREE.Vector3(0, 0, -5), heading: .4,
+    walkPhase: .3, walkPoseReady: true, deathTime: 0, model: soldierModel(false), vehicleId: null };
+  renderer.update([actor], 'high', 1, null, null, false);
+  assert.equal(renderer.snapshot.visible, 1);
+  assert.ok(scene.children.some(object => object.isInstancedMesh && object.count > 0));
+  assert.ok(scene.children.filter(object => object.isInstancedMesh).every(object => !object.visible));
+  assert.equal(actor.model.visible, true);
+  assert.deepEqual(actor.model.position, actor.position);
+  assert.equal(actor.health, 100);
+  assert.equal(actor.walkPhase, .3);
+  actor.position.z = -7;
+  renderer.update([actor], 'high', 2, null, null, false);
+  assert.equal(actor.model.position.z, -7, 'hidden batches still synchronise the physical proxy');
+  renderer.update([actor], 'high', 3);
+  assert.ok(scene.children.filter(object => object.isInstancedMesh).every(object => object.visible));
+  for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
+});

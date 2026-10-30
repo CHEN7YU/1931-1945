@@ -113,3 +113,25 @@ test('invalid wreck poses and times fail explicitly before reaching the renderer
   assert.throws(() => tankFirePose(wreck(), -1), RangeError);
   assert.throws(() => selectTankFires([], 0, { x: 0, y: NaN, z: 0 }), RangeError);
 });
+
+test('offscreen wrecks do not occupy visible fire slots and turning restores the current burn phase', () => {
+  const { fire, camera } = fixture();
+  const vehicles = [
+    ...Array.from({ length: 4 }, (_, i) => wreck({ id: `behind-${i}`, position: { x: i, y: 0, z: 20 } })),
+    ...Array.from({ length: 4 }, (_, i) => wreck({ id: `ahead-${i}`, position: { x: i, y: 0, z: -35 } })),
+  ];
+  const before = JSON.stringify(vehicles);
+  fire.update(vehicles, 1);
+  assert.deepEqual(fire.snapshot.ids, vehicles.slice(4).map(vehicle => vehicle.id));
+  camera.rotation.y = Math.PI;
+  fire.update(vehicles, 8);
+  assert.deepEqual(fire.snapshot.ids, vehicles.slice(0, 4).map(vehicle => vehicle.id));
+  assert.ok(fire.snapshot.sources.every(source => source.age === 8 && source.height < 1.6));
+  camera.rotation.y = 0;
+  fire.update(vehicles, 19);
+  assert.equal(fire.snapshot.flamePlanes, 0);
+  assert.ok(fire.snapshot.smoke > 0, 'return to smoke-only phase, not a new fireball');
+  fire.update(vehicles, 22);
+  assert.equal(fire.snapshot.wrecks, 0);
+  assert.equal(JSON.stringify(vehicles), before);
+});

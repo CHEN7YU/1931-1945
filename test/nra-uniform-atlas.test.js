@@ -6,6 +6,62 @@ import { createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 
+test('indexed distant poses preserve every triangle attribute bit, seams and source geometry', () => {
+  const geometry = new THREE.BoxGeometry(.4, 1.7, .3);
+  const material = new THREE.MeshStandardMaterial();
+  const expanded = geometry.toNonIndexed(), before = geometry.attributes.position.array.slice();
+  const atlas = { mapGeometry(target) {
+    target.setAttribute('nraUniformUv', target.attributes.uv.clone());
+  } };
+  const merged = mergeNraPose([{ geometry, material, skin: true }], atlas);
+  assert.ok(merged.index);
+  assert.equal(merged.index.count, expanded.attributes.position.count);
+  assert.equal(merged.attributes.position.count, geometry.attributes.position.count);
+  const restored = merged.toNonIndexed();
+  for (const name of ['position', 'normal', 'uv']) {
+    assert.deepEqual(new Uint32Array(restored.attributes[name].array.buffer),
+      new Uint32Array(expanded.attributes[name].array.buffer), name);
+  }
+  assert.deepEqual(restored.attributes.nraUniformUv.array, expanded.attributes.uv.array);
+  assert.ok(restored.attributes.nraSkinRegion.array.every(value => value === 1));
+  assert.deepEqual(geometry.attributes.position.array, before);
+  assert.deepEqual(merged.boundingBox, geometry.boundingBox ?? new THREE.Box3().setFromBufferAttribute(geometry.attributes.position));
+  geometry.dispose(); expanded.dispose(); merged.dispose(); restored.dispose(); material.dispose();
+});
+
+test('exact indexing does not weld close positions, material UV seams or skin-region boundaries', () => {
+  const material = new THREE.MeshStandardMaterial();
+  const first = new THREE.PlaneGeometry(1, 1), second = first.clone();
+  second.translate(.000001, 0, 0);
+  const atlas = { mapGeometry() {} };
+  const close = mergeNraPose([{ geometry: first, material }, { geometry: second, material }], atlas);
+  assert.equal(close.attributes.position.count, 8, 'nearby but unequal vertices are not rounded together');
+  const seam = first.clone();
+  for (let i = 0; i < seam.attributes.uv.count; i++) seam.attributes.uv.setX(i, seam.attributes.uv.getX(i) + .25);
+  const seamed = mergeNraPose([{ geometry: first, material }, { geometry: seam, material }], atlas);
+  assert.equal(seamed.attributes.position.count, 8, 'equal positions with different UVs remain separate');
+  const merged = mergeNraPose([{ geometry: first, material, skin: true }, { geometry: second, material, skin: false }], atlas);
+  assert.equal(merged.attributes.position.count, 8);
+  assert.equal(merged.index.count, 12);
+  const restored = merged.toNonIndexed();
+  assert.ok([...restored.attributes.nraSkinRegion.array.slice(0, 6)].every(value => value === 1));
+  assert.ok([...restored.attributes.nraSkinRegion.array.slice(6)].every(value => value === 0));
+  assert.notEqual(restored.attributes.position.getX(0), restored.attributes.position.getX(6));
+  first.dispose(); second.dispose(); seam.dispose(); close.dispose(); seamed.dispose(); merged.dispose(); restored.dispose(); material.dispose();
+});
+
+test('exact pose indices retain references beyond the 16-bit vertex limit', () => {
+  const geometry = new THREE.PlaneGeometry(1, 1, 256, 256), material = new THREE.MeshStandardMaterial();
+  const merged = mergeNraPose([{ geometry, material }], { mapGeometry() {} });
+  assert.ok(merged.index.array instanceof Uint32Array);
+  assert.equal(merged.attributes.position.count, 257 * 257);
+  assert.equal(merged.index.count, geometry.index.count);
+  assert.equal(merged.index.array.reduce((max, value) => Math.max(max, value), 0), 257 * 257 - 1);
+  const restored = merged.toNonIndexed(), expected = geometry.toNonIndexed();
+  assert.deepEqual(restored.attributes.position.array, expected.attributes.position.array);
+  geometry.dispose(); merged.dispose(); restored.dispose(); expected.dispose(); material.dispose();
+});
+
 test('one shared pose bank selects different A/B atlas tiles per instance without tinting skin or duplicating poses', () => {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => ({ getContext: () => ({ fillRect() {} }) }) };

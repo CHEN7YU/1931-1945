@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { benchmarkConfig, seededRandom, diagnosticRoster, diagnosticSpawns, createFrameTelemetry } from '../src/benchmark.js';
-import { distribution, summarizeProfile } from '../scripts/benchmark.mjs';
+import { distribution, summarizeProfile, baselineModuleSource } from '../scripts/benchmark.mjs';
 
 test('benchmark overrides are development-only and explicit; production keeps the default army', () => {
   assert.equal(benchmarkConfig('?benchmark=duel&seed=1938', false), null);
+  assert.equal(benchmarkConfig('?benchmark=full&queryStats=1', false), null);
+  assert.equal(benchmarkConfig('?benchmark=full&queryStats=1', true).queryStats, true);
+  assert.throws(() => benchmarkConfig('?benchmark=full&queryStats=0', true), RangeError);
   assert.equal(benchmarkConfig('', true), null);
   assert.deepEqual(benchmarkConfig('?benchmark=full&seed=1938', true), { scenario: 'full', seed: 1938, diagnostic: false });
   assert.throws(() => benchmarkConfig('?benchmark=unknown', true), RangeError);
@@ -16,6 +19,20 @@ test('a fixed simulation seed repeats without consuming audio or visual randomne
   const a = Array.from({ length: 100 }, first), b = Array.from({ length: 100 }, second);
   assert.deepEqual(a, b);
   assert.notEqual(a[0], other());
+});
+test('render isolation is explicit, development-only and does not change scenario population', () => {
+  for (const mode of ['normal', 'no-characters', 'no-draw']) {
+    assert.deepEqual(benchmarkConfig(`?benchmark=full&renderIsolation=${mode}&renderIsolationAt=25`, true),
+      { scenario: 'full', seed: 1938, diagnostic: false, renderIsolation: mode, renderIsolationAt: 25 });
+    assert.equal(benchmarkConfig(`?benchmark=full&renderIsolation=${mode}`, false), null);
+    assert.equal(benchmarkConfig(`?renderIsolation=${mode}`, true), null);
+  }
+  assert.equal(benchmarkConfig('?benchmark=full&renderIsolation=no-draw', true).renderIsolationAt, 0);
+  for (const query of ['renderIsolation=unknown', 'renderIsolationAt=25',
+    'renderIsolation=no-draw&renderIsolationAt=-1', 'renderIsolation=no-draw&renderIsolationAt=NaN',
+    'renderIsolation=no-draw&renderIsolationAt=181']) {
+    assert.throws(() => benchmarkConfig(`?benchmark=full&${query}`, true), RangeError);
+  }
 });
 test('5v5 is a labelled diagnosis scene with registered origins, not a smaller default', () => {
   const roster = diagnosticRoster(), points = diagnosticSpawns();
@@ -100,4 +117,14 @@ test('percentiles use raw samples including long frames, and CPU inclusive time 
   assert.equal(cpu.sampledMs, 2);
   assert.equal(cpu.self[0].selfMs, 2);
   assert.equal(cpu.inclusive.find(item => item.name.startsWith('parent')).inclusiveMs, 2);
+});
+
+test('paired renderer snapshots resolve Three and its geometry addon to the same Vite modules', () => {
+  const original = "import * as THREE from 'three';\nimport { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';";
+  const transformed = 'import * as THREE from "/node_modules/.vite/deps/three.js?v=shared";\n' +
+    'import { mergeGeometries } from "/node_modules/.vite/deps/three_addons_utils_BufferGeometryUtils__js.js?v=shared";';
+  const result = baselineModuleSource(original, transformed);
+  assert.ok(result.includes("from '/node_modules/.vite/deps/three.js?v=shared'"));
+  assert.ok(result.includes("from '/node_modules/.vite/deps/three_addons_utils_BufferGeometryUtils__js.js?v=shared'"));
+  assert.throws(() => baselineModuleSource(original, ''), /Vite must resolve/);
 });

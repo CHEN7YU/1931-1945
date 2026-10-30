@@ -143,6 +143,8 @@ export function advanceCombatParticles(state, dt, groundHeight, now = state.time
   if (!Number.isFinite(now) || now < state.time) throw new RangeError('Particle clock must be finite and monotonic');
   for (const particle of state.fragments) {
     const age = Math.max(0, now - particle.bornAt), elapsed = age - particle.age;
+    if (age >= particle.life) { particle.age = age; continue; }
+    if (elapsed === 0) continue;
     const steps = Math.max(1, Math.ceil(elapsed / .016));
     for (let i = 0; i < steps; i++) {
       const step = elapsed / steps;

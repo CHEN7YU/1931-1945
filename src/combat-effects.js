@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
 import { createTankFireEffects } from './tank-fire.js';
+import { createPresentationView } from './presentation-view.js';
 import { valueNoise2D as cloudNoise } from './value-noise.js';
 
 const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0,
@@ -35,6 +36,7 @@ export function captureImpact(hit, incoming) {
 
 export function createCombatEffects(scene, camera, groundHeight) {
   const state = createParticleState(), transform = new THREE.Object3D();
+  const view = createPresentationView(camera);
   const fragments = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0),
     new THREE.MeshStandardMaterial({ roughness: 1 }), PARTICLE_LIMITS.fragments);
   fragments.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -84,24 +86,30 @@ export function createCombatEffects(scene, camera, groundHeight) {
     const light = new THREE.PointLight(0xffc68b, 0, 3, 2);
     light.castShadow = false; light.visible = false; scene.add(light); return light;
   });
-  let settings = null, lastImpact = null, lastExplosion = null;
+  let settings = null, lastImpact = null, lastExplosion = null, presentationPasses = 0;
   const display = () => {
-    fragments.count = state.fragments.length;
-    state.fragments.forEach((particle, index) => {
+    view.update();
+    presentationPasses++;
+    fragments.count = 0;
+    for (const particle of state.fragments) {
+      if (!view.intersects(particle, particle.size)) continue;
       transform.position.set(particle.x, particle.y, particle.z);
       transform.rotation.set(particle.spin + particle.age * 5, particle.spin, particle.age * 8);
       transform.scale.setScalar(particle.size * Math.min(1, (1 - particle.age / particle.life) * 4));
       transform.updateMatrix();
-      fragments.setMatrixAt(index, transform.matrix);
-      fragments.setColorAt(index, fragmentColors[particle.kind]);
-    });
-    fragments.instanceMatrix.needsUpdate = true;
-    if (fragments.instanceColor) fragments.instanceColor.needsUpdate = true;
+      fragments.setMatrixAt(fragments.count, transform.matrix);
+      fragments.setColorAt(fragments.count++, fragmentColors[particle.kind]);
+    }
+    if (fragments.count) {
+      fragments.instanceMatrix.needsUpdate = true;
+      if (fragments.instanceColor) fragments.instanceColor.needsUpdate = true;
+    }
     clouds.forEach((sprite, index) => {
       const cloud = state.clouds[index], wave = waves[index], shockwave = cloud?.kind === 'blast-wave';
-      sprite.visible = Boolean(cloud) && !shockwave;
-      wave.visible = Boolean(shockwave);
-      if (!cloud) return;
+      const visible = Boolean(cloud) && view.intersects(cloud, cloud.size * 4);
+      sprite.visible = visible && !shockwave;
+      wave.visible = visible && Boolean(shockwave);
+      if (!visible) return;
       const t = cloud.age / cloud.life;
       if (shockwave) {
         wave.position.set(cloud.x, cloud.normal ? cloud.y : groundHeight(cloud.x, cloud.z) + .06, cloud.z);
@@ -136,7 +144,8 @@ export function createCombatEffects(scene, camera, groundHeight) {
       const pulse = state.lights[index];
       // Keep a fixed shader light count during high-quality combat; inactive lights emit zero.
       light.visible = Boolean(settings && settings.preset !== 'low' && settings.effects.muzzle && settings.effects.muzzleLight);
-      light.intensity = pulse ? (pulse.intensity ?? 9) * (1 - pulse.age / pulse.life) : 0;
+      light.intensity = pulse && view.intersects(pulse, pulse.distance ?? 3)
+        ? (pulse.intensity ?? 9) * (1 - pulse.age / pulse.life) : 0;
       light.distance = pulse?.distance ?? 3;
       if (pulse) light.position.set(pulse.x, pulse.y, pulse.z);
     });
@@ -158,6 +167,10 @@ export function createCombatEffects(scene, camera, groundHeight) {
       lightLimit: !low && settings.effects.muzzleLight ? PARTICLE_LIMITS.lights : 0,
       time,
     });
+  };
+  const update = (dt, time, vehicles = []) => {
+    advanceCombatParticles(state, dt, groundHeight, time);
+    tankFire.update(vehicles, time);
     display();
   };
   return {
@@ -180,14 +193,10 @@ export function createCombatEffects(scene, camera, groundHeight) {
       if (!visible) return;
       emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style,
         ...(surface ? { material: surface.kind, normal: surface.normal } : {}) });
-      display();
     },
-    update(dt, time, vehicles = []) {
-      advanceCombatParticles(state, dt, groundHeight, time);
-      tankFire.update(vehicles, time);
-      display();
-    },
-    clear() { clearCombatParticles(state); tankFire.clear(); lastImpact = lastExplosion = null; display(); },
+    update,
+    render(time, vehicles = []) { update(time - state.time, time, vehicles); },
+    clear() { clearCombatParticles(state); tankFire.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length + waves.filter(mesh => mesh.visible).length,
@@ -202,7 +211,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
         tankFire: tankFire.snapshot,
         visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
         shaderLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
-        limits: { ...PARTICLE_LIMITS }, emitted: state.emitted,
+        limits: { ...PARTICLE_LIMITS }, emitted: state.emitted, presentationPasses,
         muzzleLightIntensity: lights.reduce((sum, light) => sum + light.intensity, 0),
         lastImpact: lastImpact ? { ...lastImpact, position: [...lastImpact.position], normal: [...lastImpact.normal] } : null };
     },

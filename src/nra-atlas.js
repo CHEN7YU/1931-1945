@@ -104,6 +104,34 @@ export function mergeNraPose(parts, atlas) {
   const merged = mergeGeometries(geometries, false);
   for (const geometry of geometries) geometry.dispose();
   if (!merged) throw new Error('Distant uniform pose could not be merged');
+  // Match every attribute bit, not rounded positions: preserve seams, normals and uniform UVs.
+  const attributes = Object.entries(merged.attributes).map(([name, attribute]) => {
+    if (!(attribute.array instanceof Float32Array)) throw new TypeError(`Unexpected distant pose attribute: ${name}`);
+    return { name, attribute, bits: new Uint32Array(attribute.array.buffer, attribute.array.byteOffset, attribute.array.length) };
+  });
+  const count = merged.attributes.position.count, indices = new Uint32Array(count), vertices = [], lookup = new Map();
+  for (let vertex = 0; vertex < count; vertex++) {
+    let key = '';
+    for (const { attribute, bits } of attributes) {
+      for (let component = 0; component < attribute.itemSize; component++) key += `${bits[vertex * attribute.itemSize + component]},`;
+    }
+    let index = lookup.get(key);
+    if (index === undefined) {
+      index = vertices.length; lookup.set(key, index); vertices.push(vertex);
+    }
+    indices[vertex] = index;
+  }
+  if (vertices.length < count) {
+    for (const { name, attribute, bits } of attributes) {
+      const array = new Float32Array(vertices.length * attribute.itemSize), target = new Uint32Array(array.buffer);
+      for (let vertex = 0; vertex < vertices.length; vertex++) {
+        const from = vertices[vertex] * attribute.itemSize;
+        target.set(bits.subarray(from, from + attribute.itemSize), vertex * attribute.itemSize);
+      }
+      merged.setAttribute(name, new THREE.BufferAttribute(array, attribute.itemSize, attribute.normalized));
+    }
+    merged.setIndex(new THREE.BufferAttribute(vertices.length <= 65535 ? new Uint16Array(indices) : indices, 1));
+  }
   merged.computeBoundingBox(); merged.computeBoundingSphere();
   return merged;
 }

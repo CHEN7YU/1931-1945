@@ -244,6 +244,13 @@ export function solveHeadAimGoal(profile, pose, previous = null) {
     parameters: Object.freeze(solved.parameters), iterations: solved.iterations, stalled: solved.stalled });
 }
 
+export function projectUnaimedEye(profile, pose) {
+  const base = baseHead(profile, pose), neck = new Quaternion();
+  const headPosition = base.Head.position.clone().sub(base.Neck.position).applyQuaternion(neck).add(base.Neck.position);
+  const neckRotation = neck.clone().multiply(base.Neck.rotation);
+  return Object.freeze(projectSkin(profile.samples.eye, base, neckRotation, headPosition, base.Head.rotation).toArray());
+}
+
 export function projectHeadAim(profile, pose, motion) {
   const key = [pose.idleTime, pose.hipDrop, pose.bodyLean, pose.torsoYaw, pose.lowReady, motion.cheekWeight,
     ...Object.values(pose.postures), ...pose.weaponPosition, ...pose.weaponQuaternion].join(',');

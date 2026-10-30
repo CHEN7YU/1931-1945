@@ -6,6 +6,9 @@ import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { createCasualtyState } from '../src/casualties.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
+import { readFile } from 'node:fs/promises';
+import { createBayonetState } from '../src/bayonet.js';
+import { FIRING_POSES } from '../src/combat-posture.js';
 
 test('distant shared geometry preserves actual transformed skin vertices, normals, UVs and material groups', () => {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -31,7 +34,96 @@ test('distant shared geometry preserves actual transformed skin vertices, normal
   baked.dispose(); geometry.dispose(); mesh.material.dispose();
 });
 
-test('shared casualty banks grow explicitly when the minimum retention time temporarily exceeds their capacity', () => {
+test('phase-only selection and empty-batch visibility preserve body, weapon and flag instances across transitions and casualties', async () => {
+  const moduleUrl = new URL('../src/nra-force-renderer.js', import.meta.url);
+  const current = await readFile(moduleUrl, 'utf8');
+  assert.equal((current.match(/sampleNraPhase\(actor\)/g) ?? []).length, 1, 'reference must replace the actual far-only call');
+  let reference = current.replace('sampleNraPhase(actor)', 'sampleNraMotion(actor, false)');
+  for (const statement of ['mesh.visible = count > 0;', 'mesh.visible = group.count > 0;',
+    'attachment.mesh.visible = attachment.count > 0;']) {
+    assert.equal(reference.split(statement).length, 2, 'reference must remove exactly one visibility guard');
+    reference = reference.replace(statement, '');
+  }
+  const source = reference
+    .replace(/from '([^']+)'/g, (_, specifier) => `from '${specifier.startsWith('.')
+      ? new URL(specifier, moduleUrl).href : import.meta.resolve(specifier)}'`);
+  const { createNraForceRenderer: createReference } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+  const camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, 0);
+  const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const profile = { ...createNativeGaitProfile(track),
+    ...Object.fromEntries(Object.keys(FIRING_POSES).map(name => [name, track])) };
+  const geometry = new THREE.BoxGeometry(.4, 1.7, .3);
+  const material = new THREE.MeshStandardMaterial();
+  function view() {
+    const root = new THREE.Group(), flag = new THREE.Mesh(geometry, material); flag.name = 'flag';
+    root.add(new THREE.Mesh(geometry, material), flag);
+    const gun = new THREE.Group(); gun.userData.personalWeapon = true; root.add(gun);
+    return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null,
+      optionalAttachments: [{ mesh: flag, enabled: () => true }], bind() {},
+      update(person) { root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
+      get snapshot() { return null; } };
+  }
+  const forces = [createReference, createNraForceRenderer].map(create =>
+    create(new THREE.Scene(), camera, view(), 24, { team: 'enemy', uniform: 'enemy' }));
+  for (const force of forces) await force.prepare({ async compileAsync() {} });
+  const actors = Array.from({ length: 20 }, (_, index) => {
+    const actor = { id: `phase-${index}`, unitId: 'enemy-unit', team: 'enemy', groundType: 'infantry', heading: 0, health: 100,
+      position: new THREE.Vector3(index - 10, 0, -20), walkPhase: index * .1,
+      avatarAppearance: { build: index % 3 - 1, skin: index % 2 ? '#c3a78a' : '#9d7959' },
+      locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState(), bayonet: createBayonetState() };
+    actor.nativeMotion = createNraMotion(profile, actor);
+    return actor;
+  });
+  const capture = force => force.root.children.filter(mesh => mesh.isInstancedMesh).map(mesh => ({
+    name: mesh.name, count: mesh.count, matrices: Array.from(mesh.instanceMatrix.array.subarray(0, mesh.count * 16)),
+    tint: mesh.geometry.attributes.nraSkinTint ? Array.from(mesh.geometry.attributes.nraSkinTint.array.subarray(0, mesh.count * 3)) : null,
+  }));
+  for (let frame = 0; frame < 60; frame++) {
+    for (const [index, actor] of actors.entries()) {
+      const motion = actor.nativeMotion, names = Object.keys(motion.posture).filter(name => profile[name]);
+      actor.position.z = frame % 3 === 0 ? -8 : frame % 3 === 1 ? -24 : -60;
+      actor.heading = frame * .03;
+      motion.speed = (frame + index) % 6; motion.distance += .07;
+      motion.gaitCycles += .03; motion.gaitAim = frame % 4 === 0 ? 1 : 0;
+      motion.gaitCharge = frame % 4 === 1 ? 1 : 0; motion.weight = frame % 5 === 0 ? 0 : .8;
+      motion.lowReady = frame % 2;
+      for (const name of names) motion.posture[name] = 0;
+      if (frame % 6 === 2) motion.posture[names[index % names.length]] = .75;
+      if (frame % 6 === 3) { motion.posture[names[0]] = .35; motion.posture[names[1]] = .4; }
+      actor.bayonet.mode = ['idle', 'charge', 'thrust', 'recover'][frame % 4]; actor.bayonet.extension = (frame % 3) / 2;
+      if (frame === 30 && index < 3) {
+        actor.health = 0; actor.casualty = createCasualtyState(actor, frame, null, { variant: 0, retainGun: index % 2 === 0 });
+      }
+    }
+    if (frame === 45) {
+      actors[3].id = 'replacement';
+      actors[3].nativeMotion = createNraMotion(profile, actors[3]);
+    }
+    const before = actors.map(actor => JSON.stringify(actor.nativeMotion));
+    for (const force of forces) force.update(actors, frame, frame % 2 ? actors[4].id : null, frame % 2 ? 'high' : 'low');
+    assert.deepEqual(capture(forces[1]), capture(forces[0]), `bank occupancy and instance buffers at frame ${frame}`);
+    for (const mesh of forces[1].root.children.filter(child => child.isInstancedMesh)) {
+      assert.equal(mesh.visible, mesh.count > 0, `empty-only visibility at frame ${frame}: ${mesh.name}`);
+    }
+    assert.deepEqual(forces[1].snapshot.members, forces[0].snapshot.members);
+    assert.deepEqual(actors.map(actor => JSON.stringify(actor.nativeMotion)), before);
+  }
+  for (const force of forces) force.update([], 61, null, 'high');
+  assert.deepEqual(capture(forces[1]), capture(forces[0]));
+  assert.ok(forces[1].root.children.filter(child => child.isInstancedMesh).every(mesh => !mesh.visible && mesh.count === 0));
+  for (const force of forces) force.update(actors, 62, null, 'high');
+  assert.deepEqual(capture(forces[1]), capture(forces[0]), 'restoring actors after an empty frame preserves all instance buffers');
+  const restored = forces[1].root.children.filter(child => child.isInstancedMesh);
+  assert.ok(restored.some(mesh => mesh.count > 0));
+  for (const mesh of restored) assert.equal(mesh.visible, mesh.count > 0, 'nonempty batches return in the first restored update');
+  for (const force of forces) for (const mesh of force.root.children) if (mesh.isInstancedMesh) {
+    mesh.geometry.dispose(); mesh.dispose();
+  }
+  geometry.dispose(); material.dispose();
+});
+
+test('shared casualty banks grow explicitly when the minimum retention time temporarily exceeds their capacity', async () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
   camera.position.set(0, 1.67, 0);
   const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
@@ -47,6 +139,7 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
       get snapshot() { return null; } };
   }
   const renderer = createNraForceRenderer(scene, camera, view(), 2);
+  await renderer.prepare({ async compileAsync() {} });
   const bodies = Array.from({ length: 10 }, (_, index) => {
     const actor = { id: `body-${index}`, unitId: 'old-unit', team: 'friendly', heading: 0, health: 0,
       position: new THREE.Vector3(index * .1, 0, -50), walkPhase: 0, locomotion: { speed: 0 }, rifle: createRifleState() };
@@ -56,6 +149,7 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   });
   renderer.update(bodies, 30, null, 'high');
   assert.equal(renderer.snapshot.far, 10);
+  assert.equal(renderer.snapshot.coarse, 10);
   const occupied = renderer.root.children.filter(mesh => mesh.isInstancedMesh && mesh.count > 0);
   assert.equal(occupied.filter(mesh => !mesh.name.startsWith('owned-weapon-')).length, 2);
   assert.ok(occupied.some(mesh => mesh.name === 'owned-weapon-rifle'));
@@ -107,7 +201,35 @@ test('all friendly identities retain uniforms while detail pooling survives casu
   assert.ok(actors.every(actor => actor.ammo === 5), 'View substitution cannot refill personal weapons');
   force.update(actors, 14, actors[0].id, 'high');
   assert.notEqual(force.snapshot.members.find(member => member.id === observed).tier, 'hidden', 'rendering must not independently expire corpses after twelve seconds');
-  force.remove(actors); force.update([], 14, null, 'high');
+  for (const actor of actors) actor.position.z = -60;
+  force.update(actors, 15, null, 'high');
+  assert.equal(force.counts.lodReady, true);
+  assert.equal(force.snapshot.coarse, actors.length);
+  assert.ok(force.snapshot.members.every(member => member.geometryLod === 'coarse'));
+  camera.fov = 18; camera.updateProjectionMatrix();
+  force.update(actors, 15, null, 'high');
+  assert.equal(force.snapshot.coarse, 0, 'zoom immediately restores the original full body geometry');
+  assert.equal(force.snapshot.far, actors.length);
+  camera.fov = 72; camera.updateProjectionMatrix(); camera.rotation.y = Math.PI;
+  force.update(actors, 15, null, 'high');
+  assert.equal(force.snapshot.culled, actors.length);
+  assert.equal(force.snapshot.coarse, 0);
+  actors[0].position.x += .1; actors[0].heading += .3;
+  camera.rotation.y = 0;
+  force.update(actors, 15, null, 'high');
+  assert.equal(force.snapshot.coarse, actors.length, 'turning back uses the current actor state immediately');
+  const body = force.root.children.find(mesh => mesh.name === 'distant-coarse-body' && mesh.count === actors.length);
+  assert.ok(body);
+  const actual = new THREE.Matrix4(), expected = new THREE.Matrix4().compose(actors[0].position,
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, actors[0].heading, 0)), new THREE.Vector3(1, 1, 1));
+  body.getMatrixAt(0, actual);
+  assert.ok(actual.elements.every((value, index) => Math.abs(value - expected.elements[index]) < 1e-6),
+    'the first visible frame uses the updated position and heading, not its previous offscreen transform');
+  camera.position.z = -55;
+  force.update(actors, 15, null, 'high');
+  assert.equal(force.snapshot.coarse, 0, 'nearby actors outside the skinned-view budget still get original geometry');
+  assert.ok(force.snapshot.near <= 6);
+  force.remove(actors); force.update([], 15, null, 'high');
   assert.equal(force.snapshot.assigned, 0); assert.equal(force.focusedSnapshot, null);
   const replacement = { ...actors[1], id: 'replacement-101', health: 100 };
   replacement.nativeMotion = createNraMotion(profile, replacement);

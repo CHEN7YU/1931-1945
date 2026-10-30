@@ -45,7 +45,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
     return groups.get(key);
   };
   return {
-    update(actors, preset, now, controlledId = null, separateViewId = null) {
+    update(actors, preset, now, controlledId = null, separateViewId = null, renderVisible = true) {
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(projection);
@@ -79,6 +79,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         group.count++; summary.visible++; summary[detail]++;
       }
       for (const group of groups.values()) for (const mesh of group.parts) {
+        mesh.visible = renderVisible;
         mesh.count = group.count;
         mesh.instanceMatrix.needsUpdate = true;
         if (group.count) summary.batches++;

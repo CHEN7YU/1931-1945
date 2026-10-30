@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CHI_HA } from './chi-ha.js';
+import { createPresentationView } from './presentation-view.js';
 
 export const TANK_FIRE = Object.freeze({ maxWrecks: 4, lowWrecks: 2, flamePlanes: 3, lowFlamePlanes: 2,
   smokePerWreck: 8, lowSmokePerWreck: 4, strongSeconds: 4, burnSeconds: 18, smokeSeconds: 4, range: 140 });
@@ -36,7 +37,7 @@ export function tankFirePose(vehicle, now) {
       z: position.z + pivot.z + hatch.z } };
 }
 
-export function selectTankFires(vehicles, now, observer) {
+export function selectTankFires(vehicles, now, observer, isVisible = () => true) {
   if (!finitePoint(observer) || !Number.isFinite(now) || now < 0) throw new RangeError('Tank fire requires a finite observer and simulation time');
   const candidates = [], ids = new Set();
   for (const vehicle of vehicles) {
@@ -46,7 +47,8 @@ export function selectTankFires(vehicles, now, observer) {
     if (ids.has(pose.id)) throw new Error('Duplicate tank fire identity');
     ids.add(pose.id);
     const distance = Math.hypot(pose.engine.x - observer.x, pose.engine.y - observer.y, pose.engine.z - observer.z);
-    if (distance <= TANK_FIRE.range) candidates.push({ ...pose, distance });
+    const center = { x: pose.engine.x, y: pose.engine.y + 3, z: pose.engine.z };
+    if (distance <= TANK_FIRE.range && isVisible(center, 8)) candidates.push({ ...pose, distance });
   }
   candidates.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
   return candidates.slice(0, TANK_FIRE.maxWrecks);
@@ -89,6 +91,8 @@ const fragmentShader = `
   }`;
 
 export function createTankFireEffects(scene, camera, smokeTexture) {
+  const view = createPresentationView(camera);
+  const isVisible = (position, radius) => view.intersects(position, radius);
   const geometry = new THREE.PlaneGeometry(1, 1, 1, 12);
   geometry.translate(0, .5, 0);
   const views = Array.from({ length: TANK_FIRE.maxWrecks }, () => {
@@ -153,7 +157,11 @@ export function createTankFireEffects(scene, camera, smokeTexture) {
   };
   return {
     configure(value) { settings = value; display(); },
-    update(vehicles, now) { candidates = selectTankFires(vehicles, now, camera.position); display(); },
+    update(vehicles, now) {
+      view.update();
+      candidates = selectTankFires(vehicles, now, camera.position, isVisible);
+      display();
+    },
     clear() { candidates = []; display(); },
     get snapshot() {
       const active = views.filter(view => view.group.visible);

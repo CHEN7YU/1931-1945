@@ -1,0 +1,93 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { createCombatEffects } from '../src/combat-effects.js';
+
+const settings = { preset: 'high', effects: { muzzle: true, muzzleLight: true, hitParticles: true } };
+function fixture() {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => ({ getContext: () => ({
+    createRadialGradient: () => ({ addColorStop() {} }), fillRect() {},
+  }) }) };
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.y = 1.67;
+  let queries = 0, effects;
+  try { effects = createCombatEffects(scene, camera, () => { queries++; return 0; }); }
+  finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
+  effects.configure(settings);
+  const fragments = scene.children.find(object => object.isInstancedMesh);
+  return { scene, camera, effects, fragments, get queries() { return queries; } };
+}
+const impact = z => ({ position: { x: 0, y: .1, z }, normal: { x: 0, y: 1, z: 0 }, kind: 'stone' });
+
+test('many simulation events share one presentation pass and retain catch-up birth flashes', () => {
+  const { effects } = fixture(), before = effects.snapshot.presentationPasses;
+  for (let i = 0; i < 10; i++) effects.hit(impact(-20), .25);
+  effects.muzzle(new THREE.Vector3(0, 1.5, -2), new THREE.Vector3(0, 0, -1), .25);
+  effects.explosion(new THREE.Vector3(0, .1, -20), .25);
+  assert.equal(effects.snapshot.presentationPasses, before, 'emission does not upload the whole pool after every event');
+  effects.render(.25);
+  const snapshot = effects.snapshot;
+  assert.equal(snapshot.presentationPasses, before + 1);
+  assert.equal(snapshot.renderedFragments, snapshot.fragments);
+  assert.ok(snapshot.visibleLights > 0 && snapshot.renderedClouds > 0);
+  assert.equal(snapshot.shaderLights, 2, 'culling must not churn shader light-count variants');
+});
+
+test('offscreen particles skip instance uploads and return immediately at their real age, not their birth pose', () => {
+  const away = fixture(), reference = fixture(), position = new THREE.Vector3(0, .1, 50);
+  reference.camera.rotation.y = Math.PI;
+  for (const { effects } of [away, reference]) effects.explosion(position, 0);
+  const version = away.fragments.instanceMatrix.version;
+  for (const time of [.05, .2, .5]) {
+    away.effects.render(time);
+    reference.effects.render(time);
+    const snapshot = away.effects.snapshot;
+    assert.ok(snapshot.fragments > 0 && snapshot.clouds > 0);
+    assert.equal(snapshot.renderedFragments + snapshot.renderedClouds + snapshot.visibleLights, 0);
+    assert.equal(snapshot.shaderLights, 2);
+  }
+  assert.equal(away.fragments.instanceMatrix.version, version, 'hidden fragments perform zero matrix uploads');
+  away.camera.rotation.y = Math.PI;
+  away.effects.render(.5);
+  reference.effects.render(.5);
+  assert.ok(away.effects.snapshot.renderedFragments > 0 && away.effects.snapshot.renderedClouds > 0);
+  assert.equal(away.fragments.instanceMatrix.version, version + 1);
+  assert.deepEqual(away.fragments.instanceMatrix.array, reference.fragments.instanceMatrix.array);
+  const visibleClouds = fixture => fixture.scene.children.filter(object => object.isSprite && object.visible)
+    .map(object => ({ position: object.position.toArray(), scale: object.scale.toArray(), opacity: object.material.opacity }));
+  assert.deepEqual(visibleClouds(away), visibleClouds(reference), 'returning smoke matches an always-visible reference');
+  const queries = away.queries;
+  away.effects.render(.5);
+  assert.equal(away.queries, queries, 'paused presentation does not repeat terrain integration');
+});
+
+test('hidden expired fragments are retired without terrain catch-up and never replay on return', () => {
+  const sample = fixture();
+  sample.effects.explosion(new THREE.Vector3(0, .1, 50), 0);
+  sample.effects.render(5);
+  assert.equal(sample.queries, 0);
+  sample.camera.rotation.y = Math.PI;
+  sample.effects.render(5);
+  const snapshot = sample.effects.snapshot;
+  assert.equal(snapshot.fragments + snapshot.clouds + snapshot.lights + snapshot.renderedFragments + snapshot.renderedClouds, 0);
+});
+
+test('offscreen light volumes still illuminate the image and quality toggles remain immediate', () => {
+  const { effects, camera } = fixture();
+  effects.muzzle(new THREE.Vector3(0, camera.position.y, 1), new THREE.Vector3(0, 0, -1), 0);
+  effects.render(0);
+  assert.equal(effects.snapshot.visibleLights, 1);
+  effects.configure({ ...settings, preset: 'low' });
+  assert.equal(effects.snapshot.visibleLights, 0);
+  assert.equal(effects.snapshot.shaderLights, 0);
+  effects.configure({ ...settings, effects: { muzzle: false, muzzleLight: false, hitParticles: false } });
+  assert.equal(effects.snapshot.fragments + effects.snapshot.clouds + effects.snapshot.lights, 0);
+  effects.clear();
+  effects.configure(settings);
+  effects.render(0);
+  assert.equal(effects.snapshot.fragments + effects.snapshot.clouds + effects.snapshot.lights, 0);
+});

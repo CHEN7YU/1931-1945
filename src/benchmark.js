@@ -6,7 +6,15 @@ export function benchmarkConfig(search, development) {
   if (!['duel', 'full', 'bridge', 'interior', 'control', 'ford', 'cover', 'shop-art'].includes(scenario)) throw new RangeError('Unknown development benchmark scenario');
   const value = params.get('seed') ?? '1938';
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > 0xffffffff) throw new RangeError('Benchmark seed must be an unsigned 32-bit integer');
-  return Object.freeze({ scenario, seed: Number(value), diagnostic: scenario !== 'full' });
+  if (params.has('queryStats') && params.get('queryStats') !== '1') throw new RangeError('Query diagnostics must be explicitly enabled with queryStats=1');
+  const isolation = params.get('renderIsolation');
+  if (isolation !== null && !['normal', 'no-characters', 'no-draw'].includes(isolation)) throw new RangeError('Unknown render isolation mode');
+  if (params.has('renderIsolationAt') && isolation === null) throw new RangeError('Render isolation start requires a mode');
+  const isolationAt = Number(params.get('renderIsolationAt') ?? 0);
+  if (!Number.isFinite(isolationAt) || isolationAt < 0 || isolationAt > 180) throw new RangeError('Render isolation start must be in 0..180 simulation seconds');
+  return Object.freeze({ scenario, seed: Number(value), diagnostic: scenario !== 'full',
+    ...(params.has('queryStats') ? { queryStats: true } : {}),
+    ...(isolation === null ? {} : { renderIsolation: isolation, renderIsolationAt: isolationAt }) });
 }
 
 export function seededRandom(seed) {

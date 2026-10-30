@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Quaternion, Vector3 } from 'three';
-import { createNraMotion, advanceNraMotion, sampleNraMotion, nativeMuzzleLocal } from '../src/nra-motion.js';
+import { createNraMotion, advanceNraMotion, sampleNraMotion, sampleNraPhase, nativeGaitParameters, nativeMuzzleLocal } from '../src/nra-motion.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
@@ -14,6 +14,45 @@ function actor() {
   person.nativeMotion = createNraMotion(data.motion, person);
   return person;
 }
+
+test('distant phase sampling matches original arithmetic and full consumed fields across 5000 blended states', () => {
+  let seed = 1938;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const fraction = phase => ((phase % 1) + 1) % 1;
+  for (const profile of [data.motion, createNativeGaitProfile(data.motion.idle)]) {
+    const person = actor(); person.nativeMotion = createNraMotion(profile, person);
+    for (let index = 0; index < 2500; index++) {
+      const motion = person.nativeMotion;
+      person.position.x = random() * 100; person.position.z = random() * 100;
+      motion.position = { x: random() * 100, z: random() * 100 };
+      motion.distance = random() * 100; motion.idleTime = random() * 100;
+      motion.speed = random() * 5; motion.strideScale = .9 + random() * .2;
+      motion.gaitAim = random(); motion.gaitCharge = random(); motion.gaitCycles = random() * 100;
+      motion.phaseDistance = random() * 100; motion.weight = random();
+      const names = Object.keys(motion.posture);
+      for (const name of names) motion.posture[name] = profile[name] ? random() / names.length : 0;
+      const before = JSON.stringify(motion), phase = sampleNraPhase(person), full = sampleNraMotion(person, false);
+      const distance = motion.distance + Math.hypot(person.position.x - motion.position.x, person.position.z - motion.position.z);
+      const gait = profile.footCycleGait ? nativeGaitParameters(motion) : null;
+      const cycle = gait ? motion.gaitCycles + (distance - motion.phaseDistance) /
+        (gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog) : null;
+      const runTime = fraction(cycle ?? distance / (profile.strideMeters * motion.strideScale)) * profile.run.duration;
+      const walkTime = profile.walk ? fraction(cycle ?? distance / (profile.walkStrideMeters * motion.strideScale)) * profile.walk.duration : runTime;
+      const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
+      const jog = gait ? gait.jog : profile.walk ? transition * transition * (3 - 2 * transition) : 1;
+      assert.deepEqual(phase, { idleTime: motion.idleTime % profile.idle.duration, runTime, walkTime, jog, gait,
+        travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'), ...motion.posture,
+        upright: Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0)), weight: motion.weight });
+      for (const key of ['idleTime', 'runTime', 'walkTime', 'jog', 'travelStyle', 'upright', 'weight', ...names])
+        assert.deepEqual(phase[key], full[key], key);
+      assert.equal(JSON.stringify(motion), before, 'sampling must not mutate authoritative motion');
+      assert.equal(phase.weaponPosition, undefined);
+      assert.equal(phase.headAim, undefined);
+    }
+  }
+  assert.throws(() => sampleNraPhase({}), /state is missing/);
+  assert.throws(() => sampleNraPhase({ ...actor(), position: { x: NaN, y: 0, z: 0 } }), /state is missing/);
+});
 
 test('native idle holds hips and knees still with a long subtle breathing cycle', () => {
   assert.equal(data.idle.duration, 6);

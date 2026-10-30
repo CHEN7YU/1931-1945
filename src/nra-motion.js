@@ -2,7 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { infantryWeaponProfile } from './rifle-action.js';
-import { projectHeadAim, solveHeadAimGoal } from './head-aim.js';
+import { projectHeadAim, projectUnaimedEye, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
 import { hasBayonet } from './bayonet.js';
 
@@ -192,13 +192,25 @@ export function nativeEyeLocal(actor) {
     ...Object.keys(FIRING_POSES).map(name => motion.posture[name])];
   let retained = eyeSamples.get(motion);
   if (!retained || inputs.length !== retained.inputs.length || inputs.some((value, index) => value !== retained.inputs[index])) {
-    retained = { inputs, eye: sampleNraMotion(actor).headAim.eye };
+    let eye;
+    if (motion.cheekWeight === 0) {
+      // An unaimed eye needs the head skeleton, not the weapon/contact/error projections.
+      const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
+      const lowReady = nativePoseIntent(actor) === 'bayonet' && upright > .999 ? 1
+        : profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
+      const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
+        (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
+      eye = projectUnaimedEye(profile.headAim, { upright, postures: motion.posture,
+        idleTime: motion.idleTime % profile.idle.duration, hipDrop: nativeGaitDrop(actor),
+        bodyLean: motion.bodyLean * upright, torsoYaw });
+    } else eye = sampleNraMotion(actor).headAim.eye;
+    retained = { inputs, eye };
     eyeSamples.set(motion, retained);
   }
   return retained.eye;
 }
 
-export function sampleNraMotion(actor, includeHead = true) {
+export function sampleNraPhase(actor) {
   const motion = actor.nativeMotion;
   if (!motion || !validPosition(actor.position)) throw new Error('Native motion state is missing');
   const { profile } = motion;
@@ -210,11 +222,18 @@ export function sampleNraMotion(actor, includeHead = true) {
   const walkTime = profile.walk ? cycleFraction(cycle ?? distance / (profile.walkStrideMeters * motion.strideScale)) * profile.walk.duration : runTime;
   const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
   const jog = gait ? gait.jog : profile.walk ? transition * transition * (3 - 2 * transition) : 1;
+  const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
+  return { idleTime, runTime, walkTime, jog, gait, travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'),
+    ...motion.posture, upright, weight: motion.weight };
+}
+
+export function sampleNraMotion(actor, includeHead = true) {
+  const phase = sampleNraPhase(actor), motion = actor.nativeMotion, { profile } = motion;
+  const { idleTime, runTime, walkTime, jog, gait, upright } = phase;
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
   const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
   const quaternion = idle.quaternion.slerp(walk.quaternion.slerp(run.quaternion, jog), motion.weight);
-  const upright = Math.max(0, 1 - Object.values(motion.posture).reduce((sum, weight) => sum + weight, 0));
   const blendedPosition = position.clone().multiplyScalar(upright);
   let quaternionWeight = upright;
   for (const [stance, weight] of Object.entries(motion.posture)) {
@@ -287,7 +306,7 @@ export function sampleNraMotion(actor, includeHead = true) {
     walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,
     runContact: gait?.runContact ?? profile.runContact, walkContact: gait?.walkContact, heelHeight: gait?.heelHeight,
     walkClearance: gait?.walkClearance,
-    travelStyle: gait?.style ?? (jog > .5 ? 'run' : 'walk'),
+    travelStyle: phase.travelStyle,
     gaitCharge: motion.gaitCharge, gaitAim: motion.gaitAim,
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,

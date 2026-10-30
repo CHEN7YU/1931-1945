@@ -220,6 +220,31 @@ test('eye reuse invalidates on every mutable local pose input and is isolated fr
   }
 });
 
+test('unaimed eye-only projection is bit-exact across 5000 moving and blended calibrated poses', () => {
+  const { actor, profile } = fixture();
+  let seed = 1938;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  actor.health = 100;
+  for (let index = 0; index < 5000; index++) {
+    const motion = actor.nativeMotion;
+    motion.profile = { ...profile, lowReadyCarry: index % 2 === 0 };
+    const weights = Object.keys(FIRING_POSES).map(() => random()), total = weights.reduce((sum, value) => sum + value, 0);
+    const blend = index % 3 ? random() : 0;
+    motion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map((name, i) => [name, weights[i] / total * blend]));
+    Object.assign(motion, { cheekWeight: 0, idleTime: random() * 100, bodyLean: random() * .3,
+      distance: random() * 20, speed: random() * 5, gaitCycles: random() * 20,
+      gaitCharge: random(), gaitAim: random(), legLift: random(), strideScale: .8 + random() * .4,
+      lowReady: random(), weight: random(), aim: random() });
+    actor.rifleReady = index % 2 === 0;
+    actor.locomotion.mode = index % 3 ? 'walk' : 'sprint';
+    actor.position.x += .01; actor.position.z -= .01;
+    const before = JSON.stringify(motion), expected = sampleNraMotion(actor).headAim.eye;
+    assert.deepEqual(nativeEyeLocal(actor), expected, `pose ${index}`);
+    assert.equal(JSON.stringify(motion), before);
+    assert.ok(Object.isFrozen(nativeEyeLocal(actor)));
+  }
+});
+
 test('raising, releasing and reloading use a continuous owned head blend independent of rendering history', () => {
   const f = fixture();
   f.project('standing', false);

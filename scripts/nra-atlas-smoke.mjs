@@ -36,7 +36,8 @@ try {
         const source = canvas.getContext('2d'); source.drawImage(image, 0, 0);
         for (let index = 0; index < 100; index += 7) {
           const uv = new T.Vector2().fromBufferAttribute(geometry.attributes.uv, index); material.map.transformUv(uv);
-          const mapped = new T.Vector2().fromBufferAttribute(bank.geometry.attributes.uv, offset + index);
+          const vertex = bank.geometry.index?.getX(offset + index) ?? offset + index;
+          const mapped = new T.Vector2().fromBufferAttribute(bank.geometry.attributes.uv, vertex);
           const expected = [...source.getImageData(Math.min(image.width - 1, Math.floor(uv.x * image.width)),
             Math.min(image.height - 1, Math.floor(uv.y * image.height)), 1, 1).data];
           const actual = [...atlasContext.getImageData(Math.floor(mapped.x * atlas.width), Math.floor((1 - mapped.y) * atlas.height), 1, 1).data];

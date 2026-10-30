@@ -46,6 +46,7 @@
     "test:historical-vehicles": "node scripts/historical-vehicles-smoke.mjs",
     "test:rifle-textures": "node scripts/rifle-textures-smoke.mjs",
     "test:combat-effects": "node scripts/combat-effects-smoke.mjs",
+    "test:view-effects": "node scripts/view-effects-smoke.mjs",
     "test:tank-fire": "node scripts/tank-fire-smoke.mjs",
     "test:population": "node scripts/population-smoke.mjs",
     "benchmark": "node scripts/benchmark.mjs",
@@ -67,6 +68,7 @@
     "test:nra-appearance": "node scripts/nra-appearance-smoke.mjs"
   },
   "dependencies": {
+    "meshoptimizer": "^1.3.0",
     "three": "^0.180.0",
     "three-mesh-bvh": "^0.9.16"
   },

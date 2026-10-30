@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNraMotion, sampleNraMotion, syncNativeAimGoal, nativeGaitParameters, nativeTravelLean } from './nra-motion.js';
+import { createNraMotion, sampleNraMotion, sampleNraPhase, syncNativeAimGoal, nativeGaitParameters, nativeTravelLean } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
@@ -8,6 +8,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
 import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
+import { createDistantPoseGeometry, useDistantPose } from './distant-pose-lod.js';
 
 export function bakeNraGeometry(mesh) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
@@ -47,6 +48,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
   const excludedIds = new Set(), slots = [], tiers = new Map(), banks = [], weaponGroups = new Map();
   const weaponMatrix = new THREE.Matrix4();
+  let coarseIds = new Set(), lodReady = false;
+  const poseLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
+  const geometryBytes = geometry => (geometry.index?.array.byteLength ?? 0) + Object.values(geometry.attributes)
+    .filter(attribute => !attribute.isInstancedBufferAttribute).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
   function weaponGroupFor(key) {
     if (!weaponGroups.has(key)) {
       const gun = rifleWorldModel('far', createRifleState(key), { bayonet: team === 'enemy' && key === 'rifle' }), batches = new Map();
@@ -146,11 +151,11 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       return { mesh: instance, enabled, count: 0 };
     });
     instance.geometry.computeBoundingBox();
-    banks.push({ parts, count: 0, capacity, attachments, gunMatrix, bounds: instance.geometry.boundingBox.clone(),
+    banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, bounds: instance.geometry.boundingBox.clone(),
       footprint: dead ? corpseFootprint(instance.geometry) : null });
   }
   bankTemplate.bind(null);
-  let summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
+  let summary = { assigned: 0, near: 0, far: 0, coarse: 0, hidden: 0, culled: 0, batches: 0 };
   let focused = null, members = [];
   function slotFor(actor, budget) {
     let slot = slots.find(slot => slot.actorId === actor.id);
@@ -179,25 +184,42 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         const view = template.createView(); root.add(view.root);
         slots.push({ actorId: null, view });
       }
+      const started = performance.now();
+      for (const bank of banks) {
+        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(bank.parts[0].geometry), atlas.material, bank.capacity);
+        mesh.name = 'distant-coarse-body';
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
+        mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = true;
+        root.add(mesh); bank.coarseParts.push(mesh);
+        const stats = mesh.geometry.userData.distantPoseLod;
+        poseLod.sourceTriangles += stats.sourceTriangles; poseLod.triangles += stats.triangles;
+        poseLod.sourceBytes += geometryBytes(bank.parts[0].geometry); poseLod.bytes += geometryBytes(mesh.geometry);
+        poseLod.maxError = Math.max(poseLod.maxError, stats.error);
+      }
+      poseLod.preparationMs = performance.now() - started;
+      lodReady = true;
       await renderer.compileAsync(scene, camera);
       for (const slot of slots) slot.view.root.visible = false;
     },
     remove(actors) {
       const ids = new Set(actors.map(actor => actor.id));
+      for (const id of ids) coarseIds.delete(id);
       if (focused && ids.has(focused.actorId)) focused = null;
       for (const slot of slots) if (ids.has(slot.actorId)) {
         slot.actorId = null; slot.view.bind(null);
       }
     },
     update(actors, now, controlledId, preset) {
+      const nextCoarseIds = new Set();
       for (const attachment of optionalAttachments) attachment.update?.(now);
       excludedIds.clear(); tiers.clear();
       for (const group of weaponGroups.values()) group.count = 0;
       for (const bank of banks) {
         bank.count = 0;
+        bank.coarseCount = 0;
         for (const attachment of bank.attachments) attachment.count = 0;
       }
-      summary = { assigned: 0, near: 0, far: 0, hidden: 0, culled: 0, batches: 0 };
+      summary = { assigned: 0, near: 0, far: 0, coarse: 0, hidden: 0, culled: 0, batches: 0 };
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection);
       const candidates = [], visible = [], budget = preset === 'low' ? 3 : 6, limit = preset === 'low' ? 18 : 28;
@@ -213,20 +235,20 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         if (!frustum.intersectsSphere(sphere)) {
           tiers.set(actor.id, 'culled'); summary.culled++; continue;
         }
-        visible.push(actor);
+        visible.push({ actor, distance });
         const existing = slots.some(slot => slot.actorId === actor.id);
         if (distance <= limit + (existing ? 3 : 0)) candidates.push({ actor, priority: distance - (existing ? 2 : 0) + (actor.health <= 0 ? 6 : 0) });
       }
       candidates.sort((a, b) => a.priority - b.priority);
       const detailed = new Set(candidates.slice(0, budget).map(candidate => candidate.actor.id));
       for (const slot of slots) if (slot.actorId && !detailed.has(slot.actorId)) { slot.actorId = null; slot.view.bind(null); }
-      for (const actor of visible) {
+      for (const { actor, distance } of visible) {
         if (detailed.has(actor.id)) {
           const view = slotFor(actor, budget).view;
           view.update(actor, now, controlledId); tiers.set(actor.id, 'skinned'); summary.near++;
           summary.batches += view.drawBatches;
         } else {
-          const pose = sampleNraMotion(actor, false);
+          const pose = sampleNraPhase(actor);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
           const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
@@ -245,7 +267,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           if (bank.count >= bank.capacity) {
             if (index < livingBanks) throw new Error('Distant uniform instance capacity exceeded');
             bank.capacity *= 2;
-            for (const mesh of bank.parts) {
+            for (const mesh of [...bank.parts, ...bank.coarseParts]) {
               const matrices = new Float32Array(bank.capacity * 16); matrices.set(mesh.instanceMatrix.array);
               mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
               const colors = new Float32Array(bank.capacity * 3); colors.set(mesh.geometry.attributes.nraSkinTint.array);
@@ -279,20 +301,24 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           for (const mesh of weapons.parts) mesh.setMatrixAt(weapons.count, weaponMatrix);
           weapons.count++;
           const tint = new THREE.Color(actor.avatarAppearance?.skin ?? '#ffffff');
-          for (const mesh of bank.parts) {
-            mesh.setMatrixAt(bank.count, matrix);
-            mesh.geometry.attributes.nraSkinTint.setXYZ(bank.count, tint.r, tint.g, tint.b);
-            mesh.geometry.attributes.nraUniformVariant?.setX(bank.count, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
+          const coarse = lodReady && useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
+          const bodyIndex = coarse ? bank.coarseCount : bank.count - bank.coarseCount;
+          for (const mesh of coarse ? bank.coarseParts : bank.parts) {
+            mesh.setMatrixAt(bodyIndex, matrix);
+            mesh.geometry.attributes.nraSkinTint.setXYZ(bodyIndex, tint.r, tint.g, tint.b);
+            mesh.geometry.attributes.nraUniformVariant?.setX(bodyIndex, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
           }
+          if (coarse) { bank.coarseCount++; summary.coarse++; nextCoarseIds.add(actor.id); }
           for (const attachment of bank.attachments) if (attachment.enabled(actor)) {
             attachment.mesh.setMatrixAt(attachment.count++, matrix);
           }
           bank.count++; tiers.set(actor.id, 'instanced'); summary.far++;
         }
       }
-      for (const bank of banks) for (const mesh of bank.parts) {
-        mesh.count = bank.count;
-        if (bank.count) {
+      for (const bank of banks) for (const [parts, count] of [[bank.parts, bank.count - bank.coarseCount], [bank.coarseParts, bank.coarseCount]]) for (const mesh of parts) {
+        mesh.count = count;
+        mesh.visible = count > 0;
+        if (mesh.count) {
           mesh.instanceMatrix.needsUpdate = true;
           mesh.geometry.attributes.nraSkinTint.needsUpdate = true;
           if (mesh.geometry.attributes.nraUniformVariant) mesh.geometry.attributes.nraUniformVariant.needsUpdate = true;
@@ -301,10 +327,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       }
       for (const group of weaponGroups.values()) for (const mesh of group.parts) {
         mesh.count = group.count;
+        mesh.visible = group.count > 0;
         if (group.count) { mesh.instanceMatrix.needsUpdate = true; summary.batches++; }
       }
       for (const bank of banks) for (const attachment of bank.attachments) {
         attachment.mesh.count = attachment.count;
+        attachment.mesh.visible = attachment.count > 0;
         if (attachment.count) { attachment.mesh.instanceMatrix.needsUpdate = true; summary.batches++; }
       }
       const controlled = actors.find(actor => actor.id === controlledId);
@@ -313,9 +341,11 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       focused = retainedFocus?.view ?? slots.find(slot => slot.actorId && slot.actorId !== controlledId &&
         actors.some(actor => actor.id === slot.actorId && actor.unitId === controlled?.unitId && actor.health > 0))?.view ??
         slots.find(slot => slot.actorId && actors.some(actor => actor.id === slot.actorId && actor.health > 0))?.view ?? null;
+      coarseIds = nextCoarseIds;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
         health: actor.health, weaponModel: actor.rifle.model ?? 'rifle', stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform,
         uniformVariant: actor.avatarAppearance?.uniform ?? null, helmet: true, tier: tiers.get(actor.id),
+        geometryLod: coarseIds.has(actor.id) ? 'coarse' : 'original',
         motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,
         travelStyle: actor.casualty?.motion?.travelStyle ?? (profile.footCycleGait
           ? nativeGaitParameters(actor.nativeMotion).style : actor.nativeMotion.speed > 2.55 ? 'run' : 'walk'),
@@ -328,8 +358,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       return template.sampleAnatomy(actor, now);
     },
     get issue() { return slots.find(slot => slot.actorId && slot.view.issue)?.view.issue ?? null; },
-    get counts() { return { ...summary, poolSize: slots.length, poseBanks: banks.length }; },
-    get snapshot() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, members: members.map(member => ({ ...member })),
+    get counts() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod } }; },
+    get snapshot() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod }, members: members.map(member => ({ ...member })),
       views: slots.filter(slot => slot.actorId).map(slot => slot.view.snapshot) }; },
     get focusedSnapshot() { return focused?.snapshot ?? null; },
   };
