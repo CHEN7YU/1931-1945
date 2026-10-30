@@ -15,6 +15,7 @@ import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.j
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
 import { createNraGrenadeHand } from './nra-hand.js';
+import { createNraDadaoPose } from './nra-dadao-pose.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
 
@@ -103,6 +104,22 @@ export async function loadNraCharacter() {
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   motionProfile.headAim = createHeadAimProfile(normalized, inspected.canonical, idle, postures, inspected.meshes);
   const appearanceCache = { geometries: new Map(), materials: new Map() };
+  let dadaoGrip = null;
+  function getDadaoGrip() {
+    if (!dadaoGrip) {
+      const hand = createNraGrenadeHand(normalized, 'right');
+      hand.poseGrip(1, 0, 'dadao');
+      const fingers = new Map();
+      let wristRotation;
+      hand.traverse(node => {
+        if (node.isBone && /^RightHand(?:Thumb|Index|Middle|Ring|Pinky)/.test(node.name)) fingers.set(node.name, node.quaternion.clone());
+        if (node.isBone && node.name === 'RightHand') wristRotation = node.getWorldQuaternion(new THREE.Quaternion());
+      });
+      dadaoGrip = { fingers, wristRotation, center: new THREE.Vector3(...hand.userData.throwableGrips.dadao) };
+      hand.traverseVisible(node => { if (node.isMesh) node.geometry.dispose(); });
+    }
+    return dadaoGrip;
+  }
   const sampleAnatomy = createHitPoseSampler(() => createView(true));
   function createView(collision = false) {
   const root = new THREE.Group(), avatar = clone(normalized), meshes = [];
@@ -125,6 +142,7 @@ export async function loadNraCharacter() {
   }
   const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
+  let dadaoPose = null;
   const groundAt = (x, z) => walkHeight(x, z, root.position.y);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
   const mixer = new THREE.AnimationMixer(meshes[0]);
@@ -156,7 +174,7 @@ export async function loadNraCharacter() {
     },
     get actorId() { return actorId; },
     get motionProfile() { return motionProfile; },
-    get issue() { return observedActor?.health <= 0 ? null : riflePose.issue; },
+    get issue() { return observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
     update(actor, now, controlledId) {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId));
@@ -176,6 +194,9 @@ export async function loadNraCharacter() {
       applyNativeUpperBody(root, canonical, motion);
       riflePose.update(motion);
       syncWorldWeapon(gun, actor.rifle);
+      if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip());
+      dadaoPose?.update(motion.dadao);
+      gun.visible = !motion.dadao;
       casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
     },
     sampleAnatomy,
@@ -191,7 +212,8 @@ export async function loadNraCharacter() {
         hips: point('Hips'), head: point('Head'), headTop: point('HeadTop_End'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
-        heading: root.rotation.y, issue: observedActor?.health <= 0 ? null : riflePose.issue,
+        dadao: dadaoPose?.snapshot ?? null,
+        heading: root.rotation.y, issue: observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue,
         headAim: motion?.headAim && observedActor?.health > 0 ? headProbe(motion.headAim, motion) : null,
         casualty: casualtyPose,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,

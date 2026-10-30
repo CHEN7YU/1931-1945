@@ -3,6 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { configureRifleMaterials, rifleModel, rifleWorldModel } from './rifle-model.js';
 import { lightMachineGunModel } from './light-machine-gun-model.js';
 import { historicalVehicleModel, vehicleWeaponView } from './vehicle-model.js';
+import { dadaoModel, dadaoWorldStroke, DADAO_DIMENSIONS } from './dadao-model.js';
+import { solveArm } from './nra-rifle-pose.js';
 
 const actorBox = new THREE.BoxGeometry(1, 1, 1);
 const actorSphere = new THREE.SphereGeometry(1, 12, 8);
@@ -110,26 +112,49 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
     sphere(group, x, .085, -.075, .105, .09, .2, actorMaterials.leather);
     for (let y = .16; y < .46; y += .06) cylinder(group, x, y, 0, .098, .012, actorMaterials.leather);
   }
-  limb(group, [-.24, 1.32, 0], [-.09, 1.13, -.26], .065, uniform);
-  limb(group, [-.09, 1.13, -.26], [.10, 1.325, -.43], .055, uniform);
-  limb(group, [.24, 1.32, 0], [.34, 1.1, .05], .065, uniform);
-  limb(group, [.34, 1.1, .05], [.173, 1.325, -.095], .052, uniform);
-  sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
-  sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
-  if (weapon === 'sniper') {
-    const rifle = rifleWorldModel(detail, { model: weapon });
-    rifle.position.set(.13, 1.39, .02); group.add(rifle);
-  } else if (weapon !== 'rifle') {
-    const gun = lightMachineGunModel(weapon, detail);
-    gun.position.set(.13, 1.39, .02); group.add(gun);
-  } else if (friendly) {
-    const rifle = rifleWorldModel(detail);
-    rifle.position.set(.13, 1.39, .02);
-    group.add(rifle);
+  const sword = friendly && weapon.startsWith('dadao-');
+  if (sword) {
+    const [, phase, frame] = weapon.split('-');
+    const stroke = dadaoWorldStroke({ phase, progress: Number(frame ?? 0) / 3 });
+    const rig = new THREE.Group(), upper = new THREE.Object3D(), lower = new THREE.Object3D(), hand = new THREE.Object3D();
+    upper.position.set(.24, 1.32, 0); lower.position.set(.10, -.22, .05); hand.position.set(-.167, .225, -.145);
+    rig.add(upper); upper.add(lower); lower.add(hand); rig.updateMatrixWorld(true);
+    const wrist = upper.position.clone().add(stroke.wristOffset);
+    const result = solveArm(upper, lower, hand, wrist, new THREE.Vector3(.8, -.3, .15));
+    if (!result.reachable || result.error > .001) throw new Error('Procedural dadao wrist is unreachable');
+    const elbow = lower.getWorldPosition(new THREE.Vector3()).toArray();
+    limb(group, upper.position.toArray(), elbow, .065, uniform);
+    limb(group, elbow, wrist.toArray(), .052, uniform);
+    limb(group, [-.24, 1.32, 0], [-.32, 1.12, .02], .065, uniform);
+    limb(group, [-.32, 1.12, .02], [-.25, .92, -.08], .055, uniform);
+    sphere(group, ...wrist.toArray(), .033, .04, .048, actorMaterials.skin);
+    sphere(group, -.25, .92, -.08, .037, .035, .055, actorMaterials.skin);
+    const blade = dadaoModel();
+    blade.quaternion.copy(stroke.rotation);
+    blade.position.copy(wrist).sub(new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(stroke.rotation));
+    group.add(blade);
   } else {
-    const rifle = rifleWorldModel(detail, null, { bayonet: true });
-    rifle.position.set(.13, 1.39, -.179);
-    group.add(rifle);
+    limb(group, [-.24, 1.32, 0], [-.09, 1.13, -.26], .065, uniform);
+    limb(group, [-.09, 1.13, -.26], [.10, 1.325, -.43], .055, uniform);
+    limb(group, [.24, 1.32, 0], [.34, 1.1, .05], .065, uniform);
+    limb(group, [.34, 1.1, .05], [.173, 1.325, -.095], .052, uniform);
+    sphere(group, .10, 1.325, -.43, .037, .035, .055, actorMaterials.skin);
+    sphere(group, .173, 1.325, -.095, .033, .04, .048, actorMaterials.skin);
+    if (weapon === 'sniper') {
+      const rifle = rifleWorldModel(detail, { model: weapon });
+      rifle.position.set(.13, 1.39, .02); group.add(rifle);
+    } else if (weapon !== 'rifle') {
+      const gun = lightMachineGunModel(weapon, detail);
+      gun.position.set(.13, 1.39, .02); group.add(gun);
+    } else if (friendly) {
+      const rifle = rifleWorldModel(detail);
+      rifle.position.set(.13, 1.39, .02);
+      group.add(rifle);
+    } else {
+      const rifle = rifleWorldModel(detail, null, { bayonet: true });
+      rifle.position.set(.13, 1.39, -.179);
+      group.add(rifle);
+    }
   }
   part(group, 0, .96, 0, .51, .07, .34, actorMaterials.leather);
   part(group, -.16, 1.07, -.19, .13, .17, .08, actorMaterials.leather);

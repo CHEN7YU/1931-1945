@@ -26,6 +26,7 @@
     "test:rifle": "node scripts/rifle-smoke.mjs",
     "test:bayonet": "node scripts/bayonet-smoke.mjs",
     "test:dadao": "node scripts/dadao-smoke.mjs",
+    "test:ai-dadao": "node scripts/ai-dadao-smoke.mjs",
     "test:dadao-pose": "node scripts/dadao-pose-smoke.mjs",
     "test:light-machine-guns": "node scripts/light-machine-guns-smoke.mjs",
     "test:sniper": "node scripts/sniper-smoke.mjs",

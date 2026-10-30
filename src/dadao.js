@@ -9,13 +9,14 @@ export const DADAO_GRIP = Object.freeze({ length: .19, radiusX: .0145, radiusZ: 
 
 export function createDadaoState() {
   return { equipped: false, readyAt: 0, startedAt: null, nextAttackAt: 0,
-    connected: false, swings: 0, hits: 0 };
+    connected: false, swings: 0, hits: 0, mode: 'idle', targetId: null, pose: { phase: 'stowed', progress: 0 } };
 }
 
 export function stowDadao(state) {
   state.equipped = false;
   state.startedAt = null;
   state.connected = false;
+  state.mode = 'idle'; state.targetId = null; state.pose = { phase: 'stowed', progress: 0 };
 }
 
 export function drawDadao(state, now) {

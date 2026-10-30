@@ -26,7 +26,7 @@ export function syncSoldierModelPose(actor, now = actor.deathTime) {
 export function createSoldierRenderer(scene, camera, capacity = 330) {
   const groups = new Map(), matrix = new THREE.Matrix4(), root = new THREE.Matrix4(), projection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
-  let summary = { visible: 0, near: 0, far: 0, batches: 0 };
+  let summary = { visible: 0, near: 0, far: 0, melee: 0, batches: 0 };
   const groupFor = (friendly, detail, weapon) => {
     const key = `${friendly}-${detail}-${weapon}`;
     if (!groups.has(key)) {
@@ -37,10 +37,11 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         mesh.frustumCulled = false;
         mesh.castShadow = detail === 'near';
         mesh.receiveShadow = true; mesh.count = 0;
+        mesh.name = `procedural-${weapon}`;
         scene.add(mesh);
         return mesh;
       });
-      groups.set(key, { parts, count: 0, capacity });
+      groups.set(key, { parts, sources: template.children, count: 0, capacity });
     }
     return groups.get(key);
   };
@@ -50,7 +51,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(projection);
       for (const group of groups.values()) group.count = 0;
-      summary = { visible: 0, near: 0, far: 0, batches: 0 };
+      summary = { visible: 0, near: 0, far: 0, melee: 0, batches: 0 };
       for (const actor of actors) {
         syncSoldierModelPose(actor, now);
         actor.model.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
@@ -60,7 +61,11 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         sphere.center.copy(actor.model.position); sphere.center.y += .85;
         if (distance > 18 && !frustum.intersectsSphere(sphere)) continue;
         const detail = distance < (preset === 'low' ? 20 : 35) ? 'near' : 'far';
-        const group = groupFor(actor.friendly, detail, actor.rifle?.model ?? 'rifle');
+        const sword = actor.friendly && actor.health > 0 && actor.dadao?.equipped;
+        const pose = actor.dadao?.pose;
+        const phase = pose && ['windup', 'cut', 'recover'].includes(pose.phase) ? pose.phase : 'ready';
+        const frame = phase === 'ready' ? 0 : Math.min(3, Math.floor(pose.progress * 3) + 1);
+        const group = groupFor(actor.friendly, detail, sword ? `dadao-${phase}-${frame}` : actor.rifle?.model ?? 'rifle');
         if (group.count >= group.capacity) {
           if (actor.health > 0) throw new Error('Soldier instance capacity exceeded; no combatants were silently removed');
           group.capacity *= 2;
@@ -69,14 +74,17 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
             mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
           }
         }
-        if (group.parts.length !== actor.model.children.length) throw new Error('Soldier LOD hierarchy is inconsistent');
+        if (!sword && group.parts.length !== actor.model.children.length) throw new Error('Soldier LOD hierarchy is inconsistent');
         actor.model.updateMatrix(); root.copy(actor.model.matrix);
-        actor.model.children.forEach((part, index) => {
+        const sources = sword ? group.sources : actor.model.children;
+        sources.forEach((source, index) => {
+          const part = sword && index < 2 ? actor.model.userData.legs[index] : source;
           part.updateMatrix();
           matrix.multiplyMatrices(root, part.matrix);
           group.parts[index].setMatrixAt(group.count, matrix);
         });
         group.count++; summary.visible++; summary[detail]++;
+        if (sword) summary.melee++;
       }
       for (const group of groups.values()) for (const mesh of group.parts) {
         mesh.count = group.count;

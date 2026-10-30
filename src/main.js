@@ -48,6 +48,7 @@ import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './project
 import { advanceOwnedWeapons, syncControlledRifleTiming } from './weapon-simulation.js';
 import { AI_RIFLE, createAIRifleControl, resetAIRifleAim, attemptAIRifleShot } from './ai-rifle.js';
 import { BAYONET, createBayonetState, cancelBayonet, bayonetDistance, advanceBayonet } from './bayonet.js';
+import { dadaoCombatDistance, advanceAIDadao } from './ai-dadao.js';
 import { DADAO, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase, selectDadaoTarget } from './dadao.js';
 import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
 import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
@@ -607,7 +608,12 @@ function clearControlInputs() {
 }
 
 function resetControlledSimulation() {
-  for (const actor of entities.soldiers.values()) if (actor.dadao) stowDadao(actor.dadao);
+  const ids = new Set([playerInput.snapshot.owner?.soldierId, controlBinding?.soldierId, entities.control.soldierId]);
+  for (const id of ids) {
+    const actor = entities.soldiers.get(id);
+    if (actor?.dadao) stowDadao(actor.dadao);
+    if (actor?.bayonet) cancelBayonet(actor.bayonet);
+  }
   dadaoEquipped = false;
   toolEquipped = false;
   grenadeEquipped = false;
@@ -1464,7 +1470,8 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
   if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
-    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
+    beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺'
+      : weaponKind === 'dadao' ? '大刀斩击' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
@@ -2823,43 +2830,57 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   }
 }
 
-function tryAIBayonet(actor, target, dt) {
-  const distance = bayonetDistance(actor, target);
-  const limit = actor.bayonet.targetId === target?.id && actor.bayonet.mode !== 'idle'
+function cancelAIMelee(actor) {
+  cancelBayonet(actor.bayonet);
+  if (actor.dadao) stowDadao(actor.dadao);
+}
+
+function tryAIMelee(actor, target, dt) {
+  const sword = actor.team === 'friendly' && Boolean(actor.dadao);
+  const state = sword ? actor.dadao : actor.bayonet, reach = sword ? DADAO.reach : BAYONET.reach;
+  const distance = sword ? dadaoCombatDistance(actor, target) : bayonetDistance(actor, target);
+  const limit = state.targetId === target?.id && state.mode !== 'idle'
     ? BAYONET.disengageRange : BAYONET.chargeRange;
-  if (distance === null || distance > limit) { cancelBayonet(actor.bayonet); return false; }
+  if (distance === null || distance > limit) { cancelAIMelee(actor); return false; }
   const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
   const observed = observeVisualThreat(actor.tactics, target, time, point => hasLine(origin, point, limit + 2));
   const visible = Boolean(observed && hasLine(actor.position.clone().add(new THREE.Vector3(0, 1.1, 0)),
     targetAimPoint(target), limit + 2));
-  if (!visible) { cancelBayonet(actor.bayonet); return false; }
+  if (!visible) { cancelAIMelee(actor); return false; }
   actor.stance = 'standing'; actor.firingPose = null;
   const position = actor.position, dx = target.position.x - position.x, dz = target.position.z - position.z;
   const targetHeading = Math.atan2(-dx, -dz);
-  const steering = distance > BAYONET.reach ? infantrySteering(actor,
+  const steering = distance > reach ? infantrySteering(actor,
     trafficGrid.near(position.x, position.z, 3.2).filter(other => other.id !== target.id),
     { x: dx, z: dz }, { spacing: 1, constrained: false,
       dt, now: time, reservations: trafficReservations,
       blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), position.y) }) : null;
   const turn = advanceAITurn(actor, steering ? Math.atan2(-steering.x, -steering.z) : targetHeading, dt, true);
   actor.turningThisStep = true;
-  const action = advanceBayonet(actor, target, { now: time, visible,
-    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) });
+  const facts = { now: time, visible,
+    facing: Math.abs(headingError(actor.heading, targetHeading)) <= AI_TURN.fireAngle, settled: postureReady(actor) };
+  const action = sword ? advanceAIDadao(actor, target, { ...facts,
+    origin: position.clone().add(new THREE.Vector3(0, 1.1, 0)),
+    forward: new THREE.Vector3(-Math.sin(actor.heading), 0, -Math.cos(actor.heading)),
+    aimPoint: targetAimPoint, clear: (from, to) => hasLine(from, to, DADAO.reach + 1) })
+    : advanceBayonet(actor, target, facts);
   if (!action.active) return false;
-  resetAIRifleAim(actor.aiRifle, 'bayonet');
+  const kind = sword ? 'dadao' : 'bayonet';
+  resetAIRifleAim(actor.aiRifle, kind);
   actor.rifleReady = false; actor.buildProgress = 0;
   const tactics = actor.tactics;
   if (tactics.cover) coverClaims.delete(tactics.cover.id);
   tactics.cover = null; tactics.enteredCover = false; tactics.armorEscort = null;
   actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
-  tactics.mode = `bayonet-${actor.bayonet.mode}`;
-  if (action.hit) hurt(target, BAYONET.damage, captureAttackSource(entities, actor, actor.rifle), 'bayonet');
-  if (actor.bayonet.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
+  tactics.mode = `${kind}-${state.mode}`;
+  if (action.hit) hurt(target, sword ? DADAO.damage : BAYONET.damage,
+    captureAttackSource(entities, actor, sword ? actor.dadao : actor.rifle), kind);
+  if (state.mode !== 'charge' || !steering || !turn.mayMove || !postureReady(actor)) return true;
   const obstacles = movementObstacles(position.x, position.z);
   const profile = FOOT_SPEEDS[actor.groundType];
   const sprint = !actor.locomotion.exhausted && actor.locomotion.stamina > 0;
   const speed = sprint ? profile.sprint : profile.jog;
-  const step = Math.min(distance - BAYONET.reach + .05, speed * dt * steering.speed);
+  const step = Math.min(distance - reach + .05, speed * dt * steering.speed);
   const beforeX = position.x, beforeZ = position.z;
   world.moveInfantry(position, steering.x * step, steering.z * step, .42, obstacles);
   position.y = world.walkHeight(position.x, position.z, position.y);
@@ -2941,6 +2962,7 @@ function updateAI(dt) {
       resetAIRifleAim(actor.aiRifle, 'controlled'); continue;
     }
     if (actor.traversal.kind !== 'grounded') {
+      cancelAIMelee(actor);
       actor.tactics.traffic = actor.tactics.followGuard = null;
       resetAIRifleAim(actor.aiRifle, 'traversing');
       actor.rifleReady = false;
@@ -2961,10 +2983,10 @@ function updateAI(dt) {
     }
     if (actor.vehicleId) {
       tactics.traffic = tactics.followGuard = null;
-      cancelBayonet(actor.bayonet); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
     }
     if (actor.grenades.action) {
-      cancelBayonet(actor.bayonet);
+      cancelAIMelee(actor);
       const action = actor.grenades.action;
       actor.tactics.mode = action.kind === 'explosive-pack' ? 'throw-explosive-pack' : 'throw-grenade';
       resetAIRifleAim(actor.aiRifle, 'throwable');
@@ -2979,7 +3001,7 @@ function updateAI(dt) {
       const danger = dangers.find(grenade => hasLine(origin,
         new THREE.Vector3(grenade.position.x, grenade.position.y + .08, grenade.position.z), throwableProfile(grenade.kind).radius + 3));
       if (danger) {
-        cancelBayonet(actor.bayonet);
+        cancelAIMelee(actor);
         resetAIRifleAim(actor.aiRifle, 'moving');
         const distance = Math.hypot(actor.position.x - danger.position.x, actor.position.z - danger.position.z);
         const dx = distance > .01 ? actor.position.x - danger.position.x : Math.sin(actor.tactics.id);
@@ -3005,7 +3027,7 @@ function updateAI(dt) {
     if (actor.traversal.kind !== 'grounded') continue;
     const escape = position.y < 1 ? world.doorSystem.swingEscape(position) : null;
     if (escape) {
-      cancelBayonet(actor.bayonet);
+      cancelAIMelee(actor);
       const dx = escape.x - position.x, dz = escape.z - position.z, distance = Math.max(.01, Math.hypot(dx, dz));
       moveInfantry(position, dx / distance * Math.min(distance, dt * 2), dz / distance * Math.min(distance, dt * 2), .42, movementObstacles(position.x, position.z));
       settleActorSupport(actor);
@@ -3068,7 +3090,7 @@ function updateAI(dt) {
       if (benchmark) telemetry.add('sensingMs', performance.now() - sensingStarted);
     }
     const target = actor.target?.health > 0 ? actor.target : null;
-    if (tryAIBayonet(actor, target, dt)) continue;
+    if (tryAIMelee(actor, target, dt)) continue;
     if (tryAIThrowable(actor, target, dt)) continue;
     const oldEscort = tactics.armorEscort;
     if (oldEscort) escortClaims.delete(`${oldEscort.vehicleId}:${oldEscort.slot}`);
@@ -4100,6 +4122,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   spawnEvents: spawnEvents.map(event => ({ ...event })),
   enemies: enemies.filter(actor => actor.health > 0).length,
   friendlyPositions: friendlyForces.filter(actor => actor.health > 0 && actor !== controlledSoldier(entities)).map(actor => ({
+    dadao: actor.dadao ? { ...actor.dadao, pose: { ...actor.dadao.pose } } : null,
     id: actor.tactics.id, soldierId: actor.id, squad: actor.tactics.squad, slot: actor.tactics.slot,
     formationId: actor.formation.id, pathGoal: actor.pathGoal ? { ...actor.pathGoal } : null, pathLength: actor.path?.length ?? 0,
     pathWaypoint: actor.path?.[0] ? { ...actor.path[0] } : null, pathReason: actor.tactics.pathReason ?? null,

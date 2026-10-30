@@ -17,10 +17,14 @@ export function cancelBayonet(state) {
 }
 
 export function bayonetDistance(actor, target) {
-  if (!hasBayonet(actor) || actor.health <= 0 || actor.vehicleId || actor.grenades?.action ||
+  return closeCombatDistance(actor, target, hasBayonet(actor), BAYONET.floorTolerance);
+}
+
+export function closeCombatDistance(actor, target, equipped, floorTolerance) {
+  if (!equipped || actor.health <= 0 || actor.vehicleId || actor.grenades?.action ||
     !target || target.health <= 0 || target.team === actor.team || target.vehicleId ||
     !['person', 'exposed-crew'].includes(target.targetKind) ||
-    Math.abs(actor.position.y - target.position.y) > BAYONET.floorTolerance) return null;
+    Math.abs(actor.position.y - target.position.y) > floorTolerance) return null;
   return Math.hypot(actor.position.x - target.position.x, actor.position.z - target.position.z);
 }
 
