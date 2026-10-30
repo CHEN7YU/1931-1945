@@ -75,6 +75,7 @@ import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
 import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, landingHeight } from './infantry-traversal.js';
 import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
+import { createFatalReporter } from './fatal-report.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -152,6 +153,17 @@ let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
 const $ = id => document.getElementById(id);
 const canvas = $('world');
+let fatal = false;
+let readFailureContext = () => ({ state: 'loading' });
+let stopAfterFailure = () => {
+  playerInput.block();
+  if (document.pointerLockElement) document.exitPointerLock();
+};
+const fatalReporter = createFatalReporter({ document, window,
+  build: { ...buildStamp, development: import.meta.env.DEV },
+  getContext: () => readFailureContext(),
+  onFatal: () => { fatal = true; stopAfterFailure(); },
+});
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 650);
@@ -161,9 +173,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 } catch (error) {
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `无法创建 WebGL 渲染器。请使用支持硬件加速的桌面浏览器。${error.message}`;
+  fatalReporter.show(error, { stage: 'webgl-renderer' });
   throw error;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
@@ -185,9 +195,7 @@ try {
   await setModelSurfaces(surface, renderer.capabilities.getMaxAnisotropy());
   await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy());
 } catch (error) {
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `场景材质加载失败：${error.message}。请重新加载，并检查本地 assets 文件是否完整。`;
+  fatalReporter.show(error, { stage: 'scene-materials' });
   throw error;
 }
 const world = makeWorld(scene, surface);
@@ -211,8 +219,7 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     const { loadIjaCharacter, createIjaForceRenderer } = await import('./ija-character.js');
     ijaCharacter = createIjaForceRenderer(scene, camera, await loadIjaCharacter());
   } catch (error) {
-    $('loading').hidden = true; $('fatal').hidden = false;
-    $('fatal-message').textContent = `人物适配试验加载失败：${error.message}。未静默回退。`;
+    fatalReporter.show(error, { stage: 'character-loading' });
     throw error;
   }
 }
@@ -353,7 +360,19 @@ let grenadeEquipped = false;
 let selectedThrowable = 'grenade';
 let controlBinding = null;
 const construction = createConstructionState();
-let fatal = false;
+readFailureContext = () => ({
+  state, time, type: unit?.type ?? null, control: { ...entities.control },
+  stance: controlPose.stance, position: allies[current]?.position.toArray() ?? null,
+  look: { yaw: controlPose.yaw, pitch: controlPose.pitch },
+  equipment: { toolEquipped, dadaoEquipped, grenadeEquipped, selectedThrowable },
+  rifle: allies[current] ? { model: allies[current].rifle.model ?? 'rifle', action: allies[current].rifle.action,
+    ammo: allies[current].rifle.ammo } : null,
+  obstruction: weaponObstruction, obstructionBlend,
+  weaponView: weapon ? { position: weapon.position.toArray(), rotation: weapon.quaternion.toArray(),
+    handsVisible: weaponHands?.snapshot?.visible ?? false,
+    reachLimited: weaponHands?.snapshot?.reachLimited ?? false } : null,
+});
+stopAfterFailure = releaseMouse;
 const mortarTarget = new THREE.Vector3();
 const rallyPreview = rallyPointModel('friendly', true);
 rallyPreview.visible = false;
@@ -500,6 +519,7 @@ function playFootstep(event) {
 }
 
 function lockMouse() {
+  if (fatal) return;
   if (document.pointerLockElement === canvas) return;
   if (!canvas.requestPointerLock) {
     toast('当前浏览器不支持鼠标捕获：按住右键拖动瞄准', 6);
@@ -2296,6 +2316,7 @@ function updateCamera(dt) {
       weaponHands?.update(weapon, allies[current].rifle, {
         stowed: vaultLower > 0 || weapon.position.y < -.32, appearance: allies[current].avatarAppearance,
       });
+      if (weaponHands?.snapshot?.reachLimited) weapon.visible = false;
       weapon.updateMatrixWorld(true);
       ray.far = Infinity;
     } else {
@@ -3824,7 +3845,7 @@ function performControlCommand(command) {
 
 function dispatchControlCommand(action, payload) {
   const command = playerInput.capture(action, payload);
-  const result = playerInput.execute(command, controlOwner(entities), state === 'playing' && controlledSoldier(entities)?.health > 0, performControlCommand);
+  const result = playerInput.execute(command, controlOwner(entities), !fatal && state === 'playing' && controlledSoldier(entities)?.health > 0, performControlCommand);
   if (result.status === 'rejected') toast(result.reason === 'stale-owner' ? '控制对象已改变，旧操作已取消' : '当前操作已取消');
   presentControlEvents();
   return result;
@@ -3845,6 +3866,7 @@ document.addEventListener('wheel', event => {
 }, { passive: false });
 
 document.addEventListener('keydown', event => {
+  if (fatal) return;
   if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   if (event.code === 'Escape' && state === 'transferring' && !event.repeat) { showOverlay(); return; }
   if (event.repeat || state !== 'playing') return;
@@ -3869,6 +3891,7 @@ document.addEventListener('keydown', event => {
   if (event.code === 'Escape') showOverlay();
 });
 document.addEventListener('keyup', event => {
+  if (fatal) return;
   keys.delete(event.code);
   if (event.code === 'Tab') {
     $('scoreboard').hidden = true;
@@ -3887,7 +3910,7 @@ document.addEventListener('keyup', event => {
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 canvas.addEventListener('mousedown', event => {
-  if (state !== 'playing' || !$('scoreboard').hidden) return;
+  if (fatal || state !== 'playing' || !$('scoreboard').hidden) return;
   if (event.button === 0) {
     if (document.pointerLockElement !== canvas && !held.secondary) lockMouse();
     dispatchControlCommand('pressFire');
@@ -3904,7 +3927,7 @@ document.addEventListener('mouseup', event => {
   if (event.button === 2) { held.secondary = false; held.aiming = false; }
 });
 document.addEventListener('mousemove', event => {
-  if (state !== 'playing' || !$('scoreboard').hidden || (document.pointerLockElement !== canvas && !held.secondary)) return;
+  if (fatal || state !== 'playing' || !$('scoreboard').hidden || (document.pointerLockElement !== canvas && !held.secondary)) return;
   dispatchControlCommand('look', { x: event.movementX, y: event.movementY });
 });
 document.addEventListener('pointerlockchange', () => {
@@ -3924,21 +3947,6 @@ window.addEventListener('resize', () => {
   graphics.resize(innerWidth, innerHeight);
   syncQualityControls();
 });
-window.addEventListener('error', event => {
-  fatal = true;
-  releaseMouse();
-  $('loading').hidden = true;
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = `运行时发生错误：${event.message}。请重新加载；若仍出现，请保留浏览器控制台信息。`;
-});
-canvas.addEventListener('webglcontextlost', event => {
-  event.preventDefault();
-  fatal = true;
-  releaseMouse();
-  $('fatal').hidden = false;
-  $('fatal-message').textContent = '显卡上下文已丢失。请关闭占用显存的其他页面后重新加载。';
-});
-
 // A read-only snapshot makes local smoke tests observable without exposing gameplay mutations.
 Object.defineProperty(window, '__battle', { get: () => ({
   corpses: { rules: CORPSE_RULES, count: corpses.size, members: [...corpses.values()].map(actor => ({
@@ -4071,7 +4079,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
       leftHandPosition: weapon.userData.rifle.leftHand.position.toArray(),
       flashVisible: weapon.userData.rifle.flash.visible,
       dimensions: { ...weapon.userData.dimensions },
-      arms: weaponHands?.snapshot ? Object.fromEntries(['left', 'right'].map(side =>
+      arms: weaponHands?.snapshot?.visible ? Object.fromEntries(['left', 'right'].map(side =>
         [side, { upper: weaponHands.snapshot[side].arm.lengths[0], forearm: weaponHands.snapshot[side].arm.lengths[1] }]))
         : weapon.userData.armLengths ? { right: { ...weapon.userData.armLengths.right }, left: { ...weapon.userData.armLengths.left } } : null,
     } : null,
@@ -4162,10 +4170,11 @@ try {
   await nraCharacter?.prepare(renderer);
   await ijaCharacter?.prepare(renderer);
 } catch (error) {
-  $('loading').hidden = true; $('fatal').hidden = false;
-  $('fatal-message').textContent = `人物渲染初始化失败：${error.message}。未静默回退。`;
+  fatalReporter.show(error, { stage: 'character-rendering' });
   throw error;
 }
+if (fatalReporter.failed) throw new Error('Initialization interrupted; see the original fatal diagnostic');
+fatalReporter.ready();
 $('loading').hidden = true;
 $('menu').hidden = false;
 requestAnimationFrame(tick);

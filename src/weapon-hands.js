@@ -75,7 +75,7 @@ export function createWeaponHands(createHand) {
     skins[side] = { material: skin.material, original: skin.material.color.clone() };
     hands[side] = hand; root.add(hand);
   }
-  let bound = null, observation = null;
+  let bound = null, observation = null, reachWarningActive = false;
   const goal = (side, kind, anchor, rotation, weight = 1) => ({
     kind, weight, rotation,
     wrist: vector(anchor).sub(vector(WEAPON_HAND_GRIPS[side][kind].center).applyQuaternion(rotation)),
@@ -97,6 +97,14 @@ export function createWeaponHands(createHand) {
     const shoulder = new THREE.Vector3(side === 'left' ? -.18 : .22,
       side === 'left' ? -.31 + loading * .06 - supportWeight * supportDrop : -.20,
       side === 'left' ? -.10 - loading * .13 : -.08 + triggerWeight * .20).applyMatrix4(inverse);
+    if (![...shoulder, ...wrist, ...rotation].every(Number.isFinite)) {
+      throw new Error(`Native ${side} weapon arm has a non-finite pose`);
+    }
+    const [upper, lower] = hand.userData.armLengths, distance = shoulder.distanceTo(wrist);
+    if (distance <= Math.abs(upper - lower) + .001 || distance >= upper + lower - .001) {
+      return { contactLimited: true, side, requestedDistance: distance,
+        minimumDistance: Math.abs(upper - lower), maximumDistance: upper + lower };
+    }
     const defaultPole = new THREE.Vector3(side === 'left' ? -.5 : .5, -1, -.15).transformDirection(inverse);
     const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
     const down = new THREE.Vector3(0, -1, 0).transformDirection(inverse);
@@ -139,6 +147,8 @@ export function createWeaponHands(createHand) {
         return;
       }
       const profile = infantryWeaponProfile(state), pose = riflePose(state);
+      if (![...model.position, ...model.quaternion, ...model.scale].every(Number.isFinite) ||
+        model.scale.toArray().some(value => value <= 0)) throw new Error('Weapon hands require a finite, non-singular weapon transform');
       model.updateMatrix(); model.updateMatrixWorld(true);
       const inverse = model.matrix.clone().invert();
       const rightKind = profile.automatic ? 'pistol' : 'trigger';
@@ -171,8 +181,20 @@ export function createWeaponHands(createHand) {
           goal('left', 'press', top, pressFrame, reach * pressing),
         ];
       }
-      observation = { source: 'nra-authorized-skinned-weapon-hands', visible: true, appearance: appearance?.key ?? null,
-        left: apply('left', left, inverse, -.035 - supportHeight), right: apply('right', right, inverse) };
+      const leftPose = apply('left', left, inverse, -.035 - supportHeight);
+      const rightPose = apply('right', right, inverse);
+      const limited = [leftPose, rightPose].filter(pose => pose.contactLimited);
+      if (limited.length) {
+        root.visible = false;
+        observation = { source: 'nra-authorized-skinned-weapon-hands', visible: false,
+          reachLimited: true, reason: 'weapon-outside-arm-workspace', contacts: limited };
+        if (!reachWarningActive) console.warn('Weapon view stowed outside native arm reach; battle simulation continues', limited);
+        reachWarningActive = true;
+        return;
+      }
+      reachWarningActive = false;
+      observation = { source: 'nra-authorized-skinned-weapon-hands', visible: true, reachLimited: false, appearance: appearance?.key ?? null,
+        left: leftPose, right: rightPose };
       root.updateMatrixWorld(true);
     },
     get snapshot() { return observation; },

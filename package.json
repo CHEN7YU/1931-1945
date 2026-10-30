@@ -51,6 +51,7 @@
     "benchmark": "node scripts/benchmark.mjs",
     "test:benchmark-config": "node scripts/benchmark-config-smoke.mjs",
     "test:control": "node scripts/control-smoke.mjs",
+    "test:stability": "node scripts/continuous-stability-smoke.mjs && node scripts/cover-smoke.mjs && node scripts/control-smoke.mjs && node scripts/fatal-report-smoke.mjs",
     "test:projectiles": "node scripts/projectile-smoke.mjs",
     "test:grenades": "node scripts/grenade-smoke.mjs",
     "test:damage-feedback": "node scripts/damage-feedback-smoke.mjs",
