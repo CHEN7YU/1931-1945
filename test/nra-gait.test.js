@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Group, Bone, Vector3 } from 'three';
-import { lowStepTarget, runningStepTarget, applyNativeFootCycle, applyNativeBodyLean } from '../src/nra-gait.js';
+import { lowStepTarget, runningStepTarget, turningStepTarget, applyNativeFootCycle, applyNativeBodyLean } from '../src/nra-gait.js';
 
 function legs() {
   const root = new Group(), bones = new Map(), hips = new Bone();
@@ -39,6 +39,46 @@ test('low-step gait leaves stationary and static combat postures unchanged', () 
     const { root, bones, restFeet } = legs();
     assert.deepEqual(applyNativeFootCycle(root, bones, { legLift: .55, weight: 1, jog: 1, upright: 1, ...changes },
       restFeet, () => 0), { kind: 'native-foot-cycle', weight: 0 });
+  }
+});
+
+test('turn steps alternate planted support with a low swing and close continuously in either direction', () => {
+  for (const direction of [-1, 1]) {
+    for (let frame = 0; frame < 100; frame++) {
+      const phase = frame / 100, foot = turningStepTarget(phase, direction);
+      assert.ok(foot.lift >= 0 && foot.lift <= .055);
+      if (phase < .55) {
+        assert.equal(foot.lift, 0);
+        assert.ok(Math.abs(foot.yaw + direction * phase * Math.PI / 3) < 1e-10,
+          'support counter-rotates the root instead of skating around it');
+      }
+    }
+    assert.ok(Math.abs(turningStepTarget(.999999, direction).yaw) < .00001);
+    assert.ok(turningStepTarget(.75, direction).lift > .05);
+    assert.equal(turningStepTarget(.25, direction).lift, 0);
+  }
+  assert.throws(() => turningStepTarget(1, 1), RangeError);
+});
+
+test('actual turning leg IK keeps the planted foot in world space while the other foot steps without stretching', () => {
+  for (const direction of [-1, 1]) {
+    const planted = [];
+    for (const phase of [.05, .15, .25, .35, .45]) {
+      const { root, bones, restFeet } = legs();
+      root.rotation.y = direction * phase * Math.PI / 3;
+      root.updateMatrixWorld(true);
+      const result = applyNativeFootCycle(root, bones, {
+        weight: 0, upright: 1, hipDrop: 0, jog: 0, legLift: .55,
+        walkPhase: 0, runPhase: 0, walkStride: 1.25, runStride: 2.4,
+        turn: { weight: 1, phase, direction },
+      }, restFeet, () => 0);
+      assert.equal(result.left.phase, 'turn-support');
+      assert.ok(result.left.error < 1e-5 && result.right.error < 1e-5);
+      planted.push(bones.get('LeftFoot').getWorldPosition(new Vector3()));
+      assert.equal(bones.get('LeftLeg').position.y, -.4);
+      assert.equal(bones.get('LeftFoot').position.y, -.35);
+    }
+    assert.ok(planted.every(point => point.distanceTo(planted[0]) < 1e-5));
   }
 });
 

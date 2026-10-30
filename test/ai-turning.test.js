@@ -37,3 +37,22 @@ test('zero time and invalid turning inputs cannot advance orientation', () => {
     assert.throws(() => advanceAITurn(actor, ...args), RangeError);
   }
 });
+
+test('a moving turn supplies a slowed body-forward arc rather than a sideways heading-independent slide', () => {
+  for (const fps of [30, 60, 144]) {
+    const actor = { heading: 0 }, position = { x: 0, z: 0 };
+    const samples = [];
+    for (let frame = 0; frame < fps; frame++) {
+      const turn = advanceAITurn(actor, .6, 1 / fps, true);
+      assert.equal(turn.mayMove, true, 'gentle turns do not force a full stop');
+      assert.ok(turn.moveScale > 0 && turn.moveScale <= 1);
+      assert.ok(Math.abs(turn.direction.x + Math.sin(actor.heading)) < 1e-10);
+      position.x += turn.direction.x * 2 * turn.moveScale / fps;
+      position.z += turn.direction.z * 2 * turn.moveScale / fps;
+      samples.push(turn.moveScale);
+    }
+    assert.ok(position.x < -.7 && position.z < -1.4);
+    assert.ok(samples[0] < samples.at(-1), 'recover full speed as body aligns');
+    assert.ok(Math.hypot(position.x, position.z) <= 2);
+  }
+});
