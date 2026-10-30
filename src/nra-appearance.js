@@ -30,6 +30,14 @@ export function createNraAppearance(actor) {
 
 export function isNraSkin(name) { return name === NRA_FACE_NAME || name === NRA_HAND_NAME; }
 
+export function nraAppearanceResourceBudget(meshes) {
+  const names = [...new Set(meshes.map(mesh => mesh.name))];
+  return {
+    geometries: names.reduce((sum, name) => sum + (name === NRA_FACE_NAME ? faces.length * 2 : isNraSkin(name) ? 0 : 3 * 2), 0),
+    materials: names.filter(isNraSkin).length * complexions.length,
+  };
+}
+
 const bell = (value, center, width) => Math.exp(-(((value - center) / width) ** 2));
 const clamp = value => Math.max(0, Math.min(1, value));
 

@@ -58,6 +58,35 @@ async function pauseAtContact(kind) {
   observations.push({ stage: `${kind}-contact-paused`, data });
   return data;
 }
+async function observeVaultFireAndPause() {
+  const record = await page.evaluate(() => new Promise((resolve, reject) => {
+    let started = null;
+    const timer = setTimeout(() => reject(new Error('No observed early vault/fire step within 60s')), 60000);
+    function observe() {
+      const data = window.__battle, canvas = document.querySelector('#world');
+      if (!started && data.controlSimulation.traversal.kind === 'vaulting' &&
+          data.controlSimulation.traversal.elapsed <= .3) {
+        started = { time: data.time, ammo: data.ammo };
+        canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+      } else if (started && data.time > started.time) {
+        document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+        clearTimeout(timer);
+        if (data.controlSimulation.traversal.kind !== 'vaulting') {
+          reject(new Error('Vault ended before the actual blocked-fire step was observed'));
+          return;
+        }
+        const image = canvas.toDataURL('image/png');
+        for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { code: 'Escape' }));
+        resolve({ data, image, beforeAmmo: started.ammo });
+        return;
+      }
+      requestAnimationFrame(observe);
+    }
+    requestAnimationFrame(observe);
+  }));
+  phaseImages.set('vault', record.image);
+  return record;
+}
 try {
   const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5187');
   url.searchParams.set('benchmark', 'cover'); url.searchParams.set('seed', '1938');
@@ -84,9 +113,10 @@ try {
   assert.equal(data.rifle.action, 'idle');
   await capture('cover-supported-idle.png');
   const ammo = data.ammo;
+  const boltContact = pauseAtContact('bolt');
   await page.mouse.down(); await page.waitForTimeout(100); await page.mouse.up();
   await wait(ammo => window.__battle.ammo < ammo, ammo);
-  data = await pauseAtContact('bolt');
+  data = await boltContact;
   assert.equal(data.rifle.model.nativeHands.source, 'nra-authorized-skinned-weapon-hands');
   assert.equal(data.rifle.model.nativeHands.right.grip.weights.bolt, 1);
   for (const side of ['left', 'right']) {
@@ -134,18 +164,20 @@ try {
   await page.waitForTimeout(500);
   await page.keyboard.press('b');
   await wait(() => window.__battle.controlSimulation.weaponMount.active);
-  await page.keyboard.down('s'); await page.waitForTimeout(80); await page.keyboard.up('s');
+  await page.keyboard.down('s');
   await wait(() => !window.__battle.controlSimulation.weaponMount.active);
+  await page.keyboard.up('s');
   await walkTo(-12, 21.98); await turn(0);
+  // Observe and act inside actual simulated vault frames, not after a potentially slow CDP round trip.
+  const vaultObservation = observeVaultFireAndPause();
   await page.keyboard.press('Space');
-  await wait(() => window.__battle.controlSimulation.traversal.kind === 'vaulting');
-  data = await snapshot(); observations.push({ stage: 'vaulting', data });
-  const vaultAmmo = data.ammo;
-  await page.mouse.down(); await page.waitForTimeout(70); await page.mouse.up();
-  assert.equal((await snapshot()).ammo, vaultAmmo);
-  await capture('cover-vaulting.png');
-  await page.keyboard.press('Escape');
+  const vault = await vaultObservation;
+  data = vault.data; observations.push({ stage: 'vaulting', data });
+  assert.equal(data.ammo, vault.beforeAmmo);
+  assert.equal((await snapshot()).ammo, vault.beforeAmmo);
+  await capture('cover-vaulting.png', 'vault');
   const paused = await snapshot();
+  assert.equal(paused.state, 'pause');
   await page.waitForTimeout(200);
   assert.deepEqual((await snapshot()).controlSimulation, paused.controlSimulation);
   await capture('cover-vault-paused.png');

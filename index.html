@@ -48,6 +48,21 @@
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
         <a id="shop-art-entry" class="text-button shop-art-entry" href="?benchmark=shop-art&amp;seed=1938" hidden>美术样例区 ↗ 直接看首街两店</a>
         <p class="deployment-note">仅中国阵营可玩 <span>·</span> 无养成 <span>·</span> 整队阵亡后换队</p>
+        <details class="control-preferences menu-controls">
+          <summary>操作设置 · 自动记忆</summary>
+          <label for="menu-mouse-sensitivity">普通视角灵敏度 <output for="menu-mouse-sensitivity">100%</output><input id="menu-mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+          <label for="menu-aim-sensitivity">瞄准灵敏度 <output for="menu-aim-sensitivity">100%</output><input id="menu-aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+          <label class="motion-settings" for="menu-motion-strength">镜头步态 <select id="menu-motion-strength" data-motion-strength><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select></label>
+          <small>两种灵敏度独立调节；100%保持原手感，瞄准镜仍保留原有降速。</small>
+          <button type="button" class="text-button" data-reset-controls>恢复操作默认值</button>
+        </details>
+        <details class="control-preferences menu-audio">
+          <summary>声音设置 · 自动记忆</summary>
+          <div data-audio-controls="menu"></div>
+          <small>静音保留原音量，取消静音即可恢复；不改变AI听觉或战斗事件。</small>
+          <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
+        </details>
+        <p class="preferences-status" data-preferences-status role="status"></p>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </aside>
       <footer class="menu-footer"><span><i></i> 原创场景 / 扫描与 Azure AI 材质 / 美术迭代版</span><span>WASD 移动 <b>·</b> 右键举枪瞄准 <b>·</b> Y 切换队员 <b>·</b> X 小队命令</span><span>谨记历史，珍视和平</span></footer>
@@ -98,6 +113,7 @@
       <div id="boundary-warning" role="alert" hidden><strong>已离开作战区域 · 立即返回</strong><span id="boundary-detail"></span></div>
       <div id="interaction-prompt" role="status" hidden></div>
       <div id="weapon-support" role="status" hidden></div>
+      <div id="action-status" role="status" hidden></div>
       <div id="grenade-warning" role="alert" hidden></div>
       <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
       <div class="hud-bottom">
@@ -131,7 +147,22 @@
           <button id="confirm-deploy" class="primary-button" disabled>选择小队后出击 <span>↗</span></button>
         </div>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
-        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength"><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>在此调整镜头步态；不改变移速和枪械操作。</small></label>
+        <fieldset id="control-settings" class="control-preferences" hidden>
+          <legend>操作设置</legend>
+          <label for="mouse-sensitivity">普通视角灵敏度 <output for="mouse-sensitivity">100%</output><input id="mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+          <label for="aim-sensitivity">瞄准灵敏度 <output for="aim-sensitivity">100%</output><input id="aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+          <small>两种倍率独立生效；100%保持原手感，狙击镜仍保留原有降速。不改变射速、伤害或战局进度。</small>
+          <button type="button" class="text-button" data-reset-controls>恢复操作默认值（含镜头步态，不改画质）</button>
+          <p class="preferences-status" data-preferences-status role="status"></p>
+        </fieldset>
+        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength" data-motion-strength><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>在此调整镜头步态；不改变移速和枪械操作。</small></label>
+        <fieldset id="audio-settings" class="control-preferences" hidden>
+          <legend>声音设置</legend>
+          <div data-audio-controls="pause"></div>
+          <small>主音量控制全部声音。枪炮含爆炸和装填；语音含受伤短喊。静音不改变AI听觉、伤害或事件归属。</small>
+          <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
+          <p class="preferences-status" data-preferences-status role="status"></p>
+        </fieldset>
         <fieldset id="quality-settings" hidden>
           <legend>图形设置 · 手动</legend>
           <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
@@ -147,7 +178,7 @@
             <label><input id="quality-damageVignette" type="checkbox" data-quality-effect="damageVignette" checked /> 受伤暗红边缘</label>
           </div>
           <small id="quality-status" role="status"></small>
-          <small>不改变战局 · 仅当前页面有效 · 自动降级与后期尚未接入</small>
+          <small>不改变战局 · 自动记忆此浏览器设置 · 自动降级与后期尚未接入</small>
         </fieldset>
         <button id="back-menu" class="text-button">返回作战大厅</button>
         <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；连续完整控制三点20秒获胜。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>

@@ -6,7 +6,7 @@ import { createNraRiflePose } from './nra-rifle-pose.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { sampleNraMotion } from './nra-motion.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
-import { createNraAppearanceApplicator } from './nra-appearance.js';
+import { createNraAppearanceApplicator, nraAppearanceResourceBudget } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
@@ -155,6 +155,10 @@ export async function loadNraCharacter() {
   root.visible = false;
   return {
     root, uniformMaterials,
+    get appearanceResources() {
+      return { geometryIds: [...appearanceCache.geometries.values()].map(geometry => geometry.uuid),
+        materialEntries: appearanceCache.materials.size, limits: nraAppearanceResourceBudget(meshes) };
+    },
     get drawBatches() {
       let count = 0;
       root.traverseVisible(node => { if (node.isMesh) count += Array.isArray(node.material) ? node.geometry.groups.length : 1; });

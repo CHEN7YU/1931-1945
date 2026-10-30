@@ -17,6 +17,7 @@ export function createRifleMechanicalAudio(buffers) {
   const voices = new Set(), history = [];
   const counts = { played: 0, stale: 0, duplicate: 0, suspended: 0, budget: 0, replaced: 0 };
   let owner = null, active = false, batch = 0, context = null, lastEventId = 0, peakVoices = 0;
+  let output = null;
   function stop() {
     for (const voice of [...voices]) { voice.source.stop(); voice.release(); }
   }
@@ -31,6 +32,7 @@ export function createRifleMechanicalAudio(buffers) {
     active = playing;
   }
   return {
+    setOutput(node) { output = node; },
     sync,
     beginBatch(nextOwner, playing) {
       sync(nextOwner, playing);
@@ -57,7 +59,7 @@ export function createRifleMechanicalAudio(buffers) {
       const source = audio.createBufferSource(), gain = audio.createGain();
       source.buffer = samples[event.cue];
       gain.gain.value = .12;
-      source.connect(gain).connect(audio.destination);
+      source.connect(gain).connect(output ?? audio.destination);
       let ended = false;
       const voice = { source, release() {
         if (ended) return;

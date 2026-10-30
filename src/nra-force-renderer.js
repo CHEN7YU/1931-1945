@@ -178,6 +178,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   }
   return {
     root, motionProfile: profile, excludedIds,
+    get appearanceResources() { return template.appearanceResources; },
     casualtyBounds(variant, retainGun) {
       const bounds = banks[livingBanks + variant * 2 + Number(retainGun)]?.bounds;
       if (!bounds) throw new RangeError('Casualty bank does not exist');
