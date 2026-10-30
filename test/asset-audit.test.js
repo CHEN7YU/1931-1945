@@ -122,9 +122,13 @@ test('build audit flags diagnostic payload and rejects missing, stale and unrevi
   await mkdir(buildRoot);
   await cp(root, join(buildRoot, 'assets'), { recursive: true });
   await writeFile(join(buildRoot, 'index.html'), '<html></html>');
+  await writeFile(join(buildRoot, 'town-preview.html'), '<html><title>Empty town review</title></html>');
   await writeFile(join(buildRoot, 'assets', 'index-Abcdef12.js'), '// built code');
   const report = await auditAssets({ root, buildRoot });
   assert.match(report.warnings[0], /diagnostic-only/);
+  await writeFile(join(buildRoot, 'unreviewed-preview.html'), '<html></html>');
+  await assert.rejects(auditAssets({ root, buildRoot }), /Unreviewed build payload/);
+  await rm(join(buildRoot, 'unreviewed-preview.html'));
   await writeFile(join(buildRoot, 'original.zip'), 'archive');
   await assert.rejects(auditAssets({ root, buildRoot }), /Unreviewed build payload/);
   await rm(join(buildRoot, 'original.zip'));

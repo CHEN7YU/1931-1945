@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
-import { BRIDGE, RIVER, groundHeight, riverBedHeight, walkHeight, configureWalkSupport } from './ground.js';
+import { BRIDGE as DEFAULT_BRIDGE, RIVER, bridgeGroundHeight, riverBedHeight, configureWalkSupport } from './ground.js';
+import { createWalkSupport } from './multistory.js';
+import { OBJECTIVES } from './core.js';
 import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
 import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
 import { createDoorWorld } from './door-world.js';
@@ -43,10 +45,13 @@ export function createRoofGeometry(w, d, rise, meters) {
   return geometry;
 }
 
-export function makeWorld(scene, surface) {
+export function makeWorld(scene, surface, options = {}) {
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
-  const town = makeTownLayout();
-  const walkSupport = configureWalkSupport(town.pieces);
+  const town = options.town ?? makeTownLayout();
+  const BRIDGE = options.bridge ?? DEFAULT_BRIDGE;
+  const groundHeight = (x, z) => bridgeGroundHeight(x, z, BRIDGE);
+  const walkSupport = options.town ? createWalkSupport(town.pieces, groundHeight) : configureWalkSupport(town.pieces);
+  const walkHeight = walkSupport.heightAt;
   const outskirts = makeOutskirtsLayout();
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   let seed = 1938;
@@ -189,12 +194,13 @@ export function makeWorld(scene, surface) {
     mesh(geometry, stone, 8, 0, startZ + BRIDGE.rampLength / 2, true);
   }
   for (const x of [.3, 15.7]) {
-    box(x, .95, -16, .45, 1.4, 13, stone, true);
-    box(x, 1.68, -16, .65, .15, 13.3, stone);
-    obstacle(x, -16, .45, 13, 1.65);
+    const lift = BRIDGE.height - DEFAULT_BRIDGE.height;
+    box(x, .95 + lift, -16, .45, 1.4, 13, stone, true);
+    box(x, 1.68 + lift, -16, .65, .15, 13.3, stone);
+    obstacle(x, -16, .45, 13, 1.65 + lift);
     for (const z of [-22, -19, -16, -13, -10]) {
-      box(x, 1.1, z, .65, 1.8, .65, stone);
-      box(x, 2.04, z, .82, .12, .82, stone);
+      box(x, 1.1 + lift, z, .65, 1.8, .65, stone);
+      box(x, 2.04 + lift, z, .82, .12, .82, stone);
     }
   }
 
@@ -677,16 +683,27 @@ export function makeWorld(scene, surface) {
       scene.add(puff); smoke.push(puff);
     }
   }
-  for (const point of [{ x: -12, z: 30 }, { x: 8, z: -7 }, { x: -10, z: -51 }]) {
-    cylinder(point.x, 3, point.z, .04, 6, timber);
+  for (const point of options.objectives ?? OBJECTIVES) {
+    const baseY = options.objectives ? groundHeight(point.x, point.z) : 0;
+    cylinder(point.x, baseY + 3, point.z, .04, 6, timber);
     const flagMat = new THREE.MeshStandardMaterial({ color: 0xa19469, side: THREE.DoubleSide, roughness: 1 });
     const flagGeometry = new THREE.PlaneGeometry(1.8, 1, 10, 4);
     const flag = new THREE.Mesh(flagGeometry, flagMat);
-    flag.position.set(point.x + .9, 5.3, point.z);
+    flag.position.set(point.x + .9, baseY + 5.3, point.z);
     flag.castShadow = true;
     scene.add(flag); flags.push(flag);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(12.9, 13, 64), new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(point.x, .055, point.z); scene.add(ring);
+    const radius = options.objectives ? point.radius : 13;
+    const ringGeometry = new THREE.RingGeometry(radius - .1, radius, 64);
+    ringGeometry.rotateX(-Math.PI / 2);
+    if (options.objectives) {
+      const positions = ringGeometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        positions.setY(i, groundHeight(point.x + positions.getX(i), point.z + positions.getZ(i)));
+      }
+      ringGeometry.computeVertexNormals();
+    }
+    const ring = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
+    ring.position.set(point.x, .055, point.z); scene.add(ring);
   }
   // Pre-tinted haze keeps the distant ridges from tone-mapping into white silhouettes.
   const hillMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false });

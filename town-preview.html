@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>台儿庄 · 城寨空地图评审</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div id="view"></div>
+  <header>
+    <span class="eyebrow">布局草案 / 非史实复原 / 无战斗</span>
+    <h1>城寨 · 三点争夺</h1>
+    <p>高楼守视野，石桥控通行，城门争入口。</p>
+  </header>
+  <aside id="map-panel">
+    <div class="map-title"><strong>战区平面图</strong><button id="overview">放大俯瞰</button></div>
+    <canvas id="map" width="600" height="570" aria-label="城墙、据点、双方拟定集结地与当前位置"></canvas>
+    <div class="legend"><span>A 粮栈高楼</span><span>B 石桥</span><span>C 城门</span></div>
+    <p>只绘制北、东两侧城墙；西、南两侧在裁切战区外，不绘制。虚线为拟定步行进场路线，不是已确认的平衡结果。</p>
+    <table><caption>到占领圈边缘的可走路线（米）</caption><thead><tr><th>据点</th><th>中方</th><th>日方</th></tr></thead><tbody id="distances"></tbody></table>
+  </aside>
+  <footer>
+    <div class="actions">
+      <button id="walk" disabled>正在加载地图…</button>
+      <button data-point="A" disabled>1 · 看高楼</button>
+      <button data-point="B" disabled>2 · 看石桥</button>
+      <button data-point="C" disabled>3 · 看城门</button>
+      <button id="home" disabled>回到入口</button>
+    </div>
+    <p id="help">WASD 行走 · Shift 快走 · 鼠标环顾（或按住右键拖动）· E 开关门 · M 俯瞰 · Esc 释放鼠标</p>
+    <p id="status" role="status">正在加载本地材质与城寨模型…</p>
+  </footer>
+  <div id="crosshair" hidden>+</div>
+  <div id="error" role="alert" hidden></div>
+  <script type="module" src="/src/town-preview.js"></script>
+</body>
+</html>
