@@ -10,7 +10,10 @@
 - [x] 本分支整合main `9f739e93952f665c8144a834137b32cf71518164`，保留其大刀、转身／跑步、设置／音频、致命错误报告和独立城镇预览。修正远景相位遗漏`dadao`及未瞄准眼睛缓存未覆盖持刀姿态出现／消失的问题；敌军姿态断言同时检查原始／粗几何，不把两层误当新增逻辑姿态。
 - [x] 整合后完整743项规则，742通过；唯一失败为main已有的大刀收势袖口裁边视觉问题，未删除或放宽断言。生产双入口构建及资产审核通过，原有大包／素材授权告警保留。浏览器检查通过：开发诊断可重复，生产URL不启用诊断／渲染隔离，仍110／96、两方人物和实际场景绘制；预览`http://127.0.0.1:5191`返回HTTP200。
 - [ ] 用户在main工作区执行最后合并；本次不直接移动main、不推送。旧18个长测窗口没有在整合后重跑，不把整合／规则通过写成性能达标。
-- [ ] 按用户后续要求，完成整合准备后检查已并入main的本地／远程分支并清理；保留main／默认／受保护／工作区正在使用及尚未合并的分支，远程删除前核验提交已进入远程main并防止覆盖并发更新。
+- [x] 按用户后续要求完成本地／远程分支检查；本地main和远程main当时均为`9f739e9`。已安全删除两个完整进入main且未被工作区使用的本地分支：`chenqiyu-microsoft-battlefield-chinese-japanese-voices`（`327ff2f`）及`chenqiyu-microsoft-lmg-reload-elbow`（`5d00e8e`），未使用强制删除。
+- [ ] 远程语音分支已确认完整进入远程main、未受保护且SHA未变化；带精确SHA租约的删除被GitHub以HTTP403拒绝，缺少写权限。已复查远程分支仍存在，没有更换账号或绕过权限，也未推送本功能分支／修改远程main。
+- [ ] 另六个已并入main的本地分支仍被其他工作区使用，因此保留：`chenqiyu-microsoft-ai-corner-congestion-investigation`、`chenqiyu-microsoft-fix-tank-muzzle-flash-position`、`chenqiyu-microsoft-japanese-bayonet-charge`、`chenqiyu-microsoft-nra-dadao-prototype`、`chenqiyu-microsoft-river-realism`、`chenqiyu-microsoft-squad-startup-rotation`。不移除其他会话的工作区或强行解绑；待使用者关闭／切换后才能安全删除。
+- [ ] `chenqiyu-microsoft-game-ai-art`、`chenqiyu-microsoft-player-feedback-options`及本性能分支尚未完整进入main，均不删除。性能分支保留给用户最后合并，不能因反向整合main就误判为已经进入main。
 
 本文保留需求、实现记录与验收计划，**实际执行以本页最新用户决定、下方依赖分类索引与第10节为准，不再按章节编号或难度从低到高逐项开发**。`[x]`表示对应技术核查或明确标注的需求确认，不代表阶段整体或用户体验验收。历史记录保留，但不覆盖后续明确决定。
 
