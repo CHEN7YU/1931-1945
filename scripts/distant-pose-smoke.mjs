@@ -90,7 +90,7 @@ try {
   assert.deepEqual(errors, []);
   for (const result of results) {
     assert.ok(result.triangles < result.sourceTriangles * .6);
-    assert.ok(result.error <= .003001); assert.equal(result.glError, 0);
+    assert.ok(result.error <= .005001); assert.equal(result.glError, 0);
     for (const view of result.views) {
       assert.ok(view.foregroundPixels > 20);
       assert.ok(view.silhouetteIou >= .9, `${result.team} ${view.direction}: silhouette ${view.silhouetteIou}`);

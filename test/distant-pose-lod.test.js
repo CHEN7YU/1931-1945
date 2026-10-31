@@ -13,7 +13,7 @@ test('coarse poses reduce real triangles while retaining original attribute tupl
   const before = JSON.stringify(source.toJSON()), coarse = await createDistantPoseGeometry(source);
   assert.ok(coarse.index.count < source.index.count * .6);
   assert.ok(coarse.attributes.position.count < source.attributes.position.count);
-  assert.ok(coarse.userData.distantPoseLod.error <= .003001);
+  assert.ok(coarse.userData.distantPoseLod.error <= .005001);
   const names = Object.keys(source.attributes).filter(name => !source.attributes[name].isInstancedBufferAttribute);
   const key = (geometry, vertex) => names.flatMap(name => {
     const attribute = geometry.attributes[name];

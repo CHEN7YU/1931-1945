@@ -204,6 +204,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 window.__attachRenderTimingProbe?.(renderer);
+window.__attachRenderPassTimingProbe?.(renderer);
 if (import.meta.env.DEV) window.__attachRenderWorkProbe?.(renderer);
 const hemisphere = new THREE.HemisphereLight(0xc3d3e1, 0x766651, .6);
 scene.add(hemisphere);
@@ -255,7 +256,7 @@ const soldierHits = createSoldierHitSystem((actor, now) => {
   return character.sampleAnatomy(actor, now);
 });
 const bodyRay = new THREE.Raycaster();
-const groundCollision = obstacleLookup(world.obstacles, 2.5);
+const groundCollision = obstacleLookup(world.obstacles, 2.5, 4);
 const movementCollision = createMovementObstacles(groundCollision, entities.vehicles, vehicleCollider);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
 const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
@@ -2510,7 +2511,7 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     const steps = Math.max(1, Math.ceil(Math.hypot(point.x - pos.x, point.z - pos.z) / .2));
     for (let step = 1; step <= steps; step++) {
       const x = pos.x + (point.x - pos.x) * step / steps, z = pos.z + (point.z - pos.z) * step / steps;
-      if (circleBlocked(x, z, .46, movementObstacles(x, z), pos.y) ||
+      if (circleBlocked(x, z, .46, movementCollision.at(x, z), pos.y) ||
         Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3) return false;
     }
     return true;

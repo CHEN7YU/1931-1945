@@ -61,11 +61,15 @@ test('numeric cell lookup preserves rectangular query coverage across negative a
 });
 test('spatial obstacle lookup preserves capsule results and refreshes mutated obstacles', () => {
   const obstacles = [{ minX: -2, maxX: 2, minZ: -4, maxZ: 4 }];
-  const index = obstacleLookup(obstacles);
-  for (let x = -4; x < 4; x += .15) for (let z = -6; z < 6; z += .3) {
-    assert.equal(circleBlocked(x, z, .46, index.at(x, z)), circleBlocked(x, z, .46, obstacles));
+  for (const size of [2, 4, 8, 16]) {
+    const index = obstacleLookup(obstacles, .46, size);
+    for (let x = -4; x < 4; x += .15) for (let z = -6; z < 6; z += .3) {
+      assert.equal(circleBlocked(x, z, .46, index.at(x, z)), circleBlocked(x, z, .46, obstacles),
+        `grid size ${size} at ${x},${z}`);
+    }
+    obstacles[0].minX = 10; obstacles[0].maxX = 12; index.rebuild();
+    assert.equal(circleBlocked(0, 0, .46, index.at(0, 0)), false);
+    assert.equal(circleBlocked(11, 0, .46, index.at(11, 0)), true);
+    obstacles[0].minX = -2; obstacles[0].maxX = 2;
   }
-  obstacles[0].minX = 10; obstacles[0].maxX = 12; index.rebuild();
-  assert.equal(circleBlocked(0, 0, .46, index.at(0, 0)), false);
-  assert.equal(circleBlocked(11, 0, .46, index.at(11, 0)), true);
 });

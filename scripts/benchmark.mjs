@@ -9,6 +9,7 @@ import { queryDiagnosticsDelta } from '../src/query-diagnostics.js';
 import { installDriverProbe, driverProbeWindow } from './driver-probe.mjs';
 import { sampleBattleWindow, activeWindowStatus } from './benchmark-window.mjs';
 import { installRenderTimingProbe, renderTimingWindow } from './render-timing-probe.mjs';
+import { installRenderPassTimingProbe, renderPassTimingWindow } from './render-pass-timing-probe.mjs';
 import { installRenderWorkProbe, renderWorkWindow } from './render-work-probe.mjs';
 
 export function distribution(values) {
@@ -49,9 +50,15 @@ export function summarizeProfile(profile) {
 }
 
 export function baselineModuleSource(original, transformed) {
+  if (original.includes('import.meta.env.')) {
+    const environment = transformed.match(/^import\.meta\.env\s*=\s*\{[^\n]*\};/m)?.[0];
+    assert.ok(environment, 'Vite must provide the development environment for baseline modules');
+    original = `${environment}\n${original}`;
+  }
   for (const [specifier, pattern] of [
     ['three', /from\s+["']([^"']*\/three\.js[^"']*)["']/],
     ['three/addons/utils/BufferGeometryUtils.js', /from\s+["']([^"']*BufferGeometryUtils[^"']*)["']/],
+    ['meshoptimizer/simplifier', /from\s+["']([^"']*meshoptimizer_simplifier[^"']*)["']/],
   ]) {
     if (!original.includes(`from '${specifier}'`)) continue;
     const resolved = transformed.match(pattern)?.[1];
@@ -59,6 +66,10 @@ export function baselineModuleSource(original, transformed) {
     original = original.replaceAll(`from '${specifier}'`, `from '${resolved}'`);
   }
   return original;
+}
+
+export function baselineModulePattern(modules) {
+  return new RegExp(`/(?:${modules.map(name => name.replaceAll('.', '\\.')).join('|')})(?:\\?|$)`);
 }
 
 const integer = (name, fallback, min, max) => {
@@ -89,7 +100,8 @@ async function main() {
   for (const name of await readdir(new URL('../src/', import.meta.url))) {
     if (name.endsWith('.js')) sources[`src/${name}`] = await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8');
   }
-  for (const path of ['scripts/benchmark.mjs', 'scripts/benchmark-window.mjs', 'scripts/driver-probe.mjs', 'scripts/render-timing-probe.mjs', 'scripts/render-work-probe.mjs', 'package.json', 'vite.config.js']) sources[path] = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  for (const path of ['scripts/benchmark.mjs', 'scripts/benchmark-window.mjs', 'scripts/driver-probe.mjs', 'scripts/render-timing-probe.mjs',
+    'scripts/render-pass-timing-probe.mjs', 'scripts/render-work-probe.mjs', 'package.json', 'vite.config.js']) sources[path] = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
   await writeFile(join(directory, 'sources.json'), JSON.stringify(sources, null, 2));
   const repeats = integer('BENCH_REPEATS', 2, 1, 5), seconds = integer('BENCH_SECONDS', 18, 5, 180);
   const settleSeconds = integer('BENCH_SETTLE_SECONDS', 5, 1, 30);
@@ -98,18 +110,21 @@ async function main() {
   const headless = booleanOption('BENCH_HEADLESS', process.env.BENCH_HEADLESS, true);
   const kernelComparison = booleanOption('BENCH_COMPARE_CIRCLE_KERNEL', process.env.BENCH_COMPARE_CIRCLE_KERNEL, false);
   const gpuTimer = booleanOption('BENCH_GPU_TIMER', process.env.BENCH_GPU_TIMER, false);
+  const gpuPassTimer = booleanOption('BENCH_GPU_PASS_TIMER', process.env.BENCH_GPU_PASS_TIMER, false);
   const gpuComparison = booleanOption('BENCH_COMPARE_GPU', process.env.BENCH_COMPARE_GPU, false);
   const backbufferComparison = booleanOption('BENCH_COMPARE_BACKBUFFER', process.env.BENCH_COMPARE_BACKBUFFER, false);
   const passCapture = booleanOption('BENCH_PASS_CAPTURE', process.env.BENCH_PASS_CAPTURE, false);
   if ((gpuTimer || gpuComparison) && cpuProfile) throw new Error('GPU diagnosis must set BENCH_CPU_PROFILE=0');
+  if (gpuPassTimer && cpuProfile) throw new Error('GPU pass attribution must set BENCH_CPU_PROFILE=0');
   if ((backbufferComparison || passCapture) && cpuProfile) throw new Error('Render work diagnosis must set BENCH_CPU_PROFILE=0');
   const warmup = integer('BENCH_WARMUP', 3, 1, 15), seed = integer('BENCH_SEED', 1938, 0, 0xffffffff);
   const minimumTime = integer('BENCH_MIN_TIME', 0, 0, 180);
   if ([process.env.BENCH_BASELINE_ATLAS, process.env.BENCH_BASELINE_POSE, process.env.BENCH_BASELINE_COLLISION, process.env.BENCH_BASELINE_QUERY,
-    process.env.BENCH_BASELINE_MOVEMENT, process.env.BENCH_COMPARE_AI, process.env.BENCH_BASELINE_RENDERER,
+    process.env.BENCH_BASELINE_MOVEMENT, process.env.BENCH_COMPARE_AI, process.env.BENCH_BASELINE_RENDERER, process.env.BENCH_BASELINE_WORLD,
     process.env.BENCH_COMPARE_QUERY_STATS, process.env.BENCH_COMPARE_MOVEMENT_CACHE,
     process.env.BENCH_COMPARE_RENDER_SPLIT, process.env.BENCH_COMPARE_TRACERS,
-    profileComparison, kernelComparison, gpuComparison, backbufferComparison, passCapture].filter(Boolean).length > 1) {
+    process.env.BENCH_BASELINE_HEAD_AIM, process.env.BENCH_BASELINE_FULL, process.env.BENCH_BASELINE_SPATIAL,
+    profileComparison, kernelComparison, gpuComparison, backbufferComparison, passCapture, gpuPassTimer].filter(Boolean).length > 1) {
     throw new Error('Choose one isolated baseline comparison');
   }
   const collisionComparison = Boolean(process.env.BENCH_BASELINE_COLLISION);
@@ -118,6 +133,10 @@ async function main() {
   const movementComparison = Boolean(process.env.BENCH_BASELINE_MOVEMENT);
   const aiComparison = process.env.BENCH_COMPARE_AI === '1';
   const rendererComparison = Boolean(process.env.BENCH_BASELINE_RENDERER);
+  const worldComparison = Boolean(process.env.BENCH_BASELINE_WORLD);
+  const headAimComparison = Boolean(process.env.BENCH_BASELINE_HEAD_AIM);
+  const fullCandidateComparison = Boolean(process.env.BENCH_BASELINE_FULL);
+  const spatialComparison = Boolean(process.env.BENCH_BASELINE_SPATIAL);
   const statsComparison = process.env.BENCH_COMPARE_QUERY_STATS === '1', queryStats = process.env.BENCH_QUERY_STATS === '1';
   const cacheComparison = process.env.BENCH_COMPARE_MOVEMENT_CACHE === '1';
   const renderSplit = process.env.BENCH_COMPARE_RENDER_SPLIT === '1';
@@ -128,6 +147,9 @@ async function main() {
   const renderSplitAt = integer('BENCH_RENDER_SPLIT_AT', 25, 0, 180);
   const driverTrace = process.env.BENCH_TRACE_DRIVER === '1';
   if ((backbufferComparison || passCapture) && (queryStats || driverTrace)) throw new Error('Render work diagnosis excludes query and driver probes');
+  if (gpuPassTimer && (gpuTimer || gpuComparison || backbufferComparison || passCapture || queryStats || driverTrace)) {
+    throw new Error('GPU pass attribution must run without other GPU, render-work, query or driver probes');
+  }
   if (gpuComparison && (gpuTimer || queryStats || driverTrace)) throw new Error('Compare GPU timer overhead separately without query/driver probes');
   if (profileComparison && gpuTimer) throw new Error('Compare profiler overhead without GPU queries');
   if (profileComparison && (queryStats || driverTrace)) throw new Error('Compare profiler overhead without query/driver probes');
@@ -137,8 +159,14 @@ async function main() {
   if (process.env.BENCH_QUERY_STATS && !queryStats) throw new Error('BENCH_QUERY_STATS must be 1');
   if (statsComparison && queryStats) throw new Error('Choose a diagnostic run or an off/on overhead comparison');
   if (process.env.BENCH_COMPARE_AI && !aiComparison) throw new Error('BENCH_COMPARE_AI must be 1');
-  const baselinePath = process.env.BENCH_BASELINE_ATLAS || process.env.BENCH_BASELINE_RENDERER || process.env.BENCH_BASELINE_MOVEMENT || process.env.BENCH_BASELINE_QUERY || process.env.BENCH_BASELINE_COLLISION || process.env.BENCH_BASELINE_POSE;
-  const poseModules = atlasComparison ? ['src/nra-atlas.js'] : kernelComparison ? ['src/core.js'] : tracerComparison ? ['src/tracer-pool.js'] : cacheComparison ? ['src/movement-obstacles.js'] : rendererComparison ? ['src/nra-force-renderer.js'] : aiComparison ? ['src/ai-decisions.js'] : movementComparison ? ['src/core.js', 'src/infantry-spacing.js']
+  for (const [name, value] of [['BENCH_BASELINE_HEAD_AIM', process.env.BENCH_BASELINE_HEAD_AIM],
+    ['BENCH_BASELINE_FULL', process.env.BENCH_BASELINE_FULL], ['BENCH_BASELINE_SPATIAL', process.env.BENCH_BASELINE_SPATIAL]]) {
+    if (value && !value.toLowerCase().endsWith('.json')) throw new RangeError(`${name} must be a JSON source snapshot path`);
+  }
+  const baselinePath = process.env.BENCH_BASELINE_ATLAS || process.env.BENCH_BASELINE_RENDERER ||
+    process.env.BENCH_BASELINE_WORLD || process.env.BENCH_BASELINE_HEAD_AIM || process.env.BENCH_BASELINE_FULL ||
+    process.env.BENCH_BASELINE_SPATIAL || process.env.BENCH_BASELINE_MOVEMENT || process.env.BENCH_BASELINE_QUERY || process.env.BENCH_BASELINE_COLLISION || process.env.BENCH_BASELINE_POSE;
+  const poseModules = atlasComparison ? ['src/nra-atlas.js'] : kernelComparison ? ['src/core.js'] : tracerComparison ? ['src/tracer-pool.js'] : cacheComparison ? ['src/movement-obstacles.js'] : rendererComparison ? ['src/nra-force-renderer.js'] : worldComparison ? ['src/battlefield.js'] : headAimComparison ? ['src/head-aim.js'] : fullCandidateComparison ? ['src/battlefield.js', 'src/distant-pose-lod.js', 'src/head-aim.js', 'src/nra-force-renderer.js'] : spatialComparison ? ['src/main.js'] : aiComparison ? ['src/ai-decisions.js'] : movementComparison ? ['src/core.js', 'src/infantry-spacing.js']
     : queryComparison ? ['src/occlusion-query.js'] : collisionComparison ? ['src/solid-index.js'] : ['src/nra-motion.js', 'src/entities.js', 'src/nra-force-renderer.js'];
   const baselineSources = kernelComparison
     ? { 'src/core.js': collisionKernelBaseline(sources['src/core.js'], await readFile(new URL('./fixtures/circle-blocked-legacy.js', import.meta.url), 'utf8')) }
@@ -151,7 +179,7 @@ async function main() {
     : baselinePath ? JSON.parse(await readFile(resolve(baselinePath), 'utf8')) : null;
   if (baselineSources) {
     for (const name of poseModules) assert.equal(typeof baselineSources[name], 'string', `baseline snapshot must contain ${name}`);
-    await writeFile(join(directory, atlasComparison ? 'baseline-atlas-sources.json' : kernelComparison ? 'baseline-circle-kernel-sources.json' : tracerComparison ? 'baseline-tracer-sources.json' : cacheComparison ? 'baseline-movement-cache-sources.json' : rendererComparison ? 'baseline-renderer-sources.json' : aiComparison ? 'baseline-ai-sources.json' : movementComparison ? 'baseline-movement-sources.json' : queryComparison ? 'baseline-query-sources.json' : collisionComparison ? 'baseline-collision-sources.json' : 'baseline-pose-sources.json'), JSON.stringify(
+    await writeFile(join(directory, atlasComparison ? 'baseline-atlas-sources.json' : kernelComparison ? 'baseline-circle-kernel-sources.json' : tracerComparison ? 'baseline-tracer-sources.json' : cacheComparison ? 'baseline-movement-cache-sources.json' : rendererComparison ? 'baseline-renderer-sources.json' : worldComparison ? 'baseline-world-sources.json' : headAimComparison ? 'baseline-head-aim-sources.json' : fullCandidateComparison ? 'baseline-full-sources.json' : spatialComparison ? 'baseline-spatial-sources.json' : aiComparison ? 'baseline-ai-sources.json' : movementComparison ? 'baseline-movement-sources.json' : queryComparison ? 'baseline-query-sources.json' : collisionComparison ? 'baseline-collision-sources.json' : 'baseline-pose-sources.json'), JSON.stringify(
       Object.fromEntries(poseModules.map(name => [name, baselineSources[name]])), null, 2));
   }
   const scenarios = (process.env.BENCH_SCENARIOS || 'duel,full').split(',');
@@ -170,17 +198,22 @@ async function main() {
     measurement: 'Page-local rAF boundaries after settling; profiler starts before settling and stops after capture. No raw long frames removed. CPU profiles include settling/tail and are not frame-window CPU totals. Development build, not production acceptance.',
     queryStats, statsComparison,
     renderSplit, renderSplitAt: renderSplit ? renderSplitAt : null,
-    driverTrace, gpuTimer, gpuComparison, backbufferComparison, passCapture,
+    driverTrace, gpuTimer, gpuComparison, gpuPassTimer, backbufferComparison, passCapture,
     baselineCircleKernel: kernelComparison ? 'scripts/fixtures/circle-blocked-legacy.js: former closure/Array.some kernel only' : null,
     baselineTracers: tracerComparison ? 'scripts/fixtures/tracer-pool-legacy.js: former per-shot line construction and disposal' : null,
     baselineMovementCandidates: cacheComparison ? 'scripts/fixtures/movement-obstacles-legacy.js: former per-query candidate builder' : null,
     baselineAtlasSource: atlasComparison ? resolve(baselinePath) : null,
-    baselinePoseSource: baselinePath && !atlasComparison && !rendererComparison && !collisionComparison && !queryComparison && !movementComparison ? resolve(baselinePath) : null,
+    baselinePoseSource: baselinePath && !atlasComparison && !rendererComparison && !worldComparison && !headAimComparison &&
+      !fullCandidateComparison && !spatialComparison && !collisionComparison && !queryComparison && !movementComparison ? resolve(baselinePath) : null,
     baselineCollisionSource: baselinePath && collisionComparison ? resolve(baselinePath) : null,
     baselineQuerySource: baselinePath && queryComparison ? resolve(baselinePath) : null,
     baselineMovementSource: baselinePath && movementComparison ? resolve(baselinePath) : null,
     baselineAIDecisions: aiComparison ? 'scripts/fixtures/ai-decisions-legacy.js: former per-substep decision budgets' : null,
     baselineRendererSource: rendererComparison ? resolve(baselinePath) : null,
+    baselineWorldSource: worldComparison ? resolve(baselinePath) : null,
+    baselineHeadAimSource: headAimComparison ? resolve(baselinePath) : null,
+    baselineFullSource: fullCandidateComparison ? resolve(baselinePath) : null,
+    baselineSpatialSource: spatialComparison ? resolve(baselinePath) : null,
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     dirtyFiles: execFileSync('git', ['status', '--short'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean),
     limitation: 'Seed fixes random choices, not exact per-frame scheduling. Frame intervals include renderer/browser/OS work; CPU renderMs is submission, not GPU timing. Inclusive CPU entries overlap.' };
@@ -199,11 +232,11 @@ async function main() {
       const page = await context.newPage(), errors = [], events = [];
       if (driverTrace) await page.addInitScript(installDriverProbe);
       if (gpuTimer || gpuComparison) await page.addInitScript(installRenderTimingProbe, { gpu: gpuTimer || variant === 'gpu-timer' });
+      if (gpuPassTimer) await page.addInitScript(installRenderPassTimingProbe, { sampleEvery: 16 });
       if (passCapture || backbufferComparison) await page.addInitScript(installRenderWorkProbe,
         { passes: passCapture, backbufferScale: variant === 'half-buffer' ? .5 : 1 });
       const poseRequests = new Set();
-      if (baselineSources) await page.route(atlasComparison ? /\/src\/nra-atlas\.js(?:\?|$)/ : kernelComparison ? /\/src\/core\.js(?:\?|$)/ : tracerComparison ? /\/src\/tracer-pool\.js(?:\?|$)/ : cacheComparison ? /\/src\/movement-obstacles\.js(?:\?|$)/ : rendererComparison ? /\/src\/nra-force-renderer\.js(?:\?|$)/ : aiComparison ? /\/src\/ai-decisions\.js(?:\?|$)/ : movementComparison ? /\/src\/(?:core|infantry-spacing)\.js(?:\?|$)/
-        : queryComparison ? /\/src\/occlusion-query\.js(?:\?|$)/ : collisionComparison ? /\/src\/solid-index\.js(?:\?|$)/ : /\/src\/(?:nra-motion|entities|nra-force-renderer)\.js(?:\?|$)/, async route => {
+      if (baselineSources) await page.route(baselineModulePattern(poseModules), async route => {
         const response = await route.fetch(), current = await response.text();
         const name = new URL(route.request().url()).pathname.slice(1), original = baselineSources[name];
         poseRequests.add(name);
@@ -241,6 +274,7 @@ async function main() {
         assert.equal(await page.evaluate(() => Boolean(window.__battle.queryDiagnostics)), statsEnabled, 'diagnostics must match the requested variant');
         assert.equal(await page.evaluate(() => Boolean(window.__driverProbe)), driverTrace);
         assert.equal(await page.evaluate(() => Boolean(window.__renderTimingProbe?.attached)), gpuTimer || gpuComparison);
+        assert.equal(await page.evaluate(() => Boolean(window.__renderPassTimingProbe?.attached)), gpuPassTimer);
         assert.equal(await page.evaluate(() => Boolean(window.__renderWorkProbe?.attached)), passCapture || backbufferComparison);
         if (driverTrace) assert.equal(await page.evaluate(() => window.__driverProbe.materialAttached), true);
         if (renderSplit) assert.equal(await page.evaluate(() => window.__battle.benchmark.renderIsolation), isolationMode);
@@ -284,8 +318,9 @@ async function main() {
         }
         const result = await page.evaluate(sampleBattleWindow, { seconds, settleSeconds });
         const { sampleStart } = result;
-        if (gpuTimer || gpuComparison) await page.waitForTimeout(1000);
+        if (gpuTimer || gpuComparison || gpuPassTimer) await page.waitForTimeout(1000);
         const resolvedRenderTiming = gpuTimer || gpuComparison ? await page.evaluate(() => window.__renderTimingProbe) : null;
+        const resolvedRenderPassTiming = gpuPassTimer ? await page.evaluate(() => window.__renderPassTimingProbe) : null;
         if (profileEnabled) {
           ({ profile } = await cdp.send('Profiler.stop')); profileStarted = false;
           await writeFile(join(directory, `${name}.cpuprofile`), JSON.stringify(profile));
@@ -308,6 +343,8 @@ async function main() {
           tracers: { start: sampleStart.tracers, end: result.final.tracers },
           driverProbe: driverProbeWindow(sampleStart.driverProbe, result.final.driverProbe, frames),
           renderTiming: renderTimingWindow(sampleStart.renderTimingProbe, result.final.renderTimingProbe, resolvedRenderTiming, frames),
+          renderPassTiming: renderPassTimingWindow(sampleStart.renderPassTimingProbe, result.final.renderPassTimingProbe,
+            resolvedRenderPassTiming, frames),
           renderWork: renderWorkWindow(sampleStart.renderWorkProbe, result.final.renderWorkProbe),
           queryDiagnostics: queryDiagnosticsDelta(sampleStart.queryDiagnostics, result.final.queryDiagnostics),
           shaderPrograms: { initial: initial.shaderPrograms, sampleStart: sampleStart.shaderPrograms, final: result.final.shaderPrograms },
@@ -379,17 +416,23 @@ async function main() {
           const { profile } = await cdp.send('Profiler.stop');
           await writeFile(join(directory, `${name}-failed.cpuprofile`), JSON.stringify(profile));
         }
-        const state = await page.evaluate(() => {
-          const data = window.__battle;
-          return data ? { state: data.state, time: data.time, population: data.population, combat: data.combatStats,
-            simulationClock: data.simulationClock, telemetry: window.__battleTelemetry, driverProbe: window.__driverProbe ?? null,
-            renderTimingProbe: window.__renderTimingProbe ?? null } : null;
-        });
-        await writeFile(join(directory, `${name}-error.json`), JSON.stringify({ error: error.message, state, events, errors }, null, 2));
+        let state = null, stateCaptureError = null;
+        try {
+          state = await page.evaluate(() => {
+            const data = window.__battle;
+            return data ? { state: data.state, time: data.time, population: data.population, combat: data.combatStats,
+              simulationClock: data.simulationClock, telemetry: window.__battleTelemetry, driverProbe: window.__driverProbe ?? null,
+              renderTimingProbe: window.__renderTimingProbe ?? null,
+              renderPassTimingProbe: window.__renderPassTimingProbe ?? null } : null;
+          });
+        } catch (captureError) { stateCaptureError = captureError.message; }
+        await writeFile(join(directory, `${name}-error.json`),
+          JSON.stringify({ error: error.message, state, stateCaptureError, events, errors }, null, 2));
         throw error;
       } finally {
         if (!page.isClosed()) await page.evaluate(() => {
           window.__stopRenderWorkProbe?.();
+          window.__stopRenderPassTimingProbe?.();
           window.__stopRenderTimingProbe?.();
         });
         await context.close();

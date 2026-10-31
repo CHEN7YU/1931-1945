@@ -132,6 +132,60 @@ for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-b
   geometry.dispose(); material.dispose();
 });
 
+test('weapons share body distance hysteresis, restore original detail on zoom in the same update and never change combat state', async () => {
+  const camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, 0);
+  const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const profile = { idle: track, run: track, strideMeters: 2, muzzle: [0, 0, -.8] };
+  const geometry = new THREE.BoxGeometry(.4, 1.7, .3), material = new THREE.MeshStandardMaterial();
+  function view() {
+    const root = new THREE.Group(), gun = new THREE.Group();
+    gun.userData.personalWeapon = true; root.add(new THREE.Mesh(geometry, material), gun);
+    return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null, bind() {},
+      update(actor) { root.position.copy(actor.position); root.updateMatrixWorld(true); root.visible = true; },
+      get snapshot() { return null; } };
+  }
+  const force = createNraForceRenderer(new THREE.Scene(), camera, view(), 4, { team: 'enemy' });
+  const actor = { id: 'lod', unitId: 'enemy-unit', team: 'enemy', position: new THREE.Vector3(0, 0, -60),
+    heading: .4, walkPhase: 0, health: 100, rifle: createRifleState(), bayonet: createBayonetState(), locomotion: { speed: 0 } };
+  actor.nativeMotion = createNraMotion(profile, actor);
+  const before = JSON.stringify(actor);
+  await force.prepare({ async compileAsync() {} });
+  const weaponParts = () => force.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle');
+  force.update([actor], 0, null, 'high');
+  assert.equal(force.snapshot.coarseWeapons, 1);
+  assert.ok(force.snapshot.weaponGeometryTriangles < force.snapshot.weaponGeometryTrianglesWithoutLod * .6);
+  const coarse = weaponParts().filter(mesh => mesh.count > 0);
+  assert.ok(coarse.every(mesh => mesh.userData.geometryLod === 'coarse' && mesh.visible));
+  const transform = Array.from(coarse[0].instanceMatrix.array.subarray(0, 16));
+  const original = weaponParts().filter(mesh => mesh.userData.geometryLod === 'original');
+  const originalBuffers = original.map(mesh => JSON.stringify(mesh.geometry.toJSON()));
+  camera.fov = 18; camera.updateProjectionMatrix();
+  force.update([actor], 1, null, 'high');
+  assert.equal(force.snapshot.coarseWeapons, 0);
+  assert.equal(force.snapshot.weaponGeometryTriangles, force.snapshot.weaponGeometryTrianglesWithoutLod);
+  assert.ok(coarse.every(mesh => !mesh.visible && mesh.count === 0));
+  assert.ok(original.every(mesh => mesh.visible && mesh.count === 1));
+  assert.deepEqual(Array.from(original[0].instanceMatrix.array.subarray(0, 16)), transform);
+  assert.deepEqual(original.map(mesh => JSON.stringify(mesh.geometry.toJSON())), originalBuffers);
+  camera.fov = 72; camera.updateProjectionMatrix();
+  force.update([actor], 2, null, 'high');
+  assert.equal(force.snapshot.coarseWeapons, 1);
+  force.update([], 3, null, 'high');
+  assert.ok(weaponParts().every(mesh => !mesh.visible && mesh.count === 0));
+  force.update([actor], 4, null, 'high');
+  assert.equal(force.snapshot.coarseWeapons, 1);
+  assert.equal(JSON.stringify(actor), before);
+  actor.rifle = createRifleState('type11');
+  const automatic = JSON.stringify(actor);
+  force.update([actor], 5, null, 'high');
+  assert.equal(force.snapshot.coarseWeapons, 0, 'already cheap machine guns retain their original bipod and feed silhouette');
+  assert.equal(force.snapshot.weaponGeometryTriangles, force.snapshot.weaponGeometryTrianglesWithoutLod);
+  assert.equal(JSON.stringify(actor), automatic);
+  for (const mesh of force.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }
+  geometry.dispose(); material.dispose();
+});
+
 test('shared casualty banks grow explicitly when the minimum retention time temporarily exceeds their capacity', async () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
   camera.position.set(0, 1.67, 0);
