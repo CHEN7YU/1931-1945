@@ -7,7 +7,7 @@ import { OBJECTIVES } from './core.js';
 import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
 import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
 import { createDoorWorld } from './door-world.js';
-import { bakeSurfaceGeometry } from './surface-uv.js';
+import { staticGeometryBatches, STATIC_BATCH_CELL_SIZE } from './static-scene-batches.js';
 import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
 import { damagedSurfaceGeometry, craterGeometry, addStaticWrecks } from './war-damage.js';
 import { makeOutskirtsLayout, outskirtsObstacles } from './outskirts-layout.js';
@@ -641,6 +641,7 @@ export function makeWorld(scene, surface, options = {}) {
     return [kind, material];
   }));
   const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .92 });
+  leaves.userData.spatialBatch = true;
   const treeContact = surface('root-litter', 0xd5c8b4);
   treeContact.alphaMap = woodlandGroundContactMask();
   treeContact.alphaMap.channel = 1;
@@ -660,6 +661,7 @@ export function makeWorld(scene, surface, options = {}) {
     obstacle(tree.x, tree.z, tree.radius * 2, tree.radius * 2, tree.height * .8);
   }
   sceneArt.woodland = { trees: trees.length, stands: treeMaterials.size, leafStyle: 'individual-folded-leaves',
+    leafBatches: 0, leafCellMeters: STATIC_BATCH_CELL_SIZE,
     barkBatches: [...treeMaterials.values()].reduce((sum, materials) => sum + materials.bark.size, 0),
     barkSources: Object.fromEntries(species.map(kind => [kind, bark[kind].userData.source])),
     groundContact: treeContact.userData.source,
@@ -728,20 +730,18 @@ export function makeWorld(scene, surface, options = {}) {
   }
 
   scene.updateMatrixWorld(true);
-  const batches = new Map();
-  for (const object of staticMeshes) {
-    const geometry = bakeSurfaceGeometry(object);
-    if (!batches.has(object.material)) batches.set(object.material, []);
-    batches.get(object.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
-    if (geometry.index) geometry.dispose();
-    object.parent.remove(object);
-  }
-  for (const [mat, geometries] of batches) {
-    const combined = new THREE.Mesh(mergeGeometries(geometries), mat);
-    combined.castShadow = !mat.transparent;
-    combined.receiveShadow = true;
-    scene.add(combined);
-    geometries.forEach(geometry => geometry.dispose());
+  for (const [mat, cells] of staticGeometryBatches(staticMeshes)) {
+    for (const [cell, geometries] of cells) {
+      const combined = new THREE.Mesh(mergeGeometries(geometries), mat);
+      combined.userData.staticCell = cell;
+      if (mat.userData.spatialBatch) sceneArt.woodland.leafBatches++;
+      combined.geometry.computeBoundingBox();
+      combined.geometry.computeBoundingSphere();
+      combined.castShadow = !mat.transparent;
+      combined.receiveShadow = true;
+      scene.add(combined);
+      geometries.forEach(geometry => geometry.dispose());
+    }
   }
   const groundSurface = (x, z) => {
     if (riverBedHeight(x, z) < 0 && groundHeight(x, z) <= 0) return 'earth';

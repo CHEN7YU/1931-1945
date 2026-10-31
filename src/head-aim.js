@@ -4,9 +4,12 @@ import { rifleStockSection } from './rifle-contacts.js';
 const X = new Vector3(1, 0, 0), Y = new Vector3(0, 1, 0), Z = new Vector3(0, 0, 1);
 const bounds = [[-.9, .8], [-.7, .3], [-.7, .15], [-.65, .65]];
 const cache = new WeakMap();
+const headBases = new WeakMap();
 const vector = values => new Vector3().fromArray(values);
 const quaternion = values => new Quaternion().fromArray(values);
 const point = bone => bone.getWorldPosition(new Vector3());
+const headBaseInputs = pose => [pose.upright, pose.idleTime, pose.hipDrop, pose.bodyLean, pose.torsoYaw,
+  ...Object.entries(pose.postures).flat()];
 
 function channel(track, time, rotation) {
   if (track.times.length === 1) return rotation ? quaternion(track.values) : vector(track.values);
@@ -121,7 +124,10 @@ export function createHeadAimProfile(root, bones, idle, postures, meshes) {
   };
 }
 
-function baseHead(profile, pose) {
+function baseHead(profile, pose, goal = null) {
+  const inputs = headBaseInputs(pose), retained = goal && headBases.get(goal);
+  if (retained?.profile === profile && inputs.length === retained.inputs.length &&
+    inputs.every((value, index) => Object.is(value, retained.inputs[index]))) return retained.result;
   const clips = [['standing', pose.upright, pose.idleTime],
     ...Object.entries(pose.postures).map(([name, weight]) => [name, weight, 0])].filter(([, weight]) => weight > 0);
   const matrix = new Matrix4(), local = new Matrix4(), result = {};
@@ -156,6 +162,7 @@ function baseHead(profile, pose) {
     bone.rotation.premultiply(delta);
   }
   result.Head.rotation.copy(originalHead).premultiply(new Quaternion().setFromAxisAngle(X, -.2 * pose.bodyLean));
+  if (goal) headBases.set(goal, { profile, inputs, result });
   return result;
 }
 
@@ -232,7 +239,7 @@ function solve(profile, base, gunPosition, gunRotation, initial) {
 }
 
 export function solveHeadAimGoal(profile, pose, previous = null) {
-  const base = baseHead(profile, pose), gunPosition = vector(pose.weaponPosition), gunRotation = quaternion(pose.weaponQuaternion);
+  const base = baseHead(profile, pose, previous), gunPosition = vector(pose.weaponPosition), gunRotation = quaternion(pose.weaponQuaternion);
   const prior = previous?.parameters ?? [-.4, -.35, -.3, 0], cost = result => result.error.reduce((sum, value) => sum + value * value, 0);
   let solved = null;
   for (const seed of [prior, [-.7, -.5, -.4, .2], [.2, -.4, -.3, -.2]]) {
@@ -240,8 +247,10 @@ export function solveHeadAimGoal(profile, pose, previous = null) {
     if (!solved || cost(candidate) < cost(solved)) solved = candidate;
     if (Math.hypot(solved.error[0], solved.error[1]) < .001 && Math.abs(solved.error[2]) < .003) break;
   }
-  return Object.freeze({ neckRotation: Object.freeze(solved.neck.toArray()), headRotation: Object.freeze(solved.head.toArray()),
+  const result = Object.freeze({ neckRotation: Object.freeze(solved.neck.toArray()), headRotation: Object.freeze(solved.head.toArray()),
     parameters: Object.freeze(solved.parameters), iterations: solved.iterations, stalled: solved.stalled });
+  headBases.set(result, { profile, inputs: headBaseInputs(pose), result: base });
+  return result;
 }
 
 export function projectUnaimedEye(profile, pose) {
@@ -257,7 +266,7 @@ export function projectHeadAim(profile, pose, motion) {
   const retained = cache.get(motion), goal = motion.headGoal, weight = motion.cheekWeight;
   if (retained?.key === key && retained.goal === goal) return retained.result;
   if (!Number.isFinite(weight) || weight < 0 || weight > 1 || weight > 0 && !goal) throw new Error('Aimed head requires its simulation-owned target');
-  const base = baseHead(profile, pose), gunPosition = vector(pose.weaponPosition), gunRotation = quaternion(pose.weaponQuaternion);
+  const base = baseHead(profile, pose, goal), gunPosition = vector(pose.weaponPosition), gunRotation = quaternion(pose.weaponQuaternion);
   const neck = goal ? new Quaternion().slerp(quaternion(goal.neckRotation), weight) : new Quaternion();
   const headPosition = base.Head.position.clone().sub(base.Neck.position).applyQuaternion(neck).add(base.Neck.position);
   const headRotation = goal ? base.Head.rotation.clone().slerp(quaternion(goal.headRotation), weight) : base.Head.rotation;

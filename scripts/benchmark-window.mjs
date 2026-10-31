@@ -16,8 +16,10 @@ export function sampleBattleWindow({ seconds, settleSeconds }, target = globalTh
       if (!data || !telemetry) throw new Error('Development battle telemetry is unavailable');
       const driverProbe = target.__driverProbe ?? null;
       const renderTimingProbe = target.__renderTimingProbe ?? null;
+      const renderPassTimingProbe = target.__renderPassTimingProbe ?? null;
       const renderWorkProbe = target.__renderWorkProbe ?? null;
-      return { now, rafTimestamp, data, telemetry, driverProbe, renderTimingProbe, renderWorkProbe, captureMs: target.performance.now() - now };
+      return { now, rafTimestamp, data, telemetry, driverProbe, renderTimingProbe, renderPassTimingProbe, renderWorkProbe,
+        captureMs: target.performance.now() - now };
     };
     const next = callback => { request = target.requestAnimationFrame(callback); };
     const sample = rafTimestamp => {
@@ -36,7 +38,8 @@ export function sampleBattleWindow({ seconds, settleSeconds }, target = globalTh
               queryDiagnostics: data.queryDiagnostics, renderIsolation: data.renderIsolation,
               characterRendering: { friendly: data.historicalForce ?? null, enemy: data.enemyHistoricalForce ?? null },
               shaderPrograms: data.shaderPrograms, tracers: data.tracers, driverProbe: start.driverProbe,
-              renderTimingProbe: start.renderTimingProbe, renderWorkProbe: start.renderWorkProbe },
+              renderTimingProbe: start.renderTimingProbe, renderPassTimingProbe: start.renderPassTimingProbe,
+              renderWorkProbe: start.renderWorkProbe },
             now: end.now, frames: end.telemetry.frames,
             boundaries: { requestedSeconds: seconds, settleSeconds,
               startRafTimestamp: start.rafTimestamp, endRafTimestamp: end.rafTimestamp,
@@ -48,7 +51,8 @@ export function sampleBattleWindow({ seconds, settleSeconds }, target = globalTh
               shaderPrograms: final.shaderPrograms, queryDiagnostics: final.queryDiagnostics,
               renderIsolation: final.renderIsolation, tracers: final.tracers, driverProbe: end.driverProbe,
               characterRendering: { friendly: final.historicalForce ?? null, enemy: final.enemyHistoricalForce ?? null },
-              renderTimingProbe: end.renderTimingProbe, renderWorkProbe: end.renderWorkProbe },
+              renderTimingProbe: end.renderTimingProbe, renderPassTimingProbe: end.renderPassTimingProbe,
+              renderWorkProbe: end.renderWorkProbe },
           });
           return;
         }

@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
 import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
-import { createDistantPoseGeometry, useDistantPose } from './distant-pose-lod.js';
+import { createDistantPoseGeometry, createDistantWeaponGeometry, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
 import { createDadaoState } from './dadao.js';
 import { dadaoModel } from './dadao-model.js';
 
@@ -52,10 +52,31 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const weaponMatrix = new THREE.Matrix4();
   let coarseIds = new Set(), lodReady = false;
   const poseLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
+  const weaponLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
   const geometryBytes = geometry => (geometry.index?.array.byteLength ?? 0) + Object.values(geometry.attributes)
     .filter(attribute => !attribute.isInstancedBufferAttribute).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
-  function weaponGroupFor(key) {
-    if (!weaponGroups.has(key)) {
+  function weaponGroupFor(key, coarse = false) {
+    const groupKey = coarse ? `${key}:coarse` : key;
+    if (!weaponGroups.has(groupKey) && coarse) {
+      const original = weaponGroupFor(key);
+      if (original.triangles <= DISTANT_WEAPON_TRIANGLE_BUDGET) return original;
+      const started = performance.now();
+      const parts = original.parts.map(source => {
+        const geometry = createDistantWeaponGeometry(source.geometry);
+        const stats = geometry.userData.distantWeaponLod;
+        weaponLod.sourceTriangles += stats.sourceTriangles; weaponLod.triangles += stats.triangles;
+        weaponLod.sourceBytes += geometryBytes(source.geometry); weaponLod.bytes += geometryBytes(geometry);
+        weaponLod.maxError = Math.max(weaponLod.maxError, stats.error);
+        const mesh = new THREE.InstancedMesh(geometry, source.material, capacity);
+        mesh.name = `owned-weapon-${key}`; mesh.userData.geometryLod = 'coarse';
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
+        mesh.frustumCulled = false; root.add(mesh); return mesh;
+      });
+      weaponLod.preparationMs += performance.now() - started;
+      weaponGroups.set(groupKey, { parts, count: 0, capacity,
+        triangles: parts.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0),
+        sourceTriangles: original.triangles, coarse: true });
+    } else if (!weaponGroups.has(groupKey)) {
       const gun = key === 'dadao' ? dadaoModel()
         : rifleWorldModel('far', createRifleState(key), { bayonet: team === 'enemy' && key === 'rifle' });
       const batches = new Map();
@@ -70,13 +91,15 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       const parts = [...batches].map(([material, geometries]) => {
         const mesh = new THREE.InstancedMesh(mergeGeometries(geometries), material, capacity);
         mesh.name = `owned-weapon-${key}`;
+        mesh.userData.geometryLod = 'original';
         geometries.forEach(geometry => geometry.dispose());
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
         mesh.frustumCulled = false; root.add(mesh); return mesh;
       });
-      weaponGroups.set(key, { parts, count: 0, capacity });
+      const triangles = parts.reduce((sum, mesh) => sum + (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3, 0);
+      weaponGroups.set(groupKey, { parts, count: 0, capacity, triangles, sourceTriangles: triangles });
     }
-    return weaponGroups.get(key);
+    return weaponGroups.get(groupKey);
   }
   scene.add(root);
   const profile = template.motionProfile;
@@ -233,6 +256,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         for (const attachment of bank.attachments) attachment.count = 0;
       }
       summary = { assigned: 0, near: 0, far: 0, coarse: 0, hidden: 0, culled: 0, batches: 0 };
+      summary.weaponGeometryTriangles = 0; summary.weaponGeometryTrianglesWithoutLod = 0;
+      summary.coarseWeapons = 0;
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection);
       const candidates = [], visible = [], budget = preset === 'low' ? 3 : 6, limit = preset === 'low' ? 18 : 28;
@@ -307,7 +332,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           if (actor.casualty?.offset) {
             matrix.elements[12] += actor.casualty.offset.x; matrix.elements[14] += actor.casualty.offset.z;
           }
-          const weapons = weaponGroupFor(sword ? 'dadao' : actor.rifle.model ?? 'rifle');
+          const coarse = lodReady && useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
+          const weapons = weaponGroupFor(sword ? 'dadao' : actor.rifle.model ?? 'rifle', coarse);
           if (weapons.count >= weapons.capacity) {
             if (actor.health > 0) throw new Error('Distant weapon instance capacity exceeded');
             weapons.capacity *= 2;
@@ -319,8 +345,10 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           weaponMatrix.multiplyMatrices(matrix, bank.gunMatrix);
           for (const mesh of weapons.parts) mesh.setMatrixAt(weapons.count, weaponMatrix);
           weapons.count++;
+          summary.weaponGeometryTriangles += weapons.triangles;
+          summary.weaponGeometryTrianglesWithoutLod += weapons.sourceTriangles;
+          if (weapons.coarse) summary.coarseWeapons++;
           const tint = new THREE.Color(actor.avatarAppearance?.skin ?? '#ffffff');
-          const coarse = lodReady && useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
           const bodyIndex = coarse ? bank.coarseCount : bank.count - bank.coarseCount;
           for (const mesh of coarse ? bank.coarseParts : bank.parts) {
             mesh.setMatrixAt(bodyIndex, matrix);
@@ -377,8 +405,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       return template.sampleAnatomy(actor, now);
     },
     get issue() { return slots.find(slot => slot.actorId && slot.view.issue)?.view.issue ?? null; },
-    get counts() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod } }; },
-    get snapshot() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod }, members: members.map(member => ({ ...member })),
+    get counts() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod }, weaponLod: { ...weaponLod } }; },
+    get snapshot() { return { ...summary, poolSize: slots.length, poseBanks: banks.length, lodReady, poseLod: { ...poseLod }, weaponLod: { ...weaponLod }, members: members.map(member => ({ ...member })),
       views: slots.filter(slot => slot.actorId).map(slot => slot.view.snapshot) }; },
     get focusedSnapshot() { return focused?.snapshot ?? null; },
   };

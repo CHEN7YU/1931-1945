@@ -1,9 +1,23 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { MeshoptSimplifier } from 'meshoptimizer/simplifier';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+
+export const DISTANT_WEAPON_TRIANGLE_BUDGET = 3000;
 
 export async function createDistantPoseGeometry(source) {
   if (!MeshoptSimplifier.supported) throw new Error('Distant character geometry requires WebAssembly simplification support');
   await MeshoptSimplifier.ready;
+  return simplifyGeometry(source, .08, .005, 'distantPoseLod');
+}
+
+export function createDistantWeaponGeometry(source) {
+  // Body preparation has already awaited the shared simplifier before this synchronous render path.
+  const indexed = source.index ? source : mergeVertices(source, 1e-6);
+  try { return simplifyGeometry(indexed, .06, .008, 'distantWeaponLod'); }
+  finally { if (indexed !== source) indexed.dispose(); }
+}
+
+function simplifyGeometry(source, ratio, errorLimit, statisticsKey) {
   const position = source.attributes.position;
   if (!position || position.itemSize !== 3 || !(position.array instanceof Float32Array) || source.groups.length) {
     throw new Error('Distant LOD requires a merged Float32 triangle pose');
@@ -24,7 +38,7 @@ export async function createDistantPoseGeometry(source) {
     }
   }
   const [reduced, error] = MeshoptSimplifier.simplifyWithAttributes(indices, position.array, 3,
-    attributes, weights.length, weights, null, Math.max(3, Math.floor(indices.length * .12 / 3) * 3), .003);
+    attributes, weights.length, weights, null, Math.max(3, Math.floor(indices.length * ratio / 3) * 3), errorLimit);
   const [remap, count] = MeshoptSimplifier.compactMesh(reduced);
   const geometry = new BufferGeometry();
   for (const [name, attribute] of Object.entries(source.attributes)) {
@@ -42,7 +56,7 @@ export async function createDistantPoseGeometry(source) {
   geometry.setIndex(new BufferAttribute(count <= 65535 ? new Uint16Array(reduced) : reduced, 1));
   geometry.boundingBox = source.boundingBox?.clone() ?? null;
   geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
-  geometry.userData.distantPoseLod = { sourceTriangles: indices.length / 3, triangles: reduced.length / 3,
+  geometry.userData[statisticsKey] = { sourceTriangles: indices.length / 3, triangles: reduced.length / 3,
     sourceVertices: position.count, vertices: count, error };
   return geometry;
 }

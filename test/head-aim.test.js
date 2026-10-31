@@ -6,7 +6,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { prepareNraRig } from '../src/nra-rig.js';
 import { createNativePosturePoses } from '../src/nra-posture-pose.js';
 import { createNativeGaitProfile, applyNativeUpperBody } from '../src/nra-gait.js';
-import { createHeadAimProfile, createHeadAimProbe } from '../src/head-aim.js';
+import { createHeadAimProfile, createHeadAimProbe, projectHeadAim } from '../src/head-aim.js';
 import { createNraMotion, sampleNraMotion, nativeEyeLocal, nativeMuzzleLocal, nativeAimReady, advanceNraMotion, syncNativeAimGoal } from '../src/nra-motion.js';
 import { shoulderPocket } from '../src/rifle-contacts.js';
 import { soldierEyePosition, soldierPostureHeight } from '../src/entities.js';
@@ -186,6 +186,43 @@ test('eye-only reuse preserves immutable local results, world projection and the
   assert.throws(() => nativeEyeLocal(f.actor), /simulation-owned target/);
   f.actor.position.y = NaN;
   assert.throws(() => nativeEyeLocal(f.actor), /calibrated motion state/);
+});
+
+test('aim goal reuses the exactly matching head base and invalidates on pose or profile changes', () => {
+  const f = fixture(), multiply = T.Matrix4.prototype.multiply;
+  const count = callback => {
+    let calls = 0;
+    T.Matrix4.prototype.multiply = function (...args) { calls++; return multiply.apply(this, args); };
+    try { return { value: callback(), calls }; }
+    finally { T.Matrix4.prototype.multiply = multiply; }
+  };
+  f.project('standing', true, 1.1, .04);
+  f.actor.nativeMotion.idleTime += .017;
+  syncNativeAimGoal(f.actor);
+  const motion = f.actor.nativeMotion, retainedGoal = motion.headGoal;
+  const cached = count(() => sampleNraMotion(f.actor));
+  const uncachedMotion = { ...motion, headGoal: Object.freeze({ ...retainedGoal }) };
+  const uncached = count(() => sampleNraMotion({ ...f.actor, nativeMotion: uncachedMotion }));
+  assert.deepEqual(cached.value, uncached.value);
+  assert.equal(uncached.calls - cached.calls, f.profile.headAim.chain.length,
+    'matching goal/input reuse must skip exactly one head-base transform chain');
+
+  motion.idleTime += .013;
+  const changedTime = count(() => sampleNraMotion(f.actor));
+  const changedTimeMotion = { ...motion, headGoal: Object.freeze({ ...motion.headGoal }) };
+  const changedTimeReference = count(() => sampleNraMotion({ ...f.actor, nativeMotion: changedTimeMotion }));
+  assert.deepEqual(changedTime.value, changedTimeReference.value);
+  assert.equal(changedTime.calls, f.profile.headAim.chain.length,
+    'changing the animation sample time must force the base pose to be rebuilt');
+
+  const pose = sampleNraMotion(f.actor), goal = motion.headGoal;
+  const otherProfile = structuredClone(f.profile.headAim);
+  const uncachedOtherProfile = count(() => projectHeadAim(otherProfile, pose,
+    { headGoal: goal, cheekWeight: motion.cheekWeight }));
+  assert.deepEqual(uncachedOtherProfile.value, pose.headAim);
+  assert.equal(uncachedOtherProfile.calls, f.profile.headAim.chain.length,
+    'a copied calibration profile must not reuse another profile object’s cached transform chain');
+  assert.ok(Object.isFrozen(retainedGoal) && Object.isFrozen(retainedGoal.neckRotation));
 });
 
 test('unaimed eye reuse retains main sword carry semantics and invalidates when its pose appears or disappears', () => {
