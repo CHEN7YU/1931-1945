@@ -70,9 +70,10 @@ export function supportsSquad(point, type) {
 }
 
 export function spawnBlockReason(point, type, hostiles, obstacles) {
+  if (point.enabled === false) return '重生点已被合围部队永久关闭';
   if (!supportsSquad(point, type)) return '该重生点不支持此小队';
   if (point.kind === 'rally' && point.health <= 0) return '集结点已被摧毁';
-  if (point.kind !== 'air' && hostiles.some(actor => actor.health > 0 && (actor.altitude || 0) < 4 && Math.hypot(actor.x - point.x, actor.z - point.z) < SPAWN_RULES.enemyBlockRadius)) return '附近有敌军，暂时无法部署';
+  if (!point.permanent && point.kind !== 'air' && hostiles.some(actor => actor.health > 0 && (actor.altitude || 0) < 4 && Math.hypot(actor.x - point.x, actor.z - point.z) < SPAWN_RULES.enemyBlockRadius)) return '附近有敌军，暂时无法部署';
   const radius = type === 'tank' ? 2.2 : point.kind === 'air' ? 0 : SPAWN_RULES.placementRadius;
   if (radius && circleBlocked(point.x, point.z, radius, obstacles)) return '重生区域受阻';
   return null;

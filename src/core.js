@@ -17,8 +17,8 @@ export const OBJECTIVES = Object.freeze([
   { id: 'C', name: '北城街垒', x: -10, z: -51, radius: 14 },
 ]);
 
-export function makeObjectives() {
-  return OBJECTIVES.map(point => ({ ...point, owner: null, control: 0, progress: 0, enemyProgress: 0, captured: false, status: 'empty' }));
+export function makeObjectives(layout = OBJECTIVES) {
+  return layout.map(point => ({ ...point, owner: null, control: 0, progress: 0, enemyProgress: 0, captured: false, status: 'empty' }));
 }
 
 export function advanceCapture(point, dt, friendly, hostile) {

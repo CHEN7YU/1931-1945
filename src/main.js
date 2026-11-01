@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import './style.css';
 import { soldierModel, weaponModel, rallyPointModel, baseSpawnModel, setModelSurfaces } from './world.js';
 import { makeWorld } from './battlefield.js';
+import { PREVIEW_OBJECTIVES, PREVIEW_BRIDGE, makeTownPreviewLayout } from './town-preview-layout.js';
+import { encirclementRoster, encirclementSpawns, createEncirclement, captureEncirclement, advanceEncirclement } from './encirclement.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, DOMINATION_SECONDS, makeObjectives, advanceCapture, createConquest, advanceConquest, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
 import * as collisionDiagnostics from './core.js';
@@ -25,7 +27,7 @@ import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleAr
 import { createDaylight, configureSunShadow } from './lighting.js';
 import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { createTracerPool } from './tracer-pool.js';
-import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
+import { BATTLE_RULES, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
 import { SpatialGrid, obstacleLookup } from './spatial.js';
 import { createSolidIndex } from './solid-index.js';
 import { createSoldierRenderer } from './soldier-renderer.js';
@@ -222,7 +224,8 @@ try {
   fatalReporter.show(error, { stage: 'scene-materials' });
   throw error;
 }
-const world = makeWorld(scene, surface);
+const world = makeWorld(scene, surface, benchmark?.diagnostic ? {} :
+  { town: makeTownPreviewLayout(), bridge: PREVIEW_BRIDGE, objectives: PREVIEW_OBJECTIVES });
 const solidIndex = createSolidIndex(world.solids);
 const occluded = createOcclusionQuery();
 const grenadeSupport = createGrenadeSupport(world.solids, world.groundHeight, (point, radius) =>
@@ -294,7 +297,8 @@ let actorSerial = 0;
 let soundSerial = 0;
 let state = 'menu';
 let selectedType = 'infantry';
-let objectives = makeObjectives();
+let objectives = makeObjectives(benchmark?.diagnostic ? undefined : PREVIEW_OBJECTIVES);
+let encirclement = createEncirclement();
 let conquest = createConquest();
 let assaultAssignmentAt = 0;
 let allies = [];
@@ -373,7 +377,7 @@ let lastFootSurface = null;
 let weaponObstruction = 0;
 let obstructionBlend = 0;
 let lastRifleTrace = null;
-let spawnPoints = [...makeBaseSpawns(), ...stagingSpawns()];
+let spawnPoints = encirclementSpawns();
 let spawnEvents = [];
 let rallySerial = 0;
 let pendingSquad = null;
@@ -402,10 +406,12 @@ const mortarTarget = new THREE.Vector3();
 const rallyPreview = rallyPointModel('friendly', true);
 rallyPreview.visible = false;
 scene.add(rallyPreview);
+const baseSpawnViews = new Map();
 for (const point of spawnPoints.filter(point => !point.aiOnly && (point.kind === 'base' || point.kind === 'garage'))) {
   const model = baseSpawnModel(point.team);
   model.position.set(point.x, 0, point.z);
   scene.add(model);
+  baseSpawnViews.set(point.id, model);
 }
 
 function toast(message, duration = 3) {
@@ -934,17 +940,19 @@ function interactVehicle() {
 
 function resetSpawns() {
   rallyRenderer.clear();
-  spawnPoints = benchmark?.diagnostic ? diagnosticSpawns(benchmark.scenario) : [...makeBaseSpawns(), ...stagingSpawns(), ...japaneseArmorSpawns()];
+  for (const model of baseSpawnViews.values()) model.visible = true;
+  spawnPoints = benchmark?.diagnostic ? diagnosticSpawns(benchmark.scenario) : [...encirclementSpawns(), ...japaneseArmorSpawns()];
   spawnEvents = [];
   rallySerial = 0;
 }
 
 function spawnFormation(formation, initial = false) {
-  if (formation.variant === CHI_HA.id) return spawnJapaneseArmor(formation);
+  if (formation.active === false || formation.respawnEnabled === false) return false;
+  if (formation.variant === CHI_HA.id) return spawnJapaneseArmor(formation, initial);
   if (formation.type !== 'infantry') throw new Error('自主载具单位尚未接入，不能用步兵冒充载具');
   const team = formation.team, hostiles = hostilePositions(team);
   const spawn = battleSpawn(formation, spawnPoints, hostiles, deploymentObstacles(), initial);
-  const reason = spawn ? spawnBlockReason(spawn, 'infantry', hostiles, deploymentObstacles()) : '集结点不存在';
+  const reason = spawn ? spawnBlockReason(spawn, 'infantry', hostiles, deploymentObstacles()) : '无可用步兵重生点';
   if (reason) { formation.blockedReason = reason; formation.respawnAt = time + 2; return false; }
   const occupied = allForces.filter(actor => actor.health > 0).map(actor => actor.position);
   let positions;
@@ -964,10 +972,10 @@ function spawnFormation(formation, initial = false) {
   return true;
 }
 
-function spawnJapaneseArmor(formation) {
-  const spawn = spawnPoints.find(point => point.id === formation.spawnId);
+function spawnJapaneseArmor(formation, initial = false) {
   const hostiles = hostilePositions(formation.team), obstacles = deploymentObstacles();
-  const blocked = !spawn ? '日军装甲出发点不存在' : spawnBlockReason(spawn, 'tank', hostiles, obstacles) ||
+  const spawn = battleSpawn(formation, spawnPoints, hostiles, obstacles, initial);
+  const blocked = !spawn ? '无可用日军装甲重生点' : spawnBlockReason(spawn, 'tank', hostiles, obstacles) ||
     (!armorNavigate.canSpawn(spawn, [...entities.vehicles.values()]) ? '日军装甲出发点净空不足' : null);
   if (blocked) {
     formation.blockedReason = blocked; formation.respawnAt = time + 2;
@@ -1075,7 +1083,8 @@ function beginMatch() {
   aiDecisions.reset();
   resetSpawns();
   pendingSquad = pendingSpawn = null;
-  objectives = makeObjectives();
+  objectives = makeObjectives(benchmark?.diagnostic ? undefined : PREVIEW_OBJECTIVES);
+  encirclement = createEncirclement();
   conquest = createConquest();
   assaultAssignmentAt = 0;
   for (const flag of world.flags) flag.material.color.setHex(0xa19469);
@@ -1087,10 +1096,13 @@ function beginMatch() {
   lastFootSurface = null;
   frameTimes.length = 0;
   const playerType = SQUADS[selectedType].type;
-  formations = benchmark?.diagnostic ? diagnosticRoster(benchmark.scenario) : battleRoster(playerType);
-  for (const formation of formations) { registerUnit(entities, formation); registerBattleScore(formation); }
+  formations = benchmark?.diagnostic ? diagnosticRoster(benchmark.scenario) : encirclementRoster(playerType);
+  for (const formation of formations) {
+    registerUnit(entities, formation);
+    if (formation.active !== false) registerBattleScore(formation);
+  }
   if (!benchmark?.diagnostic) validateRoster(formations);
-  for (const formation of formations.filter(item => !item.player)) {
+  for (const formation of formations.filter(item => !item.player && item.active !== false)) {
     if (!spawnFormation(formation, true)) throw new Error(`开局集结失败：${formation.id}，未减少单位数作为回退`);
   }
   $('menu').hidden = true;
@@ -1232,8 +1244,8 @@ function showOverlay(kind = 'pause') {
   resetConstruction();
   renderConstruction();
   $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
-  $('overlay-title').textContent = kind === 'victory' ? '阵地已夺，山河犹在。' : kind === 'defeat' ? '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
-  $('overlay-description').textContent = ended ? `${conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。'}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
+  $('overlay-title').textContent = kind === 'victory' ? '残敌已清，合围告捷。' : kind === 'defeat' ? '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
+  $('overlay-description').textContent = ended ? `${benchmark?.diagnostic ? '诊断战局结束。' : '三点合围后，全部日军及车组已被消灭。'}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。' : '占点解锁永久敌后重生点，每次增援两队、日军撤出一队（上限10队／下限5队）；同时占领三点后停止日军重生，全歼残敌获胜。整队阵亡后才能换单位。';
   $('resume').hidden = ended || dead;
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
@@ -1258,7 +1270,9 @@ function refreshDeployment() {
     button.setAttribute('aria-pressed', String(pendingSquad === id));
     button.querySelector('small').textContent = reason ? '刚刚阵亡 · 请选其他小队' : `${TYPES[type].members} 人 · 可出击`;
   }
-  $('deployment-objective').textContent = `三点争夺 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
+  $('deployment-objective').textContent = !benchmark?.diagnostic && encirclement.phase === 2
+    ? `第二阶段 · 日军停止重生 · 剩余 ${battleSummary('enemy').alive} 人`
+    : `三点合围 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
   const pendingType = SQUADS[pendingSquad]?.type;
   $('deployment-selection').textContent = pendingSquad ? `${SQUADS[pendingSquad].name} / ${TYPES[pendingType].weapon}` : '选择其他小队，再选择重生点。';
   const candidates = pendingSquad ? spawnPoints.filter(point => !point.aiOnly && point.team === 'friendly' && supportsSquad(point, pendingType)) : [];
@@ -1274,7 +1288,8 @@ function refreshDeployment() {
     button.disabled = Boolean(reason);
     button.classList.toggle('selected', pendingSpawn === point.id);
     button.setAttribute('aria-pressed', String(pendingSpawn === point.id));
-    button.querySelector('small').textContent = reason || (point.kind === 'rally' ? `工兵建造 · 耐久 ${Math.ceil(point.health)}` : '默认重生点');
+    button.querySelector('small').textContent = reason || (point.permanent ? '永久启用 · 步兵／迫击炮可部署'
+      : point.kind === 'rally' ? `工兵建造 · 耐久 ${Math.ceil(point.health)}` : '默认重生点');
   }
   const selected = candidates.find(point => point.id === pendingSpawn);
   const blocked = selected ? spawnBlockReason(selected, pendingType, hostiles, deploymentObstacles()) : null;
@@ -1695,7 +1710,7 @@ function explode(position, damage, radius, source, weaponKind = 'explosion', sur
     origin.y = Math.max(origin.y, .5);
     if (d < radius && hasLine(origin, target, radius + 1)) hurt(actor, blastDamage(d, radius, damage), source, weaponKind);
   }
-  for (const point of spawnPoints.filter(point => point.kind === 'rally' && point.health > 0)) {
+  for (const point of spawnPoints.filter(point => point.kind === 'rally' && point.health > 0 && point.enabled !== false)) {
     if (['grenade', 'explosive-pack'].includes(weaponKind) && point.team === source.team) continue;
     const target = new THREE.Vector3(point.x, point.altitude + .8, point.z);
     const distance = target.distanceTo(position);
@@ -2669,7 +2684,7 @@ function fightFromCover(actor, target, dt, tankCover = null) {
   const armorThreat = t.threatKind === 'closed-armor';
   const threat = new THREE.Vector3(t.lastSeen.x, t.lastSeen.y, t.lastSeen.z);
   const objective = formationObjective(actor, objectives[0]);
-  if (!armorThreat && objective && time >= t.suppressedUntil &&
+  if ((benchmark?.diagnostic || encirclement.phase === 1) && !armorThreat && objective && time >= t.suppressedUntil &&
     objectiveAdvanceRequired(actor, objective, position.distanceTo(threat), AI_RIFLE.closeRange)) {
     if (t.cover) coverClaims.delete(t.cover.id);
     t.cover = null; t.wallContact = null; t.shotMovePending = false; t.shotMoveGoal = null;
@@ -3000,11 +3015,33 @@ function formationDestination(actor, active) {
   return actor.friendly ? objectiveDestination(actor.tactics, actor.position, point) : assaultDestination(actor, point);
 }
 
+const sweepRoute = [
+  ...[-82, -51, -30, 3, 30, 62, 82].flatMap(z => [-88, -66, -44, -22, 0, 22, 44, 66, 88]
+    .map(x => ({ x, y: world.groundHeight(x, z), z }))
+    .filter(point => !circleBlocked(point.x, point.z, .5, world.obstacles, point.y))),
+  ...world.town.buildings.flatMap(building => [
+    { x: building.x + building.w / 2 + 1.2, y: 0, z: building.doorZ },
+    ...(building.stairs ?? []).map(flight => ({ ...flight.upper })),
+  ]),
+];
+
+function sweepDestination(actor) {
+  const tactics = actor.tactics;
+  tactics.sweep ??= { index: (actor.formation.index * 7 + actor.index) % sweepRoute.length, startedAt: time };
+  let point = sweepRoute[tactics.sweep.index];
+  if (actor.position.distanceTo(new THREE.Vector3(point.x, point.y, point.z)) < 2 || time - tactics.sweep.startedAt > 45) {
+    tactics.sweep.index = (tactics.sweep.index + 1) % sweepRoute.length;
+    tactics.sweep.startedAt = time;
+    point = sweepRoute[tactics.sweep.index];
+  }
+  return point;
+}
+
 function updateAI(dt) {
   const player = allies[current];
   const yaw = controlPose.yaw;
   const objective = objectives.find(p => !p.captured) ?? objectives[0];
-  if (time >= assaultAssignmentAt) {
+  if (time >= assaultAssignmentAt && (benchmark?.diagnostic || encirclement.phase === 1)) {
     for (const formation of assignAssaultObjectives(formations, objectives)) {
       for (const actor of formation.members) {
         if (actor.health <= 0 || actor.vehicleId) continue;
@@ -3226,9 +3263,10 @@ function updateAI(dt) {
     if (!target && !hostileRally) resetAIRifleAim(actor.aiRifle, 'no-target');
     const offensive = !actor.playerUnit || actor.order === 'advance';
     const closeFight = actor.friendly && target && Math.hypot(position.x - target.position.x, position.z - target.position.z) < 8;
-    const assault = offensive && !closeFight &&
+    const sweeping = !benchmark?.diagnostic && encirclement.phase === 2 && actor.friendly && offensive;
+    const assault = !sweeping && offensive && !closeFight &&
       formationAssaultAction(tactics, position, assaultObjective, time, Boolean(target || hostileRally)) === 'advance';
-    const buildingRally = actor === builder && !spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally' && point.health > 0) && !target && !tactics.lastSeen;
+    const buildingRally = actor === builder && !spawnPoints.some(point => point.team === 'enemy' && point.kind === 'rally' && point.health > 0 && point.enabled !== false) && !target && !tactics.lastSeen;
     if (assault && !buildingRally) {
       if (tactics.cover) {
         coverClaims.delete(tactics.cover.id);
@@ -3247,7 +3285,7 @@ function updateAI(dt) {
       if (Math.hypot(position.x - escort.x, position.z - escort.z) > .6) walkActor(actor, escort, 3, dt);
       else tactics.mode = 'tank-cover';
     } else if (tactics.lastSeen && canRiflemanTrackTarget(tactics.threatKind) &&
-      !(actor.friendly && (!actor.playerUnit || actor.order === 'advance') && tactics.threatKind !== 'closed-armor')) {
+      (sweeping || !(actor.friendly && (!actor.playerUnit || actor.order === 'advance') && tactics.threatKind !== 'closed-armor'))) {
       if (tactics.cover || tactics.shotMovePending || time < (tactics.relocatedFireUntil ?? 0) ||
         tactics.threatKind === 'closed-armor') fightFromCover(actor, null, dt);
       else {
@@ -3280,8 +3318,10 @@ function updateAI(dt) {
       if (actor.playerUnit && actor.order === 'hold') {
         walkActor(actor, floorDestination(actor.orderPoint, holdDestination(actor), world.town.buildings), 3, dt);
       } else if (!actor.playerUnit || actor.order === 'advance') {
-        const goal = formationDestination(actor, objective);
-        if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7) walkActor(actor, goal, 3, dt);
+        if (sweeping) tactics.mode = 'sweep';
+        const goal = sweeping ? sweepDestination(actor) : formationDestination(actor, objective);
+        if (Math.hypot(position.x - goal.x, position.z - goal.z) > .7 ||
+          sweeping && Math.abs(position.y - goal.y) > .3) walkActor(actor, goal, 3, dt);
       } else {
         const guard = followGuardAction(actor, player, assaultObjective);
         if (guard) {
@@ -3361,7 +3401,7 @@ function updateAI(dt) {
     enemies = enemies.filter(retainActor);
     friendlyAI = friendlyAI.filter(retainActor);
     rebuildForces();
-    for (const formation of formations.filter(item => !item.player)) {
+    for (const formation of formations.filter(item => !item.player && item.active !== false && item.respawnEnabled !== false)) {
       if (formation.members.some(actor => actor.health > 0)) continue;
       if (formation.variant !== CHI_HA.id) formation.respawnAt ??= time + BATTLE_RULES.respawnSeconds;
       if (reinforcementDue(formation, time)) spawnFormation(formation);
@@ -3371,6 +3411,7 @@ function updateAI(dt) {
 
 function updateObjectives(dt) {
   for (const [index, point] of objectives.entries()) {
+    let closedCount = 0;
     const inRadius = actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane' &&
       Math.hypot(actor.position.x - point.x, actor.position.z - point.z) < point.radius;
     const owner = point.owner;
@@ -3382,6 +3423,31 @@ function updateObjectives(dt) {
       world.flags[index].material.color.setHex(point.owner === 'friendly' ? 0x70865d : point.owner === 'enemy' ? 0xb66551 : 0xa19469);
       assaultAssignmentAt = 0;
       if (point.owner === 'friendly') {
+        if (!benchmark?.diagnostic) {
+          const result = captureEncirclement(encirclement, formations, point.id, time, spawnPoints);
+          if (result.spawn) spawnPoints.push(result.spawn);
+          closedCount = result.disabled.length;
+          for (const closed of result.disabled) {
+            const model = baseSpawnViews.get(closed.id);
+            if (model) model.visible = false;
+          }
+          for (const formation of result.added) {
+            registerBattleScore(formation);
+            spawnFormation(formation);
+          }
+          if (result.withdrawn) {
+            const members = result.withdrawn.members.filter(actor => actor.health > 0);
+            for (const actor of members) {
+              if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
+              pathRequests.delete(actor.tactics.id);
+            }
+            clearActors(members);
+            const ids = new Set(members.map(actor => actor.id));
+            enemies = enemies.filter(actor => !ids.has(actor.id));
+            result.withdrawn.members = result.withdrawn.members.filter(actor => actor.health <= 0);
+            rebuildForces();
+          }
+        }
         const next = objectives.filter(candidate => candidate.id !== point.id &&
           (candidate.owner !== 'friendly' || candidate.status === 'contested' || candidate.control < 1))
           .sort((a, b) => Math.hypot(a.x - point.x, a.z - point.z) - Math.hypot(b.x - point.x, b.z - point.z))[0];
@@ -3393,10 +3459,21 @@ function updateObjectives(dt) {
           resetObjectiveMovement(actor, next.id);
         }
       }
-      toast(`${point.id} · ${point.name} ${point.owner === 'friendly' ? '我方占领' : point.owner === 'enemy' ? '日军占领' : '已被中和'}`, 4);
+      toast(`${point.id} · ${point.name} ${point.owner === 'friendly' ? '我方占领' : point.owner === 'enemy' ? '日军占领' : '已被中和'}${closedCount ? ` · 日军最近${closedCount}处重生点永久关闭` : ''}`, 4);
     }
   }
-  const winner = advanceConquest(conquest, objectives, dt, remaining);
+  const phase = encirclement.phase;
+  const winner = benchmark?.diagnostic ? advanceConquest(conquest, objectives, dt, remaining)
+    : advanceEncirclement(encirclement, objectives, formations);
+  if (!benchmark?.diagnostic && phase !== encirclement.phase) {
+    assaultAssignmentAt = Infinity;
+    for (const actor of friendlyForces.filter(actor => actor.health > 0)) {
+      if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
+      pathRequests.delete(actor.tactics.id);
+      resetObjectiveMovement(actor, actor.orderObjectiveId ?? actor.formation.objectiveId ?? objectives[0].id);
+    }
+    toast('第二阶段 · 合围完成！日军停止重生，清剿全部残敌', 7);
+  }
   if (winner) showOverlay(winner === 'friendly' ? 'victory' : winner === 'enemy' ? 'defeat' : 'draw');
 }
 
@@ -3495,11 +3572,15 @@ function drawRadar(ctx = radarContext) {
     ctx.fillRect(x - 6, z + 6, 12 * point.enemyProgress, 2);
   }
   for (const point of spawnPoints) {
+    if (point.enabled === false) continue;
     if (point.kind === 'air' || (point.kind === 'rally' && point.health <= 0)) continue;
     if (point.team === 'enemy' && point.kind === 'rally' && allies[current]?.position.distanceTo(new THREE.Vector3(point.x, 0, point.z)) > 35) continue;
     const [x, z] = map(point.x, point.z);
     ctx.fillStyle = point.team === 'friendly' ? '#91bca1' : '#be8d76';
     ctx.fillRect(x - 2.5, z - 2.5, 5, 5);
+    if (point.permanent) {
+      ctx.fillText(point.objectiveId === 'A' ? '10' : point.objectiveId === 'B' ? '12' : '2', x, z - 5);
+    }
     if (point.id === pendingSpawn) {
       ctx.strokeStyle = '#f7dfa1';
       ctx.strokeRect(x - 5, z - 5, 10, 10);
@@ -3583,13 +3664,18 @@ function updateHUD() {
       return `<span class="objective-chip ${point.owner === 'friendly' ? 'captured' : point.owner === 'enemy' ? 'enemy' : 'neutral'} ${point.status === 'contested' ? 'contested' : ''}" role="img" aria-label="${label}" title="${label}">${point.id}<small class="point-progress" aria-hidden="true"><i style="width:${point.progress * 100}%"></i><b style="width:${point.enemyProgress * 100}%"></b></small></span>`;
     }).join('') + `<span class="control-count enemy" aria-label="日军控制${controlCount('enemy')}点">敌 ${controlCount('enemy')}</span>`;
   const inCaptureArea = unit.type !== 'plane' && distanceToPoint(active) <= active.radius ** 2;
-  $('objective-title').textContent = inCaptureArea ? `${active.id} · ${active.name} · ${ownerLabel(active)}` : '三点控制';
+  $('objective-title').textContent = !benchmark?.diagnostic && encirclement.phase === 2 ? '第二阶段 · 全歼日军'
+    : inCaptureArea ? `${active.id} · ${active.name} · ${ownerLabel(active)}` : '第一阶段 · 三点合围';
   const domination = conquest.dominationTeam ? ` · ${conquest.dominationTeam === 'friendly' ? '我方' : '日军'}全控 ${Math.floor(conquest.dominationTime)}/${DOMINATION_SECONDS}秒` : '';
-  document.querySelector('.objective-banner').hidden = !inCaptureArea && !conquest.dominationTeam;
-  $('objective-help').textContent = `${!inCaptureArea ? '保持全点控制20秒获胜' : active.status === 'contested' ? '争夺中 · 清除圈内敌军' : active.status === 'capturing' ? '占领 / 反夺进行中' : active.owner === 'friendly' ? '守住阵地' : '进入范围占领'}${domination}`;
+  document.querySelector('.objective-banner').hidden = benchmark?.diagnostic && !inCaptureArea && !conquest.dominationTeam;
+  $('objective-help').textContent = benchmark?.diagnostic
+    ? `${inCaptureArea ? '进入范围占领' : '保持全点控制20秒获胜'}${domination}`
+    : encirclement.phase === 2 ? `日军不再重生 · 剩余 ${battleSummary('enemy').alive} 人`
+      : `${active.status === 'contested' ? '争夺中 · 清除圈内敌军' : inCaptureArea ? '占领 / 反夺据点' : '同时占领三点完成合围'} · 已占领${encirclement.captures}次 · 敌后重生点 ${encirclement.unlocked.length}/3 · 已关闭敌点${encirclement.disabledEnemySpawns.length}`;
   $('capture-fill').style.width = `${Math.abs(active.control) * 100}%`;
   $('capture-fill').style.background = active.control < 0 ? '#ed9d8b' : '#9aaa78';
-  $('timer').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.floor(remaining % 60)).padStart(2, '0')}`;
+  const clockTime = benchmark?.diagnostic ? remaining : time;
+  $('timer').textContent = `${String(Math.floor(clockTime / 60)).padStart(2, '0')}:${String(Math.floor(clockTime % 60)).padStart(2, '0')}`;
   $('ammo').textContent = dadaoEquipped ? '近战' : grenadeEquipped ? String(selectedThrowable === 'explosive-pack' ? allies[current].grenades.packs : allies[current].grenades.ammo) : unit.reloadUntil ? '装填' : String(unit.ammo);
   $('ammo-max').textContent = dadaoEquipped ? '3 · 大刀' : `/ ${grenadeEquipped ? GRENADE.count : unit.type === 'infantry' ? infantryWeaponProfile(allies[current].rifle).magazine : TYPES[unit.type].magazine}`;
   $('ammo').style.fontSize = dadaoEquipped || !grenadeEquipped && unit.reloadUntil ? '25px' : '';
@@ -4200,6 +4286,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     cameraChildren: camera.children.length, transientEffects: effects.length, shells: shells.length,
     projectileViews: shellViews.size, pathRequests: pathRequests.size, corpses: corpses.size },
   state, type: unit?.type, squadId: unit?.squadId, time, remaining, kills, teamKills, deployments,
+  encirclement: benchmark?.diagnostic ? null : { ...encirclement, unlocked: [...encirclement.unlocked],
+    disabledEnemySpawns: [...encirclement.disabledEnemySpawns] },
   squadScores: battleStats.snapshot,
   control: { ...entities.control },
   controlBinding: controlBinding ? { ...controlBinding } : null,
@@ -4294,6 +4382,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
       batches: soldierRenderer.snapshot.batches + (nraCharacter?.counts.batches ?? 0) + (ijaCharacter?.counts.batches ?? 0),
       procedural: soldierRenderer.snapshot, historical: nraCharacter?.counts ?? null, japanese: ijaCharacter?.counts ?? null }, queuedPaths: pathRequests.size,
     units: formations.map(formation => ({ id: formation.id, team: formation.team, type: formation.type, player: formation.player,
+      active: formation.active !== false, respawnEnabled: formation.respawnEnabled !== false,
       respawnAt: formation.respawnAt, blockedReason: formation.blockedReason ?? null,
       memberCount: formation.members.length, alive: formation.members.filter(actor => actor.health > 0).length,
       generation: formation.generation, spawnId: formation.spawnId, objectiveId: formation.objectiveId ?? null,
@@ -4355,7 +4444,9 @@ Object.defineProperty(window, '__battle', { get: () => ({
   construction: { tool: toolEquipped, builderId: construction.builderId, blueprint: construction.blueprint, mode: construction.mode,
     progress: construction.progress, blockedReason: construction.blockedReason, preview: construction.preview ? { ...construction.preview } : null,
     site: construction.site ? { x: construction.site.x, z: construction.site.z } : null },
-  spawnPoints: spawnPoints.map(({ id, team, kind, name, x, z, health, builderId }) => ({ id, team, kind, name, x, z, health, builderId: builderId ?? null })),
+  spawnPoints: spawnPoints.map(({ id, team, kind, name, x, z, health, builderId, permanent, objectiveId, enabled, disabledBy }) =>
+    ({ id, team, kind, name, x, z, health, builderId: builderId ?? null, permanent: Boolean(permanent),
+      objectiveId: objectiveId ?? null, enabled: enabled !== false, disabledBy: disabledBy ?? null })),
   rallyViews: rallyRenderer.snapshot,
   spawnEvents: spawnEvents.map(event => ({ ...event })),
   enemies: enemies.filter(actor => actor.health > 0).length,
