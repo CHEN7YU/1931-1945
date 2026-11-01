@@ -70,3 +70,12 @@ test('a rally destroyed before its first render creates no orphan view, and ambi
   assert.throws(() => renderer.update([live]), /different team/);
   renderer.clear();
 });
+test('a permanently closed rally removes its visible and ray targets without changing its health', () => {
+  const scene = new THREE.Scene(), renderer = createRallyRenderer(scene), point = rally('closed', 'enemy');
+  const model = renderer.targets([point])[0];
+  point.enabled = false;
+  assert.deepEqual(renderer.targets([point]), []);
+  assert.equal(model.parent, null);
+  assert.equal(point.health, 120);
+  assert.equal(renderer.snapshot.count, 0);
+});

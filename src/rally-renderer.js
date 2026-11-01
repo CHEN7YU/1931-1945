@@ -3,7 +3,7 @@ import { rallyPointModel } from './world.js';
 export function createRallyRenderer(scene) {
   const views = new Map();
   const update = points => {
-    const live = points.filter(point => point.kind === 'rally' && point.health > 0);
+    const live = points.filter(point => point.kind === 'rally' && point.health > 0 && point.enabled !== false);
     const ids = new Set(live.map(point => point.id));
     if (ids.size !== live.length) throw new Error('Duplicate live rally identity');
     for (const [id, view] of views) if (!ids.has(id)) {
