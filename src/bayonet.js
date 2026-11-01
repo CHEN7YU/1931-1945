@@ -11,6 +11,21 @@ export function createBayonetState() {
   return { mode: 'idle', targetId: null, startedAt: null, nextAttackAt: 0, pending: false, extension: 0, strikes: 0, hits: 0 };
 }
 
+export function bayonetPoseReady(actor) {
+  if ((actor.stance ?? 'standing') !== 'standing') return false;
+  if (!actor.nativeMotion) return true;
+  return Object.values(actor.nativeMotion.posture).reduce((sum, weight) => sum + weight, 0) <= .001 &&
+    actor.nativeMotion.speed <= .25 && actor.nativeMotion.weight <= .15;
+}
+
+export function bayonetCarry(extension) {
+  if (!Number.isFinite(extension) || extension < 0 || extension > 1) {
+    throw new RangeError('Bayonet carry requires a bounded thrust extension');
+  }
+  const lift = extension * extension * (3 - 2 * extension);
+  return { position: [.10, 1.16 + .04 * lift, .04 - .14 * lift], pitch: .06 + .12 * lift };
+}
+
 export function cancelBayonet(state) {
   state.mode = 'idle'; state.targetId = state.startedAt = null;
   state.pending = false; state.extension = 0;

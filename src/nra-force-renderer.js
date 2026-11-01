@@ -118,13 +118,15 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
   const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : phases + 10;
-  const livingBanks = meleeStart + meleeBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
+  const turnStart = meleeStart + meleeBanks, turnBanks = profile.footCycleGait ? phases * 2 : 0;
+  const livingBanks = turnStart + turnBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
   for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
     const dead = bank >= livingBanks;
-    const melee = !dead && bank >= meleeStart;
-    const firingBank = !dead && !melee && bank >= baseBanks;
-    const posture = dead || melee ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
-    const mode = melee ? bank < meleeStart + phases ? 'charge' : 'idle'
+    const turning = !dead && bank >= turnStart;
+    const melee = !dead && !turning && bank >= meleeStart;
+    const firingBank = !dead && !melee && !turning && bank >= baseBanks;
+    const posture = dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const mode = turning ? 'idle' : melee ? bank < meleeStart + phases ? 'charge' : 'idle'
       : bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
     sampleActor.bayonet = melee && team === 'enemy' ? { mode: mode === 'charge' ? 'charge' : 'thrust',
       extension: mode === 'charge' ? 0 : (bank - meleeStart - phases) / 2 } : null;
@@ -144,6 +146,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     sampleActor.nativeMotion.gaitCharge = mode === 'charge' ? 1 : 0;
     sampleActor.nativeMotion.gaitAim = mode === 'aim' ? 1 : 0;
     sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
+    sampleActor.nativeMotion.turn = { heading: 0, weight: turning ? 1 : 0,
+      angle: turning ? ((bank - turnStart) % phases) / phases * Math.PI / 3 : 0,
+      direction: bank - turnStart < phases ? -1 : 1 };
     sampleActor.nativeMotion.bodyLean = mode === 'idle' ? 0 : nativeTravelLean(sampleActor.nativeMotion);
     const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((melee ? bank - meleeStart : bank - 1) % phases) / phases *
@@ -265,7 +270,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         if (!actor.nativeMotion) continue;
         if (actor.team !== team) throw new Error(`A ${actor.team} identity cannot use the ${team} uniform renderer`);
         excludedIds.add(actor.id); summary.assigned++;
-        if (actor.vehicleId || (actor.health > 0 && actor.id === controlledId)) {
+        if (actor.vehicleId || actor.id === controlledId) {
           tiers.set(actor.id, 'hidden'); summary.hidden++; continue;
         }
         sphere.center.copy(actor.position); sphere.center.y += .9;
@@ -300,8 +305,12 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
             : 1 + ['windup', 'cut', 'recover'].indexOf(swordPose.phase) * 3 +
               Math.min(2, Math.floor(swordPose.progress * 3));
           const charging = sword ? actor.dadao.mode === 'charge' : actor.bayonet?.mode === 'charge';
+          const turning = actor.health > 0 && pose.upright > .999 && !melee && pose.weight <= .45 &&
+            actor.nativeMotion.turn.weight > .35 && turnBanks;
+          const turnPhase = ((actor.nativeMotion.turn.angle / (Math.PI / 3)) % 1 + 1) % 1;
           const index = actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
+            : turning ? turnStart + (actor.nativeMotion.turn.direction > 0 ? phases : 0) + Math.round(turnPhase * phases) % phases
             : melee ? meleeStart + (charging && pose.weight > .45 ? Math.round(phase * phases) % phases
               : phases + (sword ? swordFrame : Math.round(actor.bayonet.extension * 2)))
             : posture && postures.includes(posture)

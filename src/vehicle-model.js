@@ -7,6 +7,8 @@ export const VEHICLE_PROFILES = Object.freeze({
   tank: Object.freeze({ model: 'vickers-e-b', name: '维克斯六吨坦克B型', length: 4.88, width: 2.41, height: 2.16 }),
   plane: Object.freeze({ model: 'i-15bis', name: '伊-15bis', length: 6.28, span: 10.2 }),
 });
+export const JAPANESE_AIRCRAFT_PROFILE = Object.freeze({ model: 'ki-10', name: '九五式战斗机 · Ki-10',
+  length: 7.2, span: 9.55, source: 'https://en.wikipedia.org/wiki/Kawasaki_Ki-10' });
 
 const box = new THREE.BoxGeometry(1, 1, 1);
 const sphere = new THREE.SphereGeometry(1, 20, 12);
@@ -18,7 +20,7 @@ const materials = {
   olive: paint(0x535b36), edge: paint(0x727653), canvas: paint(0x626943),
   underside: paint(0x9caead), steel: paint(0x41463f), rubber: paint(0x252822),
   dark: paint(0x171d1a), leather: paint(0x503b28),
-  blue: paint(0x183e80), white: paint(0xe4e4d3),
+  blue: paint(0x183e80), white: paint(0xe4e4d3), red: paint(0xa52c24),
   glass: new THREE.MeshStandardMaterial({ color: 0xb1d1cb, roughness: .18, metalness: .05,
     transparent: true, opacity: .28, depthWrite: false, side: THREE.DoubleSide }),
 };
@@ -223,7 +225,7 @@ function loft(stations, segments = 32, cockpit = false) {
     }
   }
   for (let j = 0; j < stations.length - 1; j++) for (let i = 0; i < segments; i++) {
-    if (cockpit && stations[j][0] >= -.05 && stations[j + 1][0] <= .9 && (i < 5 || i >= segments - 5)) continue;
+    if (cockpit && stations[j][0] >= -.05 && stations[j + 1][0] <= .9 && (i / segments < 5 / 32 || i / segments >= 27 / 32)) continue;
     const a = j * (segments + 1) + i, b = a + segments + 1;
     indices.push(a, b, a + 1, a + 1, b, b + 1);
   }
@@ -243,7 +245,7 @@ function wingSurface(x, z, span, chord, y, centerZ, upper) {
   const angle = Math.acos(1 - 2 * along), camber = Math.sin(along * Math.PI) * .035;
   return y + ((upper ? 1 : -1) * Math.sin(angle) * .055 + camber) * taper;
 }
-function wing(parent, span, chord, y, z) {
+function wing(parent, span, chord, y, z, material = wingMaterial) {
   const points = [], indices = [], colors = [], color = new THREE.Color();
   const sections = 32, samples = 24;
   for (let s = 0; s <= sections; s++) {
@@ -264,9 +266,9 @@ function wing(parent, span, chord, y, z) {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  if (material.vertexColors) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices); geometry.computeVertexNormals();
-  mesh(parent, geometry, wingMaterial);
+  mesh(parent, geometry, material);
 }
 const wingMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: .02 });
 
@@ -275,14 +277,20 @@ function planeTemplate() {
   mesh(body, loft([[-2.65, 0, .01, .01], [-2.6, 0, .62, .62], [-1.85, 0, .64, .64],
     [-1.3, .02, .48, .5], [-.6, .02, .4, .48], [-.05, .02, .36, .44],
     [.4, .02, .32, .4], [.9, .06, .27, .33], [1.7, .12, .19, .24],
-    [2.6, .17, .09, .12], [3.1, .18, .015, .03]], 32, true), materials.olive);
+    [2.6, .17, .09, .12], [3.1, .18, .015, .03]], 48, true), materials.olive);
   const cowling = new THREE.TorusGeometry(.61, .045, 8, 40);
   mesh(body, cowling, materials.edge, [0, 0, -2.59]);
   mesh(body, disk, materials.dark, [0, 0, -2.6], [.57, .57, 1]).rotation.y = Math.PI;
   for (let i = 0; i < 9; i++) {
     const angle = i * Math.PI * 2 / 9;
-    tube(body, materials.steel, [Math.sin(angle) * .18, Math.cos(angle) * .18, -2.63],
-      [Math.sin(angle) * .48, Math.cos(angle) * .48, -2.63], .075);
+    const from = new THREE.Vector3(Math.sin(angle) * .18, Math.cos(angle) * .18, -2.63);
+    const to = new THREE.Vector3(Math.sin(angle) * .48, Math.cos(angle) * .48, -2.63);
+    const profile = [new THREE.Vector2(.72, -.5), new THREE.Vector2(1, -.4), new THREE.Vector2(.75, -.3),
+      new THREE.Vector2(1, -.2), new THREE.Vector2(.75, -.1), new THREE.Vector2(1, 0),
+      new THREE.Vector2(.75, .1), new THREE.Vector2(1, .2), new THREE.Vector2(.65, .5)];
+    const cylinder = mesh(body, new THREE.LatheGeometry(profile, 8), materials.steel,
+      from.clone().add(to).multiplyScalar(.5).toArray(), [.075, to.distanceTo(from), .075]);
+    cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.sub(from).normalize());
   }
   for (const side of [-1, 1]) {
     for (let i = 0; i < 5; i++)
@@ -292,6 +300,19 @@ function planeTemplate() {
   }
   wing(body, 10.2, 1.5, 1.05, -.94);
   wing(body, 7.5, 1.42, -.47, -.5);
+  for (const [span, chord, y, centerZ] of [[10.2, 1.5, 1.05, -.94], [7.5, 1.42, -.47, -.5]]) {
+    for (let x = -span / 2 + .4; x < span / 2 - .3; x += .34) {
+      const taper = wingTaper(x / (span / 2));
+      const fromZ = centerZ - chord * taper * .38, toZ = centerZ + chord * taper * .38;
+      tube(body, materials.edge, [x, wingSurface(x, fromZ, span, chord, y, centerZ, true) + .003, fromZ],
+        [x, wingSurface(x, toZ, span, chord, y, centerZ, true) + .003, toZ], .0035);
+    }
+    for (const side of [-1, 1]) {
+      const x = side * span * .35, z = centerZ + chord * .29;
+      tube(body, materials.steel, [side * span * .23, y + .035, z], [side * span * .43, y + .035, z], .007);
+      for (const hinge of [.25, .35, .42]) block(body, materials.steel, [side * span * hinge, y + .04, z], [.035, .025, .07]);
+    }
+  }
   for (const side of [-1, 1]) {
     for (const z of [-1.43, -.35]) {
       tube(body, materials.edge, [side * 2.95, -.45, z + .37], [side * 3.04, 1.04, z], .034);
@@ -311,6 +332,15 @@ function planeTemplate() {
   }
   oval(body, materials.dark, [0, .05, .4], [.27, .22, .48]);
   block(body, materials.leather, [0, .22, .73], [.38, .32, .08]);
+  tube(body, materials.leather, [-.18, .34, .69], [.16, .04, .48], .018);
+  tube(body, materials.leather, [.18, .34, .69], [-.16, .04, .48], .018);
+  block(body, materials.dark, [0, .16, .58], [.035, .32, .035]);
+  tube(body, materials.steel, [-.19, -.05, .24], [.19, -.05, .24], .012);
+  for (const side of [-1, 1]) {
+    tube(body, materials.steel, [side * .045, -.02, 1], [side * 1.1, .18, 2.44], .005);
+    for (let rivetIndex = 0; rivetIndex < 10; rivetIndex++) mesh(body, rivet, materials.edge,
+      [side * .42, .05, -1.5 + rivetIndex * .12], [.009, .009, .009]);
+  }
   const windscreen = mesh(body, new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
     materials.glass, [0, .42, -.1], [.28, .28, .23]);
   windscreen.rotation.x = -Math.PI / 5;
@@ -331,14 +361,57 @@ function planeTemplate() {
   oval(propeller, materials.steel, [0, 0, -.08], [.18, .18, .15]);
   batch(body); batch(propeller);
   propeller.name = 'propeller'; propeller.position.z = -3.03; body.add(propeller);
+  body.userData.details = { wingRibs: true, aileronHinges: true, bracingWires: true, cockpitHarness: true,
+    engine: 'radial', engineCoolingFins: 9, fuselageSections: 48 };
   return body;
 }
 
-export function historicalVehicleModel(type) {
+function japanesePlaneTemplate() {
+  const body = new THREE.Group(), propeller = new THREE.Group();
+  mesh(body, loft([[-3.55, 0, .01, .01], [-3.35, 0, .3, .36], [-2.7, .02, .36, .39],
+    [-1.5, .04, .4, .48], [-.05, .02, .34, .43], [.8, .07, .28, .32],
+    [1.9, .1, .16, .23], [3.4, .16, .015, .04]], 32, true), materials.underside);
+  wing(body, 9.55, 1.42, 1.1, -.9);
+  wing(body, 7.6, 1.32, -.44, -.55);
+  block(body, materials.dark, [0, -.38, -1.65], [.46, .23, .8]);
+  for (const side of [-1, 1]) {
+    for (const z of [-1.42, -.3]) {
+      tube(body, materials.edge, [side * 2.8, -.42, z + .3], [side * 2.9, 1.08, z], .027);
+      tube(body, materials.edge, [side * .33, .26, z + .2], [side * .72, 1.08, z], .025);
+    }
+    tube(body, materials.steel, [side * .7, -.42, -.9], [side * 2.9, 1.08, -.3], .006);
+    tube(body, materials.steel, [side * .72, 1.08, -1.42], [side * 2.8, -.42, 0], .006);
+    tube(body, materials.underside, [side * .34, -.32, -1.1], [side * .95, -1.3, -.65], .04);
+    tube(body, materials.underside, [side * .32, -.32, .1], [side * .95, -1.3, -.65], .035);
+    wheel(body, side * .97, -1.3, -.65, .31, .18);
+    oval(body, materials.underside, [side * .97, -1.25, -.65], [.19, .37, .58]);
+    for (let exhaust = 0; exhaust < 6; exhaust++) tube(body, materials.steel,
+      [side * .34, .05, -2.65 + exhaust * .18], [side * .43, -.03, -2.65 + exhaust * .18], .021);
+    const insignia = mesh(body, disk, materials.red, [side * 3.5, 1.16, -.8], [.45, .45, 1]);
+    insignia.rotation.x = -Math.PI / 2;
+    const under = mesh(body, disk, materials.red, [side * 2.7, -.5, -.45], [.38, .38, 1]);
+    under.rotation.x = Math.PI / 2;
+  }
+  oval(body, materials.dark, [0, .05, .4], [.25, .22, .4]);
+  block(body, materials.leather, [0, .2, .72], [.34, .3, .07]);
+  oval(body, materials.underside, [0, .18, 2.7], [1.4, .05, .6]);
+  oval(body, materials.underside, [0, .65, 2.8], [.04, .72, .6]);
+  for (const side of [-1, 1]) oval(propeller, materials.leather,
+    [side * .58, 0, 0], [.61, .075, .03]).rotation.z = side * .05;
+  oval(propeller, materials.underside, [0, 0, -.1], [.2, .2, .24]);
+  batch(body); batch(propeller);
+  propeller.name = 'propeller'; propeller.position.z = -3.55; body.add(propeller);
+  body.userData.details = { engine: 'inline', fixedGear: true, bracingWires: true, roundel: 'hinomaru' };
+  return body;
+}
+
+export function historicalVehicleModel(type, team = 'friendly') {
   if (!Object.hasOwn(VEHICLE_PROFILES, type)) throw new RangeError(`Unknown historical vehicle: ${type}`);
-  if (!templates.has(type)) templates.set(type, type === 'tank' ? tankTemplate() : planeTemplate());
-  const model = templates.get(type).clone(true);
-  model.userData.profile = VEHICLE_PROFILES[type];
+  if (!['friendly', 'enemy'].includes(team)) throw new RangeError('Unknown vehicle team');
+  const key = type === 'plane' ? `${team}-plane` : type;
+  if (!templates.has(key)) templates.set(key, type === 'tank' ? tankTemplate() : team === 'enemy' ? japanesePlaneTemplate() : planeTemplate());
+  const model = templates.get(key).clone(true);
+  model.userData.profile = type === 'plane' && team === 'enemy' ? JAPANESE_AIRCRAFT_PROFILE : VEHICLE_PROFILES[type];
   if (type === 'tank') {
     model.userData.turret = model.getObjectByName('turret');
     model.userData.gun = model.getObjectByName('gun');
@@ -353,18 +426,52 @@ export function vehicleWeaponView(type, seat = 'commander') {
   if (!templates.has(key)) {
     const group = new THREE.Group();
     if (type === 'plane') {
-      oval(group, materials.olive, [0, -.93, -1.8], [.65, .56, 1.15]);
+      mesh(group, loft([[-2.95, -.94, .36, .34], [-2.2, -.94, .52, .42], [-1.55, -.94, .58, .46],
+        [-.85, -.94, .58, .46]], 32), materials.olive);
+      wing(group, 7.5, 1.25, -1.10, -1.45, materials.olive);
       block(group, materials.dark, [0, -.48, -.92], [1.05, .34, .08]);
+      for (const side of [-1, 1]) {
+        for (const x of [.38, .48]) for (const y of [-.34, -.61]) mesh(group, rivet, materials.edge,
+          [side * x, y, -.865], [.008, .008, .004]);
+        for (let vent = 0; vent < 4; vent++) block(group, materials.steel,
+          [side * .51, -.58, -1.45 - vent * .17], [.015, .065, .06]);
+        tube(group, materials.edge, [side * .5, -.63, -.62], [side * .5, -.63, -1.7], .018);
+        block(group, materials.leather, [side * .49, -.59, -.92], [.07, .14, .04]);
+      }
       for (const x of [-.32, 0, .32]) {
         mesh(group, disk, materials.edge, [x, -.45, -.87], [.115, .115, 1]);
         mesh(group, disk, materials.dark, [x, -.45, -.864], [.095, .095, 1]);
         tube(group, materials.white, [x, -.45, -.86], [x + .04, -.39, -.86], .005);
+        for (let mark = 0; mark < 12; mark++) {
+          const angle = mark * Math.PI / 6;
+          tube(group, materials.white, [x + Math.sin(angle) * .075, -.45 + Math.cos(angle) * .075, -.856],
+            [x + Math.sin(angle) * .086, -.45 + Math.cos(angle) * .086, -.856], .0018);
+        }
       }
+      for (const x of [-.18, .18]) {
+        mesh(group, disk, materials.edge, [x, -.65, -.875], [.065, .065, 1]);
+        mesh(group, disk, materials.dark, [x, -.65, -.87], [.053, .053, 1]);
+        tube(group, materials.white, [x, -.65, -.864], [x + .024, -.615, -.864], .003);
+      }
+      const sight = mesh(group, new THREE.TorusGeometry(.07, .004, 6, 32), materials.steel, [0, 0, -1.19]);
+      sight.name = 'ring-sight';
       for (const side of [-1, 1]) {
-        tube(group, materials.edge, [side * .56, -.6, -1], [side * .33, .2, -1.3], .022);
-        tube(group, materials.edge, [side * .33, .2, -1.3], [0, .3, -1.3], .018);
+        tube(group, materials.steel, [0, side * .07, -1.19], [0, side * .012, -1.19], .0025);
+        tube(group, materials.steel, [side * .07, 0, -1.19], [side * .012, 0, -1.19], .0025);
       }
-      block(group, materials.glass, [0, -.1, -1.31], [.63, .71, .015]).rotation.x = -.16;
+      tube(group, materials.leather, [-.44, -.38, -.67], [-.44, -.42, -1.03], .022);
+      tube(group, materials.leather, [.44, -.38, -.67], [.44, -.42, -1.03], .022);
+      for (const side of [-1, 1]) {
+        tube(group, materials.edge, [side * .56, -.6, -1], [side * .33, -.16, -1.3], .018);
+      }
+      for (let section = 0; section < 12; section++) {
+        const a = section * Math.PI / 12, b = (section + 1) * Math.PI / 12;
+        tube(group, materials.edge, [.33 * Math.cos(a), -.16 + .35 * Math.sin(a), -1.3],
+          [.33 * Math.cos(b), -.16 + .35 * Math.sin(b), -1.3], .011);
+      }
+      mesh(group, new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+        materials.glass, [0, -.16, -1.31], [.325, .34, .045]);
+      group.userData.details = { roundedWindscreen: true, sideRails: true, lowerWingVisible: true, panelFasteners: true };
     }
     batch(group);
     templates.set(key, group);

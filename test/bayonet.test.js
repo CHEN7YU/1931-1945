@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BAYONET, hasBayonet, createBayonetState, bayonetDistance, advanceBayonet } from '../src/bayonet.js';
+import { BAYONET, hasBayonet, createBayonetState, bayonetDistance, advanceBayonet, bayonetPoseReady, bayonetCarry } from '../src/bayonet.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { rifleWorldModel, syncWorldWeapon } from '../src/rifle-model.js';
 import { damageForTarget } from '../src/combat-targets.js';
@@ -16,6 +16,37 @@ function pair(distance = 6) {
 }
 const step = (actor, target, now, facts = {}) => advanceBayonet(actor, target,
   { now, visible: true, facing: true, settled: true, ...facts });
+
+test('bayonet thrust starts at the abdomen and moves forward and upward rather than from the shoulder', () => {
+  let previous = bayonetCarry(0);
+  assert.equal(previous.position[1], 1.16);
+  for (let frame = 1; frame <= 100; frame++) {
+    const current = bayonetCarry(frame / 100);
+    assert.ok(current.position[1] >= previous.position[1] && current.position[1] <= 1.2 + 1e-8);
+    assert.ok(current.position[2] <= previous.position[2]);
+    assert.ok(current.pitch >= previous.pitch && current.pitch <= .18 + 1e-8);
+    previous = current;
+  }
+  for (const extension of [-1, 1.1, NaN]) assert.throws(() => bayonetCarry(extension), RangeError);
+});
+
+test('a bayonet attack waits until rising and running posture have settled, not just its stance label', () => {
+  const { actor, target } = pair(1);
+  actor.stance = 'standing';
+  actor.nativeMotion = { posture: { crouched: .04 }, speed: 0, weight: 0 };
+  assert.equal(bayonetPoseReady(actor), false);
+  assert.equal(step(actor, target, 0, { settled: bayonetPoseReady(actor) }).hit, false);
+  assert.equal(actor.bayonet.strikes, 0);
+  actor.nativeMotion.posture.crouched = 0;
+  actor.nativeMotion.speed = 2; actor.nativeMotion.weight = .9;
+  assert.equal(bayonetPoseReady(actor), false);
+  actor.nativeMotion.speed = 0; actor.nativeMotion.weight = 0;
+  assert.equal(bayonetPoseReady(actor), true);
+  step(actor, target, 1, { settled: bayonetPoseReady(actor) });
+  assert.equal(actor.bayonet.strikes, 1);
+  actor.stance = 'crouched';
+  assert.equal(bayonetPoseReady(actor), false);
+});
 
 test('only Japanese ordinary infantry rifles carry bayonets; armor, aircraft and other floors are excluded', () => {
   const { actor, target } = pair();

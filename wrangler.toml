@@ -1,5 +1,14 @@
 name = "1931-1945"
+main = "worker/feedback.js"
 compatibility_date = "2026-10-19"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "FEEDBACK_DB"
+database_name = "1931-1945-feedback"
+database_id = "405a6378-0bc5-4eb5-a24e-1e83c09fe2d2"
+migrations_dir = "migrations"

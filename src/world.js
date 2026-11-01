@@ -5,6 +5,7 @@ import { lightMachineGunModel } from './light-machine-gun-model.js';
 import { historicalVehicleModel, vehicleWeaponView } from './vehicle-model.js';
 import { dadaoModel, dadaoWorldStroke, DADAO_DIMENSIONS } from './dadao-model.js';
 import { solveArm } from './nra-rifle-pose.js';
+import { mortarModel } from './mortar-model.js';
 
 const actorBox = new THREE.BoxGeometry(1, 1, 1);
 const actorSphere = new THREE.SphereGeometry(1, 12, 8);
@@ -172,13 +173,14 @@ export function tankModel() {
   return historicalVehicleModel('tank');
 }
 
-export function planeModel() {
-  return historicalVehicleModel('plane');
+export function planeModel(team = 'friendly') {
+  return historicalVehicleModel('plane', team);
 }
 
 export function weaponModel(type, state = null, seat = 'commander') {
   if (type === 'infantry') return rifleModel(state);
   if (type === 'tank' || type === 'plane') return vehicleWeaponView(type, seat);
+  if (type === 'mortar') return mortarModel();
   const group = new THREE.Group();
   const steel = actorMaterials.dark, wood = actorMaterials.wood, uniform = actorMaterials.friendly;
   if (type === 'hammer') {
@@ -186,9 +188,6 @@ export function weaponModel(type, state = null, seat = 'commander') {
     part(group, .3, -.03, -.75, .38, .15, .16, actorMaterials.steel);
     limb(group, [.38, -.65, -.22], [.3, -.39, -.59], .085, uniform);
     sphere(group, .3, -.35, -.62, .065, .085, .07, actorMaterials.skin);
-  } else if (type === 'mortar') {
-    cylinder(group, .36, -.46, -.75, .09, 1.2, actorMaterials.steel).rotation.x = .8;
-    shaped(group, actorCylinder, .36, -.8, -.55, .4, .08, .35, steel);
   } else throw new RangeError(`Unknown view weapon: ${type}`);
   return group;
 }

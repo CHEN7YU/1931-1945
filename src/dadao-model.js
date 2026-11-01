@@ -28,6 +28,7 @@ function chopRotation(angle) {
 }
 
 const raisedRotation = chopRotation(-1.2), followRotation = chopRotation(1.6);
+const viewFollowRotation = chopRotation(1.25);
 
 export function dadaoWorldStroke(pose) {
   const { raise, cut } = dadaoStroke(pose);
@@ -185,7 +186,7 @@ export function updateDadaoView(root, pose, motion, camera = null) {
     .lerp(new THREE.Vector3(.05, -.13, -.40 - armDepth), cut);
   const drawOffset = new THREE.Vector3(0, -draw * .15, draw * .12);
   wrist.add(new THREE.Vector3(motion.weaponX, motion.weaponY, 0)).add(drawOffset);
-  const rotation = carryRotation.clone().slerp(raisedRotation, raise).slerp(followRotation, cut);
+  const rotation = carryRotation.clone().slerp(raisedRotation, raise).slerp(viewFollowRotation, cut);
   const handRotation = rotation.clone().multiply(handToBlade);
   const shoulder = new THREE.Vector3(.25, -.28, -.44 - armDepth).add(drawOffset);
   // Keep the right elbow outboard while the forearm rolls through the cut.

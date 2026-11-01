@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { BREATH, createBreathState, advanceBreath, aimSway } from '../src/sniper-aim.js';
-import { createRifleState, infantryWeaponProfile, shootRifle, advanceRifle, reloadRifle } from '../src/rifle-action.js';
+import { createRifleState, infantryWeaponProfile, shootRifle, advanceRifle, reloadRifle, rifleReloadSeconds } from '../src/rifle-action.js';
 import { rifleModel, rifleWorldModel, syncWorldWeapon, updateRifleModel } from '../src/rifle-model.js';
 import { soldierModel } from '../src/world.js';
 import { createAIRifleControl, attemptAIRifleShot } from '../src/ai-rifle.js';
@@ -20,7 +20,7 @@ test('sniper retains five-round owned bolt actions, mechanical cues and queued r
     assert.deepEqual(advanceRifle(rifle, profile.cycleSeconds), ['unlock', 'extract', 'close']);
   }
   assert.equal(rifle.action, 'reload');
-  advanceRifle(rifle, profile.reloadSeconds - .01);
+  advanceRifle(rifle, rifleReloadSeconds(rifle) - .01);
   assert.equal(rifle.ammo, 0);
   advanceRifle(rifle, .02);
   assert.equal(rifle.ammo, 5);

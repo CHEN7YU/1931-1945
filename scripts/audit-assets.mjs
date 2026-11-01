@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const groups = [
   { manifest: 'sources.json', directory: '', use: 'runtime', evidence: [] },
+  { manifest: 'maps/source.json', directory: 'maps', use: 'runtime', evidence: [] },
+  { manifest: 'loading/source.json', directory: 'loading', use: 'runtime', evidence: [] },
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'audio/enemy-rifle/source.json', directory: 'audio/enemy-rifle', use: 'runtime', evidence: [] },
@@ -14,6 +16,7 @@ const groups = [
   { manifest: 'audio/friendly-rifle-generated/source.json', directory: 'audio/friendly-rifle-generated', use: 'runtime',
     evidence: ['PERMISSION.txt'] },
   { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
+  { manifest: 'audio/mortar/source.json', directory: 'audio/mortar', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -131,6 +134,25 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: 'MIT',
         limitation: 'Third-party library; copyright and MIT license notice are included with the build.' });
+    } else if (group.directory === 'loading') {
+      if (metadata.sourceKind !== 'user-supplied-loading-images' ||
+        metadata.license !== 'User-requested project use; original rights unverified' ||
+        metadata.permission?.basis !== 'user-supplied-images-project-use' ||
+        metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
+        metadata.files.length !== 23 || metadata.files.some((file, index) =>
+          file.attachment !== index + 1 || file.file !== `photo-${String(index + 1).padStart(2, '0')}.png` ||
+          !file.alt || !(file.width > 0) || !(file.height > 0))) {
+        throw new Error('User-supplied loading image provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: metadata.permission.basis,
+        limitation: metadata.permission.limitation });
+    } else if (group.directory === 'maps') {
+      if (metadata.provider !== 'Project-authored tactical layout' ||
+        metadata.source !== 'src/campaign-layout.js and src/town-layout.js' ||
+        metadata.license !== 'Project source license; not independently relicensed CC0' ||
+        metadata.files.map(file => file.file).sort().join(',') !== 'taierzhuang-fort.json,taierzhuang-streets.json') {
+        throw new Error('Generated tactical map provenance requires review');
+      }
     } else if (metadata.license !== 'CC0-1.0' || !/^https:\/\//.test(metadata.source ?? metadata.licenseUrl)) {
       throw new Error(`Source/license evidence requires review: ${group.manifest}`);
     }
@@ -163,7 +185,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
     }
     warnings.push(`Build includes ${diagnostic.length} diagnostic-only files (${diagnostic.reduce((sum, item) => sum + item.bytes, 0)} bytes). They are not main-game downloads; this read-only audit does not remove them.`);
   }
-  for (const permission of permissions) if (permission.directory === 'audio/machine-gun') warnings.push(permission.limitation);
+  for (const permission of permissions) if (['audio/machine-gun', 'loading'].includes(permission.directory)) warnings.push(permission.limitation);
   return { files: [...inventory.values()].sort((a, b) => a.file.localeCompare(b.file)),
     bytes: [...inventory.values()].reduce((sum, item) => sum + item.bytes, 0), permissions, warnings };
 }

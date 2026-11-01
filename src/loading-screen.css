@@ -1,0 +1,89 @@
+#loading.loading-screen {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(ellipse at center, #30382c 0, #101813 75%);
+}
+.loading-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--gold); }
+.loading-years { font: 16px/1.5 monospace; letter-spacing: 6px; }
+.loading-brand strong { font: 52px/1.2 "STSong", "SimSun", serif; letter-spacing: 12px; padding-left: 12px; }
+.photo-wall-window {
+  width: min(1000px, 92vw);
+  height: min(58vh, 560px);
+  overflow: hidden;
+  background: #0a110dcc;
+  border: 1px solid #cfb27840;
+  box-shadow: 0 15px 70px #0005;
+  isolation: isolate;
+}
+.photo-wall-track { display: flex; width: max-content; height: 100%; align-items: center; will-change: transform; }
+.photo-wall-track[data-ready] {
+  animation: photo-wall-horizontal var(--photo-wall-duration, 120s) linear infinite;
+  animation-play-state: paused;
+}
+.photo-wall-copy {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 100%;
+  gap: 12px;
+  padding-right: 12px;
+}
+.photo-wall-card {
+  position: relative;
+  min-width: 0;
+  flex: 0 0 auto;
+  margin: 0;
+  background: #0a110d;
+  border: 1px solid #b9a77830;
+}
+.photo-wall-card img { display: block; width: auto; height: min(44vh, 420px); object-fit: contain; }
+.photo-wall-card.unavailable { width: 220px; height: min(44vh, 420px); }
+.photo-wall-card.unavailable img { display: none; }
+.photo-wall-card figcaption { display: grid; height: 100%; place-items: center; color: #aeb2a4; font-size: 11px; }
+.photo-wall-controls { width: min(1000px, 92vw); display: flex; justify-content: flex-end; }
+.photo-wall-controls button {
+  background: transparent;
+  color: #cdbd98;
+  border: 1px solid #cfb27840;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+#loading #loading-message { margin: 0; color: #d2ccba; font-size: 12px; letter-spacing: 1px; }
+[data-photo-wall-status] { min-height: 1em; color: #efc484; font-size: 11px; }
+#menu {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 20px 24px;
+}
+#menu > .masthead, #menu > .menu-footer { grid-column: 1 / -1; }
+#menu .hero { position: static; min-width: 0; align-self: center; }
+#menu .operation-panel { width: 100%; margin: 0; align-self: center; }
+#menu #game-title { font-size: clamp(52px, 5vw, 76px); }
+#menu .game-subtitle { margin: 4px 0 0; }
+#menu-photo-wall { width: 100%; margin-top: 14px; }
+#menu-photo-wall .photo-wall-window { width: 100%; height: min(52vh, 500px); }
+#menu-photo-wall .photo-wall-controls { width: 100%; margin-top: 10px; }
+#menu-photo-wall [data-photo-wall-status] { display: block; margin-top: 6px; }
+@keyframes photo-wall-horizontal {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media(max-width:800px) {
+  #menu { display: block; }
+  #menu .operation-panel { margin-top: 24px; }
+  #menu-photo-wall .photo-wall-window { height: min(52vh, 500px); }
+}
+@media(max-height:800px) and (min-width:801px) {
+  #menu { grid-template-columns: minmax(0, 1fr) 330px; }
+}
+@media(max-height:650px) {
+  #loading.loading-screen { gap: 10px; padding: 12px; }
+  .loading-brand strong { font-size: 36px; }
+  .loading-years { font-size: 13px; }
+  #loading .photo-wall-window { height: 46vh; }
+}

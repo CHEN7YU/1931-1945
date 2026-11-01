@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RIFLE, riflePose, infantryWeaponProfile } from './rifle-action.js';
+import { RIFLE, riflePose, infantryWeaponProfile, rifleReloadSeconds } from './rifle-action.js';
 import { lightMachineGunModel, configureLightMachineGunMaterials } from './light-machine-gun-model.js';
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
@@ -551,7 +551,8 @@ export function updateRifleModel(model, state) {
   const missing = RIFLE.magazine - state.ammo;
   const loose = Boolean(infantryWeaponProfile(state).scoped) || state.ammo > 0;
   parts.clip.getObjectByName('charger').visible = !loose;
-  const looseFeed = Math.max(0, (state.elapsed - .7) / 1.2) * missing;
+  const reloadPhaseTime = state.elapsed * 2.7 / rifleReloadSeconds(state);
+  const looseFeed = Math.max(0, (reloadPhaseTime - .7) / 1.2) * missing;
   if (loose) parts.clip.position.y = -.055 * (looseFeed % 1);
   for (let i = 0; i < RIFLE.magazine; i++) {
     const cartridge = parts.clip.getObjectByName(`cartridge${i}`);

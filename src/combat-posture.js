@@ -42,7 +42,9 @@ export function chooseCombatPosture({ distance, moving, covered, exposed, suppre
     ['standing', suppressed ? 8 : 25], ['kneeling', 45], ['crouched', 15],
     ...(!covered && distance >= 14 && proneClear ? [['prone', suppressed ? 40 : 25]] : []),
   ].filter(([pose]) => canFire(pose));
-  if (choices.some(([pose]) => pose !== previousPose)) choices = choices.filter(([pose]) => pose !== previousPose);
+  const lowered = choices.filter(([pose]) => pose !== 'standing');
+  if (!covered && (distance >= 14 || suppressed) && lowered.length) choices = lowered;
+  if (choices.some(([pose]) => pose === previousPose) && (!suppressed || previousPose !== 'standing')) return previousPose;
   const total = choices.reduce((sum, [, weight]) => sum + weight, 0);
   let draw = preference * total;
   for (const [pose, weight] of choices) { draw -= weight; if (draw < 0) return pose; }

@@ -77,7 +77,9 @@ test('dadao shows the whole carry fist and keeps its right elbow outboard withou
       previousElbow = elbow.clone();
       assert.ok(elbow.z < -.12, `${aspect}/${phase}/${frame}: elbow approaches the camera near plane`);
       const forward = new T.Vector3(0, 1, 0).applyQuaternion(arm.attachmentFrame.getWorldQuaternion(new T.Quaternion()));
-      assert.ok(wrist.clone().sub(elbow).normalize().dot(forward) > .65, `${aspect}/${phase}/${frame}: wrist flexes too far`);
+      const wristAlignment = wrist.clone().sub(elbow).normalize().dot(forward);
+      assert.ok(wristAlignment > .65, `${aspect}/${phase}/${frame}: wrist flexes too far ` +
+        JSON.stringify({ wristAlignment, wrist: wrist.toArray(), elbow: elbow.toArray(), forward: forward.toArray() }));
       if (['windup', 'cut', 'recover'].includes(phase)) {
         assert.ok(elbow.x > wrist.x + .03, `${aspect}/${phase}/${frame}: right elbow folds inward across the grip`);
         assert.ok(elbow.x / -elbow.z > wrist.x / -wrist.z + .025,

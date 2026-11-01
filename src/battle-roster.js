@@ -12,7 +12,7 @@ export function infantryLoadout(team, index, type = 'infantry') {
   if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 9) {
     return { role: 'sniper', model: 'sniper' };
   }
-  return { role: index % BATTLE_RULES.sectionMembers === 0 ? 'engineer' : 'rifleman', model: 'rifle' };
+  return { role: team === 'friendly' && type === 'infantry' && index % BATTLE_RULES.sectionMembers === 0 ? 'mortarman' : 'rifleman', model: 'rifle' };
 }
 const lanes = [-88, -66, -44, -22, 22, 44, 66, 88, 96];
 export class FormationPlacementError extends Error {}
@@ -21,10 +21,15 @@ export function battleRoster(playerType = 'infantry') {
   if (!TYPES[playerType]) throw new RangeError(`Unknown player unit: ${playerType}`);
   const infantry = ['friendly', 'enemy'].flatMap(team => Array.from({ length: team === 'enemy' ? 8 : BATTLE_RULES.unitsPerTeam }, (_, index) => ({
     id: `${team}-${index}`, team, index, type: team === 'friendly' && index === 0 ? playerType : 'infantry',
-    player: team === 'friendly' && index === 0, members: [], generation: 0, respawnAt: null,
+    player: team === 'friendly' && index === 0, members: [],
+    memberCount: team === 'enemy' && index === 7 ? 14 : team === 'friendly' && index === 1
+      ? BATTLE_RULES.infantryMembers * 2 - TYPES[playerType].members : team === 'friendly' && index === 0
+        ? TYPES[playerType].members : BATTLE_RULES.infantryMembers,
+    generation: 0, respawnAt: null,
     spawnId: index === 0 ? team === 'friendly' ? 'china-base' : 'japan-base' : `${team}-staging-${index}`,
   })));
-  return [...infantry, ...japaneseArmorRoster()];
+  return [...infantry, japaneseArmorRoster()[0], { id: 'enemy-9', team: 'enemy', index: 9, type: 'plane',
+    player: false, memberCount: 1, members: [], generation: 0, respawnAt: null, spawnId: 'japan-air' }];
 }
 
 export function stagingSpawns() {
@@ -83,10 +88,6 @@ export function reinforcementDue(formation, now) {
 }
 
 export function battleSpawn(formation, points, hostiles, obstacles, initial = false) {
-  if (!initial && !isVehicleUnit(formation.type)) {
-    const rally = points.find(point => point.team === formation.team && point.kind === 'rally' && !spawnBlockReason(point, 'infantry', hostiles, obstacles));
-    if (rally) return rally;
-  }
   return points.find(point => point.id === formation.spawnId);
 }
 // ---模块结束---

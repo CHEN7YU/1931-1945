@@ -39,6 +39,8 @@ test('Vickers Type B replaces the oversized placeholder with a proportioned thre
 test('I-15bis has two real airfoil wings, smaller lower span, radial nose and fixed landing gear', () => {
   const model = planeModel(), profile = VEHICLE_PROFILES.plane;
   assert.equal(model.userData.profile.model, 'i-15bis');
+  assert.equal(model.userData.details.engineCoolingFins, 9);
+  assert.equal(model.userData.details.fuselageSections, 48);
   const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3());
   assert.ok(Math.abs(size.x - profile.span) < .01);
   assert.ok(Math.abs(size.z - profile.length) < .1);
@@ -85,7 +87,11 @@ test('first-person views use matching vehicle profiles and shared buffers withou
   for (const type of ['tank', 'plane']) {
     const first = weaponModel(type), second = vehicleWeaponView(type);
     assert.equal(first.userData.profile.model, VEHICLE_PROFILES[type].model);
-    if (type === 'plane') assert.equal(first.children[0].geometry, second.children[0].geometry);
+    if (type === 'plane') {
+      assert.equal(first.children[0].geometry, second.children[0].geometry);
+      assert.equal(first.userData.details.roundedWindscreen, true);
+      assert.equal(first.userData.details.lowerWingVisible, true);
+    }
     else assert.equal(first.children.length, 0, 'closed optics do not add a floating hatch or large window model');
     assert.ok(geometryStats(first).calls <= 7);
     const opaqueCenter = contacts(first, [0, 0, 0], [0, 0, -1]).filter(hit => !hit.object.material.transparent);

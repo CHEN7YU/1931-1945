@@ -7,11 +7,9 @@ import { makeObjectives, circleBlocked } from '../src/core.js';
 const wiped = [{ health: 0 }, { health: 0 }];
 const rally = { id: 'test-rally', team: 'friendly', kind: 'rally', x: 0, z: 68, health: SPAWN_RULES.rallyHealth };
 
-test('a wiped squad is unavailable but another squad of the same class is selectable', () => {
-  assert.notEqual(SQUADS.infantry, SQUADS['infantry-reserve']);
-  assert.equal(SQUADS.infantry.type, SQUADS['infantry-reserve'].type);
-  assert.ok(deploymentBlockReason('dead', wiped, 'infantry', 'infantry'));
-  assert.equal(deploymentBlockReason('dead', wiped, 'infantry-reserve', 'infantry'), null);
+test('a wiped squad can redeploy its same type; live squads cannot refresh themselves', () => {
+  assert.deepEqual(Object.keys(SQUADS), ['infantry', 'tank', 'plane']);
+  assert.equal(deploymentBlockReason('dead', wiped, 'infantry', 'infantry'), null);
   assert.ok(deploymentBlockReason('pause', wiped, 'tank', 'infantry'));
   assert.ok(deploymentBlockReason('dead', [{ health: 1 }], 'tank', 'infantry'));
   assert.ok(deploymentBlockReason('dead', wiped, 'missing', 'infantry'));
@@ -26,17 +24,18 @@ test('registered spawn points are team-specific and distinguish ground, garage a
   }
   assert.equal(supportsSquad(rally, 'tank'), false);
   assert.equal(supportsSquad(rally, 'plane'), false);
-  assert.equal(supportsSquad(rally, 'mortar'), true);
+  assert.equal(supportsSquad(rally, 'mortar'), false);
   assert.equal(supportsSquad(rally, 'unknown'), false);
 });
 
-test('rally spawns are blocked by nearby living ground enemies, not corpses or flyovers', () => {
-  assert.equal(spawnBlockReason(rally, 'infantry', [], []), null);
-  assert.ok(spawnBlockReason(rally, 'infantry', [{ x: 0, z: 70, health: 100 }], []));
-  assert.equal(spawnBlockReason(rally, 'infantry', [{ x: 0, z: 70, health: 0 }], []), null);
-  assert.equal(spawnBlockReason(rally, 'infantry', [{ x: 0, z: 70, health: 100, altitude: 27 }], []), null);
-  assert.ok(spawnBlockReason({ ...rally, health: 0 }, 'infantry', [], []));
-  assert.ok(spawnBlockReason(rally, 'infantry', [], [{ minX: -1, maxX: 1, minZ: 67, maxZ: 69 }]));
+test('objective spawns retain enemy and geometry checks; retired rallies cannot deploy anyone', () => {
+  const point = { ...rally, kind: 'objective' };
+  assert.equal(spawnBlockReason(point, 'infantry', [], []), null);
+  assert.ok(spawnBlockReason(point, 'infantry', [{ x: 0, z: 70, health: 100 }], []));
+  assert.equal(spawnBlockReason(point, 'infantry', [{ x: 0, z: 70, health: 0 }], []), null);
+  assert.equal(spawnBlockReason(point, 'infantry', [{ x: 0, z: 70, health: 100, altitude: 27 }], []), null);
+  assert.ok(spawnBlockReason(rally, 'infantry', [], []));
+  assert.ok(spawnBlockReason(point, 'infantry', [], [{ minX: -1, maxX: 1, minZ: 67, maxZ: 69 }]));
 });
 
 test('rally building requires clearance from terrain, capture zones and nearby hostiles', () => {
@@ -79,7 +78,7 @@ test('rallies store only simulation data and replace only the same team while pr
   assert.ok(points.includes(enemy));
   assert.deepEqual(points.filter(point => point.kind !== 'rally'), makeBaseSpawns());
   assert.equal(points.filter(point => point.team === 'friendly' && point.kind === 'rally').length, 1);
-  assert.equal(spawnBlockReason(next, 'mortar', [], []), null);
+  assert.ok(spawnBlockReason(next, 'mortar', [], []), 'retained legacy data must not enable rally spawning');
   assert.doesNotThrow(() => JSON.stringify(points));
 });
 test('rally destruction is a single simulation transition and immediately blocks deployment without a renderer', () => {
@@ -88,7 +87,7 @@ test('rally destruction is a single simulation transition and immediately blocks
   assert.equal(point.health, 20);
   assert.deepEqual(damageRallyPoint(point, 100), { damage: 20, destroyed: true });
   assert.equal(point.health, 0);
-  assert.match(spawnBlockReason(point, 'infantry', [], []), /已被摧毁/);
+  assert.match(spawnBlockReason(point, 'infantry', [], []), /不支持/);
   assert.deepEqual(damageRallyPoint(point, 100), { damage: 0, destroyed: false });
   assert.equal(point.builderId, 'friendly-engineer');
 });

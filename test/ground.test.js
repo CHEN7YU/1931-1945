@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIDGE, RIVER, groundHeight, riverBedHeight, riverSectionAt } from '../src/ground.js';
+import { BRIDGE, RIVER, groundHeight, riverBedHeight, riverSectionAt, configureWalkSupport, walkHeight } from '../src/ground.js';
 import { makeTownLayout } from '../src/town-layout.js';
 import { createWalkSupport } from '../src/multistory.js';
 import { moveGround, createNavigator } from '../src/core.js';
@@ -12,6 +12,15 @@ test('bridge support is its actual raised top, not the dry riverbed', () => {
   assert.equal(groundHeight(8, BRIDGE.maxZ), BRIDGE.height);
   assert.equal(groundHeight(-1, -16), RIVER.bedHeight);
   assert.equal(groundHeight(17, -16), RIVER.bedHeight);
+});
+
+test('native feet and movement share the selected stage terrain and floor support', () => {
+  const pieces = [{ x: 0, z: 0, w: 4, d: 4, y: 3.1, h: .2, walkable: true }];
+  const selected = configureWalkSupport(pieces, () => .95);
+  assert.equal(selected.heightAt(8, -16, .95), .95);
+  assert.equal(walkHeight(8, -16, .95), selected.heightAt(8, -16, .95));
+  assert.equal(walkHeight(0, 0, 3.2), selected.heightAt(0, 0, 3.2));
+  configureWalkSupport(makeTownLayout().pieces);
 });
 
 test('the dry riverbed has irregular continuous banks without intruding into quay streets', () => {

@@ -1,0 +1,18 @@
+{
+  "provider": "Project-authored tactical layout",
+  "source": "src/campaign-layout.js and src/town-layout.js",
+  "provenance": "Generated from original prototype layout, not extracted historical or third-party map data.",
+  "license": "Project source license; not independently relicensed CC0",
+  "files": [
+    {
+      "file": "taierzhuang-streets.json",
+      "bytes": 178924,
+      "sha256": "199ffe971f9b87b62577b8d1bc949467d1adbb7f562aca1b10bad3a4c7617289"
+    },
+    {
+      "file": "taierzhuang-fort.json",
+      "bytes": 213908,
+      "sha256": "2702a639f3fdfc77dfb4c9849e1503dc4e3a81a2fb72fa0dabf6a91b21b960a8"
+    }
+  ]
+}

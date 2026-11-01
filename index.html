@@ -10,63 +10,68 @@
   <body>
     <canvas id="world" aria-label="三维战场"></canvas>
     <div class="grain" aria-hidden="true"></div>
-    <div id="loading"><span class="loading-mark">山河</span><p>正在构建战场…</p></div>
+    <div id="loading" class="loading-screen" aria-label="加载1931-1945 山河">
+      <div class="loading-brand"><span class="loading-years">1931-1945</span><strong>山河</strong></div>
+      <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card"><img src="/assets/loading/photo-01.png" alt="城墙上的机枪阵地" width="400" height="400" fetchpriority="high" decoding="async" /></figure></div></div></div>
+      <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
+      <p id="loading-message" role="status">正在构建战场…</p>
+      <span data-photo-wall-status role="status"></span>
+    </div>
     <main id="menu" hidden>
       <header class="masthead">
-        <a class="brand" href="./" aria-label="山河 · 1931-1945"><span class="brand-mark" aria-hidden="true">山河</span><span>山河<small>1931-1945</small></span></a>
-        <span class="build-tag"><i></i> 浏览器玩法原型 <span>PRE-ALPHA 0.1</span></span>
+        <a class="brand" href="./" aria-label="山河 · 1931-1945"><svg class="brand-emblem" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24 12 10 17 20 22 6 27 24" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+        <span class="build-tag"><i></i> 玩法原型</span>
       </header>
       <section class="hero">
-        <div class="eyebrow"><span class="line"></span> 中国战场 / 第一人称小队作战</div>
+        <div class="eyebrow"><span class="line"></span> 二战中国战场 · 小队FPS</div>
         <h1 id="game-title">山河</h1>
         <p class="game-subtitle" aria-label="副标题">1931-1945</p>
-        <p class="hero-copy">不为解锁而战。<br />选择战场，率领小队，即刻出击。</p>
-        <div class="theater-note"><span class="coordinate">34°33′ N &nbsp; 117°44′ E</span><span>鲁南 · 台儿庄主题战场</span></div>
+        <div id="menu-photo-wall" aria-label="战场与纪念影像">
+          <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card"><img src="/assets/loading/photo-01.png" alt="城墙上的机枪阵地" width="400" height="400" decoding="async" /></figure></div></div></div>
+          <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
+          <span data-photo-wall-status role="status"></span>
+        </div>
       </section>
       <aside class="operation-panel">
-        <div class="panel-heading"><span>作战部署</span><span class="index">01 / OPERATIONS</span></div>
-        <div class="map-preview">
-          <svg viewBox="0 0 400 150" aria-hidden="true">
-            <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#afb19c" stroke-opacity=".13" /></pattern></defs>
-            <path fill="url(#grid)" d="M0 0h400v150H0z"/>
-            <path d="M-10 130L100 105 220 95 410 10" fill="none" stroke="#aab6af" stroke-opacity=".25" stroke-width="23"/>
-            <g fill="#9e9f84" opacity=".35"><path d="M35 30h35v22H35zM85 25h25v40H85zM135 35h45v26h-45zM195 15h30v42h-30zM250 28h26v25h-26zM50 68h43v16H50zM120 70h26v20h-26zM179 72h30v15h-30zM238 65h35v16h-35zM290 85h27v33h-27zM333 63h35v27h-35zM180 120h35v23h-35zM240 110h30v33h-30z"/></g>
-            <path d="M40 121L120 100 202 80 280 58 350 27" fill="none" stroke="#d4b16e" stroke-dasharray="4 5" />
-            <g fill="#d4b16e" font-family="sans-serif" font-size="11"><circle cx="120" cy="100" r="10" fill="#343c32" stroke="#d4b16e"/><text x="116" y="104">A</text><circle cx="202" cy="80" r="10" fill="#343c32" stroke="#d4b16e"/><text x="198" y="84">B</text><circle cx="280" cy="58" r="10" fill="#343c32" stroke="#d4b16e"/><text x="276" y="62">C</text></g>
-          </svg>
-          <span class="map-stamp">TAIERZHUANG / 1938</span>
-        </div>
-        <div class="map-title"><div><span class="eyebrow">当前可玩战场</span><h2>台儿庄 <span>巷战</span></h2></div><span class="mode-tag">单人 · 人机</span></div>
-        <p class="map-description">A/B/C三点同时争夺，双方可占领和反夺。连续全控20秒获胜；10分钟结束比较控制点数，同分比较累计控制点秒。日军含8个步兵班与2个九七式坦克小队，步兵利用车后掩护推进。原创布局，非历史地形或参战编制复原。</p>
-        <div class="squad-label"><span>选择出击小队</span><span>全部开放 · 无需升级</span></div>
+        <div class="panel-heading"><span>作战部署</span><span class="index">01</span></div>
+        <label class="campaign-label" for="campaign-choice">战役阶段 <select id="campaign-choice"></select></label>
+        <p id="campaign-description" class="map-description"></p>
+        <button id="confirm-campaign" type="button" class="primary-button">选择小队 <span>→</span></button>
+        <div id="squad-step" hidden>
+        <button id="back-campaign" type="button" class="text-button">← 返回选择战役</button>
+        <div class="squad-label"><span>选择出击小队</span><span>无需升级</span></div>
         <div id="squad-choices" class="squad-choices">
-          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵班</strong><small>11人 / 工兵、狙击手、机枪手</small></button>
+          <button class="squad-choice selected" data-type="infantry" aria-pressed="true"><span class="unit-icon">♟</span>          <strong>步兵小队</strong><small>11人 / 迫击炮手、狙击手、机枪手</small></button>
           <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>维克斯六吨B型 / 3人车组</small></button>
-          <button class="squad-choice" data-type="mortar" aria-pressed="false"><span class="unit-icon">⌁</span><strong>迫击炮组</strong><small>3人 / 区域压制</small></button>
           <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>伊-15bis双翼机 / 单人飞行员</small></button>
         </div>
         <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>可在暂停菜单分别调整效果</small></label>
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
+        </div>
+        <button type="button" class="text-button feedback-entry" data-feedback-open>问题反馈 ↗</button>
         <a id="shop-art-entry" class="text-button shop-art-entry" href="?benchmark=shop-art&amp;seed=1938" hidden>美术样例区 ↗ 直接看首街两店</a>
-        <p class="deployment-note">仅中国阵营可玩 <span>·</span> 无养成 <span>·</span> 整队阵亡后换队</p>
-        <details class="control-preferences menu-controls">
-          <summary>操作设置 · 自动记忆</summary>
+        <p class="deployment-note">仅中国阵营 <span>·</span> 整队阵亡后换队</p>
+        <details id="menu-settings" class="control-preferences">
+          <summary>设置</summary>
+        <fieldset class="control-preferences menu-controls">
+          <legend>操作</legend>
           <label for="menu-mouse-sensitivity">普通视角灵敏度 <output for="menu-mouse-sensitivity">100%</output><input id="menu-mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
           <label for="menu-aim-sensitivity">瞄准灵敏度 <output for="menu-aim-sensitivity">100%</output><input id="menu-aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
           <label class="motion-settings" for="menu-motion-strength">镜头步态 <select id="menu-motion-strength" data-motion-strength><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select></label>
           <small>两种灵敏度独立调节；100%保持原手感，瞄准镜仍保留原有降速。</small>
           <button type="button" class="text-button" data-reset-controls>恢复操作默认值</button>
-        </details>
-        <details class="control-preferences menu-audio">
-          <summary>声音设置 · 自动记忆</summary>
+        </fieldset>
+        <fieldset class="control-preferences menu-audio">
+          <legend>声音</legend>
           <div data-audio-controls="menu"></div>
           <small>静音保留原音量，取消静音即可恢复；不改变AI听觉或战斗事件。</small>
           <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
+        </fieldset>
+        <p class="build-version" data-build-version aria-label="构建版本"></p>
         </details>
         <p class="preferences-status" data-preferences-status role="status"></p>
-        <p class="build-version" data-build-version aria-label="构建版本"></p>
       </aside>
-      <footer class="menu-footer"><span><i></i> 原创场景 / 扫描与 Azure AI 材质 / 美术迭代版</span><span>WASD 移动 <b>·</b> 右键举枪瞄准 <b>·</b> Y 切换队员 <b>·</b> X 小队命令</span><span>谨记历史，珍视和平</span></footer>
+      <footer class="menu-footer"><span>WASD 移动 <b>·</b> 右键瞄准 <b>·</b> Y 换人 <b>·</b> X 命令</span><span>谨记历史，珍视和平</span></footer>
     </main>
     <section id="hud" hidden>
       <aside id="shop-art-tour" hidden aria-label="美术样例导览">
@@ -80,6 +85,8 @@
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="flight-pointer" hidden aria-label="鼠标期望飞行方向"></div>
+      <div id="flight-status" hidden aria-label="飞行状态"><strong id="flight-speed"></strong><span id="flight-altitude"></span><span id="flight-throttle"></span><small id="flight-warning"></small></div>
       <div id="tank-optics" hidden aria-label="坦克闭舱观察装置">
         <svg class="tank-visor" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
           <defs>
@@ -116,11 +123,17 @@
       <div id="weapon-support" role="status" hidden></div>
       <div id="action-status" role="status" hidden></div>
       <div id="grenade-warning" role="alert" hidden></div>
-      <div id="construction-panel" hidden><span class="eyebrow">工兵建造 / 集结点</span><strong id="construction-status">右键选择集结点蓝图</strong><div class="capture-track"><div id="construction-fill"></div></div><small>1 步枪 · 2 建造工具 · 右键蓝图 · 按住左键建造</small></div>
+      <div id="construction-panel" hidden><span class="eyebrow">轻型迫击炮 / 50–250米</span><strong id="construction-status">左键架设</strong><div class="capture-track"><div id="construction-fill"></div></div><small>左键架设／架设后左键发射 · 鼠标左右方向／上下射程 · 自动装填 · 右键收起 · 1步枪 · 2迫击炮</small></div>
+      <div id="mortar-objective-sight" hidden aria-label="迫击炮方向与据点测距">
+        <div id="mortar-objective-markers" aria-label="据点方位标记"></div>
+        <strong id="mortar-target-distance"></strong>
+        <span id="mortar-range-setting"></span>
+        <small id="mortar-objective-distances"></small>
+      </div>
       <div class="hud-bottom">
         <div class="squad-status"><div class="squad-heading"><span class="hud-label" id="unit-title">步兵小队</span><span id="section-status" hidden></span><kbd>Y</kbd></div><div id="members"></div></div>
         <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div>
-          <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="第二武器／工兵工具（当前仅工兵配备）"><b>2</b>工</span><span data-equipment-slot="3" title="大刀 · 左键挥砍"><b>3</b>刀</span><span data-equipment-slot="5" title="手雷栏 · 再按切换手榴弹／炸药包"><b>5</b><span class="equipment-label">雷</span><span class="equipment-count">1</span></span></div>
+          <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="迫击炮 · 按2选择，站定后左键架设"><b>2</b>炮</span><span data-equipment-slot="3" title="大刀 · 左键挥砍"><b>3</b>刀</span><span data-equipment-slot="5" title="5 手榴弹"><b>5</b><span class="equipment-label">雷</span><span class="equipment-count">1</span></span><span data-equipment-slot="6" title="6 定时炸药包"><b>6</b><span class="equipment-label">包</span><span class="equipment-count">1</span></span></div>
           <div id="grenade-status" hidden></div><div id="tank-machine-gun" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
         <div id="tank-orientation" hidden aria-label="坦克车体与炮塔朝向，图上方为当前视线">
           <svg viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="40" fill="none" stroke="#85927d"/>
@@ -140,53 +153,83 @@
         <h2 id="overlay-title">重整队伍，再出发。</h2>
         <p id="overlay-description">当前小队仍在作战；整队阵亡后才能选择其他小队。</p>
         <div id="battle-summary"></div>
-        <div id="redeploy-choices" class="redeploy-choices"></div>
+        <div id="redeploy-choices" class="redeploy-choices" aria-label="选择新战斗小队"></div>
         <div id="deployment-options" hidden>
-          <div class="deployment-context"><canvas id="deployment-map" width="176" height="176"></canvas><div><span class="eyebrow">战场仍在进行</span><strong id="deployment-objective"></strong><p id="deployment-selection">选择其他小队，再选择重生点。</p></div></div>
-          <div id="spawn-choices" class="spawn-choices" aria-label="选择重生点"></div>
+          <div class="deployment-context"><span class="eyebrow">战场仍在进行 · 地图部署</span><strong id="deployment-objective"></strong><p id="deployment-selection">先选择小队，再点击地图上的己方出生标记。</p></div>
+          <div class="deployment-map-frame">
+            <canvas id="deployment-map" width="528" height="528" aria-label="战术部署地图"></canvas>
+            <div id="spawn-choices" class="spawn-choices" aria-label="地图上的己方可选出生点"></div>
+          </div>
+          <p id="deployment-map-hint">选中小队后默认推荐最近的可用出生点，可点击地图改选；灰色标记暂不可用。装甲仅初始基地，航空仅空中入口。</p>
           <p id="deployment-error" role="status"></p>
           <button id="confirm-deploy" class="primary-button" disabled>选择小队后出击 <span>↗</span></button>
         </div>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
-        <fieldset id="control-settings" class="control-preferences" hidden>
-          <legend>操作设置</legend>
-          <label for="mouse-sensitivity">普通视角灵敏度 <output for="mouse-sensitivity">100%</output><input id="mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
-          <label for="aim-sensitivity">瞄准灵敏度 <output for="aim-sensitivity">100%</output><input id="aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
-          <small>两种倍率独立生效；100%保持原手感，狙击镜仍保留原有降速。不改变射速、伤害或战局进度。</small>
-          <button type="button" class="text-button" data-reset-controls>恢复操作默认值（含镜头步态，不改画质）</button>
-          <p class="preferences-status" data-preferences-status role="status"></p>
-        </fieldset>
-        <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength" data-motion-strength><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>在此调整镜头步态；不改变移速和枪械操作。</small></label>
-        <fieldset id="audio-settings" class="control-preferences" hidden>
-          <legend>声音设置</legend>
-          <div data-audio-controls="pause"></div>
-          <small>主音量控制全部声音。枪炮含爆炸和装填；语音含受伤短喊。静音不改变AI听觉、伤害或事件归属。</small>
-          <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
-          <p class="preferences-status" data-preferences-status role="status"></p>
-        </fieldset>
-        <fieldset id="quality-settings" hidden>
-          <legend>图形设置 · 手动</legend>
-          <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
-          <div class="quality-options">
-            <label><input id="quality-shadows" type="checkbox" data-quality-effect="shadows" checked /> 动态阴影</label>
-            <label><input id="quality-fog" type="checkbox" data-quality-effect="fog" checked /> 距离雾</label>
-            <label><input id="quality-smoke" type="checkbox" data-quality-effect="smoke" checked /> 场景烟雾</label>
-            <label><input id="quality-grain" type="checkbox" data-quality-effect="grain" checked /> 画面颗粒</label>
-            <label><input id="quality-overcast" type="checkbox" data-quality-effect="overcast" checked /> 冷灰日光</label>
-            <label><input id="quality-muzzle" type="checkbox" data-quality-effect="muzzle" checked /> 枪口焰与烟尘</label>
-            <label><input id="quality-muzzleLight" type="checkbox" data-quality-effect="muzzleLight" checked /> 枪口点光（仅高档）</label>
-            <label><input id="quality-hitParticles" type="checkbox" data-quality-effect="hitParticles" checked /> 弹着碎屑</label>
-            <label><input id="quality-damageVignette" type="checkbox" data-quality-effect="damageVignette" checked /> 受伤暗红边缘</label>
-          </div>
-          <small id="quality-status" role="status"></small>
-          <small>不改变战局 · 自动记忆此浏览器设置 · 自动降级与后期尚未接入</small>
-        </fieldset>
+        <details id="pause-settings" class="pause-settings">
+          <summary>设置 · 操作、声音与画面</summary>
+          <fieldset id="control-settings" class="control-preferences" hidden>
+            <legend>操作设置</legend>
+            <label for="mouse-sensitivity">普通视角灵敏度 <output for="mouse-sensitivity">100%</output><input id="mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+            <label for="aim-sensitivity">瞄准灵敏度 <output for="aim-sensitivity">100%</output><input id="aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
+            <small>两种倍率独立生效；100%保持原手感，狙击镜仍保留原有降速。不改变射速、伤害或战局进度。</small>
+            <button type="button" class="text-button" data-reset-controls>恢复操作默认值（含镜头步态，不改画质）</button>
+            <p class="preferences-status" data-preferences-status role="status"></p>
+          </fieldset>
+          <label id="motion-settings" class="motion-settings" hidden>镜头步态 <select id="motion-strength" data-motion-strength><option value="1">标准</option><option value="0.35">减弱</option><option value="0">关闭</option></select><small>在此调整镜头步态；不改变移速和枪械操作。</small></label>
+          <fieldset id="audio-settings" class="control-preferences" hidden>
+            <legend>声音设置</legend>
+            <div data-audio-controls="pause"></div>
+            <small>主音量控制全部声音。枪炮含爆炸和装填；语音含受伤短喊。静音不改变AI听觉、伤害或事件归属。</small>
+            <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
+            <p class="preferences-status" data-preferences-status role="status"></p>
+          </fieldset>
+          <fieldset id="quality-settings" hidden>
+            <legend>图形设置 · 手动</legend>
+            <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
+            <div class="quality-options">
+              <label><input id="quality-shadows" type="checkbox" data-quality-effect="shadows" checked /> 动态阴影</label>
+              <label><input id="quality-fog" type="checkbox" data-quality-effect="fog" checked /> 距离雾</label>
+              <label><input id="quality-smoke" type="checkbox" data-quality-effect="smoke" checked /> 场景烟雾</label>
+              <label><input id="quality-grain" type="checkbox" data-quality-effect="grain" checked /> 画面颗粒</label>
+              <label><input id="quality-overcast" type="checkbox" data-quality-effect="overcast" checked /> 冷灰日光</label>
+              <label><input id="quality-muzzle" type="checkbox" data-quality-effect="muzzle" checked /> 枪口焰与烟尘</label>
+              <label><input id="quality-muzzleLight" type="checkbox" data-quality-effect="muzzleLight" checked /> 枪口点光（仅高档）</label>
+              <label><input id="quality-hitParticles" type="checkbox" data-quality-effect="hitParticles" checked /> 弹着碎屑</label>
+              <label><input id="quality-damageVignette" type="checkbox" data-quality-effect="damageVignette" checked /> 受伤暗红边缘</label>
+            </div>
+            <small id="quality-status" role="status"></small>
+            <small>不改变战局 · 自动记忆此浏览器设置 · 自动降级与后期尚未接入</small>
+          </fieldset>
+        </details>
         <button id="back-menu" class="text-button">返回作战大厅</button>
+        <button type="button" class="text-button feedback-entry" data-feedback-open>反馈问题／提出建议 ↗</button>
         <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；连续完整控制三点20秒获胜。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>
     <div id="fatal" class="overlay" role="alertdialog" aria-modal="true" aria-labelledby="fatal-title" hidden><div class="dialog"><h2 id="fatal-title">战场未能加载</h2><p id="fatal-message"></p><label for="fatal-details">本页诊断信息</label><textarea id="fatal-details" readonly spellcheck="false" aria-label="可复制的错误与构建信息"></textarea><button id="fatal-copy" class="text-button">复制诊断信息</button><p id="fatal-copy-status" role="status"></p><button onclick="location.reload()" class="primary-button">重新加载</button></div></div>
-    <script type="module" src="/src/main.js"></script>
+    <dialog id="feedback-dialog" aria-labelledby="feedback-title">
+      <div class="dialog">
+        <button id="feedback-close" type="button" class="text-button">关闭 ×</button>
+        <h2 id="feedback-title">反馈问题／提出建议</h2>
+        <p>无需登录，反馈私下保存。不要填写密码、密钥或其他敏感信息；网络失败时草稿保留在本页。</p>
+        <form id="feedback-form">
+          <fieldset id="feedback-fields">
+            <label for="feedback-category">类别</label>
+            <select id="feedback-category" name="category"><option value="bug">遇到问题</option><option value="suggestion">改进建议</option><option value="other">其他留言</option></select>
+            <label for="feedback-content">内容</label>
+            <textarea id="feedback-content" name="content" minlength="5" maxlength="2000" rows="6" required placeholder="哪里不顺手？请描述战场、小队和发生过程。"></textarea>
+            <small id="feedback-count">0 / 2000</small>
+            <label for="feedback-contact">联系方式（可选）</label>
+            <input id="feedback-contact" name="contact" maxlength="120" autocomplete="off" />
+            <label class="feedback-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off" /></label>
+          </fieldset>
+          <p id="feedback-status" role="status"></p>
+          <button id="feedback-submit" type="submit" class="primary-button">提交反馈</button>
+          <button id="feedback-copy" type="button" class="text-button">复制草稿（不提交）</button>
+        </form>
+      </div>
+    </dialog>
+    <script type="module" src="/src/entry.js"></script>
   </body>
 </html>

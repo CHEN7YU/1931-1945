@@ -13,9 +13,7 @@ export const SPAWN_RULES = Object.freeze({
 });
 
 export const SQUADS = Object.freeze({
-  infantry: { type: 'infantry', name: '步兵一班' },
-  'infantry-reserve': { type: 'infantry', name: '步兵二班' },
-  mortar: { type: 'mortar', name: '迫击炮组' },
+  infantry: { type: 'infantry', name: '步兵小队' },
   tank: { type: 'tank', name: '装甲车组' },
   plane: { type: 'plane', name: '航空小队' },
 });
@@ -24,8 +22,9 @@ export function makeBaseSpawns() {
   return [
     { id: 'china-base', name: '南侧步兵集结地', team: 'friendly', kind: 'base', x: 0, z: 78, altitude: 0 },
     { id: 'china-garage', name: '南侧装甲出发点', team: 'friendly', kind: 'garage', x: 0, z: 83, altitude: 0 },
-    { id: 'china-air', name: '南侧空中入场点', team: 'friendly', kind: 'air', x: 0, z: 102, altitude: 27 },
+    { id: 'china-air', name: '南侧空中入场点', team: 'friendly', kind: 'air', x: 0, z: 102, altitude: 60 },
     { id: 'japan-base', name: '北侧日军集结地', team: 'enemy', kind: 'base', x: 9, z: -81, altitude: 0 },
+    { id: 'japan-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: -102, altitude: 35, aiOnly: true },
   ];
 }
 
@@ -59,14 +58,51 @@ export function damageRallyPoint(point, amount) {
 export function deploymentBlockReason(state, members, squadId, previousSquadId) {
   if (!Object.hasOwn(SQUADS, squadId)) return '未知的小队';
   if (!canDeploySquad(state, members)) return '当前小队尚有存活队员，整队阵亡后才能更换小队';
-  if (state === 'dead' && squadId === previousSquadId) return '该小队刚刚阵亡，请选择其他小队';
   return null;
 }
 
 export function supportsSquad(point, type) {
   if (type === 'tank') return point.kind === 'garage';
   if (type === 'plane') return point.kind === 'air';
-  return (type === 'infantry' || type === 'mortar') && (point.kind === 'base' || point.kind === 'rally');
+  return (type === 'infantry' || type === 'mortar') && (point.kind === 'base' || point.kind === 'objective');
+}
+
+export function recommendedSpawn(points, type, objectives, safe) {
+  if (typeof safe !== 'function' || !Array.isArray(objectives)) throw new RangeError('Spawn recommendation requires objective and safety queries');
+  const active = objectives.filter(point => point.owner !== 'friendly' || point.status === 'contested');
+  const targets = active.length ? active : objectives;
+  const distance = point => targets.length ? Math.min(...targets.map(target => Math.hypot(target.x - point.x, target.z - point.z))) : 0;
+  return points.filter(point => point.team === 'friendly' && !point.aiOnly && supportsSquad(point, type) && safe(point))
+    .sort((a, b) => distance(a) - distance(b) || a.id.localeCompare(b.id))[0] ?? null;
+}
+
+export function capturedSpawnPoints(objectives, base, type, safe) {
+  if (!['infantry', 'tank'].includes(type) || typeof safe !== 'function' ||
+    ![base?.x, base?.z].every(Number.isFinite)) throw new RangeError('Captured spawns require a base, ground squad and safety query');
+  if (type === 'tank') return [];
+  const result = [];
+  for (const objective of objectives) {
+    if (objective.owner !== 'friendly') continue;
+    const dx = base.x - objective.x, dz = base.z - objective.z, distance = Math.hypot(dx, dz);
+    if (!distance) continue;
+    const anchor = { x: objective.x + dx / distance * 50, z: objective.z + dz / distance * 50 };
+    let selected = null;
+    for (const radius of [0, 4, 8, 12, 16, 20, 24]) {
+      for (let side = 0; side < (radius ? 16 : 1); side++) {
+        const angle = side * Math.PI / 8;
+        const point = { id: `captured-${objective.id}-${type}`, name: `${objective.id} · ${objective.name}后方`,
+          team: 'friendly', kind: type === 'tank' ? 'objective-tank' : 'objective', objectiveId: objective.id,
+          x: anchor.x + Math.cos(angle) * radius, z: anchor.z + Math.sin(angle) * radius, altitude: 0 };
+        const margin = type === 'tank' ? 4 : SPAWN_RULES.placementRadius;
+        if (point.x - margin < BATTLE_AREA.minX || point.x + margin > BATTLE_AREA.maxX ||
+          point.z - margin < BATTLE_AREA.minZ || point.z + margin > BATTLE_AREA.maxZ) continue;
+        if (safe(point)) { selected = point; break; }
+      }
+      if (selected) break;
+    }
+    if (selected) result.push(selected);
+  }
+  return result;
 }
 
 export function spawnBlockReason(point, type, hostiles, obstacles) {

@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('266 clips retain three stock male voices per side, with four reviewed Chinese charge takes', () => {
+test('284 clips retain unchanged Japanese dialogue and add friendly slogans with three male voices', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 266);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 266);
+  assert.equal(clips.length, 284);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 284);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 188 : 78);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 206 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -63,7 +63,7 @@ test('266 clips retain three stock male voices per side, with four reviewed Chin
   assert.equal(soldierVoiceVariant('soldier-42'), soldierVoiceVariant('soldier-42'));
   assert.equal(new Set(Array.from({ length: 20 }, (_, i) => soldierVoiceVariant(`soldier-${i}`))).size, 3);
   assert.throws(() => soldierVoiceVariant(''), /identity/);
-  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 262);
+  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 280);
   const reviewed = clips.filter(clip => clip.delivery);
   assert.equal(reviewed.length, 4);
   assert.ok(reviewed.every(clip => clip.team === 'friendly' && clip.id === 'advance-1' && [0, 2].includes(clip.variant)));
@@ -79,7 +79,7 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 266);
+  assert.equal(manifest.files.length, 284);
   assert.equal(manifest.format, 'mixed');
   assert.equal(manifest.defaultFormat, VOICE_FORMAT);
   for (const clip of battleVoiceClips()) {
@@ -122,8 +122,8 @@ test('charge phrases remain equally likely before selecting short/long takes at 
     const soldier = Array.from({ length: 20 }, (_, i) => actor(`charge-${i}`))
       .find(soldier => soldierVoiceVariant(soldier.id) === variant);
     const counts = new Map(), takes = new Map();
-    for (let line = 0; line < 12; line++) for (let take = 0; take < 4; take++) {
-      const draws = [0, 0, (line + .5) / 12, (take + .5) / 4, 0], context = fakeContext();
+    for (let line = 0; line < 28; line++) for (let take = 0; take < 4; take++) {
+      const draws = [0, 0, (line + .5) / 28, (take + .5) / 4, 0], context = fakeContext();
       const decoded = buffers(), audio = createBattleVoices(decoded, () => draws.shift() ?? 0);
       audio.sync(true); audio.update(context, [soldier], listener, 2);
       const played = battleVoiceClips().find(clip => clip.file === audio.snapshot.history[0].file);
@@ -132,7 +132,7 @@ test('charge phrases remain equally likely before selecting short/long takes at 
       if (played.delivery) takes.set(played.delivery.take, (takes.get(played.delivery.take) ?? 0) + 1);
       audio.reset();
     }
-    assert.deepEqual([...counts.entries()], [['advance-1', 16], ['advance-2', 16], ['advance-3', 16]]);
+    assert.deepEqual([...counts.entries()], Array.from({ length: 7 }, (_, index) => [`advance-${index + 1}`, 16]));
     assert.deepEqual([...takes.entries()], [['short', 12], ['long', 4]]);
   }
 });

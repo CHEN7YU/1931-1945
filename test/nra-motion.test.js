@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Quaternion, Vector3 } from 'three';
-import { createNraMotion, advanceNraMotion, sampleNraMotion, sampleNraPhase, nativeGaitParameters, nativeMuzzleLocal } from '../src/nra-motion.js';
+import { createNraMotion, advanceNraMotion, sampleNraMotion, sampleNraPhase, nativeGaitParameters, nativeMuzzleLocal, nativeGaitDrop } from '../src/nra-motion.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
@@ -86,6 +86,24 @@ test('dead, prone and travelling soldiers do not start an upright stationary tur
     advanceNraMotion(person, .05);
     assert.equal(sampleNraMotion(person).turn.weight, 0);
   }
+});
+
+test('stationary turning has bounded knee clearance without fake travel or altered bone lengths', () => {
+  const person = actor();
+  person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+  Object.assign(person, { health: 100, tactics: {}, stance: 'standing' });
+  for (let frame = 0; frame < 60; frame++) {
+    person.heading += .025;
+    advanceNraMotion(person, 1 / 60);
+    const drop = nativeGaitDrop(person);
+    assert.ok(drop >= 0 && drop <= .045);
+    assert.equal(person.nativeMotion.speed, 0);
+    assert.equal(person.nativeMotion.distance, 0);
+    assert.equal(sampleNraMotion(person).hipDrop, drop);
+  }
+  assert.ok(nativeGaitDrop(person) > .044);
+  for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
+  assert.equal(nativeGaitDrop(person), 0);
 });
 
 test('native idle holds hips and knees still with a long subtle breathing cycle', () => {

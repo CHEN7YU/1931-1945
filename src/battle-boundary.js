@@ -1,5 +1,5 @@
 export const BATTLE_AREA = Object.freeze({ minX: -100, maxX: 100, minZ: -96, maxZ: 96 });
-export const AIR_BATTLE_AREA = Object.freeze({ minX: -170, maxX: 170, minZ: -170, maxZ: 170 });
+export const AIR_BATTLE_AREA = Object.freeze({ minX: -600, maxX: 600, minZ: -600, maxZ: 600 });
 export const BOUNDARY_RULES = Object.freeze({ graceSeconds: 8, damagePerSecond: 10 });
 
 export function createBoundaryState() {

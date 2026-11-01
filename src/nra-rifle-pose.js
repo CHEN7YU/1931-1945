@@ -89,14 +89,14 @@ export function createNraRiflePose(root, bones, gun) {
       fingerError = Math.max(fingerError, solved.error);
     }
   }
-  function placeHand(side, palm, seed, pole, normal) {
+  function placeHand(side, palm, seed, pole, normal, iterations = 4) {
     const target = seed.clone();
     let solved;
-    for (let iteration = 0; iteration < 4; iteration++) {
+    for (let iteration = 0; iteration < iterations; iteration++) {
       solved = solveArm(bone(`${side}Arm`), bone(`${side}ForeArm`), bone(`${side}Hand`), target, pole);
       orientHand(side, normal);
       const offset = palm.clone().sub(palmPosition(side));
-      if (offset.length() < .0005 || iteration === 3) break;
+      if (offset.length() < .0005 || iteration === iterations - 1) break;
       target.add(offset);
     }
     curlHand(side);
@@ -112,7 +112,8 @@ export function createNraRiflePose(root, bones, gun) {
       const localRotation = new THREE.Quaternion().fromArray(carry.weaponQuaternion);
       const bodyFacing = rotation(root), facing = bodyFacing.clone().multiply(localRotation);
       gun.position.fromArray(carry.weaponPosition); gun.quaternion.copy(localRotation);
-      grip.position.fromArray(RIFLE_CONTACTS.supportPalm).lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportPalm), carry.lowReady ?? 0);
+      const lowGrip = carry.bayonet ? .5 : carry.lowReady ?? 0;
+      grip.position.fromArray(RIFLE_CONTACTS.supportPalm).lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportPalm), lowGrip);
       grip.position.z += (.16 * (carry.prone ?? 0) + .06 * ((carry.wallLeft ?? 0) + (carry.wallRight ?? 0))) * (1 - (carry.lowReady ?? 0));
       grip.position.z += .05 * (carry.wallRight ?? 0) * (carry.lowReady ?? 0);
       root.updateMatrixWorld(true);
@@ -123,15 +124,15 @@ export function createNraRiflePose(root, bones, gun) {
       rightTarget = root.localToWorld(new THREE.Vector3(...RIFLE_CONTACTS.triggerWrist).applyQuaternion(localRotation)
         .add(new THREE.Vector3().fromArray(carry.weaponPosition)));
       right = placeHand('Right', position(triggerPalm), rightTarget, new THREE.Vector3(.7, -.7, .1).applyQuaternion(bodyFacing),
-        new THREE.Vector3(-1, 0, 0).applyQuaternion(facing));
+        new THREE.Vector3(-1, 0, 0).applyQuaternion(facing), carry.bayonet ? 8 : 4);
       rightTarget = right.target;
       root.updateMatrixWorld(true);
       const seed = new THREE.Vector3(...RIFLE_CONTACTS.supportWrist)
-        .lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportWrist), carry.lowReady ?? 0);
+        .lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportWrist), lowGrip);
       seed.z = grip.position.z + .04;
       root.localToWorld(seed.applyQuaternion(localRotation).add(new THREE.Vector3(...carry.weaponPosition)));
       left = placeHand('Left', position(grip), seed, new THREE.Vector3(-.9, -.6, .1).applyQuaternion(bodyFacing),
-        new THREE.Vector3(0, 1, 0).applyQuaternion(facing));
+        new THREE.Vector3(0, 1, 0).applyQuaternion(facing), carry.bayonet ? 8 : 4);
       leftTarget = left.target;
       root.updateMatrixWorld(true);
       if (carry.grenade) {

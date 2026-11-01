@@ -4,7 +4,7 @@ import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { infantryWeaponProfile } from './rifle-action.js';
 import { projectHeadAim, projectUnaimedEye, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
-import { hasBayonet } from './bayonet.js';
+import { hasBayonet, bayonetCarry } from './bayonet.js';
 import { headingError } from './ai-turning.js';
 
 export function nativePoseIntent(actor) {
@@ -70,7 +70,8 @@ export function nativeGaitDrop(actor) {
   const rise = Math.min(.04, 9.81 * flightTime * flightTime / 8) * Math.sin(Math.PI * flight) ** 2;
   const walkDrop = (.09 - .02 * gait.aimed) + .005 * (1 - .7 * gait.aimed) * Math.sin(phase * Math.PI * 4);
   const drop = walkDrop * (1 - gait.jog) + (.13 + .045 * smoothSpeed(motion.speed, 3.2, 4.8) - rise) * gait.jog;
-  return drop * motion.weight * upright;
+  const turnDrop = .045 * (motion.turn?.weight ?? 0) * (1 - motion.weight);
+  return (drop * motion.weight + turnDrop) * upright;
 }
 
 export function createNraMotion(profile, actor) {
@@ -310,15 +311,17 @@ export function sampleNraMotion(actor, includeHead = true) {
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }
+  const bayonetExtension = bayonet && actor.bayonet.mode !== 'charge' ? actor.bayonet.extension : 0;
   if (bayonet) {
-    // Both hands are solved against this forward carry, including the short thrust.
-    blendedPosition.set(.13, 1.35, -.06 - actor.bayonet.extension * .1);
-    quaternion.identity();
+    const thrust = bayonetCarry(bayonetExtension);
+    blendedPosition.fromArray(thrust.position);
+    blendedPosition.y -= hipDrop;
+    quaternion.setFromAxisAngle(new Vector3(1, 0, 0), thrust.pitch);
     stockContact = null;
   }
   const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
     1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
-  const result = { intent: nativePoseIntent(actor), grenade, dadao, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
+  const result = { intent: nativePoseIntent(actor), grenade, dadao, bayonet, idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,
     walkStride: gait?.walkStride ?? (profile.walkStrideMeters ?? profile.strideMeters) * motion.strideScale,

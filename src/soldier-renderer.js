@@ -54,7 +54,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       summary = { visible: 0, near: 0, far: 0, melee: 0, batches: 0 };
       for (const actor of actors) {
         syncSoldierModelPose(actor, now);
-        actor.model.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
+        actor.model.visible = !actor.vehicleId && actor.id !== controlledId;
         if (actor.id === separateViewId || separateViewId instanceof Set && separateViewId.has(actor.id)) continue;
         if (!actor.model.visible) continue;
         const distance = camera.position.distanceTo(actor.model.position);

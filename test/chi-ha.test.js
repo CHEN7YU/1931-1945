@@ -36,15 +36,15 @@ function context(crew, extra = {}) {
     move: (p, dx, dz) => { p.x += dx; p.z += dz; }, ...extra };
 }
 
-test('two tank squads and eight infantry squads occupy exactly ten Japanese formation slots', () => {
+test('one tank, one aircraft and eight infantry squads occupy exactly ten Japanese formation slots', () => {
   const roster = battleRoster();
   validateRoster(roster);
   assert.equal(roster.length, 20);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
-  const support = roster.at(-1), garages = japaneseArmorSpawns(), garage = garages[1];
+  const support = roster.find(unit => unit.type === 'tank'), garages = japaneseArmorSpawns(), garage = garages[0];
   assert.equal(battleSpawn(support, [...garages, { team: 'enemy', kind: 'rally' }], [], [], false), garage);
   assert.equal(garage.kind, 'garage');
-  roster.forEach(unit => { unit.members = Array.from({ length: unit.type === 'tank' ? 4 : 11 }, () => ({ health: 100 })); });
+  roster.forEach(unit => { unit.members = Array.from({ length: unit.memberCount ?? 4 }, () => ({ health: 100 })); });
   assert.deepEqual(armySummary(roster, 'enemy'), { units: 10, rosterUnits: 10, alive: 96, vehicles: 2 });
   roster.find(unit => unit.team === 'enemy' && unit.type === 'infantry').type = 'tank';
   assert.throws(() => validateRoster(roster), /vehicle limit/);
@@ -67,9 +67,9 @@ test('four real crew own seats and hull damage remains independent of infantry h
 test('each tank squad replenishes after a wipe without reducing or adding formation slots', () => {
   const roster = battleRoster(), tanks = roster.filter(unit => unit.variant === CHI_HA.id);
   for (const tank of tanks) tank.members = Array.from({ length: 4 }, () => ({ health: 100 }));
+  assert.equal(reinforcementDue(tanks[0], 10), false, 'a surviving tank squad never receives a duplicate hull');
   tanks[0].members.forEach(actor => { actor.health = 0; });
   assert.equal(reinforcementDue(tanks[0], 10), true, 'armor does not wait through the infantry seventeen-second cooldown');
-  assert.equal(reinforcementDue(tanks[1], 10), false, 'a surviving tank squad never receives a duplicate hull');
   tanks[0].respawnAt = 12;
   assert.equal(reinforcementDue(tanks[0], 11), false, 'blocked garages retry explicitly instead of spawning through a wreck');
   assert.equal(reinforcementDue(tanks[0], 12), true);
@@ -77,7 +77,7 @@ test('each tank squad replenishes after a wipe without reducing or adding format
   tanks[0].respawnAt = null;
   assert.equal(reinforcementDue(tanks[0], 12), false);
   validateRoster(roster);
-  assert.equal(roster.length, 20); assert.equal(tanks.length, 2);
+  assert.equal(roster.length, 20); assert.equal(tanks.length, 1);
 });
 test('original near model has six road wheels per side, shared geometry and a bounded draw budget', () => {
   const a = chiHaModel(), b = chiHaModel();

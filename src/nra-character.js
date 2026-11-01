@@ -181,7 +181,7 @@ export async function loadNraCharacter() {
     get issue() { return observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
     update(actor, now, controlledId) {
       observedActor = actor ?? null;
-      root.visible = Boolean(actor && !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId));
+      root.visible = Boolean(actor && !actor.vehicleId && actor.id !== controlledId);
       if (!actor) return;
       if (!collision) appearance.apply(actor.avatarAppearance ?? null);
       motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';

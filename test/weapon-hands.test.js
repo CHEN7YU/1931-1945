@@ -7,7 +7,7 @@ import { prepareNraRig } from '../src/nra-rig.js';
 import { createNraGrenadeHand } from '../src/nra-hand.js';
 import { createWeaponHands } from '../src/weapon-hands.js';
 import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
-import { createRifleState, infantryWeaponProfile } from '../src/rifle-action.js';
+import { createRifleState, infantryWeaponProfile, rifleReloadSeconds } from '../src/rifle-action.js';
 import { applyCloseWeaponPose } from '../src/weapon-close-pose.js';
 
 const manager = new T.LoadingManager();
@@ -168,7 +168,8 @@ test('close-ready transitions keep both native contacts reachable through aim, p
     for (const placement of [[0, -.05, -.2], [.18, -.22, -.14], [.18, -.265, -.14]]) {
       for (const action of ['idle', 'cycle', 'reload']) for (let frame = 0; frame <= 20; frame++) {
         state.action = action;
-        state.elapsed = infantryWeaponProfile(state)[action === 'cycle' ? 'cycleSeconds' : 'reloadSeconds'] * frame / 20;
+        state.elapsed = (action === 'reload' ? rifleReloadSeconds(state) :
+          infantryWeaponProfile(state).cycleSeconds) * frame / 20;
         const pose = updateRifleModel(gun, state);
         for (let step = 0; step <= 20; step++) {
           gun.position.fromArray(placement); gun.position.y -= pose.lower * .045;

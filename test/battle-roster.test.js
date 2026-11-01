@@ -5,7 +5,7 @@ import { makeBaseSpawns } from '../src/spawns.js';
 import { makeTownLayout } from '../src/town-layout.js';
 import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination, infantryLoadout, sectionOffset } from '../src/battle-roster.js';
 
-test('default armies keep ten units: ten friendly infantry and eight enemy infantry plus two tanks', () => {
+test('default armies keep ten units and 110/96 people with enemy armor and aviation', () => {
   const roster = battleRoster();
   validateRoster(roster);
   assert.equal(TYPES.infantry.members, 11);
@@ -13,7 +13,14 @@ test('default armies keep ten units: ten friendly infantry and eight enemy infan
   assert.equal(roster.filter(unit => unit.player).length, 1);
   assert.equal(roster.filter(unit => unit.team === 'friendly' && unit.type === 'infantry').length, 10);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
-  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'tank').length, 2);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'tank').length, 1);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'plane').length, 1);
+  for (const type of ['infantry', 'tank', 'plane']) {
+    const army = battleRoster(type);
+    const count = team => army.filter(unit => unit.team === team).reduce((sum, unit) => sum + (unit.memberCount ?? 4), 0);
+    assert.equal(count('friendly'), 110);
+    assert.equal(count('enemy'), 96);
+  }
 });
 test('a single selected vehicle replaces one friendly platoon and vehicle caps reject overbooking', () => {
   const roster = battleRoster('tank');
@@ -38,15 +45,15 @@ test('all 198 staged infantry have clear, separated, registered spawn positions'
   }
   assert.equal(occupied.length, 198);
 });
-test('each eleven-person section retains its engineer and gunner and replaces one rifleman with a sniper', () => {
+test('friendly sections equip a mortarman, not an engineer, alongside the existing sniper and gunner', () => {
   for (const team of ['friendly', 'enemy']) {
     const loadouts = Array.from({ length: TYPES.infantry.members }, (_, index) => infantryLoadout(team, index));
-    assert.deepEqual(loadouts[0], { role: 'engineer', model: 'rifle' });
+    assert.deepEqual(loadouts[0], { role: team === 'friendly' ? 'mortarman' : 'rifleman', model: 'rifle' });
     assert.ok(loadouts.slice(1, 9).every(item => item.role === 'rifleman' && item.model === 'rifle'));
     assert.deepEqual(loadouts[9], { role: 'sniper', model: 'sniper' });
-    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, 8);
+    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, team === 'friendly' ? 8 : 9);
     assert.deepEqual(loadouts[10], { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' });
-    assert.equal(loadouts.filter(item => item.role === 'engineer').length, 1);
+    assert.equal(loadouts.filter(item => item.role === 'engineer').length, 0);
     for (let index = 0; index < 10; index++) assert.deepEqual(sectionOffset(index),
       { x: (index % 5 - 2) * 1.15, z: Math.floor(index / 5) * 1.4 - .7 });
     assert.deepEqual(sectionOffset(10), { x: 0, z: 2.1 });
@@ -76,7 +83,7 @@ test('army counters derive from living members, not roster labels or desired cou
   survivors[10].health = 0;
   assert.equal(canDeploySquad('dead', survivors), true);
 });
-test('autonomous reinforcement waits for a full wipe and cooldown, then uses a safe registered rally', () => {
+test('autonomous reinforcement waits for a full wipe and cooldown, never uses a retired rally', () => {
   const unit = battleRoster().find(item => item.team === 'enemy' && item.index === 0);
   unit.members = Array.from({ length: 11 }, () => ({ health: 0 }));
   unit.respawnAt = 17;
@@ -87,7 +94,7 @@ test('autonomous reinforcement waits for a full wipe and cooldown, then uses a s
   assert.equal(reinforcementDue(unit, 20), true);
   const rally = { id: 'enemy-rally-test', team: 'enemy', kind: 'rally', health: 120, x: -48, z: -53 };
   const points = [...makeBaseSpawns(), rally];
-  assert.equal(battleSpawn(unit, points, [], []).id, rally.id);
+  assert.equal(battleSpawn(unit, points, [], []).id, 'japan-base');
   assert.equal(battleSpawn(unit, points, [{ x: -48, z: -53, health: 100 }], []).id, 'japan-base');
   unit.player = true;
   assert.equal(reinforcementDue(unit, 20), false, 'player deployment never silently respawns');

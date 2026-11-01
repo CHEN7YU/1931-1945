@@ -29,6 +29,14 @@ test('poses require actual firing lines; prone does not require waiting until al
   assert.throws(() => chooseCombatPosture(facts({ distance: NaN })), /finite tactical/);
 });
 
+test('open-ground midrange fire prefers a lowered usable stance without forcing a blind pose', () => {
+  for (const preference of [0, .2, .5, .9]) {
+    assert.notEqual(chooseCombatPosture(facts({ distance: 30, previousPose: 'standing', preference })), 'standing');
+  }
+  assert.equal(chooseCombatPosture(facts({ distance: 30, canFire: pose => pose === 'standing' })), 'standing');
+  assert.equal(chooseCombatPosture(facts({ distance: 30, moving: true })), 'standing');
+});
+
 test('real side-wall contact is required, not just a cover label or a wall in front of the muzzle', () => {
   const wall = { id: 'wall', wall: true, x: .6, z: 0, w: .24, d: 4, y: 1.8, h: 3.6 };
   const contact = wallFiringContact({ x: 0, y: 0, z: 0 }, 0, [wall]);
@@ -39,7 +47,7 @@ test('real side-wall contact is required, not just a cover label or a wall in fr
   assert.notEqual(chooseCombatPosture(facts({ wall: contact, canFire: pose => pose !== 'wallRight' })), 'wallRight');
 });
 
-test('shot relocation chooses metres of reachable ground and a different eligible firing pose', () => {
+test('shot relocation chooses reachable ground and preserves an effective firing posture', () => {
   const origin = { x: 0, z: 0 }, threat = { x: 0, z: -30 };
   const query = { position: origin, threat, preference: .2, blocked: () => false, heightAt: () => 0 };
   const goal = chooseShotRelocation(query);
@@ -48,7 +56,7 @@ test('shot relocation chooses metres of reachable ground and a different eligibl
   assert.equal(chooseShotRelocation({ ...query, canFinish: () => false }), null);
   assert.equal(chooseShotRelocation({ ...query, heightAt: point => point === origin ? 0 : 1 }), null);
   const first = chooseCombatPosture(facts({ preference: .2 }));
-  assert.notEqual(chooseCombatPosture(facts({ preference: .2, previousPose: first })), first);
+  assert.equal(chooseCombatPosture(facts({ preference: .2, previousPose: first })), first);
 });
 
 test('advance pace varies by person, with aimed walking and tactical catch-up rather than per-frame rerolls', () => {

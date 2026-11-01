@@ -8,7 +8,7 @@ export const STREET_BLOCK = Object.freeze({
   rows: [62, 43, 10, -38, -68],
 });
 
-export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS } = {}) {
+export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS, rows = STREET_BLOCK.rows, laneCenter = null } = {}) {
   const buildings = [], pieces = [], covers = [], passages = [];
   const add = (id, x, y, z, w, h, d, material, extra = {}) => {
     const piece = { id, x, y, z, w, h, d, material, ...extra };
@@ -99,8 +99,8 @@ export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS } = {})
         peek: { x: x + side * .72, z: z + riverSide * (d / 2 - .64) }, kind: 'door', buildingId: id });
     }
   }
-  for (const [index, z] of STREET_BLOCK.rows.entries()) {
-    const center = z < -20 ? 8 : 0;
+  for (const [index, z] of rows.entries()) {
+    const center = laneCenter ?? (z < -20 ? 8 : 0);
     shop(`west-${index}`, center - 8.5, z, 1, ['同德糧行', '濟民藥舖', '運河茶館', '魯南客棧', '瑞和商號'][index]);
     shop(`east-${index}`, center + 8.5, z, -1, ['永安布莊', '南街食肆', '瑞和商號', '同德糧行', '濟民藥舖'][index]);
   }

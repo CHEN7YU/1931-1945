@@ -1,0 +1,22 @@
+{
+  "provider": "OpenGameArt",
+  "author": "Thimras",
+  "source": "https://opengameart.org/content/cannon-fire",
+  "download": "https://opengameart.org/sites/default/files/cannon_fire_0.ogg",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "description": "CC0 cannon-fire recording adapted as a short mortar launch report; not a historical mortar recording.",
+  "processing": "FFmpeg: first 1.1 seconds, highpass 70 Hz, lowpass 2200 Hz, fade out 0.65-1.1 seconds, mono 24 kHz PCM s16le. Source unchanged.",
+  "files": [
+    {
+      "file": "cannon-fire.ogg",
+      "bytes": 179939,
+      "sha256": "2b21ffa41e5c3be4eecdfbd3490544f5aa8b6d1581787265863e13de1a8e599d"
+    },
+    {
+      "file": "launch.wav",
+      "bytes": 52878,
+      "sha256": "17946271d65433a80eea17c48688a8a37db7ac2b14ce2cb7873c477b8c900d76"
+    }
+  ]
+}

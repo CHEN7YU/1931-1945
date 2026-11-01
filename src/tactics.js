@@ -110,7 +110,7 @@ export function peekTurn(state, now) {
 }
 
 export function coverPeeks(slot) {
-  if (slot.kind === 'window' || slot.kind === 'wall-support') return [{ x: slot.x, z: slot.z }];
+  if (slot.kind === 'window' || slot.kind === 'wall-support' || slot.kind === 'sandbag') return [{ x: slot.x, z: slot.z }];
   if (slot.kind === 'door') return [{ ...slot.peek }];
   return [[.85, 0], [-.85, 0], [0, .85], [0, -.85]].map(([x, z]) => ({ x: slot.x + x, z: slot.z + z }));
 }

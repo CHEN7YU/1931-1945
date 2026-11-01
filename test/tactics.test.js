@@ -2,9 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement, followGuardAction } from '../src/tactics.js';
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement, followGuardAction, coverPeeks } from '../src/tactics.js';
 import { makeObjectives, advanceCapture } from '../src/core.js';
 import { battleRoster } from '../src/battle-roster.js';
+
+test('sandbag firing peeks stay behind the barrier instead of stepping through its collision volume', () => {
+  const slot = { kind: 'sandbag', x: 1, z: 2 };
+  assert.deepEqual(coverPeeks(slot), [{ x: 1, z: 2 }]);
+});
 
 function followingPair(range = 3, speed = 0) {
   return {

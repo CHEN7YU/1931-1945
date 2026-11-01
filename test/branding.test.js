@@ -9,7 +9,12 @@ test('the game exposes 山河 as its main title and 1931-1945 as its separate su
   assert.match(html, /<title>山河 · 1931-1945<\/title>/);
   assert.match(html, /<h1 id="game-title">山河<\/h1>/);
   assert.match(html, /<p class="game-subtitle"[^>]*>1931-1945<\/p>/);
-  assert.match(html, /<span>山河<small>1931-1945<\/small><\/span>/);
+  assert.match(html, /<a class="brand"[^>]*aria-label="山河 · 1931-1945"[^>]*><svg/);
+  assert.doesNotMatch(html, /<span>山河<small>1931-1945<\/small><\/span>/);
+  assert.doesNotMatch(html, /id="campaign-buttons"/);
+  assert.match(html, /<details id="menu-settings"[^>]*>\s*<summary>设置<\/summary>/);
+  assert.match(html, /id="menu-photo-wall"/);
+  assert.doesNotMatch(html, /class="china-theater"|率领小队，即刻出击/);
   assert.doesNotMatch(html, /烽火|EMBERS OF CHINA/);
 });
 

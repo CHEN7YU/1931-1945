@@ -4,8 +4,8 @@ import { valueNoise2D } from './value-noise.js';
 
 let support = createWalkSupport([], groundHeight);
 
-export function configureWalkSupport(pieces) {
-  support = createWalkSupport(pieces, groundHeight);
+export function configureWalkSupport(pieces, terrain = groundHeight) {
+  support = createWalkSupport(pieces, terrain);
   return support;
 }
 

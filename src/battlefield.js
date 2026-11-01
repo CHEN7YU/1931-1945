@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
 import { BRIDGE as DEFAULT_BRIDGE, RIVER, bridgeGroundHeight, riverBedHeight, configureWalkSupport } from './ground.js';
-import { createWalkSupport } from './multistory.js';
 import { OBJECTIVES } from './core.js';
 import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
 import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
@@ -50,7 +49,7 @@ export function makeWorld(scene, surface, options = {}) {
   const town = options.town ?? makeTownLayout();
   const BRIDGE = options.bridge ?? DEFAULT_BRIDGE;
   const groundHeight = (x, z) => bridgeGroundHeight(x, z, BRIDGE);
-  const walkSupport = options.town ? createWalkSupport(town.pieces, groundHeight) : configureWalkSupport(town.pieces);
+  const walkSupport = configureWalkSupport(town.pieces, groundHeight);
   const walkHeight = walkSupport.heightAt;
   const outskirts = makeOutskirtsLayout();
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -542,6 +541,11 @@ export function makeWorld(scene, surface, options = {}) {
       }
     }
     obstacle(x, z, rotate ? .8 : count * 1.05 + .5, rotate ? count * 1.05 + .5 : .8, 1.2);
+    for (const side of [-1, 1]) for (let slot = 0; slot < count; slot += 2) {
+      const along = (slot - (count - 1) / 2) * 1.05;
+      const point = { x: x + (rotate ? side * .95 : along), z: z + (rotate ? along : side * .95) };
+      town.covers.push({ id: `sandbags-${x}-${z}-${side}-${slot}`, ...point, kind: 'sandbag', peek: { ...point } });
+    }
   }
   sandbags(-12, 21, 5); sandbags(19, 29, 5, true);
   sandbags(-9, -43, 6); sandbags(18, -33, 4);

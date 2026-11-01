@@ -1,4 +1,4 @@
-export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 2.7, length: 1.11, sightHeight: .05 });
+export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 3.8, length: 1.11, sightHeight: .05 });
 export const INFANTRY_WEAPONS = Object.freeze({
   rifle: Object.freeze({ ...RIFLE, name: '中正式风格步枪 · 比例样枪', automatic: false, muzzleZ: -.891 }),
   sniper: Object.freeze({ ...RIFLE, name: '带镜栓动步枪 · 狙击样枪', automatic: false, scoped: true,
@@ -15,6 +15,13 @@ export function infantryWeaponProfile(state) {
 }
 const clamp = value => Math.max(0, Math.min(1, value));
 const smooth = (time, from, to) => { const t = clamp((time - from) / (to - from)); return t * t * (3 - 2 * t); };
+
+export function rifleReloadSeconds(state) {
+  const profile = infantryWeaponProfile(state);
+  if (profile.automatic) return profile.reloadSeconds;
+  const missing = profile.magazine - state.ammo;
+  return state.ammo === 0 && !profile.scoped ? profile.reloadSeconds : 2.8 + missing * .4;
+}
 
 export function createRifleState(model = 'rifle') {
   const profile = infantryWeaponProfile({ model });
@@ -35,6 +42,7 @@ export function shootRifle(state) {
   state.shots++;
   state.action = 'cycle';
   state.elapsed = 0;
+  if (state.ammo === 0 && !infantryWeaponProfile(state).automatic) reloadRifle(state);
   return true;
 }
 
@@ -44,14 +52,15 @@ export function advanceRifle(state, dt) {
   const profile = infantryWeaponProfile(state);
   while (dt > 0 && state.action !== 'idle') {
     const reloading = state.action === 'reload';
-    const duration = reloading ? profile.reloadSeconds : profile.cycleSeconds;
+    const duration = reloading ? rifleReloadSeconds(state) : profile.cycleSeconds;
     const end = Math.min(duration, state.elapsed + dt);
     const clips = Math.max(1, Math.ceil((profile.magazine - state.ammo) / 5));
     const cues = profile.automatic
       ? reloading ? state.model === 'zb26' ? [[duration * .82, 'load'], [duration * .93, 'close']]
         : [...Array.from({ length: clips }, (_, index) => [duration * (.2 + .62 * (index + .8) / clips), 'load']),
           [duration * .93, 'close']] : []
-      : reloading ? [[.12, 'unlock'], [.4, 'extract'], [1.45, 'load'], [2.3, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
+      : reloading ? [[duration * .12 / 2.7, 'unlock'], [duration * .4 / 2.7, 'extract'],
+        [duration * 1.45 / 2.7, 'load'], [duration * 2.3 / 2.7, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];
     for (const [at, cue] of cues) if (state.elapsed < at && end >= at) events.push(cue);
     dt -= end - state.elapsed;
     state.elapsed = end;
@@ -76,7 +85,7 @@ export function riflePose(state) {
   };
   const reload = state.action === 'reload';
   const cycling = state.action === 'cycle';
-  const t = state.elapsed;
+  const t = reload ? state.elapsed * 2.7 / rifleReloadSeconds(state) : state.elapsed;
   const open = reload
     ? smooth(t, .05, .2) * (1 - smooth(t, 2.4, 2.67))
     : cycling ? smooth(t, .08, .2) * (1 - smooth(t, .5, .64)) : 0;

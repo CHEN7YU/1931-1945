@@ -61,11 +61,12 @@ test('returning clears the warning and resets grace; individual timers survive c
   assert.equal(first.remaining, 1);
 });
 
-test('aircraft retain a larger flight area with the same gradual warning and attrition', () => {
+test('aircraft retain a wide 600-metre flight area with the same gradual warning and attrition', () => {
   const boundary = createBoundaryState();
-  assert.equal(advanceBoundary(boundary, { x: 130, z: 102 }, 60, AIR_BATTLE_AREA), 0);
+  assert.deepEqual(AIR_BATTLE_AREA, { minX: -600, maxX: 600, minZ: -600, maxZ: 600 });
+  assert.equal(advanceBoundary(boundary, { x: 500, z: -500 }, 60, AIR_BATTLE_AREA), 0);
   assert.equal(boundary.outside, false);
-  assert.equal(advanceBoundary(boundary, { x: 171, z: 0 }, 9, AIR_BATTLE_AREA), BOUNDARY_RULES.damagePerSecond);
+  assert.equal(advanceBoundary(boundary, { x: 601, z: 0 }, 9, AIR_BATTLE_AREA), BOUNDARY_RULES.damagePerSecond);
 });
 
 test('engineers cannot establish an unsafe spawn in or against the warning strip', () => {

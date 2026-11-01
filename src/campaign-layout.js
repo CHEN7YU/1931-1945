@@ -1,0 +1,13 @@
+import { campaignById } from './campaigns.js';
+import { makeTownPreviewLayout, PREVIEW_BRIDGE, PREVIEW_OBJECTIVES } from './town-preview-layout.js';
+import { OBJECTIVES } from './core.js';
+
+export function campaignLayout(id) {
+  if (campaignById(id).locked) throw new RangeError('Campaign layout unavailable: awaiting the user design brief');
+  if (id === 'taierzhuang-streets') return { objectives: OBJECTIVES.map(point => ({ ...point })) };
+  return {
+    town: makeTownPreviewLayout(),
+    bridge: PREVIEW_BRIDGE,
+    objectives: PREVIEW_OBJECTIVES.map(({ view, ...point }) => ({ ...point })),
+  };
+}

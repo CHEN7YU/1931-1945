@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity, seatSoldier, releaseSeat,
   selectControlledSoldier, releaseSupportWeapon } from '../src/entities.js';
-import { createRifleState, shootRifle, reloadRifle, advanceRifle, RIFLE } from '../src/rifle-action.js';
+import { createRifleState, shootRifle, reloadRifle, advanceRifle, RIFLE, rifleReloadSeconds } from '../src/rifle-action.js';
 import { advanceOwnedWeapons, syncControlledRifleTiming } from '../src/weapon-simulation.js';
 import { TYPES, shotState } from '../src/core.js';
 
@@ -150,7 +150,7 @@ test('incoming personal reload timing is ready before presentation, without adva
   const before = { action: actors[1].rifle.action, elapsed: actors[1].rifle.elapsed, ammo: actors[1].rifle.ammo };
   assert.equal(before.action, 'reload');
   assert.equal(syncControlledRifleTiming(registry, 5, false), true);
-  assert.ok(Math.abs(actors[1].rifle.reloadUntil - (5 + RIFLE.reloadSeconds - before.elapsed)) < 1e-10);
+  assert.ok(Math.abs(actors[1].rifle.reloadUntil - (5 + rifleReloadSeconds(actors[1].rifle) - before.elapsed)) < 1e-10);
   syncControlledRifleTiming(registry, 6, true);
   assert.equal(actors[1].rifle.reloadUntil, 0);
   syncControlledRifleTiming(registry, 7, false);
@@ -197,9 +197,10 @@ test('autonomous empty rifles load on their own action clock; Y neither refills 
   assert.ok(Math.abs(actors[1].rifle.elapsed - 1.1) < 1e-9);
   assert.equal(actors[1].rifle.ammo, 0);
   selectControlledSoldier(registry, actors[0]);
-  advanceOwnedWeapons(registry, 1.59, 3.34, false, true);
+  const finalDt = rifleReloadSeconds(actors[1].rifle) - actors[1].rifle.elapsed - .001;
+  advanceOwnedWeapons(registry, finalDt, 1.75 + finalDt, false, true);
   assert.equal(actors[1].rifle.ammo, 0);
-  advanceOwnedWeapons(registry, .02, 3.36, false, true);
+  advanceOwnedWeapons(registry, .002, 1.752 + finalDt, false, true);
   assert.equal(actors[1].rifle.ammo, 5);
 });
 

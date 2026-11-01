@@ -35,6 +35,9 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.ok(report.permissions.some(permission => permission.basis === 'Azure-generated-images' && /not CC0/.test(permission.limitation)));
   assert.ok(report.files.some(file => file.file === 'dependencies/three-mesh-bvh/LICENSE.txt' && file.use === 'runtime'));
   assert.ok(report.permissions.some(permission => permission.directory === 'dependencies/three-mesh-bvh' && permission.basis === 'MIT'));
+  assert.equal(report.files.filter(file => /^loading\/photo-\d+\.png$/.test(file.file)).length, 23);
+  assert.ok(report.permissions.some(permission => permission.directory === 'loading' &&
+    /rights.*unverified|licenses are unverified/.test(permission.limitation)));
 });
 
 test('collision dependency license cannot be relabelled or silently corrupted', async t => {

@@ -40,6 +40,7 @@ function azureToken() {
 }
 
 export async function generateBattleVoices({ cacheOnly = false,
+  newFriendlyOnly = false,
   approvedDirectory = process.env.BATTLE_VOICE_APPROVED_DELIVERY_DIR } = {}) {
   const region = process.env.AZURE_SPEECH_REGION;
   const resourceId = process.env.AZURE_SPEECH_RESOURCE_ID;
@@ -61,7 +62,26 @@ export async function generateBattleVoices({ cacheOnly = false,
     available = await voicesResponse.json();
   }
   const files = [], clips = battleVoiceClips();
+  const budgetPath = process.env.BATTLE_VOICE_BUDGET_LOG;
+  const budget = { authorizedUsd: 50, reservedUsd: 0, requests: [], note: 'One USD reserved per small new request, not an actual Azure invoice. No automatic retries.' };
+  if (newFriendlyOnly && !budgetPath) throw new Error('New voice generation requires a durable BATTLE_VOICE_BUDGET_LOG');
+  if (newFriendlyOnly) {
+    try { Object.assign(budget, JSON.parse(await readFile(budgetPath, 'utf8'))); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (budget.authorizedUsd !== 50 || !Number.isFinite(budget.reservedUsd) || budget.reservedUsd < 0) throw new Error('Invalid voice generation budget ledger');
+  }
   for (const clip of clips) {
+    if (newFriendlyOnly) {
+      const retained = previous.files.find(item => item.file === clip.file);
+      if (retained) {
+        const bytes = await readFile(join(root, clip.file));
+        if (hash(bytes) !== retained.sha256 || retained.text !== clip.text ||
+          retained.synthesisHash !== voiceSynthesisHash(clip)) throw new Error(`Existing clip changed; refusing to regenerate: ${clip.file}`);
+        files.push(retained);
+        continue;
+      }
+      if (clip.team !== 'friendly' || clip.text.length > 120 || clip.delivery) throw new Error('Only short, new friendly dialogue is authorized');
+    }
     if (!cacheOnly) {
       const voice = available.find(item => item.ShortName === clip.voice && item.Gender === 'Male' && item.Locale === clip.locale);
       if (!voice || clip.style && !voice.StyleList?.includes(clip.style)) throw new Error(`Required male voice/style is unavailable: ${clip.voice}`);
@@ -94,13 +114,20 @@ export async function generateBattleVoices({ cacheOnly = false,
     }
     if (!bytes) {
       if (cacheOnly) throw new Error(`Missing or changed MP3 cache in --cache-only mode: ${clip.file}; no Azure synthesis was attempted.`);
+      if (newFriendlyOnly) {
+        if (budget.reservedUsd + 1 > budget.authorizedUsd) throw new Error('Voice generation budget exhausted');
+        budget.reservedUsd++;
+        budget.requests.push({ file: clip.file, characters: clip.text.length, requestedAt: new Date().toISOString(), state: 'reserved' });
+        await writeFile(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);
+      }
       let response;
-      for (let attempt = 0; attempt < 4; attempt++) {
+      const attempts = newFriendlyOnly ? 1 : 4;
+      for (let attempt = 0; attempt < attempts; attempt++) {
         response = await fetch(`${endpoint}/v1`, { method: 'POST',
           headers: { Authorization: authorization, 'Content-Type': 'application/ssml+xml',
             'X-Microsoft-OutputFormat': VOICE_FORMAT, 'User-Agent': 'EmbersOfChinaVoicePreparation' },
           body: ssml, signal: AbortSignal.timeout(60000) });
-        if (![429, 503].includes(response.status) || attempt === 3) break;
+        if (![429, 503].includes(response.status) || attempt === attempts - 1) break;
         const retry = Math.min(30, Math.max(1, Number(response.headers.get('retry-after')) || 2 ** attempt));
         await response.body?.cancel();
         await new Promise(done => setTimeout(done, retry * 1000));
@@ -115,6 +142,10 @@ export async function generateBattleVoices({ cacheOnly = false,
       if (bytes.length < 500 || !mp3) throw new Error(`Azure did not return MP3 audio for ${clip.file}`);
       await writeFile(join(root, `${clip.file}.tmp`), bytes);
       await rename(join(root, `${clip.file}.tmp`), join(root, clip.file));
+      if (newFriendlyOnly) {
+        budget.requests.at(-1).state = 'saved';
+        await writeFile(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);
+      }
     }
     files.push({ ...clip, gender: 'Male', bytes: bytes.length, sha256: hash(bytes), synthesisHash });
     console.log(`${files.length}/${clips.length} ${clip.file}`);
@@ -137,5 +168,5 @@ export async function generateBattleVoices({ cacheOnly = false,
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await generateBattleVoices({ cacheOnly: process.argv.includes('--cache-only') });
+  await generateBattleVoices({ cacheOnly: process.argv.includes('--cache-only'), newFriendlyOnly: process.argv.includes('--new-friendly-only') });
 }

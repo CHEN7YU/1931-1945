@@ -27,17 +27,19 @@ export function createVehicleRenderer(scene) {
           throw new Error('Vehicle projection requires a known variant and finite track/gun pose');
         }
         if (!views.has(vehicle.id)) {
-          const model = vehicle.variant === CHI_HA.id ? chiHaModel() : vehicle.type === 'tank' ? tankModel() : planeModel();
+          const model = vehicle.variant === CHI_HA.id ? chiHaModel() : vehicle.type === 'tank' ? tankModel() : planeModel(vehicle.team);
           model.traverse(object => { if (object.isMesh) object.userData.vehicleId = vehicle.id; });
-          views.set(vehicle.id, { model, type: vehicle.type, variant: vehicle.variant });
+          views.set(vehicle.id, { model, type: vehicle.type, variant: vehicle.variant, team: vehicle.team });
           scene.add(model);
         }
         const view = views.get(vehicle.id);
         if (view.type !== vehicle.type) throw new Error('A vehicle identity cannot change model type');
+        if (view.team !== vehicle.team) throw new Error('A vehicle identity cannot change team');
         if (view.variant !== vehicle.variant) throw new Error('A vehicle identity cannot change model variant');
         view.model.visible = vehicle.id !== cockpitVehicleId;
         view.model.position.copy(vehicle.position);
-        view.model.rotation.set(vehicle.type === 'plane' ? vehicle.pitch : 0, vehicle.heading, vehicle.type === 'plane' ? vehicle.roll : 0);
+        view.model.rotation.set(vehicle.type === 'plane' ? vehicle.pitch : 0, vehicle.heading,
+          vehicle.type === 'plane' ? vehicle.roll : 0, vehicle.type === 'plane' ? 'YXZ' : 'XYZ');
         if (vehicle.type === 'tank') {
           view.model.userData.turret.rotation.y = vehicle.turretYaw - vehicle.heading;
           view.model.userData.gun.rotation.x = vehicle.turretPitch;

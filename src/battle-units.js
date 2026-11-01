@@ -4,6 +4,11 @@ const chinese = [
   ['第20军团', 1], ['第20军团', 2], ['第20军团', 3],
 ];
 
+export function soldierRoleLabel(actor) {
+  return { mortarman: '迫击炮手', sniper: '狙击手', 'machine-gunner': '机枪手',
+    rifleman: '步枪手', tanker: '车组', pilot: '飞行员' }[actor.role] ?? actor.role;
+}
+
 export function campaignUnitName(unit) {
   if (!['friendly', 'enemy'].includes(unit.team) || !Number.isInteger(unit.index) || unit.index < 0 ||
     !['infantry', 'mortar', 'tank', 'plane'].includes(unit.type)) throw new RangeError('Campaign labels require a valid game formation');

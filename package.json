@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "dev": "node scripts/prepare-tactical-maps.mjs && vite --host 127.0.0.1",
+    "build": "node scripts/prepare-tactical-maps.mjs && vite build",
     "prepare:battle-voices": "node scripts/prepare-battle-voices.mjs",
     "prepare:scene-art": "python scripts/prepare-scene-art.py",
     "prepare:dadao-art": "python -B scripts/prepare-dadao-art.py",

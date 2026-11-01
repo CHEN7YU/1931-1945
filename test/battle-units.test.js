@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { campaignUnitName, campaignUnitDescription } from '../src/battle-units.js';
+import { campaignUnitName, campaignUnitDescription, soldierRoleLabel } from '../src/battle-units.js';
+import { infantryLoadout } from '../src/battle-roster.js';
+
+test('the first infantry member is an explicitly labelled mortar soldier with a rifle', () => {
+  const loadout = infantryLoadout('friendly', 0);
+  assert.deepEqual(loadout, { role: 'mortarman', model: 'rifle' });
+  assert.equal(soldierRoleLabel(loadout), '迫击炮手');
+  assert.equal(infantryLoadout('friendly', 1).role, 'rifleman');
+  assert.equal(infantryLoadout('friendly', 9).role, 'sniper');
+  assert.equal(infantryLoadout('friendly', 10).role, 'machine-gunner');
+});
 
 test('both teams use referenced Taierzhuang formations with explicitly abstract game subdivisions', () => {
   const names = ['friendly', 'enemy'].map(team => Array.from({ length: 10 }, (_, index) =>
