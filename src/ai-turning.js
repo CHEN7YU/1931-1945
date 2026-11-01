@@ -1,4 +1,4 @@
-export const AI_TURN = Object.freeze({ standingRate: 2.4, movingRate: 1.9, brakeAngle: .65, resumeAngle: .12, fireAngle: .07 });
+export const AI_TURN = Object.freeze({ standingRate: 4.2, movingRate: 3.3, brakeAngle: .65, resumeAngle: .12, fireAngle: .07 });
 export const headingError = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 export function advanceAITurn(actor, desired, dt, moving = false) {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AI_TURN, advanceAITurn, headingError } from '../src/ai-turning.js';
 
-test('a 180 degree reversal takes real simulated time instead of one-frame flipping at every framerate', () => {
+test('a 180 degree reversal completes briskly without one-frame flipping at every framerate', () => {
   for (const fps of [30, 60, 144]) {
     const actor = { heading: 0 }, dt = 1 / fps;
     for (let frame = 0; frame < fps; frame++) {
@@ -11,10 +11,19 @@ test('a 180 degree reversal takes real simulated time instead of one-frame flipp
       assert.ok(Math.abs(headingError(before, actor.heading)) <= AI_TURN.standingRate * dt + 1e-10);
       assert.ok(Math.abs(result.step) <= AI_TURN.standingRate * dt + 1e-10);
     }
-    assert.ok(Math.abs(actor.heading - 2.4) < 1e-9);
-    assert.ok(Math.abs(headingError(actor.heading, Math.PI)) > AI_TURN.fireAngle);
+    assert.ok(Math.abs(actor.heading - Math.PI) < 1e-9);
+    assert.ok(Math.abs(headingError(actor.heading, Math.PI)) <= AI_TURN.fireAngle);
     for (let frame = 0; frame < fps; frame++) advanceAITurn(actor, Math.PI, dt);
     assert.ok(Math.abs(headingError(actor.heading, Math.PI)) < 1e-9);
+  }
+});
+
+test('moving AI can reorient through a half-turn in about one second while keeping a grounded arc', () => {
+  for (const fps of [30, 60, 144]) {
+    const actor = { heading: 0 }, dt = 1 / fps;
+    for (let frame = 0; frame < fps; frame++) advanceAITurn(actor, Math.PI, dt, true);
+    assert.ok(Math.abs(headingError(actor.heading, Math.PI)) < .1);
+    assert.ok(AI_TURN.movingRate >= Math.PI);
   }
 });
 
