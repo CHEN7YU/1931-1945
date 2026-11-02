@@ -18,7 +18,7 @@ const materials = {
   olive: paint(0x535b36), edge: paint(0x727653), canvas: paint(0x626943),
   underside: paint(0x9caead), steel: paint(0x41463f), rubber: paint(0x252822),
   dark: paint(0x171d1a), leather: paint(0x503b28),
-  blue: paint(0x183e80), white: paint(0xe4e4d3),
+  blue: paint(0x183e80), white: paint(0xe4e4d3), red: paint(0x9d2826),
   glass: new THREE.MeshStandardMaterial({ color: 0xb1d1cb, roughness: .18, metalness: .05,
     transparent: true, opacity: .28, depthWrite: false, side: THREE.DoubleSide }),
 };
@@ -51,21 +51,23 @@ function rivets(parent, from, to, count) {
     mesh(parent, rivet, materials.edge, point, [.018, .018, .018]);
   }
 }
-function roundel(parent, position, rotation, radius, surface = null) {
+function roundel(parent, position, rotation, radius, surface = null, team = 'friendly') {
   const group = new THREE.Group();
   group.position.set(...position); group.rotation.set(...rotation); parent.add(group);
-  mesh(group, disk, materials.blue, [0, 0, 0], [radius, radius, 1]);
-  const rays = new THREE.Shape();
-  for (let i = 0; i < 24; i++) {
-    const angle = i * Math.PI / 12, r = radius * (i % 2 ? .4 : .8);
-    if (!i) rays.moveTo(Math.sin(angle) * r, Math.cos(angle) * r);
-    else rays.lineTo(Math.sin(angle) * r, Math.cos(angle) * r);
+  mesh(group, disk, team === 'enemy' ? materials.red : materials.blue, [0, 0, 0], [radius, radius, 1]);
+  if (team === 'friendly') {
+    const rays = new THREE.Shape();
+    for (let i = 0; i < 24; i++) {
+      const angle = i * Math.PI / 12, r = radius * (i % 2 ? .4 : .8);
+      if (!i) rays.moveTo(Math.sin(angle) * r, Math.cos(angle) * r);
+      else rays.lineTo(Math.sin(angle) * r, Math.cos(angle) * r);
+    }
+    rays.closePath();
+    const geometry = new THREE.ShapeGeometry(rays);
+    mesh(group, geometry, materials.white, [0, 0, .002]);
+    mesh(group, disk, materials.blue, [0, 0, .003], [radius * .43, radius * .43, 1]);
+    mesh(group, disk, materials.white, [0, 0, .004], [radius * .34, radius * .34, 1]);
   }
-  rays.closePath();
-  const geometry = new THREE.ShapeGeometry(rays);
-  mesh(group, geometry, materials.white, [0, 0, .002]);
-  mesh(group, disk, materials.blue, [0, 0, .003], [radius * .43, radius * .43, 1]);
-  mesh(group, disk, materials.white, [0, 0, .004], [radius * .34, radius * .34, 1]);
   if (surface) {
     group.updateMatrixWorld(true);
     for (const object of group.children) {
@@ -270,7 +272,7 @@ function wing(parent, span, chord, y, z) {
 }
 const wingMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: .02 });
 
-function planeTemplate() {
+function planeTemplate(team) {
   const body = new THREE.Group(), propeller = new THREE.Group();
   mesh(body, loft([[-2.65, 0, .01, .01], [-2.6, 0, .62, .62], [-1.85, 0, .64, .64],
     [-1.3, .02, .48, .5], [-.6, .02, .4, .48], [-.05, .02, .36, .44],
@@ -304,9 +306,9 @@ function planeTemplate() {
     wheel(body, side * .97, -1.31, -1.05, .32, .19);
     wheel(body, side * 1.08, -1.31, -1.05, .17, .035, materials.edge);
     roundel(body, [side * 3.85, 1.05, -.85], [-Math.PI / 2, 0, 0], .48,
-      (x, z) => wingSurface(x, z, 10.2, 1.5, 1.05, -.94, true));
+      (x, z) => wingSurface(x, z, 10.2, 1.5, 1.05, -.94, true), team);
     roundel(body, [side * 2.78, -.47, -.48], [Math.PI / 2, 0, 0], .39,
-      (x, z) => wingSurface(x, z, 7.5, 1.42, -.47, -.5, false));
+      (x, z) => wingSurface(x, z, 7.5, 1.42, -.47, -.5, false), team);
     tube(body, materials.leather, [side * .245, .32, -.05], [side * .22, .34, .85], .034);
   }
   oval(body, materials.dark, [0, .05, .4], [.27, .22, .48]);
@@ -316,7 +318,7 @@ function planeTemplate() {
   windscreen.rotation.x = -Math.PI / 5;
   oval(body, materials.olive, [0, .18, 2.42], [1.51, .055, .6]);
   oval(body, materials.olive, [0, .65, 2.47], [.045, .76, .56]);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; team === 'friendly' && i < 5; i++) {
     for (const side of [-1, 1])
       block(body, i % 2 ? materials.white : materials.blue, [side * .047, .35 + i * .18, 2.68],
         [.009, .15, .37 - Math.abs(i - 2) * .04]);
@@ -334,11 +336,14 @@ function planeTemplate() {
   return body;
 }
 
-export function historicalVehicleModel(type) {
+export function historicalVehicleModel(type, team = 'friendly') {
   if (!Object.hasOwn(VEHICLE_PROFILES, type)) throw new RangeError(`Unknown historical vehicle: ${type}`);
-  if (!templates.has(type)) templates.set(type, type === 'tank' ? tankTemplate() : planeTemplate());
-  const model = templates.get(type).clone(true);
+  if (!['friendly', 'enemy'].includes(team)) throw new RangeError(`Unknown vehicle team: ${team}`);
+  const key = type === 'plane' ? `${type}-${team}` : type;
+  if (!templates.has(key)) templates.set(key, type === 'tank' ? tankTemplate() : planeTemplate(team));
+  const model = templates.get(key).clone(true);
   model.userData.profile = VEHICLE_PROFILES[type];
+  model.userData.team = team;
   if (type === 'tank') {
     model.userData.turret = model.getObjectByName('turret');
     model.userData.gun = model.getObjectByName('gun');

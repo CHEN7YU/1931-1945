@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('266 clips retain three stock male voices per side, with four reviewed Chinese charge takes', () => {
+test('311 clips retain three stock male voices per side, including Nanjing mission calls and reviewed charge takes', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 266);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 266);
+  assert.equal(clips.length, 311);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 311);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 188 : 78);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 233 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -63,7 +63,7 @@ test('266 clips retain three stock male voices per side, with four reviewed Chin
   assert.equal(soldierVoiceVariant('soldier-42'), soldierVoiceVariant('soldier-42'));
   assert.equal(new Set(Array.from({ length: 20 }, (_, i) => soldierVoiceVariant(`soldier-${i}`))).size, 3);
   assert.throws(() => soldierVoiceVariant(''), /identity/);
-  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 262);
+  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 307);
   const reviewed = clips.filter(clip => clip.delivery);
   assert.equal(reviewed.length, 4);
   assert.ok(reviewed.every(clip => clip.team === 'friendly' && clip.id === 'advance-1' && [0, 2].includes(clip.variant)));
@@ -79,7 +79,7 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 266);
+  assert.equal(manifest.files.length, 311);
   assert.equal(manifest.format, 'mixed');
   assert.equal(manifest.defaultFormat, VOICE_FORMAT);
   for (const clip of battleVoiceClips()) {

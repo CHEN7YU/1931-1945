@@ -65,6 +65,25 @@ test('wing markings conform across their interiors, not just at the rim of a fla
   }
 });
 
+test('enemy aircraft reuse the plane geometry design with red markings and independent shared templates', () => {
+  const friendly = planeModel(), enemy = planeModel('enemy'), second = planeModel('enemy');
+  const colors = model => {
+    const result = new Set();
+    model.traverse(object => { if (object.isMesh) result.add(object.material.color.getHex()); });
+    return result;
+  };
+  assert.ok(colors(friendly).has(0x183e80));
+  assert.equal(colors(friendly).has(0x9d2826), false);
+  assert.ok(colors(enemy).has(0x9d2826));
+  assert.equal(colors(enemy).has(0x183e80), false, 'enemy aircraft must not retain Chinese wing or tail insignia');
+  assert.equal(enemy.userData.profile, friendly.userData.profile);
+  assert.equal(enemy.children[0].geometry, second.children[0].geometry);
+  assert.notEqual(enemy.userData.propeller, second.userData.propeller);
+  assert.deepEqual(new THREE.Box3().setFromObject(enemy).getSize(new THREE.Vector3()).toArray(),
+    new THREE.Box3().setFromObject(friendly).getSize(new THREE.Vector3()).toArray());
+  assert.ok(geometryStats(enemy).calls <= 14);
+});
+
 test('repeated vehicles share immutable geometry and materials, not turret, gun or propeller transforms', () => {
   for (const type of ['tank', 'plane']) {
     const first = historicalVehicleModel(type), second = historicalVehicleModel(type);

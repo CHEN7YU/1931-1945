@@ -8,8 +8,8 @@ const point = value => {
   return Object.freeze({ x: value.x, y: value.y, z: value.z });
 };
 const copySource = value => {
-  if (value?.credit === 'environment' && value.cause === 'boundary' && typeof value.subjectId === 'string' && value.subjectId) {
-    return Object.freeze({ credit: 'environment', cause: 'boundary', subjectId: value.subjectId });
+  if (value?.credit === 'environment' && ['boundary', 'fall'].includes(value.cause) && typeof value.subjectId === 'string' && value.subjectId) {
+    return Object.freeze({ credit: 'environment', cause: value.cause, subjectId: value.subjectId });
   }
   if (value?.credit === 'environment' && value.cause === 'crash' && typeof value.vehicleId === 'string' && value.vehicleId) {
     return Object.freeze({ credit: 'environment', cause: 'crash', vehicleId: value.vehicleId });
@@ -48,7 +48,7 @@ export function createCombatEvents() {
       if (type === 'shot') {
         const { weaponType, muzzle = false, color = 0xffd49a, sound = null, recoil = 0, automatic = false } = data;
         if (source.credit === 'environment' || !['infantry', 'tank', 'mortar', 'plane'].includes(weaponType) ||
-          typeof muzzle !== 'boolean' || typeof automatic !== 'boolean' || automatic && weaponType !== 'infantry' ||
+          typeof muzzle !== 'boolean' || typeof automatic !== 'boolean' || automatic && !['infantry', 'plane'].includes(weaponType) ||
           !Number.isInteger(color) || color < 0 || color > 0xffffff ||
           ![null, 'shot', 'blast'].includes(sound) || !Number.isFinite(recoil) || recoil < 0) throw new RangeError('Invalid shot feedback');
         payload = { source, weaponType, start: point(data.start), end: data.end == null ? null : point(data.end), muzzle, color, sound, recoil };

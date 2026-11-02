@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { TYPES, circleBlocked, canDeploySquad } from '../src/core.js';
 import { makeBaseSpawns } from '../src/spawns.js';
 import { makeTownLayout } from '../src/town-layout.js';
-import { BATTLE_RULES, battleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination, infantryLoadout, sectionOffset } from '../src/battle-roster.js';
+import { BATTLE_RULES, battleRoster, nanjingBattleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination, infantryLoadout, sectionOffset } from '../src/battle-roster.js';
 
 test('default armies keep ten units: ten friendly infantry and eight enemy infantry plus two tanks', () => {
   const roster = battleRoster();
@@ -14,6 +14,18 @@ test('default armies keep ten units: ten friendly infantry and eight enemy infan
   assert.equal(roster.filter(unit => unit.team === 'friendly' && unit.type === 'infantry').length, 10);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'tank').length, 2);
+});
+test('Nanjing roster stays isolated from the default ten-versus-ten battle roster', () => {
+  const roster = nanjingBattleRoster();
+  assert.equal(roster.filter(unit => unit.team === 'friendly').length, 5);
+  assert.equal(roster.filter(unit => unit.team === 'friendly' && unit.player).length, 1);
+  assert.equal(roster.filter(unit => unit.team === 'friendly' && unit.reserve).length, 2);
+  assert.equal(roster.filter(unit => unit.team === 'enemy').length, 10);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.variant === 'chi-ha').length, 1);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.aerialSupport).length, 1);
+  assert.throws(() => nanjingBattleRoster('tank'), /infantry squad/);
+  assert.equal(battleRoster().length, 20);
 });
 test('a single selected vehicle replaces one friendly platoon and vehicle caps reject overbooking', () => {
   const roster = battleRoster('tank');

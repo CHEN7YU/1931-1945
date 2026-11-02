@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCombatEvents } from '../src/combat-events.js';
-import { createCombatFeedback } from '../src/combat-feedback.js';
+import { attackSourceLabel, createCombatFeedback } from '../src/combat-feedback.js';
 
 const source = (credit = 'player', soldierId = 's1', weaponId = 'rifle-1') =>
   ({ credit, team: credit === 'enemy' ? 'enemy' : 'friendly', unitId: 'alpha', soldierId, weaponId });
@@ -11,6 +11,29 @@ const damage = (overrides = {}) => createCombatEvents().publish('damage',
   { source: source(), target: victim(), amount: 50, health: 50, ...overrides }, 1);
 const casualty = (overrides = {}, time = 1) => createCombatEvents().publish('casualty',
   { source: source(), target: victim(), health: 0, ...overrides }, time);
+
+test('friendly casualties identify the actual weapon instead of hiding their cause', () => {
+  const feedback = createCombatFeedback();
+  for (const [weaponClass, label] of [['tank', '坦克主炮'], ['tank-machine-gun', '坦克机枪'],
+    ['grenade', '手雷'], ['mortar', '迫击炮'], ['plane', '航空']]) {
+    const attacker = { ...source('enemy', 'e2'), weaponClass, squadId: 'enemy-8', unitName: '日军小队' };
+    assert.equal(attackSourceLabel(attacker), `日军·${label}`);
+    feedback.consume(casualty({ source: attacker, target: victim('friendly', 's1') }), viewer, 1);
+    assert.equal(feedback.entries(1)[0].text, `日军·${label}　›　我方士兵阵亡`);
+  }
+  assert.equal(attackSourceLabel({ credit: 'environment' }), '事故');
+  assert.throws(() => attackSourceLabel({ credit: 'unknown' }), /Unknown attack credit/);
+});
+
+test('fall casualties retain environmental credit and show the actual cause', () => {
+  const source = { credit: 'environment', cause: 'fall', subjectId: 's1' };
+  const event = casualty({ source, target: victim('friendly', 's1') });
+  assert.deepEqual(event.source, source);
+  assert.equal(attackSourceLabel(event.source), '高处坠落');
+  const feedback = createCombatFeedback();
+  feedback.consume(event, viewer, 1);
+  assert.equal(feedback.entries(1)[0].text, '高处坠落　›　我方士兵阵亡');
+});
 
 test('only actual hostile damage from the current soldier and weapon lights the hit marker', () => {
   const feedback = createCombatFeedback();

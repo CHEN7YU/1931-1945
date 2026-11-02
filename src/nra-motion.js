@@ -6,6 +6,7 @@ import { projectHeadAim, projectUnaimedEye, solveHeadAimGoal } from './head-aim.
 import { grenadePose } from './grenades.js';
 import { hasBayonet } from './bayonet.js';
 import { headingError } from './ai-turning.js';
+import { INFANTRY_AIM_PITCH } from './infantry-aim.js';
 
 export function nativePoseIntent(actor) {
   return actor.grenades?.action ? 'grenade' : actor.health > 0 && actor.dadao?.equipped ? 'dadao'
@@ -276,6 +277,14 @@ export function sampleNraMotion(actor, includeHead = true) {
   const dadao = phase.dadao;
   const lowReady = bayonet || dadao ? 1
     : profile.lowReadyCarry ? motion.lowReady * (1 - (motion.posture.prone ?? 0)) : 0;
+  const aimPitch = actor.aimPitch ?? 0;
+  if (!Number.isFinite(aimPitch) || aimPitch < INFANTRY_AIM_PITCH.minimum || aimPitch > INFANTRY_AIM_PITCH.maximum) {
+    throw new RangeError('Native rifle aim pitch is outside its supported range');
+  }
+  const firingIntent = nativePoseIntent(actor) === 'aim' ? 1 : 0;
+  if (aimPitch && firingIntent) {
+    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), aimPitch * (1 - lowReady)));
+  }
   const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
     (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
   if (lowReady) {
@@ -329,7 +338,7 @@ export function sampleNraMotion(actor, includeHead = true) {
     turn: { weight: motion.turn.weight, phase: cycleFraction(motion.turn.angle / (Math.PI / 3)), direction: motion.turn.direction },
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
-    weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
+    aimPitch: aimPitch * firingIntent * (1 - lowReady), weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
   if (includeHead && profile.headAim) result.headAim = projectHeadAim(profile.headAim, result, motion);
   return result;
 }

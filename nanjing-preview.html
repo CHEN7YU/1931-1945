@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111a1d">
+  <title>山河 · 1931-1945 · 南京保卫战概念预览</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <main class="preview">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="返回游戏首页">山河 <span>1931—1945</span></a>
+      <div class="top-label">战役流程概念 · 俯视战术示意 · 非史实地图复原</div>
+    </header>
+    <section class="stage">
+      <div class="map-wrap">
+        <div class="map-heading">
+          <div>
+            <p class="eyebrow">NANJING · TWO-PHASE WITHDRAWAL</p>
+            <h1>南京保卫战</h1>
+          </div>
+          <div class="map-compass" aria-label="北"><span>N</span><b>↑</b></div>
+        </div>
+        <svg id="battle-map" viewBox="0 0 1120 740" role="img" aria-labelledby="map-title map-desc" data-phase="defense">
+          <title id="map-title">南京保卫战两阶段战术地图概念</title>
+          <desc id="map-desc">示意西侧渡口、南侧中华门、第一阶段防守与撤退路线，以及渡口总攻方向。</desc>
+          <defs>
+            <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+              <path d="M36 0H0V36" fill="none" stroke="#667267" stroke-opacity=".13" stroke-width="1"/>
+            </pattern>
+            <pattern id="water" width="46" height="34" patternUnits="userSpaceOnUse">
+              <path d="M0 13c9-7 18 7 28 0s15-2 18 0M-8 29c9-7 18 7 28 0s15-2 28 0" fill="none" stroke="#b5d0c0" stroke-opacity=".19" stroke-width="1.5"/>
+            </pattern>
+            <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#c56c5c"/></marker>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#a7c7b6"/></marker>
+            <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#101718" flood-opacity=".35"/></filter>
+          </defs>
+          <rect width="1120" height="740" fill="#b9b394"/>
+          <rect width="1120" height="740" fill="url(#grid)"/>
+          <path d="M0 0H274Q304 88 280 178T286 364Q305 474 266 582T280 740H0Z" fill="#365965"/>
+          <path d="M0 0H274Q304 88 280 178T286 364Q305 474 266 582T280 740H0Z" fill="url(#water)"/>
+          <path d="M278 0Q306 90 282 178T288 364Q307 474 269 582T282 740" fill="none" stroke="#d4c59a" stroke-width="8" opacity=".8"/>
+          <text x="84" y="115" class="water-label">上新河渡口</text>
+          <text x="86" y="139" class="small-label">渡船撤离方向 · 概念位置</text>
+          <text x="315" y="42" class="north-label">城内街区 · 战术示意，不按比例</text>
+
+          <g class="districts" aria-hidden="true">
+            <path d="M346 82h174v96H346zM540 78h128v111H540zM697 72h171v105H697zM900 86h159v91H900z" class="block"/>
+            <path d="M350 216h130v92H350zM506 211h180v100H506zM714 205h136v101H714zM878 217h180v91H878z" class="block"/>
+            <path d="M340 350h157v84H340zM523 342h142v100H523zM695 350h193v87H695zM912 344h145v103H912z" class="block"/>
+            <path d="M356 464h172v66H356zM550 463h102v62H550zM783 459h220v70H783z" class="block"/>
+            <path d="M329 193H1080M324 326H1080M318 449H1080" class="road"/>
+            <path d="M327 194H1080M321 327H1080M316 450H1080" class="road-center"/>
+            <path d="M508 60V546M685 60V543M871 60V546M1031 60V546" class="road"/>
+            <path d="M508 60V546M685 60V543M871 60V546M1031 60V546" class="road-center"/>
+            <text x="389" y="129" class="district-label">城北街巷</text>
+            <text x="745" y="275" class="district-label">居民街区</text>
+            <text x="382" y="397" class="district-label">粮店 · 民居</text>
+            <text x="907" y="400" class="district-label">东城街区</text>
+          </g>
+
+          <g class="evac-routes" fill="none">
+            <path d="M408 118C365 224 393 294 310 378" class="civilian-route" marker-end="url(#arrow-blue)"/>
+            <path d="M808 119C693 221 455 270 310 378" class="civilian-route" marker-end="url(#arrow-blue)"/>
+            <path d="M1009 260C797 294 519 313 310 378" class="civilian-route" marker-end="url(#arrow-blue)"/>
+            <path d="M819 390C635 399 453 394 310 378" class="civilian-route" marker-end="url(#arrow-blue)"/>
+            <path d="M694 466C554 453 409 418 310 378" class="civilian-route" marker-end="url(#arrow-blue)"/>
+            <text x="474" y="286" class="route-label">分散汇流 · 由视野外进入</text>
+          </g>
+
+          <g class="city-wall">
+            <path d="M300 562H621M758 562H1080" class="wall"/>
+            <path d="M300 554H621M758 554H1080" class="wall-top"/>
+            <text x="917" y="550" class="wall-label">南京城南城墙</text>
+          </g>
+          <g class="gate">
+            <path d="M618 548V512H649V478H735V512H763V548" class="barbican-outer"/>
+            <path d="M635 548V516H662V491H722V516H746V548" class="barbican-inner"/>
+            <path d="M670 547V514Q692 488 714 514V547Z" class="gate-opening"/>
+            <path d="M656 478V461H730V478M655 461l10-10 10 10 10-10 10 10 10-10 10 10 10-10 10 10" class="gate-tower"/>
+            <text x="689" y="446" class="gate-title">中华门</text>
+            <text x="689" y="469" class="gate-subtitle">城门 · 瓮城 · 沙袋阵地</text>
+          </g>
+
+          <g class="docks">
+            <path d="M283 348h38v60h-38" class="pier"/>
+            <path d="M277 350h52M277 361h52M277 372h52M277 383h52M277 394h52M277 405h52" class="pier-planks"/>
+            <text x="298" y="333" class="dock-title">上新河渡口</text>
+            <text x="298" y="430" class="small-label">集结 · 登船 · 往返接驳</text>
+            <g class="boat" transform="translate(168 336)"><path d="M0 10h52l-8 15H9z"/><circle cx="26" cy="5" r="3" class="boatman"/><path d="M18 10 34 1" class="oar"/><text x="25" y="38">1</text></g>
+            <g class="boat" transform="translate(98 367)"><path d="M0 10h52l-8 15H9z"/><circle cx="26" cy="5" r="3" class="boatman"/><path d="M18 10 34 1" class="oar"/><text x="25" y="38">2</text></g>
+            <g class="boat" transform="translate(165 414)"><path d="M0 10h52l-8 15H9z"/><circle cx="26" cy="5" r="3" class="boatman"/><path d="M18 10 34 1" class="oar"/><text x="25" y="38">3</text></g>
+            <g class="boat" transform="translate(63 310)"><path d="M0 10h52l-8 15H9z"/><circle cx="26" cy="5" r="3" class="boatman"/><path d="M18 10 34 1" class="oar"/><text x="25" y="38">4</text></g>
+            <g class="boat" transform="translate(61 425)"><path d="M0 10h52l-8 15H9z"/><circle cx="26" cy="5" r="3" class="boatman"/><path d="M18 10 34 1" class="oar"/><text x="25" y="38">5</text></g>
+            <text x="124" y="478" class="small-label">5艘木船 · 满10人启航</text>
+          </g>
+
+          <g class="player-view">
+            <path d="M689 535 560 590 804 590Z" class="view-cone"/>
+            <circle cx="689" cy="535" r="13" class="player-dot"/>
+            <text x="689" y="539" class="unit-letter">我</text>
+            <text x="688" y="616" class="small-label">玩家视野示意</text>
+          </g>
+
+          <g class="friendly-groups">
+            <g class="friendly unit-one" transform="translate(653 530)"><circle r="16"/><text y="5">1</text></g>
+            <g class="friendly unit-two" transform="translate(731 526)"><circle r="16"/><text y="5">2</text></g>
+            <g class="reinforcements">
+              <g class="friendly" transform="translate(672 485)"><circle r="16"/><text y="5">3</text></g>
+              <g class="friendly" transform="translate(672 559)"><circle r="16"/><text y="5">4</text></g>
+            </g>
+          </g>
+
+          <g class="japanese-phase-one">
+            <path d="M694 701 694 624" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <path d="M942 636 789 587" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <g class="enemy" transform="translate(598 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(638 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(678 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(718 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(758 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(798 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(838 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy" transform="translate(878 672)"><path d="M0-12 13 12H-13Z"/><text y="5">步</text></g>
+            <g class="enemy-vehicle" transform="translate(913 673)"><rect x="-16" y="-10" width="32" height="20" rx="4"/><text y="4">坦</text></g>
+            <g class="enemy-plane" transform="translate(962 666)"><path d="M0-15 5-3 17 2 17 7 5 4 4 15 0 17-4 15-5 4-17 7-17 2-5-3Z"/><text x="20" y="5">机</text></g>
+            <text x="824" y="711" class="enemy-caption">南面来敌 · 8步兵队 / 1坦克 / 1飞机</text>
+          </g>
+
+          <g class="retreat-pressure">
+            <path d="M846 668C708 650 506 514 327 384" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <g class="enemy" transform="translate(868 654)"><path d="M0-12 13 12H-13Z"/><text y="5">日</text></g>
+            <text x="489" y="498" class="enemy-caption">现存日军持续逼近 · 停止新增援</text>
+          </g>
+
+          <g class="ferry-assault">
+            <path d="M520 82C492 180 418 272 324 352" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <path d="M1060 310C830 306 573 330 325 374" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <path d="M674 705C558 603 416 478 324 393" class="enemy-arrow" marker-end="url(#arrow-red)"/>
+            <g class="enemy" transform="translate(518 86)"><path d="M0-12 13 12H-13Z"/><text y="5">北</text></g>
+            <g class="enemy" transform="translate(1051 310)"><path d="M0-12 13 12H-13Z"/><text y="5">东</text></g>
+            <g class="enemy" transform="translate(674 694)"><path d="M0-12 13 12H-13Z"/><text y="5">南</text></g>
+            <text x="819" y="238" class="enemy-caption">现存日军编成示意 · 三路压向渡口</text>
+          </g>
+
+          <g class="civilians-at-dock">
+            <g class="civilian" transform="translate(333 359)"><circle r="5"/><circle cx="13" cy="4" r="4"/><circle cx="23" cy="-2" r="4"/><circle cx="34" cy="6" r="4"/><circle cx="44" cy="-5" r="4"/></g>
+            <g class="civilian" transform="translate(333 388)"><circle r="5"/><circle cx="13" cy="4" r="4"/><circle cx="23" cy="-2" r="4"/><circle cx="34" cy="6" r="4"/><circle cx="44" cy="-5" r="4"/></g>
+            <g class="civilian" transform="translate(385 363)"><circle r="5"/><circle cx="13" cy="4" r="4"/><circle cx="23" cy="-2" r="4"/></g>
+            <text x="402" y="422" class="small-label">候船人群（密度为示意）</text>
+          </g>
+          <g class="retreating-civilians">
+            <g class="civilian" transform="translate(403 409)"><circle r="5"/><circle cx="13" cy="4" r="4"/><circle cx="23" cy="-2" r="4"/></g>
+            <g class="civilian" transform="translate(494 399)"><circle r="5"/><circle cx="13" cy="4" r="4"/><circle cx="23" cy="-2" r="4"/></g>
+            <g class="civilian" transform="translate(584 398)"><circle r="5"/><circle cx="13" cy="4" r="4"/></g>
+          </g>
+          <g class="map-legend" transform="translate(886 670)">
+            <circle cx="0" cy="0" r="7" class="legend-friendly"/><text x="13" y="4">我方小队</text>
+            <path d="M88-7 96 7H80Z" class="legend-enemy"/><text x="103" y="4">日军</text>
+            <circle cx="154" cy="0" r="6" class="legend-civilian"/><text x="166" y="4">百姓</text>
+          </g>
+        </svg>
+        <div class="map-footnote">俯视示意 · 路线、兵力图标和人群密度用于讨论流程，不代表最终比例、人口或战术平衡。</div>
+      </div>
+      <aside class="briefing">
+        <div class="briefing-top">
+          <div class="unit-mark">南<br><span>京</span></div>
+          <div><p class="eyebrow">MISSION FLOW · DRAFT 01</p><p class="tag">概念预览 / 不可玩</p></div>
+        </div>
+        <h2 id="phase-title">第一阶段 · 守中华门</h2>
+        <p id="phase-description" class="phase-description">我方3队据守瓮城阵地。南面日军进攻，城内百姓从玩家视野之外分散汇向西侧。</p>
+        <div class="time-card">
+          <div class="time-head"><span>阶段目标</span><strong id="phase-time">坚守 03:00</strong></div>
+          <div class="time-track"><span id="time-progress"></span></div>
+          <p id="phase-rule">计时结束后停止新增日军，现存敌军仍会推进；抵达渡口才触发第二阶段。</p>
+        </div>
+        <div class="phase-controls" aria-label="选择战役阶段">
+          <button type="button" class="phase-button active" data-phase-button="defense" aria-pressed="true"><span>01</span>中华门坚守</button>
+          <button type="button" class="phase-button" data-phase-button="withdrawal" aria-pressed="false"><span>02</span>边打边撤</button>
+          <button type="button" class="phase-button" data-phase-button="ferry" aria-pressed="false"><span>03</span>渡口总攻</button>
+        </div>
+        <div class="toolbar">
+          <button type="button" id="play-flow" class="primary-button">▶ 顺序演示</button>
+          <button type="button" id="reset-flow" class="quiet-button">重置</button>
+          <button type="button" id="enter-first-person" class="primary-button enter-button">进入第一人称战场</button>
+        </div>
+        <section class="force-card" aria-live="polite">
+          <div class="card-title"><span>兵力与局势</span><span id="phase-stamp">DEFENSE</span></div>
+          <div id="force-summary" class="force-summary"></div>
+        </section>
+        <section class="civilian-card">
+          <div class="card-title"><span>百姓撤离 · 演示计数</span><span class="sample-mark">样例值</span></div>
+          <div class="civilian-stats">
+            <div><strong id="boarded-count">—</strong><span>已登船离城</span></div>
+            <div><strong id="waiting-count">—</strong><span>渡口等候</span></div>
+            <div><strong id="casualty-count">—</strong><span>伤亡（另计）</span></div>
+          </div>
+          <p id="civilian-note">百姓不会突然在玩家镜头内刷出；箭头只展示分散来路。</p>
+          <p id="civilian-message" class="civilian-message" hidden></p>
+        </section>
+        <div class="ending-note">
+          <p><b>撤离成功</b>：玩家最后登船，任务成功。</p>
+          <p><b>未能撤离</b>：玩家未撤离且渡口失守，悲壮结局“为国捐躯”。</p>
+        </div>
+        <p class="scope-note">这是战役节奏与空间关系草案，不改正式战场，不代表历史地形复原。未定数字仅作视觉占位。</p>
+      </aside>
+    </section>
+    <div id="live-status" class="sr-only" role="status" aria-live="polite">第一阶段：守中华门</div>
+  </main>
+  <section id="first-person" class="first-person" hidden aria-label="第一人称战场场景预览">
+    <div id="battle-canvas" aria-label="可步行探索的南京战场概念场景"></div>
+    <div class="scene-vignette" aria-hidden="true"></div>
+    <header class="scene-top">
+      <div><p class="scene-kicker">山河 · 南京保卫战 / FIRST-PERSON SCENE STUDY</p><h2 id="scene-title">中华门 · 瓮城防线</h2></div>
+      <div class="scene-tools">
+        <button type="button" id="scene-look">点击画面锁定鼠标</button>
+        <button type="button" id="scene-exit">返回战术地图</button>
+      </div>
+    </header>
+    <div class="scene-objective"><span class="live-dot"></span><span id="scene-objective-text">坚守中华门 · 阶段目标 03:00</span><small>概念演示 / 无真实伤害判定</small></div>
+    <div class="scene-crosshair" aria-hidden="true"><i></i><b></b></div>
+    <div class="scene-location">
+      <button type="button" id="scene-gate" class="selected">1 · 中华门阵地</button>
+      <button type="button" id="scene-ferry">2 · 上新河渡口</button>
+    </div>
+    <div class="scene-bottom">
+      <div class="scene-controls">WASD 移动 <span>·</span> Shift 快走 <span>·</span> 鼠标环顾 <span>·</span> Esc 释放鼠标</div>
+      <div id="scene-status" role="status">正在加载战场场景…</div>
+    </div>
+    <div id="scene-civilian-message" class="scene-civilian-message" hidden></div>
+    <div id="scene-error" class="scene-error" hidden role="alert"></div>
+  </section>
+  <script type="module" src="/src/nanjing-preview.js"></script>
+</body>
+</html>

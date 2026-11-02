@@ -27,7 +27,7 @@ export function createVehicleRenderer(scene) {
           throw new Error('Vehicle projection requires a known variant and finite track/gun pose');
         }
         if (!views.has(vehicle.id)) {
-          const model = vehicle.variant === CHI_HA.id ? chiHaModel() : vehicle.type === 'tank' ? tankModel() : planeModel();
+          const model = vehicle.variant === CHI_HA.id ? chiHaModel() : vehicle.type === 'tank' ? tankModel() : planeModel(vehicle.team);
           model.traverse(object => { if (object.isMesh) object.userData.vehicleId = vehicle.id; });
           views.set(vehicle.id, { model, type: vehicle.type, variant: vehicle.variant });
           scene.add(model);

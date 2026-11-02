@@ -15,7 +15,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   const snapshot = () => page.evaluate(() => window.__battle);
   assert.equal((await snapshot()).battleVoices.status, 'ready');
-  assert.equal(requests.size, 266, 'all actual MP3s and reviewed WAVs load and decode');
+  assert.equal(requests.size, 311, 'all actual MP3s and reviewed WAVs load and decode');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.battleVoices.history.some(item => item.cue === 'deploy'));
   for (let i = 0; i < 3; i++) await page.keyboard.press('x');

@@ -172,8 +172,8 @@ export function tankModel() {
   return historicalVehicleModel('tank');
 }
 
-export function planeModel() {
-  return historicalVehicleModel('plane');
+export function planeModel(team = 'friendly') {
+  return historicalVehicleModel('plane', team);
 }
 
 export function weaponModel(type, state = null, seat = 'commander') {

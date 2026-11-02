@@ -1,4 +1,18 @@
 :root{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#eeeade;background:#171c19;font-synthesis:none;font-weight:400;color-scheme:dark;--gold:#cfb278;--muted:#9a9f91;--border:rgba(216,216,186,.18)}
+.redeploying .dialog{width:min(980px,94vw);display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,1fr);column-gap:28px}
+.redeploying .dialog> :not(#redeploy-choices):not(#deployment-options){grid-column:1/-1}
+.redeploying #deployment-options{display:contents}
+.redeploying #redeploy-choices{grid-column:2;grid-row:5;margin:0 0 12px;align-self:start}
+.redeploying .deployment-context{grid-column:1;grid-row:5/9;display:flex;flex-direction:column;align-items:stretch;gap:12px;padding-top:0;border-top:0}
+.redeploying .deployment-context canvas{width:min(100%,46vh);height:auto;aspect-ratio:1;align-self:center;cursor:crosshair}
+.redeploying .dialog h2{margin:10px 0}
+.redeploying .deployment-context strong{margin-top:6px}
+.redeploying .deployment-context p{margin:6px 0}
+.redeploying #spawn-choices{grid-column:2;grid-row:6;margin-top:0;align-self:start}
+.redeploying #deployment-error{grid-column:2;grid-row:7}
+.redeploying #confirm-deploy{grid-column:2;grid-row:8;align-self:end}
+.redeploying #battle-summary{margin-bottom:20px}
+@media(max-width:700px){.redeploying .dialog{display:block;padding:20px}.redeploying #redeploy-choices{margin:12px 0}.redeploying .deployment-context canvas{max-width:380px;align-self:center}.redeploying #spawn-choices{margin-top:12px}}
 .shop-art-entry{display:block;text-align:center;text-decoration:none;border:1px solid var(--border);margin-top:10px;padding:10px;letter-spacing:1px}#shop-art-tour{position:absolute;top:66px;left:14px;max-width:440px;padding:12px;background:#172217ed;border:1px solid var(--border);pointer-events:auto;font-size:11px;line-height:1.7}#shop-art-tour strong,#shop-art-tour span{display:block}#shop-art-tour span{color:#bdc5ad;font-size:10px}#shop-art-tour div{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}#shop-art-tour button{background:#2c3829;border:1px solid #8e9a76;padding:6px 9px;font-size:11px}#shop-art-tour a{color:var(--gold);font-size:10px}
 *{box-sizing:border-box}body{margin:0;overflow:hidden}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:4px}button{color:inherit}button:disabled{cursor:not-allowed;opacity:.4}button:hover{filter:brightness(1.13)}[hidden]{display:none!important}#world{position:fixed;inset:0;width:100%;height:100%;display:block}.grain{position:fixed;inset:0;pointer-events:none;z-index:2;opacity:.045;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' opacity='.8' d='M0 0h180v180H0z'/%3E%3C/svg%3E")}
 #loading{position:fixed;inset:0;z-index:10;display:grid;place-content:center;text-align:center;background:#171c19;color:var(--gold)}.loading-mark{font:44px "STKaiti","KaiTi",serif;letter-spacing:12px}#loading p{font-size:12px;letter-spacing:3px;margin-top:30px}
@@ -55,6 +69,8 @@
 }
 #hud { --map-size: clamp(112px, 9vw, 140px); background: none; }
 #hud .hud-top { padding: 16px 20px; justify-content: flex-end; }
+#hud .hud-top-actions { display: flex; align-items: flex-start; gap: 12px; }
+#hud .hud-top-actions #pause-button { position: static; white-space: nowrap; }
 #hud #objectives { gap: 10px; align-items: center; }
 #hud .objective-chip { background: var(--hud-backing); width: 28px; height: 28px; border-radius: 50%; padding-bottom: 3px; }
 #hud .objective-chip:after { display: none; }
@@ -69,6 +85,10 @@
 .control-count.enemy { color: #ffb9a9; }
 #hud .battle-time { background: var(--hud-backing); padding: 2px 5px; }
 #hud #timer { font: 16px/20px monospace; }
+#hud.nanjing-campaign .battle-time { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); text-align: center; padding: 3px 12px; border: 1px solid #b75f53; }
+#hud.nanjing-campaign .battle-time small { color: #ffd2c9; margin: 0; font-size: 11px; line-height: 16px; }
+#hud.nanjing-campaign #timer { color: #ff887b; font: bold 32px/36px monospace; }
+#hud.nanjing-campaign .objective-banner { top: 116px; }
 #hud .objective-banner { top: 55px; width: max-content; min-width: 0; max-width: calc(100% - 60px); }
 #hud #objective-title,
 #hud #objective-help { display: table; margin: 0 auto 2px; padding: 2px 5px; background: var(--hud-backing); font-size: 12px; line-height: 16px; letter-spacing: 0; color: var(--hud-text); }

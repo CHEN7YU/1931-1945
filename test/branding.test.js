@@ -14,7 +14,7 @@ test('the game exposes 山河 as its main title and 1931-1945 as its separate su
 });
 
 test('preview labels follow the game name without migrating saved settings or deployment identity', () => {
-  for (const path of ['../town-preview.html', '../asset-lab.html']) {
+  for (const path of ['../town-preview.html', '../nanjing-preview.html', '../asset-lab.html']) {
     const html = read(path);
     assert.match(html, /<title>山河 · 1931-1945 · /);
     assert.doesNotMatch(html, /烽火山河|EMBERS OF CHINA/);

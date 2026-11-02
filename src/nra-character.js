@@ -38,7 +38,7 @@ export function attachNraHelmet(head, helmet, texture, settings) {
   return helmet;
 }
 
-export async function loadNraCharacter() {
+export async function loadNraCharacter(walkHeightAt = walkHeight) {
   const base = '/assets/game/nra-88/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Character manifest: HTTP ${response.status}`);
@@ -143,7 +143,7 @@ export async function loadNraCharacter() {
   const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
   let dadaoPose = null;
-  const groundAt = (x, z) => walkHeight(x, z, root.position.y);
+  const groundAt = (x, z) => walkHeightAt(x, z, root.position.y);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),

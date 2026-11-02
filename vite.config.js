@@ -4,13 +4,13 @@ import { readBuildStamp } from './scripts/build-stamp.mjs';
 export default defineConfig({
   build: {
     rollupOptions: {
-      input: { game: 'index.html', 'town-preview': 'town-preview.html' },
+      input: { game: 'index.html', 'town-preview': 'town-preview.html', 'nanjing-preview': 'nanjing-preview.html' },
     },
   },
   define: {
     __BUILD_STAMP__: JSON.stringify(readBuildStamp()),
   },
   server: {
-    watch: { ignored: ['**/references/**', '**/asset-research/**', '**/public/assets/characters/**', '**/public/assets/audio/**', '**/public/assets/game/**'] },
+    watch: { ignored: ['**/references/**', '**/asset-research/**', '**/public/assets/characters/**', '**/public/assets/game/**'] },
   },
 });

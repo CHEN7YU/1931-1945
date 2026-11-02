@@ -5,6 +5,19 @@ import { createSolidIndex } from '../src/solid-index.js';
 import { SpatialGrid, obstacleLookup } from '../src/spatial.js';
 import { circleBlocked } from '../src/core.js';
 
+test('collision indexing updates new mesh and ancestor transforms before the first rendered frame', () => {
+  const scene = new THREE.Scene(), parent = new THREE.Group();
+  parent.position.set(12, 0, 30);
+  scene.add(parent);
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(8, 10, 3), new THREE.MeshBasicMaterial());
+  wall.position.set(4, 5, -12);
+  parent.add(wall);
+  const index = createSolidIndex([wall]);
+  const ray = new THREE.Raycaster(new THREE.Vector3(16, 1.5, 28), new THREE.Vector3(0, 0, -1), 0, 20);
+  assert.equal(ray.intersectObjects(index.candidates(ray.ray.origin, ray.ray.direction, 20))[0]?.object, wall,
+    'an unrendered wall must block gunfire at its real world position');
+});
+
 test('indexed ray queries agree with the original physical meshes, including diagonal cells', () => {
   const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
   const solids = Array.from({ length: 50 }, (_, index) => {

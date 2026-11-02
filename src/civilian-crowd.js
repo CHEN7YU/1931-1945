@@ -1,0 +1,203 @@
+import { circleBlocked, segmentClear } from './core.js';
+
+export const NANJING_CIVILIAN_COUNT = 180;
+
+const variation = (index, salt) => {
+  let value = Math.imul(index + salt, 0x45d9f3b);
+  value = Math.imul(value ^ value >>> 16, 0x45d9f3b);
+  return ((value ^ value >>> 16) >>> 0) / 4294967296;
+};
+const openingStarts = [];
+for (let candidate = 0; openingStarts.length < 60; candidate++) {
+  const point = { x: -24 + (variation(candidate, 19) - .5) * 4.4,
+    z: 39 + variation(candidate, 71) * 25 };
+  if (openingStarts.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .82))
+    openingStarts.push(point);
+}
+openingStarts.sort((a, b) => a.z - b.z);
+const openingReleaseTimes = [];
+for (let index = 0, releaseAt = 0; index < 60; index++) {
+  if (index === 48) releaseAt = 46;
+  else if (index > 0) releaseAt += index < 48 ? .25 + variation(index, 103) * .55 : .8 + variation(index, 103) * .9;
+  openingReleaseTimes.push(releaseAt);
+}
+
+export function nanjingOpeningCivilianStart(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= 60) throw new RangeError('Invalid opening civilian');
+  return { ...openingStarts[index] };
+}
+
+export function nanjingOpeningCivilianReleaseAt(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= 60) throw new RangeError('Invalid opening civilian');
+  return openingReleaseTimes[index];
+}
+
+export function civilianPaceMultiplier(index, now) {
+  if (!Number.isInteger(index) || index < 0 || !Number.isFinite(now) || now < 0)
+    throw new RangeError('Invalid civilian pace');
+  return (.82 + variation(index, 211) * .36) *
+    (1 + Math.sin(now * (.27 + variation(index, 307) * .17) + variation(index, 401) * Math.PI * 2) * .06);
+}
+
+export function releaseNanjingCivilianWave(civilians, now) {
+  if (!Number.isFinite(now) || now < 0) throw new RangeError('Invalid civilian wave time');
+  const homeReleaseTimes = new Map();
+  for (const civilian of civilians) {
+    const data = civilian.userData;
+    if (data.withdrawalWave && !data.active) {
+      const desired = now + variation(data.civilianId, 503) * (data.streetLife ? 4 : 48);
+      data.releaseAt = Math.max(desired, homeReleaseTimes.get(data.homeId) ?? now);
+      homeReleaseTimes.set(data.homeId, data.releaseAt + 1.4 + variation(data.civilianId, 601) * 1.2);
+    }
+  }
+}
+
+export function civilianWaypointReached(position, route, index, obstacles) {
+  const target = route[index], next = route[index + 1];
+  const distance = Math.hypot(target.x - position.x, target.z - position.z);
+  if (!next) return distance <= .015;
+  return distance <= .12 || distance <= .8 && segmentClear(position, next, .36, obstacles);
+}
+
+export function civilianWaitingSlot(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= NANJING_CIVILIAN_COUNT) throw new RangeError('Invalid civilian waiting slot');
+  if (index >= 60) {
+    const overflow = index - 60, column = Math.floor(overflow / 12), row = overflow % 12;
+    return { x: -50 + column * .95, y: 0, z: -91 + row * 1.75 };
+  }
+  const column = Math.floor(index / 8), row = index % 8;
+  return { x: -71.5 + column * .95 + Math.sin(index * 2.71) * .025,
+    y: .36, z: -86.5 + row * 1.75 + Math.cos(index * 1.93) * .025 };
+}
+
+function dockDetour(position, target, peers, civilian, obstacles) {
+  const step = .25, dock = [position, target].every(value =>
+    value.x >= -73 && value.x <= -40 && value.z >= -94 && value.z <= -59);
+  const minX = dock ? -73 : Math.floor((Math.min(position.x, target.x) - 6) / step) * step;
+  const minZ = dock ? -94 : Math.floor((Math.min(position.z, target.z) - 6) / step) * step;
+  const width = dock ? 133 : Math.ceil((Math.max(position.x, target.x) + 6 - minX) / step) + 1;
+  const depth = dock ? 141 : Math.ceil((Math.max(position.z, target.z) + 6 - minZ) / step) + 1;
+  const point = index => ({ x: minX + index % width * step, z: minZ + Math.floor(index / width) * step });
+  const cell = value => Math.round((value.x - minX) / step) + Math.round((value.z - minZ) / step) * width;
+  const from = cell(position), to = cell(target), count = width * depth;
+  const maxX = minX + (width - 1) * step, maxZ = minZ + (depth - 1) * step;
+  const localObstacles = obstacles.filter(obstacle => obstacle.minX < maxX + .36 && obstacle.maxX > minX - .36 &&
+    obstacle.minZ < maxZ + .36 && obstacle.maxZ > minZ - .36);
+  const blocked = new Uint8Array(count);
+  for (let index = 0; index < count; index++) {
+    const p = point(index);
+    blocked[index] = Number(circleBlocked(p.x, p.z, .38, localObstacles));
+  }
+  for (const other of peers) {
+    if (other === civilian) continue;
+    const x = Math.round((other.position.x - minX) / step), z = Math.round((other.position.z - minZ) / step);
+    for (let row = Math.max(0, z - 3); row <= Math.min(depth - 1, z + 3); row++)
+      for (let column = Math.max(0, x - 3); column <= Math.min(width - 1, x + 3); column++) {
+        const index = row * width + column, p = point(index);
+        if (Math.hypot(p.x - other.position.x, p.z - other.position.z) < .74) blocked[index] = 1;
+      }
+  }
+  if (blocked[to]) return null;
+  const parents = new Int32Array(count).fill(-1), costs = new Float32Array(count).fill(Infinity);
+  const open = [], closed = new Uint8Array(count);
+  const heuristic = index => Math.abs(index % width - to % width) +
+    Math.abs(Math.floor(index / width) - Math.floor(to / width));
+  for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+    const column = from % width + dx, row = Math.floor(from / width) + dz, index = row * width + column;
+    if (column < 0 || column >= width || row < 0 || row >= depth || blocked[index]) continue;
+    const p = point(index), sx = p.x - position.x, sz = p.z - position.z, lengthSquared = sx * sx + sz * sz;
+    if (lengthSquared > 1 || !segmentClear(position, p, .36, localObstacles)) continue;
+    const clear = peers.every(other => {
+      if (other === civilian) return true;
+      const t = lengthSquared > 0 ? Math.max(0, Math.min(1,
+        ((other.position.x - position.x) * sx + (other.position.z - position.z) * sz) / lengthSquared)) : 0;
+      return Math.hypot(position.x + t * sx - other.position.x, position.z + t * sz - other.position.z) >= .72;
+    });
+    if (clear) { parents[index] = index; costs[index] = Math.sqrt(lengthSquared) / step; open.push(index); }
+  }
+  while (open.length) {
+    let best = 0;
+    for (let index = 1; index < open.length; index++)
+      if (costs[open[index]] + heuristic(open[index]) < costs[open[best]] + heuristic(open[best])) best = index;
+    const current = open.splice(best, 1)[0];
+    if (current === to) {
+      const path = [{ x: target.x, z: target.z }];
+      for (let index = to; ; index = parents[index]) {
+        path.push(point(index));
+        if (parents[index] === index) break;
+      }
+      return path.reverse();
+    }
+    if (closed[current]) continue;
+    closed[current] = 1;
+    for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const x = current % width + dx, z = Math.floor(current / width) + dz, next = z * width + x;
+      if (x < 0 || x >= width || z < 0 || z >= depth || blocked[next] || closed[next] ||
+        costs[next] <= costs[current] + 1) continue;
+      parents[next] = current; costs[next] = costs[current] + 1; open.push(next);
+    }
+  }
+  return null;
+}
+
+export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles) {
+  if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid civilian movement distance');
+  const position = civilian.position, radius = .36, data = civilian.userData;
+  const remaining = Math.hypot(target.x - position.x, target.z - position.z);
+  if (!data.crowdTarget || Math.hypot(target.x - data.crowdTarget.x, target.z - data.crowdTarget.z) > .01) {
+    data.crowdTarget = { x: target.x, z: target.z };
+    data.crowdPath = null; data.crowdBestDistance = remaining; data.crowdStalled = 0;
+  }
+  if (remaining < data.crowdBestDistance - .05) {
+    data.crowdBestDistance = remaining; data.crowdStalled = 0;
+  } else data.crowdStalled += distance;
+  const detourPoint = data.crowdPath?.[0];
+  if (detourPoint) {
+    const distanceToPoint = Math.hypot(detourPoint.x - position.x, detourPoint.z - position.z);
+    if (data.crowdDetourPoint !== detourPoint || distanceToPoint < data.crowdPathBestDistance - .02) {
+      data.crowdDetourPoint = detourPoint;
+      data.crowdPathBestDistance = distanceToPoint;
+      data.crowdPathStalled = 0;
+    } else data.crowdPathStalled = (data.crowdPathStalled ?? 0) + distance;
+  }
+  if ((data.crowdStalled > 1.5 && !data.crowdPath?.length) || data.crowdPathStalled > 1.5) {
+    data.crowdPath = dockDetour(position, target, peers, civilian, navigationObstacles);
+    data.crowdStalled = 0;
+    data.crowdPathStalled = 0;
+  }
+  let moved = 0;
+  const steps = Math.max(1, Math.ceil(distance / .15));
+  for (let step = 0; step < steps; step++) {
+    while (data.crowdPath?.length &&
+      Math.hypot(data.crowdPath[0].x - position.x, data.crowdPath[0].z - position.z) < .1) data.crowdPath.shift();
+    const waypoint = data.crowdPath?.[0] ?? target;
+    const dx = waypoint.x - position.x, dz = waypoint.z - position.z, remaining = Math.hypot(dx, dz);
+    if (remaining < .01) break;
+    const stride = Math.min(remaining, distance / steps);
+    const heading = Math.atan2(dz, dx), preference = civilian.userData.civilianId % 2 ? 1 : -1;
+    const next = [0, preference * .6, -preference * .6, preference * 1.2, -preference * 1.2,
+      preference * 1.8, -preference * 1.8, preference * 2.4, -preference * 2.4, Math.PI]
+      .map(angle => ({ x: position.x + Math.cos(heading + angle) * stride,
+        z: position.z + Math.sin(heading + angle) * stride }))
+      .find(point => !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
+        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= radius * 2));
+    if (!next) break;
+    position.x = next.x; position.z = next.z;
+    moved += stride;
+  }
+  position.y = position.x >= -73 && position.x <= -59 && position.z >= -90 && position.z <= -70 ? .36 : 0;
+  return moved;
+}
+
+export function animateCivilianWaiting(civilian, now) {
+  const data = civilian.userData, phase = now * 1.4 + data.civilianId * 2.17;
+  for (const leg of civilian.civilianLegs) leg.rotation.x = 0;
+  civilian.rotation.y = Math.PI / 2 + Math.sin(phase * .37) * .12;
+  civilian.civilianTorso.rotation.x = -.06 + Math.sin(phase) * .015;
+  civilian.civilianTorso.rotation.z = Math.sin(phase * .6) * .018;
+  civilian.civilianHead.rotation.set(.03 + Math.sin(phase * .8) * .04,
+    Math.sin(phase * .55) * .28, 0);
+  const gesture = Math.max(0, Math.sin(phase * .43)) ** 6;
+  civilian.civilianArms[0].rotation.x = data.carrying === 'child' ? -.5 : -.06 - gesture * .45;
+  civilian.civilianArms[1].rotation.x = data.carrying === 'none' ? -.08 - gesture * .3 : -.15;
+}

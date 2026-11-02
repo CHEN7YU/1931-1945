@@ -1,0 +1,209 @@
+:root {
+  color-scheme: dark;
+  font-family: "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  color: #e7e5d7;
+  background: #101719;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(ellipse at 38% 30%, #263237 0, #151f22 48%, #101719 100%); }
+button { font: inherit; }
+.preview { min-height: 100vh; padding: 18px 22px 22px; }
+.topbar { height: 42px; display: flex; align-items: center; justify-content: space-between; max-width: 1680px; margin: 0 auto 14px; }
+.brand { color: #f0ead6; text-decoration: none; font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+.brand span { margin-left: 9px; color: #9eacaa; font-size: 10px; font-weight: 500; letter-spacing: 1.5px; }
+.top-label { color: #9ca9a2; font-size: 11px; letter-spacing: 1px; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 366px; gap: 16px; max-width: 1680px; min-height: min(810px, calc(100vh - 76px)); margin: 0 auto; }
+.map-wrap, .briefing { border: 1px solid #53615b; background: #1b2526eF; box-shadow: 0 20px 70px #0005; }
+.map-wrap { display: flex; min-width: 0; flex-direction: column; padding: 20px 22px 12px; background: linear-gradient(145deg, #212c2c, #182123 66%); }
+.map-heading { display: flex; justify-content: space-between; align-items: flex-start; min-height: 68px; }
+.eyebrow { margin: 0 0 7px; color: #b7a982; font-size: 9px; letter-spacing: 2.2px; }
+h1 { margin: 0; color: #f0ead6; font-size: 24px; font-weight: 550; letter-spacing: 4px; }
+.map-compass { display: grid; justify-items: center; color: #c0b58f; font-size: 10px; }
+.map-compass b { font-size: 18px; font-weight: 400; }
+#battle-map { display: block; width: 100%; max-height: calc(100vh - 208px); flex: 1; min-height: 390px; border: 1px solid #67736a; background: #b9b394; box-shadow: 0 8px 26px #05090a66; }
+.map-footnote { padding-top: 9px; color: #9daaa1; font-size: 10px; line-height: 1.55; }
+
+.block { fill: #8e8d78; stroke: #797e6e; stroke-width: 2; }
+.road { fill: none; stroke: #d3c8a9; stroke-width: 21; opacity: .8; }
+.road-center { fill: none; stroke: #a79f85; stroke-width: 1; stroke-dasharray: 6 8; opacity: .7; }
+.district-label, .small-label, .north-label, .water-label, .wall-label, .gate-title, .gate-subtitle, .dock-title, .route-label, .enemy-caption { paint-order: stroke; stroke: #b9b394; stroke-width: 3px; stroke-linejoin: round; }
+.district-label { fill: #e5dfc7; font-size: 13px; letter-spacing: 2px; text-anchor: middle; opacity: .84; }
+.north-label { fill: #667167; font-size: 12px; letter-spacing: 2px; }
+.water-label { fill: #d2dfd0; font-size: 19px; letter-spacing: 5px; }
+.small-label { fill: #505d54; font-size: 11px; letter-spacing: .5px; text-anchor: middle; }
+.wall { fill: none; stroke: #665c4b; stroke-width: 19; stroke-linecap: square; }
+.wall-top { fill: none; stroke: #a28f6f; stroke-width: 4; stroke-dasharray: 9 5; }
+.wall-label { fill: #5f5c4d; font-size: 11px; }
+.barbican-outer { fill: #a18b68; stroke: #564f42; stroke-width: 6; }
+.barbican-inner { fill: #8c7658; stroke: #d0bd91; stroke-width: 4; }
+.gate-opening { fill: #303535; stroke: #4a4338; stroke-width: 2; }
+.gate-tower { fill: #71634d; stroke: #403c33; stroke-width: 4; }
+.gate-title { fill: #4c4539; font-size: 20px; font-weight: 700; text-anchor: middle; letter-spacing: 3px; }
+.gate-subtitle { fill: #4c4539; font-size: 10px; text-anchor: middle; }
+.pier { fill: #72674e; stroke: #403b31; stroke-width: 3; }
+.pier-planks { stroke: #c0ae85; stroke-width: 2; }
+.dock-title { fill: #e7dfc4; font-size: 15px; font-weight: 700; text-anchor: middle; }
+.boat { fill: #4b4639; stroke: #e1d3ac; stroke-width: 2; filter: url(#soft-shadow); }
+.boat text { fill: #f0e5c4; stroke: none; font-size: 10px; text-anchor: middle; }
+.boat .boatman { fill: #d7c89e; stroke: #514a3b; stroke-width: 1; }
+.boat .oar { fill: none; stroke: #dfd1ac; stroke-width: 2; }
+.civilian-route { stroke: #8db4a3; stroke-width: 3; stroke-dasharray: 5 10; opacity: .56; }
+.route-label { fill: #41645b; font-size: 11px; text-anchor: middle; }
+.view-cone { fill: #f3d9a1; fill-opacity: .12; stroke: #e4c78d; stroke-opacity: .4; stroke-dasharray: 5 6; }
+.player-dot { fill: #e5d29e; stroke: #433e32; stroke-width: 3; }
+.unit-letter { fill: #322e27; font-size: 10px; text-anchor: middle; font-weight: 800; }
+.friendly circle { fill: #50776d; stroke: #c1e0cf; stroke-width: 3; filter: url(#soft-shadow); }
+.friendly text { fill: #f0f3e5; text-anchor: middle; font-size: 12px; font-weight: 700; }
+.reinforcements { opacity: 0; }
+.enemy path { fill: #9f4f43; stroke: #e0a193; stroke-width: 2; }
+.enemy text, .enemy-vehicle text { fill: #f5e4d4; text-anchor: middle; font-size: 9px; font-weight: 700; }
+.enemy-vehicle rect { fill: #5b3931; stroke: #d58d78; stroke-width: 2; }
+.enemy-plane path { fill: #b65c4e; stroke: #f0b5a2; stroke-width: 1; }
+.enemy-plane text { fill: #6a342d; font-size: 10px; }
+.enemy-arrow { fill: none; stroke: #bd6958; stroke-width: 4; stroke-dasharray: 7 6; opacity: .88; }
+.enemy-caption { fill: #783f37; font-size: 11px; font-weight: 700; text-anchor: middle; }
+.civilian circle { fill: #d9c89e; stroke: #5f5746; stroke-width: 1.5; }
+.map-legend text { fill: #45483c; stroke: #b9b394; font-size: 10px; }
+.legend-friendly { fill: #50776d; stroke: #e3e3cb; stroke-width: 2; }
+.legend-enemy { fill: #a65347; }
+.legend-civilian { fill: #d9c89e; stroke: #5f5746; stroke-width: 1.3; }
+
+#battle-map .retreat-pressure, #battle-map .ferry-assault, #battle-map .retreating-civilians, #battle-map .civilians-at-dock { display: none; }
+#battle-map[data-phase="withdrawal"] .japanese-phase-one,
+#battle-map[data-phase="withdrawal"] .player-view,
+#battle-map[data-phase="withdrawal"] .ferry-assault,
+#battle-map[data-phase="withdrawal"] .civilians-at-dock { display: none; }
+#battle-map[data-phase="withdrawal"] .retreat-pressure,
+#battle-map[data-phase="withdrawal"] .retreating-civilians { display: initial; }
+#battle-map[data-phase="withdrawal"] .friendly-groups { transform: translate(-345px, -145px); transition: transform 1s ease; }
+#battle-map[data-phase="withdrawal"] .player-view,
+#battle-map[data-phase="ferry"] .player-view { transform: translate(-345px, -145px); transition: transform 1s ease; }
+#battle-map[data-phase="withdrawal"] .view-cone,
+#battle-map[data-phase="withdrawal"] .player-view > .small-label,
+#battle-map[data-phase="ferry"] .view-cone,
+#battle-map[data-phase="ferry"] .player-view > .small-label { display: none; }
+#battle-map[data-phase="ferry"] .japanese-phase-one,
+#battle-map[data-phase="ferry"] .retreat-pressure,
+#battle-map[data-phase="ferry"] .retreating-civilians { display: none; }
+#battle-map[data-phase="ferry"] .ferry-assault,
+#battle-map[data-phase="ferry"] .civilians-at-dock { display: initial; }
+#battle-map[data-phase="ferry"] .friendly-groups { transform: translate(-345px, -145px); transition: transform 1s ease; }
+#battle-map[data-phase="ferry"] .reinforcements { opacity: 1; }
+#battle-map[data-phase="ferry"] .evac-routes { opacity: .32; }
+
+.briefing { display: flex; flex-direction: column; padding: 20px; overflow: auto; }
+.briefing-top { display: flex; align-items: center; gap: 12px; }
+.unit-mark { display: grid; width: 43px; height: 43px; place-content: center; border: 1px solid #9a8b68; color: #d9c797; font-size: 14px; line-height: 1.05; text-align: center; transform: rotate(45deg); }
+.unit-mark span { font-size: 10px; }
+.unit-mark + div { padding-left: 4px; }
+.tag { display: inline-block; margin: 0; padding: 4px 7px; border: 1px solid #6f7460; color: #c7c1a8; font-size: 9px; letter-spacing: 1px; }
+h2 { margin: 22px 0 8px; color: #f0ead6; font-size: 19px; font-weight: 550; letter-spacing: 1.5px; }
+.phase-description { min-height: 58px; margin: 0; color: #b9c3ba; font-size: 12px; line-height: 1.8; }
+.time-card, .force-card, .civilian-card { margin-top: 15px; padding: 12px; border: 1px solid #465450; background: #121b1d88; }
+.time-head, .card-title { display: flex; justify-content: space-between; gap: 8px; align-items: center; color: #aeb9af; font-size: 10px; }
+.time-head strong { color: #e3d2a3; font-size: 11px; font-weight: 600; }
+.time-track { height: 4px; margin: 10px 0 8px; overflow: hidden; background: #394443; }
+.time-track span { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #bba06c, #d6bc84); }
+#battle-map[data-phase="withdrawal"] ~ .none { display: none; }
+body:has(#battle-map[data-phase="withdrawal"]) #time-progress { width: 66%; background: #b86c57; }
+body:has(#battle-map[data-phase="ferry"]) #time-progress { width: 100%; background: linear-gradient(90deg, #b86c57, #d3a26e); }
+.time-card > p { margin: 0; color: #98a49c; font-size: 10px; line-height: 1.65; }
+.phase-controls { display: grid; gap: 6px; margin-top: 14px; }
+.phase-button { display: flex; align-items: center; gap: 11px; min-height: 37px; border: 1px solid transparent; padding: 7px 10px; color: #aeb8af; text-align: left; background: #202b2b; cursor: pointer; font-size: 11px; transition: background .18s ease, border-color .18s ease, color .18s ease; }
+.phase-button span { color: #88948b; font-size: 9px; letter-spacing: 1px; }
+.phase-button:hover { border-color: #66796d; color: #eee8d6; }
+.phase-button.active { border-color: #a99163; color: #f1e7c9; background: #514936; }
+.phase-button.active span { color: #e1c98f; }
+.toolbar { display: flex; gap: 8px; margin-top: 9px; }
+.primary-button, .quiet-button { min-height: 35px; border: 1px solid #a49163; padding: 7px 11px; color: #f0e5c3; background: #5c5138; cursor: pointer; font-size: 10px; letter-spacing: .5px; }
+.primary-button:hover { background: #776746; }
+.enter-button { margin-left: auto; border-color: #9aa98e; background: #40584f; }
+.enter-button:hover { background: #567465; }
+.quiet-button { border-color: #56645e; color: #aeb9af; background: #202b2b; }
+.quiet-button:hover { color: #e2dfd0; background: #2e3b39; }
+button:focus-visible, a:focus-visible { outline: 2px solid #e3c77f; outline-offset: 3px; }
+.force-summary { display: grid; gap: 7px; margin-top: 10px; color: #bec7ba; font-size: 10px; line-height: 1.65; }
+.force-line { display: flex; gap: 8px; align-items: flex-start; }
+.force-line b { flex: 0 0 47px; color: #d7c89e; font-weight: 500; }
+.force-line span { flex: 1; }
+.sample-mark { color: #c8b881; font-size: 9px; }
+.civilian-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 12px; }
+.civilian-stats div { display: flex; flex-direction: column; gap: 3px; padding: 8px 5px; border-left: 1px solid #53615a; }
+.civilian-stats strong { color: #e3d2a3; font-size: 17px; font-weight: 550; }
+.civilian-stats span { color: #a8b3a9; font-size: 9px; white-space: nowrap; }
+.civilian-card > p { margin: 8px 0 0; color: #919f97; font-size: 9px; line-height: 1.6; }
+.civilian-card > .civilian-message { margin-top: 10px; padding: 9px; border-left: 2px solid #d5bd82; color: #e7d8b3; background: #4a433155; font-size: 10px; line-height: 1.7; }
+.ending-note { margin-top: 14px; padding: 10px 11px; border-left: 2px solid #9a855a; background: #262c27; }
+.ending-note p { margin: 3px 0; color: #aeb8af; font-size: 9px; line-height: 1.7; }
+.ending-note b { color: #dfd3b1; font-weight: 600; }
+.scope-note { margin: auto 0 0; padding-top: 15px; color: #788780; font-size: 9px; line-height: 1.7; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.first-person { position: fixed; z-index: 20; inset: 0; overflow: hidden; color: #f0ead6; background: #202624; }
+.first-person[hidden] { display: none; }
+body:has(.first-person:not([hidden])) { overflow: hidden; }
+#battle-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; }
+.scene-vignette { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, #0d1414a8 0%, transparent 26%, transparent 70%, #0d1414c9 100%), radial-gradient(ellipse at center, transparent 38%, #07101165 100%); }
+.scene-top, .scene-bottom { position: absolute; z-index: 2; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 22px; background: linear-gradient(90deg, #111a1bdc, #111a1b77); }
+.scene-top { top: 0; }
+.scene-top h2 { margin: 0; color: #f0ead6; font-size: 19px; font-weight: 550; letter-spacing: 2px; }
+.scene-kicker { margin: 0 0 5px; color: #c8b47e; font-size: 9px; letter-spacing: 2px; }
+.scene-tools { display: flex; gap: 8px; }
+.scene-tools button, .scene-location button { border: 1px solid #b8b08b88; padding: 9px 12px; color: #eee8d6; background: #192321d9; cursor: pointer; font-size: 10px; }
+.scene-tools button:hover, .scene-location button:hover { background: #46534a; }
+.scene-objective { position: absolute; z-index: 2; top: 104px; left: 22px; display: flex; align-items: center; gap: 9px; padding: 10px 13px; border: 1px solid #bdad7b66; background: #17201ed9; color: #e6dcc0; font-size: 12px; }
+.scene-objective small { margin-left: 8px; color: #a6ada2; font-size: 9px; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #c88760; box-shadow: 0 0 12px #d99267; }
+.scene-crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; opacity: .78; }
+.scene-crosshair i, .scene-crosshair b { position: absolute; display: block; background: #eee8d6; box-shadow: 0 1px 3px #000; }
+.scene-crosshair i { left: 9px; top: 2px; width: 2px; height: 16px; }
+.scene-crosshair b { left: 2px; top: 9px; width: 16px; height: 2px; }
+.scene-location { position: absolute; z-index: 2; top: 104px; right: 22px; display: flex; gap: 6px; }
+.scene-location button.selected { border-color: #dfc583; color: #f0dfb0; background: #544933df; }
+.scene-bottom { bottom: 0; align-items: flex-end; color: #d3d5c9; font-size: 10px; }
+.scene-controls span { margin: 0 5px; color: #bdad7b; }
+#scene-status { color: #d8c99e; text-align: right; }
+.scene-civilian-message { position: absolute; z-index: 2; left: 50%; bottom: 86px; width: min(660px, calc(100vw - 32px)); transform: translateX(-50%); border: 1px solid #d8c58a88; padding: 13px 17px; color: #f0e5c3; background: #17201ee8; box-shadow: 0 10px 34px #0007; text-align: center; font-size: 13px; line-height: 1.8; letter-spacing: .4px; }
+.scene-error { position: absolute; z-index: 5; top: 35%; left: 10%; right: 10%; padding: 18px; background: #542c26; white-space: pre-wrap; }
+
+@media (min-width: 1500px) {
+  .stage { grid-template-columns: minmax(0, 1fr) 390px; }
+  .briefing { padding: 24px; }
+  .map-wrap { padding: 24px 28px 14px; }
+}
+@media (max-width: 1050px) {
+  .preview { padding: 12px; }
+  .stage { grid-template-columns: minmax(0, 1fr) 320px; gap: 10px; min-height: calc(100vh - 68px); }
+  .map-wrap { padding: 14px; }
+  .briefing { padding: 15px; }
+  #battle-map { min-height: 330px; }
+}
+@media (max-width: 760px) {
+  .preview { padding: 8px; }
+  .topbar { margin-bottom: 8px; }
+  .top-label { max-width: 48%; text-align: right; font-size: 9px; }
+  .stage { grid-template-columns: 1fr; }
+  .map-wrap { min-height: 470px; }
+  #battle-map { min-height: 360px; max-height: 70vh; }
+  .briefing { overflow: visible; }
+  .phase-description { min-height: 0; }
+  .scope-note { margin-top: 14px; }
+  .enter-button { margin-left: 0; }
+  .scene-top { align-items: flex-start; flex-direction: column; gap: 8px; padding: 12px; }
+  .scene-top h2 { font-size: 15px; white-space: nowrap; }
+  .scene-kicker { font-size: 8px; }
+  .scene-tools { flex-direction: row; }
+  .scene-tools button { padding: 7px; font-size: 9px; }
+  .scene-objective { top: 132px; left: 12px; max-width: calc(100vw - 24px); flex-wrap: wrap; font-size: 10px; }
+  .scene-objective small { margin-left: 16px; }
+  .scene-location { top: auto; right: 12px; bottom: 75px; flex-direction: column; }
+  .scene-location button { padding: 7px; font-size: 9px; }
+  .scene-bottom { padding: 12px; align-items: flex-start; flex-direction: column; gap: 6px; }
+  #scene-status { text-align: left; }
+  .scene-civilian-message { bottom: 130px; font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
