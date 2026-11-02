@@ -61,6 +61,7 @@ import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
 import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
+import { createAdaptiveAI } from './adaptive-ai.js';
 import { createPresentationView } from './presentation-view.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -199,6 +200,7 @@ camera.rotation.order = 'YXZ';
 scene.add(camera);
 const aiDecisionView = createPresentationView(camera);
 const aiDecisions = createAIDecisionScheduler();
+const adaptiveAI = createAdaptiveAI();
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -1128,6 +1130,7 @@ function beginMatch() {
   friendlyAI = []; friendlyForces = []; allForces = [];
   pathRequests.clear(); trafficReservations.clear(); trafficGrid.clear(); aiCursor = 0;
   aiDecisions.reset();
+  adaptiveAI.reset();
   resetSpawns();
   pendingSquad = pendingSpawn = null;
   objectives = makeObjectives(battleLayout.objectives);
@@ -3243,7 +3246,8 @@ function updateAI(dt) {
       if (kind === 'cover') return actor.tactics.lastSeen && time >= actor.tactics.decisionAt;
       return actor.nativeMotion && actor.tactics.lastSeen &&
         (actor.tactics.postureNeedsChoice || time >= (actor.tactics.postureDecisionAt ?? 0));
-    });
+    }, (actor, kind) => adaptiveAI.intervalFor(kind, actor.position, camera.position,
+      aiDecisionView.intersects(actor.position, 2), actor.target?.id === entities.control.soldierId));
   let completedPaths = 0;
   for (const [id, request] of pathRequests) {
     if (request.actor.health <= 0 || request.actor === player || request.actor.vehicleId) {
@@ -3946,10 +3950,14 @@ function advanceBattleStep(dt, presentationTime) {
 
 function renderSimulationStatus() {
   const status = simulationClock.snapshot, element = $('simulation-status');
-  element.hidden = !status.active || status.pendingSeconds < SIMULATION_CLOCK.lagWarningSeconds;
+  const reduced = adaptiveAI.snapshot.level > 0;
+  const backlog = status.pendingSeconds >= SIMULATION_CLOCK.lagWarningSeconds;
+  element.hidden = !status.active || !backlog && !reduced;
   if (!element.hidden) {
-    element.textContent = `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶`;
-    element.title = `模拟缓慢追赶 · 上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃积压时间`;
+    const text = [backlog ? `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶` : '',
+      reduced ? '自动减负 · 远处AI思考降频' : ''].filter(Boolean).join(' · ');
+    if (element.textContent !== text) element.textContent = text;
+    element.title = `模拟追赶上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃时间；自动减负不暂停移动、交火、伤害或占点`;
   }
 }
 
@@ -3962,6 +3970,7 @@ function tick(now) {
   const cpuStarted = benchmark ? performance.now() : 0;
   const frameInterval = now - lastFrame;
   const activeFrame = activeStates.has(state);
+  adaptiveAI.observeFrame(Math.max(0, frameInterval), activeFrame && !document.hidden);
   const presentationTime = time + simulationClock.beginFrame(performance.now());
   if (benchmark && activeFrame) telemetry.begin(now, frameInterval, 0);
   if (state === 'playing') {
@@ -4111,7 +4120,7 @@ $('back-menu').addEventListener('click', () => {
   clearTransient();
   allies = [];
   enemies = [];
-  friendlyAI = []; formations = []; pathRequests.clear(); aiDecisions.reset(); rebuildForces();
+  friendlyAI = []; formations = []; pathRequests.clear(); aiDecisions.reset(); adaptiveAI.reset(); rebuildForces();
   if (weapon) { camera.remove(weapon); weapon = null; }
   unit = null;
   resetControlledSimulation();
@@ -4528,6 +4537,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     : { status: 'fallback', error: mechanicalAudioFailure },
   simulationClock: simulationClock.snapshot,
   aiDecisions: aiDecisions.snapshot,
+  adaptiveAI: adaptiveAI.snapshot,
   queryDiagnostics: queryDiagnostics?.snapshot ?? null,
   tracers: tracerPool.snapshot,
   renderIsolation: { ...renderIsolation, requested: benchmark?.renderIsolation ?? 'normal',

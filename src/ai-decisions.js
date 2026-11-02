@@ -12,17 +12,27 @@ export function createAIDecisionScheduler() {
   const queues = Object.fromEntries(kinds.map(kind => [kind, new Map()]));
   const grants = Object.fromEntries(kinds.map(kind => [kind, new Set()]));
   const used = Object.fromEntries(kinds.map(kind => [kind, new Set()]));
+  const lastServiced = Object.fromEntries(kinds.map(kind => [kind, new Map()]));
   const counts = () => Object.fromEntries(kinds.map(kind => [kind, 0]));
   let frame = 0, now = 0, serial = 0, frameCounts = counts(), stepCounts = counts(), totals = counts();
+  let intervalFor = () => 0, deferredAttempts = counts();
+  const ready = (kind, actor) => {
+    const interval = intervalFor(actor, kind);
+    if (!Number.isFinite(interval) || interval < 0) throw new RangeError('AI decision interval must be finite and non-negative');
+    const last = lastServiced[kind].get(actor.id);
+    return last === undefined || now - last + 1e-8 >= interval;
+  };
   return {
     beginFrame() {
       frame++;
       frameCounts = counts();
       for (const kind of kinds) { used[kind].clear(); grants[kind].clear(); }
     },
-    beginStep(time, priority, eligible) {
+    beginStep(time, priority, eligible, interval = () => 0) {
       if (!Number.isFinite(time) || time < now) throw new RangeError('AI decisions require monotonic simulation time');
+      if (typeof interval !== 'function') throw new RangeError('AI decision interval must be a function');
       now = time;
+      intervalFor = interval;
       stepCounts = counts();
       for (const kind of kinds) {
         grants[kind].clear();
@@ -32,7 +42,7 @@ export function createAIDecisionScheduler() {
             queues[kind].delete(id);
             continue;
           }
-          if (used[kind].has(id)) continue;
+          if (used[kind].has(id) || !ready(kind, request.actor)) continue;
           const importance = priority(request.actor);
           if (!Number.isFinite(importance) || importance < 0 || importance > 1) throw new RangeError('AI priority must be in 0..1');
           waiting.push({ id, score: now - request.since + importance * PRIORITY_SECONDS, serial: request.serial });
@@ -51,6 +61,7 @@ export function createAIDecisionScheduler() {
         queues[kind].set(id, request);
       }
       request.frame = frame;
+      if (!ready(kind, actor)) { deferredAttempts[kind]++; return false; }
       const available = Math.min(AI_DECISION_STEP_LIMITS[kind] - stepCounts[kind],
         AI_DECISION_FRAME_LIMITS[kind] - frameCounts[kind]);
       // Do not let newly arriving jobs steal slots already reserved for waiting actors.
@@ -58,20 +69,27 @@ export function createAIDecisionScheduler() {
       queues[kind].delete(id);
       grants[kind].delete(id);
       used[kind].add(id);
+      lastServiced[kind].set(id, now);
       frameCounts[kind]++; stepCounts[kind]++; totals[kind]++;
       return true;
     },
     forget(actor) {
-      for (const kind of kinds) { queues[kind].delete(actor.id); grants[kind].delete(actor.id); used[kind].delete(actor.id); }
+      for (const kind of kinds) {
+        queues[kind].delete(actor.id); grants[kind].delete(actor.id); used[kind].delete(actor.id);
+        lastServiced[kind].delete(actor.id);
+      }
     },
     reset() {
       frame = now = serial = 0;
       frameCounts = counts(); stepCounts = counts(); totals = counts();
+      deferredAttempts = counts(); intervalFor = () => 0;
+      for (const kind of kinds) lastServiced[kind].clear();
       for (const kind of kinds) { queues[kind].clear(); grants[kind].clear(); used[kind].clear(); }
     },
     get snapshot() {
       return { stepLimits: AI_DECISION_STEP_LIMITS, frameLimits: AI_DECISION_FRAME_LIMITS,
         serviced: { ...frameCounts }, totalServiced: { ...totals },
+        deferredAttempts: { ...deferredAttempts },
         pending: Object.fromEntries(kinds.map(kind => [kind, queues[kind].size])),
         oldestWaitSeconds: Object.fromEntries(kinds.map(kind =>
           [kind, Math.max(0, ...[...queues[kind].values()].map(request => now - request.since))])) };
