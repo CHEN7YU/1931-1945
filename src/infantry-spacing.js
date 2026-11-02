@@ -1,5 +1,23 @@
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
+export function sampledRouteClear(start, end, clear) {
+  if (![start.x, start.z, end.x, end.z].every(Number.isFinite) || typeof clear !== 'function') {
+    throw new RangeError('Route sampling requires finite endpoints and an explicit clearance query');
+  }
+  const steps = Math.max(1, Math.ceil(distance(start, end) / .2));
+  const check = step => {
+    const result = clear(start.x + (end.x - start.x) * step / steps, start.z + (end.z - start.z) * step / steps);
+    if (typeof result !== 'boolean') throw new TypeError('Route clearance must return a boolean');
+    return result;
+  };
+  if (!check(1)) return false;
+  // Probe an existing midpoint sample early; no points are added, removed or approximated.
+  const middle = Math.ceil(steps / 2);
+  if (middle > 1 && !check(middle)) return false;
+  for (let step = 2; step <= steps; step++) if (step !== middle && !check(step)) return false;
+  return true;
+}
+
 export function advanceInfantryPath(position, path, clear) {
   while (path.length && distance(position, path[0]) < .1 &&
     Math.abs(position.y - (path[0].y ?? position.y)) < .3) path.shift();

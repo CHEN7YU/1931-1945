@@ -78,7 +78,7 @@ import { CORPSE_RULES, createCasualtyState, expiredCorpses, placeCasualty } from
 import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
 import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
-import { infantrySteering as steerInfantry, advanceInfantryPath as advanceInfantryRoute } from './infantry-spacing.js';
+import { infantrySteering as steerInfantry, advanceInfantryPath as advanceInfantryRoute, sampledRouteClear } from './infantry-spacing.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription, soldierRoleLabel } from './battle-units.js';
 import { chooseAIThrowable, planAIThrow, antiTankApproach } from './ai-throwables.js';
@@ -2784,15 +2784,9 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     pathRequests.set(actor.tactics.id, { actor, target: { ...target }, requestedAt: pathRequests.get(actor.tactics.id)?.requestedAt ?? time });
   }
   if (!actor.path) return;
-  const waypoint = advanceInfantryPath(pos, actor.path, point => {
-    const steps = Math.max(1, Math.ceil(Math.hypot(point.x - pos.x, point.z - pos.z) / .2));
-    for (let step = 1; step <= steps; step++) {
-      const x = pos.x + (point.x - pos.x) * step / steps, z = pos.z + (point.z - pos.z) * step / steps;
-      if (circleBlocked(x, z, .46, movementCollision.at(x, z), pos.y) ||
-        Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3) return false;
-    }
-    return true;
-  });
+  const waypoint = advanceInfantryPath(pos, actor.path, point => sampledRouteClear(pos, point, (x, z) =>
+    !circleBlocked(x, z, .46, movementCollision.at(x, z), pos.y) &&
+      !(Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3)));
   if (!waypoint) return;
   const waitingDoor = pos.y < 1 ? world.doorSystem.openAhead(pos, waypoint) : null;
   if (waitingDoor) {
