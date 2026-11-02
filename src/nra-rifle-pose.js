@@ -37,6 +37,13 @@ function basis(forward, across) {
 }
 
 export function createNraRiflePose(root, bones, gun) {
+  // update() synchronizes the rig before reads and each joint solve refreshes its descendants.
+  const position = node => new THREE.Vector3().setFromMatrixPosition(node.matrixWorld);
+  const rotation = node => {
+    const result = new THREE.Quaternion();
+    node.matrixWorld.decompose(new THREE.Vector3(), result, new THREE.Vector3());
+    return result;
+  };
   const bone = name => {
     const found = bones.get(name);
     if (!found) throw new Error(`Missing rifle-pose joint: ${name}`);
@@ -104,6 +111,7 @@ export function createNraRiflePose(root, bones, gun) {
   }
   return {
     update(carry) {
+      root.updateWorldMatrix(true, false);
       fingerError = 0;
       bone('LeftShoulder').quaternion.copy(leftShoulderRest);
       for (const arm of arms) arm.bone.quaternion.copy(arm.rest);
@@ -181,6 +189,7 @@ export function createNraRiflePose(root, bones, gun) {
       return null;
     },
     get snapshot() {
+      root.updateWorldMatrix(true, true);
       const result = value => value ? { error: value.error, reachable: value.reachable, palmError: value.palmError } : null;
       return { right: result(right), left: result(left),
         rightTarget: rightTarget.toArray(), leftTarget: leftTarget.toArray(), muzzle: position(muzzle).toArray(),
