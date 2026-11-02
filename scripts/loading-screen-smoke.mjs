@@ -26,8 +26,10 @@ try {
     const firstY = images[0].getBoundingClientRect().y;
     return images.every(image => {
       const bounds = image.getBoundingClientRect();
+      const trimmed = image.parentElement.classList.contains('photo-wall-trimmed');
+      const card = image.parentElement.getBoundingClientRect();
       return Math.abs(bounds.y - firstY) < 1 && getComputedStyle(image).objectFit === 'contain' &&
-        bounds.height <= Math.min(innerHeight * .44, 420) + 1 &&
+        (trimmed ? card.height : bounds.height) <= Math.min(innerHeight * .44, 420) + 3 &&
         Math.abs(bounds.width / bounds.height - image.naturalWidth / image.naturalHeight) < .01;
     });
   });

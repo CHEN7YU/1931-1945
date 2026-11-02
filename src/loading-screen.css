@@ -41,6 +41,8 @@
   border: 1px solid #b9a77830;
 }
 .photo-wall-card img { display: block; width: auto; height: min(44vh, 420px); object-fit: contain; }
+.photo-wall-card.photo-wall-trimmed { overflow: hidden; height: calc(min(44vh, 420px) + 2px); width: calc(min(44vh, 420px) * var(--photo-trim-ratio) + 2px); }
+.photo-wall-card.photo-wall-trimmed img { height: calc(min(44vh, 420px) * var(--photo-trim-scale)); }
 .photo-wall-card.unavailable { width: 220px; height: min(44vh, 420px); }
 .photo-wall-card.unavailable img { display: none; }
 .photo-wall-card figcaption { display: grid; height: 100%; place-items: center; color: #aeb2a4; font-size: 11px; }

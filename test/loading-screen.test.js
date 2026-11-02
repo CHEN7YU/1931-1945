@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import metadata from '../public/assets/loading/source.json' with { type: 'json' };
-import { createPhotoWall, LOADING_PHOTOS, PHOTO_WALL_SPEED } from '../src/loading-screen.js';
+import { createPhotoWall, LOADING_PHOTOS, PHOTO_WALL_SPEED, PHOTO_WALL_BOTTOM_TRIMS } from '../src/loading-screen.js';
 
 function fixture({ hidden = false, reduced = false } = {}) {
   class Node extends EventTarget {
@@ -100,6 +100,22 @@ test('the wall has two identical collections for seamless horizontal scrolling, 
   assert.equal(f.track.style['--photo-wall-duration'], `${600 / PHOTO_WALL_SPEED}s`);
   assert.equal(f.track.style.animationPlayState, 'running');
   f.control.dispose(); assert.equal(f.track.style.animationPlayState, 'paused');
+});
+
+test('seven display-only bottom trims apply consistently to both copies without changing original images', () => {
+  const f = fixture();
+  assert.equal(Object.keys(PHOTO_WALL_BOTTOM_TRIMS).length, 7);
+  for (const copy of f.track.children) {
+    assert.equal(copy.children.filter(card => card.classes.has('photo-wall-trimmed')).length, 7);
+    for (const [index, photo] of LOADING_PHOTOS.entries()) {
+      const trim = PHOTO_WALL_BOTTOM_TRIMS[photo.src.split('/').at(-1).replace(/\.[^.]+$/, '')];
+      if (!trim) continue;
+      assert.ok(trim > 0 && trim <= .14);
+      assert.equal(copy.children[index].style['--photo-trim-scale'], String(1 / (1 - trim)));
+      assert.equal(copy.children[index].style['--photo-trim-ratio'], String(photo.width / (photo.height * (1 - trim))));
+    }
+  }
+  f.control.dispose();
 });
 
 test('hidden loading/menu screens and background tabs pause the wall without resetting its position', () => {

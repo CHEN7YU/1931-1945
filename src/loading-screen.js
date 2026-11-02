@@ -9,6 +9,11 @@ export const LOADING_PHOTOS = Object.freeze(metadata.files.map(file => {
   });
 }));
 export const PHOTO_WALL_SPEED = 72;
+// Display-only bottom trims; preserve original images and their provenance.
+export const PHOTO_WALL_BOTTOM_TRIMS = Object.freeze({
+  'photo-14': .07, 'photo-15': .065, 'photo-18': .095, 'photo-19': .10,
+  'photo-20': .075, 'photo-21': .14, 'photo-22': .065,
+});
 
 export function createPhotoWall(element, {
   document: doc = document, Observer = MutationObserver, Resize = ResizeObserver,
@@ -31,6 +36,13 @@ export function createPhotoWall(element, {
     for (const photo of photos) {
       const card = doc.createElement('figure'), image = doc.createElement('img');
       card.className = 'photo-wall-card';
+      const name = photo.src.split('/').at(-1).replace(/\.[^.]+$/, '');
+      const trim = PHOTO_WALL_BOTTOM_TRIMS[name] ?? 0;
+      if (trim) {
+        card.classList.add('photo-wall-trimmed');
+        card.style.setProperty('--photo-trim-ratio', String(photo.width / (photo.height * (1 - trim))));
+        card.style.setProperty('--photo-trim-scale', String(1 / (1 - trim)));
+      }
       image.alt = photo.alt; image.width = photo.width; image.height = photo.height; image.decoding = 'async';
       image.onerror = () => {
         if (disposed) return;

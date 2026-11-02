@@ -24,6 +24,7 @@ try {
         return { url: image.src, width: image.naturalWidth, height: image.naturalHeight,
           expectedWidth: LOADING_PHOTOS[index].width, expectedHeight: LOADING_PHOTOS[index].height,
           displayedRatio: displayed.width / displayed.height, naturalRatio: image.naturalWidth / image.naturalHeight,
+          trimmed: image.parentElement.classList.contains('photo-wall-trimmed'),
           restored: LOADING_PHOTOS[index].restored };
       }),
       notice: wall.querySelector('[data-photo-wall-status]').textContent,
@@ -33,6 +34,7 @@ try {
     };
   });
   assert.equal(result.images.length, 23);
+  assert.equal(result.images.filter(image => image.trimmed).length, 7);
   assert.equal(result.images.filter(image => image.restored).length, 16);
   assert.match(result.notice, /AI修复上色/);
   assert.deepEqual(result.loadingSources, result.sources, 'both walls must use the same reviewed variants');
