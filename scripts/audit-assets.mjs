@@ -7,6 +7,7 @@ const groups = [
   { manifest: 'sources.json', directory: '', use: 'runtime', evidence: [] },
   { manifest: 'maps/source.json', directory: 'maps', use: 'runtime', evidence: [] },
   { manifest: 'loading/source.json', directory: 'loading', use: 'runtime', evidence: [] },
+  { manifest: 'loading/colorized/source.json', directory: 'loading/colorized', use: 'runtime', evidence: [] },
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
   { manifest: 'audio/recorded-rifle/source.json', directory: 'audio/recorded-rifle', use: 'runtime', evidence: ['LICENSE.txt'] },
   { manifest: 'audio/enemy-rifle/source.json', directory: 'audio/enemy-rifle', use: 'runtime', evidence: [] },
@@ -134,6 +135,41 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: 'MIT',
         limitation: 'Third-party library; copyright and MIT license notice are included with the build.' });
+    } else if (group.directory === 'loading/colorized') {
+      const originals = JSON.parse(await readFile(assetPath(root, 'loading/source.json'), 'utf8'));
+      const allowed = [1, 2, 3, 5, 6, 7, 8, 12, 13, 14, 16, 18, 19, 20, 21, 23]
+        .map(number => `photo-${String(number).padStart(2, '0')}.png`);
+      if (metadata.sourceKind !== 'azure-restored-user-supplied-photographs' || metadata.provider !== 'Azure OpenAI' ||
+        metadata.model !== 'gpt-image-2.5-flare' || metadata.version !== '2026-09-08' ||
+        metadata.license !== 'Azure image edits of user-supplied originals; underlying redistribution rights unverified' ||
+        metadata.source !== 'https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e' ||
+        metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA' ||
+        metadata.permission?.basis !== 'user-approved-ai-photo-restoration' ||
+        metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
+        metadata.historicalColorsVerified !== false || metadata.permission.request !== '看着不错 批量处理' ||
+        metadata.excluded?.['photo-15'] !== 'Azure rejected the source image at input moderation; retained original without retry or bypass.' ||
+        metadata.excluded?.['photo-17'] !== 'Azure response was interrupted before the image was received; retained original without repeating the potentially charged request.' ||
+        metadata.excluded?.['photo-22'] !== 'Azure rejected the image at output moderation; retained original without retry or bypass.' ||
+        originals.files.some(file => !allowed.includes(file.file) && file.restored) ||
+        metadata.budgetUsd !== 50 || !Number.isFinite(metadata.conservativeEstimatedTotalUsd) ||
+        metadata.conservativeEstimatedTotalUsd < 0 || metadata.conservativeEstimatedTotalUsd > metadata.budgetUsd ||
+        !Number.isFinite(metadata.reservedTotalUsd) || metadata.reservedTotalUsd > metadata.budgetUsd ||
+        metadata.reservedTotalUsd < metadata.conservativeEstimatedTotalUsd ||
+        metadata.failedOrUncertainReservationUsd !== 6 ||
+        metadata.files.length !== allowed.length || metadata.files.some((file, index) => {
+          const original = originals.files.find(item => item.file === file.originalFile), restored = original?.restored;
+          return file.originalFile !== allowed[index] || !original || original.sha256 !== file.originalSha256 ||
+            file.file !== original.file.replace('.png', '.webp') ||
+            !Number.isInteger(file.width) || file.width <= 0 || file.width > 1280 ||
+            !Number.isInteger(file.height) || file.height <= 0 || file.height > 840 ||
+            Math.abs(file.width / file.height - original.width / original.height) >= .003 ||
+            restored?.file !== `colorized/${file.file}` || restored.sha256 !== file.sha256 ||
+            restored.bytes !== file.bytes || restored.width !== file.width || restored.height !== file.height;
+        })) {
+        throw new Error('AI photo restoration provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: metadata.permission.basis,
+        limitation: 'Azure AI edits of user-supplied photos; not CC0. Inferred colors and details are not historical evidence. Underlying redistribution rights remain unverified.' });
     } else if (group.directory === 'loading') {
       if (metadata.sourceKind !== 'user-supplied-loading-images' ||
         metadata.license !== 'User-requested project use; original rights unverified' ||
@@ -185,7 +221,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
     }
     warnings.push(`Build includes ${diagnostic.length} diagnostic-only files (${diagnostic.reduce((sum, item) => sum + item.bytes, 0)} bytes). They are not main-game downloads; this read-only audit does not remove them.`);
   }
-  for (const permission of permissions) if (['audio/machine-gun', 'loading'].includes(permission.directory)) warnings.push(permission.limitation);
+  for (const permission of permissions) if (['audio/machine-gun', 'loading', 'loading/colorized'].includes(permission.directory)) warnings.push(permission.limitation);
   return { files: [...inventory.values()].sort((a, b) => a.file.localeCompare(b.file)),
     bytes: [...inventory.values()].reduce((sum, item) => sum + item.bytes, 0), permissions, warnings };
 }

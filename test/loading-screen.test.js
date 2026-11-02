@@ -56,6 +56,39 @@ test('all twenty-three supplied images retain exact PNG bytes, dimensions and un
   }
 });
 
+test('sixteen reviewed Azure color variants preserve original framing without modifying excluded sources', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../public/assets/loading/colorized/source.json', import.meta.url), 'utf8'));
+  assert.equal(manifest.provider, 'Azure OpenAI');
+  assert.equal(manifest.historicalColorsVerified, false);
+  assert.equal(manifest.permission.isCC0, false);
+  assert.equal(manifest.permission.redistributionRightsIndependentlyVerified, false);
+  assert.equal(manifest.files.length, 16);
+  assert.ok(manifest.conservativeEstimatedTotalUsd <= manifest.budgetUsd);
+  assert.ok(manifest.reservedTotalUsd <= manifest.budgetUsd);
+  assert.equal(LOADING_PHOTOS.filter(photo => photo.restored).length, 16);
+  for (let index = 0; index < metadata.files.length; index++) {
+    const original = metadata.files[index], displayed = LOADING_PHOTOS[index];
+    const restored = manifest.files.find(file => file.originalFile === original.file);
+    if (!restored) {
+      assert.equal(displayed.src, `/assets/loading/${original.file}`);
+      continue;
+    }
+    assert.equal(restored.originalSha256, original.sha256);
+    assert.equal(displayed.src, `/assets/loading/colorized/${restored.file}`);
+    assert.match(displayed.alt, /AI修复上色/);
+    assert.ok(Math.abs(displayed.width / displayed.height - original.width / original.height) < .003);
+    assert.ok(displayed.width <= 1280 && displayed.height <= 840);
+    assert.deepEqual(original.restored, { file: `colorized/${restored.file}`, width: restored.width,
+      height: restored.height, bytes: restored.bytes, sha256: restored.sha256 });
+    const bytes = readFileSync(new URL(`../public/assets/loading/colorized/${restored.file}`, import.meta.url));
+    assert.equal(bytes.length, restored.bytes);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), restored.sha256);
+    assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
+  }
+  for (const number of [4, 9, 10, 11, 15, 17, 22]) assert.equal(LOADING_PHOTOS[number - 1].restored, false);
+});
+
 test('the wall has two identical collections for seamless horizontal scrolling, without slide timers', () => {
   const f = fixture();
   assert.equal(f.track.children.length, 2);

@@ -1,8 +1,13 @@
 import metadata from '../public/assets/loading/source.json' with { type: 'json' };
 
-export const LOADING_PHOTOS = Object.freeze(metadata.files.map(file => Object.freeze({
-  src: `/assets/loading/${file.file}`, alt: file.alt, width: file.width, height: file.height,
-})));
+export const LOADING_PHOTOS = Object.freeze(metadata.files.map(file => {
+  const image = file.restored ?? file;
+  return Object.freeze({
+    src: `/assets/loading/${image.file}`,
+    alt: file.restored ? `${file.alt}（AI修复上色，非历史原色）` : file.alt,
+    width: image.width, height: image.height, restored: Boolean(file.restored),
+  });
+}));
 export const PHOTO_WALL_SPEED = 72;
 
 export function createPhotoWall(element, {
@@ -18,6 +23,7 @@ export function createPhotoWall(element, {
     throw new Error('Photo wall requires its track, controls and valid photos');
   }
   let paused = reducedMotion?.matches ?? false, disposed = false;
+  if (photos.some(photo => photo.restored)) status.textContent = '部分影像经AI修复上色，颜色与补全细节为推测，非历史原色。';
   const failures = new Set();
   const copies = [false, true].map(duplicate => {
     const copy = doc.createElement('div'); copy.className = 'photo-wall-copy';

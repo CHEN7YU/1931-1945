@@ -11,6 +11,6 @@ export default defineConfig({
     __BUILD_STAMP__: JSON.stringify(readBuildStamp()),
   },
   server: {
-    watch: { ignored: ['**/.asset-audit-fixtures-*/**', '**/references/**', '**/asset-research/**', '**/public/assets/characters/**', '**/public/assets/audio/**', '**/public/assets/game/**', '**/public/assets/loading/*.png'] },
+    watch: { ignored: ['**/.asset-audit-fixtures-*/**', '**/references/**', '**/asset-research/**', '**/public/assets/characters/**', '**/public/assets/audio/**', '**/public/assets/game/**', '**/public/assets/loading/*.png', '**/public/assets/loading/colorized/*.webp'] },
   },
 });

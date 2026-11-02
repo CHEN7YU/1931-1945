@@ -10,30 +10,326 @@
     "additionalRequest": "照片墙补充",
     "limitation": "Photographs and artwork provided by the user; not CC0. Authors and original publication licenses are unverified; verify redistribution rights before public release."
   },
-  "processing": "Original supplied PNG bytes retained; displayed without cropping or historical attribution.",
+  "processing": "Original supplied PNG bytes retained unchanged. Reviewed Azure restoration paths are recorded as separate WebP variants; AI-inferred colors and details are not historical evidence. Original artwork and contemporary photographs retained.",
   "files": [
-    { "file": "photo-01.png", "attachment": 1, "alt": "城墙上的机枪阵地", "width": 400, "height": 400, "bytes": 199058, "sha256": "aa4bfa12d9ecedbd2b21981ca3f371c0eccfb4551dc8251b82bca429368f13bf" },
-    { "file": "photo-02.png", "attachment": 2, "alt": "抗日救国集会", "width": 660, "height": 370, "bytes": 283285, "sha256": "f7e6a58b38f6c1e11ff3d5147abe79a4e68fc5113ea824e6986620d092891b0c" },
-    { "file": "photo-03.png", "attachment": 3, "alt": "持刀士兵队伍", "width": 441, "height": 299, "bytes": 147555, "sha256": "de83942c6fed51f0ec243e40111a73031a97c67f99e67fc2546c6c44d42f0080" },
-    { "file": "photo-04.png", "attachment": 4, "alt": "战斗题材绘画", "width": 588, "height": 340, "bytes": 253815, "sha256": "fd2f027d6354490f7ddf50f03079a962463589a60ceab3d66fd1d19ad21fe0af" },
-    { "file": "photo-05.png", "attachment": 5, "alt": "会场内的签字场景", "width": 500, "height": 348, "bytes": 200418, "sha256": "e98b6699d0caa3bef866dca2ccdfb77e801e90dd7e0b1ca52e27d275ef350198" },
-    { "file": "photo-06.png", "attachment": 6, "alt": "城门前的军人", "width": 369, "height": 542, "bytes": 241999, "sha256": "f29c8dbc07a999e039a9a3f559d227359a59a5718cdc91012892b46c7e7b4449" },
-    { "file": "photo-07.png", "attachment": 7, "alt": "城墙上的持旗士兵", "width": 180, "height": 281, "bytes": 70234, "sha256": "13c728415cf3403c3b9cf1ecf8552b0df198903e6536380fbc45387d58704dbb" },
-    { "file": "photo-08.png", "attachment": 8, "alt": "废墟中的机枪阵地", "width": 386, "height": 518, "bytes": 263921, "sha256": "d79282bc14dfb91cb448aff7aa09a0a986c4a9027d3e8259b2ebc2a7f8c42885" },
-    { "file": "photo-09.png", "attachment": 9, "alt": "历史建筑的当代照片", "width": 678, "height": 452, "bytes": 550057, "sha256": "f3742a2a4c478cbe85a44691bc06343871534e5e265f35aaf294a0f64520da8e" },
-    { "file": "photo-10.png", "attachment": 10, "alt": "留有损伤痕迹的建筑外墙", "width": 547, "height": 365, "bytes": 371096, "sha256": "fb09c65b6bd48b70312bf3d71e96f345efa321c202e90bedef54722253ae24fe" },
-    { "file": "photo-11.png", "attachment": 11, "alt": "纪念馆与雕像", "width": 580, "height": 344, "bytes": 181940, "sha256": "c1474efe12c9b2da0f3291c2189ad72e840eb1efa2abaa25a7a87ac09f8a29b1" },
-    { "file": "photo-12.png", "attachment": 12, "alt": "街道上的装甲车辆与烟雾", "width": 464, "height": 431, "bytes": 256172, "sha256": "cc3cef97cac55356157ec02cf608554abf9f89dff4b8c2a7170449ef1bb2959c" },
-    { "file": "photo-13.png", "attachment": 13, "alt": "持刀步枪队伍", "width": 399, "height": 300, "bytes": 151153, "sha256": "7d954429a380d93f1d332f5250f8652a44af66111985a80a86e43e679037b993" },
-    { "file": "photo-14.png", "attachment": 14, "alt": "用户补充影像一", "width": 388, "height": 515, "bytes": 193603, "sha256": "b126202cf2a90979fda41fbd931cb67c90799d778a6eac0eb6a78033507a4358" },
-    { "file": "photo-15.png", "attachment": 15, "alt": "用户补充影像二", "width": 389, "height": 514, "bytes": 237460, "sha256": "50aee0899168767042b8ba94ef7addf32b4039f2cdfb410e81f16a293ab55a88" },
-    { "file": "photo-16.png", "attachment": 16, "alt": "用户补充影像三", "width": 259, "height": 194, "bytes": 52091, "sha256": "fc2f94afadc8742f0f2e449f3e7ea194c17ef997b6e8954cdd4cac4215b9f4d0" },
-    { "file": "photo-17.png", "attachment": 17, "alt": "用户补充影像四", "width": 552, "height": 362, "bytes": 265956, "sha256": "dbd71cd838a447d9bd5b346684478775b06ef7ee1aafa8c1c95dd0c973afc395" },
-    { "file": "photo-18.png", "attachment": 18, "alt": "用户补充影像五", "width": 232, "height": 294, "bytes": 86348, "sha256": "1c02acffac1aa69d3ac8d300b9df4a996eaefa08bffbd23100019b07dd2e508b" },
-    { "file": "photo-19.png", "attachment": 19, "alt": "用户补充影像六", "width": 449, "height": 279, "bytes": 164872, "sha256": "0c96cfbbb9f7d3f0f70f9d08c3184b32614310d258ac2bf268eee1fd388cbb66" },
-    { "file": "photo-20.png", "attachment": 20, "alt": "用户补充影像七", "width": 356, "height": 433, "bytes": 206748, "sha256": "f4e304a7966b0c0c8c7035a8f7c53f23968b14b9bb6326ce44d99a6655bfecf6" },
-    { "file": "photo-21.png", "attachment": 21, "alt": "用户补充影像八", "width": 335, "height": 252, "bytes": 105469, "sha256": "33f4acb6daf8b609bc9a339ce85f1224a83c0d1954adba474cfb4fd22f317378" },
-    { "file": "photo-22.png", "attachment": 22, "alt": "用户补充影像九", "width": 322, "height": 398, "bytes": 153820, "sha256": "6f2018d3a1818a8af025e9f5e06e5e9a574d5ab6298efb565635d872e6b45e51" },
-    { "file": "photo-23.png", "attachment": 23, "alt": "用户补充影像十", "width": 390, "height": 512, "bytes": 152976, "sha256": "2b5ae090f51589b770768e74f477bdf436beedaa800817af7a4d3f3eb25ed648" }
+    {
+      "file": "photo-01.png",
+      "attachment": 1,
+      "alt": "城墙上的机枪阵地",
+      "width": 400,
+      "height": 400,
+      "bytes": 199058,
+      "sha256": "aa4bfa12d9ecedbd2b21981ca3f371c0eccfb4551dc8251b82bca429368f13bf",
+      "restored": {
+        "file": "colorized/photo-01.webp",
+        "width": 840,
+        "height": 840,
+        "bytes": 198360,
+        "sha256": "0ce05dfa71223823e73872cb22f476d914b1096124adff8a0247e1fa87b75d49"
+      }
+    },
+    {
+      "file": "photo-02.png",
+      "attachment": 2,
+      "alt": "抗日救国集会",
+      "width": 660,
+      "height": 370,
+      "bytes": 283285,
+      "sha256": "f7e6a58b38f6c1e11ff3d5147abe79a4e68fc5113ea824e6986620d092891b0c",
+      "restored": {
+        "file": "colorized/photo-02.webp",
+        "width": 1280,
+        "height": 718,
+        "bytes": 134708,
+        "sha256": "7309530766513ff750b041feaccfbfe24e75feacb2701156855eb6674919f3bc"
+      }
+    },
+    {
+      "file": "photo-03.png",
+      "attachment": 3,
+      "alt": "持刀士兵队伍",
+      "width": 441,
+      "height": 299,
+      "bytes": 147555,
+      "sha256": "de83942c6fed51f0ec243e40111a73031a97c67f99e67fc2546c6c44d42f0080",
+      "restored": {
+        "file": "colorized/photo-03.webp",
+        "width": 1239,
+        "height": 840,
+        "bytes": 144836,
+        "sha256": "ab06225329a8aeb60f7777af180e1451158e85a57e3c5a5775d4bb94b3a79563"
+      }
+    },
+    {
+      "file": "photo-04.png",
+      "attachment": 4,
+      "alt": "战斗题材绘画",
+      "width": 588,
+      "height": 340,
+      "bytes": 253815,
+      "sha256": "fd2f027d6354490f7ddf50f03079a962463589a60ceab3d66fd1d19ad21fe0af"
+    },
+    {
+      "file": "photo-05.png",
+      "attachment": 5,
+      "alt": "会场内的签字场景",
+      "width": 500,
+      "height": 348,
+      "bytes": 200418,
+      "sha256": "e98b6699d0caa3bef866dca2ccdfb77e801e90dd7e0b1ca52e27d275ef350198",
+      "restored": {
+        "file": "colorized/photo-05.webp",
+        "width": 1207,
+        "height": 840,
+        "bytes": 119290,
+        "sha256": "0cf051b24a66c6e47c0178994a7a28231af5ca1d28977f12ba30c6722e6624e0"
+      }
+    },
+    {
+      "file": "photo-06.png",
+      "attachment": 6,
+      "alt": "城门前的军人",
+      "width": 369,
+      "height": 542,
+      "bytes": 241999,
+      "sha256": "f29c8dbc07a999e039a9a3f559d227359a59a5718cdc91012892b46c7e7b4449",
+      "restored": {
+        "file": "colorized/photo-06.webp",
+        "width": 572,
+        "height": 840,
+        "bytes": 101646,
+        "sha256": "6967bb75981781d8cc097f69f3b5e8eab0908e20adb0619c13ca13d7dc75a52b"
+      }
+    },
+    {
+      "file": "photo-07.png",
+      "attachment": 7,
+      "alt": "城墙上的持旗士兵",
+      "width": 180,
+      "height": 281,
+      "bytes": 70234,
+      "sha256": "13c728415cf3403c3b9cf1ecf8552b0df198903e6536380fbc45387d58704dbb",
+      "restored": {
+        "file": "colorized/photo-07.webp",
+        "width": 538,
+        "height": 840,
+        "bytes": 81296,
+        "sha256": "4e6c5e1b05f3b7256000a49602ea63d2c29a289d861855d324476fb28f6b44f5"
+      }
+    },
+    {
+      "file": "photo-08.png",
+      "attachment": 8,
+      "alt": "废墟中的机枪阵地",
+      "width": 386,
+      "height": 518,
+      "bytes": 263921,
+      "sha256": "d79282bc14dfb91cb448aff7aa09a0a986c4a9027d3e8259b2ebc2a7f8c42885",
+      "restored": {
+        "file": "colorized/photo-08.webp",
+        "width": 626,
+        "height": 840,
+        "bytes": 132344,
+        "sha256": "f3182897f150286c50319de7eded5ed2d9bb14c44af74a7d9e6511812c9f5acb"
+      }
+    },
+    {
+      "file": "photo-09.png",
+      "attachment": 9,
+      "alt": "历史建筑的当代照片",
+      "width": 678,
+      "height": 452,
+      "bytes": 550057,
+      "sha256": "f3742a2a4c478cbe85a44691bc06343871534e5e265f35aaf294a0f64520da8e"
+    },
+    {
+      "file": "photo-10.png",
+      "attachment": 10,
+      "alt": "留有损伤痕迹的建筑外墙",
+      "width": 547,
+      "height": 365,
+      "bytes": 371096,
+      "sha256": "fb09c65b6bd48b70312bf3d71e96f345efa321c202e90bedef54722253ae24fe"
+    },
+    {
+      "file": "photo-11.png",
+      "attachment": 11,
+      "alt": "纪念馆与雕像",
+      "width": 580,
+      "height": 344,
+      "bytes": 181940,
+      "sha256": "c1474efe12c9b2da0f3291c2189ad72e840eb1efa2abaa25a7a87ac09f8a29b1"
+    },
+    {
+      "file": "photo-12.png",
+      "attachment": 12,
+      "alt": "街道上的装甲车辆与烟雾",
+      "width": 464,
+      "height": 431,
+      "bytes": 256172,
+      "sha256": "cc3cef97cac55356157ec02cf608554abf9f89dff4b8c2a7170449ef1bb2959c",
+      "restored": {
+        "file": "colorized/photo-12.webp",
+        "width": 904,
+        "height": 840,
+        "bytes": 163916,
+        "sha256": "00bd2bcb2fd487b8b00577cf9e25e8e54efa28c2aae4a43025c8412d9bbbda51"
+      }
+    },
+    {
+      "file": "photo-13.png",
+      "attachment": 13,
+      "alt": "持刀步枪队伍",
+      "width": 399,
+      "height": 300,
+      "bytes": 151153,
+      "sha256": "7d954429a380d93f1d332f5250f8652a44af66111985a80a86e43e679037b993",
+      "restored": {
+        "file": "colorized/photo-13.webp",
+        "width": 1117,
+        "height": 840,
+        "bytes": 152676,
+        "sha256": "636594eb5a52307577438d16c437cb6caed82efa207feab2e2ff3e5bb9ad4aff"
+      }
+    },
+    {
+      "file": "photo-14.png",
+      "attachment": 14,
+      "alt": "用户补充影像一",
+      "width": 388,
+      "height": 515,
+      "bytes": 193603,
+      "sha256": "b126202cf2a90979fda41fbd931cb67c90799d778a6eac0eb6a78033507a4358",
+      "restored": {
+        "file": "colorized/photo-14.webp",
+        "width": 633,
+        "height": 840,
+        "bytes": 67306,
+        "sha256": "ba682acec127857d93db2ac6386fc19ab9d39c93926d57fcdcfdd748c56ebf57"
+      }
+    },
+    {
+      "file": "photo-15.png",
+      "attachment": 15,
+      "alt": "用户补充影像二",
+      "width": 389,
+      "height": 514,
+      "bytes": 237460,
+      "sha256": "50aee0899168767042b8ba94ef7addf32b4039f2cdfb410e81f16a293ab55a88"
+    },
+    {
+      "file": "photo-16.png",
+      "attachment": 16,
+      "alt": "用户补充影像三",
+      "width": 259,
+      "height": 194,
+      "bytes": 52091,
+      "sha256": "fc2f94afadc8742f0f2e449f3e7ea194c17ef997b6e8954cdd4cac4215b9f4d0",
+      "restored": {
+        "file": "colorized/photo-16.webp",
+        "width": 1121,
+        "height": 840,
+        "bytes": 109900,
+        "sha256": "5143bf967787a77b9d3d505cb81f750196e7ae4b4715314769fe4ca18107ee2b"
+      }
+    },
+    {
+      "file": "photo-17.png",
+      "attachment": 17,
+      "alt": "用户补充影像四",
+      "width": 552,
+      "height": 362,
+      "bytes": 265956,
+      "sha256": "dbd71cd838a447d9bd5b346684478775b06ef7ee1aafa8c1c95dd0c973afc395"
+    },
+    {
+      "file": "photo-18.png",
+      "attachment": 18,
+      "alt": "用户补充影像五",
+      "width": 232,
+      "height": 294,
+      "bytes": 86348,
+      "sha256": "1c02acffac1aa69d3ac8d300b9df4a996eaefa08bffbd23100019b07dd2e508b",
+      "restored": {
+        "file": "colorized/photo-18.webp",
+        "width": 663,
+        "height": 840,
+        "bytes": 90834,
+        "sha256": "58b62a3a700bca83e93f3ab74a0b11963ba8c9a6cf1759bbf28dd761dcfaede0"
+      }
+    },
+    {
+      "file": "photo-19.png",
+      "attachment": 19,
+      "alt": "用户补充影像六",
+      "width": 449,
+      "height": 279,
+      "bytes": 164872,
+      "sha256": "0c96cfbbb9f7d3f0f70f9d08c3184b32614310d258ac2bf268eee1fd388cbb66",
+      "restored": {
+        "file": "colorized/photo-19.webp",
+        "width": 1280,
+        "height": 795,
+        "bytes": 193404,
+        "sha256": "e8bf3b2914c3667d5c50351806643fa3fc51362fc5b36adbf33e982de45bbc35"
+      }
+    },
+    {
+      "file": "photo-20.png",
+      "attachment": 20,
+      "alt": "用户补充影像七",
+      "width": 356,
+      "height": 433,
+      "bytes": 206748,
+      "sha256": "f4e304a7966b0c0c8c7035a8f7c53f23968b14b9bb6326ce44d99a6655bfecf6",
+      "restored": {
+        "file": "colorized/photo-20.webp",
+        "width": 691,
+        "height": 840,
+        "bytes": 134870,
+        "sha256": "565d9f926f4c2993e08c2c24549e53417ac7663689902b30631703a0465fb2fc"
+      }
+    },
+    {
+      "file": "photo-21.png",
+      "attachment": 21,
+      "alt": "用户补充影像八",
+      "width": 335,
+      "height": 252,
+      "bytes": 105469,
+      "sha256": "33f4acb6daf8b609bc9a339ce85f1224a83c0d1954adba474cfb4fd22f317378",
+      "restored": {
+        "file": "colorized/photo-21.webp",
+        "width": 1117,
+        "height": 840,
+        "bytes": 126318,
+        "sha256": "17d91e5943a827603b3c211b6d45f37ac856aadf04536b3e05b1b9ac3703d63e"
+      }
+    },
+    {
+      "file": "photo-22.png",
+      "attachment": 22,
+      "alt": "用户补充影像九",
+      "width": 322,
+      "height": 398,
+      "bytes": 153820,
+      "sha256": "6f2018d3a1818a8af025e9f5e06e5e9a574d5ab6298efb565635d872e6b45e51"
+    },
+    {
+      "file": "photo-23.png",
+      "attachment": 23,
+      "alt": "用户补充影像十",
+      "width": 390,
+      "height": 512,
+      "bytes": 152976,
+      "sha256": "2b5ae090f51589b770768e74f477bdf436beedaa800817af7a4d3f3eb25ed648",
+      "restored": {
+        "file": "colorized/photo-23.webp",
+        "width": 640,
+        "height": 840,
+        "bytes": 66730,
+        "sha256": "c601dd435d90035d2e28dec82aec4327cf85fe77174ee4de9a27a655adc4efb3"
+      }
+    }
   ]
 }

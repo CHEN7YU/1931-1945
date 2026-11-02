@@ -1,0 +1,540 @@
+{
+  "sourceKind": "azure-restored-user-supplied-photographs",
+  "provider": "Azure OpenAI",
+  "model": "gpt-image-2.5-flare",
+  "version": "2026-09-08",
+  "deployment": "game-art-gpt-image-2-5-flare",
+  "license": "Azure image edits of user-supplied originals; underlying redistribution rights unverified",
+  "source": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e",
+  "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
+  "permission": {
+    "basis": "user-approved-ai-photo-restoration",
+    "isCC0": false,
+    "redistributionRightsIndependentlyVerified": false,
+    "request": "看着不错 批量处理",
+    "budgetRequest": "预算50usd azure"
+  },
+  "historicalColorsVerified": false,
+  "processing": "Azure image edits, high quality, approximately one megapixel at original aspect ratio; source originals unchanged. Runtime variants resized to original aspect ratio and encoded WebP Q88. No automatic retries.",
+  "limitation": "AI-inferred colors and reconstructed details are not historical evidence. Original photo and artwork rights remain unverified; AI editing does not grant rights to the underlying sources.",
+  "budgetUsd": 50,
+  "reservedTotalUsd": 46,
+  "conservativeEstimatedTotalUsd": 0.744632,
+  "failedOrUncertainReservationUsd": 6,
+  "pricing": {
+    "textInputPerMillionUsd": 5,
+    "imageInputPerMillionUsd": 8,
+    "imageOutputPerMillionUsd": 30,
+    "verifiedAt": "2026-11-02T08:10:13.545712+00:00",
+    "source": "https://prices.azure.com/api/retail/prices"
+  },
+  "generatedAt": "2026-11-02T08:11:22.513429+00:00",
+  "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+  "excluded": {
+    "photo-04": "Original artwork, not a photograph; retain unchanged.",
+    "photo-09": "Contemporary color photograph; retain unchanged.",
+    "photo-10": "Contemporary color photograph; retain unchanged.",
+    "photo-11": "Contemporary memorial photograph; retain unchanged.",
+    "photo-15": "Azure rejected the source image at input moderation; retained original without retry or bypass.",
+    "photo-17": "Azure response was interrupted before the image was received; retained original without repeating the potentially charged request.",
+    "photo-22": "Azure rejected the image at output moderation; retained original without retry or bypass."
+  },
+  "files": [
+    {
+      "file": "photo-01.webp",
+      "originalFile": "photo-01.png",
+      "originalSha256": "aa4bfa12d9ecedbd2b21981ca3f371c0eccfb4551dc8251b82bca429368f13bf",
+      "width": 840,
+      "height": 840,
+      "bytes": 198360,
+      "sha256": "0ce05dfa71223823e73872cb22f476d914b1096124adff8a0247e1fa87b75d49",
+      "rawOutputSha256": "07e44186769c75057693e9daf858156a258894a12a1eb86164d3bcf7717f7a74",
+      "usage": {
+        "input_tokens": 923,
+        "input_tokens_details": {
+          "image_tokens": 625,
+          "text_tokens": 298
+        },
+        "output_tokens": 1756,
+        "output_tokens_details": {
+          "image_tokens": 1756,
+          "text_tokens": 0
+        },
+        "total_tokens": 2679
+      },
+      "request": {
+        "prompt": "Restore and naturally colorize the supplied archival black-and-white photograph. This is careful documentary photo restoration, NOT a new scene, illustration, cinematic recreation, or reenactment. Preserve the exact original framing, camera angle, people count, facial identities, expressions, body positions, hands, clothing shapes, equipment, machine gun geometry, watchtower, stone wall, mountain contours and every foreground/background object's position. Do not replace, add, remove, modernize or beautify anything. Remove minor scan noise and scratches, recover restrained local contrast and legibility from the actual source without inventing small markings or facial detail. Keep the authentic photographic grain and soft optical character; no plastic skin, AI face enhancement, painterly brushwork, oversharpening or HDR. Add understated plausible natural colors: weathered grey-brown masonry, dry tan earth with subdued dusty olive scrub, distant blue-grey mountain haze, a pale blue daylight sky, muted khaki-grey cotton uniforms, dark brown leather, dark blued metal and dark wood for existing equipment, natural skin tones. Match source luminance and shadows. Colors are interpretive, not verified historical uniform assignments; do not invent badges, flags, emblems or text. The result should look like the SAME photograph subtly restored in color, not a contemporary high-definition staged photograph. Output the full original square composition, without cropping, borders, captions, logos or watermark.",
+        "n": "1",
+        "size": "1024x1024",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.060064
+    },
+    {
+      "file": "photo-02.webp",
+      "originalFile": "photo-02.png",
+      "originalSha256": "f7e6a58b38f6c1e11ff3d5147abe79a4e68fc5113ea824e6986620d092891b0c",
+      "width": 1280,
+      "height": 718,
+      "bytes": 134708,
+      "sha256": "7309530766513ff750b041feaccfbfe24e75feacb2701156855eb6674919f3bc",
+      "rawOutputSha256": "7125ed94b92c657e284eca92b5ef29ce82c344f887a132e16885585411e5e84b",
+      "usage": {
+        "input_tokens": 909,
+        "input_tokens_details": {
+          "image_tokens": 576,
+          "text_tokens": 333
+        },
+        "output_tokens": 987,
+        "output_tokens_details": {
+          "image_tokens": 987,
+          "text_tokens": 0
+        },
+        "total_tokens": 1896
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1360x768",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.036882
+    },
+    {
+      "file": "photo-03.webp",
+      "originalFile": "photo-03.png",
+      "originalSha256": "de83942c6fed51f0ec243e40111a73031a97c67f99e67fc2546c6c44d42f0080",
+      "width": 1239,
+      "height": 840,
+      "bytes": 144836,
+      "sha256": "ab06225329a8aeb60f7777af180e1451158e85a57e3c5a5775d4bb94b3a79563",
+      "rawOutputSha256": "20a122ec347df9733cd72338b78b55ab798170baf0e56708ed69593cdb01f146",
+      "usage": {
+        "input_tokens": 865,
+        "input_tokens_details": {
+          "image_tokens": 532,
+          "text_tokens": 333
+        },
+        "output_tokens": 1212,
+        "output_tokens_details": {
+          "image_tokens": 1212,
+          "text_tokens": 0
+        },
+        "total_tokens": 2077
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1248x848",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.04328
+    },
+    {
+      "file": "photo-05.webp",
+      "originalFile": "photo-05.png",
+      "originalSha256": "e98b6699d0caa3bef866dca2ccdfb77e801e90dd7e0b1ca52e27d275ef350198",
+      "width": 1207,
+      "height": 840,
+      "bytes": 119290,
+      "sha256": "0cf051b24a66c6e47c0178994a7a28231af5ca1d28977f12ba30c6722e6624e0",
+      "rawOutputSha256": "63e8ac9200fcd2151aeff48e6ce11e9fdc623820f2641c78a7b19c392094b304",
+      "usage": {
+        "input_tokens": 1037,
+        "input_tokens_details": {
+          "image_tokens": 704,
+          "text_tokens": 333
+        },
+        "output_tokens": 1206,
+        "output_tokens_details": {
+          "image_tokens": 1206,
+          "text_tokens": 0
+        },
+        "total_tokens": 2243
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1232x848",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.044476
+    },
+    {
+      "file": "photo-06.webp",
+      "originalFile": "photo-06.png",
+      "originalSha256": "f29c8dbc07a999e039a9a3f559d227359a59a5718cdc91012892b46c7e7b4449",
+      "width": 572,
+      "height": 840,
+      "bytes": 101646,
+      "sha256": "6967bb75981781d8cc097f69f3b5e8eab0908e20adb0619c13ca13d7dc75a52b",
+      "rawOutputSha256": "07a443d4decda365e5abca59b279b824b5f960f2bb093e3f7f18826be7fbb8ba",
+      "usage": {
+        "input_tokens": 1037,
+        "input_tokens_details": {
+          "image_tokens": 704,
+          "text_tokens": 333
+        },
+        "output_tokens": 1212,
+        "output_tokens_details": {
+          "image_tokens": 1212,
+          "text_tokens": 0
+        },
+        "total_tokens": 2249
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "848x1248",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.044656
+    },
+    {
+      "file": "photo-07.webp",
+      "originalFile": "photo-07.png",
+      "originalSha256": "13c728415cf3403c3b9cf1ecf8552b0df198903e6536380fbc45387d58704dbb",
+      "width": 538,
+      "height": 840,
+      "bytes": 81296,
+      "sha256": "4e6c5e1b05f3b7256000a49602ea63d2c29a289d861855d324476fb28f6b44f5",
+      "rawOutputSha256": "2b6494c0f80b6b74dbb8b9923c75a52a079ad1015c579aca2187262bba184fac",
+      "usage": {
+        "input_tokens": 549,
+        "input_tokens_details": {
+          "image_tokens": 216,
+          "text_tokens": 333
+        },
+        "output_tokens": 1133,
+        "output_tokens_details": {
+          "image_tokens": 1133,
+          "text_tokens": 0
+        },
+        "total_tokens": 1682
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "816x1280",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.038382
+    },
+    {
+      "file": "photo-08.webp",
+      "originalFile": "photo-08.png",
+      "originalSha256": "d79282bc14dfb91cb448aff7aa09a0a986c4a9027d3e8259b2ebc2a7f8c42885",
+      "width": 626,
+      "height": 840,
+      "bytes": 132344,
+      "sha256": "f3182897f150286c50319de7eded5ed2d9bb14c44af74a7d9e6511812c9f5acb",
+      "rawOutputSha256": "bde6e8db8818ab2099b5dfa44b0ef44eb19d4c6c9916a6f26c1aea24a101ab92",
+      "usage": {
+        "input_tokens": 1101,
+        "input_tokens_details": {
+          "image_tokens": 768,
+          "text_tokens": 333
+        },
+        "output_tokens": 1315,
+        "output_tokens_details": {
+          "image_tokens": 1315,
+          "text_tokens": 0
+        },
+        "total_tokens": 2416
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "880x1184",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.048258
+    },
+    {
+      "file": "photo-12.webp",
+      "originalFile": "photo-12.png",
+      "originalSha256": "cc3cef97cac55356157ec02cf608554abf9f89dff4b8c2a7170449ef1bb2959c",
+      "width": 904,
+      "height": 840,
+      "bytes": 163916,
+      "sha256": "00bd2bcb2fd487b8b00577cf9e25e8e54efa28c2aae4a43025c8412d9bbbda51",
+      "rawOutputSha256": "e440a648abb85eaa8c03225d9b5ff512422cc008914d5ec69b4f8a88591a0b57",
+      "usage": {
+        "input_tokens": 1116,
+        "input_tokens_details": {
+          "image_tokens": 783,
+          "text_tokens": 333
+        },
+        "output_tokens": 1646,
+        "output_tokens_details": {
+          "image_tokens": 1646,
+          "text_tokens": 0
+        },
+        "total_tokens": 2762
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1056x992",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.058308
+    },
+    {
+      "file": "photo-13.webp",
+      "originalFile": "photo-13.png",
+      "originalSha256": "7d954429a380d93f1d332f5250f8652a44af66111985a80a86e43e679037b993",
+      "width": 1117,
+      "height": 840,
+      "bytes": 152676,
+      "sha256": "636594eb5a52307577438d16c437cb6caed82efa207feab2e2ff3e5bb9ad4aff",
+      "rawOutputSha256": "15e216e4b7039839462dfb804d0c577cf78056920c4ab955331908b6d37f4f84",
+      "usage": {
+        "input_tokens": 808,
+        "input_tokens_details": {
+          "image_tokens": 475,
+          "text_tokens": 333
+        },
+        "output_tokens": 1315,
+        "output_tokens_details": {
+          "image_tokens": 1315,
+          "text_tokens": 0
+        },
+        "total_tokens": 2123
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1184x880",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.045914
+    },
+    {
+      "file": "photo-14.webp",
+      "originalFile": "photo-14.png",
+      "originalSha256": "b126202cf2a90979fda41fbd931cb67c90799d778a6eac0eb6a78033507a4358",
+      "width": 633,
+      "height": 840,
+      "bytes": 67306,
+      "sha256": "ba682acec127857d93db2ac6386fc19ab9d39c93926d57fcdcfdd748c56ebf57",
+      "rawOutputSha256": "1d51046892154be8344d046130a57f74341464d89b4255a785d34e5e9ec9b85a",
+      "usage": {
+        "input_tokens": 1133,
+        "input_tokens_details": {
+          "image_tokens": 800,
+          "text_tokens": 333
+        },
+        "output_tokens": 1323,
+        "output_tokens_details": {
+          "image_tokens": 1323,
+          "text_tokens": 0
+        },
+        "total_tokens": 2456
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "896x1184",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.048754
+    },
+    {
+      "file": "photo-16.webp",
+      "originalFile": "photo-16.png",
+      "originalSha256": "fc2f94afadc8742f0f2e449f3e7ea194c17ef997b6e8954cdd4cac4215b9f4d0",
+      "width": 1121,
+      "height": 840,
+      "bytes": 109900,
+      "sha256": "5143bf967787a77b9d3d505cb81f750196e7ae4b4715314769fe4ca18107ee2b",
+      "rawOutputSha256": "874a387f8fa0b35defbb174067a568c5efb7d7f6fa9f7d2fd43dfbb4bb0a6bb4",
+      "usage": {
+        "input_tokens": 554,
+        "input_tokens_details": {
+          "image_tokens": 221,
+          "text_tokens": 333
+        },
+        "output_tokens": 1315,
+        "output_tokens_details": {
+          "image_tokens": 1315,
+          "text_tokens": 0
+        },
+        "total_tokens": 1869
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1184x880",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.043882
+    },
+    {
+      "file": "photo-18.webp",
+      "originalFile": "photo-18.png",
+      "originalSha256": "1c02acffac1aa69d3ac8d300b9df4a996eaefa08bffbd23100019b07dd2e508b",
+      "width": 663,
+      "height": 840,
+      "bytes": 90834,
+      "sha256": "58b62a3a700bca83e93f3ab74a0b11963ba8c9a6cf1759bbf28dd761dcfaede0",
+      "rawOutputSha256": "96ef84076cb437831b07afa37185f6b552c1238b566d0500e4a606afddbbea63",
+      "usage": {
+        "input_tokens": 618,
+        "input_tokens_details": {
+          "image_tokens": 285,
+          "text_tokens": 333
+        },
+        "output_tokens": 1392,
+        "output_tokens_details": {
+          "image_tokens": 1392,
+          "text_tokens": 0
+        },
+        "total_tokens": 2010
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "912x1152",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.046704
+    },
+    {
+      "file": "photo-19.webp",
+      "originalFile": "photo-19.png",
+      "originalSha256": "0c96cfbbb9f7d3f0f70f9d08c3184b32614310d258ac2bf268eee1fd388cbb66",
+      "width": 1280,
+      "height": 795,
+      "bytes": 193404,
+      "sha256": "e8bf3b2914c3667d5c50351806643fa3fc51362fc5b36adbf33e982de45bbc35",
+      "rawOutputSha256": "e2aa25e41054bf73a4906db37df7312847d598688995396d1cabf202b726981b",
+      "usage": {
+        "input_tokens": 855,
+        "input_tokens_details": {
+          "image_tokens": 522,
+          "text_tokens": 333
+        },
+        "output_tokens": 1094,
+        "output_tokens_details": {
+          "image_tokens": 1094,
+          "text_tokens": 0
+        },
+        "total_tokens": 1949
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1296x800",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.03966
+    },
+    {
+      "file": "photo-20.webp",
+      "originalFile": "photo-20.png",
+      "originalSha256": "f4e304a7966b0c0c8c7035a8f7c53f23968b14b9bb6326ce44d99a6655bfecf6",
+      "width": 691,
+      "height": 840,
+      "bytes": 134870,
+      "sha256": "565d9f926f4c2993e08c2c24549e53417ac7663689902b30631703a0465fb2fc",
+      "rawOutputSha256": "93eb10d8e6e985d925e6566c5e819caa34716cc4b10b05584bccf315581510a7",
+      "usage": {
+        "input_tokens": 977,
+        "input_tokens_details": {
+          "image_tokens": 644,
+          "text_tokens": 333
+        },
+        "output_tokens": 1430,
+        "output_tokens_details": {
+          "image_tokens": 1430,
+          "text_tokens": 0
+        },
+        "total_tokens": 2407
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "928x1136",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.050716
+    },
+    {
+      "file": "photo-21.webp",
+      "originalFile": "photo-21.png",
+      "originalSha256": "33f4acb6daf8b609bc9a339ce85f1224a83c0d1954adba474cfb4fd22f317378",
+      "width": 1117,
+      "height": 840,
+      "bytes": 126318,
+      "sha256": "17d91e5943a827603b3c211b6d45f37ac856aadf04536b3e05b1b9ac3703d63e",
+      "rawOutputSha256": "95090fa1ac2f0dcc666ac70b3b3d3cd5f9df2556f403b52889c769a9302af001",
+      "usage": {
+        "input_tokens": 669,
+        "input_tokens_details": {
+          "image_tokens": 336,
+          "text_tokens": 333
+        },
+        "output_tokens": 1323,
+        "output_tokens_details": {
+          "image_tokens": 1323,
+          "text_tokens": 0
+        },
+        "total_tokens": 1992
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "1184x896",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.045042
+    },
+    {
+      "file": "photo-23.webp",
+      "originalFile": "photo-23.png",
+      "originalSha256": "2b5ae090f51589b770768e74f477bdf436beedaa800817af7a4d3f3eb25ed648",
+      "width": 640,
+      "height": 840,
+      "bytes": 66730,
+      "sha256": "c601dd435d90035d2e28dec82aec4327cf85fe77174ee4de9a27a655adc4efb3",
+      "rawOutputSha256": "4cb9bf85a9ef46f5a659c4f966a54d19250c8ea8c60416baa492c505f3950e49",
+      "usage": {
+        "input_tokens": 1133,
+        "input_tokens_details": {
+          "image_tokens": 800,
+          "text_tokens": 333
+        },
+        "output_tokens": 1353,
+        "output_tokens_details": {
+          "image_tokens": 1353,
+          "text_tokens": 0
+        },
+        "total_tokens": 2486
+      },
+      "request": {
+        "prompt": "Carefully restore and naturally colorize this supplied archival photograph. Use the same restrained documentary restoration treatment as a naturally colorized vintage print, NOT an illustration, reenactment or new scene. Preserve the exact original composition, camera viewpoint, identities, number of people, expressions, poses, hands, body proportions, clothing, visible equipment and weapons, architecture, landscape and all objects. Do not add, remove, redesign, beautify or modernize anything. Preserve ALL existing original Chinese writing, signs, banners, captions, printed annotations, image credits and watermarks in their original places. Do not translate, erase, rewrite or invent text, badges, insignia, flags or emblems. Reduce scan noise and minor scratches, recover gentle local contrast and legibility only from source evidence. Do not fabricate facial features or mechanical detail. Keep real photographic grain, soft vintage optics and original lighting. No plastic skin, aggressive face enhancement, sharpening halos, HDR or cinematic grading. Use muted natural color: realistic skin, subdued historically plausible grey-khaki or olive cloth without inventing unit-specific colors, brown worn leather and wood, dark blued equipment metal, grey-tan masonry and soil, natural subdued vegetation, pale sky and neutral smoke. Preserve any existing original tint as evidence. Colors are an interpretive treatment, not a claim of historically verified original colors. Preserve the source's events, including any visible damage, without adding violence, wounds, blood or dramatic elements. Output the entire original composition in its original aspect ratio, with no crop, extra border, new text or watermark.",
+        "n": "1",
+        "size": "896x1168",
+        "quality": "high",
+        "output_format": "png"
+      },
+      "conservativeEstimatedUsd": 0.049654
+    }
+  ]
+}

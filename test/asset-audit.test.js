@@ -36,8 +36,33 @@ test('all public resources have exact size/hash evidence and permission is not r
   assert.ok(report.files.some(file => file.file === 'dependencies/three-mesh-bvh/LICENSE.txt' && file.use === 'runtime'));
   assert.ok(report.permissions.some(permission => permission.directory === 'dependencies/three-mesh-bvh' && permission.basis === 'MIT'));
   assert.equal(report.files.filter(file => /^loading\/photo-\d+\.png$/.test(file.file)).length, 23);
+  assert.equal(report.files.filter(file => /^loading\/colorized\/photo-\d+\.webp$/.test(file.file)).length, 16);
+  assert.ok(report.permissions.some(permission => permission.directory === 'loading/colorized' &&
+    /not historical evidence/.test(permission.limitation)));
   assert.ok(report.permissions.some(permission => permission.directory === 'loading' &&
     /rights.*unverified|licenses are unverified/.test(permission.limitation)));
+});
+
+test('AI photo edits retain their original source, unverified colors and underlying rights', async t => {
+  const { root } = await fixture(t);
+  const path = join(root, 'loading', 'colorized', 'source.json');
+  const original = JSON.parse(await readFile(path, 'utf8'));
+  for (const change of [
+    value => { value.permission.isCC0 = true; },
+    value => { value.permission.redistributionRightsIndependentlyVerified = true; },
+    value => { value.historicalColorsVerified = true; },
+    value => { value.provider = 'Unverified provider'; },
+    value => { value.files[0].originalSha256 = '0'.repeat(64); },
+    value => { value.files[0].originalFile = 'photo-09.png'; },
+    value => { value.files.push(value.files[0]); },
+    value => { value.conservativeEstimatedTotalUsd = 51; },
+    value => { value.reservedTotalUsd = 51; },
+  ]) {
+    const changed = structuredClone(original);
+    change(changed);
+    await writeFile(path, JSON.stringify(changed));
+    await assert.rejects(auditAssets({ root }), /photo restoration provenance/);
+  }
 });
 
 test('collision dependency license cannot be relabelled or silently corrupted', async t => {
