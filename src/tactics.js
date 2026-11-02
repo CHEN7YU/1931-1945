@@ -144,7 +144,14 @@ export function objectiveDestination(state, position, objective) {
   const index = state.squad % 10 * 11 + state.slot;
   const angle = index * Math.PI * (3 - Math.sqrt(5));
   const radius = (objective.radius - 1.5) * Math.sqrt((index + .5) / 110);
-  return { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
+  const goal = { x: objective.x + Math.cos(angle) * radius, z: objective.z + Math.sin(angle) * radius };
+  if (objective.captureArea) {
+    const area = objective.captureArea;
+    goal.x = area.minX + .8 + ((index + .5) * .61803398875 % 1) * (area.maxX - area.minX - 1.6);
+    goal.z = area.minZ + .8 + ((index + .5) * .41421356237 % 1) * (area.maxZ - area.minZ - 1.6);
+    goal.y = 0;
+  }
+  return goal;
 }
 
 export function objectiveAdvanceRequired(actor, objective, threatDistance, closeRange = 35) {
@@ -175,8 +182,12 @@ export function advancePosition(state, position, objective) {
 export function assignAssaultObjectives(formations, objectives) {
   if (!objectives.length) throw new RangeError('Assault assignments require objectives');
   const previous = new Map(formations.map(formation => [formation, formation.objectiveId]));
+  for (const formation of formations.filter(unit => unit.fixedObjectiveId)) {
+    if (!objectives.some(point => point.id === formation.fixedObjectiveId)) throw new Error('Fixed objective assignment is unavailable');
+    formation.objectiveId = formation.fixedObjectiveId;
+  }
   for (const team of ['friendly', 'enemy']) {
-    const units = formations.filter(item => item.team === team && !item.player).map(formation => {
+    const units = formations.filter(item => item.team === team && !item.player && !item.fixedObjectiveId).map(formation => {
       const alive = formation.members.filter(actor => actor.health > 0 && !actor.vehicleId);
       return { formation, alive, center: alive.reduce((sum, actor) => ({
         x: sum.x + actor.position.x / alive.length, z: sum.z + actor.position.z / alive.length,
@@ -187,6 +198,8 @@ export function assignAssaultObjectives(formations, objectives) {
     const quotas = new Map(objectives.map(point => [point.id, 0]));
     let remaining = units.length;
     for (const point of objectives.filter(secured)) {
+      if (formations.some(unit => unit.team === team && unit.fixedObjectiveId === point.id &&
+        unit.members.some(actor => actor.health > 0))) continue;
       if (!remaining) break;
       quotas.set(point.id, 1);
       remaining--;

@@ -53,6 +53,12 @@
   font-size: 11px;
 }
 #loading #loading-message { margin: 0; color: #d2ccba; font-size: 12px; letter-spacing: 1px; }
+.loading-progress-row { display: flex; align-items: center; gap: 16px; width: min(640px, 92vw); }
+#loading-progress { flex: 1; min-width: 0; height: 14px; appearance: none; border: 1px solid #cfb27880; border-radius: 7px; overflow: hidden; background: #0a110d; accent-color: #cfb278; }
+#loading-progress::-webkit-progress-bar { background: #0a110d; }
+#loading-progress::-webkit-progress-value { background: #cfb278; }
+#loading-progress::-moz-progress-bar { background: #cfb278; }
+#loading-percentage { min-width: 4ch; color: var(--gold); font: bold 20px/1.2 monospace; text-align: right; }
 [data-photo-wall-status] { min-height: 1em; color: #efc484; font-size: 11px; }
 #menu {
   display: grid;

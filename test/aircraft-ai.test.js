@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceAircraftAI, AIRCRAFT_TURN } from '../src/aircraft-ai.js';
+import { advanceAircraftAI, AIRCRAFT_TURN, AIRCRAFT_AVOIDANCE } from '../src/aircraft-ai.js';
 import { historicalVehicleModel, JAPANESE_AIRCRAFT_PROFILE } from '../src/vehicle-model.js';
 import { Scene, Vector3 } from 'three';
 import { createVehicleRenderer } from '../src/vehicle-renderer.js';
+import { headingError } from '../src/ai-turning.js';
 
 const plane = () => ({ team: 'enemy', health: 180, position: { x: 0, y: 35, z: -100 },
   heading: Math.PI, pitch: -.2, roll: 0, weapon: { type: 'plane', ammo: 60, nextShot: 0, reloadUntil: 0 },
@@ -40,6 +41,7 @@ test('ground strafing fires only when the aircraft points at the real target ele
     const shot = advanceAircraftAI(aircraft, 1 / 60, frame / 60, {
       targets: [target], canFire: true, visible: () => true,
     });
+
     if (!shot) continue;
     shots++;
     const yaw = Math.atan2(aircraft.position.x - target.position.x, aircraft.position.z - target.position.z);
@@ -49,6 +51,65 @@ test('ground strafing fires only when the aircraft points at the real target ele
     assert.ok(Math.abs(pitch - aircraft.pitch) <= .08);
   }
   assert.ok(shots > 0, 'a valid ground attack must shoot, not orbit indefinitely');
+});
+
+test('an approaching aircraft breaks off its attack before buildings instead of diving into the roof', () => {
+  for (const hz of [30, 60, 144]) {
+    const aircraft = plane(), obstacle = { minX: -8, maxX: 8, minZ: -62, maxZ: -50, height: 30 };
+    let avoided = false;
+    for (let frame = 1; frame <= hz * 6; frame++) {
+      const pitch = aircraft.pitch, heading = aircraft.heading;
+      const shot = advanceAircraftAI(aircraft, 1 / hz, frame / hz, {
+        targets: [target], canFire: true, visible: () => true, obstacles: [obstacle], groundHeight: () => 0,
+      });
+      if (aircraft.aiFlight.avoidance) {
+        avoided = true; assert.equal(shot, null, 'safety takes priority over machine-gun aim');
+      }
+      const p = aircraft.position;
+      const intersects = p.x >= obstacle.minX - AIRCRAFT_AVOIDANCE.halfSpan &&
+        p.x <= obstacle.maxX + AIRCRAFT_AVOIDANCE.halfSpan &&
+        p.z >= obstacle.minZ - AIRCRAFT_AVOIDANCE.halfSpan && p.z <= obstacle.maxZ + AIRCRAFT_AVOIDANCE.halfSpan;
+      if (intersects) assert.ok(p.y > obstacle.height + 1, 'the entire wing corridor must stay above the roof');
+      assert.ok(Math.abs(aircraft.pitch - pitch) <= .4 / hz + 1e-10);
+      assert.ok(Math.abs(headingError(heading, aircraft.heading)) <= AIRCRAFT_TURN.rate / hz + 1e-10);
+    }
+    assert.ok(avoided); assert.equal(aircraft.health, 180);
+  }
+});
+
+test('avoidance sees an obstacle under the wing even when the aircraft centre would miss it', () => {
+  const aircraft = plane(), obstacle = { minX: 4, maxX: 9, minZ: -65, maxZ: -50, height: 34 };
+  advanceAircraftAI(aircraft, 1 / 60, 1 / 60, {
+    targets: [target], canFire: true, visible: () => true, obstacles: [obstacle], groundHeight: () => 0,
+  });
+  assert.equal(aircraft.aiFlight.avoidance.reason, 'building');
+});
+
+test('terrain ahead is considered and autonomous recovery does not require actual damage', () => {
+  const aircraft = plane(); aircraft.position.y = 45; aircraft.pitch = -.5;
+  const groundHeight = (x, z) => z > -70 && z < -35 ? 30 : 0;
+  let avoided = false;
+  for (let frame = 1; frame <= 60 * 6; frame++) {
+    const shot = advanceAircraftAI(aircraft, 1 / 60, frame / 60, {
+      targets: [target], canFire: true, visible: () => true, obstacles: [], groundHeight,
+    });
+    if (aircraft.aiFlight.avoidance) { avoided = true; assert.equal(shot, null); }
+    assert.ok(aircraft.position.y > groundHeight(aircraft.position.x, aircraft.position.z) + 1);
+  }
+  assert.ok(avoided); assert.equal(aircraft.health, 180);
+});
+
+test('avoidance pause freezes all flight state and invalid geometry/terrain fails explicitly', () => {
+  const aircraft = plane(), before = structuredClone(aircraft);
+  advanceAircraftAI(aircraft, 0, 0, { targets: [target], canFire: true, visible: () => true,
+    obstacles: [{ minX: -5, maxX: 5, minZ: -70, maxZ: -50, height: 35 }] });
+  assert.deepEqual(aircraft, before);
+  for (const facts of [
+    { obstacles: [{ minX: 5, maxX: -5, minZ: 0, maxZ: 1, height: 20 }] },
+    { groundHeight: () => NaN },
+  ]) assert.throws(() => advanceAircraftAI(plane(), 1 / 60, 1, {
+    targets: [target], canFire: true, visible: () => true, ...facts,
+  }), RangeError);
 });
 
 test('aircraft models keep separate faction identity and friendly detail metadata', () => {

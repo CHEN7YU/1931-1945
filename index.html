@@ -12,8 +12,9 @@
     <div class="grain" aria-hidden="true"></div>
     <div id="loading" class="loading-screen" aria-label="加载1931-1945 山河">
       <div class="loading-brand"><span class="loading-years">1931-1945</span><strong>山河</strong></div>
-      <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card"><img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" fetchpriority="high" decoding="async" /></figure></div></div></div>
+      <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card">      <img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" fetchpriority="high" decoding="async" /></figure></div></div></div>
       <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
+      <div class="loading-progress-row"><progress id="loading-progress" max="100" value="0" aria-label="游戏初始化进度" aria-valuetext="0%">0%</progress><span id="loading-percentage">0%</span></div>
       <p id="loading-message" role="status">正在构建战场…</p>
       <span data-photo-wall-status role="status"></span>
     </div>
@@ -27,7 +28,7 @@
         <h1 id="game-title">山河</h1>
         <p class="game-subtitle" aria-label="副标题">1931-1945</p>
         <div id="menu-photo-wall" aria-label="战场与纪念影像">
-          <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card"><img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" decoding="async" /></figure></div></div></div>
+          <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card">          <img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" decoding="async" /></figure></div></div></div>
           <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
           <span data-photo-wall-status role="status"></span>
         </div>
@@ -83,6 +84,7 @@
       <div class="hud-top"><div id="objectives" aria-label="三点控制情况"></div><div class="battle-time"><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
       <div class="hud-notices"><small id="hud-notice" role="status" hidden></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div>
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
+      <div id="encirclement-warning" role="alert" hidden></div>
       <div id="kill-feed"></div>
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
       <div id="flight-pointer" hidden aria-label="鼠标期望飞行方向"></div>
@@ -104,10 +106,6 @@
           <g fill="none" stroke="#121710" stroke-width="1.5"><path d="M120 500H470M530 500H880M500 530V900M480 500H520M500 480V520"/>
             <path d="M250 492V508M300 490V510M350 492V508M400 490V510M600 490V510M650 492V508M700 490V510M750 492V508M490 600H510M492 650H508M490 700H510"/>
           </g></svg></div>
-      </div>
-      <div id="tank-reload" role="progressbar" aria-label="主炮自动装填" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
-        <svg viewBox="0 0 40 40" aria-hidden="true"><circle class="reload-track" cx="20" cy="20" r="16"/><circle id="tank-reload-progress" cx="20" cy="20" r="16" pathLength="100"/></svg>
-        <span>装填 <b id="tank-reload-time"></b></span>
       </div>
       <div id="sniper-scope" hidden aria-label="狙击瞄准镜">
         <div class="scope-lens"><div class="scope-reticle" aria-hidden="true"></div></div>
@@ -132,7 +130,12 @@
       </div>
       <div class="hud-bottom">
         <div class="squad-status"><div class="squad-heading"><span class="hud-label" id="unit-title">步兵小队</span><span id="section-status" hidden></span><kbd>Y</kbd></div><div id="members"></div></div>
-        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div><div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div>
+        <div class="weapon-status"><div id="movement-status"><span id="pace-label">站定</span><div id="stamina-meter" role="progressbar" aria-label="冲刺体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div><span id="stamina-label">体力 100%</span></div>
+          <div id="tank-reload" role="progressbar" aria-label="主炮自动装填" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+            <svg viewBox="0 0 40 40" aria-hidden="true"><circle class="reload-track" cx="20" cy="20" r="16"/><circle id="tank-reload-progress" cx="20" cy="20" r="16" pathLength="100"/></svg>
+            <span>装填 <b id="tank-reload-time"></b></span>
+          </div>
+          <div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div>
           <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="迫击炮 · 按2选择，站定后左键架设"><b>2</b>炮</span><span data-equipment-slot="3" title="大刀 · 左键挥砍"><b>3</b>刀</span><span data-equipment-slot="5" title="5 手榴弹"><b>5</b><span class="equipment-label">雷</span><span class="equipment-count">1</span></span><span data-equipment-slot="6" title="6 定时炸药包"><b>6</b><span class="equipment-label">包</span><span class="equipment-count">1</span></span></div>
           <div id="grenade-status" hidden></div><div id="tank-machine-gun" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
         <div id="tank-orientation" hidden aria-label="坦克车体与炮塔朝向，图上方为当前视线">
@@ -153,6 +156,7 @@
         <h2 id="overlay-title">重整队伍，再出发。</h2>
         <p id="overlay-description">当前小队仍在作战；整队阵亡后才能选择其他小队。</p>
         <div id="battle-summary"></div>
+        <div class="deployment-workspace">
         <div id="redeploy-choices" class="redeploy-choices" aria-label="选择新战斗小队"></div>
         <div id="deployment-options" hidden>
           <div class="deployment-context"><span class="eyebrow">战场仍在进行 · 地图部署</span><strong id="deployment-objective"></strong><p id="deployment-selection">先选择小队，再点击地图上的己方出生标记。</p></div>
@@ -162,8 +166,9 @@
           </div>
           <p id="deployment-map-hint">选中小队后默认推荐最近的可用出生点，可点击地图改选；灰色标记暂不可用。装甲仅初始基地，航空仅空中入口。</p>
           <p id="deployment-error" role="status"></p>
-          <button id="confirm-deploy" class="primary-button" disabled>选择小队后出击 <span>↗</span></button>
         </div>
+        </div>
+        <button id="confirm-deploy" class="primary-button" hidden disabled>选择小队后出击 <span>↗</span></button>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
         <details id="pause-settings" class="pause-settings">
           <summary>设置 · 操作、声音与画面</summary>
@@ -201,9 +206,11 @@
             <small>不改变战局 · 自动记忆此浏览器设置 · 自动降级与后期尚未接入</small>
           </fieldset>
         </details>
+        <div class="deployment-footer">
         <button id="back-menu" class="text-button">返回作战大厅</button>
         <button type="button" class="text-button feedback-entry" data-feedback-open>反馈问题／提出建议 ↗</button>
-        <div class="dialog-hint"><strong>操作说明</strong><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。中立点占领12秒，敌占点反夺24秒；占点增援并永久解锁敌后重生点，三点合围后全歼日军获胜。时钟显示已作战时间，无积分或全控计时胜利。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div>
+        </div>
+        <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；我方三点合围后全歼日军获胜。日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div></details>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>

@@ -1,6 +1,7 @@
 import './style.css';
 import './loading-screen.css';
 import { createPhotoWall } from './loading-screen.js';
+import { setLoadingProgress } from './loading-progress.js';
 import { SELECTABLE_CAMPAIGNS, DEFAULT_CAMPAIGN, campaignById } from './campaigns.js';
 import { createFeedback } from './feedback.js';
 import { deploymentCards, deploymentMarker, DEPLOYMENT_SQUADS } from './deployment-view.js';
@@ -49,6 +50,8 @@ async function openInitialDeployment() {
   $('overlay-description').textContent = '选择小队卡片，点击地图上的初始出生标记，再确认出击。';
   for (const id of ['resume', 'battle-summary', 'pause-settings', 'control-settings', 'motion-settings', 'audio-settings', 'quality-settings']) $(id).hidden = true;
   $('redeploy-choices').hidden = $('deployment-options').hidden = false;
+  $('confirm-deploy').hidden = false;
+  $('deployment-help').open = false;
   $('deployment-objective').textContent = '首次出击 · 初始阵地';
   $('back-menu').textContent = '返回选择战役';
   initialSquad = initialSpawn = null; tacticalMapReady = false; refreshInitialDeployment();
@@ -147,7 +150,7 @@ $('confirm-deploy').addEventListener('click', async event => {
   if (pending) return;
   if (!initialSquad || !initialSpawn || !tacticalMapReady) return;
   pending = true; deploy.disabled = true; menu.hidden = true; loading.hidden = false;
-  loading.querySelector('p').textContent = '正在加载已选战场、双方部队与装备…';
+  setLoadingProgress(0, '正在加载游戏程序与已选战场…');
   const url = new URL(location.href); url.searchParams.set('campaign', selector.value);
   history.replaceState(null, '', url);
   try {

@@ -45,10 +45,64 @@ try {
       }
     }
     window.renderBayonetPose = extension => {
+      actor.weaponBlocked = false;
       Object.assign(actor.nativeMotion, { speed: 0, weight: 0, bodyLean: 0, distance: 0, gaitCharge: 0 });
       Object.assign(actor.bayonet, { mode: 'thrust', extension });
       view.update(actor, 0, null); renderer.render(scene, camera);
       return view.snapshot;
+    };
+    window.renderWallCarry = () => {
+      actor.weaponBlocked = true; actor.heading = 0;
+      Object.assign(actor.nativeMotion, { speed: 0, weight: 0, bodyLean: 0, distance: 0, gaitCharge: 0 });
+      Object.assign(actor.bayonet, { mode: 'idle', extension: 0 });
+      view.update(actor, 0, null);
+      let penetrating = 0;
+      view.root.traverse(mesh => {
+        if (!mesh.isMesh) return;
+        let weapon = false;
+        for (let node = mesh; node; node = node.parent) if (node.userData.personalWeapon) weapon = true;
+        if (!weapon) return;
+        const points = mesh.geometry.attributes.position;
+        for (let index = 0; index < points.count; index++) {
+          const point = new T.Vector3().fromBufferAttribute(points, index).applyMatrix4(mesh.matrixWorld);
+          if (Math.abs(point.x) <= 1 && point.y >= 0 && point.y <= 3.2 &&
+            point.z >= -.9 && point.z <= -.6) penetrating++;
+        }
+      });
+      const wall = new T.Mesh(new T.BoxGeometry(2, 3.2, .3), new T.MeshStandardMaterial({ color: 0x777866 }));
+      wall.position.set(0, 1.6, -.75); scene.add(wall); renderer.render(scene, camera);
+      return { issue: view.snapshot.issue, penetrating, pose: view.snapshot.riflePose };
+    };
+    window.checkCorpseWall = async () => {
+      const { createIjaForceRenderer } = await import('/src/ija-character.js');
+      const { createCasualtyState, placeCasualty } = await import('/src/casualties.js');
+      const { circleBlocked } = await import('/src/core.js');
+      const factory = createIjaForceRenderer(new T.Scene(), camera, await loadIjaCharacter());
+      const wall = { minX: -2, maxX: 2, minZ: -.9, maxZ: -.6, height: 3.2 };
+      const results = [];
+      actor.weaponBlocked = false; actor.health = 0;
+      for (const variant of [0, 1, 2, 3]) {
+        const original = createCasualtyState(actor, 0, sampleNraMotion(actor), { variant, retainGun: true });
+        actor.casualty = placeCasualty(actor, original, (v, retained) => factory.casualtyBounds(v, retained),
+          (point, radius, height) => circleBlocked(point.x, point.z, radius, [wall], point.y, height));
+        view.update(actor, 2, null);
+        let penetrating = 0;
+        view.root.traverse(mesh => {
+          if (!mesh.isMesh) return;
+          let weapon = false;
+          for (let node = mesh; node; node = node.parent) if (node.userData.personalWeapon) weapon = true;
+          if (!weapon) return;
+          const points = mesh.geometry.attributes.position;
+          for (let index = 0; index < points.count; index++) {
+            const point = new T.Vector3().fromBufferAttribute(points, index).applyMatrix4(mesh.matrixWorld);
+            if (Math.abs(point.x) <= 2 && point.y >= 0 && point.y <= 3.2 &&
+              point.z >= -.9 && point.z <= -.6) penetrating++;
+          }
+        });
+        results.push({ variant, chosen: actor.casualty.variant, penetrating });
+      }
+      actor.health = 100; delete actor.casualty;
+      return results;
     };
     return results;
   });
@@ -62,6 +116,11 @@ try {
   const gripSpacing = pose => Math.hypot(...pose.rifle.leftPalmTarget.map((value, axis) =>
     value - pose.rifle.rightPalmTarget[axis]));
   const spacing = gripSpacing(stationary[0]);
+  const close = await page.evaluate(() => window.renderWallCarry());
+  assert.equal(close.issue, null, JSON.stringify(close));
+  assert.equal(close.penetrating, 0, 'the actual skinned weapon geometry must stay on the soldier side of the wall');
+  const corpses = await page.evaluate(() => window.checkCorpseWall());
+  assert.ok(corpses.every(corpse => corpse.penetrating === 0), JSON.stringify(corpses));
   for (const pose of stationary) assert.ok(Math.abs(gripSpacing(pose) - spacing) < 1e-8,
     'both hands stay at fixed grip locations instead of sliding up the rifle during the thrust');
   if (process.env.ARTIFACT_DIR) {

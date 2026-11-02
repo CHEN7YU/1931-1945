@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeObjectives, advanceCapture, CAPTURE_SECONDS, TYPES, circleBlocked, createNavigator } from '../src/core.js';
-import { armySummary, battleSpawn, reinforcementDue, formationPositions } from '../src/battle-roster.js';
+import { objectiveContainsPosition, advanceCapture, CAPTURE_SECONDS, TYPES, circleBlocked, createNavigator } from '../src/core.js';
+import { armySummary, battleSpawn, reinforcementDue, formationPositions, validateRoster } from '../src/battle-roster.js';
 import { supportsSquad, spawnBlockReason } from '../src/spawns.js';
-import { encirclementRoster, encirclementSpawns, createEncirclement, captureEncirclement, advanceEncirclement, REAR_SPAWNS } from '../src/encirclement.js';
+import { encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
+  createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport,
+  scheduleEncirclementRespawn, ENCIRCLEMENT_RULES, REAR_SPAWNS } from '../src/encirclement.js';
 import { PREVIEW_OBJECTIVES, makeTownPreviewLayout } from '../src/town-preview-layout.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
 import { CHI_HA_SEATS, japaneseArmorSpawns } from '../src/chi-ha.js';
+import { assignAssaultObjectives, objectiveDestination } from '../src/tactics.js';
 
 const active = (roster, team) => roster.filter(unit => unit.team === team && unit.active);
 const setup = () => {
@@ -14,31 +17,148 @@ const setup = () => {
   for (const unit of roster.filter(unit => unit.active)) {
     unit.members = Array.from({ length: unit.memberCount ?? (unit.type === 'tank' ? CHI_HA_SEATS.length : TYPES[unit.type].members) }, () => ({ health: 100 }));
   }
-  return { roster, match: createEncirclement(), points: makeObjectives(PREVIEW_OBJECTIVES) };
+  return { roster, match: createEncirclement(), points: encirclementObjectives() };
 };
 
-test('campaign starts with exactly four friendly squads including the selected player and ten enemies', () => {
-  for (const type of Object.keys(TYPES)) {
-    const roster = encirclementRoster(type);
-    assert.equal(active(roster, 'friendly').length, 4);
-    assert.equal(active(roster, 'enemy').length, 10);
-    assert.equal(roster.find(unit => unit.player).type, type);
-    assert.equal(roster.filter(unit => !unit.active).length, 6);
-    assert.ok(roster.filter(unit => !unit.active).every(unit => !unit.members.length && !reinforcementDue(unit, 999)));
-    assert.equal(armySummary(roster, 'friendly').rosterUnits, 4);
+test('A begins as an enemy supply point and only indoor positions can contribute to capture', () => {
+  const point = encirclementObjectives()[0], area = point.captureArea;
+  assert.equal(point.owner, 'enemy'); assert.equal(point.control, -1);
+  for (const position of [
+    { x: area.minX - .1, y: 0, z: 12 }, { x: -36, y: 0, z: area.minZ - .1 },
+    { x: -36, y: 12.8, z: 12 }, { x: -36, y: -1, z: 12 },
+  ]) {
+    assert.equal(objectiveContainsPosition(point, position), false);
+    advanceCapture(point, 30, objectiveContainsPosition(point, position), false);
+    assert.equal(point.control, -1, 'being outside or on the roof cannot start capture');
+  }
+  for (const height of [0, 3.2, 6.4, 9.6]) assert.equal(objectiveContainsPosition(point, { x: -36, y: height, z: 12 }), true);
+  advanceCapture(point, 24, true, true);
+  assert.equal(point.control, -1, 'living defenders contest the indoor attack');
+  advanceCapture(point, 24, true, false);
+  assert.equal(point.owner, 'friendly');
+});
+
+test('two complete existing squads fit inside the granary and do not increase total Japanese strength', () => {
+  const town = makeTownPreviewLayout(), roster = encirclementRoster('infantry');
+  const guards = roster.filter(unit => unit.supplyGarrison), occupied = [];
+  assert.equal(guards.length, 2);
+  assert.equal(active(roster, 'enemy').length, 8);
+  for (const guard of guards) {
+    assert.equal(guard.type, 'infantry'); assert.equal(guard.memberCount, 11);
+    const positions = supplyGarrisonPositions(guard.memberCount, town.obstacles, occupied);
+    assert.ok(positions.every(position => objectiveContainsPosition(PREVIEW_OBJECTIVES[0], { ...position, y: 0 }) &&
+      !circleBlocked(position.x, position.z, .48, town.obstacles)));
+    assert.ok(positions.every(position => occupied.every(other => Math.hypot(position.x - other.x, position.z - other.z) >= 1.25)));
+    occupied.push(...positions);
+  }
+  assert.equal(occupied.length, 22);
+});
+
+test('the dedicated supply squads keep A rather than joining attacks on B or C', () => {
+  const roster = encirclementRoster('infantry'), points = encirclementObjectives();
+  for (const unit of roster.filter(unit => unit.active)) unit.members = [{
+    health: 100, vehicleId: ['tank', 'plane'].includes(unit.type) ? unit.id : null,
+    position: { x: unit.supplyGarrison ? -36 : 0, z: unit.supplyGarrison ? 12 : -82 },
+  }];
+  assignAssaultObjectives(roster, points);
+  assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry' && unit.objectiveId === 'A').length, 2);
+  points[0].owner = 'friendly'; points[0].control = 1;
+  assignAssaultObjectives(roster, points);
+  assert.ok(roster.filter(unit => unit.supplyGarrison).every(unit => unit.objectiveId === 'A'));
+  for (let squad = 0; squad < 10; squad++) for (let slot = 0; slot < 11; slot++) {
+    const goal = objectiveDestination({ squad, slot }, { x: 0, z: 80 }, points[0]);
+    assert.equal(objectiveContainsPosition(points[0], goal), true, 'attack destinations must be inside the building');
   }
 });
 
-test('each completed capture adds two squads up to ten and withdraws one enemy down to five', () => {
+test('six starting squads receive two waves at 45 and 90 seconds and never exceed ten squads', () => {
+  const { roster, match, points } = setup();
+  assert.equal(advanceEncirclementSupport(match, points, roster, 44.99).added.length, 0);
+  for (const [time, count] of [[45, 8], [90, 10], [135, 10]]) {
+    const wave = advanceEncirclementSupport(match, points, roster, time);
+    assert.equal(wave.added.length, time === 135 ? 0 : 2);
+    assert.ok(wave.added.every(unit => !unit.player && unit.respawnAt === time));
+    assert.equal(active(roster, 'friendly').length, count);
+    assert.equal(advanceEncirclementSupport(match, points, roster, time).added.length, 0, 'same simulation time cannot deliver twice');
+  }
+  assert.equal(match.reinforcementWaves, 2);
+  assert.equal(active(roster, 'enemy').length, 8);
+  assert.equal(advanceEncirclementSupport(match, points, roster, 999).added.length, 0);
+  const fresh = setup();
+  assert.equal(advanceEncirclementSupport(fresh.match, fresh.points, fresh.roster, 135).added.length, 4, 'a large step respects the ten-squad cap');
+});
+
+test('a resolved battle cannot dispatch extra waves or unlock positions through a later capture', () => {
+  const { roster, match, points } = setup();
+  for (const point of points) point.owner = 'enemy';
+  advanceEncirclement(match, points, roster, 90);
+  assert.equal(advanceEncirclementSupport(match, points, roster, 999).added.length, 0);
+  assert.equal(active(roster, 'friendly').length, 6);
+  assert.equal(captureEncirclement(match, roster, 'A', 999).spawn, null);
+  assert.deepEqual(match.unlocked, []);
+});
+
+test('A ownership delays already-pending infantry, tank and air reinforcements and enemy recapture restores supply', () => {
+  const { roster, match, points } = setup();
+  const units = ['infantry', 'tank', 'plane'].map(type => roster.find(unit => unit.team === 'enemy' && unit.type === type));
+  for (const unit of units) unit.members.forEach(actor => { actor.health = 0; });
+  advanceEncirclementSupport(match, points, roster, 10);
+  assert.ok(units.every(unit => unit.respawnAt === 27));
+  points[0].owner = 'friendly';
+  assert.equal(advanceEncirclementSupport(match, points, roster, 20).supplyChanged, true);
+  assert.ok(units.every(unit => unit.respawnAt === 45 && unit.reinforcementStartedAt === 10));
+  points[0].owner = null;
+  advanceEncirclementSupport(match, points, roster, 25);
+  assert.equal(match.supplyInterrupted, true, 'neutralization alone does not mean enemy supply has been restored');
+  units[0].blockedReason = 'earlier physical obstruction'; units[0].spawnRetryAt = 26;
+  points[0].owner = 'enemy';
+  assert.equal(advanceEncirclementSupport(match, points, roster, 30).supplyChanged, true);
+  assert.ok(units.every(unit => unit.respawnAt === 27 && reinforcementDue(unit, 30)));
+  assert.equal(match.supplyInterrupted, false);
+});
+
+test('supply changes cannot bypass physical spawn retries, alter living soldiers or restore phase-two respawns', () => {
+  const { roster, match, points } = setup();
+  const unit = roster.find(unit => unit.team === 'enemy' && unit.type === 'infantry');
+  unit.members.forEach(actor => { actor.health = 0; });
+  scheduleEncirclementRespawn(match, unit, 5);
+  unit.blockedReason = 'physical obstruction'; unit.respawnAt = unit.spawnRetryAt = 50;
+  points[0].owner = 'friendly'; advanceEncirclementSupport(match, points, roster, 10);
+  assert.equal(unit.respawnAt, 50);
+  points[0].owner = 'enemy'; advanceEncirclementSupport(match, points, roster, 12);
+  assert.equal(unit.respawnAt, 50);
+  const living = roster.find(candidate => candidate.team === 'enemy' && candidate.type === 'plane');
+  assert.equal(living.members[0].health, 100);
+  for (const point of points) point.owner = 'friendly';
+  advanceEncirclement(match, points, roster);
+  points[0].owner = 'enemy'; advanceEncirclementSupport(match, points, roster, 20);
+  assert.ok(roster.filter(candidate => candidate.team === 'enemy').every(candidate => candidate.respawnEnabled === false && candidate.respawnAt === null));
+  assert.equal(ENCIRCLEMENT_RULES.cutEnemyDelay, 35);
+});
+
+test('campaign starts with six friendly squads including the selected player and eight enemies', () => {
+  for (const type of Object.keys(TYPES)) {
+    const roster = encirclementRoster(type);
+    validateRoster(roster, { friendly: 10, enemy: 8 });
+    assert.equal(active(roster, 'friendly').length, 6);
+    assert.equal(active(roster, 'enemy').length, 8);
+    assert.equal(roster.find(unit => unit.player).type, type);
+    assert.equal(roster.filter(unit => !unit.active).length, 4);
+    assert.ok(roster.filter(unit => !unit.active).every(unit => !unit.members.length && !reinforcementDue(unit, 999)));
+    assert.equal(armySummary(roster, 'friendly').rosterUnits, 6);
+    assert.equal(active(roster, 'enemy').filter(unit => unit.type === 'infantry').length, 6);
+  }
+});
+
+test('captures unlock positions without giving old reinforcements, withdrawing enemies or closing spawn points', () => {
   const { roster, match } = setup();
   for (let index = 0; index < 8; index++) {
     const event = captureEncirclement(match, roster, 'A', index);
-    assert.equal(event.added.length, index < 3 ? 2 : 0);
-    assert.equal(Boolean(event.withdrawn), index < 5);
-    assert.equal(active(roster, 'friendly').length, Math.min(10, 4 + (index + 1) * 2));
-    assert.equal(active(roster, 'enemy').length, Math.max(5, 10 - index - 1));
-    assert.ok(event.added.every(unit => unit.spawnId === REAR_SPAWNS[0].id && reinforcementDue(unit, index)));
-    if (event.withdrawn) assert.equal(reinforcementDue(event.withdrawn, 999), false);
+    assert.equal(event.added.length, 0);
+    assert.equal(event.withdrawn, null);
+    assert.deepEqual(event.disabled, []);
+    assert.equal(active(roster, 'friendly').length, 6);
+    assert.equal(active(roster, 'enemy').length, 8);
   }
   assert.equal(active(roster, 'enemy').filter(unit => unit.type === 'tank').length, 1);
   assert.equal(active(roster, 'enemy').filter(unit => unit.type === 'plane').length, 1);
@@ -48,7 +168,7 @@ test('each completed capture adds two squads up to ten and withdraws one enemy d
 
 test('capture ownership transitions count recaptures, not steady ownership or contested progress', () => {
   const { roster, match, points } = setup();
-  const point = points[0];
+  const point = points[1];
   const step = (dt, friendly, enemy) => {
     const owner = point.owner;
     advanceCapture(point, dt, friendly, enemy);
@@ -79,7 +199,7 @@ test('three simultaneous owned points immediately and irreversibly stop all enem
   assert.equal(match.phase, 2);
   assert.equal(match.winner, null, 'holding three objectives is not a victory while enemies live');
   assert.equal(match.unlocked.length, 3);
-  assert.equal(active(roster, 'friendly').length, 10);
+  assert.equal(active(roster, 'friendly').length, 6, 'capturing all three points does not bypass timed waves');
   for (const unit of roster.filter(unit => unit.team === 'enemy')) {
     assert.equal(unit.respawnEnabled, false);
     assert.equal(unit.respawnAt, null);
@@ -89,6 +209,31 @@ test('three simultaneous owned points immediately and irreversibly stop all enem
   points[0].owner = 'enemy';
   assert.equal(advanceEncirclement(match, points, roster), 'friendly', 'the cleanup phase cannot revert');
   assert.deepEqual(captureEncirclement(match, roster, 'A', 100), { spawn: null, added: [], withdrawn: null, disabled: [] });
+});
+
+test('three enemy-owned objectives grant exactly 90 seconds for a counterattack in either phase', () => {
+  for (const phase of [1, 2]) {
+    const { roster, match, points } = setup();
+    match.phase = phase;
+    points[0].owner = points[1].owner = 'enemy';
+    assert.equal(advanceEncirclement(match, points, roster), null, 'two lost points are not defeat');
+    advanceCapture(points[2], CAPTURE_SECONDS - .1, false, true);
+    assert.equal(advanceEncirclement(match, points, roster), null, 'partial capture cannot end the game');
+    advanceCapture(points[2], .1, false, true);
+    assert.equal(advanceEncirclement(match, points, roster), null, 'the third capture starts a grace window, not immediate defeat');
+    assert.equal(advanceEncirclement(match, points, roster, 89.9), null);
+    assert.equal(advanceEncirclement(match, points, roster, .1), 'enemy', 'continuous enemy ownership for 90 seconds ends the game');
+    for (const point of points) point.owner = 'friendly';
+    assert.equal(advanceEncirclement(match, points, roster), 'enemy', 'a resolved defeat cannot turn into victory');
+  }
+});
+
+test('expired enemy-control grace takes priority over cleanup victory in the same step', () => {
+  const { roster, match, points } = setup();
+  match.phase = 2;
+  for (const point of points) point.owner = 'enemy';
+  for (const unit of roster) unit.members.forEach(actor => { actor.health = 0; });
+  assert.equal(advanceEncirclement(match, points, roster, 90), 'enemy');
 });
 
 test('victory requires the last living enemy including crew and has no time or score shortcut', () => {
@@ -104,33 +249,72 @@ test('victory requires the last living enemy including crew and has no time or s
   const fresh = setup();
   for (const unit of fresh.roster.filter(unit => unit.team === 'enemy')) unit.members.forEach(actor => { actor.health = 0; });
   assert.equal(advanceEncirclement(fresh.match, fresh.points, fresh.roster), null, 'phase one still needs three points');
-  assert.deepEqual(createEncirclement(), { phase: 1, captures: 0, unlocked: [], disabledEnemySpawns: [], winner: null });
+  assert.deepEqual(createEncirclement(), { phase: 1, captures: 0, unlocked: [], disabledEnemySpawns: [], winner: null,
+    supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0 });
 });
 
-test('each newly unlocked rear point permanently closes the nearest two active enemy spawns exactly once', () => {
+test('neutralizing or recapturing any objective clears grace, and a fresh enemy takeover starts from zero', () => {
+  for (const recoveredOwner of [null, 'friendly']) {
+    const { roster, match, points } = setup();
+    for (const point of points) point.owner = 'enemy';
+    advanceEncirclement(match, points, roster, 70);
+    points[1].owner = recoveredOwner;
+    assert.equal(advanceEncirclement(match, points, roster, 0), null);
+    assert.equal(match.enemyControlSeconds, 0);
+    points[1].owner = 'enemy';
+    assert.equal(advanceEncirclement(match, points, roster, 89), null);
+    assert.equal(advanceEncirclement(match, points, roster, 1), 'enemy');
+  }
+});
+
+test('a merely contested but still enemy-owned point cannot reset the defeat countdown', () => {
+  const { roster, match, points } = setup();
+  for (const point of points) point.owner = 'enemy';
+  advanceEncirclement(match, points, roster, 30);
+  points[1].status = 'contested';
+  assert.equal(advanceEncirclement(match, points, roster, 60), 'enemy');
+});
+
+test('grace integrates simulated time consistently, freezes on zero steps, and permits friendly reinforcement waves', () => {
+  for (const hz of [30, 60, 144]) {
+    const { roster, match, points } = setup();
+    for (const point of points) point.owner = 'enemy';
+    for (let frame = 1; frame < hz * 90; frame++) {
+      assert.equal(advanceEncirclement(match, points, roster, 1 / hz), null);
+    }
+    const before = structuredClone(match);
+    advanceEncirclement(match, points, roster, 0);
+    assert.deepEqual(match, before);
+    assert.equal(advanceEncirclement(match, points, roster, 1 / hz), 'enemy');
+  }
+  const { roster, match, points } = setup();
+  for (const point of points) point.owner = 'enemy';
+  advanceEncirclement(match, points, roster, 45);
+  assert.equal(advanceEncirclementSupport(match, points, roster, 45).added.length, 2);
+  assert.equal(active(roster, 'friendly').length, 8);
+  assert.equal(ENCIRCLEMENT_RULES.initialFriendly, 6);
+  assert.deepEqual(ENCIRCLEMENT_RULES.reinforcementTimes, [45, 90]);
+  for (const dt of [-1, NaN, Infinity]) assert.throws(() => advanceEncirclement(match, points, roster, dt), RangeError);
+});
+
+test('unlocking rear points no longer stacks permanent enemy closures on top of the supply-delay mechanic', () => {
   const { roster, match } = setup();
   const points = encirclementSpawns();
-  assert.equal(points.filter(point => point.team === 'enemy').length, 10, 'no unused phantom enemy staging points');
+  assert.equal(points.filter(point => point.team === 'enemy').length, 8, 'no unused phantom enemy staging points');
   for (const rear of REAR_SPAWNS) {
-    const nearest = points.filter(point => point.team === 'enemy' && point.kind !== 'air' && point.enabled !== false)
-      .sort((a, b) => Math.hypot(a.x - rear.x, a.z - rear.z) - Math.hypot(b.x - rear.x, b.z - rear.z) ||
-        a.id.localeCompare(b.id)).slice(0, 2).map(point => point.id);
     const event = captureEncirclement(match, roster, rear.objectiveId, 0, points);
-    assert.deepEqual(event.disabled.map(point => point.id), nearest);
-    assert.ok(event.disabled.every(point => point.enabled === false && point.disabledBy === rear.id));
-    assert.ok(event.disabled.every(point => /永久关闭/.test(spawnBlockReason(point, 'infantry', [], []))));
+    assert.deepEqual(event.disabled, []);
     const count = match.disabledEnemySpawns.length;
     assert.deepEqual(captureEncirclement(match, roster, rear.objectiveId, 1, points).disabled, []);
     assert.equal(match.disabledEnemySpawns.length, count);
   }
-  assert.equal(match.disabledEnemySpawns.length, 6);
-  assert.equal(new Set(match.disabledEnemySpawns).size, 6);
-  assert.equal(points.filter(point => point.team === 'enemy' && point.enabled !== false).length, 4);
+  assert.equal(match.disabledEnemySpawns.length, 0);
+  assert.equal(points.filter(point => point.team === 'enemy' && point.enabled !== false).length, 8);
   assert.ok(roster.flatMap(unit => unit.members).every(actor => actor.health === 100), 'closing a point does not kill existing soldiers');
   assert.ok(encirclementSpawns().every(point => point.enabled !== false), 'restart creates fresh points');
 });
 
-test('nearest closures include live rallies and tanks, but ignore closed points, destroyed rallies and friendly spawns', () => {
+test('capture does not silently destroy or close rallies, tanks or unrelated spawning positions', () => {
   const { roster, match } = setup(), rear = REAR_SPAWNS[0];
   const points = [
     { id: 'closed', team: 'enemy', kind: 'base', ...{ x: rear.x, z: rear.z }, enabled: false },
@@ -140,7 +324,8 @@ test('nearest closures include live rallies and tanks, but ignore closed points,
     { id: 'garage', team: 'enemy', kind: 'garage', x: rear.x + 2, z: rear.z },
     { id: 'far-base', team: 'enemy', kind: 'base', x: rear.x + 40, z: rear.z },
   ];
-  assert.deepEqual(captureEncirclement(match, roster, 'A', 0, points).disabled.map(point => point.id), ['live-rally', 'garage']);
+  assert.deepEqual(captureEncirclement(match, roster, 'A', 0, points).disabled, []);
+  assert.ok(points.filter(point => point.id !== 'closed').every(point => point.enabled === undefined));
   assert.equal(points.find(point => point.id === 'friendly').enabled, undefined);
 });
 
@@ -184,12 +369,12 @@ test('permanent rear spawns support players, survive ownership loss and disperse
 
 test('local aircraft and mortarmen survive integration and the last living pilot blocks victory', () => {
   const { roster, match, points } = setup();
-  assert.equal(armySummary(roster, 'friendly').alive, 44);
-  assert.equal(armySummary(roster, 'enemy').alive, 96);
+  assert.equal(armySummary(roster, 'friendly').alive, 66);
+  assert.equal(armySummary(roster, 'enemy').alive, 71);
   const pilot = roster.find(unit => unit.team === 'enemy' && unit.type === 'plane');
   assert.equal(pilot.spawnId, 'japan-air');
   const spawns = encirclementSpawns();
-  assert.equal(spawns.filter(point => point.team === 'enemy').length, 10);
+  assert.equal(spawns.filter(point => point.team === 'enemy').length, 8);
   assert.equal(spawns.some(point => point.id === 'japan-garage-1'), false);
   for (const point of points) {
     captureEncirclement(match, roster, point.id, 0, spawns);
@@ -209,7 +394,7 @@ test('local aircraft and mortarmen survive integration and the last living pilot
   assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   for (const type of ['infantry', 'tank', 'plane']) {
     const army = encirclementRoster(type);
-    assert.equal(active(army, 'friendly').reduce((sum, unit) => sum + unit.memberCount, 0), 44);
+    assert.equal(active(army, 'friendly').reduce((sum, unit) => sum + unit.memberCount, 0), 66);
   }
 });
 
@@ -235,10 +420,11 @@ test('fortress initial infantry and two rear reinforcement squads fit physically
   const roster = encirclementRoster('infantry');
   for (const unit of active(roster, 'friendly').concat(active(roster, 'enemy')).filter(unit => unit.type === 'infantry')) {
     const spawn = spawns.find(point => point.id === unit.spawnId);
-    const positions = formationPositions(spawn, unit.memberCount, town.obstacles, occupied);
+    const positions = unit.supplyGarrison ? supplyGarrisonPositions(unit.memberCount, town.obstacles, occupied)
+      : formationPositions(spawn, unit.memberCount, town.obstacles, occupied);
     occupied.push(...positions);
   }
-  assert.equal(occupied.length, 135);
+  assert.equal(occupied.length, 132);
   const navigate = createNavigator(town.obstacles, 1, .46);
   for (const spawn of REAR_SPAWNS) {
     assert.ok(spawn.x > BATTLE_AREA.minX && spawn.x < BATTLE_AREA.maxX);

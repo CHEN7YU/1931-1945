@@ -5,7 +5,8 @@ import { BRIDGE } from './ground.js';
 export const PREVIEW_BOUNDS = Object.freeze({ minX: -72, maxX: 72, minZ: -70, maxZ: 68 });
 export const PREVIEW_BRIDGE = Object.freeze({ ...BRIDGE, height: .95 });
 export const PREVIEW_OBJECTIVES = Object.freeze([
-  Object.freeze({ id: 'A', name: '西侧粮栈高楼', x: -36, z: 3, radius: 11,
+  Object.freeze({ id: 'A', name: '西侧粮栈高楼 · 补给点', x: -36, z: 12, radius: 11,
+    captureArea: Object.freeze({ minX: -43.4, maxX: -28.6, minZ: 6.6, maxZ: 17.4, minY: -.05, maxY: 12.6 }),
     view: { x: -49, z: -6, yaw: -2.5, pitch: .2 } }),
   Object.freeze({ id: 'B', name: '运河石桥', x: 8, z: -16, radius: 10,
     view: { x: 8, z: -5, yaw: 0 } }),

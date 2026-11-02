@@ -21,6 +21,19 @@ export function makeObjectives(layout = OBJECTIVES) {
   return layout.map(point => ({ ...point, owner: null, control: 0, progress: 0, enemyProgress: 0, captured: false, status: 'empty' }));
 }
 
+export function objectiveContainsPosition(point, position) {
+  if (!Number.isFinite(position?.x) || !Number.isFinite(position?.z)) throw new RangeError('Objective position must be finite');
+  const area = point.captureArea;
+  if (!area) return Math.hypot(position.x - point.x, position.z - point.z) < point.radius;
+  if (!['minX', 'maxX', 'minZ', 'maxZ', 'minY', 'maxY'].every(key => Number.isFinite(area[key])) ||
+    area.minX >= area.maxX || area.minZ >= area.maxZ || area.minY >= area.maxY) {
+    throw new RangeError('Indoor capture bounds must be finite and ordered');
+  }
+  if (!Number.isFinite(position.y)) throw new RangeError('Indoor capture requires a finite height');
+  return position.x > area.minX && position.x < area.maxX && position.z > area.minZ && position.z < area.maxZ &&
+    position.y >= area.minY && position.y < area.maxY;
+}
+
 export function advanceCapture(point, dt, friendly, hostile) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Capture requires a finite non-negative step');
   if (friendly && hostile) return point.status = 'contested';
@@ -117,12 +130,13 @@ export function moveGround(position, dx, dz, radius, obstacles) {
   return position;
 }
 
-export function segmentClear(start, end, radius, obstacles) {
+export function segmentClear(start, end, radius, obstacles, candidatesAt = null) {
   const distance = Math.hypot(end.x - start.x, end.z - start.z);
   const steps = Math.max(1, Math.ceil(distance / .2));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    if (circleBlocked(start.x + (end.x - start.x) * t, start.z + (end.z - start.z) * t, radius, obstacles)) return false;
+    const x = start.x + (end.x - start.x) * t, z = start.z + (end.z - start.z) * t;
+    if (circleBlocked(x, z, radius, candidatesAt ? candidatesAt(x, z) : obstacles)) return false;
   }
   return true;
 }

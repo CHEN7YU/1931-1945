@@ -119,15 +119,19 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
   const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : phases + 10;
   const turnStart = meleeStart + meleeBanks, turnBanks = profile.footCycleGait ? phases * 2 : 0;
-  const livingBanks = turnStart + turnBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
+  const closeStart = turnStart + turnBanks, closeBanks = team === 'enemy' ? 1 + postures.length : 0;
+  const livingBanks = closeStart + closeBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
   for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
     const dead = bank >= livingBanks;
-    const turning = !dead && bank >= turnStart;
-    const melee = !dead && !turning && bank >= meleeStart;
-    const firingBank = !dead && !melee && !turning && bank >= baseBanks;
-    const posture = dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
+    const closing = !dead && bank >= closeStart;
+    const turning = !dead && !closing && bank >= turnStart;
+    const melee = !dead && !closing && !turning && bank >= meleeStart;
+    const firingBank = !dead && !closing && !melee && !turning && bank >= baseBanks;
+    const posture = closing ? postures[bank - closeStart - 1] ?? null
+      : dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = turning ? 'idle' : melee ? bank < meleeStart + phases ? 'charge' : 'idle'
-      : bank === 0 || posture || firingBank || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+      : bank === 0 || posture || firingBank || closing || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    sampleActor.weaponBlocked = closing;
     sampleActor.bayonet = melee && team === 'enemy' ? { mode: mode === 'charge' ? 'charge' : 'thrust',
       extension: mode === 'charge' ? 0 : (bank - meleeStart - phases) / 2 } : null;
     const swordFrame = bank - meleeStart - phases;
@@ -160,14 +164,17 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     bankTemplate.update(sampleActor, dead ? 2 : 0, null);
     for (const attachment of optionalAttachments) attachment.mesh.visible = false;
     if (bankTemplate.issue) throw new Error(`Distant ${uniform} pose ${bank} (${mode}) is unreachable: ${bankTemplate.issue}`);
-    const baked = [];
+    const baked = [], casualtyWeapons = [];
     let gunMatrix = null;
     bankTemplate.root.traverseVisible(mesh => {
       if (mesh.userData.personalWeapon) gunMatrix = mesh.matrixWorld.clone();
     });
     bankTemplate.root.traverseVisible(mesh => {
       if (!mesh.isMesh) return;
-      for (let parent = mesh.parent; parent; parent = parent.parent) if (parent.userData.personalWeapon) return;
+      for (let parent = mesh.parent; parent; parent = parent.parent) if (parent.userData.personalWeapon) {
+        if (dead) casualtyWeapons.push(mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+        return;
+      }
       baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
     });
     if (!gunMatrix) throw new Error('Distant uniform pose lacks its owned weapon transform');
@@ -191,8 +198,14 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       return { mesh: instance, enabled, count: 0 };
     });
     instance.geometry.computeBoundingBox();
-    banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, bounds: instance.geometry.boundingBox.clone(),
-      footprint: dead ? corpseFootprint(instance.geometry) : null });
+    const bounds = instance.geometry.boundingBox.clone();
+    const footprint = dead ? [...corpseFootprint(instance.geometry)] : null;
+    for (const geometry of casualtyWeapons) {
+      geometry.computeBoundingBox(); bounds.union(geometry.boundingBox);
+      footprint.push(...corpseFootprint(geometry)); geometry.dispose();
+    }
+    banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, bounds,
+      footprint: footprint ? Object.freeze(footprint) : null });
   }
   bankTemplate.bind(null);
   let summary = { assigned: 0, near: 0, far: 0, coarse: 0, hidden: 0, culled: 0, batches: 0 };
@@ -310,6 +323,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const turnPhase = ((actor.nativeMotion.turn.angle / (Math.PI / 3)) % 1 + 1) % 1;
           const index = actor.health <= 0 && actor.casualty && deathBanks
             ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
+            : actor.weaponBlocked && closeBanks ? closeStart + (posture ? 1 + postures.indexOf(posture) : 0)
             : turning ? turnStart + (actor.nativeMotion.turn.direction > 0 ? phases : 0) + Math.round(turnPhase * phases) % phases
             : melee ? meleeStart + (charging && pose.weight > .45 ? Math.round(phase * phases) % phases
               : phases + (sword ? swordFrame : Math.round(actor.bayonet.extension * 2)))

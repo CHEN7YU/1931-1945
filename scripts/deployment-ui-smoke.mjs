@@ -25,11 +25,35 @@ window.__deploymentFixture = (owned = true) => {
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
   await page.locator('#confirm-campaign').click();
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
+  async function checkVisibleDeployment() {
+    for (const [width, height] of [[1920, 1080], [1366, 768], [1280, 720], [960, 540], [640, 600]]) {
+      await page.setViewportSize({ width, height });
+      const result = await page.evaluate(() => {
+        const button = document.getElementById('confirm-deploy'), bounds = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        const cards = [...document.querySelectorAll('#redeploy-choices button')];
+        return { visible: bounds.top >= 0 && bounds.bottom <= innerHeight && bounds.right <= innerWidth &&
+          (hit === button || button.contains(hit)),
+        cardsVisible: cards.every(card => {
+          const box = card.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return box.top >= 0 && box.bottom <= innerHeight && (hit === card || card.contains(hit));
+        }),
+        scroll: document.querySelector('#overlay > .dialog').scrollTop };
+      });
+      assert.equal(result.visible, true, `${width}x${height}: entry button must be directly clickable`);
+      assert.equal(result.cardsVisible, true, `${width}x${height}: squad cards must fit`);
+      assert.equal(result.scroll, 0, 'no dialog scrolling is required');
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+  await checkVisibleDeployment();
   await page.locator('#spawn-choices [data-spawn="china-base"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 120000 });
   await page.evaluate(() => window.__deploymentFixture(true));
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
+  await checkVisibleDeployment();
   assert.equal(await page.locator('#confirm-deploy').isDisabled(), false, 'new squad gets a safe default recommendation');
   await page.locator('#spawn-choices [data-spawn="china-base"]').click();
   assert.equal(await page.locator('#confirm-deploy').isDisabled(), false);

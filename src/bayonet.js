@@ -1,6 +1,6 @@
 export const BAYONET = Object.freeze({
   chargeRange: 8, disengageRange: 11, reach: 1.65, floorTolerance: .6,
-  windup: .22, returnTime: .22, cooldown: 1.1, damage: 65,
+  windup: .22, returnTime: .22, cooldown: 1.1, damage: 65, tipZ: -1.35,
 });
 
 export function hasBayonet(actor) {

@@ -1,4 +1,25 @@
 :root{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#eeeade;background:#171c19;font-synthesis:none;font-weight:400;color-scheme:dark;--gold:#cfb278;--muted:#9a9f91;--border:rgba(216,216,186,.18)}
+.deployment-overlay > .dialog { display: flex; flex-direction: column; width: min(1000px,96vw); height: min(820px,96dvh); max-height: 96dvh; padding: 16px; overflow: hidden; }
+.deployment-overlay > .dialog > h2 { font-size: 25px; margin: 6px 0; }
+.deployment-overlay > .dialog > p { margin: 4px 0; }
+.deployment-workspace:has(#deployment-options[hidden]) { display: none; }
+.deployment-overlay .deployment-workspace { display: grid; grid-template-columns: minmax(220px,.7fr) minmax(0,1fr); gap: 20px; flex: 1; min-height: 0; margin-top: 8px; }
+.deployment-overlay .deployment-workspace .redeploy-choices { grid-template-columns: 1fr; align-content: start; margin: 0; min-height: 0; overflow: auto; }
+.deployment-overlay #deployment-options { min-height: 0; overflow: auto; }
+.deployment-overlay .deployment-context { padding-top: 4px; }
+.deployment-overlay .deployment-context strong { margin-top: 4px; }
+.deployment-overlay > .dialog > #confirm-deploy { flex: none; max-width: none; margin: 10px 0 0; padding: 12px 16px; }
+.deployment-overlay .deployment-footer { display: flex; flex: none; }
+.deployment-overlay .deployment-footer .text-button { padding: 10px; border-top: 0; }
+#deployment-help > summary { color: var(--gold); font-size: 11px; cursor: pointer; }
+.deployment-overlay #deployment-help { flex: none; max-height: 22dvh; overflow: auto; }
+.deployment-overlay > .dialog > .build-version { margin: 4px 0 0; font-size: 10px; }
+@media(max-width:700px) {
+  .deployment-overlay .deployment-workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); gap: 8px; }
+  .deployment-overlay .deployment-workspace .redeploy-choices { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .deployment-overlay .redeploy-choices button { padding: 8px; }
+}
+#encirclement-warning{position:absolute;top:132px;left:50%;transform:translateX(-50%);max-width:calc(100% - 40px);padding:9px 14px;background:#3a1818ed;border:1px solid #c2856d;color:#ffe0c8;font-size:13px;text-align:center;line-height:1.6}
 .brand-emblem{width:36px;height:36px;color:var(--gold);border:1px solid var(--border);padding:4px}
 #menu>.menu-footer{margin-top:auto}
 #flight-pointer{position:absolute;width:24px;height:24px;border:2px solid #f2dfa4;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 3px #000;pointer-events:none}#flight-status{position:absolute;left:28px;top:92px;display:flex;flex-direction:column;gap:7px;padding:12px;background:#15231bdd;color:#e4e5d3;font:12px monospace}#flight-warning{color:#f1c584;font:12px "Microsoft YaHei",sans-serif}#flight-status.stalling{border:1px solid #da796a}#flight-status.stalling #flight-warning{color:#ffc4ac}
@@ -99,7 +120,7 @@
 #hud #weapon-name { display: inline-block; padding: 2px 4px; background: var(--hud-backing); }
 #hud .ammo { width: max-content; margin-left: auto; padding: 0 4px; background: var(--hud-backing); font: 28px/32px monospace; }
 #hud .ammo small { font-size: 12px; color: var(--hud-secondary); }
-#tank-reload { position: absolute; left: calc(50% + 56px); top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; color: var(--hud-text); }
+#tank-reload { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px auto; color: var(--hud-text); }
 #tank-reload[hidden] { display: none; }
 #tank-reload svg { width: 40px; height: 40px; transform: rotate(-90deg); fill: none; stroke-width: 3; }
 #tank-reload .reload-track { stroke: rgba(216, 216, 186, .3); }

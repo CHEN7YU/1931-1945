@@ -73,9 +73,9 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   renderer.update([replacement], 19, null, 'high');
   const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const coarseBanks = renderer.root.children.filter(mesh => mesh.name === 'distant-coarse-body');
-  assert.equal(renderer.snapshot.poseBanks, 16, 'seven original poses plus six charge phases and three thrust poses');
-  assert.equal(banks.length, 16);
-  assert.equal(coarseBanks.length, 16, 'each logical pose retains both original and coarse geometry');
+  assert.equal(renderer.snapshot.poseBanks, 17, 'original melee poses plus a wall-safe carry pose');
+  assert.equal(banks.length, 17);
+  assert.equal(coarseBanks.length, 17, 'each logical pose retains both original and coarse geometry');
   assert.equal(banks.slice(7, 13).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 7].count, 0), 1,
     'the far charging actor uses exactly one melee body pose across both geometry tiers');
   const weaponParts = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
@@ -87,4 +87,7 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   replacement.bayonet = { mode: 'thrust', extension: 1 };
   renderer.update([replacement], 19.2, null, 'high');
   assert.equal(banks[15].count + coarseBanks[15].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
+  replacement.weaponBlocked = true;
+  renderer.update([replacement], 19.3, null, 'high');
+  assert.equal(banks[16].count + coarseBanks[16].count, 1, 'blocked distant soldiers use a matching two-handed safe carry bank');
 });

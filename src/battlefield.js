@@ -709,6 +709,7 @@ export function makeWorld(scene, surface, options = {}) {
       ringGeometry.computeVertexNormals();
     }
     const ring = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
+    ring.visible = !point.captureArea;
     ring.position.set(point.x, .055, point.z); scene.add(ring);
   }
   // Pre-tinted haze keeps the distant ridges from tone-mapping into white silhouettes.

@@ -56,10 +56,10 @@ export function formationPositions(point, count, obstacles, occupied = [], hosti
   throw new FormationPlacementError(`集结区 ${point.id} 无法安全容纳 ${count} 人；未凭空缩减兵力`);
 }
 
-export function validateRoster(roster) {
+export function validateRoster(roster, counts = { friendly: BATTLE_RULES.unitsPerTeam, enemy: BATTLE_RULES.unitsPerTeam }) {
   for (const team of ['friendly', 'enemy']) {
     const units = roster.filter(unit => unit.team === team);
-    if (units.length !== BATTLE_RULES.unitsPerTeam) throw new Error(`${team} must have ten battle units`);
+    if (units.length !== counts[team]) throw new Error(`${team} must have ${counts[team]} battle units`);
     if (units.filter(unit => isVehicleUnit(unit.type)).length > BATTLE_RULES.vehicleLimit) throw new Error(`${team} exceeds the vehicle limit`);
   }
 }

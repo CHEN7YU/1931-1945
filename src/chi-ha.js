@@ -52,6 +52,8 @@ export function japaneseArmorRoster() {
 
 export function chiHaObjectiveDestination(slot, objective) {
   if (!Number.isInteger(slot) || slot < 0 || slot > 1) throw new RangeError('Chi-Ha deployment requires one of its two formation slots');
+  if (objective?.captureArea) return { ...objective,
+    x: slot === 0 ? objective.captureArea.minX - CHI_HA.stationOffset : objective.captureArea.maxX + CHI_HA.stationOffset };
   return objective ? { ...objective, x: objective.x + (slot === 0 ? -CHI_HA.stationOffset : CHI_HA.stationOffset) } : null;
 }
 

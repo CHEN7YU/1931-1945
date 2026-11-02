@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BAYONET } from './bayonet.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RIFLE, riflePose, infantryWeaponProfile, rifleReloadSeconds } from './rifle-action.js';
@@ -448,7 +449,7 @@ function bayonetModel() {
     const dark = materials.steel ?? new THREE.MeshStandardMaterial({ color: 0x454947, metalness: .7, roughness: .55 });
     const blade = new THREE.BufferGeometry();
     const base = [[-.014, -.045, -.95], [0, -.041, -.95], [.014, -.045, -.95], [0, -.049, -.95]];
-    const tip = [0, -.045, -1.35], vertices = [];
+    const tip = [0, -.045, BAYONET.tipZ], vertices = [];
     for (let i = 0; i < 4; i++) vertices.push(...base[i], ...base[(i + 1) % 4], ...tip);
     vertices.push(...base[0], ...base[3], ...base[2], ...base[0], ...base[2], ...base[1]);
     blade.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
