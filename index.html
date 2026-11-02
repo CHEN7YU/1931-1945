@@ -54,6 +54,9 @@
         <p class="deployment-note">仅中国阵营 <span>·</span> 整队阵亡后换队</p>
         <details id="menu-settings" class="control-preferences">
           <summary>设置</summary>
+          <label><input type="checkbox" data-performance-diagnostics /> 发送测试性能诊断</label>
+          <small>上传帧时、系统耗时与兵力等汇总，不录屏、不记录操作文字或联系方式。随机会话编号，保留7天，可关闭。</small>
+          <p data-performance-status role="status"></p>
         <fieldset class="control-preferences menu-controls">
           <legend>操作</legend>
           <label for="menu-mouse-sensitivity">普通视角灵敏度 <output for="menu-mouse-sensitivity">100%</output><input id="menu-mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
@@ -172,6 +175,9 @@
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
         <details id="pause-settings" class="pause-settings">
           <summary>设置 · 操作、声音与画面</summary>
+          <label><input type="checkbox" data-performance-diagnostics /> 发送测试性能诊断</label>
+          <small>匿名性能汇总，不含录屏、键盘文字、反馈内容或联系方式；保留7天，可关闭。</small>
+          <p data-performance-status role="status"></p>
           <fieldset id="control-settings" class="control-preferences" hidden>
             <legend>操作设置</legend>
             <label><input id="tank-crushing" data-tank-crushing type="checkbox" checked /> 坦克可碾压士兵（含敌我双方）</label>
@@ -234,6 +240,7 @@
             <label class="feedback-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off" /></label>
           </fieldset>
           <p id="feedback-status" role="status"></p>
+          <button id="feedback-retry" type="button" class="text-button" hidden>重新连接反馈服务</button>
           <button id="feedback-submit" type="submit" class="primary-button">提交反馈</button>
           <button id="feedback-copy" type="button" class="text-button">复制草稿（不提交）</button>
         </form>

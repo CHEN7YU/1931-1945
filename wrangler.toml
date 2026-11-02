@@ -2,6 +2,12 @@ name = "1931-1945"
 main = "worker/feedback.js"
 compatibility_date = "2026-10-19"
 
+[vars]
+PERFORMANCE_DIAGNOSTICS_ENABLED = "true"
+
+[triggers]
+crons = ["17 3 * * *"]
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

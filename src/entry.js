@@ -2,11 +2,13 @@ import './style.css';
 import './loading-screen.css';
 import { createPhotoWall } from './loading-screen.js';
 import { setLoadingProgress } from './loading-progress.js';
+import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { SELECTABLE_CAMPAIGNS, DEFAULT_CAMPAIGN, campaignById } from './campaigns.js';
 import { createFeedback } from './feedback.js';
 import { deploymentCards, deploymentMarker, DEPLOYMENT_SQUADS } from './deployment-view.js';
 
 const params = new URLSearchParams(location.search);
+getPerformanceDiagnostics();
 const menu = document.getElementById('menu'), loading = document.getElementById('loading');
 createPhotoWall(loading);
 createPhotoWall(document.getElementById('menu-photo-wall'), { visibilityElement: menu });

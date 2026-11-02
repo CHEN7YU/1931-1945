@@ -2,35 +2,49 @@ export function createFeedback({ build, getState, getMap }) {
   const dialog = document.getElementById('feedback-dialog'), form = document.getElementById('feedback-form');
   const status = document.getElementById('feedback-status'), submit = document.getElementById('feedback-submit');
   const fields = document.getElementById('feedback-fields'), content = document.getElementById('feedback-content');
+  const retry = document.getElementById('feedback-retry');
   let pending = false, id = crypto.randomUUID(), context;
   let availabilityRevision = 0;
+  let availabilityMessage = null;
   const captureContext = () => ({ build, map: getMap(), state: getState(),
     browser: navigator.userAgent.slice(0, 300), viewport: `${innerWidth}x${innerHeight}` });
   form.addEventListener('input', () => {
-    id = crypto.randomUUID(); context = captureContext(); status.textContent = ''; delete status.dataset.kind;
+    id = crypto.randomUUID(); context = captureContext();
+    if (availabilityMessage !== null) { status.textContent = availabilityMessage; return; }
+    status.textContent = ''; delete status.dataset.kind;
   });
   content.addEventListener('input', () => {
     document.getElementById('feedback-count').textContent = `${content.value.length} / 2000`;
   });
-  for (const button of document.querySelectorAll('[data-feedback-open]')) button.addEventListener('click', async () => {
+  async function checkAvailability() {
+    if (pending || !dialog.open) return;
     const revision = ++availabilityRevision;
-    context ??= captureContext();
-    dialog.showModal(); submit.disabled = true;
-    status.textContent = '正在检查反馈服务…';
+    submit.disabled = true; retry.hidden = true;
+    availabilityMessage = '正在检查反馈服务…';
+    status.textContent = availabilityMessage; delete status.dataset.kind;
     try {
       const response = await fetch('/api/feedback/status', { signal: AbortSignal.timeout(5000) });
       if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) throw new Error('反馈接口未连接');
       const result = await response.json();
       if (result.available !== true) throw new Error('反馈服务尚未配置完成');
       if (revision !== availabilityRevision || !dialog.open) return;
+      availabilityMessage = null;
       submit.disabled = pending; status.textContent = '反馈将私下保存，不公开展示。';
     } catch (error) {
       console.warn('Feedback availability check failed', error);
       if (revision !== availabilityRevision || !dialog.open) return;
-      status.textContent = '当前版本暂不可在线提交；可先填写并复制内容，草稿会在本页保留。';
+      availabilityMessage = '在线反馈服务当前不可用，暂时无法提交。填写内容已保留，可点击“重新连接”重试，或复制草稿发给开发者。';
+      status.textContent = availabilityMessage;
       status.dataset.kind = 'error';
+      retry.hidden = false;
     }
+  }
+  for (const button of document.querySelectorAll('[data-feedback-open]')) button.addEventListener('click', () => {
+    context ??= captureContext();
+    dialog.showModal();
+    void checkAvailability();
   });
+  retry.addEventListener('click', () => { void checkAvailability(); });
   document.getElementById('feedback-close').addEventListener('click', () => { availabilityRevision++; dialog.close(); });
   document.getElementById('feedback-copy').addEventListener('click', async () => {
     const text = `${form.elements.category.selectedOptions[0].textContent}\n${content.value}\n${build} / ${getMap()}`;

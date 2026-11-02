@@ -1,3 +1,5 @@
+import { handlePerformance, cleanupPerformance } from './performance.js';
+
 const MAX_BODY_BYTES = 16384;
 const STATES = new Set(['menu', 'pause', 'dead', 'victory', 'defeat', 'draw']);
 const MAPS = new Set(['taierzhuang', 'taierzhuang-streets', 'taierzhuang-fort']);
@@ -121,10 +123,14 @@ async function list(request, env) {
 }
 
 export default {
+  async scheduled(_event, env) { await cleanupPerformance(env); },
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
     try {
+      if (path === '/api/performance' || path.startsWith('/api/performance/')) {
+        return await handlePerformance(request, env, authorized);
+      }
       if (path === '/api/feedback/status' && request.method === 'GET') {
         if (!configured(env)) return json({ available: false });
         await env.FEEDBACK_DB.prepare('SELECT sequence FROM feedback LIMIT 1').first();

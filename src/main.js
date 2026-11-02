@@ -67,7 +67,8 @@ import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
 import { createAdaptiveAI } from './adaptive-ai.js';
-import { tankSweptContact, chooseTankEvasion } from './tank-infantry.js';
+import { getPerformanceDiagnostics } from './performance-diagnostics.js';
+import { tankSweptContact, chooseTankEvasion as planTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -115,6 +116,8 @@ for (const element of document.querySelectorAll('[data-build-version]')) {
 }
 
 const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
+const performanceDiagnostics = getPerformanceDiagnostics();
+const chooseTankEvasion = (...args) => performanceDiagnostics.measure('tankEvasion', () => planTankEvasion(...args));
 const telemetry = createFrameTelemetry(Boolean(benchmark));
 const renderIsolation = { mode: 'normal', drawFrames: 0, skippedFrames: 0, hiddenCharacterFrames: 0, characterPresentationFrames: 0 };
 const queryDiagnostics = createQueryDiagnostics(Boolean(benchmark?.queryStats));
@@ -456,6 +459,9 @@ function setGameState(next) {
   const active = activeStates.has(next);
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
+  if (['pause', 'menu', 'victory', 'defeat', 'draw'].includes(next)) {
+    performanceDiagnostics.flush(['victory', 'defeat', 'draw'].includes(next) ? 'ended' : 'pause');
+  }
   battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat', 'draw'].includes(state));
   battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
@@ -2784,9 +2790,9 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     pathRequests.set(actor.tactics.id, { actor, target: { ...target }, requestedAt: pathRequests.get(actor.tactics.id)?.requestedAt ?? time });
   }
   if (!actor.path) return;
-  const waypoint = advanceInfantryPath(pos, actor.path, point => sampledRouteClear(pos, point, (x, z) =>
+  const waypoint = performanceDiagnostics.measure('routes', () => advanceInfantryPath(pos, actor.path, point => sampledRouteClear(pos, point, (x, z) =>
     !circleBlocked(x, z, .46, movementCollision.at(x, z), pos.y) &&
-      !(Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3)));
+      !(Math.abs(world.walkHeight(x, z, pos.y) - pos.y) > .3))));
   if (!waypoint) return;
   const waitingDoor = pos.y < 1 ? world.doorSystem.openAhead(pos, waypoint) : null;
   if (waitingDoor) {
@@ -2824,11 +2830,11 @@ function walkActor(actor, target, speed, dt, sprint = false) {
   sprint = pace === 'sprint';
   speed = Math.hypot(target.x - pos.x, target.z - pos.z) > 1.3 ? profile[pace] : Math.min(speed, profile[pace]);
   const inCaptureArea = objectives.some(point => objectiveContainsPosition(point, pos));
-  const steering = infantrySteering(actor, trafficGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
+  const steering = performanceDiagnostics.measure('steering', () => infantrySteering(actor, trafficGrid.near(pos.x, pos.z, 3.2), { x: dx, z: dz }, {
     spacing: inCaptureArea ? 1.45 : 2.2, constrained: space.constrained,
     dt, now: time, reservations: trafficReservations,
     blocked: point => circleBlocked(point.x, point.z, .43, movementObstacles(point.x, point.z), pos.y),
-  });
+  }));
   speed *= steering.speed;
   actor.tactics.blockedBy = steering.waitingFor;
   if (speed < .05) {
@@ -2880,6 +2886,9 @@ function walkActor(actor, target, speed, dt, sprint = false) {
 
 const posturePreviews = new WeakMap();
 function postureFireLine(actor, point, stance, threat) {
+  return performanceDiagnostics.measure('posture', () => evaluatePostureFireLine(actor, point, stance, threat));
+}
+function evaluatePostureFireLine(actor, point, stance, threat) {
   if (actor.weaponBlocked) return false;
   const profile = actor.nativeMotion?.profile, track = profile && (stance === 'standing' ? profile.idle : profile[stance]);
   if (!track) throw new Error('Native combat posture is missing its carry profile');
@@ -4053,37 +4062,43 @@ function advanceBattleStep(dt, presentationTime) {
   time += dt;
   remaining = Math.max(0, remaining - dt);
   let started = benchmark ? performance.now() : 0;
-  world.doorSystem.update(dt, allForces.filter(actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane').map(actor => ({
+  performanceDiagnostics.measure('doors', () => world.doorSystem.update(dt, allForces.filter(actor => actor.health > 0 && occupiedVehicle(entities, actor)?.type !== 'plane').map(actor => ({
     x: actor.position.x, y: actor.position.y, z: actor.position.z, radius: actor.vehicleId && occupiedVehicle(entities, actor).type === 'tank' ? 1.9 : .42,
-  })));
+  }))));
   if (benchmark) { telemetry.add('doorsMs', performance.now() - started); started = performance.now(); }
   const tankStarts = new Map([...entities.vehicles.values()].filter(vehicle => vehicle.type === 'tank' && vehicle.health > 0)
     .map(vehicle => [vehicle.id, { ...vehicle.position, heading: vehicle.heading }]));
-  updateVehicles(dt);
-  updateTankContacts(tankStarts, dt);
-  vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
-  updateWeaponSimulation(dt);
-  if (state === 'playing') updatePlayer(dt);
+  performanceDiagnostics.measure('vehicles', () => {
+    updateVehicles(dt);
+    updateTankContacts(tankStarts, dt);
+    vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
+  });
+  performanceDiagnostics.measure('player', () => {
+    updateWeaponSimulation(dt);
+    if (state === 'playing') updatePlayer(dt);
+  });
   for (const actor of allForces) if (actor.health > 0 && !actor.vehicleId &&
     actor !== controlledSoldier(entities) && actor.traversal.kind !== 'grounded') updateActorTraversal(actor, dt);
   if (benchmark) { telemetry.add('playerMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) {
     // Vehicles have finished moving. Reuse read-only candidates only during this synchronous infantry pass.
     movementCollision.beginStablePass();
-    try { updateAI(dt); }
+    try { performanceDiagnostics.measure('ai', () => updateAI(dt)); }
     finally { movementCollision.endStablePass(); }
   }
   // Sample the completed AI movement/turn, not last step's heading and speed.
-  for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
-    (state !== 'playing' || actor !== controlledSoldier(entities))) {
-    updateAIWeaponClearance(actor);
-    advanceNraMotion(actor, dt);
-  }
+  performanceDiagnostics.measure('motion', () => {
+    for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
+      (state !== 'playing' || actor !== controlledSoldier(entities))) {
+      updateAIWeaponClearance(actor);
+      advanceNraMotion(actor, dt);
+    }
+  });
   if (activeStates.has(state)) updateBattleBoundary(dt);
   if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
-  if (activeStates.has(state)) updateObjectives(dt);
-  if (activeStates.has(state)) updateProjectiles(dt);
-  if (activeStates.has(state)) updateGrenades(dt);
+  if (activeStates.has(state)) performanceDiagnostics.measure('objectives', () => updateObjectives(dt));
+  if (activeStates.has(state)) performanceDiagnostics.measure('projectiles', () => updateProjectiles(dt));
+  if (activeStates.has(state)) performanceDiagnostics.measure('grenades', () => updateGrenades(dt));
   if (corpses.size > CORPSE_RULES.softLimit && time >= corpseCleanupAt) {
     corpseCleanupAt = time + 1;
     for (const actor of expiredCorpses(corpses.values(), time)) {
@@ -4119,6 +4134,7 @@ function tick(now) {
   const cpuStarted = benchmark ? performance.now() : 0;
   const frameInterval = now - lastFrame;
   const activeFrame = activeStates.has(state);
+  performanceDiagnostics.beginFrame(Math.max(0, frameInterval), state, !document.hidden);
   adaptiveAI.observeFrame(Math.max(0, frameInterval), activeFrame && !document.hidden);
   const presentationTime = time + simulationClock.beginFrame(performance.now());
   if (benchmark && activeFrame) telemetry.begin(now, frameInterval, 0);
@@ -4135,12 +4151,12 @@ function tick(now) {
       advanceBattleStep(dt, presentationTime);
     }
     const started = benchmark ? performance.now() : 0;
-    if (time >= hudAt) { updateHUD(); hudAt = time + .12; }
+    if (time >= hudAt) { performanceDiagnostics.measure('hud', updateHUD); hudAt = time + .12; }
     renderTankReload();
     if (state === 'dead' && time >= deploymentRefreshAt) { refreshDeployment(); deploymentRefreshAt = time + .25; }
     if (benchmark) telemetry.add('hudMs', performance.now() - started);
   }
-  presentRifleReports();
+  performanceDiagnostics.measure('audio', presentRifleReports);
   for (const puff of world.smoke) {
     if (!puff.visible) continue;
     const phase = (now * .000025 + puff.userData.phase) % 1;
@@ -4160,8 +4176,10 @@ function tick(now) {
   const isolationMode = benchmark?.renderIsolation && time >= benchmark.renderIsolationAt ? benchmark.renderIsolation : 'normal';
   const charactersVisible = isolationMode !== 'no-characters';
   const displayed = [...new Set([...allForces.filter(actor => actor.health > 0), ...corpses.values()])];
-  nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, graphics.snapshot.preset);
-  ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, graphics.snapshot.preset);
+  performanceDiagnostics.measure('presentation', () => {
+    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, graphics.snapshot.preset);
+    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, graphics.snapshot.preset);
+  });
   uniformExcludedIds.clear();
   for (const force of [nraCharacter, ijaCharacter]) for (const id of force?.excludedIds ?? []) uniformExcludedIds.add(id);
   soldierRenderer.update(displayed, graphics.snapshot.preset, time, entities.control.soldierId, uniformExcludedIds, charactersVisible);
@@ -4169,11 +4187,11 @@ function tick(now) {
   if (ijaCharacter) ijaCharacter.root.visible = charactersVisible;
   if (benchmark) telemetry.add('instancesMs', performance.now() - instancesStarted);
   const effectsStarted = benchmark ? performance.now() : 0;
-  combatEffects.render(time, entities.vehicles.values());
+  performanceDiagnostics.measure('effects', () => combatEffects.render(time, entities.vehicles.values()));
   if (benchmark) telemetry.add('effectsMs', performance.now() - effectsStarted);
   const renderStarted = benchmark ? performance.now() : 0;
   if (isolationMode === 'no-draw') renderer.info.reset();
-  else renderer.render(scene, camera);
+  else performanceDiagnostics.measure('render', () => renderer.render(scene, camera));
   const renderEnded = benchmark ? performance.now() : 0;
   if (benchmark && activeFrame) {
     renderIsolation.mode = isolationMode;
@@ -4199,6 +4217,7 @@ function tick(now) {
     frameDetails.callbackMs = frameDetails.callbackEndedAt - callbackEnteredAt;
     telemetry.end(frameDetails);
   }
+  performanceDiagnostics.finishFrame(state);
   requestAnimationFrame(tick);
 }
 
@@ -4691,6 +4710,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     : { status: 'fallback', error: mechanicalAudioFailure },
   simulationClock: simulationClock.snapshot,
   aiDecisions: aiDecisions.snapshot,
+  performanceDiagnostics: performanceDiagnostics.snapshot,
   adaptiveAI: adaptiveAI.snapshot,
   queryDiagnostics: queryDiagnostics?.snapshot ?? null,
   tracers: tracerPool.snapshot,
@@ -4924,6 +4944,18 @@ try {
 }
 if (fatalReporter.failed) throw new Error('Initialization interrupted; see the original fatal diagnostic');
 fatalReporter.ready();
+performanceDiagnostics.setContext(() => {
+  let allies = 0, enemies = 0, vehicles = 0;
+  for (const actor of allForces) if (actor.health > 0) {
+    if (actor.team === 'friendly') allies++; else enemies++;
+  }
+  for (const vehicle of entities.vehicles.values()) if (vehicle.health > 0) vehicles++;
+  const clock = simulationClock.snapshot;
+  return { map: campaign.id, state, time, quality: graphics.snapshot.preset, adaptiveLevel: adaptiveAI.snapshot.level,
+    allies, enemies, corpses: corpses.size, vehicles, reinforcementWaves: encirclement.reinforcementWaves,
+    drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+    backlogSeconds: clock.pendingSeconds, simulationSteps: clock.stepsThisFrame, unit: unit?.type ?? 'none' };
+});
 setLoadingProgress(100, '加载完成，即将进入战场。');
 $('loading').hidden = true;
 $('menu').hidden = false;
