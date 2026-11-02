@@ -5,7 +5,7 @@ export const PREFERENCES_KEY = 'embers-of-china.preferences.v1';
 export const SENSITIVITY_LIMITS = Object.freeze({ min: .25, max: 3, step: .05 });
 const motionValues = [0, .35, 1];
 export function defaultPreferences() {
-  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, audio: defaultAudioSettings(),
+  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, tankCrushing: true, audio: defaultAudioSettings(),
     quality: { preset: 'high', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) } };
 }
 
@@ -17,12 +17,14 @@ export function validatePreferences(value) {
     }
   }
   if (!motionValues.includes(value.motionStrength)) throw new RangeError('Invalid camera motion strength');
+  if (typeof value.tankCrushing !== 'boolean') throw new TypeError('Invalid tank crushing setting');
   if (!['high', 'low'].includes(value.quality?.preset)) throw new RangeError('Invalid saved graphics preset');
   for (const effect of QUALITY_EFFECTS) {
     if (typeof value.quality.effects?.[effect] !== 'boolean') throw new TypeError(`Invalid saved graphics effect: ${effect}`);
   }
   return { mouseSensitivity: value.mouseSensitivity, aimSensitivity: value.aimSensitivity,
-    motionStrength: value.motionStrength, audio: validateAudioSettings(value.audio), quality: { preset: value.quality.preset,
+    motionStrength: value.motionStrength, tankCrushing: value.tankCrushing,
+    audio: validateAudioSettings(value.audio), quality: { preset: value.quality.preset,
       effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, value.quality.effects[effect]])) } };
 }
 
@@ -48,6 +50,7 @@ export function createPlayerPreferences({ storage = () => window.localStorage, w
       if (record?.version !== 1) throw new RangeError('不支持的设置版本');
       // Earlier v1 settings predate audio controls; preserve their sensitivity and graphics.
       state = validatePreferences({ ...record.settings,
+        tankCrushing: record.settings?.tankCrushing === undefined ? true : record.settings.tankCrushing,
         audio: record.settings?.audio === undefined ? defaultAudioSettings() : record.settings.audio });
       status = '已恢复此浏览器保存的设置。';
     }

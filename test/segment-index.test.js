@@ -5,6 +5,13 @@ import { obstacleLookup } from '../src/spatial.js';
 import { createMovementObstacles } from '../src/movement-obstacles.js';
 import { makeTownPreviewLayout } from '../src/town-preview-layout.js';
 
+test('height-aware evasion routes include upper-floor walls and exclude surfaces below the feet', () => {
+  const wall = { minX: -1, maxX: 1, minZ: -.1, maxZ: .1, minY: 3.2, height: 6.4 };
+  const start = { x: 0, z: -2 }, end = { x: 0, z: 2 };
+  assert.equal(segmentClear(start, end, .42, [wall], null, 3.2), false);
+  assert.equal(segmentClear(start, end, .42, [wall], null, 0), true);
+});
+
 test('indexed short routes match full-map collision sampling across the real fortress', () => {
   const obstacles = makeTownPreviewLayout().obstacles;
   const lookup = obstacleLookup(obstacles, 2.5, 4);

@@ -15,7 +15,8 @@ const active = (roster, team) => roster.filter(unit => unit.team === team && uni
 const setup = () => {
   const roster = encirclementRoster('infantry');
   for (const unit of roster.filter(unit => unit.active)) {
-    unit.members = Array.from({ length: unit.memberCount ?? (unit.type === 'tank' ? CHI_HA_SEATS.length : TYPES[unit.type].members) }, () => ({ health: 100 }));
+    unit.members = Array.from({ length: unit.memberCount ?? (unit.type === 'tank' ? CHI_HA_SEATS.length : TYPES[unit.type].members) },
+      () => ({ health: 100, vehicleId: unit.type === 'plane' ? unit.id : null }));
   }
   return { roster, match: createEncirclement(), points: encirclementObjectives() };
 };
@@ -367,7 +368,7 @@ test('permanent rear spawns support players, survive ownership loss and disperse
   }
 });
 
-test('local aircraft and mortarmen survive integration and the last living pilot blocks victory', () => {
+test('local aircraft and mortarmen survive integration but a lone seated pilot cannot block cleanup victory', () => {
   const { roster, match, points } = setup();
   assert.equal(armySummary(roster, 'friendly').alive, 66);
   assert.equal(armySummary(roster, 'enemy').alive, 71);
@@ -389,13 +390,27 @@ test('local aircraft and mortarmen survive integration and the last living pilot
   for (const unit of roster.filter(unit => unit.team === 'enemy' && unit !== pilot)) {
     unit.members.forEach(actor => { actor.health = 0; });
   }
-  assert.equal(advanceEncirclement(match, points, roster), null);
-  pilot.members[0].health = 0;
+  assert.equal(pilot.members[0].health, 1, 'do not silently kill the pilot to force victory');
   assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   for (const type of ['infantry', 'tank', 'plane']) {
     const army = encirclementRoster(type);
     assert.equal(active(army, 'friendly').reduce((sum, unit) => sum + unit.memberCount, 0), 66);
   }
+});
+
+test('aircraft-only enemies do not bypass the initial encirclement requirement and a dismounted pilot still counts', () => {
+  const { roster, match, points } = setup();
+  const pilot = roster.find(unit => unit.team === 'enemy' && unit.type === 'plane');
+  for (const unit of roster.filter(unit => unit.team === 'enemy' && unit !== pilot)) {
+    unit.members.forEach(actor => { actor.health = 0; });
+  }
+  assert.equal(advanceEncirclement(match, points, roster), null);
+  for (const point of points) point.owner = 'friendly';
+  pilot.members[0].vehicleId = null;
+  assert.equal(advanceEncirclement(match, points, roster), null, 'a pilot fighting on foot is a ground enemy');
+  pilot.members[0].vehicleId = pilot.id;
+  assert.equal(advanceEncirclement(match, points, roster), 'friendly');
+  assert.equal(pilot.members[0].health, 100);
 });
 
 test('enemy presence cannot seal permanent player or AI spawns, but physical clearance remains', () => {

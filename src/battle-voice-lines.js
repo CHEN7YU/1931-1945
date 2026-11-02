@@ -45,6 +45,14 @@ export const BATTLE_VOICE_LINES = Object.freeze({
     { id: 'defeat-1', cue: 'defeat', text: '作战失利！重整队伍，准备再战！' },
     { id: 'draw-1', cue: 'draw', text: '时间到了！双方未分胜负，重整队伍！' },
     { id: 'lost-1', cue: 'lost', text: '阵地失去控制！重新集结，准备夺回！' },
+    { id: 'supply-brief-1', cue: 'supply-brief', text: '拿下A点高楼，就能切断日军补给！' },
+    { id: 'supply-cut-1', cue: 'supply-cut', text: '日军补给切断了！守住高楼，拖住敌人！' },
+    { id: 'supply-restored-1', cue: 'supply-restored', text: '日军夺回了补给点！弟兄们，把高楼抢回来！' },
+    { id: 'reinforcements-1', cue: 'reinforcements', text: '我们的援军到了！弟兄们，继续进攻！' },
+    { id: 'supply-reinforced-1', cue: 'supply-reinforced', text: '敌军补给已断，我们的援军也到了！' },
+    { id: 'encircled-1', cue: 'encircled', text: '敌军被我们包围了！消灭地面残敌！' },
+    { id: 'reinforcements-blocked-1', cue: 'reinforcements-blocked', text: '敌军援军被拦截了！别让残敌跑了！' },
+    { id: 'cleanup-orders-1', cue: 'cleanup-orders', text: '敌人援军被切断，全歼被围日军，我们就赢了！' },
     ...['十二', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一'].flatMap((hour, index) =>
       [
         { role: 'sniper', label: '狙击手' },

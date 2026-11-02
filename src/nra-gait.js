@@ -9,7 +9,7 @@ export function applyNativeUpperBody(root, bones, motion) {
 }
 
 export function applyNativeBodyLean(root, bones, motion) {
-  if (!Number.isFinite(motion.bodyLean) || motion.bodyLean < 0 || motion.bodyLean > .65) throw new Error('Invalid owned torso lean');
+  if (!Number.isFinite(motion.bodyLean) || motion.bodyLean < 0 || motion.bodyLean > .75) throw new Error('Invalid owned torso lean');
   const yaw = motion.torsoYaw ?? 0;
   if (!Number.isFinite(yaw) || Math.abs(yaw) > .6) throw new Error('Invalid owned firing torso turn');
   if (!motion.bodyLean && !yaw) return;

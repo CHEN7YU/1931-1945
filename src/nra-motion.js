@@ -37,7 +37,7 @@ const smoothSpeed = (speed, start, end) => {
 
 export function nativeTravelLean(motion) {
   const jog = smoothSpeed(motion.speed, 1.5, 3.3), fast = smoothSpeed(motion.speed, 3.2, 4.8);
-  return (.045 + (.40 + motion.runLean * .2 - .045) * jog + .16 * fast) * (1 - .82 * motion.gaitAim);
+  return (.045 + (.54 + motion.runLean * .2 - .045) * jog + .12 * fast) * (1 - .82 * motion.gaitAim);
 }
 
 export function nativeGaitParameters(motion) {
@@ -70,7 +70,7 @@ export function nativeGaitDrop(actor) {
   const flightTime = gait.runStride * (.5 - gait.runContact) / Math.max(2.1, motion.speed);
   const rise = Math.min(.04, 9.81 * flightTime * flightTime / 8) * Math.sin(Math.PI * flight) ** 2;
   const walkDrop = (.09 - .02 * gait.aimed) + .005 * (1 - .7 * gait.aimed) * Math.sin(phase * Math.PI * 4);
-  const drop = walkDrop * (1 - gait.jog) + (.13 + .045 * smoothSpeed(motion.speed, 3.2, 4.8) - rise) * gait.jog;
+  const drop = walkDrop * (1 - gait.jog) + (.17 + .055 * smoothSpeed(motion.speed, 3.2, 4.8) - rise) * gait.jog;
   const turnDrop = .045 * (motion.turn?.weight ?? 0) * (1 - motion.weight);
   return (drop * motion.weight + turnDrop) * upright;
 }

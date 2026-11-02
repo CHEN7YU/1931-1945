@@ -242,8 +242,8 @@ test('one soldier switches between charge, quick short steps and aimed slow move
   assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
   assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.25);
   assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
-  assert.ok(samples.jog.bodyLean >= .40 && samples.jog.bodyLean <= .48);
-  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .14);
+  assert.ok(samples.jog.bodyLean >= .54 && samples.jog.bodyLean <= .60);
+  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .10);
   assert.ok(samples.sprint.runContact < samples.jog.runContact - .1);
   assert.ok(samples.aim.walkClearance < samples.jog.walkClearance * .5);
   assert.ok(samples.aim.lowReady < .001 && samples.aim.bodyLean < samples.jog.bodyLean * .5);
@@ -268,8 +268,8 @@ test('fast actual movement cannot retain an upright walk even when its mode labe
   }
   const fast = sampleNraMotion(person);
   assert.equal(fast.travelStyle, 'charge');
-  assert.ok(fast.bodyLean >= .60 && fast.bodyLean <= .63);
-  assert.ok(fast.hipDrop > .13);
+  assert.ok(fast.bodyLean >= .70 && fast.bodyLean <= .72);
+  assert.ok(fast.hipDrop > .19);
   person.locomotion = { mode: 'walk', speed: 0 };
   for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
   assert.ok(sampleNraMotion(person).bodyLean < .001);
@@ -292,7 +292,7 @@ test('real metres set running cadence at every timestep, even when requested loc
       'one complete left/right cycle covers exactly its visual stride');
     const stepsPerSecond = cycles * 2 / 3;
     assert.ok(speed === 3.15 ? stepsPerSecond > 3.7 && stepsPerSecond < 4.2 : stepsPerSecond > 4.2 && stepsPerSecond < 4.8);
-    assert.ok(pose.bodyLean >= (speed === 3.15 ? .4 : .6));
+    assert.ok(pose.bodyLean >= (speed === 3.15 ? .54 : .70));
     const stopped = person.nativeMotion.gaitCycles;
     person.locomotion.speed = 4.8;
     for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);

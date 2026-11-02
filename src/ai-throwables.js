@@ -16,6 +16,23 @@ export function chooseAIThrowable(actor, targets, friends) {
   return choices[0] ?? null;
 }
 
+export function antiTankApproach(actor, targets, blocked) {
+  if (typeof blocked !== 'function') throw new TypeError('Anti-tank approach needs physical clearance');
+  if (!throwableStock(actor.grenades, 'explosive-pack')) return null;
+  for (const target of targets.filter(target => target.kind === 'armor')
+    .sort((a, b) => distance(actor.position, a.position) - distance(actor.position, b.position))) {
+    const range = distance(actor.position, target.position);
+    if (range <= 13 || range > 30 || Math.abs(actor.position.y - target.position.y) > 1) continue;
+    const angle = Math.atan2(actor.position.z - target.position.z, actor.position.x - target.position.x);
+    for (const offset of [0, .55, -.55]) {
+      const goal = { x: target.position.x + Math.cos(angle + offset) * 12,
+        y: target.position.y, z: target.position.z + Math.sin(angle + offset) * 12 };
+      if (!blocked(goal)) return { ...goal, vehicleId: target.id };
+    }
+  }
+  return null;
+}
+
 export function planAIThrow(origin, target, kind, trace, intendedVehicleId = null) {
   const profile = throwableProfile(kind);
   if (![origin.x, origin.y, origin.z, target.x, target.y, target.z].every(Number.isFinite) ||

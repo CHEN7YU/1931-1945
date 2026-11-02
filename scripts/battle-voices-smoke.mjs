@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { battleVoiceClips } from '../src/battle-voice-lines.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const base = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5173');
@@ -15,7 +16,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   const snapshot = () => page.evaluate(() => window.__battle);
   assert.equal((await snapshot()).battleVoices.status, 'ready');
-  assert.equal(requests.size, 266, 'all actual MP3s and reviewed WAVs load and decode');
+  assert.equal(requests.size, battleVoiceClips().length, 'all actual MP3s and reviewed WAVs load and decode');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.battleVoices.history.some(item => item.cue === 'deploy'));
   for (let i = 0; i < 3; i++) await page.keyboard.press('x');

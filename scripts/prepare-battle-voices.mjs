@@ -115,6 +115,9 @@ export async function generateBattleVoices({ cacheOnly = false,
     if (!bytes) {
       if (cacheOnly) throw new Error(`Missing or changed MP3 cache in --cache-only mode: ${clip.file}; no Azure synthesis was attempted.`);
       if (newFriendlyOnly) {
+        if (budget.requests.some(request => request.file === clip.file)) {
+          throw new Error(`Prior request already recorded for ${clip.file}; refusing an automatic retry or duplicate charge`);
+        }
         if (budget.reservedUsd + 1 > budget.authorizedUsd) throw new Error('Voice generation budget exhausted');
         budget.reservedUsd++;
         budget.requests.push({ file: clip.file, characters: clip.text.length, requestedAt: new Date().toISOString(), state: 'reserved' });
@@ -156,6 +159,14 @@ export async function generateBattleVoices({ cacheOnly = false,
     license: 'Azure-generated-speech', licenseUrl: 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA',
     provenance: 'Original fictional game dialogue, synthesized with stock male neural voices. Not historical recordings or cloned voices; not CC0. Use is subject to the Azure agreement.',
     format: 'mixed', defaultFormat: VOICE_FORMAT, files };
+  if (previous.generationBatches) metadata.generationBatches = [...previous.generationBatches];
+  if (newFriendlyOnly && budget.requests.length) {
+    const id = budget.requests[0].requestedAt;
+    metadata.generationBatches = [...(metadata.generationBatches ?? []).filter(batch => batch.id !== id), {
+      id, authorizedUsd: budget.authorizedUsd, reservedUsd: budget.reservedUsd,
+      note: budget.note, requests: budget.requests,
+    }];
+  }
   await writeFile(join(root, 'source.json.tmp'), `${JSON.stringify(metadata, null, 2)}\n`);
   await rename(join(root, 'source.json.tmp'), join(root, 'source.json'));
   // Publish the replacement catalog before retiring audio referenced by the previous one.

@@ -266,7 +266,9 @@ export async function loadBattleVoices() {
       const clip = clips[cursor++];
       const response = await fetch(`/assets/audio/battle-voices/${clip.file}`, { signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error(`Battle voice ${clip.file}: HTTP ${response.status}`);
-      buffers[clip.file] = await context.decodeAudioData(await response.arrayBuffer());
+      const bytes = await response.arrayBuffer();
+      try { buffers[clip.file] = await context.decodeAudioData(bytes); }
+      catch (error) { throw new Error(`Battle voice ${clip.file}: audio decoding failed`, { cause: error }); }
     }
   }));
   return createBattleVoices(buffers);

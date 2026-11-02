@@ -17,6 +17,7 @@ export function encirclementRoster(playerType) {
   return battleRoster(playerType).filter(formation => formation.team !== 'enemy' ||
     formation.index < ENCIRCLEMENT_RULES.enemySquads - 2 || formation.type !== 'infantry').map(formation => ({ ...formation,
     active: formation.team === 'enemy' || formation.index < ENCIRCLEMENT_RULES.initialFriendly,
+    reinforcement: formation.team === 'friendly' && formation.index >= ENCIRCLEMENT_RULES.initialFriendly,
     fixedObjectiveId: formation.team === 'enemy' && formation.index < ENCIRCLEMENT_RULES.supplyGuardSquads ? 'A' : null,
     supplyGarrison: formation.team === 'enemy' && formation.index < ENCIRCLEMENT_RULES.supplyGuardSquads,
     reinforcementStartedAt: null, spawnRetryAt: null,
@@ -60,6 +61,12 @@ export function encirclementSpawns() {
 export function createEncirclement() {
   return { phase: 1, captures: 0, unlocked: [], disabledEnemySpawns: [], winner: null,
     supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0 };
+}
+
+export function encirclementGroundEnemies(formations) {
+  return formations.filter(unit => unit.team === 'enemy' && unit.active !== false)
+    .reduce((count, unit) => count + unit.members.filter(actor => actor.health > 0 &&
+      !(unit.type === 'plane' && actor.vehicleId)).length, 0);
 }
 
 export function captureEncirclement(match, formations, objectiveId, now) {
@@ -125,7 +132,6 @@ export function advanceEncirclement(match, points, formations, dt = 0) {
       unit.spawnRetryAt = unit.reinforcementStartedAt = null;
     }
   }
-  if (match.phase === 2 && !formations.some(unit => unit.team === 'enemy' &&
-    unit.active && unit.members.some(actor => actor.health > 0))) match.winner = 'friendly';
+  if (match.phase === 2 && encirclementGroundEnemies(formations) === 0) match.winner = 'friendly';
   return match.winner;
 }

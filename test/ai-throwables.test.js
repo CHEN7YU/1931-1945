@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseAIThrowable, planAIThrow } from '../src/ai-throwables.js';
+import { chooseAIThrowable, planAIThrow, antiTankApproach } from '../src/ai-throwables.js';
 import { throwableProfile } from '../src/grenades.js';
 import { createGrenadeSystem, createGrenadeInventory, throwableVehicleDamage } from '../src/grenades.js';
 import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, createVehicleEntity,
@@ -30,6 +30,20 @@ test('throw trajectory matches actual speed, lift and gravity and rejects interm
     assert.ok(Math.abs(y - target.y) < 1e-6);
     assert.equal(planAIThrow(from, target, kind, () => ({ position: { x: 0, y: 1, z: -4 } })), null);
     assert.equal(planAIThrow(from, { x: 0, y: 0, z: -100 }, kind, () => null), null);
+  }
+});
+test('both factions actively approach observed armor to real throwing range without free packs or blocked goals', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const actor = { team, position: { x: 0, y: 0, z: 0 }, grenades: { ammo: 1, packs: 1 } };
+    const armor = { id: 'tank', kind: 'armor', position: { x: 0, y: 0, z: -26 } };
+    const goal = antiTankApproach(actor, [armor], () => false);
+    assert.ok(goal);
+    assert.ok(Math.abs(Math.hypot(goal.x - armor.position.x, goal.z - armor.position.z) - 12) < 1e-8);
+    assert.equal(antiTankApproach(actor, [armor], () => true), null);
+    armor.position.y = 3.2;
+    assert.equal(antiTankApproach(actor, [armor], () => false), null);
+    armor.position.y = 0; actor.grenades.packs = 0;
+    assert.equal(antiTankApproach(actor, [armor], () => false), null);
   }
 });
 

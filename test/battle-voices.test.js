@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('284 clips retain unchanged Japanese dialogue and add friendly slogans with three male voices', () => {
+test('308 clips retain unchanged dialogue and add fortress announcements with three male voices', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 284);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 284);
+  assert.equal(clips.length, 308);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 308);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 206 : 78);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 230 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -63,7 +63,7 @@ test('284 clips retain unchanged Japanese dialogue and add friendly slogans with
   assert.equal(soldierVoiceVariant('soldier-42'), soldierVoiceVariant('soldier-42'));
   assert.equal(new Set(Array.from({ length: 20 }, (_, i) => soldierVoiceVariant(`soldier-${i}`))).size, 3);
   assert.throws(() => soldierVoiceVariant(''), /identity/);
-  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 280);
+  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 304);
   const reviewed = clips.filter(clip => clip.delivery);
   assert.equal(reviewed.length, 4);
   assert.ok(reviewed.every(clip => clip.team === 'friendly' && clip.id === 'advance-1' && [0, 2].includes(clip.variant)));
@@ -79,7 +79,13 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 284);
+  assert.equal(manifest.files.length, 308);
+  const fortressBatch = manifest.generationBatches.find(batch => batch.requests.some(request =>
+    request.file === 'friendly-0-cleanup-orders-1.mp3'));
+  assert.equal(fortressBatch.authorizedUsd, 50);
+  assert.equal(fortressBatch.reservedUsd, 24);
+  assert.equal(fortressBatch.requests.length, 24);
+  assert.ok(fortressBatch.requests.every(request => request.state === 'saved'));
   assert.equal(manifest.format, 'mixed');
   assert.equal(manifest.defaultFormat, VOICE_FORMAT);
   for (const clip of battleVoiceClips()) {

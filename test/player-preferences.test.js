@@ -23,6 +23,18 @@ test('fresh preferences retain original look speed, aim reduction, scope reducti
   assert.equal(f.writes.length, 0, 'loading a page does not overwrite persisted values');
   assert.deepEqual(f.warnings, []);
 });
+test('tank crushing defaults on, persists an explicit opt-out, and migrates older v1 settings without overwriting them', () => {
+  const defaults = defaultPreferences();
+  assert.equal(defaults.tankCrushing, true);
+  const old = { ...defaults }; delete old.tankCrushing;
+  const f = fixture(JSON.stringify({ version: 1, settings: old })), settings = f.create();
+  assert.equal(settings.snapshot.tankCrushing, true);
+  assert.equal(settings.status.problem, false);
+  assert.equal(f.writes.length, 0);
+  settings.update({ tankCrushing: false });
+  assert.equal(f.create().snapshot.tankCrushing, false);
+  assert.throws(() => settings.update({ tankCrushing: 'false' }), TypeError);
+});
 
 test('normal and aimed multipliers are independent, including scope and lower/upper bounds', () => {
   const settings = { mouseSensitivity: 3, aimSensitivity: .25 };

@@ -6,7 +6,9 @@ import { makeWorld } from './battlefield.js';
 import { campaignLayout } from './campaign-layout.js';
 import { campaignById } from './campaigns.js';
 import { ENCIRCLEMENT_RULES, encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
-  createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport, scheduleEncirclementRespawn } from './encirclement.js';
+  createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport, scheduleEncirclementRespawn,
+  encirclementGroundEnemies } from './encirclement.js';
+import { createEncirclementVoiceTracker } from './encirclement-voices.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, DOMINATION_SECONDS, makeObjectives, objectiveContainsPosition, advanceCapture, createConquest, advanceConquest, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
 import * as collisionDiagnostics from './core.js';
@@ -65,6 +67,7 @@ import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
 import { createAdaptiveAI } from './adaptive-ai.js';
+import { tankSweptContact, chooseTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
 import { createCombatEvents } from './combat-events.js';
 import { createCombatFeedback } from './combat-feedback.js';
@@ -78,7 +81,7 @@ import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonP
 import { infantrySteering as steerInfantry, advanceInfantryPath as advanceInfantryRoute } from './infantry-spacing.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription, soldierRoleLabel } from './battle-units.js';
-import { chooseAIThrowable, planAIThrow } from './ai-throwables.js';
+import { chooseAIThrowable, planAIThrow, antiTankApproach } from './ai-throwables.js';
 import { scoreIcon } from './score-icons.js';
 import { CHI_HA, CHI_HA_MG, japaneseArmorSpawns, chiHaObjectiveDestination } from './chi-ha.js';
 import { advanceChiHaAI } from './chi-ha-ai.js';
@@ -359,6 +362,7 @@ let battleVoices = null, battleVoicesFailure = null;
 let battleReactions = null, battleReactionsFailure = null;
 let mortarLaunch = null, mortarLaunchFailure = null, mortarLaunchesPlayed = 0;
 const objectiveVoiceTracker = createObjectiveVoiceTracker();
+const encirclementVoiceTracker = createEncirclementVoiceTracker();
 try {
   mortarLaunch = await loadMortarLaunch();
 } catch (error) {
@@ -1099,6 +1103,7 @@ function clearTransient() {
   battleVoices?.reset();
   battleReactions?.reset();
   objectiveVoiceTracker.reset();
+  encirclementVoiceTracker.reset();
   combatFeedback.clear(); recoil = 0;
   $('hit-marker').style.opacity = $('damage-vignette').style.opacity = '0';
   combatEffects.clear();
@@ -1282,6 +1287,9 @@ function deploy(squadId, spawnId = null) {
   hudAt = 0;
   initAudio();
   battleVoiceEvent('deploy');
+  if (encirclementMode) for (const cue of encirclementVoiceTracker.update(encirclement, objectives, formations)) {
+    battleVoiceEvent(cue, { eventKey: `encirclement:${cue}` });
+  }
   if (benchmark?.scenario !== 'shop-art') lockMouse();
   updateCamera(0);
   renderConstruction();
@@ -1321,9 +1329,9 @@ function showOverlay(kind = 'pause') {
   $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
   $('overlay-title').textContent = kind === 'victory' ? encirclementMode ? '残敌已清，合围告捷。' : '阵地已夺，山河犹在。' : kind === 'defeat' ? '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
   const victoryRule = encirclementMode ? kind === 'defeat' ? '日军连续控制三个据点90秒，反夺宽限耗尽，我方合围失败。'
-    : '三点合围后，全部日军、车组及飞行员已被消灭。'
+    : '三点合围后，日军地面部队及车组已被消灭；仅余空中飞机不影响胜利。'
     : conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。';
-  $('overlay-description').textContent = ended ? `${victoryRule}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。' : encirclementMode ? '  我军六队、日军八队开局，作战45、90秒各增援两队，最多十队。A高楼有两队日军驻守，必须进入楼内占领；占领后日军补充等待35秒，日军夺回则恢复17秒。我方三点合围后全歼残敌获胜；日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
+  $('overlay-description').textContent = ended ? `${victoryRule}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。' : encirclementMode ? '  我军六队、日军八队开局，作战45、90秒各增援两队，最多十队。A高楼有两队日军驻守，必须进入楼内占领；占领后日军补充等待35秒，日军夺回则恢复17秒。  我方三点合围后清除地面残敌获胜，仅余空中飞机不影响胜利；日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
   $('resume').hidden = ended || dead;
   if (kind === 'victory') $('overlay-description').textContent = '';
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
@@ -1378,7 +1386,7 @@ function refreshDeployment() {
     button.querySelector('small').textContent = reason || `${TYPES[type].members} 人 · 新小队可出击`;
   }
   $('deployment-objective').textContent = encirclementMode && encirclement.phase === 2
-    ? `第二阶段 · 日军停止重生 · 剩余 ${battleSummary('enemy').alive} 人`
+    ? `第二阶段 · 日军停止重生 · 地面残敌 ${encirclementGroundEnemies(formations)} 人`
     : `三点合围 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
   const pendingType = SQUADS[pendingSquad]?.type;
   refreshCapturedSpawns(pendingType);
@@ -1708,7 +1716,8 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null) {
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
   if (selected && actor.health === 0) {
     beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺'
-      : weaponKind === 'dadao' ? '大刀斩击' : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
+      : weaponKind === 'dadao' ? '大刀斩击' : weaponKind === 'collision' ? '坦克碾压'
+      : ['explosion', 'grenade', 'explosive-pack'].includes(weaponKind) ? '爆炸' : '中弹');
   }
   if (actor.health === 0) finishActorDeath(actor, source);
 }
@@ -1909,21 +1918,43 @@ function interruptGrenade(actor) {
 
 function tryAIThrowable(actor, target, dt) {
   const tactics = actor.tactics;
-  if (!tactics.throwIntent && time < (tactics.throwDecisionAt ?? 0)) return false;
+  const approach = () => {
+    const plan = tactics.packApproach, tank = plan && entities.vehicles.get(plan.vehicleId);
+    if (!plan || plan.until <= time || !tank || tank.health <= 0 ||
+      !actor.grenades.packs || Math.hypot(actor.position.x - tank.position.x, actor.position.z - tank.position.z) <= 13) {
+      tactics.packApproach = null; return false;
+    }
+    cancelAIMelee(actor);
+    if (tactics.cover) coverClaims.delete(tactics.cover.id);
+    tactics.cover = tactics.armorEscort = null;
+    actor.stance = 'standing'; actor.firingPose = null; actor.rifleReady = false;
+    tactics.mode = 'approach-armor-pack';
+    resetAIRifleAim(actor.aiRifle, 'moving');
+    walkActor(actor, plan, 3.15, dt, true);
+    return true;
+  };
+  if (!tactics.throwIntent && time < (tactics.throwDecisionAt ?? 0)) return approach();
   const eye = soldierEyePosition(actor), origin = new THREE.Vector3(eye.x, eye.y, eye.z);
   const visible = candidate => hasLine(origin, new THREE.Vector3(candidate.position.x,
     candidate.position.y + (candidate.kind === 'armor' ? 1 : .6), candidate.position.z), 30, candidate.vehicleId);
   if (!tactics.throwIntent) {
     tactics.throwDecisionAt = time + 1.1 + tactics.id % 7 * .09;
-    const targets = [];
-    const armor = tactics.seenArmor && time - tactics.seenArmor.time < 1.5
-      ? entities.vehicles.get(tactics.seenArmor.vehicleId) : null;
-    if (armor?.health > 0 && armor.team !== actor.team) targets.push({
-      id: armor.id, kind: 'armor', vehicleId: armor.id, position: { ...armor.position } });
+    const targets = actor.grenades.packs ? [...entities.vehicles.values()]
+      .filter(armor => armor.type === 'tank' && armor.health > 0 && armor.team !== actor.team &&
+        Math.hypot(actor.position.x - armor.position.x, actor.position.z - armor.position.z) <= 30)
+      .map(armor => ({ id: armor.id, kind: 'armor', vehicleId: armor.id, position: { ...armor.position } })) : [];
     if (target?.health > 0 && !target.vehicleId) targets.push({
       id: target.id, kind: 'person', position: { ...target.position } });
-    const choice = chooseAIThrowable(actor, targets.filter(visible), allForces.filter(other => other.team === actor.team));
-    if (!choice || choice.kind === 'grenade' && time < (actor.formation.nextThrowableAt ?? 0)) return false;
+    const observed = targets.filter(visible);
+    const choice = chooseAIThrowable(actor, observed, allForces.filter(other => other.team === actor.team));
+    tactics.packApproach = null;
+    if (!choice) {
+      const goal = antiTankApproach(actor, observed, point => circleBlocked(point.x, point.z, .43,
+        movementObstacles(point.x, point.z), actor.position.y));
+      if (goal) tactics.packApproach = { ...goal, until: time + 2.3 };
+      return approach();
+    }
+    if (choice.kind === 'grenade' && time < (actor.formation.nextThrowableAt ?? 0)) return false;
     const key = `${actor.team}:${choice.target.id}`, reservation = aiThrowReservations.get(key);
     if (reservation && reservation.until > time && reservation.actorId !== actor.id) return false;
     aiThrowReservations.set(key, { actorId: actor.id, until: time + 2.5 });
@@ -1948,7 +1979,16 @@ function tryAIThrowable(actor, target, dt) {
     { kind: intent.kind, phase: 'throwing', elapsed: profile.windup }).position;
   const point = { ...intent.target.position, y: world.groundHeight(intent.target.position.x, intent.target.position.z) + profile.size };
   const plan = planAIThrow(launch, point, intent.kind, traceGrenade, intent.target.vehicleId);
-  if (!plan) { tactics.throwIntent = null; aiThrowReservations.delete(intent.key); return false; }
+  if (!plan) {
+    tactics.throwIntent = null; aiThrowReservations.delete(intent.key);
+    if (intent.kind === 'explosive-pack') {
+      const goal = antiTankApproach(actor, [intent.target], point => circleBlocked(point.x, point.z, .43,
+        movementObstacles(point.x, point.z), actor.position.y));
+      if (goal) tactics.packApproach = { ...goal, until: time + 2.3 };
+      return approach();
+    }
+    return false;
+  }
   const source = captureAttackSource(entities, actor, intent.kind === 'grenade' ? actor.grenades : actor.explosivePack);
   const reason = grenades.begin(actor.id, actor.grenades, source, time, intent.kind);
   if (reason) { tactics.throwRejection = reason; tactics.throwIntent = null; aiThrowReservations.delete(intent.key); return false; }
@@ -2338,6 +2378,31 @@ function updateVehicles(dt) {
       const occupant = entities.soldiers.get(seat.occupantId);
       if (!occupant) continue;
       occupant.position.copy(position);
+    }
+  }
+}
+
+function updateTankContacts(before, dt) {
+  for (const tank of entities.vehicles.values()) {
+    if (tank.type !== 'tank' || tank.health <= 0 || !before.has(tank.id)) continue;
+    const start = before.get(tank.id);
+    tank.groundMotion = {
+      x: (tank.position.x - start.x) / dt, z: (tank.position.z - start.z) / dt,
+      turn: headingError(start.heading, tank.heading) / dt,
+    };
+    if (!preferenceValues.tankCrushing) continue;
+    let source = null;
+    for (const actor of allForces) {
+      if (!tankSweptContact(tank, start, actor, dt)) continue;
+      if (!source) {
+        const controlled = controlledSoldier(entities);
+        const operator = controlled?.health > 0 && controlled.vehicleId === tank.id ? controlled :
+          tank.seats.filter(seat => seat.role === 'driver').concat(tank.seats)
+            .map(seat => entities.soldiers.get(seat.occupantId)).find(person => person?.health > 0);
+        source = operator ? Object.freeze({ ...captureAttackSource(entities, operator, tank.weapon), cause: 'tank-crush' })
+          : Object.freeze({ credit: 'environment', cause: 'tank-crush', vehicleId: tank.id });
+      }
+      hurt(actor, actor.health, source, 'collision');
     }
   }
 }
@@ -3346,6 +3411,36 @@ function updateAI(dt) {
       tactics.traffic = tactics.followGuard = null;
       cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'seated'); continue;
     }
+    const dodge = chooseTankEvasion(actor, armor, {
+      visible: tank => {
+        const eye = soldierEyePosition(actor);
+        return hasLine(new THREE.Vector3(eye.x, eye.y, eye.z),
+          tank.position.clone().add(new THREE.Vector3(0, .8, 0)), 20, tank.id);
+      },
+      clear: (from, to) => segmentClear(from, to, .42, world.obstacles,
+        movementObstacles, from.y),
+    });
+    if (dodge) {
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'moving');
+      if (tactics.cover) coverClaims.delete(tactics.cover.id);
+      tactics.cover = tactics.armorEscort = null;
+      actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
+      const position = actor.position, dx = dodge.x - position.x, dz = dodge.z - position.z;
+      const distance = Math.max(.001, Math.hypot(dx, dz));
+      const beforeX = position.x, beforeZ = position.z;
+      actor.stance = 'standing'; actor.firingPose = null;
+      tactics.mode = 'evade-tank'; tactics.evadingTankId = dodge.vehicleId;
+      advanceAITurn(actor, Math.atan2(-dx, -dz), dt, true);
+      world.moveInfantry(position, dx / distance * Math.min(distance, 3.15 * dt),
+        dz / distance * Math.min(distance, 3.15 * dt), .42, movementObstacles(position.x, position.z));
+      settleActorSupport(actor);
+      actor.locomotion.speed = Math.hypot(position.x - beforeX, position.z - beforeZ) / dt;
+      actor.locomotion.mode = actor.locomotion.speed > .06 ? 'jog' : 'idle';
+      actor.walkPhase += actor.locomotion.speed * dt * 2.5;
+      actor.walkPoseReady = actor.locomotion.speed > .06;
+      continue;
+    }
+    tactics.evadingTankId = null;
     if (actor.grenades.action) {
       cancelAIMelee(actor);
       const action = actor.grenades.action;
@@ -3450,8 +3545,8 @@ function updateAI(dt) {
       if (benchmark) telemetry.add('sensingMs', performance.now() - sensingStarted);
     }
     const target = actor.target?.health > 0 ? actor.target : null;
-    if (tryAIMelee(actor, target, dt)) continue;
     if (tryAIThrowable(actor, target, dt)) continue;
+    if (tryAIMelee(actor, target, dt)) continue;
     const oldEscort = tactics.armorEscort;
     if (oldEscort) escortClaims.delete(`${oldEscort.vehicleId}:${oldEscort.slot}`);
     const assaultObjective = formationObjective(actor, objective);
@@ -3645,7 +3740,10 @@ function updateObjectives(dt) {
       pathRequests.delete(actor.tactics.id);
       resetObjectiveMovement(actor, actor.orderObjectiveId ?? actor.formation.objectiveId ?? objectives[0].id);
     }
-    toast('第二阶段 · 合围完成！日军停止重生，清剿全部残敌', 7);
+    toast('第二阶段 · 合围完成！日军停止重生，清剿地面残敌', 7);
+  }
+  if (encirclementMode) for (const cue of encirclementVoiceTracker.update(encirclement, objectives, formations)) {
+    battleVoiceEvent(cue, { eventKey: `encirclement:${cue}` });
   }
   if (winner) showOverlay(winner === 'friendly' ? 'victory' : winner === 'enemy' ? 'defeat' : 'draw');
 }
@@ -3883,7 +3981,7 @@ function updateHUD() {
   const supplyInfo = encirclement.supplyInterrupted ? 'A补给已切断 · 日军补充35秒' : 'A补给正常 · 日军补充17秒';
   $('objective-help').textContent = !encirclementMode
     ? `${inCaptureArea ? '进入范围占领' : '保持全点控制20秒获胜'}${domination}`
-    : encirclement.phase === 2 ? `日军不再重生 · 剩余 ${battleSummary('enemy').alive} 人 · ${supportInfo}`
+    : encirclement.phase === 2 ? `日军不再重生 · 地面残敌 ${encirclementGroundEnemies(formations)} 人 · ${supportInfo}`
       : `${active.captureArea && !inCaptureArea ? '进入A高楼内部才能占领' : active.status === 'contested' ? '争夺中 · 清除楼内／圈内敌军' : inCaptureArea ? '占领 / 反夺据点' : '同时占领三点完成合围'} · ${supplyInfo} · ${supportInfo}`;
   $('capture-fill').style.width = `${Math.abs(active.control) * 100}%`;
   $('capture-fill').style.background = active.control < 0 ? '#ed9d8b' : '#9aaa78';
@@ -3965,7 +4063,10 @@ function advanceBattleStep(dt, presentationTime) {
     x: actor.position.x, y: actor.position.y, z: actor.position.z, radius: actor.vehicleId && occupiedVehicle(entities, actor).type === 'tank' ? 1.9 : .42,
   })));
   if (benchmark) { telemetry.add('doorsMs', performance.now() - started); started = performance.now(); }
+  const tankStarts = new Map([...entities.vehicles.values()].filter(vehicle => vehicle.type === 'tank' && vehicle.health > 0)
+    .map(vehicle => [vehicle.id, { ...vehicle.position, heading: vehicle.heading }]));
   updateVehicles(dt);
+  updateTankContacts(tankStarts, dt);
   vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
   updateWeaponSimulation(dt);
   if (state === 'playing') updatePlayer(dt);
@@ -4220,6 +4321,7 @@ function syncPreferenceControls() {
     input.parentElement.querySelector('output').value = `${Math.round(value * 100)}%`;
   }
   for (const selector of document.querySelectorAll('[data-motion-strength]')) selector.value = String(motionStrength);
+  for (const input of document.querySelectorAll('[data-tank-crushing]')) input.checked = preferenceValues.tankCrushing;
   for (const element of document.querySelectorAll('[data-preferences-status]')) {
     element.textContent = preferences.status.message;
     element.classList.toggle('preferences-warning', preferences.status.problem);
@@ -4238,6 +4340,10 @@ for (const input of document.querySelectorAll('[data-sensitivity]')) input.addEv
 });
 for (const button of document.querySelectorAll('[data-reset-controls]')) button.addEventListener('click', () => {
   preferences.update({ mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1 });
+  syncPreferenceControls();
+});
+for (const input of document.querySelectorAll('[data-tank-crushing]')) input.addEventListener('change', () => {
+  preferences.update({ tankCrushing: input.checked });
   syncPreferenceControls();
 });
 for (const input of document.querySelectorAll('[data-audio-volume], [data-audio-mute]')) {

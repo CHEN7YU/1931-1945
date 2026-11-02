@@ -130,13 +130,13 @@ export function moveGround(position, dx, dz, radius, obstacles) {
   return position;
 }
 
-export function segmentClear(start, end, radius, obstacles, candidatesAt = null) {
+export function segmentClear(start, end, radius, obstacles, candidatesAt = null, feetY = 0, bodyHeight = 1.75) {
   const distance = Math.hypot(end.x - start.x, end.z - start.z);
   const steps = Math.max(1, Math.ceil(distance / .2));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const x = start.x + (end.x - start.x) * t, z = start.z + (end.z - start.z) * t;
-    if (circleBlocked(x, z, radius, candidatesAt ? candidatesAt(x, z) : obstacles)) return false;
+    if (circleBlocked(x, z, radius, candidatesAt ? candidatesAt(x, z) : obstacles, feetY, bodyHeight)) return false;
   }
   return true;
 }
