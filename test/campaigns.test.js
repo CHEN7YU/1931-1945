@@ -5,18 +5,21 @@ import { campaignLayout } from '../src/campaign-layout.js';
 import { capturedSpawnPoints, supportsSquad, deploymentBlockReason, SQUADS, recommendedSpawn } from '../src/spawns.js';
 import { createMortar, MORTAR, mortarTarget, stowMortar, adjustMortarRange, mortarObjectiveRanges } from '../src/mortar.js';
 
-test('the launcher shows only Taierzhuang fort while retaining the hidden streets layout and locked placeholders', () => {
+test('the launcher exposes independent Taierzhuang and Nanjing campaigns while retaining hidden and locked layouts', () => {
   assert.equal(CAMPAIGNS.length, 4);
   assert.deepEqual(Object.keys(SQUADS), ['infantry', 'tank', 'plane']);
-  assert.deepEqual(SELECTABLE_CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaign.id), ['taierzhuang-fort']);
+  assert.deepEqual(SELECTABLE_CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaign.id), ['taierzhuang-fort', 'nanjing']);
   assert.equal(DEFAULT_CAMPAIGN.id, 'taierzhuang-fort');
   assert.equal(campaignById('taierzhuang-streets').hidden, true);
   assert.equal(SELECTABLE_CAMPAIGNS.some(campaign => campaign.id === 'taierzhuang-streets'), false);
   const layouts = CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaignLayout(campaign.id));
   assert.equal(layouts[0].town, undefined);
-  assert.ok(layouts.slice(1).every(layout => layout.town.pieces.length > 100 && layout.town.obstacles.length > 100));
-  assert.equal(new Set(layouts.map(layout => JSON.stringify(layout.objectives))).size, 2);
-  for (const id of ['shanghai', 'nanjing']) {
+  const fortress = campaignLayout('taierzhuang-fort');
+  assert.ok(fortress.town.pieces.length > 100 && fortress.town.obstacles.length > 100);
+  assert.equal(campaignLayout('nanjing').campaign, 'nanjing');
+  assert.deepEqual(campaignLayout('nanjing').objectives.map(point => point.id), ['gate', 'dock']);
+  assert.equal(new Set(layouts.map(layout => JSON.stringify(layout.objectives))).size, 3);
+  for (const id of ['shanghai']) {
     assert.equal(campaignById(id).locked, true);
     assert.throws(() => campaignLayout(id), /awaiting the user design brief/);
   }

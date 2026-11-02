@@ -109,7 +109,7 @@ function campaignStep() {
   confirmCampaign.hidden = false;
 }
 confirmCampaign.addEventListener('click', () => {
-  if (loaded) {
+  if (loaded || selector.value === 'nanjing') {
     const url = new URL(location.href); url.searchParams.set('campaign', selector.value); location.assign(url); return;
   }
   void openInitialDeployment();
@@ -171,7 +171,7 @@ $('confirm-deploy').addEventListener('click', async event => {
   }
 });
 // Existing diagnostic URLs intentionally bypass the campaign launcher.
-if (params.has('benchmark')) {
+if (params.has('benchmark') || params.get('campaign') === 'nanjing') {
   squadStep.hidden = false; confirmCampaign.hidden = true;
   menu.hidden = true; loading.hidden = false;
   await import('./main.js');

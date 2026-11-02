@@ -1,3 +1,5 @@
+import { deploymentMapPoint } from './deployment-map.js';
+
 export const DEPLOYMENT_SQUADS = Object.freeze([
   { id: 'infantry', name: '步兵小队', members: 11, icon: '⚑' },
   { id: 'tank', name: '装甲车组', members: 3, icon: '▰' },
@@ -27,10 +29,10 @@ export function deploymentMarker(point, type) {
   return button;
 }
 
-export function deploymentMarkerPositions(points) {
+export function deploymentMarkerPositions(points, view = { x: 0, z: 0, span: 220 }) {
   const placed = [];
   return points.map(point => {
-    const x = (point.x + 110) / 220 * 100, y = (point.z + 110) / 220 * 100;
+    const [x, y] = deploymentMapPoint(view, point.x, point.z, 100);
     let position = { x, y };
     for (let attempt = 0; attempt <= points.length * 2; attempt++) {
       if (!placed.some(other => Math.abs(other.x - position.x) < 9 && Math.abs(other.y - position.y) < 9)) break;

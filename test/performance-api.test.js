@@ -79,6 +79,21 @@ test('strict payloads, body size, origin, disabling and rate caps cannot bypass 
     assert.equal((await (await worker.fetch(f.get('/api/performance/status'), f.env)).json()).available, true);
   } finally { f.sqlite.close(); }
 });
+test('shared performance APIs store and filter independent Nanjing and Taierzhuang reports', async () => {
+  const f = fixture();
+  try {
+    for (const map of ['nanjing', 'taierzhuang-fort']) {
+      const body = f.batch();
+      body.windows[0].context.map = map;
+      assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    }
+    const raw = await (await worker.fetch(f.get('/api/performance?map=nanjing'), f.env)).json();
+    assert.equal(raw.items.length, 1);
+    assert.equal(raw.items[0].batch.windows[0].context.map, 'nanjing');
+    const summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
+    assert.deepEqual(summary.groups.map(group => group.map).sort(), ['nanjing', 'taierzhuang-fort']);
+  } finally { f.sqlite.close(); }
+});
 test('daily scheduled retention removes old diagnostics only, without touching private feedback tables', async () => {
   const f = fixture();
   try {

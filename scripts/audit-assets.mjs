@@ -18,6 +18,7 @@ const groups = [
     evidence: ['PERMISSION.txt'] },
   { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/mortar/source.json', directory: 'audio/mortar', use: 'runtime', evidence: [] },
+  { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -102,11 +103,12 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: 'Adapted from the user-authorized original; not CC0 or an independently accepted historical reconstruction.' });
-    } else if (group.directory === 'audio/battle-voices') {
+    } else if (group.directory === 'audio/battle-voices' || group.directory === 'audio/civilian-voices') {
       if (metadata.provider !== 'Azure AI Speech' || metadata.license !== 'Azure-generated-speech' ||
         metadata.source !== 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech' ||
         metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA' ||
-        metadata.files.some(file => file.gender !== 'Male')) throw new Error('Generated battle voice provenance requires review');
+        metadata.files.some(file => group.directory === 'audio/battle-voices' ? file.gender !== 'Male' :
+          !['Male', 'Female'].includes(file.gender))) throw new Error('Generated battle voice provenance requires review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
     } else if (group.directory === 'audio/machine-gun') {
@@ -215,7 +217,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
       if (createHash('sha256').update(data).digest('hex') !== item.sha256) throw new Error(`Published asset differs: ${item.file}`);
     }
     for (const file of await filesUnder(resolve(buildRoot))) {
-      if (['index.html', 'town-preview.html'].includes(file) || inventory.has(file.replace(/^assets\//, '')) && file.startsWith('assets/')) continue;
+      if (['index.html', 'town-preview.html', 'nanjing-preview.html'].includes(file) || inventory.has(file.replace(/^assets\//, '')) && file.startsWith('assets/')) continue;
       if (/^assets\/[^/]+-[\w-]{8,}\.(js|css)$/.test(file)) continue;
       throw new Error(`Unreviewed build payload: ${file}`);
     }

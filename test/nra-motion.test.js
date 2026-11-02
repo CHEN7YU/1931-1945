@@ -209,6 +209,23 @@ test('current native carry lowers the real muzzle during travel and raises smoot
   assert.ok(Math.abs(new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...raised.weaponQuaternion)).y) < .05);
 });
 
+test('native rifle pose raises its muzzle for elevated targets while retaining a valid aiming quaternion', () => {
+  const person = actor();
+  person.rifleReady = true;
+  person.nativeMotion.lowReady = 0;
+  person.nativeMotion.aim = 1;
+  const level = sampleNraMotion(person);
+  person.aimPitch = .4;
+  const raised = sampleNraMotion(person);
+  const levelDirection = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...level.weaponQuaternion));
+  const raisedDirection = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...raised.weaponQuaternion));
+  assert.ok(raisedDirection.y > levelDirection.y + .3);
+  assert.ok(Math.abs(Math.hypot(...raised.weaponQuaternion) - 1) < 1e-8);
+  assert.equal(raised.aimPitch, .4);
+  person.rifleReady = false;
+  assert.equal(sampleNraMotion(person).aimPitch, 0, 'AI elevation aim cannot leak into a travel pose');
+});
+
 test('contact-based carry anchors the actual buttplate, not the receiver or camera, for shoulder and armpit modes', () => {
   for (const ready of [true, false]) {
     const person = actor(), shoulder = [.184, 1.41, .063];

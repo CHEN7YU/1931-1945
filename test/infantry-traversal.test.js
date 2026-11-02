@@ -1,12 +1,56 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { circleBlocked } from '../src/core.js';
-import { TRAVERSAL, createTraversal, findVault, beginTraversal, advanceTraversal, moveAirborne, landingHeight } from '../src/infantry-traversal.js';
+import { TRAVERSAL, FALL_DAMAGE, landingDamage, createTraversal, findVault, beginTraversal, advanceTraversal, moveAirborne, moveSupported, landingHeight } from '../src/infantry-traversal.js';
 import { makeTownLayout } from '../src/town-layout.js';
 
 const ground = () => 0;
 const wall = { minX: -2, maxX: 2, minZ: -1.4, maxZ: -.6, height: 1.2 };
 const position = () => ({ x: 0, y: 0, z: 0 });
+
+test('walking off an unobstructed edge allows up to two metres and falls naturally without a jump', () => {
+  for (const height of [.66, 1, 1.99, 2, 2.01, 4]) {
+    const p = { x: -.6, y: height, z: 0 };
+    const ledge = { minX: -4, maxX: 0, minZ: -3, maxZ: 3, height, walkable: true };
+    const heightAt = x => x <= 0 ? height : 0;
+    const groundMove = point => assert.fail('an edge drop must use airborne movement, not snap to ground');
+    moveSupported(p, 1.2, 0, .4, [ledge], heightAt, (point, dx) => {
+      if (point.x + dx <= 0) point.x += dx;
+      else groundMove(point);
+    }, TRAVERSAL.bodyHeight, 2);
+    if (height > 2) {
+      assert.ok(p.x <= .4, 'high falls remain blocked until an explicit jump');
+    } else {
+      assert.ok(p.x > .4);
+      assert.equal(p.y, height, 'horizontal movement must not teleport feet down');
+      const state = createTraversal();
+      beginTraversal(state, p); state.velocity = 0;
+      for (let frame = 0; frame < 180 && state.kind !== 'grounded'; frame++)
+        advanceTraversal(state, p, 1 / 60, [ledge], heightAt);
+      assert.equal(p.y, 0);
+      assert.equal(state.kind, 'grounded');
+    }
+  }
+});
+
+test('shared landing damage leaves normal jumps safe, injures medium falls and kills high falls at all frame rates', () => {
+  for (const fps of [30, 60, 144]) for (const [height, damage] of [[1, 0], [3, 0], [5, 40], [8, 100], [12, 100]]) {
+    const p = { x: 0, y: height, z: 0 }, state = createTraversal();
+    beginTraversal(state, p);
+    state.velocity = 0;
+    let impact = null;
+    for (let frame = 0; frame < fps * 5 && state.kind !== 'grounded'; frame++) {
+      impact = advanceTraversal(state, p, 1 / fps, [], ground);
+    }
+    assert.equal(state.kind, 'grounded');
+    assert.ok(Math.abs(landingDamage(impact) - damage) < .001, `${height}m at ${fps}fps`);
+    assert.equal(advanceTraversal(state, p, 1 / fps, [], ground), null, 'one fall cannot apply damage twice');
+  }
+  assert.equal(landingDamage(TRAVERSAL.jumpSpeed), 0);
+  assert.equal(FALL_DAMAGE.lethalDrop, 8);
+  assert.throws(() => landingDamage(NaN), RangeError);
+  assert.throws(() => landingDamage(-1), RangeError);
+});
 
 test('a low sandbag-height barrier has a swept, collision-free rise/cross/land trajectory at different frame rates', () => {
   for (const fps of [30, 60, 144]) {

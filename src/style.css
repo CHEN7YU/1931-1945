@@ -1,4 +1,8 @@
 :root{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#eeeade;background:#171c19;font-synthesis:none;font-weight:400;color-scheme:dark;--gold:#cfb278;--muted:#9a9f91;--border:rgba(216,216,186,.18)}
+#hud.nanjing-campaign .battle-time { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); text-align: center; padding: 3px 12px; border: 1px solid #b75f53; }
+#hud.nanjing-campaign .battle-time small { color: #ffd2c9; margin: 0; font-size: 11px; line-height: 16px; }
+#hud.nanjing-campaign #timer { color: #ff887b; font: bold 32px/36px monospace; }
+#hud.nanjing-campaign .objective-banner { top: 116px; }
 .deployment-overlay > .dialog { display: flex; flex-direction: column; width: min(1000px,96vw); height: min(820px,96dvh); max-height: 96dvh; padding: 16px; overflow: hidden; }
 .deployment-overlay > .dialog > h2 { font-size: 25px; margin: 6px 0; }
 .deployment-overlay > .dialog > p { margin: 4px 0; }

@@ -16,7 +16,7 @@ import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 
-export async function loadIjaCharacter() {
+export async function loadIjaCharacter(walkHeightAt = walkHeight) {
   const base = '/assets/game/ija-1938/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Japanese character manifest: HTTP ${response.status}`);
@@ -66,7 +66,7 @@ export async function loadIjaCharacter() {
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(level, null, { bayonet: true }), pose = createNraRiflePose(root, bones, gun);
-    const groundAt = (x, z) => walkHeight(x, z, root.position.y);
+    const groundAt = (x, z) => walkHeightAt(x, z, root.position.y);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);

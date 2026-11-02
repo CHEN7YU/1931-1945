@@ -23,6 +23,7 @@ export function createSolidIndex(solids, size = 8) {
   const cells = new Map(), global = [], dynamic = [], ray = new THREE.Ray(), point = new THREE.Vector3();
   const acceleration = { meshes: 0, triangles: 0 };
   for (const object of solids) {
+    object.updateWorldMatrix(true, false);
     if (object.isInstancedMesh) { dynamic.push(object); continue; }
     if (accelerateCollisionMesh(object)) {
       acceleration.meshes++;

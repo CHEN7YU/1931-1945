@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { historicalVehicleModel, vehicleWeaponView, VEHICLE_PROFILES } from '../src/vehicle-model.js';
+import { historicalVehicleModel, vehicleWeaponView, VEHICLE_PROFILES, JAPANESE_AIRCRAFT_PROFILE } from '../src/vehicle-model.js';
 import { tankModel, planeModel, weaponModel } from '../src/world.js';
 
 function geometryStats(model) {
@@ -65,6 +65,26 @@ test('wing markings conform across their interiors, not just at the rim of a fla
     assert.ok(hit, 'painted upper wing has physical geometry');
     assert.equal(Boolean(hit.object.material.vertexColors), false, 'base wing cannot poke through its roundel');
   }
+});
+
+test('enemy aircraft reuse the Japanese Ki-10 template with red markings rather than the Chinese I-15bis', () => {
+  const friendly = planeModel(), enemy = planeModel('enemy'), second = planeModel('enemy');
+  const colors = model => {
+    const result = new Set();
+    model.traverse(object => { if (object.isMesh) result.add(object.material.color.getHex()); });
+    return result;
+  };
+  assert.ok(colors(friendly).has(0x183e80));
+  assert.equal(colors(friendly).has(0xa52c24), false);
+  assert.ok(colors(enemy).has(0xa52c24));
+  assert.equal(colors(enemy).has(0x183e80), false, 'enemy aircraft must not retain Chinese wing or tail insignia');
+  assert.equal(enemy.userData.profile, JAPANESE_AIRCRAFT_PROFILE);
+  assert.equal(friendly.userData.profile, VEHICLE_PROFILES.plane);
+  assert.equal(enemy.children[0].geometry, second.children[0].geometry);
+  assert.notEqual(enemy.userData.propeller, second.userData.propeller);
+  const size = new THREE.Box3().setFromObject(enemy).getSize(new THREE.Vector3());
+  assert.ok(Math.abs(size.x - JAPANESE_AIRCRAFT_PROFILE.span) < .01);
+  assert.ok(geometryStats(enemy).calls <= 14);
 });
 
 test('repeated vehicles share immutable geometry and materials, not turret, gun or propeller transforms', () => {

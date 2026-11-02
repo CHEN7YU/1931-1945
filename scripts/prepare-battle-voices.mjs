@@ -13,8 +13,8 @@ export function voiceSSML(clip) {
   const text = clip.pauseMs
     ? clip.text.split(/[!！。]/u).map(part => part.trim()).filter(Boolean).map(xml).join(`<break time="${clip.pauseMs}ms"/>`) + '！'
     : xml(clip.text);
-  const speech = `<prosody rate="${clip.rate}" pitch="${clip.pitch}" volume="loud">${text}</prosody>`;
-  const styled = clip.style ? `<mstts:express-as style="${clip.style}" styledegree="${clip.styledegree ?? '1.5'}">${speech}</mstts:express-as>` : speech;
+  const speech = `<prosody rate="${clip.rate}" pitch="${clip.pitch}" volume="${clip.volume ?? 'loud'}">${text}</prosody>`;
+  const styled = clip.style ? `<mstts:express-as style="${clip.style}" styledegree="${clip.styledegree ?? '1.5'}"${clip.role ? ` role="${clip.role}"` : ''}>${speech}</mstts:express-as>` : speech;
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${clip.locale}"><voice name="${clip.voice}">${styled}</voice></speak>`;
 }
 
@@ -26,7 +26,7 @@ export function voiceSynthesisHash(clip) {
   return synthesisHash;
 }
 
-function azureToken() {
+export function azureToken() {
   const args = ['account', 'get-access-token', '--resource', 'https://cognitiveservices.azure.com', '--query', 'accessToken', '-o', 'tsv', '--only-show-errors'];
   try {
     const token = (process.platform === 'win32'

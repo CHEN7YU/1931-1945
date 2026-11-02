@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNraMotion, sampleNraMotion, sampleNraPhase, syncNativeAimGoal, nativeGaitParameters, nativeTravelLean } from './nra-motion.js';
+import { createNraMotion, sampleNraMotion, sampleNraPhase, syncNativeAimGoal, nativeGaitParameters, nativeTravelLean, nativePoseIntent } from './nra-motion.js';
 import { createRifleState } from './rifle-action.js';
 import { createNraAtlas, mergeNraPose } from './nra-atlas.js';
 import { isNraSkin } from './nra-appearance.js';
@@ -49,7 +49,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const scale = new THREE.Vector3(1, 1, 1), euler = new THREE.Euler(), projection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere(new THREE.Vector3(), 2);
   const excludedIds = new Set(), slots = [], tiers = new Map(), banks = [], weaponGroups = new Map();
-  const weaponMatrix = new THREE.Matrix4();
+  const weaponMatrix = new THREE.Matrix4(), aimPitchRotation = new THREE.Matrix4();
   let coarseIds = new Set(), lodReady = false;
   const poseLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
   const weaponLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
@@ -366,6 +366,11 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
             }
           }
           weaponMatrix.multiplyMatrices(matrix, bank.gunMatrix);
+          if (!sword && actor.health > 0 && Number.isFinite(actor.aimPitch) && actor.nativeMotion &&
+            nativePoseIntent(actor) === 'aim') {
+            const lowReady = actor.nativeMotion.lowReady ?? 0;
+            weaponMatrix.multiply(aimPitchRotation.makeRotationX(actor.aimPitch * (1 - lowReady)));
+          }
           for (const mesh of weapons.parts) mesh.setMatrixAt(weapons.count, weaponMatrix);
           weapons.count++;
           summary.weaponGeometryTriangles += weapons.triangles;

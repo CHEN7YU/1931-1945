@@ -2,7 +2,7 @@ import { handlePerformance, cleanupPerformance } from './performance.js';
 
 const MAX_BODY_BYTES = 16384;
 const STATES = new Set(['menu', 'pause', 'dead', 'victory', 'defeat', 'draw']);
-const MAPS = new Set(['taierzhuang', 'taierzhuang-streets', 'taierzhuang-fort']);
+const MAPS = new Set(['taierzhuang', 'taierzhuang-streets', 'taierzhuang-fort', 'nanjing']);
 const json = (data, status = 200, extra = {}) => Response.json(data, { status,
   headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra } });
 

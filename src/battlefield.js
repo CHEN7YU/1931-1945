@@ -15,6 +15,9 @@ import { weatheredWallPiece } from './scene-art.js';
 import { streetGrimePatches, grimePatchGeometry, sandbagGeometry, sandbagCollisionProxy } from './scene-details.js';
 import { SHOP_ART_STYLES, shopAwningGeometry, shopAwningFrame, shopNoticeGeometry, shopPrintMaterial,
   shopContactMaterial, shopContactPatches } from './shop-art.js';
+import { makeNanjingBattlefield } from './nanjing-battlefield.js';
+import { createRoofGeometry } from './roof-geometry.js';
+export { createRoofGeometry } from './roof-geometry.js';
 
 export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
   [4, -4, 17, 12], [0, 52.5, 87, 4], [-16, 62, 7, 14],
@@ -23,28 +26,8 @@ export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82],
   [-36, 18, 16, 12], [27, 16.5, 14, 13], [-9.5, -34.5, 5, 11],
   [8, -16, 16, 13]];
 
-export function createRoofGeometry(w, d, rise, meters) {
-  const vertices = [], uv = [], distances = [0], segments = 16;
-  const height = u => rise * Math.pow(1 - Math.abs(u), .84) + Math.pow(Math.abs(u), 7) * .27;
-  for (let i = 0; i < segments; i++) {
-    const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
-    distances.push(distances[i] + Math.hypot((b - a) * w / 2, height(b) - height(a)));
-  }
-  for (let i = 0; i < segments; i++) {
-    const a = i / segments * 2 - 1, b = (i + 1) / segments * 2 - 1;
-    for (const [u, v] of [[a, -1], [a, 1], [b, -1], [b, -1], [a, 1], [b, 1]]) {
-      vertices.push(u * w / 2, height(u), v * d / 2);
-      uv.push(distances[u === a ? i : i + 1] / meters, v * d / 2 / meters);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 export function makeWorld(scene, surface, options = {}) {
+  if (options.campaign === 'nanjing') return makeNanjingBattlefield(scene, surface);
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
   const town = options.town ?? makeTownLayout();
   const BRIDGE = options.bridge ?? DEFAULT_BRIDGE;

@@ -3,6 +3,33 @@ import assert from 'node:assert/strict';
 import { SQUADS, SPAWN_RULES, makeBaseSpawns, deploymentBlockReason, supportsSquad, spawnBlockReason, rallyBuildBlockReason, spawnPositions,
   createRallyPoint, replaceTeamRally, damageRallyPoint } from '../src/spawns.js';
 import { makeObjectives, circleBlocked } from '../src/core.js';
+import { NANJING_WALL_WALK } from '../src/nanjing-layout.js';
+import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+import { formationPositions } from '../src/battle-roster.js';
+
+test('Nanjing defense spawns retain enemy blocking while the northern rampart offers a separate counterattack entry', () => {
+  for (const id of ['nanjing-gate', 'nanjing-west-dock', 'nanjing-gate-north-wall']) {
+    const point = NANJING_SPAWNS.find(point => point.id === id);
+    const enemy = { x: point.x, z: point.z, health: 100, altitude: point.altitude };
+    assert.equal(spawnBlockReason(point, 'infantry', [enemy], []), '附近有敌军，暂时无法部署');
+    if (point.layout === 'wall' || point.deploymentZone) {
+      assert.throws(() => formationPositions(point, 11, [], [], [enemy]));
+    } else {
+      assert.ok(formationPositions(point, 11, [], [], [enemy]).every(position =>
+        Math.hypot(position.x - enemy.x, position.z - enemy.z) >= SPAWN_RULES.enemyBlockRadius));
+    }
+    assert.equal(spawnBlockReason(point, 'tank', [enemy], []), '该重生点不支持此小队');
+    assert.equal(spawnBlockReason(point, 'infantry', [],
+      [{ minX: point.x - 3, maxX: point.x + 3, minZ: point.z - 3, maxZ: point.z + 3 }]), '重生区域受阻');
+  }
+  const rampart = NANJING_SPAWNS.find(point => point.id === 'nanjing-gate-north-wall');
+  const groundEnemy = { x: rampart.x, z: rampart.z, health: 100, altitude: 0 };
+  assert.equal(spawnBlockReason(rampart, 'infantry', [groundEnemy], []), null);
+  const positions = formationPositions(rampart, 11, [],
+    [{ x: rampart.x, y: 0, z: rampart.z }], [groundEnemy]);
+  assert.equal(positions.length, 11);
+  assert.ok(positions.every(position => Math.abs(position.z - rampart.z) <= .71));
+});
 
 const wiped = [{ health: 0 }, { health: 0 }];
 const rally = { id: 'test-rally', team: 'friendly', kind: 'rally', x: 0, z: 68, health: SPAWN_RULES.rallyHealth };
@@ -36,6 +63,11 @@ test('objective spawns retain enemy and geometry checks; retired rallies cannot 
   assert.equal(spawnBlockReason(point, 'infantry', [{ x: 0, z: 70, health: 100, altitude: 27 }], []), null);
   assert.ok(spawnBlockReason(rally, 'infantry', [], []));
   assert.ok(spawnBlockReason(point, 'infantry', [], [{ minX: -1, maxX: 1, minZ: 67, maxZ: 69 }]));
+  const wall = { ...point, x: (NANJING_WALL_WALK.minX + NANJING_WALL_WALK.maxX) / 2,
+    z: -16, altitude: NANJING_WALL_WALK.height, layout: 'wall' };
+  assert.equal(spawnBlockReason(wall, 'infantry', [{ x: wall.x, z: wall.z, health: 100 }], []), null);
+  assert.ok(spawnBlockReason(wall, 'infantry', [{ x: wall.x, z: wall.z,
+    altitude: NANJING_WALL_WALK.height, health: 100 }], []));
 });
 
 test('rally building requires clearance from terrain, capture zones and nearby hostiles', () => {

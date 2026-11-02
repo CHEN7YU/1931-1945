@@ -6,6 +6,15 @@ export const TRAVERSAL = Object.freeze({
   reach: 1.05, clearance: .06, vaultSeconds: .85, jumpCost: .08, vaultCost: .14,
 });
 
+export const FALL_DAMAGE = Object.freeze({ safeDrop: 3, lethalDrop: 8, lethalDamage: 100 });
+
+export function landingDamage(impactSpeed) {
+  if (!Number.isFinite(impactSpeed) || impactSpeed < 0) throw new RangeError('Landing speed must be finite and non-negative');
+  const drop = impactSpeed * impactSpeed / (2 * TRAVERSAL.gravity);
+  return Math.min(FALL_DAMAGE.lethalDamage, Math.max(0,
+    (drop - FALL_DAMAGE.safeDrop) / (FALL_DAMAGE.lethalDrop - FALL_DAMAGE.safeDrop) * FALL_DAMAGE.lethalDamage));
+}
+
 export function createTraversal() {
   return { kind: 'grounded', velocity: 0, baseY: 0, elapsed: 0, plan: null, blocked: false };
 }
@@ -28,6 +37,21 @@ export function moveAirborne(position, dx, dz, radius, obstacles, bodyHeight = T
   for (let i = 0; i < steps; i++) {
     if (!circleBlocked(position.x + dx / steps, position.z, radius, obstacles, position.y, bodyHeight)) position.x += dx / steps;
     if (!circleBlocked(position.x, position.z + dz / steps, radius, obstacles, position.y, bodyHeight)) position.z += dz / steps;
+  }
+  return position;
+}
+
+export function moveSupported(position, dx, dz, radius, obstacles, heightAt, moveGround,
+  bodyHeight = TRAVERSAL.bodyHeight, maxDrop = Infinity) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / .04));
+  for (let step = 0; step < steps; step++) {
+    const next = { x: position.x + dx / steps, z: position.z + dz / steps };
+    const terrain = heightAt(next.x, next.z, position.y);
+    const floor = landingHeight(next, position.y, obstacles, heightAt);
+    if (position.y - floor > maxDrop) continue;
+    // Let the body clear a low edge before its support footprint releases.
+    const move = position.y - Math.min(terrain, floor) > .25 ? moveAirborne : moveGround;
+    move(position, dx / steps, dz / steps, radius, obstacles, bodyHeight);
   }
   return position;
 }
@@ -113,7 +137,8 @@ export function advanceTraversal(state, position, dt, obstacles, heightAt) {
       if (velocity <= 0) {
         const floor = landingHeight(position, position.y, obstacles, heightAt);
         if (floor <= position.y + .025 && nextY <= floor) {
-          position.y = floor; impact = Math.abs(velocity); state.kind = 'grounded'; state.velocity = 0;
+          impact = Math.sqrt(state.velocity * state.velocity + 2 * TRAVERSAL.gravity * Math.max(0, position.y - floor));
+          position.y = floor; state.kind = 'grounded'; state.velocity = 0;
           continue;
         }
       }

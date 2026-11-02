@@ -6,7 +6,7 @@ export const PERFORMANCE_SCOPES = Object.freeze([
 ]);
 export const PERFORMANCE_SCOPE_SAMPLE_EVERY = Object.freeze({ steering: 32, routes: 32, posture: 32, tankEvasion: 32 });
 export const PERFORMANCE_STATES = Object.freeze(['menu', 'playing', 'transferring', 'pause', 'dead', 'victory', 'defeat', 'draw', 'loading']);
-export const PERFORMANCE_MAPS = Object.freeze(['taierzhuang-fort', 'taierzhuang-streets', 'taierzhuang']);
+export const PERFORMANCE_MAPS = Object.freeze(['taierzhuang-fort', 'taierzhuang-streets', 'taierzhuang', 'nanjing']);
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) => object(value) && Object.keys(value).every(key => names.includes(key));

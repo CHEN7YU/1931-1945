@@ -2,7 +2,7 @@ import { RIFLE } from './rifle-action.js';
 
 export const RIFLE_HIT_DAMAGE = Object.freeze({ head: 100, torso: 100, limb: 40 });
 const kinds = new Set(['person', 'exposed-crew', 'closed-armor', 'aircraft']);
-const weapons = new Set(['rifle', 'bayonet', 'dadao', 'grenade', 'explosive-pack', 'explosion', 'cannon', 'aircraft-gun', 'collision', 'boundary']);
+const weapons = new Set(['rifle', 'bayonet', 'dadao', 'grenade', 'explosive-pack', 'explosion', 'cannon', 'aircraft-gun', 'collision', 'boundary', 'fall']);
 
 export function canWeaponDamageTarget(weapon, kind) {
   if (!weapons.has(weapon) || !kinds.has(kind)) throw new RangeError(`Unknown weapon/target classification: ${weapon}/${kind}`);

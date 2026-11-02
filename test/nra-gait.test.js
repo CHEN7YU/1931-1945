@@ -34,6 +34,21 @@ test('low steps use bounded foot trajectories without stretching legs or changin
   assert.ok(results[1] - results[0] > .003);
 });
 
+test('low-step feet follow a submerged walking floor instead of targeting the dry-world surface', () => {
+  const { root, bones } = legs();
+  root.position.y = -1.765;
+  root.updateMatrixWorld(true);
+  const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
+    [side, root.worldToLocal(bones.get(`${side}Foot`).getWorldPosition(new Vector3()))]));
+  const motion = { weight: 1, upright: 1, jog: 0, hipDrop: 0, legLift: .55,
+    walkPhase: .6, runPhase: .6, walkStride: 1.25, runStride: 2.4 };
+  const groundAt = (_x, _z) => root.position.y;
+  const result = applyNativeFootCycle(root, bones, motion, restFeet, groundAt);
+  assert.equal(result.left.floor, -1.765);
+  assert.equal(result.right.floor, -1.765);
+  assert.ok(result.left.error < 1e-5 && result.right.error < 1e-5);
+});
+
 test('low-step gait leaves stationary and static combat postures unchanged', () => {
   for (const changes of [{ upright: 0 }, { weight: 0 }]) {
     const { root, bones, restFeet } = legs();

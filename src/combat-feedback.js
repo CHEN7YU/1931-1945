@@ -1,4 +1,15 @@
+import { KILL_COLUMNS } from './battle-stats.js';
+
 const creditNames = { player: '你', ally: '友军', enemy: '日军', environment: '事故' };
+
+export function attackSourceLabel(source) {
+  if (source.credit === 'environment' && source.cause === 'fall') return '高处坠落';
+  const credit = creditNames[source.credit];
+  if (!credit) throw new RangeError('Unknown attack credit');
+  const weapon = source.cause === 'tank-crush' ? '坦克碾压' : source.weaponClass === 'tank' ? '坦克主炮'
+    : KILL_COLUMNS.find(([id]) => id === source.weaponClass)?.[1];
+  return weapon ? `${credit}·${weapon}` : credit;
+}
 
 export function createCombatFeedback() {
   let flash = 0, markerUntil = 0, markerSource = null;
@@ -22,8 +33,9 @@ export function createCombatFeedback() {
       if (viewer?.machineGunWeaponIds != null && (!Array.isArray(viewer.machineGunWeaponIds) ||
         viewer.machineGunWeaponIds.some(id => typeof id !== 'string' || !id))) throw new Error('Machine-gun feedback requires owned weapon identities');
       if (event.type === 'casualty') {
-        if (event.target.team === 'enemy') {
-          feed.unshift({ text: `${creditNames[event.source.credit]}　›　日军守兵`, until: event.time + 5,
+        if (event.target.team === 'enemy' || event.target.team === 'friendly') {
+          const target = event.target.team === 'friendly' ? '我方士兵阵亡' : '日军守兵';
+          feed.unshift({ text: `${attackSourceLabel(event.source)}　›　${target}`, until: event.time + 5,
             targetId: event.target.id, sourceId: event.source.soldierId ?? event.source.vehicleId });
           if (feed.length > 4) feed.pop();
         }

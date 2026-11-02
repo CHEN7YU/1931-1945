@@ -13,6 +13,13 @@ export const BATTLE_VOICE_PROFILES = Object.freeze({
 
 export const BATTLE_VOICE_LINES = Object.freeze({
   friendly: [
+    ...['一', '二', '三', '四', '五', '六', '七'].flatMap((minutes, index) => [
+      { id: `nanjing-gate-${index + 1}`, cue: `nanjing-gate-${index + 1}`,
+        text: `弟兄们，我们还要在这里坚守${minutes}分钟，给百姓撤退争取时间！` },
+      { id: `nanjing-dock-${index + 1}`, cue: `nanjing-dock-${index + 1}`,
+        text: `守住渡口！还要坚守${minutes}分钟，掩护百姓渡江！` },
+    ]),
+    { id: 'nanjing-withdrawal', cue: 'nanjing-withdrawal', text: '我们撤退到渡口，掩护百姓渡江！' },
     { id: 'advance-1', cue: 'advance', text: '冲啊！跟我上！' },
     { id: 'advance-2', cue: 'advance', text: '弟兄们，向前推进！' },
     { id: 'advance-3', cue: 'advance', text: '跟紧队伍，别掉队！' },

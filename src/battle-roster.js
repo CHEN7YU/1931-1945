@@ -1,6 +1,7 @@
 import { TYPES, circleBlocked } from './core.js';
 import { spawnBlockReason, supportsSquad } from './spawns.js';
 import { CHI_HA, japaneseArmorRoster } from './chi-ha.js';
+import { NANJING_SPAWNS } from './nanjing-campaign.js';
 
 export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
@@ -32,6 +33,33 @@ export function battleRoster(playerType = 'infantry') {
     player: false, memberCount: 1, members: [], generation: 0, respawnAt: null, spawnId: 'japan-air' }];
 }
 
+export function nanjingBattleRoster(playerType = 'infantry') {
+  if (playerType !== 'infantry') throw new RangeError('The Nanjing campaign deploys an infantry squad');
+  const friendly = Array.from({ length: 5 }, (_, index) => ({
+    id: `friendly-${index}`, team: 'friendly', index, type: 'infantry', player: index === 0,
+    members: [], generation: 0, respawnAt: null, reserve: index > 2,
+    openingSpawnId: index < 3 ? `nanjing-gate-front-${index}` : null,
+    spawnId: ['nanjing-gate', 'nanjing-gate', 'nanjing-gate',
+      'nanjing-west-ai-1', 'nanjing-west-ai-2'][index],
+  }));
+  const enemyInfantry = Array.from({ length: 8 }, (_, index) => ({
+    id: `enemy-${index}`, team: 'enemy', index, type: 'infantry', player: false, members: [],
+    generation: 0, respawnAt: null, spawnId: `nanjing-south-${index + 1}`,
+    assaultCrossing: 'bridge',
+  }));
+  const armor = japaneseArmorRoster()[0];
+  armor.id = 'enemy-8';
+  armor.index = 8;
+  armor.spawnId = 'nanjing-south-armor';
+  const aircraft = { id: 'enemy-9', team: 'enemy', index: 9, type: 'plane', player: false,
+    aerialSupport: true, members: [], generation: 0, respawnAt: null, spawnId: 'nanjing-south-air' };
+  if (NANJING_SPAWNS.filter(spawn => spawn.team === 'friendly').length < friendly.length ||
+    NANJING_SPAWNS.filter(spawn => spawn.team === 'enemy').length < enemyInfantry.length + 2) {
+    throw new Error('Nanjing campaign spawn configuration is incomplete');
+  }
+  return [...friendly, ...enemyInfantry, armor, aircraft];
+}
+
 export function stagingSpawns() {
   return ['friendly', 'enemy'].flatMap(team => lanes.map((x, index) => ({
     id: `${team}-staging-${index + 1}`, name: `${team === 'friendly' ? '南侧' : '北侧'}分队集结区 ${index + 1}`,
@@ -42,14 +70,56 @@ export function stagingSpawns() {
 export function formationPositions(point, count, obstacles, occupied = [], hostiles = []) {
   const candidates = [];
   const hostileClearance = point.permanent ? 1.25 : 18;
-  for (let z = -9; z <= 9; z++) for (let x = -9; x <= 9; x++) {
-    const px = point.x + x * 1.55, pz = point.z + z * 1.55;
-    if (!circleBlocked(px, pz, .48, obstacles) && !hostiles.some(actor => actor.health > 0 && (actor.altitude || 0) < 4 && Math.hypot(actor.x - px, actor.z - pz) < hostileClearance)) candidates.push({ x: px, z: pz, score: x * x + z * z });
+  if (point.layout === 'wall' || point.layout === 'cave') {
+    const columns = point.layout === 'wall' ? 2 : 3;
+    if (point.layout === 'wall' && point.formationZones?.length) {
+      for (const zone of point.formationZones) {
+        const rows = Math.floor((zone.maxZ - zone.minZ - .96) / 1.4) + 1;
+        const firstZ = zone.minZ + ((zone.maxZ - zone.minZ) - (rows - 1) * 1.4) / 2;
+        for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+          const x = point.x + (column - (columns - 1) / 2) * 1.4;
+          const z = firstZ + row * 1.4;
+          candidates.push({ x, z, score: (x - point.x) ** 2 + (z - point.z) ** 2 });
+        }
+      }
+    } else {
+      const rows = Math.ceil(count / columns);
+      for (let index = 0; index < count; index++) {
+        const column = index % columns, row = Math.floor(index / columns);
+        const across = (column - (columns - 1) / 2) * 1.4;
+        const along = (row - (rows - 1) / 2) * 1.4;
+        candidates.push({
+          x: point.x + (point.formationAxis === 'x' ? along : across),
+          z: point.z + (point.formationAxis === 'x' ? across : along),
+          score: column * column + row * row,
+        });
+      }
+    }
+  } else {
+    for (let z = -9; z <= 9; z++) for (let x = -9; x <= 9; x++) {
+      const px = point.x + x * 1.55, pz = point.z + z * 1.55;
+      candidates.push({ x: px, z: pz, score: x * x + z * z });
+    }
   }
+  const feetY = point.altitude ?? 0;
+  const clearCandidates = candidates.filter(candidate => {
+    if (point.deploymentZone && (candidate.x < point.deploymentZone.minX || candidate.x > point.deploymentZone.maxX ||
+      candidate.z < point.deploymentZone.minZ || candidate.z > point.deploymentZone.maxZ)) return false;
+    return (
+    !circleBlocked(candidate.x, candidate.z, .48, obstacles, feetY) &&
+    !hostiles.some(actor => {
+      const x = actor.position?.x ?? actor.x, z = actor.position?.z ?? actor.z;
+      return actor.health > 0 && Math.abs((actor.position?.y ?? actor.altitude ?? 0) - feetY) < 4 &&
+        Math.hypot(x - candidate.x, z - candidate.z) < hostileClearance;
+    }));
+  });
+  candidates.length = 0;
+  candidates.push(...clearCandidates);
   candidates.sort((a, b) => a.score - b.score || a.z - b.z || a.x - b.x);
   const placed = [];
   for (const point of candidates) {
-    if ([...occupied, ...placed].some(other => Math.hypot(point.x - other.x, point.z - other.z) < 1.25)) continue;
+    if ([...occupied, ...placed].some(other => Math.abs((other.y ?? feetY) - feetY) < 1.75 &&
+      Math.hypot(point.x - other.x, point.z - other.z) < 1.25)) continue;
     placed.push({ x: point.x, z: point.z });
     if (placed.length === count) return placed;
   }
@@ -91,6 +161,7 @@ export function reinforcementDue(formation, now) {
 
 export function battleSpawn(formation, points, hostiles, obstacles, initial = false) {
   const available = points.filter(point => point.team === formation.team && point.enabled !== false);
+  if (initial && formation.openingSpawnId) return points.find(point => point.id === formation.openingSpawnId);
   if (!initial && !isVehicleUnit(formation.type)) {
     const rear = available.filter(point => point.permanent &&
       !spawnBlockReason(point, 'infantry', hostiles, obstacles));

@@ -50,6 +50,8 @@
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
         </div>
         <button type="button" class="text-button feedback-entry" data-feedback-open>问题反馈 ↗</button>
+        <a id="nanjing-menu-entry" class="text-button shop-art-entry" href="?campaign=nanjing">南京保卫战 · 两阶段战役 ↗</a>
+        <a id="nanjing-menu-return" class="text-button shop-art-entry" href="./" hidden>返回台儿庄部署 ↗</a>
         <a id="shop-art-entry" class="text-button shop-art-entry" href="?benchmark=shop-art&amp;seed=1938" hidden>美术样例区 ↗ 直接看首街两店</a>
         <p class="deployment-note">仅中国阵营 <span>·</span> 整队阵亡后换队</p>
         <details id="menu-settings" class="control-preferences">
@@ -84,7 +86,7 @@
         <div><button data-shop-view="grain">① 粮行（F1）</button><button data-shop-view="cloth">② 布庄（F2）</button><button data-shop-view="ground">③ 门前积尘（F3）</button></div>
         <a href="./">返回正常战场大厅</a>
       </aside>
-      <div class="hud-top"><div id="objectives" aria-label="三点控制情况"></div><div class="battle-time"><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
+      <div class="hud-top"><div id="objectives" aria-label="战役目标"></div><div class="battle-time"><small id="timer-label">剩余作战时间</small><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
       <div class="hud-notices"><small id="hud-notice" role="status" hidden></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div>
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="encirclement-warning" role="alert" hidden></div>

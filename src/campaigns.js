@@ -5,8 +5,8 @@ export const CAMPAIGNS = Object.freeze([
     x: 76, y: 51, description: '进入粮栈高楼夺取补给点，接应外线援军，完成城寨合围。' }),
   Object.freeze({ id: 'shanghai', name: '淞沪会战', year: 1937, region: '上海', locked: true,
     x: 85, y: 61, description: '战场设计待提交，当前不可进入。' }),
-  Object.freeze({ id: 'nanjing', name: '南京保卫战', year: 1937, region: '南京', locked: true,
-    x: 81, y: 58, description: '战场设计待提交，当前不可进入。' }),
+  Object.freeze({ id: 'nanjing', name: '南京保卫战', year: 1937, region: '南京',
+    x: 81, y: 58, description: '坚守中华门，沿陆路撤往上新河渡口，掩护百姓渡江后登船撤离。' }),
 ]);
 
 export const SELECTABLE_CAMPAIGNS = Object.freeze(CAMPAIGNS.filter(campaign => !campaign.hidden));

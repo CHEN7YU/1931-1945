@@ -8,17 +8,18 @@ const point = value => {
   return Object.freeze({ x: value.x, y: value.y, z: value.z });
 };
 const copySource = value => {
-  if (value?.credit === 'environment' && value.cause === 'boundary' && typeof value.subjectId === 'string' && value.subjectId) {
-    return Object.freeze({ credit: 'environment', cause: 'boundary', subjectId: value.subjectId });
+  if (value?.credit === 'environment' && ['boundary', 'fall'].includes(value.cause) && typeof value.subjectId === 'string' && value.subjectId) {
+    return Object.freeze({ credit: 'environment', cause: value.cause, subjectId: value.subjectId });
   }
-  if (value?.credit === 'environment' && value.cause === 'crash' && typeof value.vehicleId === 'string' && value.vehicleId) {
-    return Object.freeze({ credit: 'environment', cause: 'crash', vehicleId: value.vehicleId });
+  if (value?.credit === 'environment' && ['crash', 'tank-crush'].includes(value.cause) && typeof value.vehicleId === 'string' && value.vehicleId) {
+    return Object.freeze({ credit: 'environment', cause: value.cause, vehicleId: value.vehicleId });
   }
   if (!value || !['player', 'ally', 'enemy'].includes(value.credit) ||
     !['unitId', 'soldierId', 'weaponId'].every(field => typeof value[field] === 'string' && value[field]) ||
     value.team !== (value.credit === 'enemy' ? 'enemy' : 'friendly') ||
     !['vehicleId', 'seatId'].every(field => value[field] == null || typeof value[field] === 'string')) throw new Error('Combat feedback requires an original attack source');
   const classification = {};
+  if (value.cause === 'tank-crush') classification.cause = value.cause;
   if (value.weaponClass != null) {
     if (!['weaponClass', 'squadId', 'unitName'].every(field => typeof value[field] === 'string' && value[field])) throw new Error('Attack classification requires immutable weapon and squad labels');
     for (const field of ['weaponClass', 'squadId', 'unitName']) classification[field] = value[field];
@@ -48,7 +49,7 @@ export function createCombatEvents() {
       if (type === 'shot') {
         const { weaponType, muzzle = false, color = 0xffd49a, sound = null, recoil = 0, automatic = false } = data;
         if (source.credit === 'environment' || !['infantry', 'tank', 'mortar', 'plane'].includes(weaponType) ||
-          typeof muzzle !== 'boolean' || typeof automatic !== 'boolean' || automatic && weaponType !== 'infantry' ||
+          typeof muzzle !== 'boolean' || typeof automatic !== 'boolean' || automatic && !['infantry', 'plane'].includes(weaponType) ||
           !Number.isInteger(color) || color < 0 || color > 0xffffff ||
           ![null, 'shot', 'blast'].includes(sound) || !Number.isFinite(recoil) || recoil < 0) throw new RangeError('Invalid shot feedback');
         payload = { source, weaponType, start: point(data.start), end: data.end == null ? null : point(data.end), muzzle, color, sound, recoil };

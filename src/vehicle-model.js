@@ -412,6 +412,7 @@ export function historicalVehicleModel(type, team = 'friendly') {
   if (!templates.has(key)) templates.set(key, type === 'tank' ? tankTemplate() : team === 'enemy' ? japanesePlaneTemplate() : planeTemplate());
   const model = templates.get(key).clone(true);
   model.userData.profile = type === 'plane' && team === 'enemy' ? JAPANESE_AIRCRAFT_PROFILE : VEHICLE_PROFILES[type];
+  model.userData.team = team;
   if (type === 'tank') {
     model.userData.turret = model.getObjectByName('turret');
     model.userData.gun = model.getObjectByName('gun');
