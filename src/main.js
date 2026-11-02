@@ -1312,7 +1312,10 @@ function showOverlay(kind = 'pause') {
   const dead = kind === 'dead';
   $('overlay').classList.toggle('deployment-overlay', dead);
   $('confirm-deploy').hidden = !dead;
-  $('deployment-help').open = !dead;
+  $('deployment-help').hidden = ended;
+  $('deployment-help').open = !dead && !ended;
+  $('overlay').querySelector('[data-build-version]').hidden = ended;
+  $('overlay-description').hidden = kind === 'victory';
   resetConstruction();
   renderConstruction();
   $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
@@ -1322,6 +1325,7 @@ function showOverlay(kind = 'pause') {
     : conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。';
   $('overlay-description').textContent = ended ? `${victoryRule}这是原创玩法演示，不代表真实历史战斗过程。` : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。' : encirclementMode ? '  我军六队、日军八队开局，作战45、90秒各增援两队，最多十队。A高楼有两队日军驻守，必须进入楼内占领；占领后日军补充等待35秒，日军夺回则恢复17秒。我方三点合围后全歼残敌获胜；日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
   $('resume').hidden = ended || dead;
+  if (kind === 'victory') $('overlay-description').textContent = '';
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
   $('pause-settings').hidden = kind !== 'pause';

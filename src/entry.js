@@ -52,6 +52,9 @@ async function openInitialDeployment() {
   $('redeploy-choices').hidden = $('deployment-options').hidden = false;
   $('confirm-deploy').hidden = false;
   $('deployment-help').open = false;
+  $('deployment-help').hidden = false;
+  $('overlay-description').hidden = false;
+  $('overlay').querySelector('[data-build-version]').hidden = false;
   $('deployment-objective').textContent = '首次出击 · 初始阵地';
   $('back-menu').textContent = '返回选择战役';
   initialSquad = initialSpawn = null; tacticalMapReady = false; refreshInitialDeployment();
