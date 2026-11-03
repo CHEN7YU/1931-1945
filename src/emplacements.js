@@ -16,7 +16,7 @@ export const EMPLACEMENT_PROFILES = Object.freeze({
 export const NANJING_EMPLACEMENTS = Object.freeze([
   { id: 'bridge-mg', profile: 'maxim24', x: -29, z: 26, heading: Math.PI },
   { id: 'bridge-gun', profile: 'bofors75', x: -31, z: 23, heading: -2.84 },
-  { id: 'dock-mg', profile: 'maxim24', x: -58, z: -92, heading: -Math.PI / 2 },
+  { id: 'dock-mg', profile: 'maxim24', x: -53.5, z: -92, heading: -Math.PI / 2 },
   { id: 'dock-gun', profile: 'bofors75', x: -63, z: -94, heading: -Math.PI / 2 },
   { id: 'gate-aa', profile: 'maxim24aa', x: 13.5, z: 20, altitude: NANJING_GATE_HEIGHT, heading: Math.PI },
   { id: 'dock-aa', profile: 'maxim24aa', x: -68, z: -71, altitude: .36, heading: -Math.PI / 2 },

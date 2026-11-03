@@ -34,7 +34,14 @@ export function makeTownPreviewLayout() {
   for (const piece of town.pieces) if (piece.id.startsWith(`${towerId}-`)) piece.z += 12;
   town.passages = town.passages.filter(passage => !oldYard(passage.id));
   for (const passage of town.passages) if (passage.id.startsWith(`${towerId}-`)) passage.z += 12;
-  town.covers = town.covers.filter(cover => !oldYard(cover.wallId ?? cover.id));
+  const sealedPartition = `${towerId}-partition`;
+  town.pieces = town.pieces.filter(piece => !piece.id.startsWith(`${sealedPartition}-`));
+  town.passages = town.passages.filter(passage => passage.id !== `${sealedPartition}-door`);
+  town.pieces.push({ id: `${sealedPartition}-sealed`, x: (tower.x - tower.w / 2 + tower.x + .95) / 2,
+    y: 1.55, z: tower.z - .9, w: tower.w / 2 + .95, h: 3.1, d: .24,
+    material: 'plaster', collision: true, wall: true });
+  town.covers = town.covers.filter(cover => !oldYard(cover.wallId ?? cover.id) &&
+    !cover.wallId?.startsWith(`${sealedPartition}-`));
   for (const cover of town.covers) if (cover.buildingId === towerId || cover.wallId?.startsWith(`${towerId}-`)) {
     cover.z += 12;
     if (cover.peek) cover.peek.z += 12;

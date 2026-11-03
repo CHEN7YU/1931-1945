@@ -34,7 +34,7 @@ export function updateCivilianStreetLife(person, now, dt, peers, doorSystem) {
     person.civilianArms[index].rotation.x = -stride * (index ? -1 : 1);
   }
   person.civilianHead.rotation.y = Math.sin(now * .7 + data.civilianId) * .16;
-  if (civilianWaypointReached(person.position, street.route, street.waypoint, street.navigationObstacles))
+  if (civilianWaypointReached(person.position, street.route, street.waypoint, street.navigationObstacles,street.navigationLookup))
     street.waypoint++;
   if (street.waypoint === street.route.length) {
     // Hide only after physically crossing the open doorway into the house.

@@ -47,7 +47,7 @@ try {
           updateCivilianAppearance(world.civilians, camera, 'high');
           renderer.render(scene, camera);
         },
-        run() {
+        run(displace = false) {
           enemies = []; rebuildForces();
           combatSounds.length = 0;
           world.resetCampaign(); time = 0; nanjingCampaign = createNanjingCampaign();
@@ -66,6 +66,27 @@ try {
               }));
               nanjingCampaign.stage = 'withdrawal';
               updateNanjingMission(0);
+              if (displace) {
+                const displaced = world.civilians.filter(person => person.userData.civilianId < 20);
+                const homes = world.landmarks.residentialBuildings.filter(home => home.z < -15 && home.z > -60);
+                for (let index = 0; index < displaced.length; index++) {
+                  const person = displaced[index], home = homes[index % homes.length];
+                  const start = { x: home.x + home.width / 2 + .65, z: home.z };
+                  const target = { x: home.x - home.width / 2 - .65, z: home.z };
+                  if (circleBlocked(start.x,start.z,.45,world.civilianNavigationObstacles) ||
+                    circleBlocked(target.x,target.z,.45,world.civilianNavigationObstacles)) throw Error('Displacement fixture needs clear exterior points');
+                  const path = world.civilianNavigate(target,person.userData.waitingSlot);
+                  if (!path.length) throw Error('Displacement fixture has no legal continuation');
+                  person.position.set(start.x,world.groundHeight(start.x,start.z),start.z);
+                  Object.assign(person.userData,{route:[target,...path],waypoint:0,arrived:false,
+                    crowdTarget:null,crowdPath:null,active:true,routeRejoinAt:0,threatResponse:null});
+                  person.visible=true;
+                }
+                world.civilianQueue.splice(0,world.civilianQueue.length,
+                  ...world.civilianQueue.filter(person=>!displaced.includes(person)));
+                nanjingCampaign.civiliansArrived-=displaced.length;
+                nanjingCampaign.civiliansWaiting-=displaced.length;
+              }
             }
             time += .05;
             world.doorSystem.update(.05, world.civilians.filter(person => person.visible && person.parent === scene)
@@ -81,6 +102,7 @@ try {
           }
           const waiting = world.civilians.filter(person => person.userData.arrived);
           const report = { arrivals: waiting.length, prematureWave, streetLife, minSeparation, trees: world.landmarks.trees.length,
+            routeRejoins: world.civilians.reduce((sum,person)=>sum+(person.userData.routeRejoins??0),0),
             stuck: world.civilians.filter(person => !person.userData.arrived).map(person =>
               ({ id: person.userData.civilianId, position: person.position, waypoint: person.userData.waypoint,
                 target: person.userData.route[person.userData.waypoint], detour: person.userData.crowdPath,
@@ -100,15 +122,21 @@ try {
         board() {
           nanjingCampaign.stage='dock-defense';
           nanjingCampaign.dockActivated=true;
-          let frame=0;
+          let frame=0,fadeOut=false,fadeIn=false,hidden=false;
           for(;frame<36000&&nanjingCampaign.civiliansEvacuated<world.civilians.length;frame++) {
             time+=.05;
             updateNanjingCivilians(.05);
+            for(const ferry of world.ferries){
+              const opacity=ferry.userData.opacity;
+              if(opacity>0&&opacity<1&&ferry.userData.state==='outbound')fadeOut=true;
+              if(opacity>0&&opacity<1&&ferry.userData.state==='inbound')fadeIn=true;
+              if(ferry.userData.state==='offscreen'&&!ferry.visible&&opacity===0)hidden=true;
+            }
             controlEvents.drain(()=>{});
             if(frame%2400===0)console.log('[crowd] '+JSON.stringify({boardingSeconds:frame*.05,
               evacuated:nanjingCampaign.civiliansEvacuated,waiting:nanjingCampaign.civiliansWaiting}));
           }
-          return {seconds:frame*.05,evacuated:nanjingCampaign.civiliansEvacuated,
+          return {seconds:frame*.05,evacuated:nanjingCampaign.civiliansEvacuated,fadeOut,fadeIn,hidden,
             waiting:nanjingCampaign.civiliansWaiting,aboard:nanjingCampaign.civiliansAboard,
             casualties:nanjingCampaign.civilianCasualties,
             physicallyEvacuated:world.civilians.filter(person=>person.userData.evacuated&&!person.parent&&!person.visible).length,
@@ -121,18 +149,18 @@ try {
   });
   await page.goto(`${process.env.GAME_URL || 'http://127.0.0.1:5173'}/?campaign=nanjing`);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
-  await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle?.state === 'playing');
+  await page.waitForFunction(() => window.__battle?.state === 'playing',null,{timeout:180000});
   if (process.env.STREET_SCREENSHOT) {
     await page.evaluate(() => crowdReview.streetView());
     await page.screenshot({ path: process.env.STREET_SCREENSHOT });
   }
-  const result = await page.evaluate(() => crowdReview.run());
+  const result = await page.evaluate(displace => crowdReview.run(displace), process.env.DISPLACED_CROWD === '1');
   if (process.env.CROWD_RESULT) await writeFile(process.env.CROWD_RESULT, JSON.stringify({ result, errors }, null, 2));
   if (process.env.CROWD_SCREENSHOT) await page.screenshot({ path: process.env.CROWD_SCREENSHOT });
   console.log(JSON.stringify(result));
   assert.equal(result.arrivals, NANJING_CIVILIAN_COUNT, 'every civilian must reach a distinct waiting position');
+  if (process.env.DISPLACED_CROWD === '1') assert.ok(result.routeRejoins >= 20, 'every deliberately displaced refugee must reconnect around the actual houses');
   assert.equal(result.prematureWave, 0, 'the main refugee wave must wait for the gate withdrawal command');
   assert.equal(result.streetLife.length, 10);
   assert.ok(result.streetLife.every(person => person.cycles > 0),
@@ -147,6 +175,7 @@ try {
   assert.equal(boarding.evacuated, NANJING_CIVILIAN_COUNT, 'all survivors must physically board and reach the far bank');
   assert.equal(boarding.physicallyEvacuated, NANJING_CIVILIAN_COUNT);
   assert.equal(boarding.waiting + boarding.aboard + boarding.casualties, 0);
+  assert.ok(boarding.fadeOut&&boarding.fadeIn&&boarding.hidden,'actual round trips must fade out, remain hidden offshore and fade back in');
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

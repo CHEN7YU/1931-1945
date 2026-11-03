@@ -30,6 +30,18 @@ test('only an eastward crossing through the C gate aperture qualifies for a late
   assert.equal(crossedEastGate({x:60,y:0,z:3},{x:63,y:0,z:3}),false);
   assert.equal(crossedEastGate({x:55,y:8,z:3},{x:57,y:8,z:3}),false);
 });
+test('completed force restoration grants exactly twenty simulated seconds before the mass charge', () => {
+  const f = fixture(70);
+  advanceEncirclement(f.match, f.points, f.formations, 19.99);
+  assert.equal(f.match.breakout.stage, 'regroup');
+  const frozen = f.match.breakout.elapsed;
+  advanceEncirclement(f.match, f.points, f.formations, 0);
+  assert.equal(f.match.breakout.elapsed, frozen);
+  advanceEncirclement(f.match, f.points, f.formations, .01);
+  assert.equal(f.match.breakout.stage, 'breakout');
+  assert.equal(f.match.breakout.strength,70);
+  assert.equal(f.match.breakout.requiredKills,47);
+});
 test('escaped enemies are never counted as killed and passing the allowed escape count loses the blocking mission', () => {
   const f = fixture(30);
   for (const member of f.members.slice(0, 10)) assert.equal(recordEncirclementEscape(f.match, member.id), true);

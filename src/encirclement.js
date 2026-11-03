@@ -8,7 +8,7 @@ export const ENCIRCLEMENT_RULES = Object.freeze({ initialFriendly: 6, enemySquad
   reinforcementTimes: Object.freeze([45, 90]), normalEnemyDelay: BATTLE_RULES.respawnSeconds,
   cutEnemyDelay: 35, supplyObjective: 'A', supplyGuardSquads: 2, defeatGraceSeconds: 90 });
 export const EAST_BREAKOUT = Object.freeze({ x: 56, z: 3, halfWidth: 3.2, exitX: 62,
-  regroupSeconds: 15, announcementInterval: 25, announcements: 3 });
+  regroupSeconds: 20, announcementInterval: 25, announcements: 3 });
 export function crossedEastGate(from,to) {
   if(!from||![from.x,from.y,from.z,to.x,to.y,to.z].every(Number.isFinite))return false;
   if(from.x>=EAST_BREAKOUT.x||to.x<EAST_BREAKOUT.x)return false;

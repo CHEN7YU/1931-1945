@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
+import {mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
 import {chromium} from 'playwright';
 import {defaultPreferences,PREFERENCES_KEY} from '../src/player-preferences.js';
 
@@ -16,6 +18,18 @@ try{
     const response=await route.fetch();
     await route.fulfill({response,body:await response.text()+`
       window.feedbackReview={
+        towerView(){
+          setGameState('pause');$('hud').hidden=true;$('overlay').hidden=true;
+          for(const child of camera.children)child.visible=false;
+          camera.position.set(-40,1.65,16);camera.lookAt(-34,1.4,12.5);
+          const door=world.doorSystem.doors.find(door=>door.id==='canal-south-granary-east-door');
+          if(!door)throw Error('Missing retained A tower street entrance');
+          if(Math.abs(door.targetAngle)<.01)world.doorSystem.interact(door,{x:door.x-.8,z:door.z});
+          for(let frame=0;frame<60;frame++)world.doorSystem.update(1/60,[]);
+          renderer.render(scene,camera);
+          return{sealed:!world.doorSystem.doors.some(door=>door.id==='canal-south-granary-partition-door'),
+            retained:door.state};
+        },
         mobile(){
           setGameState('menu');beginMatch();
           const player=controlledSoldier(entities),crew=friendlyAI[0],gun=emplacements.get('dock-gun');
@@ -88,13 +102,37 @@ try{
             id:unit.id,type:unit.type,living:unit.members.filter(actor=>actor.health>0).length}));
           const air=formations.filter(unit=>unit.team==='enemy'&&unit.type==='plane').map(unit=>unit.members.filter(actor=>actor.health>0&&actor.vehicleId).length);
           const goals=enemies.filter(actor=>actor.health>0&&!actor.vehicleId).map(actor=>breakoutDestination(actor));
+          updateHUD();
+          const countdown={title:$('objective-title').textContent,counts:$('objectives').textContent};
+          const friend=friendlyAI.find(actor=>actor.health>0&&!actor.vehicleId);
+          const enemy=enemies.find(actor=>actor.health>0&&!actor.vehicleId);
+          const friendlyGoal=breakoutDestination(friend),enemyGoal=breakoutDestination(enemy);
+          const assemblyStart=[{x:0,z:30},{x:20,z:30},{x:10,z:0},{x:20,z:0}].find(point=>
+            !circleBlocked(point.x,point.z,.5,world.obstacles)&&navigate(point,friendlyGoal).length);
+          if(!assemblyStart)throw Error('Missing physically valid approach position for friendly assembly fixture');
+          friend.position.set(assemblyStart.x,0,assemblyStart.z);
+          friend.path=friend.pathGoal=null;pathRequests.delete(friend.tactics.id);
+          const friendlyBefore=friend.position.distanceTo(new THREE.Vector3(friendlyGoal.x,friendlyGoal.y,friendlyGoal.z));
+          for(let frame=0;frame<100;frame++){
+            time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateVehicles(.05);updateAI(.05);
+            for(const actor of allForces)if(actor.health>0&&actor.nativeMotion)advanceNraMotion(actor,.05);
+            updateObjectives(.05);controlEvents.drain(()=>{});combatEvents.drain(()=>{});
+          }
+          const assembly={stage:encirclement.breakout.stage,elapsed:encirclement.breakout.elapsed,
+            friendlyBefore,friendlyAfter:friend.position.distanceTo(new THREE.Vector3(friendlyGoal.x,friendlyGoal.y,friendlyGoal.z)),
+            enemyGoalX:enemyGoal.x,enemyGoalZ:enemyGoal.z,friendlyMode:friend.tactics.mode,
+            pathReason:friend.tactics.pathReason,position:friend.position.toArray(),
+            aircraftShots:[...entities.vehicles.values()].filter(vehicle=>vehicle.team==='enemy'&&vehicle.type==='plane')
+              .reduce((sum,vehicle)=>sum+(vehicle.aiFlight.shots??0),0)};
           setGameState('pause');
           return{phase:encirclement.phase,winner:encirclement.winner,breakout:structuredClone(encirclement.breakout),
             ground,air,visible,newActors:newActors.length,maxRestoreUpdate:Math.max(...durations),
-            goals:goals.slice(0,3)};
+            goals:goals.slice(0,3),countdown,assembly};
         },
         eastAir(){
           setGameState('playing');
+          const wait=Math.max(0,EAST_BREAKOUT.regroupSeconds-encirclement.breakout.elapsed);
+          time+=wait;updateObjectives(wait);
           const player=controlledSoldier(entities);
           player.position.set(44,0,-12);
           for(const actor of friendlyForces)if(actor!==player)actor.position.set(42+actor.index%3*3,0,-12+Math.floor(actor.index/3)*2);
@@ -142,10 +180,23 @@ try{
   assert.equal(restore.ground.filter(unit=>unit.type==='tank').length,1);
   assert.deepEqual(restore.air,[1,1,1]);assert.deepEqual(restore.visible,[]);
   assert.equal(restore.breakout.strength,70);
+  assert.match(restore.countdown.title,/20秒/);
+  assert.match(restore.countdown.counts,/地面编制 70人/);
+  assert.ok(restore.countdown.counts.includes('已歼 0/47'));
+  assert.equal(restore.assembly.stage,'regroup');
+  assert.equal(restore.assembly.aircraftShots,0,'the defense countdown must not start enemy strafing early');
+  assert.ok(restore.assembly.friendlyAfter<restore.assembly.friendlyBefore);
+  assert.ok(restore.assembly.enemyGoalX<52,'during the countdown enemies assemble, not charge the gate');
   const air=await page.evaluate(()=>feedbackReview.eastAir());
   console.log(JSON.stringify({eastAir:air}));
   assert.equal(air.length,3);
   assert.ok(air.reduce((count,plane)=>count+plane.shots,0)>0,'air support must actually fire near the east gate');
+  if(process.env.ARTIFACT_DIR){
+    const tower=await page.evaluate(()=>feedbackReview.towerView());
+    assert.ok(tower.sealed);assert.equal(tower.retained,'open');
+    await mkdir(process.env.ARTIFACT_DIR,{recursive:true});
+    await page.screenshot({path:join(process.env.ARTIFACT_DIR,'a-tower-sealed-interior.png')});
+  }
   assert.deepEqual(errors,[]);
   if(process.env.FEEDBACK_RESULT)await writeFile(process.env.FEEDBACK_RESULT,JSON.stringify({mobile,restore,air,errors},null,2));
 }finally{await browser.close();}

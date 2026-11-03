@@ -7,6 +7,22 @@ import { OBJECTIVES, circleBlocked, segmentClear, createNavigator } from '../src
 import { PREVIEW_OBJECTIVES, PREVIEW_BASES, PREVIEW_BRIDGE, PREVIEW_BOUNDS, makeTownPreviewLayout } from '../src/town-preview-layout.js';
 import { makeOutskirtsLayout } from '../src/outskirts-layout.js';
 
+test('A tower seals only the interior left doorway and retains the street entrance and staircase access', () => {
+  const town = makeTownPreviewLayout(), id = 'canal-south-granary';
+  const tower = town.buildings.find(building => building.id === id);
+  assert.equal(town.passages.some(passage => passage.id === `${id}-partition-door`), false);
+  assert.equal(town.pieces.some(piece => piece.id.startsWith(`${id}-partition-frame-`)), false);
+  assert.ok(town.passages.some(passage => passage.id === `${id}-east-door`));
+  assert.equal(circleBlocked(tower.x,tower.z-.9,.2,town.obstacles,0),true);
+  const door = town.passages.find(passage => passage.id === `${id}-east-door`);
+  assert.equal(circleBlocked(door.x,door.z,.2,town.obstacles,0),false);
+  const navigate = createNavigator(town.obstacles,.5,.42);
+  assert.ok(navigate({x:door.x-.7,z:door.z},tower.stairs[0].lower).length,
+    'the retained entrance must still reach the stairs around the end of the partition');
+  assert.ok(makeTownLayout().passages.some(passage=>passage.id===`${id}-partition-door`),
+    'the hidden legacy street layout is unchanged');
+});
+
 test('empty map proposal has three separated triangular landmarks within a compact crop', () => {
   const [a, b, c] = PREVIEW_OBJECTIVES;
   const area = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x)) / 2;

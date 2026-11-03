@@ -127,6 +127,9 @@ test('AA detail includes the feed, controls, cradle and true tripod without exce
 
 test('northern dock weapons face clear eastern streets and AA stays behind their firing line',()=>{
   const scene=new THREE.Scene(),world=makeNanjingBattlefield(scene,()=>new THREE.MeshStandardMaterial());
+  for(const spawn of NANJING_SPAWNS.filter(point=>point.id.startsWith('nanjing-west')))
+    assert.equal(spawnBlockReason(spawn,'infantry',[],world.obstacles),null,
+      `${spawn.id}: northern defensive weapons must not occupy existing dock deployment clearance`);
   for(const spec of NANJING_EMPLACEMENTS) {
     const point=createEmplacement(spec),pose=emplacementPose(point,spec.altitude??world.groundHeight(point.x,point.z));
     assert.equal(circleBlocked(pose.operator.x,pose.operator.z,.43,world.obstacles,pose.operator.y),false,

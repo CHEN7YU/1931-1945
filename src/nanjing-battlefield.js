@@ -13,6 +13,8 @@ import { AIRCRAFT_GUN } from './aircraft-ai.js';
 import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
+import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
+import { obstacleLookup } from './spatial.js';
 import { planeModel } from './world.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStart,
   nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
@@ -56,7 +58,8 @@ export function makeNanjingBattlefield(scene, surface) {
     const south = RIVERS[0], west = RIVERS[1];
     if (Math.abs(x - south.x) < south.width / 2 && Math.abs(z - south.z) < south.depth / 2)
       return SOUTH_RIVER_WATER;
-    if (Math.abs(x - west.x) < west.width / 2 && Math.abs(z - west.z) < west.depth / 2) {
+    if (x < west.x + west.width / 2 && x > west.x + west.width / 2 - NANJING_FERRY_ROUTE.riverWidth &&
+      Math.abs(z - west.z) < NANJING_FERRY_ROUTE.riverDepth / 2) {
       const blend = Math.min(1, Math.max(0, Math.abs(z - south.z) - south.depth / 2) / 12);
       return -.28 + (SOUTH_RIVER_WATER + .28) * (1 - blend * blend * (3 - 2 * blend));
     }
@@ -123,7 +126,8 @@ export function makeNanjingBattlefield(scene, surface) {
       let rectangles = [{ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 }];
       for (const river of RIVERS) {
         rectangles = rectangles.flatMap(rect => {
-          const minX = Math.max(rect.minX, river.x - river.width / 2);
+          const minX = Math.max(rect.minX, river.id === 'yangtze-west'
+            ? river.x + river.width / 2 - NANJING_FERRY_ROUTE.riverWidth : river.x - river.width / 2);
           const maxX = Math.min(rect.maxX, river.x + river.width / 2);
           const minZ = Math.max(rect.minZ, river.z - river.depth / 2);
           const maxZ = Math.min(rect.maxZ, river.z + river.depth / 2);
@@ -192,16 +196,16 @@ export function makeNanjingBattlefield(scene, surface) {
     const riverLevel = w > d ? SOUTH_RIVER_WATER : -.28;
     const other = RIVERS.find(river => river.x !== x || river.z !== z);
     const surfaces = w > d && other ? [
-      makeSurface((x - w / 2 + other.x - other.width / 2) / 2, z,
-        other.x - other.width / 2 - (x - w / 2), d, water, riverLevel),
       makeSurface((other.x + other.width / 2 + x + w / 2) / 2, z,
         x + w / 2 - (other.x + other.width / 2), d, water, riverLevel),
-    ] : [makeSurface(x, z, w, d, water, riverLevel)];
+    ] : [makeSurface(x + w / 2 - NANJING_FERRY_ROUTE.riverWidth / 2, z,
+      NANJING_FERRY_ROUTE.riverWidth, NANJING_FERRY_ROUTE.riverDepth, water, riverLevel)];
     for (const riverSurface of surfaces) {
       riverSurface.userData.nanjingFeature = 'river-water';
       if (w < d && other) {
         riverSurface.geometry.dispose();
-        riverSurface.geometry = new THREE.PlaneGeometry(w, d, 1, Math.ceil(d));
+        riverSurface.geometry = new THREE.PlaneGeometry(NANJING_FERRY_ROUTE.riverWidth,
+          NANJING_FERRY_ROUTE.riverDepth, 1, Math.ceil(NANJING_FERRY_ROUTE.riverDepth));
         const vertices = riverSurface.geometry.attributes.position;
         for (let index = 0; index < vertices.count; index++) {
           const worldZ = z - vertices.getY(index);
@@ -220,7 +224,7 @@ export function makeNanjingBattlefield(scene, surface) {
         maxX > otherRiver.x - otherRiver.width / 2 &&
         minZ < otherRiver.z + otherRiver.depth / 2 && maxZ > otherRiver.z - otherRiver.depth / 2) {
         if (w > d) {
-          if (minX < otherRiver.x - otherRiver.width / 2) {
+          if (otherRiver.id !== 'yangtze-west' && minX < otherRiver.x - otherRiver.width / 2) {
             addBank(minX, otherRiver.x - otherRiver.width / 2, minZ, maxZ);
           }
           if (maxX > otherRiver.x + otherRiver.width / 2) {
@@ -311,11 +315,12 @@ export function makeNanjingBattlefield(scene, surface) {
     } else {
       const dockEdge = NANJING_DOCK.x - 7;
       obstacles.push(
-        { minX: x - w / 2, maxX: dockEdge, minZ: z - d / 2, maxZ: z + d / 2, height: 2, water: true },
+        { minX: x + w / 2 - NANJING_FERRY_ROUTE.riverWidth, maxX: dockEdge,
+          minZ: z - NANJING_FERRY_ROUTE.riverDepth / 2, maxZ: z + NANJING_FERRY_ROUTE.riverDepth / 2, height: 2, water: true },
         { minX: dockEdge, maxX: x + w / 2, minZ: z - d / 2, maxZ: NANJING_DOCK.z - 10, height: 2, water: true },
         { minX: dockEdge, maxX: x + w / 2, minZ: NANJING_DOCK.z + 10, maxZ: z + d / 2, height: 2, water: true },
       );
-      for (const edge of [-1, 1]) {
+      for (const edge of [1]) {
         const bankX = x + edge * (w / 2 - bank / 2);
         const gaps = edge === 1 ? [{ min: NANJING_DOCK.z - 10, max: NANJING_DOCK.z + 10 }] : [];
         let start = z - d / 2;
@@ -1357,6 +1362,7 @@ export function makeNanjingBattlefield(scene, surface) {
       const route = [home.exit, ...outwardPath, ...outwardPath.slice(0, -1).reverse(), home.exit, inside];
       const initialWaypoint = data.civilianId % 2 ? Math.max(1, Math.floor(outwardPath.length / 2)) : 0;
       data.streetLife = { route, navigate, door, exit: home.exit, navigationObstacles,
+        navigationLookup: obstacleLookup(navigationObstacles,.8),
         movementObstacles: obstacles.filter(obstacle => (obstacle.height ?? Infinity) > .24),
         initialWaypoint, initialPosition: initialWaypoint ? route[initialWaypoint - 1] : inside,
         initialDelay: initialWaypoint ? 0 : (data.civilianId - 60) * 1.3 };
@@ -1496,6 +1502,7 @@ export function makeNanjingBattlefield(scene, surface) {
     resetCampaign() {
       civilianQueue.length = 0;
       for (const civilian of civilians) {
+        restoreFerryPassenger(civilian);
         civilian.removeFromParent();
         scene.add(civilian);
         const data = civilian.userData;
@@ -1507,7 +1514,9 @@ export function makeNanjingBattlefield(scene, surface) {
         civilian.visible = false;
         Object.assign(data, { waypoint: 0, arrived: false, dead: false, health: 100, active: false, exposure: 0,
           panicked: false, panicStartedAt: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
+          crowdSearch: null, crowdSearchRevision: null,
           threatResponse: null, escapeMotion: null, escapeMode: null,
+          routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
           streetEvacuating: false, route: data.homeRoute,
@@ -1523,6 +1532,8 @@ export function makeNanjingBattlefield(scene, surface) {
         ferry.userData.gangplank.visible = true;
         ferry.userData.state = 'docked';
         ferry.position.set(NANJING_DOCK.ferryX, .05, ferry.userData.originZ);
+        ferry.userData.opacity = null;
+        updateFerryVisibility(ferry);
       }
       for (const [index, model] of aircraft.entries()) {
         model.userData.propeller.rotation.set(0, 0, 0);

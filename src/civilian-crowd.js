@@ -53,11 +53,12 @@ export function releaseNanjingCivilianWave(civilians, now) {
   }
 }
 
-export function civilianWaypointReached(position, route, index, obstacles) {
+export function civilianWaypointReached(position, route, index, obstacles, lookup = null) {
   const target = route[index], next = route[index + 1];
   const distance = Math.hypot(target.x - position.x, target.z - position.z);
   if (!next) return distance <= .015;
-  return distance <= .12 || distance <= .8 && segmentClear(position, next, .36, obstacles);
+  return distance <= .12 || distance <= .8 && segmentClear(position, next, .36, obstacles,
+    lookup ? (x, z) => lookup.at(x, z) : undefined);
 }
 
 const waitingSlots = [];
@@ -103,11 +104,12 @@ export function placeCivilianWaitingSlots(clear) {
 
 export function createCivilianCrowdPlanner() {
   const grids = new Map();
-  let remaining = 1;
-  const stats = { searches: 0, deferred: 0, grids: 0, expanded: 0, maxExpanded: 0 };
+  let remaining = 1, revision = 0;
+  const stats = { searches: 0, deferred: 0, grids: 0, expanded: 0, maxExpanded: 0,
+    maxGridCellsPerSlice: 0, maxExpandedPerSlice: 0 };
   return {
-    stats, beginStep() { remaining = 1; },
-    invalidate() { grids.clear(); stats.grids = 0; },
+    stats, get revision() { return revision; }, beginStep() { remaining = 1; },
+    invalidate() { grids.clear(); stats.grids = 0; revision++; },
     take() { if (!remaining) { stats.deferred++; return false; } remaining--; stats.searches++; return true; },
     grid(key, obstacles, build) {
       const previous = grids.get(key);
@@ -120,7 +122,33 @@ export function createCivilianCrowdPlanner() {
   };
 }
 
-function dockDetour(position, target, peers, civilian, obstacles, spacing, planner) {
+export function rejoinCivilianRoute(position, target, navigate, obstacles, lookup) {
+  const clear = (from, to) => segmentClear(from, to, .36, obstacles,
+    lookup ? (x, z) => lookup.at(x, z) : undefined);
+  const starts = [{ x: position.x, z: position.z }];
+  for (const radius of [.5, 1]) for (let side = 0; side < 8; side++) {
+    const angle = side * Math.PI / 4;
+    starts.push({ x: position.x + Math.cos(angle) * radius, z: position.z + Math.sin(angle) * radius });
+  }
+  for (const start of starts) {
+    if (!clear(position, start)) continue;
+    const path = navigate(start, target);
+    if (!path.length || Math.hypot(path.at(-1).x - target.x, path.at(-1).z - target.z) > .015) continue;
+    let from = position;
+    const points = [start, ...path];
+    if (!points.every(point => {
+      const valid = clear(from, point);
+      from = point;
+      return valid;
+    })) continue;
+    return points.filter(point => Math.hypot(point.x - position.x, point.z - position.z) > .015)
+      .map(point => ({ x: point.x, z: point.z }));
+  }
+  return null;
+}
+
+function* dockDetour(position, target, peers, civilian, obstacles, spacing, planner) {
+  position = { x: position.x, z: position.z };
   const step = .25, dock = [position, target].every(value =>
     value.x >= -73 && value.x <= -40 && value.z >= -94 && value.z <= -59);
   const minX = dock ? -73 : Math.floor((Math.min(position.x, target.x) - 6) / step) * step;
@@ -134,14 +162,18 @@ function dockDetour(position, target, peers, civilian, obstacles, spacing, plann
   const localObstacles = obstacles.filter(obstacle => obstacle.minX < maxX + .36 && obstacle.maxX > minX - .36 &&
     obstacle.minZ < maxZ + .36 && obstacle.maxZ > minZ - .36);
   const makeGrid = () => {
-    const lookup = obstacleLookup(localObstacles, .8), blocked = new Uint8Array(count);
-    for (let index = 0; index < count; index++) {
-      const p = point(index);
-      blocked[index] = Number(circleBlocked(p.x, p.z, .38, lookup.at(p.x, p.z)));
-    }
-    return { lookup, blocked };
+    return { lookup: obstacleLookup(localObstacles, .8), blocked: new Uint8Array(count), next: 0 };
   };
   const grid = planner ? planner.grid(`${minX}:${minZ}:${width}:${depth}`, obstacles, makeGrid) : makeGrid();
+  while (grid.next < count) {
+    const until = Math.min(count, grid.next + 512);
+    if(planner)planner.stats.maxGridCellsPerSlice=Math.max(planner.stats.maxGridCellsPerSlice,until-grid.next);
+    for (; grid.next < until; grid.next++) {
+      const p = point(grid.next);
+      grid.blocked[grid.next] = Number(circleBlocked(p.x, p.z, .38, grid.lookup.at(p.x, p.z)));
+    }
+    if (grid.next < count) yield;
+  }
   const lookup = grid.lookup, blocked = grid.blocked.slice();
   for (const other of peers) {
     if (other === civilian) continue;
@@ -210,6 +242,9 @@ function dockDetour(position, target, peers, civilian, obstacles, spacing, plann
     closed[current] = 1;
     expanded++;
     if (planner) { planner.stats.expanded++; planner.stats.maxExpanded = Math.max(planner.stats.maxExpanded, expanded); }
+    if(planner)planner.stats.maxExpandedPerSlice=Math.max(planner.stats.maxExpandedPerSlice,
+      (expanded-1)%256+1);
+    if (expanded % 256 === 0) yield;
     for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
       const x = current % width + dx, z = Math.floor(current / width) + dz, next = z * width + x;
       if (x < 0 || x >= width || z < 0 || z >= depth || blocked[next] || closed[next] ||
@@ -228,7 +263,7 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
   const remaining = Math.hypot(target.x - position.x, target.z - position.z);
   if (!data.crowdTarget || Math.hypot(target.x - data.crowdTarget.x, target.z - data.crowdTarget.z) > .01) {
     data.crowdTarget = { x: target.x, z: target.z };
-    data.crowdPath = null; data.crowdBestDistance = remaining; data.crowdStalled = 0;
+    data.crowdPath = data.crowdSearch = null; data.crowdBestDistance = remaining; data.crowdStalled = 0;
   }
   if (remaining < data.crowdBestDistance - .05) {
     data.crowdBestDistance = remaining; data.crowdStalled = 0;
@@ -242,11 +277,18 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
       data.crowdPathStalled = 0;
     } else data.crowdPathStalled = (data.crowdPathStalled ?? 0) + distance;
   }
-  if (!canStep && ((data.crowdStalled > 1.5 && !data.crowdPath?.length) || data.crowdPathStalled > 1.5) &&
+  if (data.crowdSearch && data.crowdSearchRevision !== planner?.revision) data.crowdSearch = null;
+  if (!canStep && (data.crowdSearch || (data.crowdStalled > 1.5 && !data.crowdPath?.length) || data.crowdPathStalled > 1.5) &&
     (!planner || planner.take())) {
-    data.crowdPath = dockDetour(position, target, peers, civilian, navigationObstacles, spacing, planner);
-    data.crowdStalled = 0;
-    data.crowdPathStalled = 0;
+    data.crowdSearch ??= dockDetour(position, target, peers, civilian, navigationObstacles, spacing, planner);
+    data.crowdSearchRevision = planner?.revision;
+    let result = data.crowdSearch.next();
+    if (!planner) while (!result.done) result = data.crowdSearch.next();
+    if (result.done) {
+      data.crowdPath = result.value; data.crowdSearch = null;
+      data.crowdStalled = 0;
+      data.crowdPathStalled = 0;
+    }
   }
   let moved = 0;
   const steps = Math.max(1, Math.ceil(distance / .15));

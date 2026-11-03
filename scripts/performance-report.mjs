@@ -44,7 +44,7 @@ if (!token && process.platform === 'win32') {
   catch { throw new Error('Cannot read the Windows-user-encrypted administrator credential; alternatively set FEEDBACK_ADMIN_TOKEN locally. Never paste it into chat or source.'); }
 }
 if (typeof token !== 'string' || token.length < 32 || /\s/.test(token)) throw new Error('A valid local FEEDBACK_ADMIN_TOKEN is required');
-const origin = 'https://1931-1945.shan-he.workers.dev';
+const origin = 'https://1931-1945.qchen.workers.dev';
 const params = new URLSearchParams({
   since: args.get('since') ?? new Date(Date.now() - 86400000).toISOString(),
   until: args.get('until') ?? new Date().toISOString(),

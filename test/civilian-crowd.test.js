@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { circleBlocked } from '../src/core.js';
+import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
+import { obstacleLookup } from '../src/spatial.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
-  releaseNanjingCivilianWave, createCivilianCrowdPlanner } from '../src/civilian-crowd.js';
+  releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute } from '../src/civilian-crowd.js';
 
 test('sixty bridge refugees have independent exterior positions, and the 120 residents do not emerge before the retreat order', () => {
   const starts = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianStart(index));
@@ -141,4 +142,69 @@ test('waiting civilians look toward the boats, shift their upper bodies, and sto
   assert.notEqual(civilian.civilianHead.rotation.y, head);
   assert.ok(civilian.civilianLegs.every(leg => leg.rotation.x === 0));
   assert.deepEqual(civilian.position, before);
+});
+
+test('a refugee displaced behind a house or into a gate-side courtyard rejoins through a real exit rather than aiming through masonry', () => {
+  for (const walls of [
+    [{ minX: -2, maxX: 2, minZ: -14, maxZ: 14, height: 5 }],
+    [{ minX: -2, maxX: -1, minZ: -14, maxZ: 14, height: 5 },
+      { minX: 5, maxX: 6, minZ: -14, maxZ: 14, height: 5 },
+      { minX: -2, maxX: 6, minZ: -14, maxZ: -13, height: 5 }],
+  ]) {
+    const position = { x: 3, z: 0 }, target = { x: -5, z: 0 };
+    const navigate = createNavigator(walls, .5, .45);
+    assert.equal(segmentClear(position, target, .36, walls), false);
+    const route = rejoinCivilianRoute(position, target, navigate, walls);
+    assert.ok(route?.length);
+    let from = position;
+    for (const point of route) {
+      assert.ok(segmentClear(from, point, .36, walls));
+      from = point;
+    }
+    assert.deepEqual(from, target);
+    assert.ok(route.some(point => Math.abs(point.z) > 14), 'the route must leave the corner, not cut through its wall');
+  }
+});
+
+test('route rejoining never accepts an unreachable destination or a near-cell substitute', () => {
+  const position = { x: 0, z: 0 }, target = { x: 5, z: 5 };
+  assert.equal(rejoinCivilianRoute(position, target, () => [], []), null);
+  assert.equal(rejoinCivilianRoute(position, target, () => [{ x: 4, z: 4 }], []), null);
+});
+
+test('one difficult detour is split across steps rather than completing a whole grid and search in one callback', () => {
+  const person={position:{x:-4,y:0,z:0},userData:{civilianId:1,crowdTarget:{x:4,z:0},
+    crowdBestDistance:0,crowdStalled:2}};
+  const planner=createCivilianCrowdPlanner(),wall={minX:0,maxX:1,minZ:-20,maxZ:20,height:3};
+  const obstacles=[wall];
+  planner.beginStep();
+  moveCivilianInCrowd(person,{x:4,z:0},.1,[person],obstacles,obstacles,null,planner);
+  assert.ok(person.userData.crowdSearch,'the costly job yields instead of blocking the simulation');
+  for(let step=0;step<600;step++){
+    planner.beginStep();
+    moveCivilianInCrowd(person,{x:4,z:0},.1,[person],obstacles,obstacles,null,planner);
+    assert.equal(circleBlocked(person.position.x,person.position.z,.36,obstacles),false);
+  }
+  assert.ok(planner.stats.maxGridCellsPerSlice<=512);
+  assert.ok(planner.stats.maxExpandedPerSlice<=256);
+  planner.invalidate();
+  person.userData.crowdStalled=2;person.userData.crowdPath=null;
+  planner.beginStep();
+  moveCivilianInCrowd(person,{x:4,z:0},.1,[person],obstacles,obstacles,null,planner);
+  assert.equal(person.userData.crowdSearchRevision,planner.revision);
+});
+
+test('indexed waypoint checks retain the exact full-obstacle result at walls, corners and final waiting positions', () => {
+  const obstacles=[{minX:.25,maxX:2,minZ:-3,maxZ:-.4,height:3},
+    ...Array.from({length:2000},(_,index)=>({minX:100+index%40,maxX:100.5+index%40,
+      minZ:100+Math.floor(index/40),maxZ:100.5+Math.floor(index/40),height:4}))];
+  const lookup=obstacleLookup(obstacles,.8),route=[{x:0,z:0},{x:0,z:-5}];
+  for(let x=-1;x<2;x+=.07)for(let z=-1;z<1;z+=.13){
+    const position={x,z};
+    assert.equal(civilianWaypointReached(position,route,0,obstacles,lookup),
+      civilianWaypointReached(position,route,0,obstacles));
+  }
+  for(const x of [0,.01,.016,.7])assert.equal(
+    civilianWaypointReached({x,z:-5},route,1,obstacles,lookup),
+    civilianWaypointReached({x,z:-5},route,1,obstacles));
 });

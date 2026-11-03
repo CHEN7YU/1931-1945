@@ -17,14 +17,23 @@ try{
       const source=execFileSync('git',['show',`c979120:src/${file}.js`],{encoding:'utf8'});
       await page.route(`**/src/${file}.js*`,async route=>{
         let body=source;
-        if(file==='civilian-crowd')body+='\nexport function createCivilianCrowdPlanner(){return{beginStep(){},invalidate(){},stats:{}}}';
+        if(file==='civilian-crowd')body+='\nexport function createCivilianCrowdPlanner(){return{beginStep(){},invalidate(){},stats:{}}}\nexport function rejoinCivilianRoute(position,target,navigate){return navigate(position,target);}';
         await route.fulfill({contentType:'text/javascript',body});
       });
     }
   }
   await page.route('**/src/main.js*',async route=>{
     const response=await route.fetch();
-    await route.fulfill({response,body:await response.text()+`
+    const source=(await response.text()).replaceAll('rejoinCivilianRoute(','profileRejoin(')
+      .replaceAll('moveCivilianInCrowd(','profileMove(');
+    await route.fulfill({response,body:source+`
+      const civilianProfile={rejoin:{calls:0,total:0,max:0},move:{calls:0,total:0,max:0}};
+      function profileOperation(key,operation,args){
+        const start=performance.now();try{return operation(...args);}
+        finally{const elapsed=performance.now()-start,item=civilianProfile[key];item.calls++;item.total+=elapsed;item.max=Math.max(item.max,elapsed);}
+      }
+      function profileRejoin(...args){return profileOperation('rejoin',rejoinCivilianRoute,args);}
+      function profileMove(...args){return profileOperation('move',moveCivilianInCrowd,args);}
       window.stallReview=()=>{
         setGameState('menu');beginMatch();enemies=[];rebuildForces();combatSounds.length=0;
         const samples=[],step=(count,label)=>{
@@ -47,7 +56,7 @@ try{
         nanjingCampaign.stage='dock-defense';nanjingCampaign.dockActivated=true;
         step(600,'dock-boarding-30s');
         setGameState('pause');
-        return {samples,planner:civilianCrowdPlanner.stats};
+        return {samples,planner:civilianCrowdPlanner.stats,operations:civilianProfile};
       };`});
   });
   await page.goto(process.env.GAME_URL??'http://127.0.0.1:5203/?campaign=nanjing');
