@@ -43,7 +43,7 @@ try {
         },
         airframeBurst() {
           setGameState('menu');beginMatch();
-          const crew=friendlyAI.find(actor=>actor.health>0),point=emplacements.get('gate-aa'),floor=point.altitude;
+          const crew=controlledSoldier(entities),point=emplacements.get('gate-aa'),floor=point.altitude;
           const pose=emplacementPose(point,floor);
           crew.position.set(pose.operator.x,floor,pose.operator.z);occupyEmplacement(point,crew);
           const planes=[...entities.vehicles.values()].filter(vehicle=>vehicle.type==='plane'&&vehicle.team==='enemy');
@@ -54,7 +54,8 @@ try {
           enemies=[];rebuildForces();
           const hits=[];let previous=target.health;
           for(let step=0;step<1200&&target.health>0;step++) {
-            time+=.05;advanceEmplacement(point,.05,time);operateAIEmplacement(crew,.05);
+            time+=.05;advanceEmplacement(point,.05,time);
+            if(aimEmplacement(point,target.position,.05,floor))fireFixedWeapon(point,crew);
             if(target.health!==previous) {
               hits.push({health:target.health,pilot:pilot.health,time,shots:point.shots});
               previous=target.health;
@@ -239,7 +240,7 @@ try {
           const crew=friendlyAI.find(actor=>actor.health>0);
           for(const [index,friend] of friendlyForces.entries())if(friend!==crew)
             friend.position.set(-80+index%4*2,0,40+Math.floor(index/4)*2);
-          for(const point of emplacements.values()) {
+          for(const point of [...emplacements.values()].filter(point=>!point.weapon.settings.antiAircraft)) {
             releaseEmplacement(crew,false);releaseEmplacement(player);
             nanjingCampaign.stage=point.id.startsWith('dock-')?'dock-defense':'gate-defense';
             nanjingCampaign.dockActivated=point.id.startsWith('dock-');
@@ -256,7 +257,7 @@ try {
             } else {
               target=originalEnemies.find(actor=>actor.health>0&&!actor.vehicleId);
               const choices=point.id.startsWith('bridge-')?[[-24,45],[-24,48],[-24,52],[-22,44]]:
-                [[-47,-76],[-48,-80],[-50,-78],[-47,-72],[-51,-73]];
+                [[-35,-94],[-30,-93],[-40,-94],[-38,-92],[-32,-91]];
               const location=choices.find(([x,z])=>!circleBlocked(x,z,.46,world.obstacles)&&
                 emplacementCanAimAt(point,{x,y:world.groundHeight(x,z)+1.1,z},floor)&&
                 hasLine(new THREE.Vector3(point.x,floor+2,point.z),
@@ -337,6 +338,7 @@ try {
   if(process.env.RETREAT_ONLY!=='1') {
   const operators=await page.evaluate(()=>civilianDefenseReview.operators());
   console.log(JSON.stringify({operators}));
+  assert.equal(operators.length,4);
   assert.ok(operators.every(point=>point.fired>0&&point.damage>0&&point.takeover),
     'AI must use all weapon types against real targets and allow resource-preserving player takeover');
   const fieldReload=await page.evaluate(()=>civilianDefenseReview.fieldReload());

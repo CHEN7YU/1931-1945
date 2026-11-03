@@ -128,6 +128,7 @@ export function createEmplacementModel(point) {
     }
   }
   root.userData.update = () => {
+    root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
     swivel.rotation.y = point.yaw - point.heading;
     barrel.rotation.x = point.pitch;
     root.updateMatrixWorld(true);
@@ -157,6 +158,7 @@ export function createEmplacementModel(point) {
   }
   root.traverse(object => { if (object.isMesh) {
     object.castShadow = object.receiveShadow = true; object.userData.emplacementId = point.id;
+    if (cannon) object.userData.dynamicCollision = true;
   } });
   swivel.traverse(object => { if (object.isMesh) object.userData.dynamicCollision = true; });
   return root;

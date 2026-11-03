@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPose,
-  advanceEmplacement, fireEmplacement, reloadEmplacement, emplacementObstacles, aimEmplacement } from '../src/emplacements.js';
+  advanceEmplacement, fireEmplacement, reloadEmplacement, emplacementObstacles, aimEmplacement,
+  moveArtillery, setArtilleryPosition, ARTILLERY_MARCH } from '../src/emplacements.js';
+import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
 import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { spawnBlockReason } from '../src/spawns.js';
@@ -123,7 +125,7 @@ test('AA detail includes the feed, controls, cradle and true tripod without exce
   assert.ok(meshes <= 12, 'merge detail by material and moving assembly instead of adding a draw call per rivet');
 });
 
-test('dock weapons face open streets instead of nearby houses and AA stays behind their firing line',()=>{
+test('northern dock weapons face clear eastern streets and AA stays behind their firing line',()=>{
   const scene=new THREE.Scene(),world=makeNanjingBattlefield(scene,()=>new THREE.MeshStandardMaterial());
   for(const spec of NANJING_EMPLACEMENTS) {
     const point=createEmplacement(spec),pose=emplacementPose(point,spec.altitude??world.groundHeight(point.x,point.z));
@@ -132,6 +134,7 @@ test('dock weapons face open streets instead of nearby houses and AA stays behin
   }
   for(const id of ['dock-mg','dock-gun']){
     const point=createEmplacement(NANJING_EMPLACEMENTS.find(spec=>spec.id===id));
+    assert.ok(point.z<=-90);assert.equal(point.heading,-Math.PI/2);
     const pose=emplacementPose(point,world.groundHeight(point.x,point.z));
     const ray=new THREE.Raycaster(new THREE.Vector3(pose.muzzle.x,pose.muzzle.y,pose.muzzle.z),
       new THREE.Vector3(-Math.sin(point.yaw),0,-Math.cos(point.yaw)),0,25);
@@ -141,4 +144,39 @@ test('dock weapons face open streets instead of nearby houses and AA stays behin
   }
   const aa=NANJING_EMPLACEMENTS.find(point=>point.id==='dock-aa');
   assert.ok(aa.x<NANJING_EMPLACEMENTS.find(point=>point.id==='dock-mg').x-8);
+});
+
+test('artillery has no original-position tether, cannot exceed walking speed and retains physical obstruction and reload time',()=>{
+  const point=createEmplacement(NANJING_EMPLACEMENTS.find(point=>point.profile==='bofors75'));
+  const start={x:point.x,z:point.z};
+  point.operatorId='player';point.weapon.ammo=0;reloadEmplacement(point,0);
+  assert.equal(setArtilleryPosition(point,'march'),true);
+  assert.equal(fireEmplacement(point,0),false);
+  for(let step=0;step<500;step++)moveArtillery(point,1,0,.1,()=>true);
+  const travelled=Math.hypot(point.x-start.x,point.z-start.z);
+  assert.ok(travelled>40,'the old fifteen-metre tether must not survive under a larger replacement limit');
+  assert.ok(Math.abs(travelled-50*ARTILLERY_MARCH.speed)<1e-8);
+  for(const profile of Object.values(FOOT_SPEEDS))assert.ok(travelled<=50*profile.walk);
+  const before={x:point.x,z:point.z,heading:point.heading};
+  moveArtillery(point,-1,1,.2,()=>false);
+  assert.deepEqual({x:point.x,z:point.z,heading:point.heading},before);
+  assert.equal(point.weapon.reloadUntil,5.5);
+  advanceEmplacement(point,5.5,5.5);
+  assert.equal(setArtilleryPosition(point,'gunner'),true);
+  assert.equal(point.weapon.ammo,1);assert.equal(point.weapon.reserve,23);
+});
+
+test('pushing speed stays frame-rate independent for forward, reverse and simultaneous steering',()=>{
+  for(const hz of [30,60,144])for(const forward of [-1,1]){
+    const point=createEmplacement(NANJING_EMPLACEMENTS.find(point=>point.profile==='bofors75'));
+    point.operatorId='player';setArtilleryPosition(point,'march');
+    let distance=0;
+    for(let frame=0;frame<hz*2;frame++){
+      const before={x:point.x,z:point.z};
+      moveArtillery(point,forward,1,1/hz,()=>true);
+      distance+=Math.hypot(point.x-before.x,point.z-before.z);
+    }
+    assert.ok(Math.abs(distance-2*ARTILLERY_MARCH.speed)<1e-8);
+    for(const profile of Object.values(FOOT_SPEEDS))assert.ok(distance<=2*profile.walk);
+  }
 });

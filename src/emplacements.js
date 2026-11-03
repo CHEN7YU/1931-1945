@@ -1,4 +1,5 @@
 import { NANJING_GATE_HEIGHT } from './nanjing-layout.js';
+import { FOOT_SPEEDS } from './locomotion.js';
 
 const maxim24 = { type: 'infantry', model: 'zb26', magazine: 200, reserve: 1000, reload: 5,
   interval: .1, range: 220, damage: 100, spread: .006, barrel: 1.25 };
@@ -15,8 +16,8 @@ export const EMPLACEMENT_PROFILES = Object.freeze({
 export const NANJING_EMPLACEMENTS = Object.freeze([
   { id: 'bridge-mg', profile: 'maxim24', x: -29, z: 26, heading: Math.PI },
   { id: 'bridge-gun', profile: 'bofors75', x: -31, z: 23, heading: -2.84 },
-  { id: 'dock-mg', profile: 'maxim24', x: -58, z: -68, heading: 0 },
-  { id: 'dock-gun', profile: 'bofors75', x: -49, z: -67, heading: 0 },
+  { id: 'dock-mg', profile: 'maxim24', x: -58, z: -92, heading: -Math.PI / 2 },
+  { id: 'dock-gun', profile: 'bofors75', x: -63, z: -94, heading: -Math.PI / 2 },
   { id: 'gate-aa', profile: 'maxim24aa', x: 13.5, z: 20, altitude: NANJING_GATE_HEIGHT, heading: Math.PI },
   { id: 'dock-aa', profile: 'maxim24aa', x: -68, z: -71, altitude: .36, heading: -Math.PI / 2 },
 ].map(Object.freeze));
@@ -24,9 +25,39 @@ export const NANJING_EMPLACEMENTS = Object.freeze([
 export function createEmplacement(spec) {
   const profile = EMPLACEMENT_PROFILES[spec.profile];
   if (!profile || ![spec.x, spec.z, spec.heading].every(Number.isFinite)) throw new RangeError('Invalid fixed weapon position');
-  return { ...spec, yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
+  return { ...spec, position: 'gunner',
+    yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
     weapon: { type: profile.type, model: profile.model, ammo: profile.magazine, reserve: profile.reserve,
       nextShot: 0, reloadUntil: 0, settings: profile } };
+}
+
+export const ARTILLERY_MARCH = Object.freeze({
+  speed: Math.min(.85, ...Object.values(FOOT_SPEEDS).map(profile => profile.walk)), turnRate: .55,
+});
+
+export function setArtilleryPosition(point, position) {
+  if (point.profile !== 'bofors75' || !point.operatorId || !['gunner', 'march'].includes(position)) return false;
+  point.position = position;
+  if (position === 'march') { point.yaw = point.heading; point.pitch = 0; }
+  return true;
+}
+
+export function moveArtillery(point, forward, turn, dt, clear) {
+  if (![forward, turn, dt].every(Number.isFinite) || Math.abs(forward) > 1 || Math.abs(turn) > 1 ||
+    dt < 0 || typeof clear !== 'function') throw new RangeError('Invalid artillery marching input');
+  if (point.profile !== 'bofors75' || point.position !== 'march' || !point.operatorId) return false;
+  const steps = Math.max(1, Math.ceil(dt * ARTILLERY_MARCH.speed / .08));
+  let changed = false;
+  for (let step = 0; step < steps; step++) {
+    const heading = point.heading - turn * ARTILLERY_MARCH.turnRate * dt / steps;
+    const x = point.x - Math.sin(heading) * forward * ARTILLERY_MARCH.speed * dt / steps;
+    const z = point.z - Math.cos(heading) * forward * ARTILLERY_MARCH.speed * dt / steps;
+    const candidate = { x, z, heading };
+    if (!clear(candidate)) break;
+    changed ||= x !== point.x || z !== point.z || heading !== point.heading;
+    Object.assign(point, candidate); point.yaw = heading;
+  }
+  return changed;
 }
 
 export function aimEmplacement(point, target, dt, floor = 0) {
@@ -105,7 +136,7 @@ export function advanceEmplacement(point, dt, now) {
 
 export function fireEmplacement(point, now) {
   const weapon = point.weapon;
-  if (!point.operatorId || point.overheated || weapon.reloadUntil || now < weapon.nextShot) return false;
+  if (!point.operatorId || point.position === 'march' || point.overheated || weapon.reloadUntil || now < weapon.nextShot) return false;
   if (weapon.ammo <= 0) { reloadEmplacement(point, now); return false; }
   weapon.ammo--; weapon.nextShot = now + weapon.settings.interval; point.shots++;
   if (point.weapon.type !== 'field-gun') {

@@ -43,6 +43,7 @@ try {
             actor.path=actor.pathGoal=null;resetAIRifleAim(actor.aiRifle,'fixture');
           }
           for(const point of objectives)Object.assign(point,{owner:'friendly',control:1,progress:1,enemyProgress:0,captured:true});
+          advanceEncirclement(encirclement,objectives,formations,0);
           updateObjectives(0);
           for(const point of objectives)Object.assign(point,{owner:'enemy',control:-1,progress:0,enemyProgress:1,captured:false});
           return encirclement.breakout.strength;

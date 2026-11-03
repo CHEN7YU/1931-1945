@@ -11,6 +11,21 @@ const plane = () => ({ team: 'enemy', health: 180, position: { x: 0, y: 35, z: -
   aiFlight: { phase: 'approach', until: 0, targetId: null, nextSense: 0 } });
 const target = { id: 'friendly', team: 'friendly', health: 100, position: { x: 0, y: 0, z: 0 } };
 
+test('Nanjing player-squad priority replaces a retained AI target only when a living squad member is visible and reachable',()=>{
+  const aircraft=plane(),other={...target,id:'other',unitId:'other'},player={...target,id:'player',unitId:'squad',
+    position:{x:20,y:0,z:0}};
+  aircraft.aiFlight.targetId=other.id;
+  advanceAircraftAI(aircraft,.01,1,{targets:[other,player],preferredUnitId:'squad',canFire:true,visible:()=>true});
+  assert.equal(aircraft.aiFlight.targetId,player.id);
+  aircraft.aiFlight.nextSense=0;
+  advanceAircraftAI(aircraft,.01,2,{targets:[other,player],preferredUnitId:'squad',canFire:true,
+    visible:(_from,to)=>to.x===0});
+  assert.equal(aircraft.aiFlight.targetId,other.id);
+  player.health=0;aircraft.aiFlight.nextSense=0;
+  advanceAircraftAI(aircraft,.01,3,{targets:[other,player],preferredUnitId:'squad',canFire:true,visible:()=>true});
+  assert.equal(aircraft.aiFlight.targetId,other.id);
+});
+
 test('Japanese aircraft turns, attacks visible enemies and retains ammo and simulation time', () => {
   const aircraft = plane(); let shots = 0;
   for (let frame = 1; frame <= 60 * 20; frame++) {

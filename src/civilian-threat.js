@@ -18,15 +18,22 @@ export function civilianStepAvoidsThreats(from, to, threats) {
 }
 
 export function observeCivilianThreats(position, enemies, canSee) {
-  return enemies.filter(enemy => enemy.health > 0 && !enemy.vehicleId &&
+  const vehicles=new Set();
+  return enemies.filter(enemy => {
+    if(enemy.health<=0||enemy.vehicleId&&enemy.targetKind!=='closed-armor')return false;
+    if(enemy.vehicleId&&vehicles.has(enemy.vehicleId))return false;
+    if(enemy.vehicleId)vehicles.add(enemy.vehicleId);
+    return enemy.health > 0 && (!enemy.vehicleId || enemy.targetKind === 'closed-armor') &&
     Math.abs(enemy.position.y - position.y) < 3 &&
-    distance(position, enemy.position) <= CIVILIAN_THREAT.radius)
+    distance(position, enemy.position) <= CIVILIAN_THREAT.radius;
+  })
     .sort((a, b) => distance(position, a.position) - distance(position, b.position)).slice(0, 4)
-    .filter(enemy => canSee(position, enemy.position)).slice(0, CIVILIAN_THREAT.maximumThreats)
-    .map(enemy => ({ x: enemy.position.x, y: enemy.position.y, z: enemy.position.z }));
+    .filter(enemy => canSee(position, enemy.position, enemy.vehicleId??null)).slice(0, CIVILIAN_THREAT.maximumThreats)
+    .map(enemy => ({ x: enemy.position.x, y: enemy.position.y, z: enemy.position.z,
+      ...(enemy.vehicleId?{vehicleId:enemy.vehicleId}:{}) }));
 }
 
-export function planCivilianEscape(position, routeTarget, threats, obstacles, concealed) {
+export function planCivilianEscape(position, routeTarget, threats, obstacles, concealed, lookup = null) {
   if (!threats.length) return { mode: 'route', target: routeTarget };
   const nearest = Math.min(...threats.map(threat => distance(position, threat)));
   const routeDistance = distance(position, routeTarget);
@@ -38,7 +45,8 @@ export function planCivilianEscape(position, routeTarget, threats, obstacles, co
       y: position.y, z: position.z + Math.sin(heading + angle) * stride };
     if (point.x < BATTLE_AREA.minX + .38 || point.x > BATTLE_AREA.maxX - .38 ||
       point.z < BATTLE_AREA.minZ + .38 || point.z > BATTLE_AREA.maxZ - .38) continue;
-    if (!civilianStepAvoidsThreats(position, point, threats) || !segmentClear(position, point, .38, obstacles)) continue;
+    if (!civilianStepAvoidsThreats(position, point, threats) ||
+      !segmentClear(position, point, .38, obstacles, lookup ? (x, z) => lookup.at(x, z) : undefined)) continue;
     const clearance = Math.min(...threats.map(threat => distance(point, threat)));
     if (clearance < CIVILIAN_THREAT.personalSpace && clearance <= nearest + .5) continue;
     candidates.push({ point, score: (routeDistance - distance(point, routeTarget)) * .7 +
@@ -56,7 +64,7 @@ export function planCivilianEscape(position, routeTarget, threats, obstacles, co
   return { mode: 'flee', target: candidates[0].point };
 }
 
-export function updateCivilianThreatResponse(data, position, target, enemies, obstacles, now, canSee, concealed) {
+export function updateCivilianThreatResponse(data, position, target, enemies, obstacles, now, canSee, concealed, lookup = null) {
   const response = data.threatResponse ??= { nextThinkAt: 0, until: 0, threats: [], mode: 'route', target: null };
   if (now < response.nextThinkAt) return response;
   response.nextThinkAt = now + CIVILIAN_THREAT.thinkSeconds + (data.civilianId % 7) * .025;
@@ -65,6 +73,6 @@ export function updateCivilianThreatResponse(data, position, target, enemies, ob
     response.threats = observed; response.until = now + CIVILIAN_THREAT.memorySeconds;
     data.panicked = true; data.panicStartedAt ??= now;
   } else if (now >= response.until) response.threats = [];
-  Object.assign(response, planCivilianEscape(position, target, response.threats, obstacles, concealed));
+  Object.assign(response, planCivilianEscape(position, target, response.threats, obstacles, concealed, lookup));
   return response;
 }

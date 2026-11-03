@@ -16,6 +16,18 @@ test('civilians only perceive nearby visible live ground soldiers, not enemies b
   assert.deepEqual(threats, [seen.position]);
 });
 
+test('live Japanese tank crew trigger the same avoidance as infantry, without treating aircraft pilots as road threats',()=>{
+  const tank={...enemy(3,-2),vehicleId:'tank',targetKind:'closed-armor'};
+  const plane={...enemy(2,0),vehicleId:'plane',targetKind:'aircraft'};
+  const queries=[];
+  assert.deepEqual(observeCivilianThreats(position,[tank,{...tank},plane],(_from,_to,id)=>{queries.push(id);return true;}),
+    [{...tank.position,vehicleId:'tank'}]);
+  assert.deepEqual(queries,['tank'],'the tank hull cannot be mistaken for an opaque wall hiding its own crew');
+  const data={civilianId:1},response=updateCivilianThreatResponse(data,position,{x:3,z:-20},[tank],[],0,()=>true,()=>false);
+  assert.equal(response.mode,'flee');
+  assert.ok(civilianStepAvoidsThreats(position,response.target,response.threats));
+});
+
 test('an approaching or parallel enemy produces an escape away from its body rather than following the original road', () => {
   for (const threat of [{ x: 0, y: 0, z: -5 }, { x: 2, y: 0, z: 0 }]) {
     const result = planCivilianEscape(position, { x: 0, z: -20 }, [threat], [], () => false);

@@ -55,6 +55,21 @@ test('returning from a hidden tab does not upload background elapsed time as a g
   assert.equal(f.sent.at(-1).windows[0].maxFrameMs, 0);
   assert.equal(f.sent.at(-1).windows[0].longFrames, 0);
 });
+test('stage labels and civilian timing survive ingestion while old contexts remain valid',async()=>{
+  const f=fixture();f.context.map='nanjing';f.context.stage='dock-defense';
+  f.diagnostics.setEnabled(true);
+  f.diagnostics.beginFrame(16,'playing');
+  f.diagnostics.measure('civilians',()=>f.advance(8));
+  f.diagnostics.finishFrame('playing');f.diagnostics.flush();await settle();
+  const payload=f.sent[0];
+  assert.equal(validatePerformanceBatch(payload),null);
+  assert.equal(payload.windows[0].context.stage,'dock-defense');
+  assert.equal(payload.windows[0].scopes.civilians.totalMs,8);
+  delete payload.windows[0].context.stage;
+  assert.equal(validatePerformanceBatch(payload),null);
+  payload.windows[0].context.stage='arbitrary player text';
+  assert.match(validatePerformanceBatch(payload),/Invalid performance window/);
+});
 test('high-frequency timers sample every 32 calls, do not advance gameplay, and label sampled counts', async () => {
   const f = fixture();
   f.diagnostics.setEnabled(true); f.diagnostics.beginFrame(16, 'playing');

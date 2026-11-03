@@ -161,5 +161,8 @@ export function civilianVoiceClips() {
       cue: index === 2 || index === 3 ? 'shield' : 'protect',
       id: `opening-soldier-${voiceIndex}-${index + 1}`, file: `opening-soldier-${voiceIndex}-${index + 1}.mp3`, text,
     })));
-  return [...retreat, ...opening, ...soldiers];
+  const urgentCalls=new Set(['girl-1','girl-2','boy-1','boy-2','opening-girl-1','opening-boy-1']);
+  return [...retreat, ...opening, ...soldiers].map(clip=>urgentCalls.has(clip.id)?{
+    ...clip,style:'fearful',styledegree:'2',rate:'+16%',volume:'loud',pauseMs:110,audioRevision:'fearful-2',
+  }:clip);
 }

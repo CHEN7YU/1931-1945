@@ -111,7 +111,8 @@ export async function loadCivilianVoices() {
   await Promise.all(Array.from({ length: 4 }, async () => {
     while (cursor < clips.length) {
       const clip = clips[cursor++];
-      const response = await fetch(`/assets/audio/civilian-voices/${clip.file}`, { signal: AbortSignal.timeout(15000) });
+      const revision=clip.audioRevision?`?v=${encodeURIComponent(clip.audioRevision)}`:'';
+      const response = await fetch(`/assets/audio/civilian-voices/${clip.file}${revision}`, { signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error(`Civilian voice ${clip.file}: HTTP ${response.status}`);
       buffers[clip.file] = await context.decodeAudioData(await response.arrayBuffer());
     }

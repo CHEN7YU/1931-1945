@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { civilianVoiceClips } from '../src/civilian-voice-lines.js';
-import { createCivilianVoiceDirector, createCivilianVoices } from '../src/civilian-voices.js';
+import { createCivilianVoiceDirector, createCivilianVoices,loadCivilianVoices } from '../src/civilian-voices.js';
 import { voiceSSML } from '../scripts/prepare-battle-voices.mjs';
 
 const listener = { position: { x: 0, y: 1.6, z: 0 }, right: { x: 1, y: 0, z: 0 }, soldierId: 'player' };
@@ -52,6 +52,23 @@ test('every real MP3 matches its synthesis hash and provenance, with independent
     assert.ok(manifest.attemptedCharactersByPhase[phase] <= 200000);
     assert.ok(manifest.attemptedCharactersByPhase[phase] * 15 / 1000000 < 50);
   }
+});
+test('only the six new urgent takes change emotion parameters and cache revision',()=>{
+  const urgent=civilianVoiceClips().filter(clip=>clip.audioRevision);
+  assert.equal(urgent.length,6);
+  assert.ok(urgent.every(clip=>clip.audioRevision==='fearful-2'&&clip.style==='fearful'&&
+    clip.styledegree==='2'&&clip.volume==='loud'&&clip.pauseMs===110&&clip.age==='child'));
+});
+test('the actual voice loader requests revised URLs for changed takes and keeps legacy URLs stable',async()=>{
+  const previousAudio=globalThis.OfflineAudioContext,previousFetch=globalThis.fetch,requests=[];
+  globalThis.OfflineAudioContext=class { async decodeAudioData(){return{numberOfChannels:1,duration:3};} };
+  globalThis.fetch=async url=>{requests.push(url);return new Response(new Uint8Array([0]));};
+  try{
+    await loadCivilianVoices();
+    assert.equal(requests.length,132);
+    assert.equal(requests.filter(url=>url.includes('?v=fearful-2')).length,6);
+    assert.ok(requests.includes('/assets/audio/civilian-voices/man-1.mp3'));
+  }finally{globalThis.fetch=previousFetch;globalThis.OfflineAudioContext=previousAudio;}
 });
 
 test('voice selection follows actual age, gender, stage and location, excludes inactive or dead people, and never repeats a text within 150 seconds', () => {

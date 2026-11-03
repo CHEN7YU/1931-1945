@@ -9,6 +9,13 @@ export const ENCIRCLEMENT_RULES = Object.freeze({ initialFriendly: 6, enemySquad
   cutEnemyDelay: 35, supplyObjective: 'A', supplyGuardSquads: 2, defeatGraceSeconds: 90 });
 export const EAST_BREAKOUT = Object.freeze({ x: 56, z: 3, halfWidth: 3.2, exitX: 62,
   regroupSeconds: 15, announcementInterval: 25, announcements: 3 });
+export function crossedEastGate(from,to) {
+  if(!from||![from.x,from.y,from.z,to.x,to.y,to.z].every(Number.isFinite))return false;
+  if(from.x>=EAST_BREAKOUT.x||to.x<EAST_BREAKOUT.x)return false;
+  const fraction=(EAST_BREAKOUT.x-from.x)/(to.x-from.x);
+  return Math.abs(from.z+(to.z-from.z)*fraction-EAST_BREAKOUT.z)<=EAST_BREAKOUT.halfWidth&&
+    from.y+(to.y-from.y)*fraction<2;
+}
 export const REAR_SPAWNS = Object.freeze([
   Object.freeze({ id: 'china-rear-A', objectiveId: 'A', name: '敌后永久重生点 · 10点方向', x: -82, z: -82 }),
   Object.freeze({ id: 'china-rear-B', objectiveId: 'B', name: '敌后永久重生点 · 12点方向', x: 8, z: -65 }),
@@ -79,6 +86,16 @@ export function recordEncirclementEscape(match, id) {
   return true;
 }
 
+export function registerBreakoutStrength(match, ids, complete = false) {
+  const breakout=match.breakout;
+  if(match.phase!==2||!breakout||!breakout.reinforcing||!Array.isArray(ids)||
+    ids.some(id=>typeof id!=='string'||!id))throw new Error('Invalid breakout restoration strength');
+  for(const id of ids)if(!breakout.initialIds.includes(id))breakout.initialIds.push(id);
+  breakout.strength=breakout.initialIds.length;
+  breakout.requiredKills=Math.ceil(breakout.strength*2/3);
+  breakout.escapeLimit=Math.floor(breakout.strength/3);
+  if(complete){breakout.reinforcing=false;breakout.stage='regroup';breakout.elapsed=0;}
+}
 export function encirclementGroundEnemies(formations) {
   return formations.filter(unit => unit.team === 'enemy' && unit.active !== false)
     .reduce((count, unit) => count + unit.members.filter(actor => actor.health > 0 &&
@@ -131,7 +148,7 @@ export function advanceEncirclementSupport(match, points, formations, now) {
   }
   return { added, supplyChanged: previous !== match.supplyInterrupted };
 }
-export function advanceEncirclement(match, points, formations, dt = 0) {
+export function advanceEncirclement(match, points, formations, dt = 0, { restoreForces = false } = {}) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Encirclement defeat requires non-negative simulation time');
   if (match.winner) return match.winner;
   const enemyControlsAll = match.phase === 1 && points.length === 3 && points.every(point => point.owner === 'enemy');
@@ -147,7 +164,8 @@ export function advanceEncirclement(match, points, formations, dt = 0) {
     const remnants = groundRemnants(formations);
     match.breakout = { initialIds: remnants.map(remnant => remnant.id), strength: remnants.length,
       requiredKills: Math.ceil(remnants.length * 2 / 3), escapeLimit: Math.floor(remnants.length / 3),
-      escapedIds: [], killed: 0, elapsed: 0, stage: 'regroup' };
+      escapedIds: [], killed: 0, elapsed: 0, stage: restoreForces ? 'forming' : 'regroup',
+      reinforcing: restoreForces };
     for (const unit of formations.filter(unit => unit.team === 'enemy')) {
       unit.respawnEnabled = false; unit.respawnAt = null;
       unit.spawnRetryAt = unit.reinforcementStartedAt = null;
@@ -159,6 +177,7 @@ export function advanceEncirclement(match, points, formations, dt = 0) {
       return match.winner;
     }
     const breakout = match.breakout;
+    if(breakout.reinforcing)return null;
     breakout.elapsed += dt;
     if (breakout.elapsed >= EAST_BREAKOUT.regroupSeconds) breakout.stage = 'breakout';
     const remaining = groundRemnants(formations).filter(remnant => breakout.initialIds.includes(remnant.id) &&

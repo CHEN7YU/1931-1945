@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceEncirclement, createEncirclement, recordEncirclementEscape, EAST_BREAKOUT } from '../src/encirclement.js';
+import { advanceEncirclement, createEncirclement, recordEncirclementEscape, EAST_BREAKOUT,registerBreakoutStrength,crossedEastGate } from '../src/encirclement.js';
 
 function fixture(count) {
   const unit = { id: 'enemy', team: 'enemy', type: 'infantry', active: true,
@@ -22,6 +22,13 @@ test('the phase-entry denominator is fixed and integer thresholds allow at most 
     assert.equal(advanceEncirclement(f.match, f.points, f.formations), 'friendly');
     assert.equal(f.match.breakout.strength, count);
   }
+});
+test('only an eastward crossing through the C gate aperture qualifies for a later escape',()=>{
+  assert.equal(crossedEastGate({x:55,y:0,z:3},{x:57,y:0,z:3}),true);
+  assert.equal(crossedEastGate({x:55,y:0,z:12},{x:57,y:0,z:12}),false);
+  assert.equal(crossedEastGate({x:57,y:0,z:3},{x:55,y:0,z:3}),false);
+  assert.equal(crossedEastGate({x:60,y:0,z:3},{x:63,y:0,z:3}),false);
+  assert.equal(crossedEastGate({x:55,y:8,z:3},{x:57,y:8,z:3}),false);
 });
 test('escaped enemies are never counted as killed and passing the allowed escape count loses the blocking mission', () => {
   const f = fixture(30);
@@ -50,4 +57,19 @@ test('ground crews count but airborne pilots do not; stale point ownership never
   assert.equal(f.match.enemyControlSeconds, 0);
   assert.equal(f.match.breakout.stage, 'breakout');
   assert.ok(EAST_BREAKOUT.regroupSeconds > 0);
+});
+
+test('second-stage restoration cannot win on the old small denominator and retains kills made during assembly',()=>{
+  const f=fixture(3);f.match=createEncirclement();
+  advanceEncirclement(f.match,f.points,f.formations,0,{restoreForces:true});
+  f.members[0].health=0;
+  assert.equal(advanceEncirclement(f.match,f.points,f.formations,100),null);
+  assert.equal(f.match.breakout.elapsed,0);
+  const added=Array.from({length:67},(_,index)=>({id:`new-${index}`,health:100}));
+  f.members.push(...added);
+  registerBreakoutStrength(f.match,added.map(actor=>actor.id),true);
+  assert.equal(f.match.breakout.strength,70);
+  assert.equal(f.match.breakout.requiredKills,47);
+  advanceEncirclement(f.match,f.points,f.formations,0);
+  assert.equal(f.match.breakout.killed,1);
 });

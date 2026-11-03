@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { circleBlocked } from '../src/core.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
-  releaseNanjingCivilianWave } from '../src/civilian-crowd.js';
+  releaseNanjingCivilianWave, createCivilianCrowdPlanner } from '../src/civilian-crowd.js';
 
 test('sixty bridge refugees have independent exterior positions, and the 120 residents do not emerge before the retreat order', () => {
   const starts = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianStart(index));
@@ -103,6 +103,30 @@ test('a civilian displaced from a city route replans around a long wall instead 
     assert.equal(circleBlocked(person.position.x, person.position.z, .36, [wall]), false);
   }
   assert.ok(Math.hypot(person.position.x - target.x, person.position.z - target.z) < .02);
+});
+
+test('a shared crowd step admits only one full detour search and invalidation never reuses a stale obstacle grid',()=>{
+  const planner=createCivilianCrowdPlanner();
+  planner.beginStep();
+  assert.equal(planner.take(),true);assert.equal(planner.take(),false);
+  planner.beginStep();assert.equal(planner.take(),true);
+  const obstacles=[];let builds=0;
+  assert.equal(planner.grid('dock',obstacles,()=>++builds),1);
+  assert.equal(planner.grid('dock',obstacles,()=>++builds),1);
+  planner.invalidate();
+  assert.equal(planner.grid('dock',obstacles,()=>++builds),2);
+  assert.equal(planner.stats.deferred,1);
+});
+test('six blocked civilians cannot trigger six full synchronous searches in one simulation step',()=>{
+  const planner=createCivilianCrowdPlanner(),target={x:4,z:0};
+  const people=Array.from({length:6},(_,index)=>({position:{x:-4,y:0,z:index*2},
+    userData:{civilianId:index,crowdTarget:{...target},crowdBestDistance:0,crowdStalled:2}}));
+  const wall={minX:0,maxX:1,minZ:-20,maxZ:20,height:3},obstacles=[wall];
+  planner.beginStep();
+  for(const person of people)moveCivilianInCrowd(person,target,.1,people,obstacles,obstacles,null,planner);
+  assert.equal(planner.stats.searches,1);
+  assert.equal(planner.stats.deferred,5);
+  assert.ok(people.every(person=>!circleBlocked(person.position.x,person.position.z,.36,obstacles)));
 });
 
 test('waiting civilians look toward the boats, shift their upper bodies, and stop walking in place', () => {

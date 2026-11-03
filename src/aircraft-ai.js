@@ -76,7 +76,7 @@ function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHe
 }
 
 export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible, obstacles = [], groundHeight = () => 0,
-  patrolCenter = { x: 0, z: 0 } }) {
+  patrolCenter = { x: 0, z: 0 }, preferredUnitId = null }) {
   if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(now) || now < 0 ||
     ![vehicle.position.x, vehicle.position.y, vehicle.position.z, vehicle.heading, vehicle.pitch, vehicle.roll].every(Number.isFinite) ||
     typeof canFire !== 'boolean' || typeof visible !== 'function' || typeof groundHeight !== 'function' ||
@@ -103,8 +103,11 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
       Math.hypot(actor.position.x - p.x, actor.position.z - p.z);
     candidates.sort((a, b) => Number(b.targetKind === 'aircraft') - Number(a.targetKind === 'aircraft') ||
       bearingCost(a) - bearingCost(b));
+    const preferred = preferredUnitId ? candidates.filter(actor => actor.unitId === preferredUnitId) : [];
     const retainedVisible = retained && candidates.includes(retained) && visible(start, aimPoint(retained));
-    state.targetId = retainedVisible ? retained.id : candidates.find(actor => visible(start, aimPoint(actor)))?.id ?? null;
+    const priority = retainedVisible && retained.unitId === preferredUnitId ? retained
+      : preferred.find(actor => visible(start, aimPoint(actor)));
+    state.targetId = priority?.id ?? (retainedVisible ? retained.id : candidates.find(actor => visible(start, aimPoint(actor)))?.id ?? null);
   }
   const target = targets.find(actor => actor.id === state.targetId && actor.health > 0);
   const aim = target ? aimPoint(target) : null;

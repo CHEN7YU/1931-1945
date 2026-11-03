@@ -2,7 +2,7 @@ export const PERFORMANCE_SCHEMA_VERSION = 1;
 export const FRAME_BUCKETS_MS = Object.freeze([8, 12, 16.7, 20, 25, 33.4, 50, 66.7, 100, 150, 250, 500, 1000, 5000, 60000]);
 export const PERFORMANCE_SCOPES = Object.freeze([
   'doors', 'vehicles', 'player', 'ai', 'motion', 'objectives', 'projectiles', 'grenades',
-  'effects', 'hud', 'presentation', 'render', 'audio', 'steering', 'routes', 'posture', 'tankEvasion',
+  'effects', 'hud', 'presentation', 'render', 'audio', 'steering', 'routes', 'posture', 'tankEvasion', 'civilians',
 ]);
 export const PERFORMANCE_SCOPE_SAMPLE_EVERY = Object.freeze({ steering: 32, routes: 32, posture: 32, tankEvasion: 32 });
 export const PERFORMANCE_STATES = Object.freeze(['menu', 'playing', 'transferring', 'pause', 'dead', 'victory', 'defeat', 'draw', 'loading']);
@@ -14,11 +14,13 @@ const number = (value, max = 1e9) => Number.isFinite(value) && value >= 0 && val
 const integer = (value, max = 1e9) => Number.isInteger(value) && number(value, max);
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const contextNames = ['map', 'state', 'time', 'quality', 'adaptiveLevel', 'allies', 'enemies', 'corpses', 'vehicles',
-  'reinforcementWaves', 'drawCalls', 'triangles', 'backlogSeconds', 'simulationSteps', 'unit'];
+  'reinforcementWaves', 'drawCalls', 'triangles', 'backlogSeconds', 'simulationSteps', 'unit', 'stage'];
 function context(value) {
   return keys(value, contextNames) && PERFORMANCE_MAPS.includes(value.map) && PERFORMANCE_STATES.includes(value.state) &&
     ['high', 'low'].includes(value.quality) && ['infantry', 'tank', 'plane', 'mortar', 'none'].includes(value.unit) &&
-    contextNames.filter(name => !['map', 'state', 'quality', 'unit'].includes(name))
+    (value.stage === undefined || ['gate-defense', 'withdrawal', 'dock-defense', 'withdrawal-to-boats',
+      'encirclement', 'east-breakout', 'conquest'].includes(value.stage)) &&
+    contextNames.filter(name => !['map', 'state', 'quality', 'unit', 'stage'].includes(name))
       .every(name => number(value[name])) && integer(value.adaptiveLevel, 2) &&
     integer(value.allies, 1000) && integer(value.enemies, 1000) && integer(value.corpses, 10000) &&
     integer(value.vehicles, 100) && integer(value.reinforcementWaves, 100);
