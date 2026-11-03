@@ -94,7 +94,7 @@ export function registerBreakoutStrength(match, ids, complete = false) {
   breakout.strength=breakout.initialIds.length;
   breakout.requiredKills=Math.ceil(breakout.strength*2/3);
   breakout.escapeLimit=Math.floor(breakout.strength/3);
-  if(complete){breakout.reinforcing=false;breakout.stage='regroup';breakout.elapsed=0;}
+  if(complete){breakout.reinforcing=false;breakout.stage=breakout.elapsed>=EAST_BREAKOUT.regroupSeconds?'breakout':'regroup';}
 }
 export function encirclementGroundEnemies(formations) {
   return formations.filter(unit => unit.team === 'enemy' && unit.active !== false)
@@ -177,14 +177,16 @@ export function advanceEncirclement(match, points, formations, dt = 0, { restore
       return match.winner;
     }
     const breakout = match.breakout;
-    if(breakout.reinforcing)return null;
     breakout.elapsed += dt;
+    if(breakout.reinforcing)return null;
     if (breakout.elapsed >= EAST_BREAKOUT.regroupSeconds) breakout.stage = 'breakout';
     const remaining = groundRemnants(formations).filter(remnant => breakout.initialIds.includes(remnant.id) &&
       !breakout.escapedIds.includes(remnant.id)).length;
     breakout.killed = breakout.strength - remaining - breakout.escapedIds.length;
-    if (breakout.escapedIds.length > breakout.escapeLimit) match.winner = 'enemy';
-    else if (breakout.killed >= breakout.requiredKills) match.winner = 'friendly';
+    breakout.remaining=remaining;
+    breakout.objectiveStatus=breakout.escapedIds.length>breakout.escapeLimit?'failed':
+      breakout.killed>=breakout.requiredKills?'achieved':'pending';
+    if(remaining===0)match.winner=breakout.objectiveStatus==='failed'?'enemy':'friendly';
   }
   return match.winner;
 }

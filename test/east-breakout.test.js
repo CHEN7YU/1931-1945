@@ -19,8 +19,13 @@ test('the phase-entry denominator is fixed and integer thresholds allow at most 
     for (const member of f.members.slice(0, required - 1)) member.health = 0;
     assert.equal(advanceEncirclement(f.match, f.points, f.formations), null);
     f.members[required - 1].health = 0;
-    assert.equal(advanceEncirclement(f.match, f.points, f.formations), 'friendly');
+    assert.equal(advanceEncirclement(f.match, f.points, f.formations), count===required?'friendly':null);
     assert.equal(f.match.breakout.strength, count);
+    if(count!==required){
+      assert.equal(f.match.breakout.objectiveStatus,'achieved');
+      for(const member of f.members.slice(required))member.health=0;
+      assert.equal(advanceEncirclement(f.match,f.points,f.formations),'friendly');
+    }
   }
 });
 test('only an eastward crossing through the C gate aperture qualifies for a later escape',()=>{
@@ -30,7 +35,7 @@ test('only an eastward crossing through the C gate aperture qualifies for a late
   assert.equal(crossedEastGate({x:60,y:0,z:3},{x:63,y:0,z:3}),false);
   assert.equal(crossedEastGate({x:55,y:8,z:3},{x:57,y:8,z:3}),false);
 });
-test('completed force restoration grants exactly twenty simulated seconds before the mass charge', () => {
+test('the defense countdown grants twenty simulated seconds from phase entry before the mass charge', () => {
   const f = fixture(70);
   advanceEncirclement(f.match, f.points, f.formations, 19.99);
   assert.equal(f.match.breakout.stage, 'regroup');
@@ -50,7 +55,10 @@ test('escaped enemies are never counted as killed and passing the allowed escape
   assert.equal(recordEncirclementEscape(f.match, f.members[0].id), false);
   assert.equal(recordEncirclementEscape(f.match, 'untracked-aircraft'), false);
   assert.equal(recordEncirclementEscape(f.match, f.members[10].id), true);
-  assert.equal(advanceEncirclement(f.match, f.points, f.formations), 'enemy');
+  assert.equal(advanceEncirclement(f.match, f.points, f.formations), null);
+  assert.equal(f.match.breakout.objectiveStatus,'failed');
+  for(const member of f.members.slice(11))member.health=0;
+  assert.equal(advanceEncirclement(f.match,f.points,f.formations),'enemy');
   const victory = fixture(30);
   for (const member of victory.members.slice(0, 10)) recordEncirclementEscape(victory.match, member.id);
   for (const member of victory.members.slice(10)) member.health = 0;
@@ -76,7 +84,7 @@ test('second-stage restoration cannot win on the old small denominator and retai
   advanceEncirclement(f.match,f.points,f.formations,0,{restoreForces:true});
   f.members[0].health=0;
   assert.equal(advanceEncirclement(f.match,f.points,f.formations,100),null);
-  assert.equal(f.match.breakout.elapsed,0);
+  assert.equal(f.match.breakout.elapsed,100);
   const added=Array.from({length:67},(_,index)=>({id:`new-${index}`,health:100}));
   f.members.push(...added);
   registerBreakoutStrength(f.match,added.map(actor=>actor.id),true);

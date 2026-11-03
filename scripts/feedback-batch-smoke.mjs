@@ -90,6 +90,8 @@ try{
           for(const actor of enemies)if(!actor.vehicleId&&actor.index>2)actor.health=0;
           for(const point of objectives)Object.assign(point,{owner:'friendly',control:1,progress:1,enemyProgress:0,captured:true});
           updateObjectives(0);
+          updateHUD();
+          const entryCountdown=$('objective-title').textContent;
           const durations=[];
           for(let frame=0;frame<500&&encirclement.breakout.reinforcing;frame++){
             time+=.05;const began=performance.now();updateObjectives(.05);durations.push(performance.now()-began);
@@ -114,7 +116,7 @@ try{
           friend.path=friend.pathGoal=null;pathRequests.delete(friend.tactics.id);
           const friendlyBefore=friend.position.distanceTo(new THREE.Vector3(friendlyGoal.x,friendlyGoal.y,friendlyGoal.z));
           for(let frame=0;frame<100;frame++){
-            time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateVehicles(.05);updateAI(.05);
+            time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateGrenades(.05);updateVehicles(.05);updateAI(.05);
             for(const actor of allForces)if(actor.health>0&&actor.nativeMotion)advanceNraMotion(actor,.05);
             updateObjectives(.05);controlEvents.drain(()=>{});combatEvents.drain(()=>{});
           }
@@ -127,7 +129,44 @@ try{
           setGameState('pause');
           return{phase:encirclement.phase,winner:encirclement.winner,breakout:structuredClone(encirclement.breakout),
             ground,air,visible,newActors:newActors.length,maxRestoreUpdate:Math.max(...durations),
-            goals:goals.slice(0,3),countdown,assembly};
+            goals:goals.slice(0,3),countdown,entryCountdown,assembly};
+        },
+        gather(){
+          const before=encirclement.breakout.groups.map(group=>({...group})),releases=[];
+          for(let frame=0;frame<800&&!encirclement.breakout.groups.every(group=>group.released);frame++){
+            time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateGrenades(.05);updateVehicles(.05);updateAI(.05);
+            for(const actor of allForces)if(actor.health>0&&actor.nativeMotion)advanceNraMotion(actor,.05);
+            const previous=encirclement.breakout.groups.map(group=>group.released);
+            updateObjectives(.05);
+            encirclement.breakout.groups.forEach((group,index)=>{
+              if(group.released&&!previous[index])releases.push({index,elapsed:encirclement.breakout.elapsed,...group});
+            });
+            controlEvents.drain(()=>{});combatEvents.drain(()=>{});
+          }
+          setGameState('pause');return{before,releases,groups:structuredClone(encirclement.breakout.groups)};
+        },
+        retaliation(){
+          setGameState('playing');
+          const player=controlledSoldier(entities),enemy=enemies.find(actor=>actor.health>0&&!actor.vehicleId&&!actor.grenades.action);
+          if(!enemy)throw Error('Missing living rifleman without an in-progress throw');
+          for(const actor of allForces)if(actor!==player&&actor!==enemy)actor.health=0;
+          for(const vehicle of entities.vehicles.values()){vehicle.health=0;vehicle.position.set(-400,200,-400);}
+          vehicleRenderer.update(entities.vehicles.values(),time);
+          player.position.set(37,0,3);player.health=100000;
+          enemy.position.set(47,0,3);enemy.target=null;enemy.nextThink=0;
+          enemy.tactics.lastSeen=null;enemy.tactics.cover=null;enemy.tactics.suppressedUntil=0;
+          enemy.tactics.breakoutNextFireAt=0;enemy.tactics.breakoutFireUntil=0;
+          enemy.path=enemy.pathGoal=null;enemy.heading=Math.PI/2;
+          const shots=enemy.rifle.shots,start=enemy.position.clone();let travel=0;
+          for(let frame=0;frame<400&&!encirclement.winner;frame++){
+            const previous=enemy.position.clone();
+            time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateGrenades(.05);updateAI(.05);
+            advanceNraMotion(enemy,.05);travel+=previous.distanceTo(enemy.position);
+            updateObjectives(.05);controlEvents.drain(()=>{});combatEvents.drain(()=>{});
+          }
+          const result={shots:enemy.rifle.shots-shots,travel,start:start.toArray(),end:enemy.position.toArray(),
+            target:enemy.target?.id,aim:enemy.aiRifle.blocked,mode:enemy.tactics.mode};
+          setGameState('pause');return result;
         },
         eastAir(){
           setGameState('playing');
@@ -180,7 +219,8 @@ try{
   assert.equal(restore.ground.filter(unit=>unit.type==='tank').length,1);
   assert.deepEqual(restore.air,[1,1,1]);assert.deepEqual(restore.visible,[]);
   assert.equal(restore.breakout.strength,70);
-  assert.match(restore.countdown.title,/20秒/);
+  assert.match(restore.entryCountdown,/20秒/);
+  assert.match(restore.countdown.title,/C点布防倒计时/);
   assert.match(restore.countdown.counts,/地面编制 70人/);
   assert.ok(restore.countdown.counts.includes('已歼 0/47'));
   assert.equal(restore.assembly.stage,'regroup');
@@ -191,6 +231,14 @@ try{
   console.log(JSON.stringify({eastAir:air}));
   assert.equal(air.length,3);
   assert.ok(air.reduce((count,plane)=>count+plane.shots,0)>0,'air support must actually fire near the east gate');
+  await page.evaluate(()=>feedbackReview.restore());
+  const gather=await page.evaluate(()=>feedbackReview.gather());
+  console.log(JSON.stringify({gather}));
+  assert.ok(gather.groups.every(group=>group.released));
+  assert.ok(gather.releases.every(group=>group.elapsed>=20));
+  const retaliation=await page.evaluate(()=>feedbackReview.retaliation());
+  console.log(JSON.stringify({retaliation}));
+  assert.ok(retaliation.shots>=2&&retaliation.travel>2,'retreating infantry must repeatedly return fire and physically move');
   if(process.env.ARTIFACT_DIR){
     const tower=await page.evaluate(()=>feedbackReview.towerView());
     assert.ok(tower.sealed);assert.equal(tower.retained,'open');
@@ -198,5 +246,5 @@ try{
     await page.screenshot({path:join(process.env.ARTIFACT_DIR,'a-tower-sealed-interior.png')});
   }
   assert.deepEqual(errors,[]);
-  if(process.env.FEEDBACK_RESULT)await writeFile(process.env.FEEDBACK_RESULT,JSON.stringify({mobile,restore,air,errors},null,2));
+  if(process.env.FEEDBACK_RESULT)await writeFile(process.env.FEEDBACK_RESULT,JSON.stringify({mobile,restore,gather,air,retaliation,errors},null,2));
 }finally{await browser.close();}

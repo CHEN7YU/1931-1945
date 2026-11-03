@@ -78,3 +78,20 @@ test('crowd sidesteps cannot quietly steer a fleeing person back into a nearby s
   assert.ok(Math.hypot(civilian.position.x - 2, civilian.position.z) >= 1.985);
   assert.ok(Math.hypot(civilian.position.x - before.x, civilian.position.z - before.z) <= .2 + 1e-8);
 });
+
+test('repeated reads respect the threat clock and a shared decision budget defers rather than rescans every waiting person',()=>{
+  const data={civilianId:1},budget={remaining:1};let rays=0;
+  const view=()=>{rays++;return true;},concealed=()=>false;
+  const threat=enemy(3,0);
+  const response=updateCivilianThreatResponse(data,position,position,[threat],[],1,view,concealed,null,budget);
+  const before=rays;
+  for(let frame=0;frame<20;frame++)updateCivilianThreatResponse(data,position,position,[threat],[],1.1,view,concealed,null,budget);
+  assert.equal(rays,before);assert.equal(data.threatThinkCount,1);
+  const other={civilianId:2};
+  updateCivilianThreatResponse(other,position,position,[threat],[],1,view,concealed,null,budget);
+  assert.equal(other.threatThinkCount,undefined);
+  budget.remaining=1;
+  updateCivilianThreatResponse(other,position,position,[threat],[],1.2,view,concealed,null,budget);
+  assert.equal(other.threatThinkCount,1);
+  assert.deepEqual(response.threats,[threat.position]);
+});

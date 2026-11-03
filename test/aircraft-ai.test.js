@@ -11,6 +11,21 @@ const plane = () => ({ team: 'enemy', health: 180, position: { x: 0, y: 35, z: -
   aiFlight: { phase: 'approach', until: 0, targetId: null, nextSense: 0 } });
 const target = { id: 'friendly', team: 'friendly', health: 100, position: { x: 0, y: 0, z: 0 } };
 
+test('ordinary military-only battles retain a visible target instead of switching every sensing tick',()=>{
+  const aircraft=plane(),retained={...target,id:'retained',position:{x:30,y:0,z:0}};
+  aircraft.aiFlight.targetId=retained.id;
+  advanceAircraftAI(aircraft,.01,1,{targets:[target,retained],canFire:true,visible:()=>true});
+  assert.equal(aircraft.aiFlight.targetId,retained.id);
+});
+
+test('an exposed civilian in the forward attack lane is a valid target even while the retained player squad is nearby off-axis',()=>{
+  const aircraft=plane(),player={...target,id:'player',unitId:'squad',position:{x:80,y:0,z:-80}};
+  const civilian={...target,id:'civilian:1',unitId:'nanjing-civilians',civilian:{},aimHeight:.8};
+  aircraft.aiFlight.targetId=player.id;
+  advanceAircraftAI(aircraft,.01,1,{targets:[player,civilian],preferredUnitId:'squad',canFire:true,visible:()=>true});
+  assert.equal(aircraft.aiFlight.targetId,civilian.id);
+});
+
 test('Nanjing player-squad priority replaces a retained AI target only when a living squad member is visible and reachable',()=>{
   const aircraft=plane(),other={...target,id:'other',unitId:'other'},player={...target,id:'player',unitId:'squad',
     position:{x:20,y:0,z:0}};

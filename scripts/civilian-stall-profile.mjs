@@ -7,6 +7,7 @@ import {defaultPreferences,PREFERENCES_KEY} from '../src/player-preferences.js';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];
 page.on('pageerror',error=>{errors.push(error.message);console.error(error.stack);});
+page.on('console',message=>{if(message.text().startsWith('[profile]'))console.log(message.text());});
 try{
   const settings=defaultPreferences();settings.quality.preset='low';
   Object.keys(settings.quality.effects).forEach(key=>settings.quality.effects[key]=false);
@@ -25,17 +26,19 @@ try{
   await page.route('**/src/main.js*',async route=>{
     const response=await route.fetch();
     const source=(await response.text()).replaceAll('rejoinCivilianRoute(','profileRejoin(')
-      .replaceAll('moveCivilianInCrowd(','profileMove(');
+      .replaceAll('moveCivilianInCrowd(','profileMove(')
+      .replaceAll('updateCivilianThreatResponse(','profileFear(');
     await route.fulfill({response,body:source+`
-      const civilianProfile={rejoin:{calls:0,total:0,max:0},move:{calls:0,total:0,max:0}};
+      const civilianProfile={rejoin:{calls:0,total:0,max:0},move:{calls:0,total:0,max:0},fear:{calls:0,total:0,max:0}};
       function profileOperation(key,operation,args){
         const start=performance.now();try{return operation(...args);}
         finally{const elapsed=performance.now()-start,item=civilianProfile[key];item.calls++;item.total+=elapsed;item.max=Math.max(item.max,elapsed);}
       }
       function profileRejoin(...args){return profileOperation('rejoin',rejoinCivilianRoute,args);}
       function profileMove(...args){return profileOperation('move',moveCivilianInCrowd,args);}
+      function profileFear(...args){return profileOperation('fear',updateCivilianThreatResponse,args);}
       window.stallReview=()=>{
-        setGameState('menu');beginMatch();enemies=[];rebuildForces();combatSounds.length=0;
+        setGameState('menu');beginMatch();const originalEnemies=[...enemies];enemies=[];rebuildForces();combatSounds.length=0;
         const samples=[],step=(count,label)=>{
           const timings=[];
           for(let frame=0;frame<count;frame++){
@@ -49,14 +52,37 @@ try{
           samples.push({label,frames:count,total:timings.reduce((a,b)=>a+b,0),
             p95:timings[Math.floor(count*.95)],max:timings.at(-1),arrived:nanjingCampaign.civiliansArrived,
             evacuated:nanjingCampaign.civiliansEvacuated});
+          console.log('[profile] '+JSON.stringify(samples.at(-1)));
         };
-        step(1200,'opening-60s');
-        nanjingCampaign.stage='withdrawal';updateNanjingMission(0);
-        step(4800,'residential-wave-240s');
+        if(${process.env.ENEMY_DOCK_PROFILE==='1'}){
+          for(const person of world.civilians){
+            const point=person.userData.waitingSlot;
+            person.position.set(point.x,world.groundHeight(point.x,point.z),point.z);person.visible=true;
+            Object.assign(person.userData,{active:true,arrived:true,boarding:false,dead:false,health:100});
+          }
+          nanjingCampaign.civiliansArrived=nanjingCampaign.civiliansWaiting=180;
+          world.civilianQueue.splice(0,world.civilianQueue.length,...world.civilians);
+        }else{
+          step(1200,'opening-60s');
+          nanjingCampaign.stage='withdrawal';updateNanjingMission(0);
+          step(4800,'residential-wave-240s');
+        }
         nanjingCampaign.stage='dock-defense';nanjingCampaign.dockActivated=true;
-        step(600,'dock-boarding-30s');
+        if(${process.env.ENEMY_DOCK_PROFILE==='1'}){
+          const positions=[];
+          for(let z=-92;z<=-74;z+=2)for(let x=-58;x<=-42;x+=2)
+            if(!circleBlocked(x,z,.46,world.obstacles))positions.push({x,z});
+          enemies=originalEnemies.filter(actor=>!actor.vehicleId).slice(0,12);
+          enemies.forEach((actor,index)=>{const point=positions[index];if(!point)throw Error('Insufficient enemy contact positions');
+            actor.position.set(point.x,world.groundHeight(point.x,point.z),point.z);});
+          rebuildForces();
+          step(40,'dock-enemy-contact-2s');
+          enemies=[];rebuildForces();
+        }
+        step(${process.env.ENEMY_DOCK_PROFILE==='1'?160:600},'dock-boarding');
         setGameState('pause');
-        return {samples,planner:civilianCrowdPlanner.stats,operations:civilianProfile};
+        return {samples,planner:civilianCrowdPlanner.stats,operations:civilianProfile,
+          threatDecisions:world.civilians.reduce((sum,person)=>sum+(person.userData.threatThinkCount??0),0)};
       };`});
   });
   await page.goto(process.env.GAME_URL??'http://127.0.0.1:5203/?campaign=nanjing');
@@ -67,7 +93,7 @@ try{
   console.log(JSON.stringify({result,errors}));
   if(process.env.STALL_RESULT)await writeFile(process.env.STALL_RESULT,JSON.stringify({result,errors},null,2));
   assert.deepEqual(errors,[]);
-  assert.equal(result.samples[1].arrived,180);
+  if(process.env.ENEMY_DOCK_PROFILE!=='1')assert.equal(result.samples[1].arrived,180);
   if(process.env.STALL_BASELINE!=='1')assert.ok(result.samples.every(sample=>sample.max<150),
     'civilian-only simulation updates must not contain multi-second synchronous searches');
 }finally{await browser.close();}

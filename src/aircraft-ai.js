@@ -91,7 +91,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   if (!state) throw new Error('Aircraft requires an autonomous flight state');
   const p = vehicle.position;
   const start = aircraftMuzzle(vehicle);
-  const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + (actor.vehicleId ? 0 : 1.2), z: actor.position.z });
+  const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + (actor.vehicleId ? 0 : actor.aimHeight??1.2), z: actor.position.z });
   if (now >= state.nextSense) {
     state.nextSense = now + .6;
     const retained = targets.find(actor => actor.id === state.targetId && actor.health > 0);
@@ -105,8 +105,14 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
       bearingCost(a) - bearingCost(b));
     const preferred = preferredUnitId ? candidates.filter(actor => actor.unitId === preferredUnitId) : [];
     const retainedVisible = retained && candidates.includes(retained) && visible(start, aimPoint(retained));
-    const priority = retainedVisible && retained.unitId === preferredUnitId ? retained
-      : preferred.find(actor => visible(start, aimPoint(actor)));
+    const exposedCivilian=candidates.find(actor=>actor.civilian&&visible(start,aimPoint(actor)));
+    const preferredTarget=retainedVisible&&retained.unitId===preferredUnitId?retained:
+      preferred.find(actor=>visible(start,aimPoint(actor)));
+    const militaryTarget=preferredTarget??(retainedVisible&&!retained.civilian?retained:
+      candidates.find(actor=>!actor.civilian&&visible(start,aimPoint(actor))));
+    const priority=exposedCivilian
+      ? !militaryTarget||bearingCost(exposedCivilian)+15<bearingCost(militaryTarget)?exposedCivilian:militaryTarget
+      :preferredTarget;
     state.targetId = priority?.id ?? (retainedVisible ? retained.id : candidates.find(actor => visible(start, aimPoint(actor)))?.id ?? null);
   }
   const target = targets.find(actor => actor.id === state.targetId && actor.health > 0);

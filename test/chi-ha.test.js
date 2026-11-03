@@ -158,6 +158,17 @@ test('AI turns and aims before firing, uses original gun ownership and model-spe
   advanceOwnedWeapons(registry, .1, firedAt + CHI_HA.reload);
   assert.equal(vehicle.weapon.ammo, 1);
 });
+test('cannon aims at the supplied civilian body height instead of a fixed adult target point', () => {
+  const { vehicle, crew } = fixture();
+  const civilian = { ...target, id: 'civilian:1', aimHeight: .6 };
+  let shot;
+  for (let frame = 0; frame < 80 && !shot; frame++) {
+    shot = advanceChiHaAI(vehicle, .1, frame / 10, context(crew, { targets: [civilian] }));
+  }
+  assert.ok(shot);
+  assert.equal(shot.targetId, civilian.id);
+  assert.equal(shot.end.y, .6);
+});
 test('walls, blocked fire lanes, friendly blast risk, dead crew and missing gunners prevent fire', () => {
   for (const extra of [{ visible: () => false }, { safeToFire: () => false }, { crew: [] }, { canFire: false }]) {
     const { vehicle, crew } = fixture();

@@ -64,9 +64,12 @@ export function planCivilianEscape(position, routeTarget, threats, obstacles, co
   return { mode: 'flee', target: candidates[0].point };
 }
 
-export function updateCivilianThreatResponse(data, position, target, enemies, obstacles, now, canSee, concealed, lookup = null) {
+export function updateCivilianThreatResponse(data, position, target, enemies, obstacles, now, canSee, concealed, lookup = null, budget = null) {
   const response = data.threatResponse ??= { nextThinkAt: 0, until: 0, threats: [], mode: 'route', target: null };
   if (now < response.nextThinkAt) return response;
+  if(budget&&budget.remaining<=0)return response;
+  if(budget)budget.remaining--;
+  data.threatThinkCount=(data.threatThinkCount??0)+1;
   response.nextThinkAt = now + CIVILIAN_THREAT.thinkSeconds + (data.civilianId % 7) * .025;
   const observed = observeCivilianThreats(position, enemies, canSee);
   if (observed.length) {

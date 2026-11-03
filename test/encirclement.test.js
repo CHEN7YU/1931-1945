@@ -236,14 +236,15 @@ test('expired phase-one enemy-control grace cannot turn into victory because ene
   assert.equal(advanceEncirclement(match, points, roster, 90), 'enemy');
 });
 
-test('phase-two victory uses the two-thirds threshold including ground crew rather than the old last-enemy rule', () => {
+test('phase-two threshold is recorded but the last remaining ground crew must be resolved before victory', () => {
   const { roster, match, points } = setup();
   for (const point of points) point.owner = 'friendly';
   advanceEncirclement(match, points, roster);
   const crew = roster.find(unit => unit.team === 'enemy' && unit.type === 'tank').members[0];
   for (const unit of roster.filter(unit => unit.team === 'enemy')) unit.members.forEach(actor => { actor.health = 0; });
   crew.health = 1;
-  assert.equal(advanceEncirclement(match, points, roster), 'friendly');
+  assert.equal(advanceEncirclement(match, points, roster), null);
+  assert.equal(match.breakout.objectiveStatus,'achieved');
   crew.health = 0;
   assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   const fresh = setup();

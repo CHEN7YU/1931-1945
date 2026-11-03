@@ -1516,6 +1516,7 @@ export function makeNanjingBattlefield(scene, surface) {
           panicked: false, panicStartedAt: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
           crowdSearch: null, crowdSearchRevision: null,
           threatResponse: null, escapeMotion: null, escapeMode: null,
+          threatThinkCount:0,
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,

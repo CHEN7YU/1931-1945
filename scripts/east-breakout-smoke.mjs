@@ -75,13 +75,22 @@ try {
           for(const actor of enemies.filter(actor=>actor.health>0&&encirclement.breakout.initialIds.includes(actor.id))
             .slice(0,encirclement.breakout.requiredKills))hurt(actor,100,source,'rifle','torso');
           updateObjectives(0);
-          return {state,breakout:structuredClone(encirclement.breakout)};
+          const thresholdState=state,objectiveStatus=encirclement.breakout.objectiveStatus;
+          for(const actor of enemies.filter(actor=>actor.health>0&&encirclement.breakout.initialIds.includes(actor.id)&&
+            !encirclement.breakout.escapedIds.includes(actor.id)))hurt(actor,100,source,'rifle','torso');
+          updateObjectives(0);
+          return {state,thresholdState,objectiveStatus,breakout:structuredClone(encirclement.breakout)};
         },
         lose() {
           this.prepare();
           for(const id of encirclement.breakout.initialIds.slice(0,4))recordEncirclementEscape(encirclement,id);
           updateObjectives(0);
-          return {state,breakout:structuredClone(encirclement.breakout),message:$('overlay-description').textContent};
+          const thresholdState=state,objectiveStatus=encirclement.breakout.objectiveStatus;
+          const source=captureAttackSource(entities,controlledSoldier(entities));
+          for(const actor of enemies.filter(actor=>actor.health>0&&encirclement.breakout.initialIds.includes(actor.id)&&
+            !encirclement.breakout.escapedIds.includes(actor.id)))hurt(actor,100,source,'rifle','torso');
+          updateObjectives(0);
+          return {state,thresholdState,objectiveStatus,breakout:structuredClone(encirclement.breakout),message:$('overlay-description').textContent};
         }
       };
     ` });
@@ -109,7 +118,9 @@ try {
   }
   const win = await page.evaluate(() => eastBreakoutReview.win());
   const lose = await page.evaluate(() => eastBreakoutReview.lose());
-  assert.equal(win.state, 'victory'); assert.equal(win.breakout.killed, 6);
+  assert.equal(win.thresholdState,'playing');assert.equal(win.objectiveStatus,'achieved');
+  assert.equal(lose.thresholdState,'playing');assert.equal(lose.objectiveStatus,'failed');
+  assert.equal(win.state, 'victory'); assert.equal(win.breakout.killed, 8);
   assert.equal(lose.state, 'defeat'); assert.equal(lose.breakout.escapedIds.length, 4);
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'east-breakout.json'),
     JSON.stringify({ range, escape, win, lose, errors }, null, 2));

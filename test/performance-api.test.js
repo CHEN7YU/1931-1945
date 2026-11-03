@@ -94,6 +94,28 @@ test('shared performance APIs store and filter independent Nanjing and Taierzhua
     assert.deepEqual(summary.groups.map(group => group.map).sort(), ['nanjing', 'taierzhuang-fort']);
   } finally { f.sqlite.close(); }
 });
+test('civilian combat counters round-trip and reject invalid counts while older batches remain valid', async () => {
+  const f = fixture();
+  try {
+    const body = f.batch();
+    Object.assign(body.windows[0].context, { map: 'nanjing', civilianCasualties: 3,
+      civilianShots: 21, civilianAircraftHits: 4 });
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    const raw = await (await worker.fetch(f.get('/api/performance?map=nanjing'), f.env)).json();
+    const context = raw.items[0].batch.windows[0].context;
+    assert.equal(context.civilianCasualties, 3);
+    assert.equal(context.civilianShots, 21);
+    assert.equal(context.civilianAircraftHits, 4);
+    for (const name of ['civilianCasualties', 'civilianShots', 'civilianAircraftHits']) {
+      for (const invalid of [-1, .5, 10000001, '2']) {
+        const invalidBody = f.batch();
+        invalidBody.windows[0].context[name] = invalid;
+        assert.equal((await worker.fetch(f.post(invalidBody), f.env)).status, 400);
+      }
+    }
+    assert.equal((await worker.fetch(f.post(f.batch()), f.env)).status, 201);
+  } finally { f.sqlite.close(); }
+});
 test('daily scheduled retention removes old diagnostics only, without touching private feedback tables', async () => {
   const f = fixture();
   try {

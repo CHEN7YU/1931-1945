@@ -3,7 +3,7 @@ import { headingError } from './ai-turning.js';
 import { shotState } from './core.js';
 
 const turn = (from, to, step) => from + Math.max(-step, Math.min(step, headingError(from, to)));
-const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + 1, z: actor.position.z });
+const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + (actor.aimHeight ?? 1), z: actor.position.z });
 
 export function advanceChiHaAI(vehicle, dt, now, context) {
   if (vehicle.variant !== CHI_HA.id || !Number.isFinite(dt) || dt < 0 || !Number.isFinite(now)) {

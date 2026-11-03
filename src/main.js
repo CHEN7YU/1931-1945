@@ -127,6 +127,8 @@ import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
 import { registerBreakoutStrength, crossedEastGate } from './encirclement.js';
 import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger } from './nanjing-ferry.js';
+import {civilianCombatTargets,civilianAimHeight,civilianEngagementPreferred} from './civilian-targets.js';
+import {advanceBreakoutGroups,breakoutGroupNumber,breakoutGroupDestination} from './breakout-groups.js';
 
 const buildStamp = Object.freeze(__BUILD_STAMP__);
 const buildRevision = buildStamp.commit?.slice(0, 7);
@@ -392,6 +394,7 @@ let friendlyForces = [];
 const corpses = new Map();
 let corpseCleanupAt = 0;
 let allForces = [];
+let civilianCombatTime=null,civilianCombatList=[];
 let formations = [];
 let aiCursor = 0;
 const pathRequests = new Map();
@@ -1206,6 +1209,7 @@ function clearTransient() {
 }
 
 function beginMatch() {
+  civilianCombatTime=null;civilianCombatList=[];
   footstepAudio?.sync(null, false);
   mechanicalAudio?.reset();
   simulationClock.reset(performance.now());
@@ -1437,7 +1441,7 @@ function showOverlay(kind = 'pause') {
     : nanjingCampaignMode && kind === 'defeat' ? '为国捐躯，山河永记。'
       : kind === 'victory' ? encirclementMode ? '城东阻击告捷。' : '阵地已夺，山河犹在。' : kind === 'defeat' ? encirclementMode && encirclement.phase === 2 ? '敌军突破东门，阻击失利。' : '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
   const victoryRule = encirclementMode ? encirclement.phase === 2
-    ? `合围残敌${encirclement.breakout?.strength ?? 0}人，已歼${encirclement.breakout?.killed ?? 0}人、逃出${encirclement.breakout?.escapedIds.length ?? 0}人；歼灭至少2/3且逃出不超过1/3获胜。`
+    ? `本阶段地面敌军已全部被歼或逃脱。合围残敌${encirclement.breakout?.strength ?? 0}人，已歼${encirclement.breakout?.killed ?? 0}人、逃出${encirclement.breakout?.escapedIds.length ?? 0}人；歼灭至少2/3且逃出不超过1/3获胜。`
     : kind === 'defeat' ? '日军连续控制三个据点90秒，反夺宽限耗尽，我方合围失败。'
     : '三点合围后转为城东突围阻击。'
     : conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。';
@@ -1447,7 +1451,7 @@ function showOverlay(kind = 'pause') {
     : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。'
       : '守住中华门防线，随后撤往上新河渡口掩护百姓登船，最后撤离。';
   else if (encirclementMode && !ended && !dead) $('overlay-description').textContent =
-    '第一阶段夺取三点形成合围；第二阶段停止占点，残敌集结后向C点东门突围。我军清剿并守住东门，歼灭至少2/3即可取胜，最多允许1/3逃脱。';
+    '第一阶段夺取三点形成合围；第二阶段先在C点周围布防20秒，日军分组集结后向东门突围并还击。歼灭至少2/3、逃脱不超过1/3为胜利目标；全部地面敌军被歼或逃脱后才结算。';
   $('resume').hidden = ended || dead;
   if (kind === 'victory') $('overlay-description').textContent = '';
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
@@ -2208,6 +2212,14 @@ function explode(position, damage, radius, source, weaponKind = 'explosion', sur
     if (d < radius && hasLine(origin, target, radius + 1)) hurt(actor, blastDamage(d, radius, damage), source, weaponKind,
       null, target.clone().sub(position));
   }
+  if(nanjingCampaignMode&&source.team==='enemy'){
+    for(const civilian of nanjingCivilianCombatTargets()){
+      const target=civilian.position.clone().add(new THREE.Vector3(0,civilian.aimHeight,0));
+      const distance=target.distanceTo(position);
+      if(distance<radius&&hasLine(blastOrigin,target,radius+1))
+        applyCivilianDamage(civilian.civilian,blastDamage(distance,radius,damage),source);
+    }
+  }
 }
 
 function traceGrenade(from, to, radius, checkingSupport = false, ignoreVehicleId = null, groundVehiclesOnly = false, groundHeight = world.groundHeight) {
@@ -2566,6 +2578,7 @@ function updateJapaneseArmor(transport, dt) {
   const gateRegroup = nanjingCampaignMode && nanjingCampaign.stage === 'withdrawal';
   const eastAssembly = encirclementMode && encirclement.phase === 2 && encirclement.breakout?.stage !== 'breakout';
   const vehicles = [...entities.vehicles.values()];
+  const targets=nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces;
   const objective = encirclementMode && encirclement.phase === 2
     ? { id: 'east-breakout', x: EAST_BREAKOUT.x, z: EAST_BREAKOUT.z, radius: 8, owner: 'friendly' }
     : nanjingCampaignMode
@@ -2575,8 +2588,8 @@ function updateJapaneseArmor(transport, dt) {
   const gunner = transport.seats.filter(seat => seat.canFire).map(seat => entities.soldiers.get(seat.occupantId)).find(actor => actor?.health > 0);
   const shot = advanceChiHaAI(transport, dt, time, {
     crew, canFire: Boolean(gunner) && !eastAssembly, targets: eastAssembly ? [] : gateRegroup
-      ? friendlyForces.filter(actor => actor.position.z > -12 && Math.hypot(actor.position.x, actor.position.z - 29) < 40)
-      : friendlyForces, objective,
+      ? targets.filter(actor => actor.position.z > -12 && Math.hypot(actor.position.x, actor.position.z - 29) < 40)
+      : targets, objective,
     destination: encirclementMode && encirclement.phase === 2 && crew.length ? breakoutDestination(crew[0])
       : gateRegroup ? transport.position.z > 40 ? { x: -24, z: 38 } : { x: 0, z: 29 }
       : nanjingCampaignMode && !nanjingCampaign.dockActivated
@@ -2593,8 +2606,9 @@ function updateJapaneseArmor(transport, dt) {
   });
   transport.position.y = world.groundHeight(transport.position.x, transport.position.z);
   const machineGunShots = advanceChiHaMachineGuns(transport, dt, time, {
-    crew, targets: eastAssembly ? [] : friendlyForces, busyCrewIds: shot ? [gunner.id] : [],
-    aimPoint: actor => ({ x: actor.position.x, y: actor.position.y + soldierPostureHeight(actor, 'aim'), z: actor.position.z }),
+    crew, targets: eastAssembly ? [] : targets, busyCrewIds: shot ? [gunner.id] : [],
+    aimPoint: actor => ({ x: actor.position.x, y: actor.position.y +
+      (actor.civilian?actor.aimHeight:soldierPostureHeight(actor,'aim')), z: actor.position.z }),
     visible: (from, to) => hasLine(new THREE.Vector3(from.x, from.y, from.z),
       new THREE.Vector3(to.x, to.y, to.z), CHI_HA_MG.range + 2, transport.id),
     safeToFire: (from, to) => !enemies.some(actor => actor.health > 0 && !actor.vehicleId &&
@@ -2618,11 +2632,14 @@ function updateJapaneseArmor(transport, dt) {
   if (groundHit && groundHit.distanceTo(start) < end.distanceTo(start)) {
     end = groundHit; surface = { kind: 'soil', normal: { x: 0, y: 1, z: 0 } };
   }
+  const civilianHit=nanjingCampaignMode?traceCivilianBullet(nanjingCivilianCombatTargets().map(target=>target.civilian),
+    start,travel,end.distanceTo(start),person=>person.getWorldPosition(new THREE.Vector3())):null;
+  if(civilianHit){end=new THREE.Vector3(civilianHit.position.x,civilianHit.position.y,civilianHit.position.z);surface=null;}
   ray.far = Infinity;
   combatEvents.publish('shot', { source, weaponType: 'tank', start, end, sound: 'blast', recoil: 0 }, time);
   combatSounds.push({ id: ++soundSerial, friendly: false, x: start.x, y: start.y, z: start.z, time, radius: 85 });
   if (combatSounds.length > 32) combatSounds.shift();
-  if (surface) explode(end, CHI_HA.damage, CHI_HA.blastRadius, source, 'explosion', surface);
+  if (surface || civilianHit) explode(end, CHI_HA.damage, CHI_HA.blastRadius, source, 'explosion', surface);
 }
 
 function fireTankMachineGun(transport, shot) {
@@ -2664,7 +2681,8 @@ function fireAutomaticShot(transport, shot, source, start, yaw, pitch, aircraft 
   let end = hit ? hit.point : endOfRay;
   if (groundHit && groundHit.distanceTo(start) < end.distanceTo(start)) { end = groundHit; hit = null; }
   const civilianHit = nanjingCampaignMode && !friendly
-    ? traceCivilianBullet(world.civilians.filter(person => person.parent === scene), start, travel, end.distanceTo(start)) : null;
+    ? traceCivilianBullet(nanjingCivilianCombatTargets().map(target=>target.civilian),start,travel,end.distanceTo(start),
+      person=>person.getWorldPosition(new THREE.Vector3())) : null;
   if (civilianHit) { end = new THREE.Vector3(civilianHit.position.x, civilianHit.position.y, civilianHit.position.z); hit = null; }
   ray.far = Infinity;
   shot.gun.lastShot = Object.freeze({ time, start: Object.freeze(start.toArray()), end: Object.freeze(end.toArray()) });
@@ -2721,7 +2739,7 @@ function updateVehicles(dt) {
       const eastAirSupport=encirclementMode&&encirclement.phase===2;
       const shot = advanceAircraftAI(transport, dt, time, { targets: eastAirSupport
         ? friendlyForces.filter(actor=>Math.hypot(actor.position.x-EAST_BREAKOUT.x,actor.position.z-EAST_BREAKOUT.z)<75)
-        : friendlyForces,
+        : nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces,
         preferredUnitId: nanjingCampaignMode ? controlledSoldier(entities)?.unitId : null,
         canFire: Boolean(pilot) && (!eastAirSupport || encirclement.breakout?.stage === 'breakout') &&
           (!nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal' && !nanjingCampaign.outcome),
@@ -2799,26 +2817,11 @@ function updateTankContacts(before, dt) {
 function fireAircraftGun(transport, pilot, muzzle) {
   const source = captureAttackSource(entities, pilot, transport.weapon);
   const start = new THREE.Vector3(muzzle.x, muzzle.y, muzzle.z);
-  const spread = AIRCRAFT_GUN.spread;
-  const yaw = transport.heading + (battleRandom() * 2 - 1) * spread;
-  const pitch = transport.pitch + (battleRandom() * 2 - 1) * spread;
-  const travel = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-  const end = start.clone().addScaledVector(travel, AIRCRAFT_GUN.range);
-  const people = allForces.filter(actor => actor.health > 0 && !actor.vehicleId &&
-    pointSegmentDistance(actor.position, start, end).distance < 2).map(actor => soldierHits.sync(actor, time));
-  ray.set(start, travel); ray.far = AIRCRAFT_GUN.range;
-  const hit = ray.intersectObjects([...solidIndex.candidates(start, travel, AIRCRAFT_GUN.range), ...vehicleSolids(transport.id), ...people], true)[0];
-  if (hit) end.copy(hit.point);
-  transport.weapon.lastShot = Object.freeze({ time, start: Object.freeze(start.toArray()), end: Object.freeze(end.toArray()) });
-  ray.far = Infinity;
-  combatEvents.publish('shot', { source, weaponType: 'plane', start, end, sound: 'shot',
-    muzzle: true, color: 0xdfb17a }, time);
-  if (!hit) return;
-  const actor = hit.object.userData.actor;
-  if (actor && actor.team !== transport.team) hurt(actor, TYPES.plane.damage, source, 'aircraft-gun', hit.object.userData.hitZone, travel);
-  const vehicle = entities.vehicles.get(hit.object.userData.vehicleId);
-  if (vehicle && vehicle.team !== transport.team) damageVehicle(vehicle, TYPES.plane.damage, source, 'aircraft-gun');
-  combatEvents.publish('impact', { ...(actor ? { position: end, kind: null } : captureImpact(hit, travel)), source }, time);
+  const gun={settings:{...AIRCRAFT_GUN,damage:TYPES.plane.damage},lastShot:null};
+  fireAutomaticShot(transport,{gun},source,start,
+    transport.heading+(battleRandom()*2-1)*AIRCRAFT_GUN.spread,
+    transport.pitch+(battleRandom()*2-1)*AIRCRAFT_GUN.spread,true);
+  transport.weapon.lastShot=gun.lastShot;
 }
 
 function updateWeaponSimulation(dt) {
@@ -3784,13 +3787,16 @@ function breakoutDestination(actor) {
   let destination;
   if (intercept) destination = { x: 39 + actor.formation.index % 3 * 4 + actor.index % 2 * 1.3,
     z: EAST_BREAKOUT.z + (actor.index % 5 - 2) * 2.4 + (Math.floor(actor.formation.index / 3) - 1) * 3 };
-  else if (!actor.friendly && breakout?.stage === 'breakout') {
+  else if (!actor.friendly && breakout?.stage === 'breakout' &&
+    (breakout.groups?.[breakoutGroupNumber(actor.formation)].released??true)) {
     if (actor.position.x >= EAST_BREAKOUT.x - (actor.vehicleId ? 6 : 5) &&
       Math.abs(actor.position.z - EAST_BREAKOUT.z) < 3)
       actor.tactics.breakoutApproach = true;
     destination = { x: actor.tactics.breakoutApproach ? EAST_BREAKOUT.exitX + 2 : EAST_BREAKOUT.x - 4, z: EAST_BREAKOUT.z };
-  } else destination = { x: 36 - actor.formation.index % 3 * 4,
-    z: EAST_BREAKOUT.z + (actor.formation.index % 5 - 2) * 4 };
+  } else {
+    const group=breakoutGroupDestination(breakoutGroupNumber(actor.formation));
+    destination={x:group.x+(actor.index%3-1)*1.5,z:group.z+(Math.floor(actor.index/3)-1.5)*1.5};
+  }
   const signature = `${destination.x}:${destination.z}`;
   if (actor.tactics.breakoutGoal?.signature === signature) return actor.tactics.breakoutGoal.point;
   const radius = actor.vehicleId ? 2.2 : .5;
@@ -4290,8 +4296,11 @@ function updateAI(dt) {
         const distance = from.distanceTo(to);
         const angle = Math.atan2(position.x - to.x, position.z - to.z);
         const rampartSentry = gateDefender && position.y > 7;
+        const coveringRetreat = encirclementMode && encirclement.phase === 2 &&
+          encirclement.breakout?.stage === 'breakout' && !actor.friendly &&
+          candidate.id === tactics.threatId && Boolean(tactics.lastSeen);
         const inView = rampartSentry || distance < 9 || Math.cos(angle - actor.heading) > .25 ||
-          time < tactics.suppressedUntil;
+          time < tactics.suppressedUntil || coveringRetreat;
         const armorCandidate = candidate.targetKind === 'closed-armor' && actor.grenades.packs > 0;
         if (inView && (distance < closest || armorCandidate)) {
           const observed = visibleTargetPoint(candidate, point => hasLine(from, point, 75, candidate.vehicleId));
@@ -4325,7 +4334,8 @@ function updateAI(dt) {
     const regroupGuard = nanjingCampaignMode && !actor.friendly && nanjingCampaign.stage === 'withdrawal';
     const civilianPursuit = nanjingCampaignMode && !actor.friendly ? nanjingCivilianPursuitTarget(actor) : null;
     const target = actor.target?.health > 0 &&
-      !(civilianPursuit && actor.position.distanceTo(actor.target.position) > 22) &&
+      !(civilianPursuit && civilianEngagementPreferred(actor,actor.target,
+        {position:civilianPursuit.getWorldPosition(new THREE.Vector3())})) &&
       (!regroupGuard || actor.target.position.z > -12 &&
         Math.hypot(actor.target.position.x, actor.target.position.z - 27) < 40) ? actor.target : null;
     if (regroupGuard) {
@@ -4362,8 +4372,8 @@ function updateAI(dt) {
     if (encirclementMode && encirclement.phase === 2 && !actor.friendly &&
       (!target || actor.position.distanceTo(target.position) > 6)) {
       if (target && time >= (tactics.breakoutNextFireAt ?? 0)) {
-        tactics.breakoutFireUntil = time + .8;
-        tactics.breakoutNextFireAt = time + 5;
+        tactics.breakoutFireUntil = time + 2.2;
+        tactics.breakoutNextFireAt = time + 3.8;
       }
       if (target && time < (tactics.breakoutFireUntil ?? 0)) fightFromCover(actor, target, dt, null, true);
       else {
@@ -4595,7 +4605,10 @@ function updateObjectives(dt) {
     }
     toast('第二阶段 · 我军向C点集结！日军补齐后有20秒布防时间，随后冲击东门。', 7);
   }
-  if(encirclementMode&&encirclement.phase===2)restoreBreakoutForces();
+  if(encirclementMode&&encirclement.phase===2){
+    restoreBreakoutForces();
+    advanceBreakoutGroups(formations,encirclement,time);
+  }
   if (encirclementMode) for (const cue of encirclementVoiceTracker.update(encirclement, objectives, formations, time)) {
     battleVoiceEvent(cue, { eventKey: `encirclement:${cue}:${Math.floor(time)}` });
   }
@@ -4752,38 +4765,40 @@ function updateNanjingMission(dt) {
   }
 }
 
+function nanjingCivilianCombatTargets(){
+  if(civilianCombatTime!==time){
+    civilianCombatTime=time;civilianCombatList=civilianCombatTargets(world.civilians);
+  }
+  return civilianCombatList;
+}
+
 function nanjingCivilianPursuitTarget(actor) {
-  if (!['gate-defense', 'dock-defense', 'withdrawal-to-boats'].includes(nanjingCampaign.stage) ||
-    actor.tactics.suppressedUntil > time || actor.target?.health > 0 &&
-      actor.position.distanceTo(actor.target.position) < 22) return null;
+  if (!['gate-defense', 'dock-defense', 'withdrawal-to-boats'].includes(nanjingCampaign.stage))return null;
   const tactics = actor.tactics;
   if (time >= (tactics.civilianThinkAt ?? 0)) {
     tactics.civilianThinkAt = time + .5;
     const eye = soldierEyePosition(actor), from = new THREE.Vector3(eye.x, eye.y, eye.z);
-    tactics.civilianTarget = world.civilians.filter(person => person.visible && person.userData.active &&
-      !person.userData.dead && !person.userData.evacuated && person.parent === scene &&
-      Math.hypot(person.position.x - actor.position.x, person.position.z - actor.position.z) < 34)
-      .sort((a, b) => a.position.distanceToSquared(actor.position) - b.position.distanceToSquared(actor.position))
+    tactics.civilianTarget = nanjingCivilianCombatTargets().filter(target =>
+      Math.hypot(target.position.x-actor.position.x,target.position.z-actor.position.z)<34)
+      .sort((a,b)=>a.position.distanceToSquared(actor.position)-b.position.distanceToSquared(actor.position))
       .slice(0, 4)
-      .find(person => hasLine(from, person.position.clone().add(new THREE.Vector3(0, .9, 0)), 36)) ?? null;
+      .find(target=>hasLine(from,target.position.clone().add(new THREE.Vector3(0,target.aimHeight,0)),36))?.civilian??null;
   }
   const person = tactics.civilianTarget;
   return person && person.visible && !person.userData.dead && !person.userData.evacuated &&
-    person.parent === scene && actor.position.distanceTo(person.position) < 36 ? person : null;
+    person.parent?.visible && actor.position.distanceTo(person.getWorldPosition(new THREE.Vector3())) < 36 ? person : null;
 }
 
 function pursueNanjingCivilian(actor, civilian, dt) {
-  const crouch = civilian.userData.escapeMotion?.crouch ?? 0;
-  const target = civilian.position.clone().add(new THREE.Vector3(0,
-    (civilian.userData.ageGroup === 'child' ? .7 : 1) * (1 - crouch * .35), 0));
+  const target=civilian.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,civilianAimHeight(civilian),0));
   const distance = actor.position.distanceTo(target), tactics = actor.tactics;
   cancelAIMelee(actor);
   actor.stance = 'standing'; actor.firingPose = null;
   tactics.mode = 'pursue-civilians';
   if (distance > 21) {
     resetAIRifleAim(actor.aiRifle, 'moving');
-    const goal = { x: civilian.position.x, z: civilian.position.z + 7, y: 0 };
-    if (actor.position.z > 38 && civilian.position.z < 38) { goal.x = -24; goal.z = 37; }
+    const goal = { x: target.x, z: target.z + 7, y: 0 };
+    if (actor.position.z > 38 && target.z < 38) { goal.x = -24; goal.z = 37; }
     walkActor(actor, goal, 3, dt);
     return true;
   }
@@ -4797,9 +4812,11 @@ function pursueNanjingCivilian(actor, civilian, dt) {
     mayFire: facing, postureSettled: postureReady(actor) && nativeAimReady(actor),
     suppressed: time < tactics.suppressedUntil,
     confirmShot: () => { muzzle = clearAIRifleLine(actor, from, target); return muzzle ? muzzle.distanceTo(target) : null; } })) {
-    actor.nextFire = time + 5 + battleRandom() * 3;
+    const profile=infantryWeaponProfile(actor.rifle),suppressed=time<tactics.suppressedUntil;
+    actor.nextFire=time+(profile.automatic?(actor.rifle.shots%3===0 ? .8 : profile.cycleSeconds):
+      rifleAIFireDelay(distance,suppressed,battleRandom()));
     const source = captureAttackSource(entities, actor, actor.rifle);
-    const hit = battleRandom() < .22;
+    const hit = battleRandom() < rifleAIHitChance(distance,suppressed);
     const aim = hit ? target : target.clone().add(new THREE.Vector3(battleRandom() < .5 ? -1.2 : 1.2, .5, 0));
     const delta = aim.sub(muzzle);
     const gun = { settings: { range: RIFLE.range, damage: TYPES.infantry.damage } };
@@ -4814,9 +4831,17 @@ function applyCivilianDamage(civilian, damage, source) {
   const data = civilian.userData;
   if (data.dead || source.team !== 'enemy') return;
   data.health = Math.max(0, (data.health ?? 100) - damage);
+  if(source.weaponClass==='plane')nanjingCampaign.civilianAircraftHits=(nanjingCampaign.civilianAircraftHits??0)+1;
+  civilianCombatTime=null;
   if (data.health > 0) { data.panicked = true; return; }
   data.dead = true; data.deadAt = time; data.casualtySource = source.soldierId;
-  registerCivilianCasualties(nanjingCampaign, 1, data.arrived);
+  const ferry=world.ferries.find(ferry=>ferry.userData.passengers.includes(civilian));
+  if(ferry){
+    const boat=nanjingCampaign.boats[ferry.userData.ferryId];
+    if(boat.passengers<=0||nanjingCampaign.civiliansAboard<=0)throw new Error('Civilian passenger casualty has inconsistent boat counts');
+    boat.passengers--;nanjingCampaign.civiliansAboard--;nanjingCampaign.civilianCasualties++;
+    ferry.userData.passengers.splice(ferry.userData.passengers.indexOf(civilian),1);
+  }else registerCivilianCasualties(nanjingCampaign, 1, data.arrived);
   const queued = world.civilianQueue.indexOf(civilian);
   if (queued >= 0) world.civilianQueue.splice(queued, 1);
   for (const ferry of world.ferries) if (ferry.userData.boarding?.civilian === civilian) ferry.userData.boarding = null;
@@ -4827,6 +4852,7 @@ function applyCivilianDamage(civilian, damage, source) {
 
 function updateNanjingCivilians(dt) {
   civilianCrowdPlanner.beginStep();
+  const threatBudget={remaining:6};
   const queue = world.civilianQueue;
   const peers = world.civilians.filter(other => other.visible && other.parent === scene && !other.userData.dead);
   const visibleThreat = (from, enemy, vehicleId=null) => hasLine(
@@ -4844,7 +4870,8 @@ function updateNanjingCivilians(dt) {
     if (data.boarding || civilian.parent !== scene) continue;
     if (data.streetLife && !data.active && !data.streetEvacuating) {
       const danger = civilian.visible ? updateCivilianThreatResponse(data, civilian.position, data.streetLife.exit,
-        enemies, data.streetLife.navigationObstacles, time, visibleThreat, concealed) : null;
+        enemies, data.streetLife.navigationObstacles, time, visibleThreat, concealed,
+        data.streetLife.navigationLookup,threatBudget) : null;
       if (time < data.releaseAt && !danger?.threats.length) {
         updateCivilianStreetLife(civilian, time, dt, peers, world.doorSystem);
         continue;
@@ -4864,7 +4891,7 @@ function updateNanjingCivilians(dt) {
     const routeTarget = data.arrived ? civilian.position : data.route[data.waypoint];
     if (routeTarget) response = updateCivilianThreatResponse(data, civilian.position, routeTarget, enemies,
       data.streetEvacuating ? data.streetLife.navigationObstacles : world.civilianNavigationObstacles,
-      time, visibleThreat, concealed, data.streetEvacuating ? null : civilianNavigationLookup);
+      time, visibleThreat, concealed, data.streetEvacuating ? data.streetLife.navigationLookup : civilianNavigationLookup,threatBudget);
     if (!data.arrived && routeTarget && !response?.threats.length &&
       time >= (data.routeRejoinAt ?? 0) &&
       !segmentClear(civilian.position, routeTarget, .36,
@@ -4888,8 +4915,8 @@ function updateNanjingCivilians(dt) {
         if (data.routeRejoinFailures === 1) console.warn(`Civilian ${data.civilianId} cannot yet rejoin its evacuation path`);
       }
     }
-    if (response?.target && civilian.position.distanceTo(new THREE.Vector3(response.target.x,
-      civilian.position.y, response.target.z)) < .3) response.nextThinkAt = 0;
+    if (response?.mode==='flee'&&response.target&&civilian.position.distanceTo(new THREE.Vector3(response.target.x,
+      civilian.position.y,response.target.z))<.3)response.nextThinkAt=Math.min(response.nextThinkAt,time+.15);
     if (response?.mode === 'cower') {
       advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'cower' });
       continue;
@@ -5429,11 +5456,12 @@ function updateHUD() {
   if (encirclementMode && encirclement.breakout) {
     const breakout = encirclement.breakout;
     $('objectives').textContent = `地面编制 ${breakout.strength}人 · 已歼 ${breakout.killed}/${breakout.requiredKills} · 逃出 ${breakout.escapedIds.length}/${breakout.escapeLimit}`;
-    $('objective-title').textContent = breakout.reinforcing ? '日军集结增兵 · 立即布防C点东门'
-      : breakout.stage === 'regroup'
+    $('objective-title').textContent = breakout.elapsed<EAST_BREAKOUT.regroupSeconds
         ? `C点布防倒计时 ${Math.max(0, Math.ceil(EAST_BREAKOUT.regroupSeconds - breakout.elapsed))}秒`
-        : '日军集体冲锋 · 守住C点东门';
-    $('objective-help').textContent = `东门 ${Math.round(Math.hypot(position.x - EAST_BREAKOUT.x, position.z - EAST_BREAKOUT.z))}米 · 需歼灭 ${breakout.requiredKills}人 · 最多允许 ${breakout.escapeLimit}人逃脱`;
+        : breakout.reinforcing?'日军仍在集结 · 守住C点':'日军分组突围 · 守住C点东门';
+    const status=breakout.objectiveStatus==='achieved'?'歼敌目标达成 · 继续清剿':
+      breakout.objectiveStatus==='failed'?'阻击目标失败 · 继续作战':'守住东门';
+    $('objective-help').textContent = `${status} · 剩余 ${breakout.remaining??encirclementGroundEnemies(formations)}人 · 东门 ${Math.round(Math.hypot(position.x-EAST_BREAKOUT.x,position.z-EAST_BREAKOUT.z))}米`;
     document.querySelector('.objective-banner').hidden = false;
     $('capture-fill').style.width = `${breakout.requiredKills ? Math.min(100, breakout.killed / breakout.requiredKills * 100) : 100}%`;
   }
@@ -6264,6 +6292,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   encirclement: !encirclementMode ? null : { ...encirclement, unlocked: [...encirclement.unlocked],
     disabledEnemySpawns: [...encirclement.disabledEnemySpawns], breakout: encirclement.breakout ? {
       ...encirclement.breakout, initialIds: [...encirclement.breakout.initialIds], escapedIds: [...encirclement.breakout.escapedIds],
+      ...(encirclement.breakout.groups?{groups:encirclement.breakout.groups.map(group=>({...group}))}:{}),
       ...(encirclement.breakout.restoration?{restoration:encirclement.breakout.restoration.map(task=>({...task}))}:{}) } : null },
   campaign: nanjingCampaign ? { ...nanjingCampaign, boats: nanjingCampaign.boats.map(boat => ({ ...boat })),
     civilianVisuals: { active: world.civilians.filter(civilian => civilian.userData.active && !civilian.userData.dead).length,
@@ -6569,7 +6598,9 @@ performanceDiagnostics.setContext(() => {
     quality: graphics.snapshot.preset, adaptiveLevel: adaptiveAI.snapshot.level,
     allies, enemies, corpses: corpses.size, vehicles, reinforcementWaves: encirclement.reinforcementWaves,
     drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
-    backlogSeconds: clock.pendingSeconds, simulationSteps: clock.stepsThisFrame, unit: unit?.type ?? 'none' };
+    backlogSeconds: clock.pendingSeconds, simulationSteps: clock.stepsThisFrame, unit: unit?.type ?? 'none',
+    ...(nanjingCampaignMode?{civilianCasualties:nanjingCampaign.civilianCasualties,
+      civilianShots:nanjingCampaign.civilianShots??0,civilianAircraftHits:nanjingCampaign.civilianAircraftHits??0}:{}) };
 });
 setLoadingProgress(100, '加载完成，即将进入战场。');
 $('loading').hidden = true;

@@ -1,13 +1,14 @@
-export function traceCivilianBullet(civilians, start, direction, maximumDistance) {
+export function traceCivilianBullet(civilians, start, direction, maximumDistance, positionOf=person=>person.position) {
   let closest = maximumDistance, result = null;
   for (const civilian of civilians) {
     const data = civilian.userData;
     if (!civilian.visible || data.dead || data.evacuated) continue;
     const scale = civilian.civilianSkin?.profile.height ?? 1;
+    const position=positionOf(civilian);
     const height = scale * (1.72 - (data.escapeMotion?.crouch ?? 0) * .65);
     const radius = scale * .22;
     for (const y of [radius + .08, height * .53, height - radius]) {
-      const dx = civilian.position.x - start.x, dy = civilian.position.y + y - start.y, dz = civilian.position.z - start.z;
+      const dx = position.x - start.x, dy = position.y + y - start.y, dz = position.z - start.z;
       const along = dx * direction.x + dy * direction.y + dz * direction.z;
       const perpendicular = dx * dx + dy * dy + dz * dz - along * along;
       if (perpendicular > radius * radius) continue;
