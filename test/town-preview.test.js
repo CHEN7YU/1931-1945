@@ -5,6 +5,7 @@ import { createWalkSupport, TOWN_STOREYS } from '../src/multistory.js';
 import { BRIDGE, groundHeight, bridgeGroundHeight } from '../src/ground.js';
 import { OBJECTIVES, circleBlocked, segmentClear, createNavigator } from '../src/core.js';
 import { PREVIEW_OBJECTIVES, PREVIEW_BASES, PREVIEW_BRIDGE, PREVIEW_BOUNDS, makeTownPreviewLayout } from '../src/town-preview-layout.js';
+import { makeOutskirtsLayout } from '../src/outskirts-layout.js';
 
 test('empty map proposal has three separated triangular landmarks within a compact crop', () => {
   const [a, b, c] = PREVIEW_OBJECTIVES;
@@ -49,6 +50,29 @@ test('gate arch has a real infantry and vehicle passage, side breach and matchin
   assert.equal(circleBlocked(56, 3, .4, walls), false);
   for (const point of PREVIEW_OBJECTIVES) {
     assert.equal(circleBlocked(point.view.x, point.view.z, .34, town.obstacles), false, point.id);
+  }
+});
+
+test('east-gate forecourt separates the closed side building from the gatehouse without moving C', () => {
+  const town = makeTownPreviewLayout(), gate = town.fortifications.gate;
+  const defaults = makeOutskirtsLayout(), fortress = makeOutskirtsLayout({ eastGate: gate });
+  assert.ok(defaults.sideBuildings.some(building => building.x === 65 && building.z === 12));
+  assert.equal(fortress.sideBuildings.some(building => building.x === 65 && building.z === 12), false);
+  const shifted = fortress.sideBuildings.find(building => building.x === 68 && building.z === 22);
+  assert.ok(shifted);
+  const obstacles = fortress.sideBuildings.map(building => ({
+    minX: building.x - building.w / 2 - .8, maxX: building.x + building.w / 2 + .8,
+    minZ: building.z - building.d / 2 - .9, maxZ: building.z + building.d / 2 + .9,
+    height: 12,
+  }));
+  assert.ok(segmentClear({ x: 48, z: 3 }, { x: 68, z: 3 }, 2.2, [...town.obstacles, ...obstacles]),
+    'the real gate route remains clear for infantry and armor, including roof overhangs');
+  assert.deepEqual(PREVIEW_OBJECTIVES.find(point => point.id === 'C').view, { x: 44, z: 3, yaw: -Math.PI / 2, pitch: .1 });
+  for (const side of [-1, 1]) {
+    const tower = { minX: gate.x - 2.1, maxX: gate.x + 2.1,
+      minZ: gate.z + side * 6 - 2.55, maxZ: gate.z + side * 6 + 2.55 };
+    const house = obstacles.find(obstacle => obstacle.minZ > 10 && obstacle.minX > gate.x);
+    assert.ok(house.minZ > tower.maxZ + 2 || house.minX > tower.maxX + 2);
   }
 });
 

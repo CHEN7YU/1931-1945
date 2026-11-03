@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { NANJING_CIVILIAN_COUNT } from '../src/civilian-crowd.js';
+import { writeFile } from 'node:fs/promises';
+import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => { errors.push(error.message); console.error(error.stack); });
+  page.on('console', message => { if (message.text().startsWith('[crowd]')) console.log(message.text()); });
+  const preferences = defaultPreferences();
+  preferences.quality.preset = 'low';
+  for (const effect of Object.keys(preferences.quality.effects)) preferences.quality.effects[effect] = false;
+  await page.addInitScript(({ key, settings }) => localStorage.setItem(key,
+    JSON.stringify({ version: 1, settings })), { key: PREFERENCES_KEY, settings: preferences });
   await page.route('**/src/main.js*', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
@@ -47,6 +55,8 @@ try {
           let prematureWave = 0;
           let streetLife;
           for (let frame = 0; frame < 12000; frame++) {
+            if (frame % 1200 === 0) console.log('[crowd] '+JSON.stringify({seconds:frame*.05,
+              arrived:world.civilians.filter(person=>person.userData.arrived).length}));
             if (frame === 3600) {
               prematureWave = world.civilians.filter(person => person.userData.withdrawalWave &&
                 !person.userData.streetLife && person.visible).length;
@@ -75,8 +85,10 @@ try {
               ({ id: person.userData.civilianId, position: person.position, waypoint: person.userData.waypoint,
                 target: person.userData.route[person.userData.waypoint], detour: person.userData.crowdPath,
                 stalled: person.userData.crowdStalled })),
-            feetOnDock: waiting.every(person => person.position.y === person.userData.waitingSlot.y),
-            legsStill: waiting.every(person => person.civilianLegs.every(leg => leg.rotation.x === 0)) };
+            feetOnDock: waiting.every(person => Math.abs(person.position.y -
+              world.groundHeight(person.position.x, person.position.z)) < .001),
+            legsFollowMovement: waiting.every(person => person.userData.escapeMotion.speed > .02 ||
+              person.civilianLegs.every(leg => Math.abs(leg.rotation.x) < .02)) };
           state = 'review';
           camera.position.set(-54, 15, -63);
           camera.lookAt(-69, 1, -80);
@@ -84,6 +96,25 @@ try {
           updateCivilianAppearance(world.civilians, camera, 'low');
           renderer.render(scene, camera);
           return report;
+        },
+        board() {
+          nanjingCampaign.stage='dock-defense';
+          nanjingCampaign.dockActivated=true;
+          let frame=0;
+          for(;frame<36000&&nanjingCampaign.civiliansEvacuated<world.civilians.length;frame++) {
+            time+=.05;
+            updateNanjingCivilians(.05);
+            controlEvents.drain(()=>{});
+            if(frame%2400===0)console.log('[crowd] '+JSON.stringify({boardingSeconds:frame*.05,
+              evacuated:nanjingCampaign.civiliansEvacuated,waiting:nanjingCampaign.civiliansWaiting}));
+          }
+          return {seconds:frame*.05,evacuated:nanjingCampaign.civiliansEvacuated,
+            waiting:nanjingCampaign.civiliansWaiting,aboard:nanjingCampaign.civiliansAboard,
+            casualties:nanjingCampaign.civilianCasualties,
+            physicallyEvacuated:world.civilians.filter(person=>person.userData.evacuated&&!person.parent&&!person.visible).length,
+            boats:world.ferries.map(ferry=>({state:ferry.userData.state,passengers:ferry.userData.passengers.length,
+              boarding:ferry.userData.boarding?{id:ferry.userData.boarding.civilian.userData.civilianId,
+                position:ferry.userData.boarding.civilian.position,path:ferry.userData.boarding.path}:null}))};
         },
       };
     ` });
@@ -98,6 +129,7 @@ try {
     await page.screenshot({ path: process.env.STREET_SCREENSHOT });
   }
   const result = await page.evaluate(() => crowdReview.run());
+  if (process.env.CROWD_RESULT) await writeFile(process.env.CROWD_RESULT, JSON.stringify({ result, errors }, null, 2));
   if (process.env.CROWD_SCREENSHOT) await page.screenshot({ path: process.env.CROWD_SCREENSHOT });
   console.log(JSON.stringify(result));
   assert.equal(result.arrivals, NANJING_CIVILIAN_COUNT, 'every civilian must reach a distinct waiting position');
@@ -105,9 +137,16 @@ try {
   assert.equal(result.streetLife.length, 10);
   assert.ok(result.streetLife.every(person => person.cycles > 0),
     'every neighborhood resident must complete a real outside-and-home loop before evacuation');
-  assert.ok(result.minSeparation >= .719, 'the waiting crowd must never merge bodies');
-  assert.ok(result.feetOnDock && result.legsStill);
+  assert.ok(result.minSeparation >= .519, 'the packed waiting crowd must retain physical body clearance');
+  assert.ok(result.feetOnDock && result.legsFollowMovement);
   assert.ok(result.trees >= 25);
+  const boarding = await page.evaluate(() => crowdReview.board());
+  console.log(JSON.stringify({ boarding }));
+  if (process.env.CROWD_RESULT) await writeFile(process.env.CROWD_RESULT,
+    JSON.stringify({ result, boarding, errors }, null, 2));
+  assert.equal(boarding.evacuated, NANJING_CIVILIAN_COUNT, 'all survivors must physically board and reach the far bank');
+  assert.equal(boarding.physicallyEvacuated, NANJING_CIVILIAN_COUNT);
+  assert.equal(boarding.waiting + boarding.aboard + boarding.casualties, 0);
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

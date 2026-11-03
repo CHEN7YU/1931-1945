@@ -1,6 +1,6 @@
 {
   "provider": "Azure AI Speech",
-  "generatedAt": "2026-11-02T11:57:01.339Z",
+  "generatedAt": "2026-11-03T09:33:56.752Z",
   "source": "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech",
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
@@ -6158,6 +6158,57 @@
       "bytes": 19584,
       "sha256": "67f15824feffb567646ea22e8db24d3dc293b1159cb1c944ae94e511456aef47",
       "synthesisHash": "a2cdfcf0f81aa1cd9a2e74dcd5edf54ccc095ee3fcebd4aa41307d657fbfb2af"
+    },
+    {
+      "id": "east-breakout-1",
+      "cue": "east-breakout",
+      "text": "敌军失去支援，正向东门突围！守住东门，阻止他们！",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+12%",
+      "pitch": "-2%",
+      "team": "friendly",
+      "variant": 0,
+      "file": "friendly-0-east-breakout-1.mp3",
+      "gender": "Male",
+      "bytes": 34560,
+      "sha256": "b7dc0649d67a14565b0f0e9dfa8dabe7010933256445c0d160ffbd68f2009a1e",
+      "synthesisHash": "4afb15260210f9eb08de73f9c60f2ca6ce535a239fe1fabb265f51db984489ce"
+    },
+    {
+      "id": "east-breakout-1",
+      "cue": "east-breakout",
+      "text": "敌军失去支援，正向东门突围！守住东门，阻止他们！",
+      "voice": "zh-CN-YunxiNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+16%",
+      "pitch": "+2%",
+      "team": "friendly",
+      "variant": 1,
+      "file": "friendly-1-east-breakout-1.mp3",
+      "gender": "Male",
+      "bytes": 30960,
+      "sha256": "dc6f2fb1d7db9019514a2bb107c49a31909a5e27fb78555c54a26834badccea6",
+      "synthesisHash": "0ffdd80209ce3367b634a68333849c43dad18dc0297c176d61966e97a99d62cc"
+    },
+    {
+      "id": "east-breakout-1",
+      "cue": "east-breakout",
+      "text": "敌军失去支援，正向东门突围！守住东门，阻止他们！",
+      "voice": "zh-CN-YunfengNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+10%",
+      "pitch": "-4%",
+      "team": "friendly",
+      "variant": 2,
+      "file": "friendly-2-east-breakout-1.mp3",
+      "gender": "Male",
+      "bytes": 33408,
+      "sha256": "35245a93f82b59b4a90cdc50cbca0e333ac9ad370c17f25e732aec63b3ff1a96",
+      "synthesisHash": "afe68b9bd19cda602b44ab62101d85b208fb14be5c183cbb4babd7efc19182b4"
     }
   ],
   "generationBatches": [
@@ -6309,6 +6360,32 @@
           "file": "friendly-2-cleanup-orders-1.mp3",
           "characters": 21,
           "requestedAt": "2026-11-02T09:05:52.775Z",
+          "state": "saved"
+        }
+      ]
+    },
+    {
+      "id": "2026-11-02T21:19:46.321Z",
+      "authorizedUsd": 50,
+      "reservedUsd": 3,
+      "note": "One USD reserved per small new request, not an actual Azure invoice. No automatic retries.",
+      "requests": [
+        {
+          "file": "friendly-0-east-breakout-1.mp3",
+          "characters": 24,
+          "requestedAt": "2026-11-02T21:19:46.321Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-1-east-breakout-1.mp3",
+          "characters": 24,
+          "requestedAt": "2026-11-02T21:19:46.833Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-2-east-breakout-1.mp3",
+          "characters": 24,
+          "requestedAt": "2026-11-02T21:19:47.321Z",
           "state": "saved"
         }
       ]

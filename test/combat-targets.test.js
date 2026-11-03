@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from '../src/combat-targets.js';
 import { createTactics, rememberThreat, expireThreat } from '../src/tactics.js';
 
+test('dedicated anti-aircraft machine guns can damage real aircraft without turning ordinary rifles into AA weapons', () => {
+  assert.equal(damageForTarget('anti-aircraft-gun', 'aircraft', 100), 12);
+  assert.equal(damageForTarget('anti-aircraft-gun', 'person', 100, 'torso'), 100);
+  assert.equal(Math.ceil(180 / damageForTarget('anti-aircraft-gun', 'aircraft', 100)), 15);
+  assert.equal(damageForTarget('anti-aircraft-gun', 'closed-armor', 100), 0);
+  assert.equal(damageForTarget('rifle', 'aircraft', 100), 0);
+});
+
 test('ordinary rifles neither select sealed armor for firing nor damage its hull', () => {
   assert.equal(canWeaponDamageTarget('rifle', 'closed-armor'), false);
   assert.equal(damageForTarget('rifle', 'closed-armor', 100), 0);

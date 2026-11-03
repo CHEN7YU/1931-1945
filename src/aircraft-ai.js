@@ -4,6 +4,16 @@ import { headingError } from './ai-turning.js';
 export const AIRCRAFT_TURN = Object.freeze({ rate: .6, headingGain: 1.8, bankRate: .65, bankResponse: .25 });
 export const AIRCRAFT_AVOIDANCE = Object.freeze({ lookAhead: 4, sampleStep: .2, halfSpan: 5.2,
   clearance: 6, pullUpAltitude: 22, climbPitch: .38, holdSeconds: 2 });
+export const AIRCRAFT_GUN = Object.freeze({ range: 220, spread: .012 });
+
+export function aircraftMuzzle(vehicle) {
+  const forward = vehicle.team === 'enemy' ? 3.55 : 2.8, height = vehicle.team === 'enemy' ? .17 : .1;
+  const x = -height * Math.sin(vehicle.roll);
+  const y = height * Math.cos(vehicle.roll) * Math.cos(vehicle.pitch) + forward * Math.sin(vehicle.pitch);
+  const z = height * Math.cos(vehicle.roll) * Math.sin(vehicle.pitch) - forward * Math.cos(vehicle.pitch);
+  return { x: vehicle.position.x + x * Math.cos(vehicle.heading) + z * Math.sin(vehicle.heading),
+    y: vehicle.position.y + y, z: vehicle.position.z - x * Math.sin(vehicle.heading) + z * Math.cos(vehicle.heading) };
+}
 
 function headingStep(heading, desired, dt) {
   const delta = headingError(heading, desired);
@@ -65,10 +75,12 @@ function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHe
   return threat;
 }
 
-export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible, obstacles = [], groundHeight = () => 0 }) {
+export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible, obstacles = [], groundHeight = () => 0,
+  patrolCenter = { x: 0, z: 0 } }) {
   if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(now) || now < 0 ||
     ![vehicle.position.x, vehicle.position.y, vehicle.position.z, vehicle.heading, vehicle.pitch, vehicle.roll].every(Number.isFinite) ||
     typeof canFire !== 'boolean' || typeof visible !== 'function' || typeof groundHeight !== 'function' ||
+    !Number.isFinite(patrolCenter.x) || !Number.isFinite(patrolCenter.z) ||
     !Array.isArray(obstacles) || obstacles.some(obstacle =>
       !['minX', 'maxX', 'minZ', 'maxZ', 'height'].every(key => Number.isFinite(obstacle[key])) ||
       obstacle.minX > obstacle.maxX || obstacle.minZ > obstacle.maxZ)) {
@@ -78,8 +90,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   const state = vehicle.aiFlight;
   if (!state) throw new Error('Aircraft requires an autonomous flight state');
   const p = vehicle.position;
-  const start = { x: p.x - Math.sin(vehicle.heading) * 3, y: p.y,
-    z: p.z - Math.cos(vehicle.heading) * 3 };
+  const start = aircraftMuzzle(vehicle);
   const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + (actor.vehicleId ? 0 : 1.2), z: actor.position.z });
   if (now >= state.nextSense) {
     state.nextSense = now + .6;
@@ -104,7 +115,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
     state.phase = 'egress'; state.until = now + 5;
   }
   if (state.phase === 'egress' && now >= state.until) state.phase = 'approach';
-  const edgeDistance = Math.max(Math.abs(p.x), Math.abs(p.z));
+  const edgeDistance = Math.max(Math.abs(p.x - patrolCenter.x), Math.abs(p.z - patrolCenter.z));
   state.returningToArea = state.returningToArea ? edgeDistance > 105 : edgeDistance > 125;
   const nearEdge = state.returningToArea;
   let desiredHeading, desiredPitch;
@@ -115,7 +126,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
     desiredHeading = Math.atan2(p.x - aim.x, p.z - aim.z);
     desiredPitch = Math.max(-.55, Math.min(.3, Math.atan2(aim.y - p.y, horizontal)));
   } else {
-    desiredHeading = Math.atan2(p.x, p.z) + (nearEdge ? 0 : .75);
+    desiredHeading = Math.atan2(p.x - patrolCenter.x, p.z - patrolCenter.z) + (nearEdge ? 0 : .75);
     desiredPitch = Math.max(-.12, Math.min(.22, (40 - p.y) * .015));
   }
   if (state.avoidance && now >= state.avoidance.until && p.y >= state.avoidance.altitude) state.avoidance = null;
@@ -154,7 +165,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   const aimPitch = aim ? Math.atan2(aim.y - p.y, Math.hypot(aim.x - p.x, aim.z - p.z)) : vehicle.pitch;
   if (!canFire || !aim || state.avoidance || state.phase === 'egress' || nearEdge ||
     Math.abs(headingError(vehicle.heading, aimHeading)) > .08 || Math.abs(vehicle.pitch - aimPitch) > .08 ||
-    !visible(start, aim) || !shotState(vehicle.weapon, now, true)) return null;
+    !visible(aircraftMuzzle(vehicle), aim) || !shotState(vehicle.weapon, now, true)) return null;
   state.shots = (state.shots ?? 0) + 1;
-  return { start, aim };
+  return { start: aircraftMuzzle(vehicle), aim };
 }

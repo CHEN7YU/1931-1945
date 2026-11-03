@@ -4,9 +4,19 @@ import {
   NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_OBJECTIVES, NANJING_SPAWNS,
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
-  isNanjingSpawnAvailable, nanjingMissionVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat,
+  isNanjingSpawnAvailable, nanjingMissionVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
 } from '../src/nanjing-campaign.js';
-import { NANJING_COURTYARDS, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL } from '../src/nanjing-layout.js';
+import { NANJING_COURTYARDS, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
+
+test('raised dock decks and ordinary city floors are not mistaken for castle-wall descent',()=>{
+  assert.equal(nanjingWallExitWaypoint({x:-61,y:.36,z:-80}),null);
+  assert.equal(nanjingWallExitWaypoint({x:-57.8,y:.08,z:-75}),null);
+  assert.equal(nanjingWallExitWaypoint({x:30,y:2.7,z:-40}),null);
+  for(const ramp of NANJING_WALL_RAMPS){
+    assert.ok(nanjingWallExitWaypoint({x:(ramp.minX+ramp.maxX)/2,y:.1,z:ramp.centerZ}));
+    assert.ok(nanjingWallExitWaypoint({x:ramp.side*21.5,y:NANJING_WALL_WALK.height,z:0}));
+  }
+});
 
 test('only enemy infantry holding the west side inside the second gate alone can finish its capture countdown', () => {
   const campaign = createNanjingCampaign();

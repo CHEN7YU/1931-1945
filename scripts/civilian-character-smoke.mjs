@@ -4,9 +4,9 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.route('**/__civilian-review.html', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
@@ -16,6 +16,7 @@ try {
     <script type="module">
     import * as THREE from '/node_modules/three/build/three.module.js';
     import {createCivilianCharacterFactory,updateCivilianAppearance} from '/src/civilian-character.js';
+    import {advanceCivilianMotion} from '/src/civilian-motion.js';
     const renderer=new THREE.WebGLRenderer({antialias:true});
     renderer.setSize(1440,900); renderer.setPixelRatio(1);
     renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -31,10 +32,13 @@ try {
       ['elderly','woman','none'],['child','woman','none'],['child','man','none'],['adult','woman','child']];
     for(let i=0;i<roles.length;i++){
       const person=factory.create(i+2,...roles[i]);person.position.set((i-3)*.65,0,0);
-      Object.assign(person.userData,{carrying:roles[i][2]});people.push(person);scene.add(person);
+      Object.assign(person.userData,{civilianId:i,ageGroup:roles[i][0],carrying:roles[i][2],walkPhase:i});
+      people.push(person);scene.add(person);
     }
     window.review={
       render(mode){
+        if(mode==='cower')for(let frame=0;frame<60;frame++)for(const person of people)
+          advanceCivilianMotion(person,{dt:1/60,now:frame/60,moved:0,mode:'cower'});
         if(mode==='face'){camera.position.set(-2.01,1.53,-.85);camera.lookAt(-1.95,1.57,0);}
         else {camera.position.set(1.7,2.15,-7.2);camera.lookAt(0,.84,0);}
         updateCivilianAppearance(people,camera);renderer.render(scene,camera);
@@ -64,6 +68,8 @@ try {
     await page.screenshot({ path: path.join(process.env.CIVILIAN_ARTIFACT_DIR, 'civilian-gallery.png') });
     await page.evaluate(() => review.render('face'));
     await page.screenshot({ path: path.join(process.env.CIVILIAN_ARTIFACT_DIR, 'civilian-face.png') });
+    await page.evaluate(() => review.render('cower'));
+    await page.screenshot({ path: path.join(process.env.CIVILIAN_ARTIFACT_DIR, 'civilian-cower.png') });
   }
   const crowd = await page.evaluate(() => review.crowd());
   console.log(JSON.stringify({ gallery, crowd, errors }));
@@ -72,6 +78,9 @@ try {
   assert.equal(crowd.calls, 181, 'far civilians must use one GPU draw per visible person');
   assert.ok(crowd.triangles < 400000, '180 far civilians must stay under the geometry budget');
   assert.deepEqual(errors, []);
+} catch (error) {
+  console.error(JSON.stringify({ errors }));
+  throw error;
 } finally {
   await browser.close();
 }

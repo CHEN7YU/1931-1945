@@ -18,7 +18,7 @@ test('supply brief, cut, restoration and encirclement announcements follow actua
   points[0].owner = 'enemy'; match.supplyInterrupted = false;
   assert.deepEqual(tracker.update(match, points, units), ['supply-restored']);
   match.phase = 2;
-  assert.deepEqual(tracker.update(match, points, units), ['encircled', 'reinforcements-blocked', 'cleanup-orders']);
+  assert.deepEqual(tracker.update(match, points, units), ['encircled', 'reinforcements-blocked']);
   assert.deepEqual(tracker.update(match, points, units), []);
   match.supplyInterrupted = true;
   assert.deepEqual(tracker.update(match, points, units), [], 'cleanup cannot announce restored enemy reinforcements');
@@ -44,9 +44,25 @@ test('reinforcement speech waits for actual spawn, handles delayed arrivals once
   assert.deepEqual(tracker.update(match, points, units), []);
 });
 test('all strategic cues have short friendly stock-male variants without changing Japanese dialogue', () => {
-  for (const cue of ['supply-brief', 'supply-cut', 'supply-restored', 'reinforcements', 'supply-reinforced', 'encircled', 'reinforcements-blocked', 'cleanup-orders']) {
+  for (const cue of ['supply-brief', 'supply-cut', 'supply-restored', 'reinforcements', 'supply-reinforced', 'encircled', 'reinforcements-blocked', 'cleanup-orders', 'east-breakout']) {
     const clips = battleVoiceClips().filter(clip => clip.cue === cue);
     assert.equal(clips.length, 3);
     assert.ok(clips.every(clip => clip.team === 'friendly' && clip.text.length < 50 && clip.locale === 'zh-CN'));
   }
+});
+
+test('the important eastern breakout order repeats three times on simulation time, never per frame or after victory', () => {
+  const { tracker, match, points, units } = setup();
+  tracker.update(match, points, units, 0);
+  match.phase = 2; match.breakout = { stage: 'regroup' };
+  tracker.update(match, points, units, 10);
+  match.breakout.stage = 'breakout';
+  assert.deepEqual(tracker.update(match, points, units, 25), ['east-breakout']);
+  for (let frame = 0; frame < 60; frame++) assert.deepEqual(tracker.update(match, points, units, 25), []);
+  assert.deepEqual(tracker.update(match, points, units, 49.9), []);
+  assert.deepEqual(tracker.update(match, points, units, 50), ['east-breakout']);
+  assert.deepEqual(tracker.update(match, points, units, 75), ['east-breakout']);
+  assert.deepEqual(tracker.update(match, points, units, 200), []);
+  tracker.reset(); match.winner = 'friendly';
+  assert.deepEqual(tracker.update(match, points, units, 300), []);
 });

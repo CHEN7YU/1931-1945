@@ -27,7 +27,7 @@
 .brand-emblem{width:36px;height:36px;color:var(--gold);border:1px solid var(--border);padding:4px}
 #menu>.menu-footer{margin-top:auto}
 #flight-pointer{position:absolute;width:24px;height:24px;border:2px solid #f2dfa4;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 3px #000;pointer-events:none}#flight-status{position:absolute;left:28px;top:92px;display:flex;flex-direction:column;gap:7px;padding:12px;background:#15231bdd;color:#e4e5d3;font:12px monospace}#flight-warning{color:#f1c584;font:12px "Microsoft YaHei",sans-serif}#flight-status.stalling{border:1px solid #da796a}#flight-status.stalling #flight-warning{color:#ffc4ac}
-#hud:has(#mortar-objective-sight:not([hidden])) #construction-panel{left:auto;right:24px;top:auto;bottom:170px;transform:none;width:260px}#mortar-objective-sight #mortar-range-setting,#mortar-objective-sight #mortar-objective-distances{left:auto;right:24px;transform:none}#mortar-objective-sight #mortar-range-setting{top:52%}#mortar-objective-sight #mortar-objective-distances{top:57%}
+#hud:has(#mortar-objective-sight:not([hidden])) #construction-panel{left:auto;right:24px;top:auto;bottom:170px;transform:none;width:260px}#mortar-objective-sight #mortar-objective-distances{left:auto;right:24px;transform:none;top:57%}#hud #mortar-range-setting{left:50%;right:auto;top:calc(50% + 50px);transform:translateX(-50%);min-width:150px;padding:10px 20px;font:bold 32px/1.2 monospace;text-align:center;color:#ffe0a4;background:#142018ed;border:1px solid #cfb278;z-index:1}#mortar-range-setting:before{content:"设置射程";display:block;margin-bottom:4px;font:11px/1.4 "Microsoft YaHei",sans-serif;color:#c5cfb9}
 .deployment-map-frame #spawn-choices button{width:38px;min-width:38px;height:38px;padding:4px}.deployment-map-frame #spawn-choices .spawn-map-name,.deployment-map-frame #spawn-choices small{display:none;pointer-events:none}.deployment-map-frame #spawn-choices button:hover .spawn-map-name,.deployment-map-frame #spawn-choices button:focus-visible .spawn-map-name,.deployment-map-frame #spawn-choices button.selected .spawn-map-name{display:block;position:absolute;bottom:100%;width:150px;background:#152319ef;padding:5px}.deployment-map-frame #spawn-choices button:hover small,.deployment-map-frame #spawn-choices button:focus-visible small{display:block;position:absolute;top:100%;width:150px;background:#152319ef;padding:5px}
 .deployment-overlay>.dialog{width:min(860px,94vw)}.deployment-overlay .redeploy-choices{grid-template-columns:repeat(3,1fr)}.deployment-overlay .deployment-context{display:block}.deployment-map-frame{position:relative;width:min(100%,528px);aspect-ratio:1;margin:12px auto;border:1px solid var(--border)}.deployment-map-frame canvas{display:block;width:100%;height:100%}.deployment-map-frame #spawn-choices{position:absolute;inset:0;margin:0;display:block;pointer-events:none}.deployment-map-frame #spawn-choices button{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;border:1px solid #9cbda2;border-radius:3px;background:#17281eee;color:#d7e8d5;min-width:36px;padding:4px 7px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;max-width:145px;line-height:1.2}.deployment-map-frame #spawn-choices button.selected{border:2px solid #f2d49b;background:#4b4930f2;color:#fff0bf;z-index:2}.deployment-map-frame #spawn-choices button:disabled{opacity:.65;background:#3b3d38;color:#a5a89d;border-color:#73796f}.spawn-map-icon{font-size:22px}.spawn-map-name{font-size:10px}.deployment-map-frame #spawn-choices small{float:none;font-size:9px;color:inherit}#deployment-map-hint{font-size:11px}.deployment-overlay #confirm-deploy{max-width:528px;margin:12px auto}
 #feedback-dialog{padding:0;border:1px solid var(--border);background:#202a21;color:inherit;max-width:92vw}#feedback-dialog::backdrop{background:#08110dd9}#feedback-dialog .dialog{border:0;max-height:90vh}#feedback-fields{border:0;padding:0}#feedback-fields label{display:block;font-size:12px;margin:12px 0 6px}#feedback-fields input,#feedback-fields textarea,#feedback-fields select{width:100%;padding:9px;background:#121d16;border:1px solid var(--border);color:inherit;font:inherit}#feedback-fields small{font-size:10px;color:var(--muted)}#feedback-fields .feedback-honeypot{position:absolute;left:-10000px}#feedback-status[data-kind=error]{color:#eac08b}.feedback-entry{color:var(--gold);border-top:1px solid var(--border)}
@@ -90,6 +90,7 @@
 }
 #hud { --map-size: clamp(112px, 9vw, 140px); background: none; }
 #hud .hud-top { padding: 16px 20px; justify-content: flex-end; }
+#hud .hud-tools { display: flex; align-items: center; gap: 8px; }
 #hud #objectives { gap: 10px; align-items: center; }
 #hud .objective-chip { background: var(--hud-backing); width: 28px; height: 28px; border-radius: 50%; padding-bottom: 3px; }
 #hud .objective-chip:after { display: none; }
@@ -104,9 +105,10 @@
 .control-count.enemy { color: #ffb9a9; }
 #hud .battle-time { background: var(--hud-backing); padding: 2px 5px; }
 #hud #timer { font: 16px/20px monospace; }
-#hud .objective-banner { top: 55px; width: max-content; min-width: 0; max-width: calc(100% - 60px); }
+#hud .objective-banner { top: 55px; width: max-content; min-width: 0; max-width: min(560px, calc(100% - 64px - min(520px, 56vw))); }
 #hud #objective-title,
 #hud #objective-help { display: table; margin: 0 auto 2px; padding: 2px 5px; background: var(--hud-backing); font-size: 12px; line-height: 16px; letter-spacing: 0; color: var(--hud-text); }
+#hud #objective-help[hidden], #hud .capture-track[hidden] { display: none; }
 #hud .capture-track,
 #hud .health-track,
 #hud #stamina-meter { height: 4px; background: rgba(216, 216, 186, .3); }
@@ -148,12 +150,15 @@
 #hud #minimap:not(.expanded) { left: 20px; bottom: 20px; width: var(--map-size); padding: 3px; background: var(--hud-backing); }
 #hud #minimap:not(.expanded) #radar { width: 100%; height: auto; }
 #hud #minimap span { font-size: 12px; line-height: 16px; letter-spacing: 0; padding: 0; color: var(--hud-secondary); }
-#hud .hud-button { right: 20px; top: 46px; padding: 3px 5px; font-size: 12px; background: var(--hud-backing); color: var(--hud-text); }
+#hud .hud-button { position: static; flex-shrink: 0; padding: 3px 5px; font-size: 12px; background: var(--hud-backing); color: var(--hud-text); }
 .hud-notices { position: absolute; left: 20px; top: 16px; max-width: min(260px, 27vw); display: flex; flex-direction: column; gap: 4px; }
 #hud-notice,
 #hud .simulation-status { padding: 3px 5px; background: var(--hud-backing); font: 12px/18px "Microsoft YaHei", sans-serif; color: #f0d397; overflow-wrap: anywhere; }
 #hud #kill-feed { top: 82px; right: 20px; gap: 3px; font-size: 12px; line-height: 16px; max-width: min(260px, 28vw); align-items: flex-end; }
-#hud .feed-entry { padding: 3px 5px; background: var(--hud-backing); overflow-wrap: anywhere; }
+#hud .feed-entry { display: flex; align-items: center; gap: 7px; padding: 3px 5px; background: var(--hud-backing); white-space: nowrap; }
+#hud .feed-entry .score-icon { flex: 0 0 25px; width: 25px; height: 20px; color: #f0d397; }
+#hud .feed-actor.friendly { color: #c8d8ae; }
+#hud .feed-actor.enemy { color: #ffb9a9; }
 #hud #aim-label { font-size: 12px; padding: 3px 7px; background: var(--hud-backing); }
 #hud #toast {
   left: 50%;

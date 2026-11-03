@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion } from '../src/casualties.js';
+import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion, casualtyResponse } from '../src/casualties.js';
 import { circleBlocked } from '../src/core.js';
 
 function corpse(index, time = 0) {
@@ -87,4 +87,28 @@ test('a constrained casualty uses a folded death pose instead of returning to a 
   assert.equal(last.upright, 0); assert.equal(last.kneeling, 1);
   assert.equal(last.bodyLean, 0);
   assert.equal(JSON.stringify(state), snapshot, 'sampling never mutates the immutable death snapshot');
+});
+
+test('real hit direction selects a collapse side while running and prone casualties retain their existing momentum and posture',()=>{
+  const actor=corpse(7);actor.heading=0;
+  for(const [direction,variant]of [[{x:-1,z:0},0],[{x:1,z:0},1],[{x:0,z:-1},2],[{x:0,z:1},3]]) {
+    actor.lastHit={direction,hitZone:'torso'};
+    assert.equal(createCasualtyState(actor,0).variant,variant);
+  }
+  assert.equal(createCasualtyState(actor,0,{speed:4.8,prone:0}).variant,2);
+  assert.equal(createCasualtyState(actor,0,{speed:0,prone:1}).variant,2);
+  actor.lastHit.direction.x=NaN;
+  assert.throws(()=>createCasualtyState(actor,0),/finite/);
+});
+
+test('knees buckle and pelvis drops before the main fall, followed by arm relaxation and a bounded final settle',()=>{
+  const actor=corpse(9),state=actor.casualty,duration=state.duration;
+  const early=casualtyResponse(state,duration*.15),middle=casualtyResponse(state,duration*.4),
+    last=casualtyResponse(state,duration);
+  assert.ok(early.buckle>early.fall&&early.drop>0);
+  assert.ok(middle.buckle>.8&&middle.arms>0);
+  assert.equal(last.fall,1);assert.equal(last.relax,1);assert.equal(last.arms,1);
+  assert.ok(Math.abs(last.drop)<1e-10&&Math.abs(last.settle)<1e-10);
+  assert.deepEqual(casualtyResponse(state,duration*.4),middle,'sampling cannot accumulate rotations while paused');
+  assert.throws(()=>casualtyProgress({time:0,duration:0},1),/presentation time/);
 });

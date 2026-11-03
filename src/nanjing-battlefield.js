@@ -5,13 +5,17 @@ import { resetCivilianStreetLife } from './civilian-street-life.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { circleBlocked, createNavigator } from './core.js';
 import { createDoorWorld } from './door-world.js';
-import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_OBJECTIVES } from './nanjing-campaign.js';
+import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_OBJECTIVES, NANJING_SPAWNS } from './nanjing-campaign.js';
 import { sandbagCollisionProxy, sandbagGeometry } from './scene-details.js';
 import { createRoofGeometry } from './roof-geometry.js';
 import { AIR_SUPPORT, createAirSupport } from './air-support.js';
+import { AIRCRAFT_GUN } from './aircraft-ai.js';
+import { TYPES } from './core.js';
+import { batchStaticScene } from './static-scene-batches.js';
+import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { planeModel } from './world.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStart,
-  nanjingOpeningCivilianReleaseAt } from './civilian-crowd.js';
+  nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from './nanjing-city-layout.js';
 import { WOODLAND_SPECIES, woodlandTreeGeometry } from './woodland.js';
 import { NANJING_COURTYARDS, NANJING_COURTYARD_HALF_WIDTH,
@@ -37,6 +41,8 @@ export function makeNanjingBattlefield(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], ferries = [], civilians = [], civilianQueue = [];
   const flankWalkSupports = [];
   const residentialBuildings = [];
+  const northernBackdrop = [];
+  const residentialMeshes = [];
   const cityLayout = createNanjingCityLayout();
   const wallBreaches = [{ id: 'east-shell-breach', minX: 88, maxX: 94, minZ: 16, maxZ: 20.4 }];
   const impactGeometry = [];
@@ -45,6 +51,16 @@ export function makeNanjingBattlefield(scene, surface) {
     if (x < -73 || x > -57.5 || z < -91.5 || z > -68.5) return 0;
     return .36 * Math.min(1, Math.max(0, (-57.5 - x) / 1.5),
       Math.max(0, (z + 91.5) / 1.5), Math.max(0, (-68.5 - z) / 1.5));
+  };
+  const impactHeight = (x, z) => {
+    const south = RIVERS[0], west = RIVERS[1];
+    if (Math.abs(x - south.x) < south.width / 2 && Math.abs(z - south.z) < south.depth / 2)
+      return SOUTH_RIVER_WATER;
+    if (Math.abs(x - west.x) < west.width / 2 && Math.abs(z - west.z) < west.depth / 2) {
+      const blend = Math.min(1, Math.max(0, Math.abs(z - south.z) - south.depth / 2) / 12);
+      return -.28 + (SOUTH_RIVER_WATER + .28) * (1 - blend * blend * (3 - 2 * blend));
+    }
+    return groundHeight(x, z);
   };
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   const ground = surface('earth', 0x777361, 4);
@@ -776,6 +792,28 @@ export function makeNanjingBattlefield(scene, surface) {
   }
   const roofMaterial = surface('tiles', 0x89918c, 1.4);
   roofMaterial.side = THREE.DoubleSide;
+  for (let row = 0; row < 2; row++) for (let index = 0; index < 20; index++) {
+    const x = -67 + index * 8.5 + (row ? 1.5 : 0) + Math.sin(index * 2.71) * .5;
+    const z = -101.5 - row * 6 + Math.cos(index * 1.73) * .35;
+    const width = 5.3 + (index % 4) * .5, depth = 4;
+    if (cityLayout.lots.some(([houseX, houseZ, houseWidth, houseDepth]) =>
+      Math.abs(houseX - x) < (houseWidth + width) / 2 + .8 &&
+      Math.abs(houseZ - z) < (houseDepth + depth) / 2 + .8)) continue;
+    const height = 3.2 + row * 1.4 + (index % 3) * .65;
+    const start = solids.length;
+    const body = addBox(x, height / 2, z, width, height, depth, index % 3 ? brick : stone);
+    body.userData.nanjingFeature = 'northern-background-house';
+    const roof = new THREE.Mesh(createRoofGeometry(width + .7, depth + .6, .9, 1.4), roofMaterial);
+    roof.position.set(x, height, z); roof.castShadow = roof.receiveShadow = true;
+    roof.userData.nanjingFeature = 'northern-background-roof';
+    scene.add(roof); solids.push(roof);
+    for (const side of [-1, 1]) addBox(x + side * width * .27, 1.6, z + depth / 2 + .02, .7, .85, .045, dark);
+    addBox(x, 1.05, z + depth / 2 + .03, .9, 2.1, .06, timber);
+    for (const mesh of solids.slice(start)) {
+      mesh.userData.staticResidential = true; residentialMeshes.push(mesh);
+    }
+    northernBackdrop.push({ x, z, width, depth, height, interactive: false });
+  }
   const residentialLots = cityLayout.lots;
   const plaster = surface('plaster', 0xaaa18b, 1.2);
   for (const [index, [x, z, footprintWidth, footprintDepth, floors, facing]] of residentialLots.entries()) {
@@ -829,9 +867,8 @@ export function makeNanjingBattlefield(scene, surface) {
         }
         for (let vertex = 0; vertex < positions.count; vertex += 3) {
           const cx = (positions.getX(vertex) + positions.getX(vertex + 1) + positions.getX(vertex + 2)) / 3;
-          const cz = (positions.getZ(vertex) + positions.getZ(vertex + 1) + positions.getZ(vertex + 2)) / 3;
-          const edge = .9 + .18 * Math.sin(strip * 2.7 + index);
-          if (cx > -.15 && (cx - w * .18) ** 2 / (w * .46) ** 2 + cz ** 2 / (d * .48) ** 2 < edge) continue;
+          const brokenEdge = -w * (.03 + .045 * (1 + Math.sin(strip * 2.7 + index)));
+          if (cx > brokenEdge) continue;
           indices.push(vertex, vertex + 1, vertex + 2);
         }
         fragment.setIndex(indices);
@@ -857,22 +894,25 @@ export function makeNanjingBattlefield(scene, surface) {
       addBox(x + side * (w / 2 - .1), .18, z, .3, .36, d, brick);
     }
     addBox(x, .18, z + d / 2 - .1, w, .36, .3, brick);
-    // Seal the gables so visible roof space also blocks shots and movement.
+    // Ruins retain supported end gables, not a solid block filling the exposed attic.
     const gable = new THREE.Shape();
     gable.moveTo(-intactWidth / 2, 0);
     gable.lineTo(damaged ? intactWidth / 2 : 0, roofRise);
     gable.lineTo(intactWidth / 2, 0);
     gable.closePath();
-    const roofCore = new THREE.Mesh(new THREE.ExtrudeGeometry(gable, { depth: d, bevelEnabled: false }), facade);
-    roofCore.userData.nanjingFeature = 'residential-roof-core';
-    roofCore.position.set(roofX, h, z - d / 2);
-    roofCore.castShadow = roofCore.receiveShadow = true;
-    scene.add(roofCore); solids.push(roofCore);
-    obstacles.push({ minX: roofX - intactWidth / 2, maxX: roofX + intactWidth / 2,
-      minZ: z - d / 2, maxZ: z + d / 2, minY: h, height: h + roofRise });
+    const gableDepth = damaged ? thickness : d;
+    for (const gableZ of damaged ? [z - d / 2, z + d / 2 - thickness] : [z - d / 2]) {
+      const roofCore = new THREE.Mesh(new THREE.ExtrudeGeometry(gable, { depth: gableDepth, bevelEnabled: false }), facade);
+      roofCore.userData.nanjingFeature = 'residential-roof-core';
+      roofCore.position.set(roofX, h, gableZ);
+      roofCore.castShadow = roofCore.receiveShadow = true;
+      scene.add(roofCore); solids.push(roofCore);
+      obstacles.push({ minX: roofX - intactWidth / 2, maxX: roofX + intactWidth / 2,
+        minZ: gableZ, maxZ: gableZ + gableDepth, minY: h, height: h + roofRise });
+    }
     for (const side of [-1, 1]) {
       addBox(x + side * (doorWidth / 2 + .06), doorHeight / 2, frontZ - .08, .12, doorHeight, .16, timber);
-      addBox(x + side * (w / 2 + .05), h + .1, z, .14, .2, d + .8, timber);
+      if (!damaged || side < 0) addBox(x + side * (w / 2 + .05), h + .1, z, .14, .2, d + .8, timber);
     }
     addBox(x, doorHeight + .08, frontZ - .08, doorWidth + .24, .16, .16, timber);
     addBox(x, .07, z - d / 2 - .24, 1.4, .14, .4, stone);
@@ -898,8 +938,9 @@ export function makeNanjingBattlefield(scene, surface) {
       damaged, use: z < -30 && index % 2 === 0 && !damaged ? 'shop' : 'home' });
     if (index % 3 === 0 || damaged) for (let mark = 0; mark < 7; mark++) {
       const spread = Math.sin((index * 7 + mark * 13) * 2.37);
-      shellPocks(x + Math.sign(spread) * (.95 + Math.abs(spread) * (w * .4 - .95)),
-        .65 + (Math.sin(mark * 8.31 + index) + 1) * Math.min(1.7, h * .35),
+      const remainingHeight = damaged && spread >= 0 ? 1.05 : h;
+      shellPocks(x + (spread >= 0 ? 1 : -1) * (doorWidth / 2 + .4 + Math.abs(spread) * (w / 2 - doorWidth / 2 - .8)),
+        .35 + (Math.sin(mark * 8.31 + index) + 1) / 2 * Math.min(3, remainingHeight - .7),
         frontZ - thickness / 2, damaged ? .16 : .065, index + mark);
     }
     if (damaged) {
@@ -911,9 +952,11 @@ export function makeNanjingBattlefield(scene, surface) {
         rubble.userData.nanjingFeature = 'collapsed-house-rubble';
       }
       for (let rafter = 0; rafter < 5; rafter++) {
-        const beam = addBox(x + .35, h + .25 - rafter % 2 * .35, z - d * .36 + rafter * d * .18,
-          w * .7, .14, .16, timber);
-        beam.rotation.z = -.25 - rafter % 3 * .13;
+        const startX = x - w / 2 + .1, endX = x - w * (.06 + rafter % 3 * .03);
+        const startY = h - .04, endY = h - .3 - rafter % 3 * .16;
+        const beam = addBox((startX + endX) / 2, (startY + endY) / 2,
+          z - d * .36 + rafter * d * .18, Math.hypot(endX - startX, endY - startY), .14, .16, timber);
+        beam.rotation.z = Math.atan2(endY - startY, endX - startX);
         beam.userData.nanjingFeature = 'broken-roof-beam';
       }
     }
@@ -951,6 +994,13 @@ export function makeNanjingBattlefield(scene, surface) {
       for (const geometry of impactGeometry.slice(firstImpact)) geometry.applyMatrix4(matrix);
       Object.assign(passage, transform(passage.x, passage.z), { axis: facing % 2 ? 'z' : 'x' });
       home.exit = transform(home.exit.x, home.exit.z);
+    }
+    for (const mesh of solids.slice(firstSolid)) {
+      mesh.userData.residentialId = home.id;
+      if (mesh.visible && !mesh.material.transparent) {
+        mesh.userData.staticResidential = true;
+        residentialMeshes.push(mesh);
+      }
     }
   }
 
@@ -1028,17 +1078,6 @@ export function makeNanjingBattlefield(scene, surface) {
   addForwardDefense(-35, 37, 'bridge-west', 8, 3);
   addForwardDefense(-13, 37, 'bridge-east', 8, 3);
   const bridgeDeckDefenses = [];
-  for (const side of [-1, 1]) {
-    const x = YUHUA_BRIDGE.x + side * 3.85, z = 37;
-    const id = `bridge-deck-${side < 0 ? 'west' : 'east'}`;
-    for (let row = 0; row < 3; row++) for (let column = 0; column < 2; column++) {
-      placeForwardSandbag(x + side * (row % 2) * .04, z + column * .72,
-        row, `${id}-${row}-${column}`, 0, 'bridge-deck-sandbag');
-    }
-    town.covers.push({ id: `${id}-cover`, x: YUHUA_BRIDGE.x + side * 3.45,
-      z: z - 1.2, kind: 'low' });
-    bridgeDeckDefenses.push({ id, x, z, width: 1.22, depth: 1.6, height: 1.16 });
-  }
   const dockDefenses = [];
   addForwardDefense(-66.5, -92, 'dock-north', 5, 2, Math.PI, dockDefenses);
   addForwardDefense(-65, -68, 'dock-south', 5, 2, 0, dockDefenses);
@@ -1112,7 +1151,7 @@ export function makeNanjingBattlefield(scene, surface) {
       openingWave: index < 60, openingStraggler: index >= 48 && index < 60,
       withdrawalWave: index >= 60, releaseAt: index >= 60 ? Infinity : nanjingOpeningCivilianReleaseAt(index),
       ageGroup, presentation, carrying, walkPhase: index * .71,
-      waypoint: 0, arrived: false, dead: false, waitingSlot: civilianWaitingSlot(index) });
+      waypoint: 0, arrived: false, dead: false, health: 100, waitingSlot: civilianWaitingSlot(index) });
     scene.add(group);
     civilians.push(group);
   }
@@ -1120,17 +1159,16 @@ export function makeNanjingBattlefield(scene, surface) {
   const aircraft = Array.from({ length: AIR_SUPPORT.count }, (_, index) => {
     const model = planeModel('enemy');
     model.userData.attack = createAirSupport(index);
-    model.userData.gun = { settings: AIR_SUPPORT, lastShot: null };
+    model.userData.gun = { settings: { ...AIRCRAFT_GUN, damage: TYPES.plane.damage }, lastShot: null };
     resetAircraftPose(model);
     scene.add(model);
     return model;
   });
   function resetAircraftPose(model) {
-    const { phase, index } = model.userData.attack;
+    const { phase, index, pitch, heading, roll } = model.userData.attack;
     model.position.set(-AIR_SUPPORT.orbitWidth + AIR_SUPPORT.orbitWidth * Math.cos(phase),
       AIR_SUPPORT.altitude + index * 3, -AIR_SUPPORT.orbitLength * Math.sin(phase));
-    model.rotation.set(0, Math.atan2(AIR_SUPPORT.orbitWidth * Math.sin(phase),
-      AIR_SUPPORT.orbitLength * Math.cos(phase)), -.2);
+    model.rotation.set(pitch, heading, roll, 'YXZ');
   }
 
   const smokePixels = new Uint8Array(64 * 64 * 4);
@@ -1227,10 +1265,14 @@ export function makeNanjingBattlefield(scene, surface) {
     if (trees.length >= 40 || Math.abs(x) < 7 || Math.abs(z + 60) < 3 ||
       x < -39 && z < -64 && z > -97 || Math.abs(x + 24) < 9 && z > 25 ||
       circleBlocked(x, z, 1, obstacles) ||
+      NANJING_SPAWNS.some(spawn => spawn.id.startsWith('nanjing-reserve-') &&
+        Math.hypot(x - spawn.x, z - spawn.z) < 6) ||
+      northernBackdrop.some(home => Math.abs(x - home.x) < home.width / 2 + 1 &&
+        Math.abs(z - home.z) < home.depth / 2 + 1) ||
       residentialBuildings.some(home => Math.abs(x - home.x) < home.width / 2 + .75 &&
         Math.abs(z - home.z) < home.depth / 2 + .75 ||
         Math.hypot(x - home.exit.x, z - home.exit.z) < 1.5) ||
-      cityLayout.streets.some(street => street.width >= 6 &&
+      cityLayout.streets.some(street => street.width >= 4.8 &&
         cityStreetIntersectsLot([x, z, 2, 2], street)) ||
       trees.some(tree => Math.hypot(tree.x - x, tree.z - z) < 4)) continue;
     const species = x < -64 ? 'willow' : index % 4 === 0 ? 'poplar' : 'elm';
@@ -1257,16 +1299,21 @@ export function makeNanjingBattlefield(scene, surface) {
   sceneArt.woodland = { trees: trees.length, leafStyle: 'individual-folded-leaves',
     species: Object.fromEntries(Object.keys(WOODLAND_SPECIES).map(species =>
       [species, trees.filter(tree => tree.species === species).length])) };
+  obstacles.push(...NANJING_EMPLACEMENTS.flatMap(emplacementObstacles));
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, stone);
   const civilianNavigationObstacles = [...doorSystem.navigationObstacles,
     ...residentialBuildings.map(home => ({
       minX: home.x - home.width / 2, maxX: home.x + home.width / 2,
       minZ: home.z - home.depth / 2, maxZ: home.z + home.depth / 2, height: home.height, civilianHomeId: home.id,
     }))];
-  const civilianNavigate = createNavigator(civilianNavigationObstacles, .75, .45);
+  const civilianNavigate = createNavigator(civilianNavigationObstacles, .5, .45);
+  const waitingPlaces = placeCivilianWaitingSlots(point =>
+    !circleBlocked(point.x, point.z, .45, civilianNavigationObstacles));
   const homeRoutes = new Map();
+  const routeSegments = new Map();
   for (const civilian of civilians) {
     const data = civilian.userData;
+    data.waitingSlot = waitingPlaces[data.civilianId];
     if (!homeRoutes.has(data.civilianId)) {
       const start = { x: data.startX, z: data.startZ };
       const entry = { x: -61, z: data.waitingSlot.z };
@@ -1277,7 +1324,12 @@ export function makeNanjingBattlefield(scene, surface) {
       const route = [];
       let from = start;
       for (const stop of stops) {
-        const path = civilianNavigate(from, stop);
+        const key = `${from.x},${from.z}:${stop.x},${stop.z}`;
+        let path = routeSegments.get(key);
+        if (!path) {
+          path = civilianNavigate(from, stop);
+          if (path.length) routeSegments.set(key, path);
+        }
         if (!path.length) throw new Error(`Civilian home ${data.homeId} has no evacuation route: ` +
           `${civilianNavigate.stats.reason} from ${JSON.stringify(from)} to ${JSON.stringify(stop)}`);
         route.push(...path);
@@ -1400,15 +1452,17 @@ export function makeNanjingBattlefield(scene, surface) {
   }
   const groundSurface = (x, z) => Math.abs(z - 52) < 13 || Math.abs(x + 84) < 12
     ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
+  const staticRendering = batchStaticScene(scene, residentialMeshes);
+  sceneArt.staticRendering = staticRendering;
   return {
     solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,
-    moveInfantry: moveNanjingInfantry, elevatedPath,
+    moveInfantry: moveNanjingInfantry, elevatedPath, staticRendering,
     bridgeSurfaces: { deck: 0, northRamp: 0, southRamp: 0 },
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
-    ferries, civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES,
+    ferries, civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
     landmarks: {
       gatehouse: { style: 'arched-stone-gate', gates: gateways, barbicans: NANJING_COURTYARDS.length,
         centerZ: (NANJING_GATE_NORTH_EDGE + NANJING_GATE_SOUTH_EDGE) / 2,
@@ -1430,6 +1484,7 @@ export function makeNanjingBattlefield(scene, surface) {
       trees,
       cityStreets: cityLayout.streets,
       residentialBuildings,
+      northernBackdrop,
       primaryAssaultRoute: 'yuhua-road-bridge-through-jubaomen',
       wallWalk: WALL_WALK,
       wallWalks: NANJING_WALL_WALKS,
@@ -1450,13 +1505,15 @@ export function makeNanjingBattlefield(scene, surface) {
         civilian.civilianTorso.rotation.set(0, 0, 0);
         civilian.civilianHead.rotation.set(0, 0, 0);
         civilian.visible = false;
-        Object.assign(data, { waypoint: 0, arrived: false, dead: false, active: false, exposure: 0,
+        Object.assign(data, { waypoint: 0, arrived: false, dead: false, health: 100, active: false, exposure: 0,
           panicked: false, panicStartedAt: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
+          threatResponse: null, escapeMotion: null, escapeMode: null,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
           streetEvacuating: false, route: data.homeRoute,
           releaseAt: data.withdrawalWave ? Infinity : nanjingOpeningCivilianReleaseAt(data.civilianId) });
         for (const bone of civilian.civilianSkin.skeleton.bones) bone.rotation.set(0, 0, 0);
+        civilian.civilianSkin.joints.root.position.y = 0;
         resetCivilianStreetLife(civilian);
       }
       for (const ferry of ferries) {

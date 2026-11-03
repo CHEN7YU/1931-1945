@@ -143,7 +143,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
   const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
   let dadaoPose = null;
-  const groundAt = (x, z) => walkHeightAt(x, z, root.position.y);
+  const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),

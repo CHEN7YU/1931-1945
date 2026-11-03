@@ -5,6 +5,15 @@ import { createSolidIndex } from '../src/solid-index.js';
 import { SpatialGrid, obstacleLookup } from '../src/spatial.js';
 import { circleBlocked } from '../src/core.js';
 
+test('rotating fixed-weapon collision meshes remain queryable after leaving their original static grid cell', () => {
+  const moving = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshBasicMaterial());
+  moving.userData.dynamicCollision = true;
+  const index = createSolidIndex([moving]);
+  moving.position.set(30, 1, -20); moving.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(new THREE.Vector3(30, 1, 0), new THREE.Vector3(0, 0, -1), 0, 30);
+  assert.equal(ray.intersectObjects(index.candidates(ray.ray.origin, ray.ray.direction, 30))[0]?.object, moving);
+});
+
 test('collision indexing updates new mesh and ancestor transforms before the first rendered frame', () => {
   const scene = new THREE.Scene(), parent = new THREE.Group();
   parent.position.set(12, 0, 30);

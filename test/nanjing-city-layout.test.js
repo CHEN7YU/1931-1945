@@ -7,6 +7,11 @@ test('city layout is deterministic, varied and street-facing rather than aligned
   assert.deepEqual(layout, createNanjingCityLayout());
   const homes = layout.lots.filter(lot => lot[1] < -12);
   assert.ok(layout.lots.length >= Math.ceil(117 * 1.15), 'density increases by at least 15 percent');
+  assert.ok(layout.lots.reduce((area, lot) => area + lot[2] * lot[3], 0) >= 5000,
+    'larger street blocks must replace empty ground, not just add more tiny buildings');
+  assert.ok(layout.streets.find(street => street.id === 'gate-high-street').width < 6);
+  assert.ok(layout.streets.find(street => street.id === 'north-bank-lane').width >= 5,
+    'the narrower northern street still reserves an armored approach');
   assert.equal(new Set(homes.map(lot => lot[5])).size, 4, 'entrances must face different nearby streets');
   for (const dimension of [0, 1]) {
     const bins = new Map();

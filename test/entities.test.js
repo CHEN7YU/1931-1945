@@ -7,6 +7,7 @@ import { createEntityRegistry, registerUnit, registerWeapon, registerSoldier, cr
 import { circleBlocked, segmentClear } from '../src/core.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { TANK_OBSERVATION } from '../src/player-tank.js';
+import { damageForTarget } from '../src/combat-targets.js';
 
 function fixture() {
   const world = createEntityRegistry();
@@ -23,6 +24,22 @@ function fixture() {
   world.control.unitId = 'alpha'; selectControlledSoldier(world, actors[0]);
   return { world, actors, vehicle };
 }
+test('shared 180-health aircraft survive fourteen approved AA hits and lose their pilot only on the fifteenth', () => {
+  for (const team of ['friendly','enemy']) {
+    const world = createEntityRegistry();
+    registerUnit(world, { id:'air', type:'plane', team });
+    const pilot = registerSoldier(world, { id:'pilot', unitId:'air', team, health:100, position:{x:0,y:0,z:0} });
+    const plane = createVehicleEntity(world, { id:'plane', unitId:'air', team, type:'plane', position:{x:0,y:35,z:0} });
+    assert.equal(seatSoldier(world,pilot,plane,plane.seats[0].id),null);
+    for (let shot=1;shot<=15;shot++) {
+      const result=damageVehicleEntity(world,plane,damageForTarget('anti-aircraft-gun','aircraft',100));
+      assert.equal(plane.health,180-shot*12);
+      assert.equal(result.destroyed,shot===15);
+      assert.equal(pilot.health,shot===15?0:100);
+      assert.equal(result.casualties.length,shot===15?1:0);
+    }
+  }
+});
 test('unit, person, weapon, vehicle and seat identities have independent owners', () => {
   const { world, actors, vehicle } = fixture();
   assert.equal(world.units.size, 2); assert.equal(world.soldiers.size, 5); assert.equal(world.weapons.size, 7);

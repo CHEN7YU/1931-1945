@@ -56,21 +56,21 @@ test('sixty individual waiting places form a dense crowd on the dock without mer
   for (const [index, slot] of slots.entries()) {
     assert.ok(slot.x > -73 && slot.x < -64 && slot.z > -90 && slot.z < -70);
     assert.equal(slot.y, .36);
-    for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) > .89);
+    for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) >= .58);
   }
   assert.throws(() => civilianWaitingSlot(NANJING_CIVILIAN_COUNT), RangeError);
-  for (let index = 0; index < 7; index++) {
-    const a = civilianWaitingSlot(index), b = civilianWaitingSlot(index + 1);
-    assert.ok(b.z - a.z > 1.7, 'passing aisles remain open even after the adjacent rows have filled');
-  }
+  assert.ok(new Set(slots.map(slot => Math.round(slot.z * 100))).size > 55, 'waiting people must not form grid rows');
+  const nearest = slots.map((slot, index) => Math.min(...slots.filter((_, other) => other !== index)
+    .map(other => Math.hypot(slot.x - other.x, slot.z - other.z))));
+  assert.ok(nearest.reduce((sum, distance) => sum + distance, 0) / slots.length < .85, 'the crowd must actually be tightly packed');
 });
 
 test('one hundred and eighty civilians overflow the dock onto the eastern approach without sharing body space', () => {
   const slots = Array.from({ length: NANJING_CIVILIAN_COUNT }, (_, index) => civilianWaitingSlot(index));
   assert.equal(slots.length, 180);
-  assert.equal(slots.filter(slot => slot.x > -59).length, 120);
+  assert.ok(slots.filter(slot => slot.x > -59).length >= 70);
   for (let index = 0; index < slots.length; index++) for (const other of slots.slice(index + 1))
-    assert.ok(Math.hypot(slots[index].x - other.x, slots[index].z - other.z) >= .72);
+    assert.ok(Math.hypot(slots[index].x - other.x, slots[index].z - other.z) >= .58);
 });
 test('a moving civilian cannot pass through a waiting person or a solid barrier', () => {
   const first = { position: { x: 0, y: 0, z: 0 }, userData: { civilianId: 0 } };

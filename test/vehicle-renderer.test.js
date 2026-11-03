@@ -100,12 +100,58 @@ test('wreck views remain until registry retirement and cleanup never disposes sh
   registry.vehicles.delete(tank.id);
   renderer.update(registry.vehicles.values());
   assert.equal(model.parent, null);
-  assert.deepEqual(renderer.snapshot, { count: 1, ids: [plane.id] });
+  assert.deepEqual(renderer.snapshot, { count: 1, ids: [plane.id], wrecks: 0, wreckBatches: 0 });
   assert.throws(() => renderer.model(tank.id), /no registered view/);
   renderer.clear();
   assert.equal(scene.children.length, 0);
   assert.equal(disposed, 0);
   for (const resource of resources) resource.removeEventListener('dispose', listener);
+});
+test('grounded aircraft and tanks become privately charred, persist at late times and share static draw batches', () => {
+  const {registry,scene,tank,plane,renderer}=fixture();
+  renderer.update(registry.vehicles.values(),1);
+  const originals=new Map();
+  for(const id of [tank.id,plane.id])renderer.model(id).traverse(object=>{
+    if(object.isMesh)for(const material of Array.isArray(object.material)?object.material:[object.material])
+      originals.set(material,material.color?.clone());
+  });
+  plane.health=0;plane.fall={grounded:false};
+  renderer.update(registry.vehicles.values(),2);
+  assert.equal(renderer.model(plane.id).userData.wreck,undefined,'falling is not a grounded wreck yet');
+  plane.fall.grounded=true;tank.health=0;
+  renderer.update(registry.vehicles.values(),3);
+  const batches=renderer.snapshot.wreckBatches;
+  assert.equal(renderer.snapshot.wrecks,2);
+  for(const id of [tank.id,plane.id]) {
+    const model=renderer.model(id);
+    assert.equal(model.userData.wreck,true);
+    assert.equal(model.visible,false,'the original collider projects through static wreck instances');
+    model.traverse(object=>{
+      if(object.isMesh)for(const material of Array.isArray(object.material)?object.material:[object.material])
+        assert.ok(material.color.r<.05&&material.color.g<.05&&material.color.b<.05);
+    });
+  }
+  for(const [material,color]of originals)assert.deepEqual(material.color,color,'live shared materials cannot be darkened');
+  const next=createVehicleEntity(registry,{id:'tank-2',unitId:'ground',team:'friendly',type:'tank',
+    position:new THREE.Vector3(3,.45,5)});
+  next.health=0;
+  renderer.update(registry.vehicles.values(),3600);
+  assert.equal(renderer.snapshot.wrecks,3);
+  assert.equal(renderer.snapshot.wreckBatches,batches,'another wreck in the same sector reuses geometry/material instances');
+  registry.vehicles.delete(tank.id);
+  renderer.update(registry.vehicles.values(),7200);
+  assert.equal(renderer.snapshot.wrecks,2);
+  assert.ok(scene.children.some(object=>object.userData.wreckBatch&&object.count>0));
+  renderer.clear();
+  assert.equal(scene.children.length,0);
+});
+test('a destroyed player aircraft remains visibly instanced while its dead pilot still owns the cockpit',()=>{
+  const {registry,plane,renderer}=fixture();
+  plane.health=0;plane.fall={grounded:true};
+  renderer.update(registry.vehicles.values(),1,plane.id);
+  assert.equal(renderer.snapshot.wrecks,1);
+  assert.ok(renderer.snapshot.wreckBatches>0,'cockpit exterior hiding cannot suppress permanent wreck creation');
+  renderer.clear();
 });
 test('an actual aircraft hull contact rejects rifle damage and its seated pilot shares aircraft classification', () => {
   const { registry, plane, renderer } = fixture();

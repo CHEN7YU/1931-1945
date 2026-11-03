@@ -86,7 +86,7 @@
         <div><button data-shop-view="grain">① 粮行（F1）</button><button data-shop-view="cloth">② 布庄（F2）</button><button data-shop-view="ground">③ 门前积尘（F3）</button></div>
         <a href="./">返回正常战场大厅</a>
       </aside>
-      <div class="hud-top"><div id="objectives" aria-label="战役目标"></div><div class="battle-time"><small id="timer-label">剩余作战时间</small><span id="timer" aria-label="剩余作战时间">10:00</span></div></div>
+      <div class="hud-top"><div id="objectives" aria-label="战役目标"></div><div class="hud-tools"><div class="battle-time"><small id="timer-label">剩余作战时间</small><span id="timer" aria-label="剩余作战时间">10:00</span></div><button id="pause-button" class="hud-button">Esc 暂停</button></div></div>
       <div class="hud-notices"><small id="hud-notice" role="status" hidden></small><small id="simulation-status" class="simulation-status" role="status" hidden></small></div>
       <div class="objective-banner" hidden><span id="objective-title">A/B/C · 三点争夺</span><small id="objective-help">进入据点 · 双方在圈时冻结进度</small><div class="capture-track"><div id="capture-fill"></div></div></div>
       <div id="encirclement-warning" role="alert" hidden></div>
@@ -130,7 +130,7 @@
       <div id="mortar-objective-sight" hidden aria-label="迫击炮方向与据点测距">
         <div id="mortar-objective-markers" aria-label="据点方位标记"></div>
         <strong id="mortar-target-distance"></strong>
-        <span id="mortar-range-setting"></span>
+        <output id="mortar-range-setting" aria-label="迫击炮当前设置射程" aria-live="polite"></output>
         <small id="mortar-objective-distances"></small>
       </div>
       <div class="hud-bottom">
@@ -151,7 +151,6 @@
           </svg><span>车体 / 炮塔</span>
         </div>
       </div>
-      <button id="pause-button" class="hud-button">Esc 暂停</button>
       <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>
       <div id="scoreboard" hidden aria-label="台儿庄战况"><div class="scoreboard-heading"><div id="scoreboard-objectives" aria-label="据点控制"></div><span id="scoreboard-clock" aria-label="剩余时间">10:00</span><div id="scoreboard-stats"></div></div><div id="squad-score-table" aria-label="各小队按武器分类的本局击杀"></div><p class="scoreboard-hint"><kbd>Tab</kbd> 战况　<kbd>Alt</kbd> 交互 · 班号为游戏分组</p></div>
     </section>
@@ -220,7 +219,7 @@
         <button id="back-menu" class="text-button">返回作战大厅</button>
         <button type="button" class="text-button feedback-entry" data-feedback-open>反馈问题／提出建议 ↗</button>
         </div>
-        <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p>Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；        我方三点合围后清除地面残敌获胜，仅余空中飞机不影响胜利。日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div></details>
+        <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p id="encirclement-controls">Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；我方三点合围后转为东门阻击，歼灭至少2/3地面残敌获胜，最多允许1/3逃脱，仅余空中飞机不影响胜利。第一阶段日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div></details>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>

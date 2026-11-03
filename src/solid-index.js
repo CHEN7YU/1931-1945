@@ -24,7 +24,7 @@ export function createSolidIndex(solids, size = 8) {
   const acceleration = { meshes: 0, triangles: 0 };
   for (const object of solids) {
     object.updateWorldMatrix(true, false);
-    if (object.isInstancedMesh) { dynamic.push(object); continue; }
+    if (object.isInstancedMesh || object.userData.dynamicCollision) { dynamic.push(object); continue; }
     if (accelerateCollisionMesh(object)) {
       acceleration.meshes++;
       acceleration.triangles += (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3;

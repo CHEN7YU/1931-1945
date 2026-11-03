@@ -7,6 +7,8 @@ import { japaneseArmorSpawns } from './chi-ha.js';
 export const ENCIRCLEMENT_RULES = Object.freeze({ initialFriendly: 6, enemySquads: 8, maxFriendly: 10, reinforcements: 2,
   reinforcementTimes: Object.freeze([45, 90]), normalEnemyDelay: BATTLE_RULES.respawnSeconds,
   cutEnemyDelay: 35, supplyObjective: 'A', supplyGuardSquads: 2, defeatGraceSeconds: 90 });
+export const EAST_BREAKOUT = Object.freeze({ x: 56, z: 3, halfWidth: 3.2, exitX: 62,
+  regroupSeconds: 15, announcementInterval: 25, announcements: 3 });
 export const REAR_SPAWNS = Object.freeze([
   Object.freeze({ id: 'china-rear-A', objectiveId: 'A', name: '敌后永久重生点 · 10点方向', x: -82, z: -82 }),
   Object.freeze({ id: 'china-rear-B', objectiveId: 'B', name: '敌后永久重生点 · 12点方向', x: 8, z: -65 }),
@@ -60,7 +62,21 @@ export function encirclementSpawns() {
 
 export function createEncirclement() {
   return { phase: 1, captures: 0, unlocked: [], disabledEnemySpawns: [], winner: null,
-    supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0 };
+    supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0, breakout: null };
+}
+
+function groundRemnants(formations) {
+  return formations.flatMap((unit, unitIndex) => unit.team === 'enemy' && unit.active !== false
+    ? unit.members.flatMap((actor, index) => actor.health > 0 && !(unit.type === 'plane' && actor.vehicleId)
+      ? [{ actor, id: actor.id ?? `${unit.id ?? unitIndex}:${index}` }] : []) : []);
+}
+
+export function recordEncirclementEscape(match, id) {
+  const breakout = match.breakout;
+  if (match.phase !== 2 || match.winner || !breakout || !breakout.initialIds.includes(id) ||
+    breakout.escapedIds.includes(id)) return false;
+  breakout.escapedIds.push(id);
+  return true;
 }
 
 export function encirclementGroundEnemies(formations) {
@@ -118,7 +134,7 @@ export function advanceEncirclementSupport(match, points, formations, now) {
 export function advanceEncirclement(match, points, formations, dt = 0) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Encirclement defeat requires non-negative simulation time');
   if (match.winner) return match.winner;
-  const enemyControlsAll = points.length === 3 && points.every(point => point.owner === 'enemy');
+  const enemyControlsAll = match.phase === 1 && points.length === 3 && points.every(point => point.owner === 'enemy');
   match.enemyControlSeconds = enemyControlsAll
     ? Math.min(ENCIRCLEMENT_RULES.defeatGraceSeconds, match.enemyControlSeconds + dt) : 0;
   if (enemyControlsAll && match.enemyControlSeconds + 1e-8 >= ENCIRCLEMENT_RULES.defeatGraceSeconds) {
@@ -127,11 +143,29 @@ export function advanceEncirclement(match, points, formations, dt = 0) {
   }
   if (match.phase === 1 && points.length === 3 && points.every(point => point.owner === 'friendly')) {
     match.phase = 2;
+    match.enemyControlSeconds = 0;
+    const remnants = groundRemnants(formations);
+    match.breakout = { initialIds: remnants.map(remnant => remnant.id), strength: remnants.length,
+      requiredKills: Math.ceil(remnants.length * 2 / 3), escapeLimit: Math.floor(remnants.length / 3),
+      escapedIds: [], killed: 0, elapsed: 0, stage: 'regroup' };
     for (const unit of formations.filter(unit => unit.team === 'enemy')) {
       unit.respawnEnabled = false; unit.respawnAt = null;
       unit.spawnRetryAt = unit.reinforcementStartedAt = null;
     }
   }
-  if (match.phase === 2 && encirclementGroundEnemies(formations) === 0) match.winner = 'friendly';
+  if (match.phase === 2) {
+    if (!match.breakout) {
+      if (encirclementGroundEnemies(formations) === 0) match.winner = 'friendly';
+      return match.winner;
+    }
+    const breakout = match.breakout;
+    breakout.elapsed += dt;
+    if (breakout.elapsed >= EAST_BREAKOUT.regroupSeconds) breakout.stage = 'breakout';
+    const remaining = groundRemnants(formations).filter(remnant => breakout.initialIds.includes(remnant.id) &&
+      !breakout.escapedIds.includes(remnant.id)).length;
+    breakout.killed = breakout.strength - remaining - breakout.escapedIds.length;
+    if (breakout.escapedIds.length > breakout.escapeLimit) match.winner = 'enemy';
+    else if (breakout.killed >= breakout.requiredKills) match.winner = 'friendly';
+  }
   return match.winner;
 }

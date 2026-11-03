@@ -184,6 +184,11 @@ export function controlledWeapon(registry) {
 
 function soldierWeapon(registry, actor) {
   if (!actor) return null;
+  if (actor.emplacementWeaponId) {
+    const weapon = registry.weapons.get(actor.emplacementWeaponId);
+    if (!weapon || weapon.ownerId !== actor.id) throw new Error('Broken fixed weapon ownership');
+    return weapon;
+  }
   return occupiedVehicle(registry, actor)?.weapon || (actor.groundType === 'mortar' ? registry.units.get(actor.unitId).supportWeapon : actor.rifle);
 }
 

@@ -1,4 +1,4 @@
-export function makeOutskirtsLayout() {
+export function makeOutskirtsLayout({ eastGate = null } = {}) {
   const buildings = [];
   const add = (x, z, near = false) => {
     const index = buildings.length;
@@ -13,7 +13,12 @@ export function makeOutskirtsLayout() {
       for (const x of [-94, -73, -52, -31, -10, 11, 32, 53, 74, 95]) add(x, side * distance);
     }
   }
-  return { buildings, hills: [
+  const sideBuildings = [69, 44, 12, -38, -69].flatMap(z => [
+    { x: -61, z, w: 17, d: 15 },
+    { x: eastGate && z === 12 ? eastGate.x + 12 : 65,
+      z: eastGate && z === 12 ? eastGate.z + 19 : z, w: 16, d: 14 },
+  ]);
+  return { buildings, sideBuildings, hills: [
     { x: -286, z: 278, w: 210, d: 144, height: 30, phase: 0 },
     { x: -215, z: 326, w: 184, d: 128, height: 23, phase: 1.7 },
     { x: -354, z: 220, w: 168, d: 150, height: 27, phase: 3.1 },

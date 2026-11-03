@@ -66,7 +66,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(level, null, { bayonet: true }), pose = createNraRiflePose(root, bones, gun);
-    const groundAt = (x, z) => walkHeightAt(x, z, root.position.y);
+    const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);

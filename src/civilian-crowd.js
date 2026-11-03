@@ -1,4 +1,5 @@
 import { circleBlocked, segmentClear } from './core.js';
+import { obstacleLookup } from './spatial.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
 
@@ -59,18 +60,48 @@ export function civilianWaypointReached(position, route, index, obstacles) {
   return distance <= .12 || distance <= .8 && segmentClear(position, next, .36, obstacles);
 }
 
-export function civilianWaitingSlot(index) {
-  if (!Number.isInteger(index) || index < 0 || index >= NANJING_CIVILIAN_COUNT) throw new RangeError('Invalid civilian waiting slot');
-  if (index >= 60) {
-    const overflow = index - 60, column = Math.floor(overflow / 12), row = overflow % 12;
-    return { x: -50 + column * .95, y: 0, z: -91 + row * 1.75 };
+const waitingSlots = [];
+for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
+  for (let attempt = 0; ; attempt++) {
+    const seed = index * 997 + attempt;
+    const x = index < 60 ? -71.6 + variation(seed, 701) ** 1.8 * 5
+      : -63.8 + variation(seed, 703) * 15;
+    const z = index < 60 ? -86.5 + variation(seed, 709) * 12 : -88 + variation(seed, 709) * 15.6;
+    if (waitingSlots.every(point => Math.hypot(point.x - x, point.z - z) >= .58)) {
+      waitingSlots.push({ x, y: x < -59 ? .36 : 0, z }); break;
+    }
   }
-  const column = Math.floor(index / 8), row = index % 8;
-  return { x: -71.5 + column * .95 + Math.sin(index * 2.71) * .025,
-    y: .36, z: -86.5 + row * 1.75 + Math.cos(index * 1.93) * .025 };
 }
 
-function dockDetour(position, target, peers, civilian, obstacles) {
+export function civilianWaitingSlot(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= NANJING_CIVILIAN_COUNT) throw new RangeError('Invalid civilian waiting slot');
+  return { ...waitingSlots[index] };
+}
+
+export function civilianWaitingDrift(index, now, anchor) {
+  const phase = now * (.35 + variation(index, 719) * .2) + index * 2.17;
+  return { x: anchor.x + Math.sin(phase) * .32, z: anchor.z + Math.sin(phase * .73 + 1.4) * .38 };
+}
+
+export function placeCivilianWaitingSlots(clear) {
+  const placed = [];
+  for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
+    const anchor = civilianWaitingSlot(index), candidates = [anchor];
+    for (const radius of [.6, 1.2, 1.8, 2.4, 3.6, 5]) for (let side = 0; side < 24; side++) {
+      const angle = side * Math.PI / 12 + index * 2.17;
+      const x = anchor.x + Math.cos(angle) * radius, z = anchor.z + Math.sin(angle) * radius;
+      candidates.push({ x, z, y: x < -59 ? .36 : 0 });
+    }
+    const point = candidates.find(point => point.x > -72.5 && point.x < -46 &&
+      point.z > -91 && point.z < -71 &&
+      placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .58) && clear(point));
+    if (!point) throw new Error(`No physically clear dock waiting place for civilian ${index}`);
+    placed.push(point);
+  }
+  return placed;
+}
+
+function dockDetour(position, target, peers, civilian, obstacles, spacing) {
   const step = .25, dock = [position, target].every(value =>
     value.x >= -73 && value.x <= -40 && value.z >= -94 && value.z <= -59);
   const minX = dock ? -73 : Math.floor((Math.min(position.x, target.x) - 6) / step) * step;
@@ -83,10 +114,11 @@ function dockDetour(position, target, peers, civilian, obstacles) {
   const maxX = minX + (width - 1) * step, maxZ = minZ + (depth - 1) * step;
   const localObstacles = obstacles.filter(obstacle => obstacle.minX < maxX + .36 && obstacle.maxX > minX - .36 &&
     obstacle.minZ < maxZ + .36 && obstacle.maxZ > minZ - .36);
+  const lookup = obstacleLookup(localObstacles, .8);
   const blocked = new Uint8Array(count);
   for (let index = 0; index < count; index++) {
     const p = point(index);
-    blocked[index] = Number(circleBlocked(p.x, p.z, .38, localObstacles));
+    blocked[index] = Number(circleBlocked(p.x, p.z, .38, lookup.at(p.x, p.z)));
   }
   for (const other of peers) {
     if (other === civilian) continue;
@@ -94,7 +126,7 @@ function dockDetour(position, target, peers, civilian, obstacles) {
     for (let row = Math.max(0, z - 3); row <= Math.min(depth - 1, z + 3); row++)
       for (let column = Math.max(0, x - 3); column <= Math.min(width - 1, x + 3); column++) {
         const index = row * width + column, p = point(index);
-        if (Math.hypot(p.x - other.position.x, p.z - other.position.z) < .74) blocked[index] = 1;
+        if (Math.hypot(p.x - other.position.x, p.z - other.position.z) < spacing + .02) blocked[index] = 1;
       }
   }
   if (blocked[to]) return null;
@@ -106,12 +138,12 @@ function dockDetour(position, target, peers, civilian, obstacles) {
     const column = from % width + dx, row = Math.floor(from / width) + dz, index = row * width + column;
     if (column < 0 || column >= width || row < 0 || row >= depth || blocked[index]) continue;
     const p = point(index), sx = p.x - position.x, sz = p.z - position.z, lengthSquared = sx * sx + sz * sz;
-    if (lengthSquared > 1 || !segmentClear(position, p, .36, localObstacles)) continue;
+    if (lengthSquared > 1 || !segmentClear(position, p, .36, localObstacles, (x, z) => lookup.at(x, z))) continue;
     const clear = peers.every(other => {
       if (other === civilian) return true;
       const t = lengthSquared > 0 ? Math.max(0, Math.min(1,
         ((other.position.x - position.x) * sx + (other.position.z - position.z) * sz) / lengthSquared)) : 0;
-      return Math.hypot(position.x + t * sx - other.position.x, position.z + t * sz - other.position.z) >= .72;
+      return Math.hypot(position.x + t * sx - other.position.x, position.z + t * sz - other.position.z) >= spacing;
     });
     if (clear) { parents[index] = index; costs[index] = Math.sqrt(lengthSquared) / step; open.push(index); }
   }
@@ -140,9 +172,11 @@ function dockDetour(position, target, peers, civilian, obstacles) {
   return null;
 }
 
-export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles) {
+export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles, canStep = null) {
   if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid civilian movement distance');
   const position = civilian.position, radius = .36, data = civilian.userData;
+  const crowdedDock = position.x < -45 && position.z < -65;
+  const spacing = crowdedDock ? .52 : radius * 2;
   const remaining = Math.hypot(target.x - position.x, target.z - position.z);
   if (!data.crowdTarget || Math.hypot(target.x - data.crowdTarget.x, target.z - data.crowdTarget.z) > .01) {
     data.crowdTarget = { x: target.x, z: target.z };
@@ -160,8 +194,8 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
       data.crowdPathStalled = 0;
     } else data.crowdPathStalled = (data.crowdPathStalled ?? 0) + distance;
   }
-  if ((data.crowdStalled > 1.5 && !data.crowdPath?.length) || data.crowdPathStalled > 1.5) {
-    data.crowdPath = dockDetour(position, target, peers, civilian, navigationObstacles);
+  if (!canStep && ((data.crowdStalled > 1.5 && !data.crowdPath?.length) || data.crowdPathStalled > 1.5)) {
+    data.crowdPath = dockDetour(position, target, peers, civilian, navigationObstacles, spacing);
     data.crowdStalled = 0;
     data.crowdPathStalled = 0;
   }
@@ -179,8 +213,8 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
       preference * 1.8, -preference * 1.8, preference * 2.4, -preference * 2.4, Math.PI]
       .map(angle => ({ x: position.x + Math.cos(heading + angle) * stride,
         z: position.z + Math.sin(heading + angle) * stride }))
-      .find(point => !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
-        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= radius * 2));
+      .find(point => (!canStep || canStep(position, point)) && !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
+        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= spacing));
     if (!next) break;
     position.x = next.x; position.z = next.z;
     moved += stride;

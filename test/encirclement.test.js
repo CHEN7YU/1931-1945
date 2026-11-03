@@ -212,8 +212,8 @@ test('three simultaneous owned points immediately and irreversibly stop all enem
   assert.deepEqual(captureEncirclement(match, roster, 'A', 100), { spawn: null, added: [], withdrawn: null, disabled: [] });
 });
 
-test('three enemy-owned objectives grant exactly 90 seconds for a counterattack in either phase', () => {
-  for (const phase of [1, 2]) {
+test('three enemy-owned objectives grant exactly 90 seconds for a counterattack in phase one', () => {
+  for (const phase of [1]) {
     const { roster, match, points } = setup();
     match.phase = phase;
     points[0].owner = points[1].owner = 'enemy';
@@ -229,29 +229,28 @@ test('three enemy-owned objectives grant exactly 90 seconds for a counterattack 
   }
 });
 
-test('expired enemy-control grace takes priority over cleanup victory in the same step', () => {
+test('expired phase-one enemy-control grace cannot turn into victory because enemies died', () => {
   const { roster, match, points } = setup();
-  match.phase = 2;
   for (const point of points) point.owner = 'enemy';
   for (const unit of roster) unit.members.forEach(actor => { actor.health = 0; });
   assert.equal(advanceEncirclement(match, points, roster, 90), 'enemy');
 });
 
-test('victory requires the last living enemy including crew and has no time or score shortcut', () => {
+test('phase-two victory uses the two-thirds threshold including ground crew rather than the old last-enemy rule', () => {
   const { roster, match, points } = setup();
   for (const point of points) point.owner = 'friendly';
   advanceEncirclement(match, points, roster);
   const crew = roster.find(unit => unit.team === 'enemy' && unit.type === 'tank').members[0];
   for (const unit of roster.filter(unit => unit.team === 'enemy')) unit.members.forEach(actor => { actor.health = 0; });
   crew.health = 1;
-  assert.equal(advanceEncirclement(match, points, roster), null);
+  assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   crew.health = 0;
   assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   const fresh = setup();
   for (const unit of fresh.roster.filter(unit => unit.team === 'enemy')) unit.members.forEach(actor => { actor.health = 0; });
   assert.equal(advanceEncirclement(fresh.match, fresh.points, fresh.roster), null, 'phase one still needs three points');
   assert.deepEqual(createEncirclement(), { phase: 1, captures: 0, unlocked: [], disabledEnemySpawns: [], winner: null,
-    supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0 });
+    supplyInterrupted: false, reinforcementWaves: 0, enemyControlSeconds: 0, breakout: null });
 });
 
 test('neutralizing or recapturing any objective clears grace, and a fresh enemy takeover starts from zero', () => {

@@ -1,11 +1,11 @@
 const streets = [
-  { id: 'gate-high-street', width: 6, points: [[0, -108], [2, -86], [-2, -64], [2, -41], [0, -12]] },
-  { id: 'dock-approach', width: 4, points: [[-10, -16], [-25, -33], [-38, -47], [-48, -60], [-56, -73], [-56, -92]] },
-  { id: 'cross-market-lane', width: 3.2, points: [[-68, -60], [-48, -60], [-29, -63], [-12, -59],
+  { id: 'gate-high-street', width: 4.8, points: [[0, -108], [2, -86], [-2, -64], [2, -41], [0, -12]] },
+  { id: 'dock-approach', width: 3, points: [[-10, -16], [-25, -33], [-38, -47], [-48, -60], [-56, -73], [-56, -92]] },
+  { id: 'cross-market-lane', width: 2.6, points: [[-68, -60], [-48, -60], [-29, -63], [-12, -59],
     [6, -58], [25, -62], [44, -59], [66, -64], [103, -60]] },
-  { id: 'east-neighborhood-lane', width: 3.6, points: [[18, -12], [27, -31], [38, -44], [43, -60],
+  { id: 'east-neighborhood-lane', width: 3.2, points: [[18, -12], [27, -31], [38, -44], [43, -60],
     [53, -78], [61, -104]] },
-  { id: 'north-bank-lane', width: 8, points: [[-68, -96], [-40, -94], [-19, -98], [0, -94],
+  { id: 'north-bank-lane', width: 5.5, points: [[-68, -96], [-40, -94], [-19, -98], [0, -94],
     [26, -98], [51, -93], [79, -97], [104, -93]] },
 ];
 
@@ -36,6 +36,7 @@ export function cityStreetIntersectsLot(lot, street, clearance = 0) {
 export function createNanjingCityLayout() {
   const lots = [];
   const assaultSpawns = NANJING_SPAWNS.filter(spawn => NANJING_DOCK_ASSAULT_SPAWNS.includes(spawn.id));
+  const reserves = NANJING_SPAWNS.filter(spawn => spawn.id.startsWith('nanjing-reserve-'));
   let seed = 19371212;
   const random = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -50,14 +51,19 @@ export function createNanjingCityLayout() {
     if (z !== 29 || x !== -9) lots.push([x, z, 6.5, 6, 1]);
   }
   for (let attempt = 0; attempt < 120000; attempt++) {
-    const x = -67 + random() * 168, z = -101 + random() * 87;
-    const width = 4.4 + random() * 2.6, depth = 4.4 + random() * 2.6;
+    const infill = attempt >= 20000;
+    const x = -67 + random() * 168, z = -101 + random() * 111;
+    const width = infill ? 3.6 + random() * 2 : 6 + random() * 3;
+    const depth = infill ? 3.6 + random() * 2 : 6 + random() * 3;
     const lot = [x, z, width, depth];
-    if (x - width / 2 < -39 && z - depth / 2 < -64 && z + depth / 2 > -97 ||
+    if (x - width / 2 < -45 && z - depth / 2 < -65 && z + depth / 2 > -92 ||
+      z + depth / 2 > -14 && x - width / 2 < 30 && x + width / 2 > -34 ||
       x - width / 2 < -70 || x + width / 2 > 104 ||
       z - depth / 2 < -105 ||
       assaultSpawns.some(spawn => Math.abs(x - spawn.x) < width / 2 + 5 &&
         Math.abs(z - spawn.z) < depth / 2 + 5) ||
+      reserves.some(spawn => Math.abs(x - spawn.x) < width / 2 + 4 &&
+        Math.abs(z - spawn.z) < depth / 2 + 4) ||
       Math.abs(x - 90) < width / 2 + 4 && Math.abs(z + 93) < depth / 2 + 4 ||
       streets.some(street => cityStreetIntersectsLot(lot, street, .65)) ||
       lots.some(([lx, lz, w, d]) => Math.abs(x - lx) < (width + w) / 2 + 1.8 &&

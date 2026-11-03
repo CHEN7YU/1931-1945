@@ -15,7 +15,7 @@ try {
   await page.route('**/__movement-casualties', route => route.fulfill({ contentType: 'text/html',
     body: '<!doctype html><html><head><link rel="icon" href="data:,"></head><body style="margin:0"></body></html>' }));
   await page.goto(new URL('/__movement-casualties', process.env.GAME_URL ?? 'http://127.0.0.1:5196/').href);
-  result = await page.evaluate(async () => {
+  result = await page.evaluate(async casualtiesOnly => {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
     const { loadIjaCharacter } = await import('/src/ija-character.js');
@@ -82,7 +82,7 @@ try {
     }
     for (const [team, factory] of Object.entries(factories)) {
       const displayed = [], entries = [];
-      for (const [column, [mode, speed, aim]] of [['sprint', 4.8, false], ['jog', 3.15, false], ['aim', 1.5, true]].entries()) {
+      if (!casualtiesOnly) for (const [column, [mode, speed, aim]] of [['sprint', 4.8, false], ['jog', 3.15, false], ['aim', 1.5, true]].entries()) {
         const view = factory.createView(), actor = actorFor(team, factory, `${team}-${mode}`);
         actor.locomotion = { speed, mode }; actor.aimWalking = aim; actor.rifleReady = aim;
         for (let frame = 0; frame < 150; frame++) { actor.position.z -= speed / 60; advanceNraMotion(actor, 1 / 60); }
@@ -101,10 +101,40 @@ try {
         actor.nativeMotion.gaitCycles = .45; view.update(actor, 0, null);
         scene.add(view.root); displayed.push(view.root); entries.push({ actor, view });
       }
-      camera.position.set(4.5, 2.3, -5.3); camera.lookAt(0, .9, 0);
-      image(`${team}-gaits.png`, `${team}: charge / short quick steps / aimed slow movement — pose inspection, not gameplay`);
-      await recordMovement(team, entries);
+      if (entries.length) {
+        camera.position.set(4.5, 2.3, -5.3); camera.lookAt(0, .9, 0);
+        image(`${team}-gaits.png`, `${team}: charge / short quick steps / aimed slow movement — pose inspection, not gameplay`);
+        await recordMovement(team, entries);
+      }
       displayed.forEach(root => scene.remove(root));
+      const falling=[];
+      for(const [index,stance]of ['standing','running','kneeling'].entries()) {
+        const view=factory.createView(),actor=actorFor(team,factory,`${team}-fall-${stance}`);
+        actor.position.x=(index-1)*2.1;
+        if(stance==='running') {
+          actor.nativeMotion.speed=4.8;actor.nativeMotion.weight=1;
+          actor.nativeMotion.gaitCharge=1;actor.locomotion={speed:4.8,mode:'sprint'};
+        }
+        if(stance==='kneeling')actor.nativeMotion.posture.kneeling=1;
+        syncNativeAimGoal(actor);actor.health=0;
+        actor.casualty=createCasualtyState(actor,0,sampleNraMotion(actor),{variant:[0,2,3][index]});
+        view.bind(actor.id);scene.add(view.root);falling.push({actor,view});
+      }
+      camera.position.set(5,3.8,-7);camera.lookAt(0,.65,0);
+      const stream=renderer.domElement.captureStream(30),chunks=[];
+      const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
+      recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+      const stopped=new Promise(resolve=>{recorder.onstop=resolve;});recorder.start();
+      for(let frame=0;frame<60;frame++) {
+        for(const entry of falling)entry.view.update(entry.actor,frame/30,null);
+        renderer.render(scene,camera);
+        await new Promise(resolve=>setTimeout(resolve,33));
+      }
+      recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
+      const video=await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);
+        reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));});
+      videos.push({name:`${team}-collapse.webm`,data:video});
+      falling.forEach(entry=>scene.remove(entry.view.root));
       for (const level of factory.createFarView ? ['near', 'far'] : ['near']) {
         const view = level === 'far' ? factory.createFarView() : factory.createView();
         const gallery = [];
@@ -158,13 +188,44 @@ try {
       mesh.geometry.computeBoundingBox();
       for (let index = 0; index < mesh.count; index++) {
         mesh.getMatrixAt(index, matrix); world.multiplyMatrices(mesh.matrixWorld, matrix);
-        bounds.union(mesh.geometry.boundingBox.clone().applyMatrix4(world));
+        if(mesh.geometry.morphAttributes.position?.length) {
+          const probe=new T.Mesh(mesh.geometry,mesh.material);
+          mesh.getMorphAt(index,probe);
+          for(let vertex=0;vertex<mesh.geometry.attributes.position.count;vertex++)
+            bounds.expandByPoint(probe.getVertexPosition(vertex,new T.Vector3()).applyMatrix4(world));
+        } else bounds.union(mesh.geometry.boundingBox.clone().applyMatrix4(world));
       }
     });
     if (force.snapshot.far !== 1 || bounds.max.y >= 1) throw new Error(`Constrained distant casualty is standing: ${bounds.max.y}`);
     image('enemy-constrained-far.png', 'Wall-constrained corpse uses a collapsed death bank, not a living idle pose — LOD diagnostic');
-    return { gaits, casualties, images, videos };
-  });
+    camera.position.set(0,1.4,-45);camera.lookAt(0,.5,0);
+    force.update([actor],actor.casualty.duration*.375,null,'high');
+    const body=force.root.children.find(mesh=>mesh.isInstancedMesh&&mesh.count>0&&mesh.geometry.morphAttributes.position?.length);
+    if(!body)throw Error('Missing actual distant corpse morph instance');
+    const probe=new T.Mesh(body.geometry,body.material);body.getMorphAt(0,probe);
+    const weights=[...probe.morphTargetInfluences];
+    if(weights[0]!==.5||weights[1]!==.5)throw Error('Distant collapse must interpolate between skeletal samples');
+    renderer.render(scene,camera);
+    image('enemy-mid-collapse-far.png','Continuous instanced skeletal collapse between native pose samples');
+    const texture=[...body.morphTexture.image.data];
+    force.update([actor],actor.casualty.duration*.375,null,'high');
+    if(texture.some((value,index)=>value!==body.morphTexture.image.data[index]))throw Error('Paused morph weights changed');
+    const elevated=[];
+    for(const [team,load]of [['friendly',loadNraCharacter],['enemy',loadIjaCharacter]]) {
+      const factory=await load((_x,_z,referenceY)=>referenceY+.24>=8.58?8.58:0);
+      const actor=actorFor(team,factory,`${team}-elevated-collapse`),view=factory.createView();
+      actor.position.y=8.58;actor.nativeMotion.speed=4.8;actor.nativeMotion.weight=1;
+      actor.health=0;actor.casualty=createCasualtyState(actor,0,sampleNraMotion(actor),{variant:0,retainGun:false});
+      view.bind(actor.id);
+      for(let frame=0;frame<=30;frame++) {
+        view.update(actor,actor.casualty.duration*frame/30,null);
+        const anatomy=view.anatomy;
+        if(anatomy.Hips.y<8.56||anatomy.Head.y<8.56)throw Error('Buckling corpse fell through the occupied elevated floor');
+      }
+      elevated.push(team);
+    }
+    return { gaits, casualties, images, videos,elevated,farTransition:{weights} };
+  },process.env.CASUALTIES_ONLY==='1');
   for (const image of result.images) await writeFile(join(directory, image.name), Buffer.from(image.data.split(',')[1], 'base64'));
   for (const video of result.videos) await writeFile(join(directory, video.name), Buffer.from(video.data.split(',')[1], 'base64'));
   for (const sample of result.gaits) {

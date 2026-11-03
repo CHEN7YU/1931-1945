@@ -1,11 +1,13 @@
 import { RIFLE } from './rifle-action.js';
 
 export const RIFLE_HIT_DAMAGE = Object.freeze({ head: 100, torso: 100, limb: 40 });
+export const ANTI_AIRCRAFT_AIRFRAME_DAMAGE = 12;
 const kinds = new Set(['person', 'exposed-crew', 'closed-armor', 'aircraft']);
-const weapons = new Set(['rifle', 'bayonet', 'dadao', 'grenade', 'explosive-pack', 'explosion', 'cannon', 'aircraft-gun', 'collision', 'boundary', 'fall']);
+const weapons = new Set(['rifle', 'bayonet', 'dadao', 'grenade', 'explosive-pack', 'explosion', 'cannon', 'aircraft-gun', 'anti-aircraft-gun', 'collision', 'boundary', 'fall']);
 
 export function canWeaponDamageTarget(weapon, kind) {
   if (!weapons.has(weapon) || !kinds.has(kind)) throw new RangeError(`Unknown weapon/target classification: ${weapon}/${kind}`);
+  if (weapon === 'anti-aircraft-gun') return kind !== 'closed-armor';
   return !['rifle', 'bayonet', 'dadao', 'grenade'].includes(weapon) || (kind !== 'closed-armor' && kind !== 'aircraft');
 }
 
@@ -17,6 +19,7 @@ export function canRiflemanTrackTarget(kind) {
 export function damageForTarget(weapon, kind, damage, hitZone = null) {
   if (!Number.isFinite(damage) || damage < 0) throw new RangeError('Damage must be non-negative and finite');
   if (!canWeaponDamageTarget(weapon, kind)) return 0;
+  if (weapon === 'anti-aircraft-gun' && kind === 'aircraft') return Math.min(damage, ANTI_AIRCRAFT_AIRFRAME_DAMAGE);
   if (weapon !== 'rifle') return damage;
   if (!Object.hasOwn(RIFLE_HIT_DAMAGE, hitZone)) throw new RangeError('Rifle person damage requires a confirmed anatomical hit zone');
   return Math.min(damage, RIFLE_HIT_DAMAGE[hitZone]);

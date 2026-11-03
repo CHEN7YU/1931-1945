@@ -90,7 +90,7 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
   };
 }
 
-export function mergeNraPose(parts, atlas) {
+export function mergeNraPose(parts, atlas, { weld = true } = {}) {
   const geometries = [];
   for (const { geometry, material, skin = false } of parts) {
     const expanded = geometry.index ? geometry.toNonIndexed() : geometry.clone();
@@ -104,6 +104,10 @@ export function mergeNraPose(parts, atlas) {
   const merged = mergeGeometries(geometries, false);
   for (const geometry of geometries) geometry.dispose();
   if (!merged) throw new Error('Distant uniform pose could not be merged');
+  if (!weld) {
+    merged.computeBoundingBox(); merged.computeBoundingSphere();
+    return merged;
+  }
   // Match every attribute bit, not rounded positions: preserve seams, normals and uniform UVs.
   const attributes = Object.entries(merged.attributes).map(([name, attribute]) => {
     if (!(attribute.array instanceof Float32Array)) throw new TypeError(`Unexpected distant pose attribute: ${name}`);

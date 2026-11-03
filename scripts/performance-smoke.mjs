@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { validatePerformanceBatch } from '../src/performance-schema.js';
+import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -16,6 +17,11 @@ await page.route('**/api/performance', async route => {
   else await route.fulfill({ status: 201, json: { id: body.id, saved: true } });
 });
 try {
+  const preferences = defaultPreferences();
+  preferences.quality.preset = 'low';
+  for (const effect of Object.keys(preferences.quality.effects)) preferences.quality.effects[effect] = false;
+  await page.addInitScript(({ key, settings }) => localStorage.setItem(key,
+    JSON.stringify({ version: 1, settings })), { key: PREFERENCES_KEY, settings: preferences });
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
   if (map === 'nanjing') url.searchParams.set('campaign', map);
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 60000 });

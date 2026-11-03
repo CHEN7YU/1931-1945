@@ -102,7 +102,10 @@ test('every residential door can be focused, opened, entered and closed using th
     scene.updateMatrixWorld(true);
     ray.set(new THREE.Vector3(door.x + nx, 1.2, door.z + nz), new THREE.Vector3(-nx, 0, -nz));
     ray.far = 2;
-    assert.equal(ray.intersectObjects(world.solids, false).length, 0, 'open portal has no hidden solid face');
+    const hits = ray.intersectObjects(world.solids, false);
+    assert.equal(hits.length, 0, `${home.id}: open portal has no hidden solid face; ` +
+      JSON.stringify(hits.map(hit => ({ feature: hit.object.userData.nanjingFeature,
+        house: hit.object.userData.residentialId }))));
     for (let step = 0; step < 20; step++) world.moveInfantry(position, -nx * .1, -nz * .1, .42);
     assert.ok((position.x - door.x) * nx + (position.z - door.z) * nz < -.8, `player enters ${home.id}`);
     assert.equal(circleBlocked(home.x, home.z, .42, world.obstacles, 0), false);
@@ -302,23 +305,16 @@ test('both rivers have varying shoreline bends while keeping bridge and dock ope
   assert.equal(circleBlocked(NANJING_DOCK.x, NANJING_DOCK.z, .42, world.obstacles), false);
 });
 
-test('friendly bridge deck sandbags stop southbound fire without closing the central tank lane', () => {
+test('bridge deck has no obstructing sandbags or stale cover targets while shore defenses remain', () => {
   const scene = new THREE.Scene();
   const world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
-  assert.equal(world.landmarks.bridgeDeckDefenses.length, 2);
-  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'bridge-deck-sandbag-collision').length, 12);
-  const bridge = world.landmarks.bridges[0], ray = new THREE.Raycaster();
-  for (const defense of world.landmarks.bridgeDeckDefenses) {
-    assert.ok(defense.z < bridge.z, 'defenses belong on the friendly northern half');
-    const cover = world.town.covers.find(point => point.id === `${defense.id}-cover`);
-    assert.equal(circleBlocked(cover.x, cover.z, .42, world.obstacles, 0), false);
-    ray.set(new THREE.Vector3(cover.x, .7, 48), new THREE.Vector3(0, 0, -1));
-    ray.far = 48 - cover.z;
-    const hit = ray.intersectObjects(world.solids, false)[0];
-    assert.equal(hit?.object.userData.nanjingFeature, 'bridge-deck-sandbag-collision',
-      'sandbags must actually protect the north-side firing position');
-  }
+  assert.equal(world.landmarks.bridgeDeckDefenses.length, 0);
+  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature?.startsWith('bridge-deck-sandbag')).length, 0);
+  assert.equal(world.town.covers.some(cover => cover.id.startsWith('bridge-deck-')), false);
+  assert.ok(world.landmarks.forwardDefenses.some(defense => defense.id === 'bridge-west'));
+  assert.ok(world.landmarks.forwardDefenses.some(defense => defense.id === 'bridge-east'));
+  const bridge = world.landmarks.bridges[0];
   assert.equal(segmentClear({ x: bridge.x, z: 32 }, { x: bridge.x, z: 50 }, 3.1, world.obstacles), true,
     'full tank radius must fit the central bridge lane');
 });
@@ -454,33 +450,39 @@ test('Nanjing battlefield provides its own gate, river crossings, dock, ferries 
   assert.deepEqual(world.landmarks.rivers.map(river => river.name), ['秦淮河南段', '长江']);
   assert.equal(world.landmarks.rivers.find(river => river.id === 'qinhuai-south').z, 52);
   assert.equal(world.landmarks.rivers.find(river => river.id === 'yangtze-west').x, -84);
+  assert.equal(world.impactHeight(-50,52),-1.9,'aircraft must contact the actual river level, not invisible ground above it');
+  assert.ok(Math.abs(world.impactHeight(-84,0)+.28)<1e-8);
+  assert.equal(world.impactHeight(0,-50),world.groundHeight(0,-50));
   assert.equal(world.landmarks.primaryAssaultRoute, 'yuhua-road-bridge-through-jubaomen');
   assert.equal(world.outskirts.buildings.length, 0);
   assert.equal(world.doorSystem.doors.length, world.landmarks.residentialBuildings.length);
   const houses = world.landmarks.residentialBuildings;
   assert.deepEqual([...new Set(houses.map(house => house.floors))].sort(), [1, 2, 3, 4]);
-  assert.ok(houses.every(house => house.width <= 7 && house.depth <= 7),
-    'residential footprints must not become oversized warehouses');
+  assert.ok(houses.every(house => house.width <= 9 && house.depth <= 9),
+    'denser residential parcels stay within the nine-metre house limit');
   assert.ok(houses.filter(house => house.z < -60 || house.z > 65).every(house => house.floors === 1),
     'distant buildings should be small single-storey homes');
   assert.ok(!world.landmarks.rivers.some(river => river.id === 'qinhuai-north'),
     'the city district must have no internal river');
-  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'residential-roof-core').length, houses.length);
+  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'residential-roof-core').length,
+    houses.length + houses.filter(house => house.damaged).length);
   const roofs = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'residential-tile-roof');
   assert.equal(roofs.length, houses.length);
   assert.ok(roofs.every(roof => roof.userData.roofStyle === 'taierzhuang-curved-tiles'));
   for (const house of houses) {
     const w = house.facing % 2 ? house.depth : house.width;
     const d = house.facing % 2 ? house.width : house.depth;
-    const a = housePoint(house, -w / 2, -d / 2), b = housePoint(house, house.damaged ? 0 : w / 2, d / 2);
-    const box = {
-      minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x),
-      minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z),
-    };
-    assert.ok(world.obstacles.some(obstacle => Math.abs(obstacle.minX - box.minX) < 1e-8 &&
-      Math.abs(obstacle.maxX - box.maxX) < 1e-8 && Math.abs(obstacle.minZ - box.minZ) < 1e-8 &&
-      Math.abs(obstacle.maxZ - box.maxZ) < 1e-8 && obstacle.height === house.height),
-    'the masonry below each tiled roof must remain collision solid');
+    for (const [front, back] of house.damaged ? [[-d / 2, -d / 2 + .24], [d / 2 - .24, d / 2]] : [[-d / 2, d / 2]]) {
+      const a = housePoint(house, -w / 2, front), b = housePoint(house, house.damaged ? 0 : w / 2, back);
+      const box = {
+        minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x),
+        minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z),
+      };
+      assert.ok(world.obstacles.some(obstacle => Math.abs(obstacle.minX - box.minX) < 1e-8 &&
+        Math.abs(obstacle.maxX - box.maxX) < 1e-8 && Math.abs(obstacle.minZ - box.minZ) < 1e-8 &&
+        Math.abs(obstacle.maxZ - box.maxZ) < 1e-8 && obstacle.height === house.height),
+      'remaining roof masonry must match its actual supported volume');
+    }
   }
   const rubble = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'gate-rubble');
   assert.equal(rubble.length, 22);

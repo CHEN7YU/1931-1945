@@ -6,7 +6,7 @@ import { isNraSkin } from './nra-appearance.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
-import { CORPSE_RULES, createCasualtyState, corpseFootprint } from './casualties.js';
+import { CORPSE_RULES, CASUALTY_POSE_FRAMES, createCasualtyState, corpseFootprint, casualtyProgress } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
 import { createDistantPoseGeometry, createDistantWeaponGeometry, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
 import { createDadaoState } from './dadao.js';
@@ -54,7 +54,8 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const poseLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
   const weaponLod = { preparationMs: 0, sourceTriangles: 0, triangles: 0, sourceBytes: 0, bytes: 0, maxError: 0 };
   const geometryBytes = geometry => (geometry.index?.array.byteLength ?? 0) + Object.values(geometry.attributes)
-    .filter(attribute => !attribute.isInstancedBufferAttribute).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
+    .filter(attribute => !attribute.isInstancedBufferAttribute).reduce((sum, attribute) => sum + attribute.array.byteLength, 0) +
+    Object.values(geometry.morphAttributes).flat().reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
   function weaponGroupFor(key, coarse = false) {
     const groupKey = coarse ? `${key}:coarse` : key;
     if (!weaponGroups.has(groupKey) && coarse) {
@@ -120,14 +121,17 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
   const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : phases + 10;
   const turnStart = meleeStart + meleeBanks, turnBanks = profile.footCycleGait ? phases * 2 : 0;
   const closeStart = turnStart + turnBanks, closeBanks = team === 'enemy' ? 1 + postures.length : 0;
-  const livingBanks = closeStart + closeBanks, deathBanks = profile.footCycleGait ? CORPSE_RULES.variants * 2 : 0;
+  const livingBanks = closeStart + closeBanks, deathKinds = CORPSE_RULES.variants * 2;
+  const deathStances = ['standing', ...['kneeling', 'prone'].filter(stance => postures.includes(stance))];
+  const deathBanks = profile.footCycleGait ? deathKinds * deathStances.length : 0;
   for (let bank = 0; bank < livingBanks + deathBanks; bank++) {
     const dead = bank >= livingBanks;
+    const deathStance = dead ? deathStances[Math.floor((bank - livingBanks) / deathKinds)] : null;
     const closing = !dead && bank >= closeStart;
     const turning = !dead && !closing && bank >= turnStart;
     const melee = !dead && !closing && !turning && bank >= meleeStart;
     const firingBank = !dead && !closing && !melee && !turning && bank >= baseBanks;
-    const posture = closing ? postures[bank - closeStart - 1] ?? null
+    const posture = dead && deathStance !== 'standing' ? deathStance : closing ? postures[bank - closeStart - 1] ?? null
       : dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = turning ? 'idle' : melee ? bank < meleeStart + phases ? 'charge' : 'idle'
       : bank === 0 || posture || firingBank || closing || dead ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
@@ -160,30 +164,44 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     syncNativeAimGoal(sampleActor);
     sampleActor.health = dead ? 0 : 100;
     sampleActor.casualty = dead ? createCasualtyState(sampleActor, 0, sampleNraMotion(sampleActor),
-      { variant: Math.floor((bank - livingBanks) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
-    bankTemplate.update(sampleActor, dead ? 2 : 0, null);
-    for (const attachment of optionalAttachments) attachment.mesh.visible = false;
-    if (bankTemplate.issue) throw new Error(`Distant ${uniform} pose ${bank} (${mode}) is unreachable: ${bankTemplate.issue}`);
-    const baked = [], casualtyWeapons = [];
-    let gunMatrix = null;
-    bankTemplate.root.traverseVisible(mesh => {
-      if (mesh.userData.personalWeapon) gunMatrix = mesh.matrixWorld.clone();
-    });
-    bankTemplate.root.traverseVisible(mesh => {
-      if (!mesh.isMesh) return;
-      for (let parent = mesh.parent; parent; parent = parent.parent) if (parent.userData.personalWeapon) {
-        if (dead) casualtyWeapons.push(mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
-        return;
-      }
-      baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
-    });
-    if (!gunMatrix) throw new Error('Distant uniform pose lacks its owned weapon transform');
-    const instance = new THREE.InstancedMesh(mergeNraPose(baked, atlas), atlas.material, capacity);
+      { variant: Math.floor(((bank - livingBanks) % deathKinds) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
+    const poses = [], casualtyWeapons = [];
+    for (let frame = 0; frame < (dead ? CASUALTY_POSE_FRAMES : 1); frame++) {
+      bankTemplate.update(sampleActor, dead ? frame / (CASUALTY_POSE_FRAMES - 1) * sampleActor.casualty.duration : 0, null);
+      for (const attachment of optionalAttachments) attachment.mesh.visible = false;
+      if (bankTemplate.issue) throw new Error(`Distant ${uniform} pose ${bank} (${mode}) is unreachable: ${bankTemplate.issue}`);
+      const baked = [];
+      let gunMatrix = null;
+      bankTemplate.root.traverseVisible(mesh => {
+        if (mesh.userData.personalWeapon) gunMatrix = mesh.matrixWorld.clone();
+      });
+      bankTemplate.root.traverseVisible(mesh => {
+        if (!mesh.isMesh) return;
+        for (let parent = mesh.parent; parent; parent = parent.parent) if (parent.userData.personalWeapon) {
+          if (dead) casualtyWeapons.push(mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+          return;
+        }
+        baked.push({ geometry: bakeNraGeometry(mesh), material: mesh.material, skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
+      });
+      if (!gunMatrix) throw new Error('Distant uniform pose lacks its owned weapon transform');
+      const geometry = mergeNraPose(baked, atlas, { weld: !dead });
+      for (const part of baked) part.geometry.dispose();
+      poses.push({ geometry, gunMatrix });
+    }
+    const geometry = poses[0].geometry, gunMatrix = poses.at(-1).gunMatrix;
+    if (dead) {
+      for (const pose of poses) if (pose.geometry.attributes.position.count !== geometry.attributes.position.count)
+        throw new Error('Casualty morph poses must preserve their source vertex topology');
+      geometry.morphAttributes.position = poses.slice(1).map(pose => pose.geometry.attributes.position);
+      geometry.morphAttributes.normal = poses.slice(1).map(pose => pose.geometry.attributes.normal);
+      geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+    }
+    const instance = new THREE.InstancedMesh(geometry, atlas.material, capacity);
+    if (dead) instance.setMorphAt(0, { morphTargetInfluences: Array(CASUALTY_POSE_FRAMES - 1).fill(0) });
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
       .setUsage(THREE.DynamicDrawUsage));
     if (atlas.hasUniformVariants) instance.geometry.setAttribute('nraUniformVariant',
       new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage));
-    for (const part of baked) part.geometry.dispose();
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
     root.add(instance);
@@ -199,15 +217,39 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     });
     instance.geometry.computeBoundingBox();
     const bounds = instance.geometry.boundingBox.clone();
-    const footprint = dead ? [...corpseFootprint(instance.geometry)] : null;
+    const footprint = dead ? poses.flatMap(pose => corpseFootprint(pose.geometry)) : null;
     for (const geometry of casualtyWeapons) {
       geometry.computeBoundingBox(); bounds.union(geometry.boundingBox);
       footprint.push(...corpseFootprint(geometry)); geometry.dispose();
     }
-    banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, bounds,
+    banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, deathStance, bounds,
+      gunFrames: poses.map(pose => pose.gunMatrix),
       footprint: footprint ? Object.freeze(footprint) : null });
+    for (const pose of poses.slice(1)) pose.geometry.dispose();
   }
   bankTemplate.bind(null);
+  const casualtyShapes = Array.from({ length: deathBanks ? deathKinds : 0 }, (_, kind) => {
+    const selected = deathStances.map((_, stance) => banks[livingBanks + stance * deathKinds + kind]);
+    const bounds = selected[0].bounds.clone(), footprint = new Map();
+    for (const bank of selected) {
+      bounds.union(bank.bounds);
+      for (const point of bank.footprint) footprint.set(point.join(','), point);
+    }
+    return { bounds, footprint: Object.freeze([...footprint.values()]) };
+  });
+  const morphControl = { morphTargetInfluences: Array(CASUALTY_POSE_FRAMES - 1).fill(0) };
+  const gunBlend = new THREE.Matrix4(), gunPositionA = new THREE.Vector3(), gunPositionB = new THREE.Vector3();
+  const gunScaleA = new THREE.Vector3(), gunScaleB = new THREE.Vector3();
+  const gunRotationA = new THREE.Quaternion(), gunRotationB = new THREE.Quaternion();
+  const sampledGun = (bank, elapsed) => {
+    if (!bank.deathStance) return bank.gunMatrix;
+    const phase = elapsed * (CASUALTY_POSE_FRAMES - 1);
+    const frame = Math.min(CASUALTY_POSE_FRAMES - 2, Math.floor(phase)), blend = phase - frame;
+    bank.gunFrames[frame].decompose(gunPositionA, gunRotationA, gunScaleA);
+    bank.gunFrames[frame + 1].decompose(gunPositionB, gunRotationB, gunScaleB);
+    return gunBlend.compose(gunPositionA.lerp(gunPositionB, blend),
+      gunRotationA.slerp(gunRotationB, blend), gunScaleA.lerp(gunScaleB, blend));
+  };
   let summary = { assigned: 0, near: 0, far: 0, coarse: 0, hidden: 0, culled: 0, batches: 0 };
   let focused = null, members = [];
   function slotFor(actor, budget) {
@@ -226,10 +268,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
     root, motionProfile: profile, excludedIds,
     get appearanceResources() { return template.appearanceResources; },
     casualtyBounds(variant, retainGun) {
-      const bounds = banks[livingBanks + variant * 2 + Number(retainGun)]?.bounds;
-      if (!bounds) throw new RangeError('Casualty bank does not exist');
-      return { min: bounds.min.toArray(), max: bounds.max.toArray(),
-        footprint: banks[livingBanks + variant * 2 + Number(retainGun)].footprint };
+      const shape = casualtyShapes[variant * 2 + Number(retainGun)];
+      if (!shape) throw new RangeError('Casualty bank does not exist');
+      return { min: shape.bounds.min.toArray(), max: shape.bounds.max.toArray(), footprint: shape.footprint };
     },
     createGrenadeHand: template.createGrenadeHand,
     createWeaponHand: template.createWeaponHand,
@@ -240,7 +281,16 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
       }
       const started = performance.now();
       for (const bank of banks) {
-        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(bank.parts[0].geometry), atlas.material, bank.capacity);
+        const source = bank.parts[0].geometry;
+        const settled = bank.deathStance ? source.clone() : source;
+        if (bank.deathStance) {
+          settled.setAttribute('position', source.morphAttributes.position.at(-1).clone());
+          settled.setAttribute('normal', source.morphAttributes.normal.at(-1).clone());
+          settled.morphAttributes = {};
+          settled.computeBoundingBox(); settled.computeBoundingSphere();
+        }
+        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(settled), atlas.material, bank.capacity);
+        if (settled !== source) settled.dispose();
         mesh.name = 'distant-coarse-body';
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
         mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = true;
@@ -293,7 +343,9 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         }
         visible.push({ actor, distance });
         const existing = slots.some(slot => slot.actorId === actor.id);
-        if (distance <= limit + (existing ? 3 : 0)) candidates.push({ actor, priority: distance - (existing ? 2 : 0) + (actor.health <= 0 ? 6 : 0) });
+        const falling = actor.casualty && now < actor.casualty.time + actor.casualty.duration;
+        if (distance <= (falling ? 40 : limit) + (existing ? 3 : 0))
+          candidates.push({ actor, priority: distance - (existing ? 2 : 0) + (falling ? -40 : actor.health <= 0 ? 6 : 0) });
       }
       candidates.sort((a, b) => a.priority - b.priority);
       const detailed = new Set(candidates.slice(0, budget).map(candidate => candidate.actor.id));
@@ -321,8 +373,14 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           const turning = actor.health > 0 && pose.upright > .999 && !melee && pose.weight <= .45 &&
             actor.nativeMotion.turn.weight > .35 && turnBanks;
           const turnPhase = ((actor.nativeMotion.turn.angle / (Math.PI / 3)) % 1 + 1) % 1;
-          const index = actor.health <= 0 && actor.casualty && deathBanks
-            ? livingBanks + actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
+          const dead = actor.health <= 0 && actor.casualty && deathBanks;
+          const deathMotion = actor.casualty?.motion ?? pose;
+          const stance = deathMotion.prone > .5 ? 'prone'
+            : (deathMotion.kneeling ?? 0) + (deathMotion.crouched ?? 0) > .5 ? 'kneeling' : 'standing';
+          const deathElapsed = dead ? Math.min(1, Math.max(0, (now - actor.casualty.time) / actor.casualty.duration)) : 1;
+          const index = dead
+            ? livingBanks + Math.max(0, deathStances.indexOf(stance)) * deathKinds +
+              actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
             : actor.weaponBlocked && closeBanks ? closeStart + (posture ? 1 + postures.indexOf(posture) : 0)
             : turning ? turnStart + (actor.nativeMotion.turn.direction > 0 ? phases : 0) + Math.round(turnPhase * phases) % phases
             : melee ? meleeStart + (charging && pose.weight > .45 ? Math.round(phase * phases) % phases
@@ -337,6 +395,11 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
             for (const mesh of [...bank.parts, ...bank.coarseParts]) {
               const matrices = new Float32Array(bank.capacity * 16); matrices.set(mesh.instanceMatrix.array);
               mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
+              if (mesh.morphTexture) {
+                const image = mesh.morphTexture.image, data = new Float32Array(image.width * bank.capacity);
+                data.set(image.data); mesh.morphTexture.dispose();
+                mesh.morphTexture = new THREE.DataTexture(data, image.width, bank.capacity, THREE.RedFormat, THREE.FloatType);
+              }
               const colors = new Float32Array(bank.capacity * 3); colors.set(mesh.geometry.attributes.nraSkinTint.array);
               mesh.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
               if (mesh.geometry.attributes.nraUniformVariant) {
@@ -349,13 +412,15 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
               attachment.mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
             }
           }
-          orientation.setFromEuler(euler.set(0, actor.heading + (actor.casualty?.yaw ?? 0), actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
+          const deathProgress = actor.casualty ? casualtyProgress(actor.casualty, now) : 1;
+          orientation.setFromEuler(euler.set(0, actor.heading + (actor.casualty?.yaw ?? 0) * deathProgress, actor.health > 0 || actor.casualty ? 0 : Math.PI / 2));
           scale.set(1 + (actor.avatarAppearance?.build ?? 0) * .025, 1, 1);
           matrix.compose(actor.position, orientation, scale);
           if (actor.casualty?.offset) {
-            matrix.elements[12] += actor.casualty.offset.x; matrix.elements[14] += actor.casualty.offset.z;
+            matrix.elements[12] += actor.casualty.offset.x * Math.sqrt(deathProgress);
+            matrix.elements[14] += actor.casualty.offset.z * Math.sqrt(deathProgress);
           }
-          const coarse = lodReady && useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
+          const coarse = lodReady && (!dead || deathElapsed === 1) && useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
           const weapons = weaponGroupFor(sword ? 'dadao' : actor.rifle.model ?? 'rifle', coarse);
           if (weapons.count >= weapons.capacity) {
             if (actor.health > 0) throw new Error('Distant weapon instance capacity exceeded');
@@ -365,7 +430,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
               mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
             }
           }
-          weaponMatrix.multiplyMatrices(matrix, bank.gunMatrix);
+          weaponMatrix.multiplyMatrices(matrix, sampledGun(bank, deathElapsed));
           if (!sword && actor.health > 0 && Number.isFinite(actor.aimPitch) && actor.nativeMotion &&
             nativePoseIntent(actor) === 'aim') {
             const lowReady = actor.nativeMotion.lowReady ?? 0;
@@ -378,8 +443,15 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
           if (weapons.coarse) summary.coarseWeapons++;
           const tint = new THREE.Color(actor.avatarAppearance?.skin ?? '#ffffff');
           const bodyIndex = coarse ? bank.coarseCount : bank.count - bank.coarseCount;
+          if (dead && !coarse) {
+            const phase = deathElapsed * (CASUALTY_POSE_FRAMES - 1), frame = Math.floor(phase), blend = phase - frame;
+            morphControl.morphTargetInfluences.fill(0);
+            if (frame > 0) morphControl.morphTargetInfluences[frame - 1] = 1 - blend;
+            if (frame < CASUALTY_POSE_FRAMES - 1) morphControl.morphTargetInfluences[frame] = blend;
+          }
           for (const mesh of coarse ? bank.coarseParts : bank.parts) {
             mesh.setMatrixAt(bodyIndex, matrix);
+            if (dead && !coarse) mesh.setMorphAt(bodyIndex, morphControl);
             mesh.geometry.attributes.nraSkinTint.setXYZ(bodyIndex, tint.r, tint.g, tint.b);
             mesh.geometry.attributes.nraUniformVariant?.setX(bodyIndex, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
           }
@@ -396,6 +468,7 @@ export function createNraForceRenderer(scene, camera, template, capacity = 330, 
         if (mesh.count) {
           mesh.instanceMatrix.needsUpdate = true;
           mesh.geometry.attributes.nraSkinTint.needsUpdate = true;
+          if (mesh.morphTexture) mesh.morphTexture.needsUpdate = true;
           if (mesh.geometry.attributes.nraUniformVariant) mesh.geometry.attributes.nraUniformVariant.needsUpdate = true;
           summary.batches += Array.isArray(mesh.material) ? mesh.geometry.groups.length : 1;
         }

@@ -47,13 +47,13 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('353 clips retain fortress announcements and independent Nanjing mission calls with three male voices', () => {
+test('356 clips retain fortress and Nanjing announcements plus east-gate breakout commands with three male voices', () => {
   const clips = battleVoiceClips();
-  assert.equal(clips.length, 353);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 353);
+  assert.equal(clips.length, 356);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 356);
   for (const team of ['friendly', 'enemy']) {
     assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
-    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 275 : 78);
+    assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 278 : 78);
   }
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
@@ -63,7 +63,7 @@ test('353 clips retain fortress announcements and independent Nanjing mission ca
   assert.equal(soldierVoiceVariant('soldier-42'), soldierVoiceVariant('soldier-42'));
   assert.equal(new Set(Array.from({ length: 20 }, (_, i) => soldierVoiceVariant(`soldier-${i}`))).size, 3);
   assert.throws(() => soldierVoiceVariant(''), /identity/);
-  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 349);
+  assert.equal(clips.filter(clip => clip.file.endsWith('.mp3')).length, 352);
   const reviewed = clips.filter(clip => clip.delivery);
   assert.equal(reviewed.length, 4);
   assert.ok(reviewed.every(clip => clip.team === 'friendly' && clip.id === 'advance-1' && [0, 2].includes(clip.variant)));
@@ -79,7 +79,7 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 353);
+  assert.equal(manifest.files.length, 356);
   const fortressBatch = manifest.generationBatches.find(batch => batch.requests.some(request =>
     request.file === 'friendly-0-cleanup-orders-1.mp3'));
   assert.equal(fortressBatch.authorizedUsd, 50);

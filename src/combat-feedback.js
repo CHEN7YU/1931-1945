@@ -1,6 +1,20 @@
 import { KILL_COLUMNS } from './battle-stats.js';
 
 const creditNames = { player: '你', ally: '友军', enemy: '日军', environment: '事故' };
+const causeNames = { fall: '高处坠落', crash: '坠毁', boundary: '脱离战区', 'tank-crush': '坦克碾压' };
+
+function casualtyFeedEntry(event) {
+  const source = event.source, attacker = creditNames[source.credit];
+  if (!attacker) throw new RangeError('Unknown attack credit');
+  const weapon = KILL_COLUMNS.find(([id]) => id === source.weaponClass);
+  if (source.weaponClass != null && !weapon) throw new RangeError(`Unknown attack weapon: ${source.weaponClass}`);
+  const icon = source.cause ?? source.weaponClass ?? 'total';
+  const weaponLabel = causeNames[source.cause] ?? (source.weaponClass === 'tank' ? '坦克主炮' : weapon?.[1]) ?? '攻击';
+  const target = event.target.team === 'friendly' ? '友军' : '日军';
+  return { attacker, target, icon, weaponLabel, sourceTeam: source.team ?? 'environment', targetTeam: event.target.team,
+    text: `${attacker} · ${weaponLabel} · ${target}`, until: event.time + 5,
+    targetId: event.target.id, sourceId: source.soldierId ?? source.vehicleId };
+}
 
 export function attackSourceLabel(source) {
   if (source.credit === 'environment' && source.cause === 'fall') return '高处坠落';
@@ -34,9 +48,7 @@ export function createCombatFeedback() {
         viewer.machineGunWeaponIds.some(id => typeof id !== 'string' || !id))) throw new Error('Machine-gun feedback requires owned weapon identities');
       if (event.type === 'casualty') {
         if (event.target.team === 'enemy' || event.target.team === 'friendly') {
-          const target = event.target.team === 'friendly' ? '我方士兵阵亡' : '日军守兵';
-          feed.unshift({ text: `${attackSourceLabel(event.source)}　›　${target}`, until: event.time + 5,
-            targetId: event.target.id, sourceId: event.source.soldierId ?? event.source.vehicleId });
+          feed.unshift(casualtyFeedEntry(event));
           if (feed.length > 4) feed.pop();
         }
         return;

@@ -34,7 +34,7 @@ export function makeWorld(scene, surface, options = {}) {
   const groundHeight = (x, z) => bridgeGroundHeight(x, z, BRIDGE);
   const walkSupport = configureWalkSupport(town.pieces, groundHeight);
   const walkHeight = walkSupport.heightAt;
-  const outskirts = makeOutskirtsLayout();
+  const outskirts = makeOutskirtsLayout({ eastGate: town.fortifications?.gate });
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   let seed = 1938;
   const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -445,9 +445,8 @@ export function makeWorld(scene, surface, options = {}) {
     sceneArt.contactPatches++;
   }
   const wrecks = addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber: charred });
-  for (const z of [69, 44, 12, -38, -69]) {
-    building(-61, z, 17, 15, 6 + random() * 3, random() < .3);
-    building(65, z, 16, 14, 6 + random() * 3, random() < .25);
+  for (const house of outskirts.sideBuildings) {
+    building(house.x, house.z, house.w, house.d, 6 + random() * 3, random() < (house.x < 0 ? .3 : .25));
   }
   building(-7, -90, 24, 11, 8);
   building(-9, 92, 21, 10, 7);

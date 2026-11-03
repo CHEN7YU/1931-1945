@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCombatEvents } from '../src/combat-events.js';
 import { attackSourceLabel, createCombatFeedback } from '../src/combat-feedback.js';
+import { SCORE_ICON_PATHS } from '../src/score-icons.js';
+import { KILL_COLUMNS } from '../src/battle-stats.js';
 
 const source = (credit = 'player', soldierId = 's1', weaponId = 'rifle-1') =>
   ({ credit, team: credit === 'enemy' ? 'enemy' : 'friendly', unitId: 'alpha', soldierId, weaponId });
@@ -19,7 +21,14 @@ test('friendly casualties identify the actual weapon instead of hiding their cau
     const attacker = { ...source('enemy', 'e2'), weaponClass, squadId: 'enemy-8', unitName: '日军小队' };
     assert.equal(attackSourceLabel(attacker), `日军·${label}`);
     feedback.consume(casualty({ source: attacker, target: victim('friendly', 's1') }), viewer, 1);
-    assert.equal(feedback.entries(1)[0].text, `日军·${label}　›　我方士兵阵亡`);
+    const entry = feedback.entries(1)[0];
+    assert.equal(entry.text, `日军 · ${label} · 友军`);
+    assert.equal(entry.attacker, '日军');
+    assert.equal(entry.target, '友军');
+    assert.equal(entry.icon, weaponClass);
+    assert.equal(entry.weaponLabel, label);
+    assert.equal(entry.sourceTeam, 'enemy');
+    assert.equal(entry.targetTeam, 'friendly');
   }
   assert.equal(attackSourceLabel({ credit: 'environment' }), '事故');
   assert.throws(() => attackSourceLabel({ credit: 'unknown' }), /Unknown attack credit/);
@@ -32,7 +41,8 @@ test('fall casualties retain environmental credit and show the actual cause', ()
   assert.equal(attackSourceLabel(event.source), '高处坠落');
   const feedback = createCombatFeedback();
   feedback.consume(event, viewer, 1);
-  assert.equal(feedback.entries(1)[0].text, '高处坠落　›　我方士兵阵亡');
+  assert.equal(feedback.entries(1)[0].text, '事故 · 高处坠落 · 友军');
+  assert.equal(feedback.entries(1)[0].icon, 'fall');
 });
 
 test('shared casualty labels distinguish tank crushing from cannon fire without changing kill categories', () => {
@@ -43,7 +53,34 @@ test('shared casualty labels distinguish tank crushing from cannon fire without 
     const event = casualty({ source: attacker, target: victim('friendly') });
     assert.equal(event.source.cause, 'tank-crush');
     assert.match(attackSourceLabel(event.source), /坦克碾压$/);
+    const feedback = createCombatFeedback();
+    feedback.consume(event, viewer, 1);
+    assert.equal(feedback.entries(1)[0].icon, 'tank-crush');
+    assert.equal(feedback.entries(1)[0].weaponLabel, '坦克碾压');
   }
+});
+
+test('every weapon and environmental cause has a feed icon without death wording or a separator arrow', () => {
+  for (const [weaponClass] of KILL_COLUMNS) {
+    const feedback = createCombatFeedback();
+    feedback.consume(casualty({ source: { ...source(), weaponClass, squadId: 'player', unitName: '玩家小队' } }), viewer, 1);
+    const entry = feedback.entries(1)[0];
+    assert.equal(entry.icon, weaponClass);
+    assert.ok(SCORE_ICON_PATHS[entry.icon]);
+    assert.doesNotMatch(entry.text, /阵亡|守兵|›/);
+    assert.equal(entry.attacker, '你');
+    assert.equal(entry.target, '日军');
+  }
+  for (const cause of ['fall', 'boundary', 'crash', 'tank-crush']) {
+    const feedback = createCombatFeedback();
+    feedback.consume(casualty({ source: { credit: 'environment', cause, subjectId: 's1', vehicleId: 'v1' } }), viewer, 1);
+    const entry = feedback.entries(1)[0];
+    assert.ok(SCORE_ICON_PATHS[entry.icon]);
+    assert.doesNotMatch(entry.text, /阵亡|›/);
+  }
+  const feedback = createCombatFeedback();
+  assert.throws(() => feedback.consume(casualty({ source: { ...source(), weaponClass: 'unknown',
+    squadId: 'player', unitName: '玩家小队' } }), viewer, 1), /Unknown attack weapon/);
 });
 
 test('only actual hostile damage from the current soldier and weapon lights the hit marker', () => {

@@ -1,8 +1,11 @@
+import { EAST_BREAKOUT } from './encirclement.js';
+
 export function createEncirclementVoiceTracker() {
   let briefed = false, interrupted = false, phase = 1;
+  let breakoutAnnouncements = 0, nextBreakoutAt = 0;
   const arrived = new Set();
   return {
-    update(match, points, formations) {
+    update(match, points, formations, now = 0) {
       if (match.winner) return [];
       const supply = points.find(point => point.id === 'A');
       if (!supply) throw new Error('Encirclement voice requires the supply objective');
@@ -18,10 +21,15 @@ export function createEncirclementVoiceTracker() {
         unit.active && unit.generation > 0 && !arrived.has(unit.id));
       for (const unit of newArrivals) arrived.add(unit.id);
       if (newArrivals.length) cues.push(match.supplyInterrupted ? 'supply-reinforced' : 'reinforcements');
-      if (phase === 1 && match.phase === 2) cues.push('encircled', 'reinforcements-blocked', 'cleanup-orders');
+      if (phase === 1 && match.phase === 2) cues.push('encircled', 'reinforcements-blocked');
+      if (match.phase === 2 && match.breakout?.stage === 'breakout' &&
+        breakoutAnnouncements < EAST_BREAKOUT.announcements && now >= nextBreakoutAt) {
+        cues.push('east-breakout');
+        breakoutAnnouncements++; nextBreakoutAt = now + EAST_BREAKOUT.announcementInterval;
+      }
       phase = match.phase;
       return cues;
     },
-    reset() { briefed = interrupted = false; phase = 1; arrived.clear(); },
+    reset() { briefed = interrupted = false; phase = 1; arrived.clear(); breakoutAnnouncements = nextBreakoutAt = 0; },
   };
 }

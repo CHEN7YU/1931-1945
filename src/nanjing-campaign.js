@@ -61,6 +61,10 @@ export const NANJING_SPAWNS = Object.freeze([
   Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口', team: 'friendly', kind: 'base', x: NANJING_DOCK.x, z: NANJING_DOCK.z, altitude: 0 }),
   Object.freeze({ id: 'nanjing-west-ai-1', name: '渡口东侧阵地', team: 'friendly', kind: 'base', x: -58, z: NANJING_DOCK.z, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-west-ai-2', name: '渡口北侧阵地', team: 'friendly', kind: 'base', x: -58, z: NANJING_DOCK.z - 10, altitude: 0, aiOnly: true }),
+  Object.freeze({ id: 'nanjing-reserve-1', name: '城内中部预备队集结点', team: 'friendly', kind: 'base',
+    x: -16, z: -42, altitude: 0, aiOnly: true }),
+  Object.freeze({ id: 'nanjing-reserve-2', name: '城内东街预备队集结点', team: 'friendly', kind: 'base',
+    x: 14, z: -49, altitude: 0, aiOnly: true }),
   ...assaultLanes,
 ]);
 
@@ -71,6 +75,9 @@ export const NANJING_OBJECTIVES = Object.freeze([
 ]);
 
 export function nanjingWallExitWaypoint(position) {
+  const onRamp = NANJING_WALL_RAMPS.some(ramp => position.x >= ramp.minX - .5 &&
+    position.x <= ramp.maxX + .5 && position.z >= ramp.minZ - .5 && position.z <= ramp.maxZ + .5);
+  if (position.y > .025 && position.y < NANJING_WALL_WALK.height - .25 && !onRamp) return null;
   const side = position.x < 0 ? -1 : 1;
   const ramp = NANJING_WALL_RAMPS.find(candidate => candidate.side === side);
   if (position.y <= .025) {

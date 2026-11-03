@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-export function bakeSurfaceGeometry(object) {
+export function bakeSurfaceGeometry(object, { preserveUV = false } = {}) {
   const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
   const meters = object.material.userData.metersPerTile;
-  if (meters === undefined || object.userData.keepUV) return geometry;
+  if (preserveUV || meters === undefined || object.userData.keepUV) return geometry;
   if (!Number.isFinite(meters) || meters <= 0) throw new RangeError('metersPerTile must be positive and finite');
   const positions = geometry.attributes.position, normals = geometry.attributes.normal, uv = geometry.attributes.uv;
   if (!uv || !normals) throw new Error('Surface UV projection requires positions, normals and UVs');

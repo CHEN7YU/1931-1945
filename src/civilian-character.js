@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { applyCivilianProtectivePose, restoreCivilianMotionPose } from './civilian-motion.js';
 
 const CLOTH = [0x797366, 0x526266, 0x89765f, 0x675957, 0x555c50, 0x8e8879];
 const SKIN = [0xb49478, 0xc3a084, 0xa5846b];
@@ -301,6 +302,7 @@ export function updateCivilianAppearance(civilians, camera, preset = 'high') {
     skin.level = near ? 'near' : 'far';
     skin.mesh.geometry = skin.geometry[skin.level];
     skin.mesh.castShadow = distance < (preset === 'low' ? 12 : 26);
+    restoreCivilianMotionPose(civilian);
     // Existing gameplay drives the upper joints; secondary joints preserve the same pose across LODs.
     for (const [side, index] of [['left', 0], ['right', 1]]) {
       skin.joints[`${side}Knee`].rotation.x = -Math.max(0, civilian.civilianLegs[index].rotation.x) * .85;
@@ -313,5 +315,6 @@ export function updateCivilianAppearance(civilians, camera, preset = 'high') {
         arm.rotation.z = index ? -.18 : .18;
       }
     else if (civilian.userData.carrying === 'luggage') civilian.civilianArms[0].rotation.x = -.04;
+    applyCivilianProtectivePose(civilian);
   }
 }
