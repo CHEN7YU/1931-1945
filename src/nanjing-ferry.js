@@ -37,3 +37,14 @@ export function restoreFerryPassenger(person) {
     delete object.userData.ferryOriginalMaterial;
   });
 }
+
+export function setFerryPassengerMaterial(object, material) {
+  const original = object.userData.ferryOriginalMaterial;
+  if (original === undefined) { object.material = material; return; }
+  if (original === material) return;
+  const { opacity, transparent, depthWrite } = object.material;
+  object.material.copy(material);
+  Object.assign(object.material, { opacity, transparent, depthWrite });
+  object.material.needsUpdate = true;
+  object.userData.ferryOriginalMaterial = material;
+}
