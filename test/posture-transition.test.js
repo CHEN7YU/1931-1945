@@ -6,6 +6,18 @@ import { soldierPostureHeight } from '../src/entities.js';
 const motion = () => ({ profile: { kneeling: {}, crouched: {}, prone: {} },
   posture: { kneeling: 0, crouched: 0, prone: 0 } });
 
+test('crouch-to-standing includes a supported half-rise and a short weight-shift hold instead of a 100ms snap', () => {
+  const state = motion(); state.posture.crouched = 1;
+  const duration = POSTURE_TRANSITION.crouchRiseSeconds;
+  advancePostureBlend(state, 'standing', duration * .48);
+  assert.ok(Math.abs(state.posture.crouched - .42) < 1e-8);
+  const held = { ...state.posture };
+  advancePostureBlend(state, 'standing', duration * .14);
+  assert.ok(Object.keys(held).every(pose => Math.abs(state.posture[pose] - held[pose]) < 1e-12));
+  advancePostureBlend(state, 'standing', duration);
+  assert.equal(state.posture.crouched, 0); assert.equal(state.postureTransition, null);
+});
+
 test('both teams lower through a supporting knee before lying down, with matching body and eye heights', () => {
   for (const team of ['friendly', 'enemy']) {
     const nativeMotion = motion(), actor = { team, nativeMotion, stance: 'prone' };

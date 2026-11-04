@@ -13,6 +13,8 @@ export const BATTLE_VOICE_PROFILES = Object.freeze({
 
 export const BATTLE_VOICE_LINES = Object.freeze({
   friendly: [
+    { id: 'enemy-whistle-1', cue: 'enemy-whistle', text: '日军吹哨了，他们要冲锋了！' },
+    { id: 'enemy-whistle-2', cue: 'enemy-whistle', text: '听，日军的哨子！准备迎敌！' },
     ...['一', '二', '三', '四', '五', '六', '七'].flatMap((minutes, index) => [
       { id: `nanjing-gate-${index + 1}`, cue: `nanjing-gate-${index + 1}`,
         text: `弟兄们，我们还要在这里坚守${minutes}分钟，给百姓撤退争取时间！` },

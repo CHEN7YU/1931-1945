@@ -29,3 +29,16 @@ test('wreck rests only after a real contact and emits a single landing transitio
   assert.equal(advanceAircraftFall(vehicle, .1, 2, () => assert.fail('grounded wreck cannot fall again')), false);
   assert.deepEqual(vehicle, before);
 });
+
+test('deep-water impacts sink below the surface exactly once and never become a floating ground wreck', () => {
+  const vehicle = wreck();
+  assert.equal(advanceAircraftFall(vehicle, .1, 1, () => ({ x: -84, y: .17, z: -80, water: true, waterLevel: -.28 })), true);
+  assert.equal(vehicle.fall.grounded, false); assert.ok(vehicle.fall.sinking);
+  const before = structuredClone(vehicle);
+  advanceAircraftFall(vehicle, 0, 1, () => assert.fail('paused sinking cannot trace'));
+  assert.deepEqual(vehicle, before);
+  for (let step = 1; step <= 60; step++) {
+    assert.equal(advanceAircraftFall(vehicle, .05, 1 + step * .05, () => assert.fail('deep water is not solid ground')), false);
+  }
+  assert.ok(vehicle.fall.sunk); assert.ok(vehicle.position.y < -5.28);
+});

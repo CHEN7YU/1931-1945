@@ -13,6 +13,16 @@ function fixture() {
   const plane = createVehicleEntity(registry, { id: 'plane-1', unitId: 'air', team: 'friendly', type: 'plane', position: new THREE.Vector3(30, 20, -10) });
   return { registry, scene, tank, plane, renderer: createVehicleRenderer(scene) };
 }
+test('fully submerged aircraft presentation is removed without deleting its original score identity', () => {
+  const { registry, plane, renderer, scene } = fixture();
+  renderer.update(registry.vehicles.values());
+  const original = renderer.model(plane.id);
+  plane.health = 0; plane.fall = { sinking: true, sunk: true };
+  renderer.update(registry.vehicles.values());
+  assert.equal(scene.children.includes(original), false);
+  assert.equal(registry.vehicles.get(plane.id), plane);
+  assert.throws(() => renderer.model(plane.id), /no registered view/);
+});
 test('vehicle views project independent hull/turret/flight pose without modifying simulation or owning its records', () => {
   const { registry, scene, tank, plane, renderer } = fixture();
   tank.heading = .4; tank.turretYaw = 1.1; tank.turretPitch = .25;

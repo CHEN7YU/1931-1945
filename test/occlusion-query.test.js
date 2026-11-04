@@ -1,8 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createOcclusionQuery } from '../src/occlusion-query.js';
+import { createOcclusionQuery, createClosestHitQuery } from '../src/occlusion-query.js';
 import { accelerateCollisionMesh, createSolidIndex } from '../src/solid-index.js';
+
+test('BVH closest-hit mode preserves actual contact points and restores the shared raycaster flag', () => {
+  const closest = createClosestHitQuery(), material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const meshes = [new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), material),
+    new THREE.Mesh(new THREE.BoxGeometry(1, 2, .1), material)];
+  meshes[0].position.z = -3; meshes[1].position.z = -5;
+  for (const mesh of meshes) { mesh.updateMatrixWorld(true); accelerateCollisionMesh(mesh); }
+  for (let index = 0; index < 200; index++) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(Math.sin(index) * 1.4, .11, 0), new THREE.Vector3(0, 0, -1), 0, 10);
+    const expected = ray.intersectObjects(meshes, true)[0], actual = closest(ray, meshes);
+    assert.equal(actual?.object, expected?.object);
+    if (expected) assert.ok(actual.point.distanceTo(expected.point) < 1e-8);
+    assert.equal(Object.hasOwn(ray, 'firstHitOnly'), false);
+  }
+});
 
 test('boolean occlusion matches complete queries across dense meshes, sides, ranges and transforms', () => {
   const query = createOcclusionQuery();

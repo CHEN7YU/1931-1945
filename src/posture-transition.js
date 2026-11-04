@@ -1,4 +1,6 @@
-export const POSTURE_TRANSITION = Object.freeze({ lowerSeconds: 1, riseSeconds: 1.3, kneeFraction: .42 });
+export const POSTURE_TRANSITION = Object.freeze({
+  lowerSeconds: 1, riseSeconds: 1.6, kneeFraction: .42, crouchRiseSeconds: .95, crouchLowerSeconds: .55,
+});
 const smooth = value => {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
@@ -9,13 +11,31 @@ export function advancePostureBlend(motion, target, dt) {
   if (dt === 0) return;
   const weights = motion.posture, prone = weights.prone ?? 0;
   let transition = motion.postureTransition;
-  if (transition?.target !== target && (transition || target === 'prone' && prone < .999 || prone > .001 && target !== 'prone')) {
-    transition = motion.postureTransition = { target, elapsed: 0, from: { ...weights },
-      duration: target === 'prone' ? POSTURE_TRANSITION.lowerSeconds : POSTURE_TRANSITION.riseSeconds,
-      knee: motion.profile.kneeling ? 'kneeling' : motion.profile.crouched ? 'crouched' : null,
-      viaKnee: target === 'prone' ? prone < .001 : prone > .001 };
-  } else if (transition && transition.target !== target) {
-    transition = motion.postureTransition = null;
+  const lowered = (weights.crouched ?? 0) + (weights.kneeling ?? 0);
+  const changingHeight = target === 'prone' && prone < .999 || prone > .001 && target !== 'prone' ||
+    target === 'standing' && lowered > .001 ||
+    ['crouched', 'kneeling'].includes(target) && weights[target] < .999;
+  if (transition?.target !== target && (transition || changingHeight)) {
+    const from = { ...weights }, pose = name => Object.fromEntries(Object.keys(weights)
+      .map(key => [key, Number(key === name && Boolean(motion.profile[key]))]));
+    const destination = pose(target), knee = pose(motion.profile.kneeling ? 'kneeling' : 'crouched');
+    let duration, frames;
+    if (target === 'prone') {
+      duration = POSTURE_TRANSITION.lowerSeconds;
+      frames = prone < .001 ? [[0, from], [.42, knee], [.50, knee], [1, destination]] : [[0, from], [1, destination]];
+    } else if (prone > .001) {
+      duration = POSTURE_TRANSITION.riseSeconds;
+      const half = Object.fromEntries(Object.keys(weights).map(key => [key, knee[key] * .42 + destination[key] * .58]));
+      frames = [[0, from], [.45, knee], [.54, knee], [.78, half], [.87, half], [1, destination]];
+    } else if (target === 'standing') {
+      duration = POSTURE_TRANSITION.crouchRiseSeconds;
+      const half = Object.fromEntries(Object.entries(from).map(([key, weight]) => [key, weight * .42]));
+      frames = [[0, from], [.48, half], [.62, half], [1, destination]];
+    } else {
+      duration = POSTURE_TRANSITION.crouchLowerSeconds;
+      frames = [[0, from], [.82, destination], [1, destination]];
+    }
+    transition = motion.postureTransition = { target, elapsed: 0, duration, frames };
   }
   if (!transition) {
     for (const pose of Object.keys(weights)) {
@@ -27,15 +47,10 @@ export function advancePostureBlend(motion, target, dt) {
     return;
   }
   transition.elapsed = Math.min(transition.duration, transition.elapsed + dt);
-  const t = transition.elapsed / transition.duration;
-  const viaKnee = transition.viaKnee && transition.knee;
-  const split = target === 'prone' ? POSTURE_TRANSITION.kneeFraction : 1 - POSTURE_TRANSITION.kneeFraction;
-  const first = viaKnee && t < split;
-  const blend = smooth(viaKnee ? first ? t / split : (t - split) / (1 - split) : t);
-  for (const pose of Object.keys(weights)) {
-    const from = !viaKnee || first ? transition.from[pose] : Number(pose === transition.knee);
-    const to = first ? Number(pose === transition.knee) : Number(pose === target && Boolean(motion.profile[pose]));
-    weights[pose] = from + (to - from) * blend;
-  }
+  const t = transition.elapsed / transition.duration, frames = transition.frames;
+  const index = Math.max(0, frames.findIndex((frame, index) => index < frames.length - 1 && t <= frames[index + 1][0]));
+  const [start, from] = frames[index], [end, to] = frames[index + 1];
+  const blend = smooth((t - start) / (end - start));
+  for (const pose of Object.keys(weights)) weights[pose] = from[pose] + (to[pose] - from[pose]) * blend;
   if (t === 1) motion.postureTransition = null;
 }

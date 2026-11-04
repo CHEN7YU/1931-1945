@@ -46,6 +46,7 @@ export function makeNanjingBattlefield(scene, surface) {
   const residentialBuildings = [];
   const northernBackdrop = [];
   const residentialMeshes = [];
+  let templeLandmark = null;
   const cityLayout = createNanjingCityLayout();
   const wallBreaches = [{ id: 'east-shell-breach', minX: 88, maxX: 94, minZ: 16, maxZ: 20.4 }];
   const impactGeometry = [];
@@ -388,6 +389,31 @@ export function makeNanjingBattlefield(scene, surface) {
     return { x, z, width, length, axis, type: 'stone-bridge' };
   }
 
+  function makePlaque(text, x, y, z, width, height, stoneStyle = false, front = 1) {
+    const material = new THREE.MeshStandardMaterial({ color: stoneStyle ? 0xb9ae91 : 0x33291f, roughness: .95 });
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 160;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Landmark lettering requires a working canvas');
+      context.fillStyle = stoneStyle ? '#b9ae91' : '#33291f'; context.fillRect(0, 0, 512, 160);
+      context.strokeStyle = stoneStyle ? '#82765c' : '#8c7952'; context.lineWidth = 5; context.strokeRect(9, 9, 494, 142);
+      context.fillStyle = stoneStyle ? '#302d26' : '#d2bd86';
+      context.font = 'bold 112px KaiTi, STKaiti, SimSun, serif';
+      context.textAlign = 'center'; context.textBaseline = 'middle';
+      context.fillText([...text].reverse().join(''), 256, 84, 460);
+      material.map = new THREE.CanvasTexture(canvas); material.map.colorSpace = THREE.SRGBColorSpace;
+      material.color.setHex(0xffffff);
+    }
+    material.userData.lettering = { text, order: 'right-to-left', historicalHandwritingReplica: false,
+      rasterized: Boolean(material.map) };
+    addBox(x, y, z - front * .07, width + .16, height + .14, .16, stoneStyle ? stone : timber);
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+    plaque.position.set(x, y, z + front * .018); plaque.rotation.y = front < 0 ? Math.PI : 0;
+    plaque.userData.nanjingFeature = 'landmark-plaque';
+    plaque.userData.text = text; scene.add(plaque); solids.push(plaque);
+    return plaque;
+  }
+
   function makeGatewayArch(z, opening, spring, depth) {
     const radius = opening / 2;
     const archstones = [];
@@ -468,6 +494,10 @@ export function makeNanjingBattlefield(scene, surface) {
     obstacles.push({ minX: -opening / 2, maxX: opening / 2, minZ: z - depth / 2,
       maxZ: z + depth / 2, minY: archCrown, height: wallHeight });
     aboveArch.userData.nanjingFeature = 'gate-above-arch-masonry';
+    if (main) {
+      const plaque = makePlaque('中華門', 0, archCrown + .95, z + depth / 2 + .10, 3.2, 1, true);
+      plaque.userData.nanjingFeature = 'gate-name-plaque';
+    }
     const merlons = [];
     for (let x = -width / 2 + 2 * DETAIL_SCALE; x <= width / 2 - 2 * DETAIL_SCALE; x += 4 * DETAIL_SCALE) {
       if (Math.abs(x) < opening / 2 + 1.5 * DETAIL_SCALE) continue;
@@ -822,12 +852,19 @@ export function makeNanjingBattlefield(scene, surface) {
   }
   const residentialLots = cityLayout.lots;
   const plaster = surface('plaster', 0xaaa18b, 1.2);
-  for (const [index, [x, z, footprintWidth, footprintDepth, floors, facing]] of residentialLots.entries()) {
+  const templeLot = residentialLots.map((lot, index) => ({ lot, index }))
+    .filter(({ lot }) => lot[4] > 1 && lot[0] > -51 && lot[0] < -24 && lot[1] > -68 && lot[1] < -28 && lot[2] > 5 && lot[3] > 5)
+    .sort((a, b) => (a.lot[0] + 38) ** 2 + (a.lot[1] + 47) ** 2 - (b.lot[0] + 38) ** 2 - (b.lot[1] + 47) ** 2)[0];
+  if (!templeLot) throw new Error('No existing roadside parcel is available for the small temple');
+  const templeRed = new THREE.MeshStandardMaterial({ color: 0x62382c, roughness: .95 });
+  const templeBronze = new THREE.MeshStandardMaterial({ color: 0x887344, roughness: .78, metalness: .25 });
+  for (const [index, [x, z, footprintWidth, footprintDepth, sourceFloors, facing]] of residentialLots.entries()) {
+    const temple = index === templeLot.index, floors = temple ? 1 : sourceFloors;
     const w = facing % 2 ? footprintDepth : footprintWidth;
     const d = facing % 2 ? footprintWidth : footprintDepth;
     const firstSolid = solids.length, firstObstacle = obstacles.length, firstImpact = impactGeometry.length;
     const h = floors * 2.7;
-    const damaged = z < 10 && (index % 3 !== 0 || z >= -26 && index % 4 === 0);
+    const damaged = !temple && z < 10 && (index % 3 !== 0 || z >= -26 && index % 4 === 0);
     const facade = index % 3 === 0 ? brick : plaster;
     const doorWidth = 1.3, doorHeight = 2.2, thickness = .24;
     const wall = (px, py, pz, width, height, depth) => {
@@ -941,7 +978,47 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     residentialBuildings.push({ id: `nanjing-home-${index}`, x, z, width: w, depth: d,
       floors, height: h + roofRise, exit: { x, z: z - d / 2 - .8 },
-      damaged, use: z < -30 && index % 2 === 0 && !damaged ? 'shop' : 'home' });
+      damaged, use: temple ? 'temple' : z < -30 && index % 2 === 0 && !damaged ? 'shop' : 'home' });
+    if (temple) {
+      for (const side of [-1, 1]) {
+        addBox(x + side * (w / 2 - .45), 1.32, frontZ - .26, .19, 2.64, .19, templeRed, true);
+        addBox(x + side * (w / 2 - .45), .13, frontZ - .26, .33, .26, .33, stone, true);
+      }
+      addBox(x, 2.52, frontZ - .25, w - .5, .18, .24, templeRed);
+      makePlaque('佛堂', x, 2.40, frontZ - .42, 1.5, .35, false, -1);
+      const altarZ = z + d / 2 - 1.05;
+      addBox(x, .38, altarZ, 1.4, .76, 1.05, stone, true);
+      addBox(x, .78, altarZ, 1.55, .1, 1.15, templeRed, true);
+      for (const [px, py, pz, sx, sy, sz] of [
+        [0, 1, 0, .48, .17, .30], [0, 1.38, .08, .27, .38, .20],
+        [0, 1.88, .04, .16, .19, .16], [0, 2.07, .06, .085, .075, .085],
+        [-.16, 1.86, .02, .035, .10, .045], [.16, 1.86, .02, .035, .10, .045],
+        [0, 1.88, -.13, .025, .035, .025],
+        [-.31, 1.35, -.02, .08, .28, .09], [.31, 1.35, -.02, .08, .28, .09],
+        [0, 1.14, -.22, .17, .055, .09],
+      ]) {
+        const part = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), templeBronze);
+        part.position.set(x + px, py, altarZ + pz); part.scale.set(sx, sy, sz);
+        part.receiveShadow = true; part.userData.nanjingFeature = 'temple-buddha'; scene.add(part); solids.push(part);
+      }
+      for (const side of [-1, 1]) addBox(x + side * .058, 1.925, altarZ - .11, .047, .007, .01, dark);
+      addBox(x, 1.82, altarZ - .11, .055, .007, .01, dark);
+      obstacles.push({ minX: x - .72, maxX: x + .72, minZ: altarZ - .6, maxZ: altarZ + .6, height: 2.2 });
+      const bell = new THREE.Mesh(new THREE.LatheGeometry([
+        new THREE.Vector2(.03, .4), new THREE.Vector2(.12, .32), new THREE.Vector2(.16, .08), new THREE.Vector2(.22, 0),
+      ], 12), templeBronze);
+      bell.position.set(x - w / 2 + .75, 1.75, frontZ - .20);
+      bell.receiveShadow = true;
+      bell.userData.nanjingFeature = 'temple-bell'; scene.add(bell); solids.push(bell);
+      addBox(bell.position.x, 2.35, bell.position.z, .035, .4, .035, templeBronze);
+      addBox(x, h + roofRise + .05, z, .18, .18, d + .6, roofMaterial);
+      addBox(x + w / 2 - .8, .25, frontZ + .6, .45, .5, .45, stone, true);
+      const censer = new THREE.Mesh(new THREE.CylinderGeometry(.23, .17, .18, 12), templeBronze);
+      censer.position.set(x + w / 2 - .8, .59, frontZ + .6);
+      censer.userData.nanjingFeature = 'temple-censer'; scene.add(censer); solids.push(censer);
+      for (let stick = -1; stick <= 1; stick++)
+        addBox(censer.position.x + stick * .06, .83, censer.position.z, .012, .36, .012, templeRed);
+    }
     if (index % 3 === 0 || damaged) for (let mark = 0; mark < 7; mark++) {
       const spread = Math.sin((index * 7 + mark * 13) * 2.37);
       const remainingHeight = damaged && spread >= 0 ? 1.05 : h;
@@ -966,7 +1043,7 @@ export function makeNanjingBattlefield(scene, surface) {
         beam.userData.nanjingFeature = 'broken-roof-beam';
       }
     }
-    if (z < -30 && index % 2 === 0 && !damaged) {
+    if (!temple && z < -30 && index % 2 === 0 && !damaged) {
       const awning = addBox(x, 2.45, frontZ - .65, w - .7, .12, 1.15, timber);
       awning.rotation.x = .12;
       awning.userData.nanjingFeature = 'residential-shop-awning';
@@ -1000,6 +1077,11 @@ export function makeNanjingBattlefield(scene, surface) {
       for (const geometry of impactGeometry.slice(firstImpact)) geometry.applyMatrix4(matrix);
       Object.assign(passage, transform(passage.x, passage.z), { axis: facing % 2 ? 'z' : 'x' });
       home.exit = transform(home.exit.x, home.exit.z);
+    }
+    if (temple) {
+      passage.openAngle = -Math.PI / 2;
+      templeLandmark = { id: home.id, x, z, width: footprintWidth, depth: footprintDepth,
+        facing, entry: { ...home.exit }, fictional: true, sourceParcelFloors: sourceFloors };
     }
     for (const mesh of solids.slice(firstSolid)) {
       mesh.userData.residentialId = home.id;
@@ -1130,7 +1212,7 @@ export function makeNanjingBattlefield(scene, surface) {
     ferries.push(boat);
   }
 
-  const civilianHomes = residentialBuildings.filter(house => house.floors === 1 && house.z < 0 && !house.damaged);
+  const civilianHomes = residentialBuildings.filter(house => house.floors === 1 && house.z < 0 && !house.damaged && house.use !== 'temple');
   for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
     const ageGroup = index % 10 === 0 ? 'child' : index % 10 === 1 ? 'elderly' : 'adult';
     const presentation = (ageGroup === 'adult' ? index : Math.floor(index / 10)) % 2 === 0 ? 'woman' : 'man';
@@ -1461,7 +1543,10 @@ export function makeNanjingBattlefield(scene, surface) {
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
     ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
+    isDeepWater: (x, z) => x < -72 && x > -72 - NANJING_FERRY_ROUTE.riverWidth &&
+      Math.abs(z) < NANJING_FERRY_ROUTE.riverDepth / 2 || Math.abs(z - 52) < 13 && x > -105 && x < 105,
     landmarks: {
+      temple: templeLandmark,
       gatehouse: { style: 'arched-stone-gate', gates: gateways, barbicans: NANJING_COURTYARDS.length,
         centerZ: (NANJING_GATE_NORTH_EDGE + NANJING_GATE_SOUTH_EDGE) / 2,
         footprint: { width: GATE_WIDTH, length: GATE_LENGTH, height: NANJING_GATE_HEIGHT },

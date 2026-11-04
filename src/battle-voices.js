@@ -104,7 +104,7 @@ export function createBattleVoices(buffers, random = Math.random) {
     }
   }
   let enabled = false, nextAmbient = 2, nextScan = 0, nextCallout = 0, nextCalloutScan = 0, context = null;
-  let output = null;
+  let output = null, nextSignalWarning = 0;
   const counts = { ambient: 0, callout: 0, command: 0, announcement: 0, interrupted: 0, queuePressure: 0 };
   const choose = items => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
   function select(team, cue, variant) {
@@ -180,6 +180,18 @@ export function createBattleVoices(buffers, random = Math.random) {
       }
       queue.push(request); flush();
     },
+    signalWarning(audio, speaker, listener, time) {
+      if (!enabled || !audio || audio.state !== 'running' || time < nextSignalWarning || queue.length ||
+        voices.has('command') || voices.has('announcement') || voices.has('callout') ||
+        speaker?.team !== 'friendly' || speaker.health <= 0 || speaker.vehicleId ||
+        battleVoiceMix(speaker.position, listener).distance > BATTLE_VOICE_LIMITS.calloutDistance) return false;
+      context = audio;
+      const request = { clip: select('friendly', 'enemy-whistle', soldierVoiceVariant(speaker.id)),
+        soldierId: speaker.id, listenerId: listener.soldierId, time, eventKey: `enemy-whistle:${time}` };
+      if (!start('callout', request, battleVoiceMix(speaker.position, listener))) return false;
+      nextSignalWarning = time + 38; nextCallout = time + BATTLE_VOICE_LIMITS.calloutInterval;
+      return true;
+    },
     update(audio, actors, listener, time, ambient = true, canSee = null) {
       context = audio;
       if (!enabled || !audio || audio.state !== 'running') return;
@@ -189,7 +201,7 @@ export function createBattleVoices(buffers, random = Math.random) {
         if (!voice) continue;
         const actor = actors.find(actor => actor.id === voice.request.soldierId && actor.health > 0 && !actor.vehicleId);
         const staleCallout = channel === 'callout' && (voice.request.listenerId !== listener.soldierId ||
-          !actors.some(target => target.id === voice.request.targetId && target.health > 0));
+          voice.request.targetId && !actors.some(target => target.id === voice.request.targetId && target.health > 0));
         if (!actor || !ambient || staleCallout) stop(channel);
         else {
           const mix = battleVoiceMix(actor.position, listener);
@@ -246,6 +258,7 @@ export function createBattleVoices(buffers, random = Math.random) {
       teamAt.clear(); soldierAt.clear(); lastLine.clear();
       calloutTargetAt.clear(); calloutSpeakerAt.clear();
       nextAmbient = 2; nextScan = 0; nextCallout = nextCalloutScan = 0;
+      nextSignalWarning = 0;
       for (const key of Object.keys(counts)) counts[key] = 0;
     },
     get priorityActive() { return queue.length > 0 || ['command', 'announcement', 'callout'].some(channel => voices.has(channel)); },

@@ -5,7 +5,14 @@ import { obstacleLookup } from '../src/spatial.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
   releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute,
-  activateCivilianEvacuation } from '../src/civilian-crowd.js';
+  activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from '../src/civilian-crowd.js';
+
+test('boarding chooses the physically nearest waiting civilian independently of queue order and uses a jog', () => {
+  const queue = [8, 2, 5].map(x => ({ position: { x, y: 0, z: 0 } }));
+  assert.equal(closestCivilianForBoat(queue, { x: 0, z: 0 }), queue[1]);
+  assert.equal(closestCivilianForBoat([...queue].reverse(), { x: 10, z: 0 }), queue[0]);
+  for (const age of ['adult', 'elderly', 'child']) assert.ok(civilianBoardingSpeed(age) >= 2.4);
+});
 
 test('visible residents can start evacuating at legal crowd spacing without applying the hidden-emergence gate twice', () => {
   const people = [0, .73].map((x, index) => ({ visible: true, position: { x, z: 0 },
@@ -78,15 +85,15 @@ test('sixty individual waiting places form a dense crowd on the dock without mer
   assert.ok(new Set(slots.map(slot => Math.round(slot.z * 100))).size > 55, 'waiting people must not form grid rows');
   const nearest = slots.map((slot, index) => Math.min(...slots.filter((_, other) => other !== index)
     .map(other => Math.hypot(slot.x - other.x, slot.z - other.z))));
-  assert.ok(nearest.reduce((sum, distance) => sum + distance, 0) / slots.length < .85, 'the crowd must actually be tightly packed');
+  assert.ok(nearest.reduce((sum, distance) => sum + distance, 0) / slots.length < 1, 'the crowd must actually be tightly packed');
 });
 
-test('one hundred and eighty civilians overflow the dock onto the eastern approach without sharing body space', () => {
+test('one hundred and eighty civilians prefer the western dock instead of the eastern fighting approach', () => {
   const slots = Array.from({ length: NANJING_CIVILIAN_COUNT }, (_, index) => civilianWaitingSlot(index));
   assert.equal(slots.length, 180);
-  assert.ok(slots.filter(slot => slot.x > -59).length >= 70);
+  assert.ok(slots.every(slot => slot.x < -59.8));
   for (let index = 0; index < slots.length; index++) for (const other of slots.slice(index + 1))
-    assert.ok(Math.hypot(slots[index].x - other.x, slots[index].z - other.z) >= .58);
+    assert.ok(Math.hypot(slots[index].x - other.x, slots[index].z - other.z) >= .74);
 });
 test('a moving civilian cannot pass through a waiting person or a solid barrier', () => {
   const first = { position: { x: 0, y: 0, z: 0 }, userData: { civilianId: 0 } };

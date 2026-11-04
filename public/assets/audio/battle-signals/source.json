@@ -1,0 +1,49 @@
+{
+  "sourceKind": "reviewed-instrument-recordings",
+  "license": "Mixed-Public-Domain-and-CC0",
+  "source": "https://commons.wikimedia.org/",
+  "sources": [
+    {
+      "id": "bugle",
+      "author": "United States Air Force Heritage of America Band",
+      "license": "Public-Domain-US-Government",
+      "source": "https://commons.wikimedia.org/wiki/File:Charge_-_Concert_Band_-_United_States_Air_Force_Heritage_of_America_Band.mp3",
+      "licenseUrl": "https://www.music.af.mil/Multimedia/Music/Public-Domain-Music/",
+      "download": "https://upload.wikimedia.org/wikipedia/commons/d/d6/Charge_-_Concert_Band_-_United_States_Air_Force_Heritage_of_America_Band.mp3",
+      "sha256": "fa717b4e7a572abc24333f26f19543ae1308bd70255e9bd4c7e58a933b16ef01"
+    },
+    {
+      "id": "whistle",
+      "author": "SpliceSound",
+      "license": "CC0-1.0",
+      "source": "https://commons.wikimedia.org/wiki/File:218318_splicesound_referee-whistle-blow-gymnasium.wav",
+      "originalPage": "https://freesound.org/people/SpliceSound/sounds/218318/",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://upload.wikimedia.org/wikipedia/commons/7/7d/218318_splicesound_referee-whistle-blow-gymnasium.wav",
+      "sha256": "6659d56633874aba1b03a1639df8019eef0fe57569ea98159e16d1273041c509"
+    }
+  ],
+  "files": [
+    {
+      "file": "friendly-bugle.wav",
+      "team": "friendly",
+      "sourceId": "bugle",
+      "bytes": 518672,
+      "sha256": "a377a3d790b48d5c5cf929e26172ecb23e7dddf31712cbdab81e3d3c124ab69b",
+      "processing": "atrim=0:10.8,afade=t=in:d=0.015,afade=t=out:st=10.6:d=0.2; mono 24kHz PCM16; no synthetic instrument replacement"
+    },
+    {
+      "file": "enemy-whistle.wav",
+      "team": "enemy",
+      "sourceId": "whistle",
+      "bytes": 39476,
+      "sha256": "896cc46f5ea993ef4e3935eddaa37fdbe0a2c91450187978c75e3d6ae1f3f933",
+      "processing": "atrim=0:0.82,highpass=f=650,lowpass=f=6500,afade=t=in:d=0.008,afade=t=out:st=0.68:d=0.14; mono 24kHz PCM16; no synthetic instrument replacement"
+    }
+  ],
+  "limitations": [
+    "Modern recordings used for game instrument timbre, not verified NRA or IJA historical signals.",
+    "Friendly Charge is an American military bugle call, not presented as an authenticated Chinese command melody.",
+    "The whistle is a referee whistle recorded indoors, not an original Japanese military recording."
+  ]
+}

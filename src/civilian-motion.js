@@ -16,7 +16,7 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
     person.rotation.y += Math.max(-3.8 * dt, Math.min(3.8 * dt, delta));
   }
   const active = Math.min(1, motion.speed / 1.2) * (1 - motion.crouch);
-  const phase = data.walkPhase, stride = Math.sin(phase) * active * (mode === 'flee' ? .65 : .46);
+  const phase = data.walkPhase, stride = Math.sin(phase) * active * (['flee', 'boarding'].includes(mode) ? .65 : .46);
   motion.stride = stride;
   motion.lean = mix(data.ageGroup === 'elderly' ? -.13 : -.06,
     -.26, Math.max(motion.protective, Math.min(1, motion.speed / 4)));

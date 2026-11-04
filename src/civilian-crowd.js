@@ -8,6 +8,7 @@ const variation = (index, salt) => {
   value = Math.imul(value ^ value >>> 16, 0x45d9f3b);
   return ((value ^ value >>> 16) >>> 0) / 4294967296;
 };
+const CROWD_TURNS = Object.freeze([0, .6, -.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]);
 const openingStarts = [];
 for (let candidate = 0; openingStarts.length < 60; candidate++) {
   const point = { x: -24 + (variation(candidate, 19) - .5) * 4.4,
@@ -79,10 +80,10 @@ const waitingSlots = [];
 for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
   for (let attempt = 0; ; attempt++) {
     const seed = index * 997 + attempt;
-    const x = index < 60 ? -71.6 + variation(seed, 701) ** 1.8 * 5
-      : -63.8 + variation(seed, 703) * 15;
-    const z = index < 60 ? -86.5 + variation(seed, 709) * 12 : -88 + variation(seed, 709) * 15.6;
-    if (waitingSlots.every(point => Math.hypot(point.x - x, point.z - z) >= .58)) {
+    const x = -71.6 + variation(seed, 701) ** 1.35 * (index < 60 ? 5 : 10.8);
+    const z = index < 60 ? -86.5 + variation(seed, 709) * 12 : -88.8 + variation(seed, 709) * 17.6;
+    const gangway = x < -70.4 && [-86, -83, -80, -77, -74].some(boatZ => Math.abs(z - boatZ) < .65);
+    if (!gangway && waitingSlots.every(point => Math.hypot(point.x - x, point.z - z) >= .74)) {
       waitingSlots.push({ x, y: x < -59 ? .36 : 0, z }); break;
     }
   }
@@ -107,13 +108,26 @@ export function placeCivilianWaitingSlots(clear) {
       const x = anchor.x + Math.cos(angle) * radius, z = anchor.z + Math.sin(angle) * radius;
       candidates.push({ x, z, y: x < -59 ? .36 : 0 });
     }
-    const point = candidates.find(point => point.x > -72.5 && point.x < -46 &&
+    const point = candidates.find(point => point.x > -72.5 && point.x < -59.8 &&
       point.z > -91 && point.z < -71 &&
-      placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .58) && clear(point));
+      !(point.x < -70.4 && [-86, -83, -80, -77, -74].some(z => Math.abs(point.z - z) < .65)) &&
+      placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .74) && clear(point));
     if (!point) throw new Error(`No physically clear dock waiting place for civilian ${index}`);
     placed.push(point);
   }
   return placed;
+}
+
+export function closestCivilianForBoat(queue, boat) {
+  if (!queue.length) throw new RangeError('Boarding selection requires waiting civilians');
+  const distance = person => (person.position.x - boat.x) ** 2 + (person.position.z - boat.z) ** 2;
+  return queue.reduce((nearest, person) => distance(person) < distance(nearest) ? person : nearest);
+}
+
+export function civilianBoardingSpeed(age) {
+  const speed = { adult: 3.2, elderly: 2.4, child: 2.8 }[age];
+  if (!speed) throw new RangeError('Unknown boarding civilian age');
+  return speed;
 }
 
 export function createCivilianCrowdPlanner() {
@@ -314,12 +328,16 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
     if (remaining < .01) break;
     const stride = Math.min(remaining, distance / steps);
     const heading = Math.atan2(dz, dx), preference = civilian.userData.civilianId % 2 ? 1 : -1;
-    const next = [0, preference * .6, -preference * .6, preference * 1.2, -preference * 1.2,
-      preference * 1.8, -preference * 1.8, preference * 2.4, -preference * 2.4, Math.PI]
-      .map(angle => ({ x: position.x + Math.cos(heading + angle) * stride,
-        z: position.z + Math.sin(heading + angle) * stride }))
-      .find(point => (!canStep || canStep(position, point)) && !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
-        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= spacing));
+    let next = null;
+    for (let turn = 0; turn < CROWD_TURNS.length; turn++) {
+      const angle = turn === CROWD_TURNS.length - 1 ? Math.PI : CROWD_TURNS[turn] * preference;
+      const point = { x: position.x + Math.cos(heading + angle) * stride,
+        z: position.z + Math.sin(heading + angle) * stride };
+      if ((!canStep || canStep(position, point)) && !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
+        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= spacing)) {
+        next = point; break;
+      }
+    }
     if (!next) break;
     position.x = next.x; position.z = next.z;
     moved += stride;

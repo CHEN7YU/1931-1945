@@ -22,7 +22,7 @@ import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
 import { createWeaponHands } from './weapon-hands.js';
-import { createOcclusionQuery } from './occlusion-query.js';
+import { createOcclusionQuery, createClosestHitQuery } from './occlusion-query.js';
 import { createGrenadeSupport } from './grenade-support.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
@@ -41,6 +41,7 @@ import { loadRifleAudio } from './rifle-audio.js';
 import { loadFootstepAudio } from './footstep-audio.js';
 import { loadRifleMechanicalAudio } from './rifle-mechanical-audio.js';
 import { loadBattleVoices, createObjectiveVoiceTracker } from './battle-voices.js';
+import { loadBattleSignals } from './battle-signals.js';
 import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion as sampleNativeMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
@@ -125,7 +126,7 @@ import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJI
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from './nanjing-defense.js';
 import { civilianWaypointReached, moveCivilianInCrowd, releaseNanjingCivilianWave,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
-  activateCivilianEvacuation } from './civilian-crowd.js';
+  activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
@@ -335,6 +336,7 @@ const emplacements = new Map((nanjingCampaignMode ? NANJING_EMPLACEMENTS : []).m
 }));
 const solidIndex = createSolidIndex(world.solids);
 const occluded = createOcclusionQuery();
+const closestHit = createClosestHitQuery();
 const grenadeSupport = createGrenadeSupport(world.solids, world.groundHeight, (point, radius) =>
   !world.doorSystem.doors.some(door => Math.hypot(point.x - door.x, point.z - door.z) < door.width * 2 + radius + .1) &&
   ![...entities.vehicles.values()].some(vehicle =>
@@ -453,6 +455,7 @@ let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audi
 let footstepAudio = null, footstepAudioFailure = null;
 let mechanicalAudio = null, mechanicalAudioFailure = null;
 let battleVoices = null, battleVoicesFailure = null;
+let battleSignals = null, battleSignalsFailure = null;
 let civilianVoices = null, civilianVoicesFailure = null;
 let battleReactions = null, battleReactionsFailure = null;
 let mortarLaunch = null, mortarLaunchFailure = null, mortarLaunchesPlayed = 0;
@@ -501,6 +504,11 @@ try {
 } catch (error) {
   battleReactionsFailure = error.message;
   console.error('真人战斗反应录音未加载，短喊与受击人声不可用：', error);
+}
+try { battleSignals = await loadBattleSignals(); }
+catch (error) {
+  battleSignalsFailure = error.message;
+  console.error('战场军号与哨声未加载：', error);
 }
 let pointerHintShown = false;
 let hadPointerLock = false;
@@ -564,6 +572,7 @@ function setGameState(next) {
   battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat', 'draw'].includes(state));
   civilianVoices?.sync(['playing', 'transferring'].includes(state));
   battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
+  battleSignals?.sync(activeStates.has(state));
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -647,6 +656,7 @@ function initAudio() {
     battleVoices?.setOutput(audioMixer.output('voices'));
     civilianVoices?.setOutput(audioMixer.output('voices'));
     battleReactions?.setOutput(audioMixer.output('voices'));
+    battleSignals?.setOutput(audioMixer.output('voices'));
     noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
@@ -804,6 +814,7 @@ function deploymentOccupiedPositions(actors) {
 
 function vehicleSolids(ignoreVehicleId = null, from = null, groundOnly = false) {
   return [...entities.vehicles.values()].filter(item => item.id !== ignoreVehicleId &&
+    !item.fall?.sunk &&
     (!groundOnly || item.type === 'tank') &&
     (!from || from.distanceTo(item.position) > 3.2)).map(item => vehicleRenderer.model(item.id));
 }
@@ -967,6 +978,12 @@ function battleAudioListener() {
 
 function presentRifleReports() {
   const listener = battleAudioListener();
+  const signal = battleSignals?.update(audioContext, allForces, listener, time, activeStates.has(state));
+  if (signal?.team === 'enemy') {
+    const speaker = friendlyForces.filter(actor => actor.health > 0 && !actor.vehicleId && actor.id !== listener.soldierId)
+      .sort((a, b) => a.position.distanceToSquared(listener.position) - b.position.distanceToSquared(listener.position))[0];
+    if (speaker) battleVoices?.signalWarning(audioContext, speaker, listener, time);
+  }
   rifleAudio?.playBatch(audioContext, rifleReports.splice(0), listener);
   battleVoices?.update(audioContext, allForces, listener, time, activeStates.has(state), (observer, target) => {
     const eye = soldierEyePosition(observer);
@@ -1239,6 +1256,7 @@ function clearTransient() {
   battleVoices?.reset();
   civilianVoices?.reset();
   battleReactions?.reset();
+  battleSignals?.reset();
   objectiveVoiceTracker.reset();
   encirclementVoiceTracker.reset();
   combatFeedback.clear(); recoil = 0;
@@ -2295,10 +2313,11 @@ function traceGrenade(from, to, radius, checkingSupport = false, ignoreVehicleId
   for (const offset of [[0, 0, 0], [radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0], [0, 0, radius], [0, 0, -radius]]) {
     const origin = start.clone().add(new THREE.Vector3(...offset));
     ray.set(origin, travel); ray.far = length;
-    const hit = ray.intersectObjects([...solidIndex.candidates(origin, travel, length), ...transports], true)[0];
+    const hit = closestHit(ray, [...solidIndex.candidates(origin, travel, length), ...transports]);
     if (hit && hit.distance < distance) {
       distance = hit.distance;
       closest = { position: start.clone().addScaledVector(travel, distance), normal: captureImpact(hit, travel).normal,
+        surfaceKind: 'solid',
         vehicleId: hit.object.userData.vehicleId ?? null,
         ...(checkingSupport ? { staticSupport: grenadeSupport.mesh(hit.object, from, radius) } : {}) };
     }
@@ -2320,6 +2339,7 @@ function traceGrenade(from, to, radius, checkingSupport = false, ignoreVehicleId
       const slopeX = (groundHeight(position.x + .02, position.z) - groundHeight(position.x - .02, position.z)) / .04;
       const slopeZ = (groundHeight(position.x, position.z + .02) - groundHeight(position.x, position.z - .02)) / .04;
       closest = { position, normal: new THREE.Vector3(-slopeX, 1, -slopeZ).normalize(),
+        surfaceKind: 'ground',
         ...(checkingSupport ? { staticSupport: grenadeSupport.ground(from, radius) } : {}) };
     }
   }
@@ -2771,13 +2791,16 @@ function fireAutomaticShot(transport, shot, source, start, yaw, pitch, aircraft 
 function updateVehicles(dt) {
   for (const transport of entities.vehicles.values()) {
     if (transport.health <= 0) {
-      if (transport.type === 'plane' && transport.fall && !transport.fall.grounded) {
+      if (transport.type === 'plane' && transport.fall && !transport.fall.grounded && !transport.fall.sunk) {
         const impactHeight = world.impactHeight ?? world.groundHeight;
         const landed = advanceAircraftFall(transport, dt, time, (from, to) => {
           const collision = traceGrenade(from, to, .45, false, transport.id, true, impactHeight);
-          if (collision) return { ...collision.position };
+          if (collision) return { ...collision.position,
+            ...(collision.surfaceKind === 'ground' && world.isDeepWater?.(collision.position.x, collision.position.z)
+              ? { water: true, waterLevel: impactHeight(collision.position.x, collision.position.z) } : {}) };
           const floor = impactHeight(to.x, to.z) + .45;
-          if (to.y <= floor) return { x: to.x, y: floor, z: to.z };
+          if (to.y <= floor) return { x: to.x, y: floor, z: to.z,
+            ...(world.isDeepWater?.(to.x, to.z) ? { water: true, waterLevel: floor - .45 } : {}) };
           return null;
         });
         for (const seat of transport.seats) {
@@ -5027,6 +5050,7 @@ function updateNanjingCivilians(dt) {
         data.arrived = true;
         registerCivilianArrival(nanjingCampaign);
         queue.push(civilian);
+        continue;
       }
     }
     if (data.arrived && civilian.parent === scene && response?.mode !== 'flee') {
@@ -5047,11 +5071,11 @@ function updateNanjingCivilians(dt) {
   for (const ferry of world.ferries) {
     const boatState = nanjingCampaign.boats[ferry.userData.ferryId];
     if (ferry.userData.state === 'docked') {
+      let boardingStarted = false;
       if (nanjingCampaign.dockActivated && queue.length && !ferry.userData.boarding &&
         boatState.passengers < NANJING_BOAT_CAPACITY && nanjingCampaign.boardingClock >= 1) {
         nanjingCampaign.boardingClock = 0;
-        const civilian = queue.reduce((nearest, person) =>
-          person.position.distanceTo(ferry.position) < nearest.position.distanceTo(ferry.position) ? person : nearest);
+        const civilian = closestCivilianForBoat(queue, ferry.position);
         const shore = { x: -72.2, z: ferry.position.z };
         const path = rejoinCivilianRoute(civilian.position, shore, world.civilianNavigate,
           world.civilianNavigationObstacles, civilianNavigationLookup);
@@ -5067,15 +5091,16 @@ function updateNanjingCivilians(dt) {
           z: ferry.position.z + (passengerIndex % 2 ? .4 : -.4), y: ferry.position.y + NANJING_FERRY_FLOOR };
         ferry.userData.boarding = { civilian, path: [...path.map(point => ({ ...point, y: world.groundHeight(point.x, point.z) })),
           { x: -74.3, z: ferry.position.z, y: ferry.position.y + NANJING_FERRY_FLOOR }, seat] };
+        boardingStarted = true;
       }
       const boarding = ferry.userData.boarding;
-      if (boarding) {
+      if (boarding && !boardingStarted) {
         const { civilian, path } = boarding;
         while (path.length > 1 && path[0].x >= -72.2 && path[1].x >= -72.2 &&
           civilianWaypointReached(civilian.position, path, 0, world.civilianNavigationObstacles,civilianNavigationLookup)) path.shift();
         const target = path[0];
         const delta = new THREE.Vector3(target.x, target.y, target.z).sub(civilian.position);
-        const distance = delta.length(), travel = Math.min(distance, dt * 1.8);
+        const distance = delta.length(), travel = Math.min(distance, dt * civilianBoardingSpeed(civilian.userData.ageGroup));
         if (distance > .001) {
           const before = civilian.position.clone();
           if (target.x >= -72.2 && civilian.position.x >= -72.21) {
@@ -5087,13 +5112,14 @@ function updateNanjingCivilians(dt) {
           } else civilian.position.addScaledVector(delta, travel / distance);
           const moved = civilian.position.distanceTo(before);
           civilian.rotation.y = Math.atan2(-delta.x, -delta.z);
-          civilian.userData.walkPhase += moved * 5;
-          for (const [index, leg] of civilian.civilianLegs.entries())
-            leg.rotation.x = moved > .001 ? Math.sin(civilian.userData.walkPhase) * .45 * (index ? -1 : 1) : 0;
+          advanceCivilianMotion(civilian, { dt, now: time, moved,
+            dx: civilian.position.x - before.x, dz: civilian.position.z - before.z, mode: 'boarding' });
         }
-        if (civilian.position.distanceTo(new THREE.Vector3(target.x, target.y, target.z)) < .015) path.shift();
+        if (civilian.position.distanceTo(new THREE.Vector3(target.x, target.y, target.z)) <
+          (path.length === 1 ? 1e-5 : .015)) path.shift();
         if (!path.length && boardCivilian(nanjingCampaign, boatState.id)) {
           if (boatState.passengers === 1) ferry.userData.loadedAt = time;
+          civilian.userData.escapeMotion = null; civilian.userData.escapeMode = null;
           for (const limb of [...civilian.civilianArms, ...civilian.civilianLegs]) limb.rotation.x = 0;
           if (civilian.civilianTorso) civilian.civilianTorso.rotation.x = 0;
           if (civilian.civilianTorso) civilian.civilianTorso.rotation.z = 0;
@@ -5654,7 +5680,7 @@ function updateHUD() {
     ? `渲染隔离诊断 · ${benchmark.renderIsolationAt}秒后${benchmark.renderIsolation === 'no-draw' ? '停止绘制' : '隐藏第三人称人物'} · 战斗模拟继续　` : '';
   const diagnosticLabel = isolationLabel + scenarioLabel;
   const audioLabel = audioUnsupported ? '音效不可用　'
-    : `${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
+    : `${battleSignalsFailure ? '军号与哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
@@ -6450,7 +6476,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     airSupport: { count: [...entities.vehicles.values()].filter(vehicle => vehicle.type === 'plane' && vehicle.team === 'enemy').length,
       aircraft: [...entities.vehicles.values()].filter(vehicle => vehicle.type === 'plane' && vehicle.team === 'enemy').map(vehicle => ({
         ...vehicle.aiFlight, position: vehicle.position.toArray(), pitch: vehicle.pitch, heading: vehicle.heading, roll: vehicle.roll,
-        health: vehicle.health, ammo: vehicle.weapon.ammo, model: vehicleRenderer.model(vehicle.id).userData.profile.model,
+        health: vehicle.health, ammo: vehicle.weapon.ammo, sunk: Boolean(vehicle.fall?.sunk),
+        model: vehicle.fall?.sunk ? null : vehicleRenderer.model(vehicle.id).userData.profile.model,
         team: vehicle.team, lastShot: vehicle.weapon.lastShot ?? null })) },
     map: { ferries: world.ferries.length, gateBarbicans: world.landmarks.gatehouse.barbicans,
       bridgeDeckDefenses: world.landmarks.bridgeDeckDefenses,
@@ -6487,6 +6514,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
     ? { ...battleVoices.snapshot, contextState: audioContext?.state ?? 'not-started' }
     : { status: 'unavailable', error: battleVoicesFailure },
   civilianVoices: civilianVoices ? civilianVoices.snapshot : { status: 'unavailable', error: civilianVoicesFailure },
+  battleSignals: battleSignals ? battleSignals.snapshot : { status: 'unavailable', error: battleSignalsFailure },
   battleReactions: audioUnsupported ? { status: 'unavailable' } : battleReactions
     ? battleReactions.snapshot : { status: 'unavailable', error: battleReactionsFailure },
   rifleAudio: audioUnsupported ? { status: 'unavailable' } : rifleAudio

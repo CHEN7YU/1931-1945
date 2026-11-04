@@ -1,6 +1,6 @@
 {
   "provider": "Azure AI Speech",
-  "generatedAt": "2026-11-03T09:33:56.752Z",
+  "generatedAt": "2026-11-04T09:46:28.246Z",
   "source": "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech",
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
@@ -6209,6 +6209,108 @@
       "bytes": 33408,
       "sha256": "35245a93f82b59b4a90cdc50cbca0e333ac9ad370c17f25e732aec63b3ff1a96",
       "synthesisHash": "afe68b9bd19cda602b44ab62101d85b208fb14be5c183cbb4babd7efc19182b4"
+    },
+    {
+      "id": "enemy-whistle-1",
+      "cue": "enemy-whistle",
+      "text": "日军吹哨了，他们要冲锋了！",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+12%",
+      "pitch": "-2%",
+      "team": "friendly",
+      "variant": 0,
+      "file": "friendly-0-enemy-whistle-1.mp3",
+      "gender": "Male",
+      "bytes": 16560,
+      "sha256": "bf1eaf2a83632a3be116b05433372202fa3a75e658b62c13d649a449ddf73e5a",
+      "synthesisHash": "780dca2be298d3137a2653378df3f5c644127dd20dfdb4b8c2bcce8d14965869"
+    },
+    {
+      "id": "enemy-whistle-2",
+      "cue": "enemy-whistle",
+      "text": "听，日军的哨子！准备迎敌！",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+12%",
+      "pitch": "-2%",
+      "team": "friendly",
+      "variant": 0,
+      "file": "friendly-0-enemy-whistle-2.mp3",
+      "gender": "Male",
+      "bytes": 20592,
+      "sha256": "2c1b8c2c7ff95f03711363201c9c727838ac45551f27e349a01e644289fa1b46",
+      "synthesisHash": "433c9e307c000c83bc42f7ff73aed049b264719d436fd00dd1d8820bfe125df8"
+    },
+    {
+      "id": "enemy-whistle-1",
+      "cue": "enemy-whistle",
+      "text": "日军吹哨了，他们要冲锋了！",
+      "voice": "zh-CN-YunxiNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+16%",
+      "pitch": "+2%",
+      "team": "friendly",
+      "variant": 1,
+      "file": "friendly-1-enemy-whistle-1.mp3",
+      "gender": "Male",
+      "bytes": 16704,
+      "sha256": "5792191de354b930d053907a97966bc1d4a3a6caba75fd047e32b5ef8f17b9b6",
+      "synthesisHash": "ce89f09f2ce1d20308272c446f6716d78e3daca680149d240d8d6c93ffbf4bf4"
+    },
+    {
+      "id": "enemy-whistle-2",
+      "cue": "enemy-whistle",
+      "text": "听，日军的哨子！准备迎敌！",
+      "voice": "zh-CN-YunxiNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+16%",
+      "pitch": "+2%",
+      "team": "friendly",
+      "variant": 1,
+      "file": "friendly-1-enemy-whistle-2.mp3",
+      "gender": "Male",
+      "bytes": 20592,
+      "sha256": "30b2aa4d492cebdeeda0536ce3ef806b49185b13d6ef3606b8dc28303c5d97d5",
+      "synthesisHash": "60afa69f5d6f0775263371b7dae4696e73c18c1a5bc04f77b3ea7e1cad662d0a"
+    },
+    {
+      "id": "enemy-whistle-1",
+      "cue": "enemy-whistle",
+      "text": "日军吹哨了，他们要冲锋了！",
+      "voice": "zh-CN-YunfengNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+10%",
+      "pitch": "-4%",
+      "team": "friendly",
+      "variant": 2,
+      "file": "friendly-2-enemy-whistle-1.mp3",
+      "gender": "Male",
+      "bytes": 17856,
+      "sha256": "97895454d464b64d87b177b1a1362c194655708d21659ebcacd5dbbf5c79eef1",
+      "synthesisHash": "39f92aeaebca74aa0fb0439d9af42e0a436ee5913d90c35104cfc56915e37c3c"
+    },
+    {
+      "id": "enemy-whistle-2",
+      "cue": "enemy-whistle",
+      "text": "听，日军的哨子！准备迎敌！",
+      "voice": "zh-CN-YunfengNeural",
+      "locale": "zh-CN",
+      "style": "angry",
+      "rate": "+10%",
+      "pitch": "-4%",
+      "team": "friendly",
+      "variant": 2,
+      "file": "friendly-2-enemy-whistle-2.mp3",
+      "gender": "Male",
+      "bytes": 22320,
+      "sha256": "8f5e505c90846c4fa2d37e3880900b403f4a8b63517edb9cb791c7d1f0c6263e",
+      "synthesisHash": "df1e98e2fe80086aa6b08dafeee6fb77cc71dbbbfe55da9634e74cd9046316d4"
     }
   ],
   "generationBatches": [
@@ -6386,6 +6488,50 @@
           "file": "friendly-2-east-breakout-1.mp3",
           "characters": 24,
           "requestedAt": "2026-11-02T21:19:47.321Z",
+          "state": "saved"
+        }
+      ]
+    },
+    {
+      "id": "2026-11-04T09:46:25.910Z",
+      "authorizedUsd": 50,
+      "reservedUsd": 6,
+      "note": "One USD reserved per small new request, not an actual Azure invoice. No automatic retries.",
+      "requests": [
+        {
+          "file": "friendly-0-enemy-whistle-1.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:25.910Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-0-enemy-whistle-2.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:26.215Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-1-enemy-whistle-1.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:26.614Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-1-enemy-whistle-2.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:26.989Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-2-enemy-whistle-1.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:27.431Z",
+          "state": "saved"
+        },
+        {
+          "file": "friendly-2-enemy-whistle-2.mp3",
+          "characters": 13,
+          "requestedAt": "2026-11-04T09:46:27.705Z",
           "state": "saved"
         }
       ]

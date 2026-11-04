@@ -19,6 +19,7 @@ const groups = [
     evidence: ['PERMISSION.txt'] },
   { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/mortar/source.json', directory: 'audio/mortar', use: 'runtime', evidence: [] },
+  { manifest: 'audio/battle-signals/source.json', directory: 'audio/battle-signals', use: 'runtime', evidence: [] },
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
@@ -112,6 +113,16 @@ export async function auditAssets({ root, buildRoot } = {}) {
           !['Male', 'Female'].includes(file.gender))) throw new Error('Generated battle voice provenance requires review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
+    } else if (group.directory === 'audio/battle-signals') {
+      if (metadata.sourceKind !== 'reviewed-instrument-recordings' || metadata.license !== 'Mixed-Public-Domain-and-CC0' ||
+        metadata.files.map(file => file.file).sort().join(',') !== 'enemy-whistle.wav,friendly-bugle.wav' ||
+        metadata.sources?.length !== 2 ||
+        metadata.sources[0].author !== 'United States Air Force Heritage of America Band' ||
+        metadata.sources[0].license !== 'Public-Domain-US-Government' ||
+        metadata.sources[0].sha256 !== 'fa717b4e7a572abc24333f26f19543ae1308bd70255e9bd4c7e58a933b16ef01' ||
+        metadata.sources[1].author !== 'SpliceSound' || metadata.sources[1].license !== 'CC0-1.0' ||
+        metadata.sources[1].sha256 !== '6659d56633874aba1b03a1639df8019eef0fe57569ea98159e16d1273041c509')
+        throw new Error('Faction signal recording provenance requires review');
     } else if (group.directory === 'audio/machine-gun') {
       if (metadata.license !== 'Pixabay-Content-License' || metadata.author !== 'Foisal72' ||
         metadata.source !== 'https://pixabay.com/sound-effects/film-special-effects-gun-fire-346766/' ||

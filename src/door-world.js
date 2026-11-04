@@ -19,6 +19,25 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
   pivot.add(child);
   const colliders = doors.map(door => doorCollider(door));
   obstacles.push(...colliders);
+  const proxy = new THREE.Mesh(leaf.geometry, leaf.material), instance = new THREE.Matrix4(), identity = new THREE.Matrix4();
+  const bounds = new THREE.Box3(), intersection = new THREE.Vector3(), doorHits = [];
+  const raycastStats = { queries: 0, bounds: 0, meshTests: 0 };
+  leaf.raycast = (raycaster, hits) => {
+    raycastStats.queries++;
+    const localWorld = leaf.matrixWorld.equals(identity);
+    for (let index = 0; index < doors.length; index++) {
+      const box = colliders[index]; raycastStats.bounds++;
+      bounds.min.set(box.minX, 0, box.minZ); bounds.max.set(box.maxX, box.height + .02, box.maxZ);
+      if (!localWorld) bounds.applyMatrix4(leaf.matrixWorld);
+      if (!bounds.containsPoint(raycaster.ray.origin) && (!raycaster.ray.intersectBox(bounds, intersection) ||
+        intersection.distanceToSquared(raycaster.ray.origin) > raycaster.far ** 2)) continue;
+      raycastStats.meshTests++;
+      leaf.getMatrixAt(index, instance);
+      proxy.matrixWorld.multiplyMatrices(leaf.matrixWorld, instance);
+      doorHits.length = 0; proxy.raycast(raycaster, doorHits);
+      for (const hit of doorHits) { hit.object = leaf; hit.instanceId = index; hits.push(hit); }
+    }
+  };
   let onNavigationChanged = () => {};
   let onRequested = () => {};
   let blockedDoors = [];
@@ -65,7 +84,7 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
   const portal = new THREE.Plane();
   const hitPoint = new THREE.Vector3();
   return {
-    doors, navigationObstacles,
+    doors, navigationObstacles, raycastStats,
     set onNavigationChanged(callback) { onNavigationChanged = callback; },
     set onRequested(callback) { onRequested = callback; },
     update(dt, occupants) {
