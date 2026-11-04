@@ -20,6 +20,8 @@ const groups = [
   { manifest: 'audio/battle-voices/source.json', directory: 'audio/battle-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/mortar/source.json', directory: 'audio/mortar', use: 'runtime', evidence: [] },
   { manifest: 'audio/battle-signals/source.json', directory: 'audio/battle-signals', use: 'runtime', evidence: [] },
+  { manifest: 'audio/tactical-feedback/source.json', directory: 'audio/tactical-feedback', use: 'runtime', evidence: [] },
+  { manifest: 'audio/vehicle-engines/source.json', directory: 'audio/vehicle-engines', use: 'runtime', evidence: [] },
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
@@ -113,6 +115,30 @@ export async function auditAssets({ root, buildRoot } = {}) {
           !['Male', 'Female'].includes(file.gender))) throw new Error('Generated battle voice provenance requires review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
+    } else if (group.directory === 'audio/tactical-feedback') {
+      if (metadata.sourceKind !== 'reviewed-foley-and-procedural' || metadata.license !== 'Mixed-CC0-and-project-authored' ||
+        metadata.files.length !== 10 || metadata.sources?.length !== 3 ||
+        metadata.sources[0].author !== 'Kenney' || metadata.sources[0].license !== 'CC0-1.0' ||
+        metadata.sources[0].archiveSha256 !== '029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8' ||
+        metadata.sources[1].author !== 'rubberduck' || metadata.sources[1].license !== 'CC0-1.0' ||
+        metadata.sources[1].archiveSha256 !== '7cd39abb49d4362a37ba18dc0e454c7dc1d08029d4e5b683149046bc237b2eba' ||
+        metadata.files.some(file => file.file !== 'flyby.wav' && file.license !== 'CC0-1.0') ||
+        metadata.files.find(file => file.file === 'flyby.wav')?.license !== 'Project-authored procedural audio; not a recording')
+        throw new Error('Tactical audio source provenance requires review');
+    } else if (group.directory === 'audio/vehicle-engines') {
+      const attribution = await readFile(assetPath(root, 'audio/vehicle-engines/ATTRIBUTION.txt'), 'utf8');
+      if (metadata.sourceKind !== 'attributed-derived-engine-loops' ||
+        metadata.license !== 'Mixed-CC-BY-3.0-and-CC-BY-SA-4.0' || metadata.attribution !== 'ATTRIBUTION.txt' ||
+        metadata.files.map(file => file.file).sort().join(',') !== 'ATTRIBUTION.txt,plane-engine.wav,tank-engine.wav' ||
+        metadata.files.find(file => file.file === 'tank-engine.wav')?.license !== 'CC-BY-3.0' ||
+        metadata.files.find(file => file.file === 'plane-engine.wav')?.license !== 'CC-BY-SA-4.0' ||
+        metadata.sources?.[0]?.sha256 !== '11b053f13c40a8ea9926b16cc8ed51c67ad90bfe9b49e80cfd974500ded6a400' ||
+        metadata.sources?.[1]?.sha256 !== '1fb80a280b7b62dc5d60e34531d6ba18aa3b22f5e7ab4fc5a1054940772f1a70' ||
+        !['Nayckron', 'qubodup', 'Versatile Virtuoso', 'CC BY 3.0', 'CC BY-SA 4.0',
+          'https://creativecommons.org/licenses/by-sa/4.0/'].every(text => attribution.includes(text)))
+        throw new Error('Attributed engine audio license or credits require review');
+      permissions.push({ directory: group.directory, basis: metadata.license,
+        limitation: 'Derived loops retain CC BY 3.0 and CC BY-SA 4.0 licenses with source attribution; not CC0.' });
     } else if (group.directory === 'audio/battle-signals') {
       if (metadata.sourceKind !== 'reviewed-instrument-recordings' || metadata.license !== 'Mixed-Public-Domain-and-CC0' ||
         metadata.files.map(file => file.file).sort().join(',') !== 'enemy-whistle.wav,friendly-bugle.wav' ||

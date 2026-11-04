@@ -1530,8 +1530,9 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     return [];
   }
-  const groundSurface = (x, z) => Math.abs(z - 52) < 13 || Math.abs(x + 84) < 12
-    ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
+  const groundSurface = (x, z) => x >= -73 && x <= -59 && z >= -90 && z <= -70 ? 'wood'
+    : Math.abs(z - 52) < 13 || Math.abs(x + 84) < 12
+      ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
   const staticRendering = batchStaticScene(scene, residentialMeshes);
   sceneArt.staticRendering = staticRendering;
   return {

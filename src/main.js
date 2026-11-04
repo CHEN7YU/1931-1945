@@ -42,6 +42,8 @@ import { loadFootstepAudio } from './footstep-audio.js';
 import { loadRifleMechanicalAudio } from './rifle-mechanical-audio.js';
 import { loadBattleVoices, createObjectiveVoiceTracker } from './battle-voices.js';
 import { loadBattleSignals } from './battle-signals.js';
+import { loadTacticalFeedbackAudio } from './tactical-feedback-audio.js';
+import { loadVehicleAudio } from './vehicle-audio.js';
 import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion as sampleNativeMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
@@ -456,6 +458,7 @@ let footstepAudio = null, footstepAudioFailure = null;
 let mechanicalAudio = null, mechanicalAudioFailure = null;
 let battleVoices = null, battleVoicesFailure = null;
 let battleSignals = null, battleSignalsFailure = null;
+let tacticalAudio = null, tacticalAudioFailure = null, vehicleAudio = null, vehicleAudioFailure = null;
 let civilianVoices = null, civilianVoicesFailure = null;
 let battleReactions = null, battleReactionsFailure = null;
 let mortarLaunch = null, mortarLaunchFailure = null, mortarLaunchesPlayed = 0;
@@ -510,6 +513,13 @@ catch (error) {
   battleSignalsFailure = error.message;
   console.error('战场军号与哨声未加载：', error);
 }
+try {
+  tacticalAudio = await loadTacticalFeedbackAudio({ water: typeof world.isDeepWater === 'function', ferries: Boolean(world.ferries?.length) });
+} catch (error) {
+  tacticalAudioFailure = error.message; console.error('弹道与场景接触音效未加载：', error);
+}
+try { vehicleAudio = await loadVehicleAudio(); }
+catch (error) { vehicleAudioFailure = error.message; console.error('载具引擎录音未加载：', error); }
 let pointerHintShown = false;
 let hadPointerLock = false;
 let scoreboardInteractive = false, scoreboardReturnCapture = false, scoreboardRestoring = false;
@@ -573,6 +583,7 @@ function setGameState(next) {
   civilianVoices?.sync(['playing', 'transferring'].includes(state));
   battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
   battleSignals?.sync(activeStates.has(state));
+  tacticalAudio?.sync(activeStates.has(state)); vehicleAudio?.sync(activeStates.has(state));
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -657,6 +668,8 @@ function initAudio() {
     civilianVoices?.setOutput(audioMixer.output('voices'));
     battleReactions?.setOutput(audioMixer.output('voices'));
     battleSignals?.setOutput(audioMixer.output('voices'));
+    tacticalAudio?.setOutputs({ weapons: audioMixer.output('weapons'), footsteps: audioMixer.output('footsteps'), effects: audioMixer.output('effects') });
+    vehicleAudio?.setOutput(audioMixer.output('effects'));
     noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
@@ -923,7 +936,9 @@ function resetPersonalCombatFeedback() {
 
 function presentCombatEvents(bornAt = time) {
   const position = point => new THREE.Vector3(point.x, point.y, point.z);
+  const listener = tacticalAudio ? battleAudioListener() : null;
   combatEvents.drain(event => {
+    tacticalAudio?.consume(event, listener);
     if (event.type === 'shot') {
       if (event.weaponType === 'mortar' && mortarLaunch && audioContext && audioMixer) {
         if (playMortarLaunch(audioContext, mortarLaunch, audioMixer)) mortarLaunchesPlayed++;
@@ -971,13 +986,15 @@ function battleAudioListener() {
   const actor = controlledSoldier(entities), transport = occupiedVehicle(entities, actor);
   return {
     position: camera.position, right: { x: elements[0], y: elements[1], z: elements[2] },
-    soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId,
+    soldierId: entities.control.soldierId, weaponId: controlOwner(entities)?.weaponId, vehicleId: transport?.id ?? null,
     ownedWeaponIds: occupiedSeat(entities)?.canFire ? (transport?.machineGuns ?? []).map(gun => gun.id) : [],
   };
 }
 
 function presentRifleReports() {
   const listener = battleAudioListener();
+  tacticalAudio?.flush(audioContext, listener, time, entities.vehicles.values());
+  vehicleAudio?.update(audioContext, entities.vehicles.values(), listener, time, activeStates.has(state));
   const signal = battleSignals?.update(audioContext, allForces, listener, time, activeStates.has(state));
   if (signal?.team === 'enemy') {
     const speaker = friendlyForces.filter(actor => actor.health > 0 && !actor.vehicleId && actor.id !== listener.soldierId)
@@ -1257,6 +1274,7 @@ function clearTransient() {
   civilianVoices?.reset();
   battleReactions?.reset();
   battleSignals?.reset();
+  tacticalAudio?.reset(); vehicleAudio?.reset();
   objectiveVoiceTracker.reset();
   encirclementVoiceTracker.reset();
   combatFeedback.clear(); recoil = 0;
@@ -2807,8 +2825,12 @@ function updateVehicles(dt) {
           const occupant = entities.soldiers.get(seat.occupantId);
           if (occupant) occupant.position.copy(transport.position);
         }
-        if (landed) combatEvents.publish('explosion', { position: transport.position,
-          source: { credit: 'environment', cause: 'crash', vehicleId: transport.id }, sound: true, style: 'tank-destruction' }, time);
+        if (landed) {
+          if (transport.fall.sinking) tacticalAudio?.waterCrash(transport, time);
+          combatEvents.publish('explosion', { position: transport.position,
+            source: { credit: 'environment', cause: 'crash', vehicleId: transport.id },
+            sound: !transport.fall.sinking, style: 'tank-destruction' }, time);
+        }
       }
       continue;
     }
@@ -5112,8 +5134,12 @@ function updateNanjingCivilians(dt) {
           } else civilian.position.addScaledVector(delta, travel / distance);
           const moved = civilian.position.distanceTo(before);
           civilian.rotation.y = Math.atan2(-delta.x, -delta.z);
+          const phaseBefore = civilian.userData.walkPhase;
           advanceCivilianMotion(civilian, { dt, now: time, moved,
             dx: civilian.position.x - before.x, dz: civilian.position.z - before.z, mode: 'boarding' });
+          if (Math.floor(civilian.userData.walkPhase / Math.PI) > Math.floor(phaseBefore / Math.PI) && moved > .001 &&
+            (world.groundSurface(civilian.position.x, civilian.position.z) === 'wood' || civilian.position.x < -72.2))
+            tacticalAudio?.emit('deck-step', civilian.position, time, civilian.userData.civilianId);
         }
         if (civilian.position.distanceTo(new THREE.Vector3(target.x, target.y, target.z)) <
           (path.length === 1 ? 1e-5 : .015)) path.shift();
@@ -5168,6 +5194,7 @@ function updateNanjingCivilians(dt) {
       }
     }
     updateNanjingFerryRower(ferry, time);
+    tacticalAudio?.rower(ferry, time, world.impactHeight, world.isDeepWater);
   }
 }
 
@@ -5680,7 +5707,7 @@ function updateHUD() {
     ? `渲染隔离诊断 · ${benchmark.renderIsolationAt}秒后${benchmark.renderIsolation === 'no-draw' ? '停止绘制' : '隐藏第三人称人物'} · 战斗模拟继续　` : '';
   const diagnosticLabel = isolationLabel + scenarioLabel;
   const audioLabel = audioUnsupported ? '音效不可用　'
-    : `${battleSignalsFailure ? '军号与哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
+    : `${tacticalAudioFailure ? '弹道与接触音效未加载　' : ''}${vehicleAudioFailure ? '载具引擎未加载　' : ''}${battleSignalsFailure ? '军号与哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
@@ -5850,6 +5877,7 @@ function renderSimulationStatus() {
 function tick(now) {
   const callbackEnteredAt = benchmark ? performance.now() : 0;
   if (fatal) return;
+  tacticalAudio?.beginFrame();
   footstepAudio?.beginBatch(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   const mechanical = mechanicalPlayback();
   mechanicalAudio?.beginBatch(mechanical.owner, mechanical.playing);
@@ -6515,6 +6543,8 @@ Object.defineProperty(window, '__battle', { get: () => ({
     : { status: 'unavailable', error: battleVoicesFailure },
   civilianVoices: civilianVoices ? civilianVoices.snapshot : { status: 'unavailable', error: civilianVoicesFailure },
   battleSignals: battleSignals ? battleSignals.snapshot : { status: 'unavailable', error: battleSignalsFailure },
+  tacticalAudio: tacticalAudio ? tacticalAudio.snapshot : { status: 'unavailable', error: tacticalAudioFailure },
+  vehicleAudio: vehicleAudio ? vehicleAudio.snapshot : { status: 'unavailable', error: vehicleAudioFailure },
   battleReactions: audioUnsupported ? { status: 'unavailable' } : battleReactions
     ? battleReactions.snapshot : { status: 'unavailable', error: battleReactionsFailure },
   rifleAudio: audioUnsupported ? { status: 'unavailable' } : rifleAudio

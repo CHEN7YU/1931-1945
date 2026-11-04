@@ -266,4 +266,6 @@
 #scoreboard .scoreboard-hint { margin: 9px 0 0; text-align: center; font-size: 12px; }
 .scoreboard-hint kbd { color: #ead49d; }
 .member.dead { text-decoration: none; }
+.menu-footer a { color: inherit; text-decoration: none; pointer-events: auto; }
+.menu-footer a:hover { text-decoration: underline; }
 @media(max-width:850px) { :is(#squad-score-table,#result-squad-scores) { grid-template-columns: 1fr; } }

@@ -1,0 +1,17 @@
+Vehicle engine recordings and derived loops
+
+Tank engine: Nayckron, with source work by qubodup.
+Source: https://opengameart.org/content/engine-loop-heavy-vehicletank
+Selected license: Creative Commons Attribution 3.0 (CC BY 3.0).
+https://creativecommons.org/licenses/by/3.0/
+Changes: mono 24kHz PCM conversion, peak normalization, 60ms loop crossfade.
+A designed heavy-vehicle loop derived from a car; not a historical tank recording.
+
+Plane engine: Versatile Virtuoso, "Propeller-plane-flying-steady-01.wav".
+Source: https://commons.wikimedia.org/wiki/File:Propeller-plane-flying-steady-01.wav
+License: Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0).
+https://creativecommons.org/licenses/by-sa/4.0/
+Changes: excerpt at 4-12 seconds, mono 24kHz PCM conversion, peak normalization, 60ms loop crossfade.
+The derived plane-engine.wav is distributed under CC BY-SA 4.0.
+Not identified as any specific historical aircraft or engine model.
+Neither author endorses this project.

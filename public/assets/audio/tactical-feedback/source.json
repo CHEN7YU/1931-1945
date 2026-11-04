@@ -1,0 +1,146 @@
+{
+  "sourceKind": "reviewed-foley-and-procedural",
+  "license": "Mixed-CC0-and-project-authored",
+  "sources": [
+    {
+      "id": "kenney-impact",
+      "author": "Kenney",
+      "source": "https://kenney.nl/assets/impact-sounds",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "archiveSha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8"
+    },
+    {
+      "id": "rubberduck-water",
+      "author": "rubberduck",
+      "source": "https://opengameart.org/content/40-cc0-water-splash-slime-sfx",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://opengameart.org/sites/default/files/water-splash-slime-sfx.zip",
+      "archiveSha256": "7cd39abb49d4362a37ba18dc0e454c7dc1d08029d4e5b683149046bc237b2eba"
+    },
+    {
+      "id": "project-procedural",
+      "author": "Project-authored sound design",
+      "source": "scripts/prepare-world-audio.mjs",
+      "license": "Project source license; not independently relicensed CC0"
+    }
+  ],
+  "processing": "Mono 24kHz PCM16, short excerpts, bounded peak and endpoint fades.",
+  "files": [
+    {
+      "file": "hit-stone.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/impactMining_000.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.22,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 10604,
+      "sha256": "2b117b73eb36e7074c01820105c7f4e125d43837af99f14d64bc32c632c63ae9"
+    },
+    {
+      "file": "hit-wood.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/impactWood_light_000.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.22,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 10604,
+      "sha256": "a3d6d0858aa809a40ecb1a96367cacdd1d2a362d44b2b2ea6f7f59e2fc7cdbe4"
+    },
+    {
+      "file": "hit-soil.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/impactSoft_medium_000.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.115125,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 5570,
+      "sha256": "02e799c32a925ce6a22836126e2ab06f7344c214796df5019897a9926fe1b246"
+    },
+    {
+      "file": "hit-generic.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/impactGeneric_light_000.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.16108333333333333,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 7776,
+      "sha256": "3378c9da76cf227d1d9b2fe4d0edb10bdd430b2aef933b315346edc1e1ee44a2"
+    },
+    {
+      "file": "deck-step.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/footstep_wood_001.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.16,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 7724,
+      "sha256": "f3d89e057b573d7a2215e976a230b704a96e2807904e8252c0abea9cfcfb3a42"
+    },
+    {
+      "file": "submerged-metal.wav",
+      "sourceId": "kenney-impact",
+      "original": "Audio/impactMetal_heavy_000.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.16475,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 7952,
+      "sha256": "b11cd6abc12cb11db25f612013cbc838a1607983e2c0e05dbd0b21fc92d05c2c"
+    },
+    {
+      "file": "oar.wav",
+      "sourceId": "rubberduck-water",
+      "original": "splash_03.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.65,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 31244,
+      "sha256": "96813015fbc8afe3aca8dba06d79e1c4914747ccb1f477918a511faabca7d096"
+    },
+    {
+      "file": "bubbles.wav",
+      "sourceId": "rubberduck-water",
+      "original": "bubble_01.ogg",
+      "license": "CC0-1.0",
+      "duration": 0.6965,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 33476,
+      "sha256": "d6bfbbacb5468caa9bd53a650e6f0027c0f660e00a5c57b175f0380362dae36b"
+    },
+    {
+      "file": "water-crash.wav",
+      "sourceId": "rubberduck-water",
+      "originals": [
+        "splash_11.ogg",
+        "splash_04.ogg"
+      ],
+      "license": "CC0-1.0",
+      "processing": "Layered splashes, reduced pitch; not an actual aircraft-crash recording.",
+      "duration": 2,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 96044,
+      "sha256": "6b6c8ed653ea0a8389f5d0fd2064091b2556fee2d5912740afedac1898683ab4"
+    },
+    {
+      "file": "flyby.wav",
+      "sourceId": "project-procedural",
+      "license": "Project-authored procedural audio; not a recording",
+      "processing": "Deterministic short noise transient; no gameplay randomness.",
+      "duration": 0.14,
+      "sampleRate": 24000,
+      "channels": 1,
+      "bytes": 6764,
+      "sha256": "ecc582f7a36cb991a9846651c2051551898122c75414efa4cc4de53634462cc9"
+    }
+  ]
+}

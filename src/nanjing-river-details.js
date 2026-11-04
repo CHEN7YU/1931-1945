@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const NANJING_FERRY_FLOOR = .42;
+export const NANJING_OAR_BLADE_TIP = Object.freeze([2.975, 0, 0]);
 
 const stations = [-3.2, -2.85, -2.35, -1.65, -.8, 0, .8, 1.65, 2.35, 2.85, 3.2];
 const beam = x => .045 + .89 * Math.pow(Math.max(0, 1 - (x / 3.22) ** 2), .65);
@@ -77,13 +78,14 @@ export function createNanjingFerryFactory(timber) {
   const hull = finish(parts, wood);
   hull.userData.nanjingFeature = 'open-planked-ferry';
   const oarParts = [];
-  box(oarParts, [3.1, .055, .055], [.75, 0, 0], 0xc1aa83);
-  box(oarParts, [.65, .055, .27], [2.05, 0, 0], 0x9b805d);
+  box(oarParts, [3.7, .055, .055], [1.05, 0, 0], 0xc1aa83);
+  box(oarParts, [.65, .055, .27], [2.65, 0, 0], 0x9b805d);
   const oar = finish(oarParts, wood);
   return () => {
     const boat = new THREE.Group();
     boat.add(hull.clone());
     const paddle = new THREE.Group(); paddle.add(oar.clone());
+    paddle.userData.bladeTip = [...NANJING_OAR_BLADE_TIP];
     paddle.position.set(2.35, 1.1, -.15);
     boat.add(paddle); boat.userData.oar = paddle;
     return boat;
