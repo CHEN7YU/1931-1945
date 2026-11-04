@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { finishStartupWork } from './startup-work.js';
 
 export function createNraAtlas(root, uniformMaterials = new Map()) {
   const materials = new Map(), keys = new Map();
@@ -18,7 +19,7 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
       if (variant) uniformKeys.set(material, register(variant));
     }
   });
-  if (materials.size === 1) return { material: [...materials.values()][0], mapGeometry() {} };
+  if (materials.size === 1) return { material: [...materials.values()][0], mapGeometry() {}, *mapGeometryWork() {} };
   const hasUniformVariants = [...uniformKeys].some(([material, key]) => keys.get(material) !== key);
   const canvas = document.createElement('canvas'), tile = 512, padding = 8;
   const columns = Math.ceil(Math.sqrt(materials.size)), size = columns * tile;
@@ -65,6 +66,9 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
   return {
     material, hasUniformVariants,
     mapGeometry(geometry, sourceMaterials) {
+      return finishStartupWork(this.mapGeometryWork(geometry, sourceMaterials));
+    },
+    *mapGeometryWork(geometry, sourceMaterials) {
       const list = Array.isArray(sourceMaterials) ? sourceMaterials : [sourceMaterials];
       const groups = Array.isArray(sourceMaterials) ? geometry.groups : [{ start: 0, count: geometry.attributes.position.count, materialIndex: 0 }];
       const originalUv = geometry.attributes.uv.clone();
@@ -83,6 +87,7 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
             alternateUv.setXY(vertex, (alternate.x + padding + .5 + point.x * (tile - 2 * padding - 1)) / size,
               1 - (alternate.y + padding + .5 + point.y * (tile - 2 * padding - 1)) / size);
           }
+          if ((vertex + 1) % 512 === 0) yield;
         }
       }
       if (alternateUv) geometry.setAttribute('nraUniformUv', alternateUv);
@@ -91,15 +96,21 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
 }
 
 export function mergeNraPose(parts, atlas, { weld = true } = {}) {
+  return finishStartupWork(mergeNraPoseWork(parts, atlas, { weld }));
+}
+
+export function* mergeNraPoseWork(parts, atlas, { weld = true } = {}) {
   const geometries = [];
   for (const { geometry, material, skin = false } of parts) {
     const expanded = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-    atlas.mapGeometry(expanded, material);
+    if (atlas.mapGeometryWork) yield* atlas.mapGeometryWork(expanded, material);
+    else atlas.mapGeometry(expanded, material);
     expanded.setAttribute('nraSkinRegion', new THREE.Float32BufferAttribute(
       new Float32Array(expanded.attributes.position.count).fill(skin ? 1 : 0), 1));
     expanded.clearGroups();
     for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv'].includes(name)) expanded.deleteAttribute(name);
     geometries.push(expanded);
+    yield;
   }
   const merged = mergeGeometries(geometries, false);
   for (const geometry of geometries) geometry.dispose();
@@ -124,6 +135,7 @@ export function mergeNraPose(parts, atlas, { weld = true } = {}) {
       index = vertices.length; lookup.set(key, index); vertices.push(vertex);
     }
     indices[vertex] = index;
+    if ((vertex + 1) % 512 === 0) yield;
   }
   if (vertices.length < count) {
     for (const { name, attribute, bits } of attributes) {
@@ -131,6 +143,7 @@ export function mergeNraPose(parts, atlas, { weld = true } = {}) {
       for (let vertex = 0; vertex < vertices.length; vertex++) {
         const from = vertices[vertex] * attribute.itemSize;
         target.set(bits.subarray(from, from + attribute.itemSize), vertex * attribute.itemSize);
+        if ((vertex + 1) % 512 === 0) yield;
       }
       merged.setAttribute(name, new THREE.BufferAttribute(array, attribute.itemSize, attribute.normalized));
     }

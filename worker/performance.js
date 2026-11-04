@@ -49,6 +49,7 @@ function summaries(rows) {
     const batch = JSON.parse(row.payload);
     for (const window of batch.windows) {
       const { context } = window, env = batch.environment;
+      if (context.state === 'loading') continue;
       const key = [batch.build.commit, batch.build.dirty, batch.build.builtAt, context.map, context.quality, env.browser, env.major,
         env.platform, env.width, env.height, env.dpr].join(':');
       if (!groups.has(key)) groups.set(key, {
@@ -76,6 +77,23 @@ function summaries(rows) {
     p95UpperBoundMs: histogramPercentile(group.histogram, .95),
     p99UpperBoundMs: histogramPercentile(group.histogram, .99) }));
 }
+function loadingSummaries(rows) {
+  const sessions = new Map();
+  for (const row of rows) {
+    const batch = JSON.parse(row.payload);
+    for (const window of batch.windows) {
+      if (window.context.state !== 'loading') continue;
+      const key = `${batch.sessionId}:${window.context.map}`;
+      const previous = sessions.get(key);
+      if (previous && previous.sequence >= window.sequence) continue;
+      sessions.set(key, { sessionId: batch.sessionId, sequence: window.sequence, build: batch.build,
+        map: window.context.map, quality: window.context.quality, environment: batch.environment,
+        lastStage: window.context.stage ?? null, elapsedSeconds: window.context.time,
+        ready: window.context.stage === 'ready' });
+    }
+  }
+  return [...sessions.values()];
+}
 export async function handlePerformance(request, env, authorized) {
   const url = new URL(request.url);
   const enabled = env.PERFORMANCE_DIAGNOSTICS_ENABLED === 'true';
@@ -97,7 +115,7 @@ export async function handlePerformance(request, env, authorized) {
       const included = results.slice(0, summaryLimit);
       return json({ schemaVersion: 1, since: query.since, until: query.until, reports: included.length,
         truncated: results.length > summaryLimit, nextCursor: included.at(-1)?.sequence ?? 0,
-        histogramBoundsMs: FRAME_BUCKETS_MS, groups: summaries(included),
+        histogramBoundsMs: FRAME_BUCKETS_MS, groups: summaries(included), loading: loadingSummaries(included),
         notice: 'Percentiles are merged-histogram upper bounds, not averaged FPS. Scope timings overlap. calls counts timed samples; sampleEvery=32 totals cover sampled calls only, not total CPU time. CPU render submission is not GPU execution. Truncated results are partial; export raw pages for full aggregation.' });
     }
     const after = url.searchParams.get('after') ?? '0', limit = url.searchParams.get('limit') ?? '50';

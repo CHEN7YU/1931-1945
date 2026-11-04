@@ -146,8 +146,11 @@ export async function auditAssets({ root, buildRoot } = {}) {
         metadata.permission?.basis !== 'user-supplied-soundtrack-project-use' ||
         metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
         metadata.permission.request !== '这个bgm用于用户打开游戏 直到完全进入战斗' ||
-        metadata.files.length !== 1 || metadata.files[0].file !== 'the-last-judgement.mp3' ||
-        metadata.files[0].sha256 !== '83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7')
+        metadata.activeFile !== 'youjing-long-march.mp3' || metadata.startSeconds !== 29 ||
+        metadata.files.length !== 2 || metadata.files[0].file !== 'the-last-judgement.mp3' ||
+        metadata.files[0].sha256 !== '83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7' ||
+        metadata.files[1].file !== 'youjing-long-march.mp3' ||
+        metadata.files[1].sha256 !== '819dc0934692ef4c8cf26fc9f1d4a4caae11bb4f27f9bed892d2d91100daf063')
         throw new Error('User-supplied menu soundtrack permission requires explicit review');
       permissions.push({ directory: group.directory, basis: metadata.permission.basis, limitation: metadata.permission.limitation });
     } else if (group.directory === 'audio/battle-signals') {

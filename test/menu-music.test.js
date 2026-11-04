@@ -2,19 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { createMenuMusic, MENU_MUSIC_VOLUME } from '../src/menu-music.js';
+import { createMenuMusic, MENU_MUSIC_VOLUME, MENU_MUSIC_START_SECONDS } from '../src/menu-music.js';
 import { defaultAudioSettings } from '../src/audio-mixer.js';
 
 function fixture(options = {}) {
-  const audio = { paused: true, currentTime: 0, volume: 1, loop: false, calls: 0, listeners: new Map(),
+  const { audio: audioSettings, ...musicOptions } = options;
+  const audio = { paused: true, currentTime: 0, readyState: 1, duration: 240,
+    volume: 1, loop: false, calls: 0, listeners: new Map(),
     async play() { this.calls++; this.paused = false; },
     pause() { this.paused = true; },
     addEventListener(name, listener) { this.listeners.set(name, listener); },
     removeEventListener(name) { this.listeners.delete(name); },
+    ...audioSettings,
   };
   const errors = [], changes = [];
   const music = createMenuMusic({ audio, settings: defaultAudioSettings(), fadeMs: 0,
-    onError: error => errors.push(error), onChange: status => changes.push(status), ...options });
+    onError: error => errors.push(error), onChange: status => changes.push(status), ...musicOptions });
   return { audio, music, errors, changes };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -23,9 +26,9 @@ test('one looping source continues through menu, deployment and loading, then ne
   const { audio, music } = fixture();
   await music.activate(); audio.currentTime = 45;
   music.setState('deployment'); music.setState('loading');
-  assert.equal(audio.calls, 1); assert.equal(audio.currentTime, 45); assert.equal(audio.loop, true);
+  assert.equal(audio.calls, 1); assert.equal(audio.currentTime, 45); assert.equal(audio.loop, false);
   music.setState('playing');
-  assert.equal(audio.paused, true); assert.equal(audio.currentTime, 0);
+  assert.equal(audio.paused, true); assert.equal(audio.currentTime, MENU_MUSIC_START_SECONDS);
   for (const state of ['pause', 'dead', 'transferring', 'victory', 'defeat', 'draw']) {
     music.setState(state); await music.activate(); assert.equal(audio.calls, 1);
   }
@@ -69,7 +72,7 @@ test('actual battle entry fades then pauses and rewinds the source', async () =>
   await new Promise(resolve => setTimeout(resolve, 45));
   assert.ok(audio.volume < MENU_MUSIC_VOLUME && audio.volume > 0);
   await new Promise(resolve => setTimeout(resolve, 80));
-  assert.equal(audio.paused, true); assert.equal(audio.currentTime, 0); assert.equal(audio.volume, 0);
+  assert.equal(audio.paused, true); assert.equal(audio.currentTime, MENU_MUSIC_START_SECONDS); assert.equal(audio.volume, 0);
   music.dispose();
 });
 
@@ -85,12 +88,63 @@ test('a late successful play cannot leak music into battle, and real decoding fa
   assert.equal(audio.paused, true); music.dispose();
 });
 
-test('the copied user MP3 retains its exact hash and unverified redistribution notice', async () => {
+test('playback begins at 29 seconds, loops back to 29 rather than zero, and mute preserves the playhead', async () => {
+  const { audio, music } = fixture();
+  await music.activate();
+  assert.equal(audio.currentTime, 29);
+  audio.currentTime = 87;
+  music.toggle(); music.toggle(); await settle();
+  assert.equal(audio.currentTime, 87);
+  audio.currentTime = audio.duration; audio.paused = true;
+  audio.listeners.get('ended')(); await settle();
+  assert.equal(audio.currentTime, 29); assert.equal(audio.paused, false);
+  music.dispose();
+});
+
+test('campaign navigation resumes the same playhead and does not lose a separate music mute', async () => {
+  let saved;
+  const first = fixture({ onNavigate: value => { saved = value; } });
+  await first.music.activate(); first.audio.currentTime = 76;
+  first.music.toggle(); first.music.prepareNavigation();
+  assert.deepEqual(saved, { time: 76, muted: true });
+  const next = fixture({ resumeTime: saved.time, initialMuted: saved.muted });
+  await next.music.activate();
+  assert.equal(next.audio.calls, 0);
+  next.music.toggle(); await settle();
+  assert.equal(next.audio.currentTime, 76); assert.equal(next.audio.paused, false);
+  first.music.dispose(); next.music.dispose();
+  const pendingMetadata = fixture({ resumeTime: 76, audio: { readyState: 0, duration: NaN },
+    onNavigate: value => { saved = value; } });
+  pendingMetadata.music.prepareNavigation();
+  assert.equal(saved.time, 76, 'a second fast campaign change must retain the pending resume offset before metadata arrives');
+  pendingMetadata.music.dispose();
+});
+
+test('metadata arriving after activation applies the initial seek once, while an unusable short recording is explicit', async () => {
+  const { audio, music, errors } = fixture({ audio: { readyState: 0, duration: NaN } });
+  await music.activate();
+  audio.duration = 240;
+  audio.readyState = 1; audio.currentTime = 0; audio.listeners.get('loadedmetadata')();
+  assert.equal(audio.currentTime, 29);
+  audio.currentTime = 44; audio.listeners.get('loadedmetadata')();
+  assert.equal(audio.currentTime, 44);
+  assert.deepEqual(errors, []); music.dispose();
+  const short = fixture({ audio: { readyState: 0, duration: 20 } });
+  short.audio.readyState = 1; short.audio.listeners.get('loadedmetadata')();
+  assert.equal(short.errors.length, 1);
+  assert.equal(short.audio.paused, true); short.music.dispose();
+});
+
+test('both copied MP3s retain their exact hashes and unverified redistribution notice', async () => {
   const root = new URL('../public/assets/audio/menu-music/', import.meta.url);
   const source = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
-  const bytes = await readFile(new URL(source.files[0].file, root));
-  assert.equal(bytes.length, source.files[0].bytes);
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), source.files[0].sha256);
+  assert.equal(source.activeFile, 'youjing-long-march.mp3'); assert.equal(source.startSeconds, 29);
+  assert.equal(source.files.length, 2);
+  for (const file of source.files) {
+    const bytes = await readFile(new URL(file.file, root));
+    assert.equal(bytes.length, file.bytes);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256);
+  }
   assert.equal(source.permission.isCC0, false);
   assert.equal(source.permission.redistributionRightsIndependentlyVerified, false);
 });

@@ -1,8 +1,15 @@
 export const SIGNAL_LIMITS = Object.freeze({ distance: 140, scanSeconds: .75, globalCooldown: 6,
-  enemyCooldown: 10, minimumAdvancing: 2 });
+  enemyCooldown: 25, minimumAdvancing: 2 });
 export const SIGNAL_CLIPS = Object.freeze([
   { team: 'enemy', file: 'enemy-whistle.wav' },
 ]);
+const nanjingStages = new Set(['gate-defense', 'withdrawal', 'dock-defense', 'withdrawal-to-boats']);
+
+export function enemySignalsEnabled(active, nanjingStage = null) {
+  if (typeof active !== 'boolean' || nanjingStage !== null && !nanjingStages.has(nanjingStage))
+    throw new RangeError('Enemy signal policy requires an active-state flag and a valid campaign stage');
+  return active && nanjingStage !== 'withdrawal';
+}
 
 export function signalMix(position, listener) {
   if (![position?.x, position?.y, position?.z, listener?.position?.x, listener?.position?.y, listener?.position?.z,

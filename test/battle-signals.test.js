@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { SIGNAL_CLIPS, SIGNAL_LIMITS, createBattleSignals, advancingSignalGroups, loadBattleSignals } from '../src/battle-signals.js';
+import { SIGNAL_CLIPS, SIGNAL_LIMITS, createBattleSignals, advancingSignalGroups, loadBattleSignals, enemySignalsEnabled } from '../src/battle-signals.js';
 
 const listener = { position: { x: 0, y: 1.7, z: 0 }, right: { x: 1, y: 0, z: 0 } };
 const soldiers = team => [0, 1].map(index => ({ id: `${team}-${index}`, unitId: team, team,
@@ -23,9 +23,10 @@ test('only actual enemy advances produce whistles, with bounded overlap, cooldow
   assert.equal(audio.update(ctx, actors, listener, 7, true).file, 'enemy-whistle.wav');
   assert.equal(audio.update(ctx, actors, listener, 17, true), null, 'a playing signal cannot be overlapped');
   ctx.sources[0].onended();
-  assert.equal(audio.update(ctx, actors, listener, 17, true).file, 'enemy-whistle.wav');
+  assert.equal(audio.update(ctx, actors, listener, 17, true), null, 'the reduced cadence still applies after a clip finishes');
+  assert.equal(audio.update(ctx, actors, listener, 7 + SIGNAL_LIMITS.enemyCooldown, true).file, 'enemy-whistle.wav');
   audio.sync(false); assert.equal(audio.snapshot.active, false);
-  assert.equal(audio.update(ctx, actors, listener, 20, false), null);
+  assert.equal(audio.update(ctx, actors, listener, 10 + SIGNAL_LIMITS.enemyCooldown, false), null);
   for (const actor of actors) actor.health = 0;
   assert.equal(audio.update(ctx, actors, listener, 60, true), null);
   audio.reset(); assert.equal(audio.snapshot.history.length, 0);
@@ -39,20 +40,39 @@ test('retreats, isolated soldiers, vehicles, standing guards and distant advance
   for (const actor of actors) { actor.tactics.mode = 'advance'; actor.position.x = 200; }
   assert.equal(advancingSignalGroups(actors, listener).length, 0);
 });
-test('enemy whistles recur more frequently during a sustained real advance, never overlap or leak into a retreat', () => {
+test('enemy whistles recur no sooner than every twenty-five seconds during a sustained real advance', () => {
   const buffers = Object.fromEntries(SIGNAL_CLIPS.map(clip => [clip.file, { duration: .82, numberOfChannels: 1 }]));
   const audio = createBattleSignals(buffers), ctx = context(), actors = soldiers('enemy'), times = [];
-  for (let time = 0; time <= 40; time += .25) {
+  for (let time = 0; time <= 1000; time += .05) {
     const report = audio.update(ctx, actors, listener, time, true);
     if (report) { times.push(time); ctx.sources.at(-1).onended(); }
   }
-  assert.equal(SIGNAL_LIMITS.enemyCooldown, 10);
+  assert.equal(SIGNAL_LIMITS.enemyCooldown, 25);
   assert.equal(Object.hasOwn(SIGNAL_LIMITS, 'friendlyCooldown'), false);
-  assert.ok(times.length >= 4, 'sustained nearby advance should produce four spaced whistles in 40 seconds');
+  assert.equal(times.length, Math.floor((1000 - 7) / 25) + 1);
   for (let index = 1; index < times.length; index++)
-    assert.ok(times[index] - times[index - 1] >= 10 && times[index] - times[index - 1] < 11);
+    assert.ok(times[index] - times[index - 1] >= 25 - 1e-8 && times[index] - times[index - 1] <= 25.051);
   for (const actor of actors) actor.tactics.mode = 'retreat';
-  assert.equal(audio.update(ctx, actors, listener, 60, true), null);
+  assert.equal(audio.update(ctx, actors, listener, 1100, true), null);
+});
+test('Nanjing gate-to-dock withdrawal is silent and cuts off an existing whistle; other attack stages and maps remain eligible', () => {
+  assert.equal(enemySignalsEnabled(true, 'withdrawal'), false);
+  for (const stage of [null, 'gate-defense', 'dock-defense', 'withdrawal-to-boats']) {
+    assert.equal(enemySignalsEnabled(true, stage), true);
+    assert.equal(enemySignalsEnabled(false, stage), false);
+  }
+  const buffers = Object.fromEntries(SIGNAL_CLIPS.map(clip => [clip.file, { duration: 2, numberOfChannels: 1 }]));
+  const audio = createBattleSignals(buffers), ctx = context(), actors = soldiers('enemy');
+  assert.ok(audio.update(ctx, actors, listener, 7, enemySignalsEnabled(true, 'gate-defense')));
+  assert.equal(audio.snapshot.active, true);
+  assert.equal(audio.update(ctx, actors, listener, 8, enemySignalsEnabled(true, 'withdrawal')), null);
+  assert.equal(audio.snapshot.active, false);
+  for (let time = 9; time < 100; time++)
+    assert.equal(audio.update(ctx, actors, listener, time, enemySignalsEnabled(true, 'withdrawal')), null);
+  assert.equal(audio.snapshot.history.length, 1, 'no whistle or new charge-warning report during withdrawal');
+  const fresh = audio.update(ctx, actors, listener, 100, enemySignalsEnabled(true, 'dock-defense'));
+  assert.equal(fresh.time, 100, 'resuming defense produces only a current real advance, never queued historical whistles');
+  assert.throws(() => enemySignalsEnabled(true, 'unknown'), RangeError);
 });
 test('signal recordings are real local PCM audio with checked licensed provenance', async () => {
   const root = new URL('../public/assets/audio/battle-signals/', import.meta.url);

@@ -25,7 +25,7 @@ try {
   await capture('taierzhuang-selection.png');
   await page.locator('#campaign-choice').selectOption('nanjing');
   assert.match(await page.locator('#campaign-history').textContent(), /12月13日南京沦陷/);
-  assert.match(await page.locator('#campaign-goals').textContent(), /中华门.*上新河.*最后登船撤离南京/);
+  assert.match(await page.locator('#campaign-goals').textContent(), /中华门.*上新河.*本队登船撤离南京/);
   assert.doesNotMatch(await page.locator('#campaign-goals').textContent(), /按\s*F|返航木船/);
   assert.match(await page.locator('#campaign-history-source').getAttribute('href'), /19371213\.com\.cn/);
   await capture('nanjing-selection.png');

@@ -139,6 +139,8 @@ export function createNanjingCampaign() {
     requiredAISquads: 4,
     embarkOrderIssued: false,
     playerEscaped: false,
+    playerBoardingBoatId: null,
+    boardedAISquads: [],
     outcome: null,
     civiliansArrived: 0,
     civiliansEvacuated: 0,
@@ -269,7 +271,7 @@ export function recordNanjingSquadEvacuation(campaign, squadId, isPlayer = false
   if (campaign.outcome || campaign.civiliansWaiting > 0 || campaign.civiliansAboard > 0) return false;
   if (campaign.evacuatedSquads.some(squad => squad.id === squadId)) return false;
   if (campaign.stage !== 'withdrawal-to-boats') return false;
-  if (isPlayer && campaign.evacuatedSquads.filter(squad => !squad.isPlayer).length < campaign.requiredAISquads) return false;
+  if (isPlayer && !nanjingAISquadsBoarded(campaign)) return false;
   if (!isPlayer && campaign.evacuatedSquads.some(squad => squad.isPlayer)) return false;
   campaign.evacuatedSquads.push({ id: squadId, isPlayer });
   if (isPlayer) {
@@ -277,6 +279,24 @@ export function recordNanjingSquadEvacuation(campaign, squadId, isPlayer = false
     advanceNanjingCampaign(campaign, 0);
   }
   return true;
+}
+
+export function recordNanjingAISquadBoarding(campaign, squadId) {
+  if (typeof squadId !== 'string' || !squadId) throw new TypeError('A boarding squad requires an id');
+  if (campaign.outcome || campaign.stage !== 'withdrawal-to-boats' ||
+    campaign.civiliansWaiting > 0 || campaign.civiliansAboard > 0 || campaign.boardedAISquads.includes(squadId)) return false;
+  campaign.boardedAISquads.push(squadId);
+  return true;
+}
+
+export function nanjingAIBoardedCount(campaign) {
+  const ids = new Set(campaign.boardedAISquads);
+  for (const squad of campaign.evacuatedSquads) if (!squad.isPlayer) ids.add(squad.id);
+  return ids.size;
+}
+
+export function nanjingAISquadsBoarded(campaign) {
+  return nanjingAIBoardedCount(campaign) >= campaign.requiredAISquads;
 }
 
 export function nanjingCivilianEvacuationStatus(campaign, civilians) {

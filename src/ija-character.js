@@ -6,7 +6,7 @@ import { createNativePosturePoses } from './nra-posture-pose.js';
 import { sampleNraMotion } from './nra-motion.js';
 import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
-import { createNraForceRenderer } from './nra-force-renderer.js';
+import { createNraForceRenderer, createNraForceRendererAsync } from './nra-force-renderer.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
@@ -141,4 +141,8 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
 
 export function createIjaForceRenderer(scene, camera, template, capacity = 330) {
   return createNraForceRenderer(scene, camera, template, capacity, { team: 'enemy', uniform: 'ija1938' });
+}
+
+export function createIjaForceRendererAsync(scene, camera, template, capacity = 330, options = {}) {
+  return createNraForceRendererAsync(scene, camera, template, capacity, { ...options, team: 'enemy', uniform: 'ija1938' });
 }

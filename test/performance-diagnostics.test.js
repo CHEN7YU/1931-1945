@@ -28,6 +28,30 @@ function fixture(send) {
       diagnostics.finishFrame(context.state);
     } };
 }
+test('opt-in startup markers upload before combat context exists, use bounded stages and contain no battle samples', async () => {
+  const f = fixture();
+  const context = { map: 'nanjing', quality: 'high', stage: 'friendly-model' };
+  f.diagnostics.recordLoading(context);
+  assert.equal(f.sent.length, 0);
+  f.diagnostics.setEnabled(true);
+  f.diagnostics.recordLoading(context);
+  await settle();
+  assert.equal(f.sent.length, 1);
+  assert.equal(validatePerformanceBatch(f.sent[0]), null);
+  assert.equal(f.sent[0].windows[0].context.state, 'loading');
+  assert.equal(f.sent[0].windows[0].context.stage, 'friendly-model');
+  assert.equal(f.sent[0].windows[0].frames, 0);
+  assert.deepEqual(f.sent[0].windows[0].scopes, {});
+  f.advance(1500);
+  f.diagnostics.recordLoading({ ...context, stage: 'friendly-poses' });
+  f.diagnostics.flush();
+  await settle();
+  assert.equal(f.sent[1].windows[0].context.time, 1.5);
+  assert.equal(validatePerformanceBatch(f.sent[1]), null);
+  assert.throws(() => f.diagnostics.recordLoading({ ...context, stage: 'private text' }), /Invalid loading/);
+  f.diagnostics.setEnabled(false);
+  assert.equal(f.diagnostics.snapshot.queuedWindows, 0);
+});
 test('diagnostics collect nothing until enabled, then upload bounded validated anonymous windows with a receipt', async () => {
   const f = fixture();
   for (let index = 0; index < 8; index++) { f.advance(5001); f.frame(); }

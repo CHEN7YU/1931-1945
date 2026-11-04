@@ -1,4 +1,5 @@
-import { FRAME_BUCKETS_MS, PERFORMANCE_SCHEMA_VERSION, PERFORMANCE_SCOPES, PERFORMANCE_SCOPE_SAMPLE_EVERY } from './performance-schema.js';
+import { FRAME_BUCKETS_MS, PERFORMANCE_SCHEMA_VERSION, PERFORMANCE_SCOPES, PERFORMANCE_SCOPE_SAMPLE_EVERY,
+  PERFORMANCE_MAPS, PERFORMANCE_LOADING_STAGES } from './performance-schema.js';
 
 const STORAGE_KEY = 'shanhe.performance-diagnostics.v1';
 const activeStates = new Set(['playing', 'transferring', 'dead']);
@@ -25,6 +26,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
   let enabled = false, context = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
   let frameScopes = emptyScopes(), frameStarted = 0, intervalMs = 0, queue = [], pending = null, controller = null;
   let recording = false;
+  let loadingStarted = null, loadingTimer = null;
   const scopeSerial = {};
   let lastSend = now(), saved = 0, dropped = 0, failures = 0, status = '未开启性能诊断', generation = 0;
   const readContext = () => context?.();
@@ -67,20 +69,52 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       notify('性能诊断上传未确认 · 游戏继续，稍后仅尝试新数据');
     } finally {
       clearTimeout(timeout);
-      if (revision === generation) { pending = controller = null; changed(); }
+      if (revision === generation) {
+        pending = controller = null; changed();
+        if (queue.some(item => item.context.state === 'loading')) scheduleLoadingUpload();
+      }
     }
+  }
+  function scheduleLoadingUpload() {
+    if (loadingTimer !== null) return;
+    loadingTimer = setTimeout(() => {
+      loadingTimer = null;
+      if (!enabled) return;
+      lastSend = now(); void upload();
+    }, Math.max(0, 10000 - (now() - lastSend)));
   }
   return {
     setEnabled(value) {
       if (typeof value !== 'boolean') throw new TypeError('Diagnostics activity must be explicit');
       if (enabled === value) return;
       generation++; enabled = value; controller?.abort(); pending = controller = null;
+      clearTimeout(loadingTimer); loadingTimer = null; loadingStarted = null;
       recording = false;
       queue = []; current = null; frameScopes = emptyScopes(); started = lastSend = now();
       if (value) { sessionId = uuid(); sequence = saved = dropped = failures = 0; }
       notify(value ? '性能诊断已开启 · 每30秒汇总上传，可随时关闭' : '性能诊断已关闭 · 不再收集或上传');
     },
     setContext(reader) { if (typeof reader !== 'function') throw new TypeError('Diagnostics context must be a function'); context = reader; },
+    recordLoading({ map, quality, stage }) {
+      if (!enabled) return;
+      if (!PERFORMANCE_MAPS.includes(map) || !['high', 'low'].includes(quality) ||
+        !PERFORMANCE_LOADING_STAGES.includes(stage)) throw new RangeError('Invalid loading diagnostic context');
+      const first = loadingStarted === null;
+      if (first) loadingStarted = now();
+      queue.push({
+        sequence: sequence++, durationMs: 0, reason: 'manual', frames: 0,
+        frameMs: FRAME_BUCKETS_MS.map(() => 0), maxFrameMs: 0, longFrames: 0, scopes: {}, slowFrames: [], errors: {},
+        context: { map, state: 'loading', stage, time: Math.max(0, now() - loadingStarted) / 1000, quality,
+          adaptiveLevel: 0, allies: 0, enemies: 0, corpses: 0, vehicles: 0, reinforcementWaves: 0,
+          drawCalls: 0, triangles: 0, backlogSeconds: 0, simulationSteps: 0, unit: 'none' },
+      });
+      if (queue.length > 12) {
+        dropped += queue.shift().frames;
+        warn('Performance diagnostics queue full; oldest unsent window dropped');
+      }
+      if (first) { lastSend = now(); void upload(); }
+      else scheduleLoadingUpload();
+    },
     beginFrame(elapsed, state, visible = true) {
       if (!enabled) return;
       const previous = recording;

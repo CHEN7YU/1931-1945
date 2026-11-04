@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { recordNanjingAISquadBoarding, nanjingAISquadsBoarded, nanjingAIBoardedCount } from '../src/nanjing-campaign.js';
 import assert from 'node:assert/strict';
 import {
   NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_OBJECTIVES, NANJING_SPAWNS,
@@ -278,4 +279,19 @@ test('campaign rejects invalid time and civilian counts', () => {
   assert.throws(() => advanceNanjingCampaign(campaign, -1), RangeError);
   assert.throws(() => registerCivilianArrival(campaign, 1.5), RangeError);
   assert.throws(() => registerCivilianCasualties(campaign, -1), RangeError);
+});
+
+test('friendly AI boarding readiness does not wait for river crossings or falsely count boarded squads as already evacuated', () => {
+  const campaign = createNanjingCampaign();
+  campaign.stage = 'withdrawal-to-boats'; campaign.dockActivated = true; campaign.requiredAISquads = 2;
+  assert.equal(nanjingAISquadsBoarded(campaign), false);
+  assert.equal(recordNanjingAISquadBoarding(campaign, 'ai-a'), true);
+  assert.equal(nanjingAISquadsBoarded(campaign), false);
+  assert.equal(recordNanjingAISquadBoarding(campaign, 'ai-b'), true);
+  assert.equal(nanjingAISquadsBoarded(campaign), true);
+  assert.equal(nanjingAIBoardedCount(campaign), 2);
+  assert.equal(campaign.evacuatedSquads.length, 0);
+  assert.equal(recordNanjingAISquadBoarding(campaign, 'ai-b'), false);
+  recordNanjingSquadEvacuation(campaign, 'ai-a');
+  assert.equal(nanjingAIBoardedCount(campaign), 2, 'crossing must not double-count the same AI formation');
 });

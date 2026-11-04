@@ -95,6 +95,7 @@ function campaignStep() {
 }
 confirmCampaign.addEventListener('click', () => {
   if (!loaded && selector.value === 'nanjing') {
+    menuMusic.prepareNavigation();
     const url = new URL(location.href); url.searchParams.set('campaign', selector.value); location.assign(url); return;
   }
   void openInitialDeployment();
@@ -125,6 +126,7 @@ function selectCampaign(id) {
 }
 selector.addEventListener('change', () => {
   if (loaded) {
+    menuMusic.prepareNavigation();
     const url = new URL(location.href);
     url.searchParams.set('campaign', selector.value);
     location.assign(url); return;

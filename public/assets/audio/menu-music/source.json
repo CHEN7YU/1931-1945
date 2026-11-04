@@ -1,7 +1,8 @@
 {
   "sourceKind": "user-supplied-menu-soundtrack",
-  "title": "琅琊榜 原声音乐 · 最后的审判 / Nirvana in Fire OST · The Last Judgement",
-  "originalFile": "琅琊榜 原声音乐 最后的审判 Nirvana in Fire OST The Last Judgement.mp3",
+  "title": "游京（长征版） - 谭晶；保留原《最后的审判》录音",
+  "activeFile": "youjing-long-march.mp3",
+  "startSeconds": 29,
   "license": "User-requested project use; original and redistribution rights unverified",
   "permission": {
     "basis": "user-supplied-soundtrack-project-use",
@@ -10,15 +11,22 @@
     "redistributionRightsIndependentlyVerified": false,
     "limitation": "User supplied this recording for menu and loading playback. This request is not evidence of rights-holder permission for public or commercial redistribution; obtain the required music license before public distribution."
   },
-  "processing": "Original supplied MP3 copied byte-for-byte; no re-encoding or excerpting. Playback volume and fade-out are applied at runtime.",
+  "processing": "Both user-supplied MP3 files retained byte-for-byte without re-encoding or excerpting. Active track starts at 29 seconds, loops from its end back to 29 seconds, and preserves playback position during deployment choices and campaign navigation. Volume and battle-entry fade are applied at runtime.",
   "files": [
     {
       "file": "the-last-judgement.mp3",
+      "originalFile": "琅琊榜 原声音乐 最后的审判 Nirvana in Fire OST The Last Judgement.mp3",
       "bytes": 2291565,
       "sha256": "83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7",
       "duration": 160.008979,
       "channels": 2,
       "sampleRate": 48000
+    },
+    {
+      "file": "youjing-long-march.mp3",
+      "originalFile": "游京（长征版） - 谭晶.mp3",
+      "bytes": 5697092,
+      "sha256": "819dc0934692ef4c8cf26fc9f1d4a4caae11bb4f27f9bed892d2d91100daf063"
     }
   ]
 }

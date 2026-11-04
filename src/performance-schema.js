@@ -7,6 +7,10 @@ export const PERFORMANCE_SCOPES = Object.freeze([
 export const PERFORMANCE_SCOPE_SAMPLE_EVERY = Object.freeze({ steering: 32, routes: 32, posture: 32, tankEvasion: 32 });
 export const PERFORMANCE_STATES = Object.freeze(['menu', 'playing', 'transferring', 'pause', 'dead', 'victory', 'defeat', 'draw', 'loading']);
 export const PERFORMANCE_MAPS = Object.freeze(['taierzhuang-fort', 'taierzhuang-streets', 'taierzhuang', 'nanjing']);
+export const PERFORMANCE_LOADING_STAGES = Object.freeze([
+  'scene-materials', 'friendly-model', 'friendly-poses', 'enemy-model', 'enemy-poses',
+  'friendly-rendering', 'enemy-rendering', 'ready',
+]);
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) => object(value) && Object.keys(value).every(key => names.includes(key));
@@ -21,7 +25,8 @@ function context(value) {
   return keys(value, contextNames) && PERFORMANCE_MAPS.includes(value.map) && PERFORMANCE_STATES.includes(value.state) &&
     ['high', 'low'].includes(value.quality) && ['infantry', 'tank', 'plane', 'mortar', 'none'].includes(value.unit) &&
     (value.stage === undefined || ['gate-defense', 'withdrawal', 'dock-defense', 'withdrawal-to-boats',
-      'encirclement', 'east-breakout', 'conquest'].includes(value.stage)) &&
+      'encirclement', 'east-breakout', 'conquest'].includes(value.stage) ||
+      value.state === 'loading' && PERFORMANCE_LOADING_STAGES.includes(value.stage)) &&
     civilianCounters.every(name=>value[name]===undefined||integer(value[name],1e7))&&
     contextNames.filter(name => !['map', 'state', 'quality', 'unit', 'stage',...civilianCounters].includes(name))
       .every(name => number(value[name])) && integer(value.adaptiveLevel, 2) &&

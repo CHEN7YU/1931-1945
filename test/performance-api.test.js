@@ -37,6 +37,34 @@ function fixture() {
   const get = path => new Request(`https://game.test${path}`, { headers: { Authorization: `Bearer ${token}` } });
   return { sqlite, env, batch, post, get };
 }
+test('loading breadcrumbs persist independently and never inflate battle FPS, CPU time or session counts', async () => {
+  const f = fixture();
+  try {
+    const body = f.batch();
+    const first = body.windows[0];
+    Object.assign(first, { frames: 0, frameMs: FRAME_BUCKETS_MS.map(() => 0), longFrames: 0,
+      maxFrameMs: 0, durationMs: 0, scopes: {} });
+    Object.assign(first.context, { state: 'loading', stage: 'friendly-model', time: 0 });
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    let summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
+    assert.deepEqual(summary.groups, []);
+    assert.equal(summary.loading[0].lastStage, 'friendly-model');
+    assert.equal(summary.loading[0].ready, false);
+    body.id = crypto.randomUUID(); first.sequence = 1; first.context.stage = 'ready'; first.context.time = 17;
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    assert.equal((await worker.fetch(f.post(f.batch()), f.env)).status, 201);
+    summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
+    assert.equal(summary.groups.length, 1);
+    assert.equal(summary.groups[0].frames, 101);
+    assert.equal(summary.groups[0].windows, 1);
+    assert.equal(summary.groups[0].sessions, 1);
+    assert.equal(summary.loading.length, 1);
+    assert.equal(summary.loading[0].ready, true);
+    assert.equal(summary.loading[0].elapsedSeconds, 17);
+    first.context.stage = 'private text'; body.id = crypto.randomUUID();
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 400);
+  } finally { f.sqlite.close(); }
+});
 test('production diagnostic ingestion persists, deduplicates receipts and keeps all reads authenticated', async () => {
   const f = fixture();
   try {

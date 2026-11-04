@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
+import { bakeNraGeometry, createNraForceRenderer, createNraForceRendererAsync } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { createCasualtyState } from '../src/casualties.js';
@@ -67,8 +67,19 @@ for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-b
       update(person) { root.position.copy(person.position); root.updateMatrixWorld(true); root.visible = true; },
       get snapshot() { return null; } };
   }
-  const forces = [createReference, createNraForceRenderer].map(create =>
-    create(new THREE.Scene(), camera, view(), 24, { team, uniform: team === 'enemy' ? 'enemy' : 'nra88' }));
+  const progress = [];
+  const forces = await Promise.all([createReference, createNraForceRenderer, createNraForceRendererAsync].map(create =>
+    create(new THREE.Scene(), camera, view(), 24, { team, uniform: team === 'enemy' ? 'enemy' : 'nra88',
+      onProgress: item => progress.push(item) })));
+  const geometryData = force => force.root.children.filter(mesh => mesh.isInstancedMesh).map(mesh => ({
+    index: mesh.geometry.index?.array,
+    attributes: Object.fromEntries(Object.entries(mesh.geometry.attributes).map(([name, attribute]) => [name, attribute.array])),
+    morphs: Object.fromEntries(Object.entries(mesh.geometry.morphAttributes).map(([name, attributes]) =>
+      [name, attributes.map(attribute => attribute.array)])),
+  }));
+  assert.deepEqual(geometryData(forces[2]), geometryData(forces[1]), 'all asynchronous vertex, normal, UV, tint and morph buffers are identical');
+  assert.equal(progress.length, forces[2].snapshot.poseBanks);
+  assert.equal(progress.at(-1).completed, progress.at(-1).total);
   for (const force of forces) await force.prepare({ async compileAsync() {} });
   const actors = Array.from({ length: 20 }, (_, index) => {
     const actor = { id: `phase-${index}`, unitId: `${team}-unit`, team, groundType: 'infantry', heading: 0, health: 100,
@@ -110,6 +121,7 @@ for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-b
     const before = actors.map(actor => JSON.stringify(actor.nativeMotion));
     for (const force of forces) force.update(actors, frame, frame % 2 ? actors[4].id : null, frame % 2 ? 'high' : 'low');
     assert.deepEqual(capture(forces[1]), capture(forces[0]), `bank occupancy and instance buffers at frame ${frame}`);
+    assert.deepEqual(capture(forces[2]), capture(forces[1]), `asynchronous renderer preserves all instances at frame ${frame}`);
     swordRendered ||= forces[1].root.children.some(mesh => mesh.name.startsWith('owned-weapon-dadao') && mesh.count > 0);
     for (const mesh of forces[1].root.children.filter(child => child.isInstancedMesh)) {
       assert.equal(mesh.visible, mesh.count > 0, `empty-only visibility at frame ${frame}: ${mesh.name}`);

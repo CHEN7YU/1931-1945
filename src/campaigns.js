@@ -28,7 +28,7 @@ export const CAMPAIGNS = Object.freeze([
       url: 'https://www.19371213.com.cn/research/yjda/202012/t20201209_2746867.html' }),
     goals: Object.freeze(['守住中华门第二道门内左侧阵地，日军独占20秒将导致失守。',
       '收到撤退命令后前往上新河渡口，掩护百姓登船过江。',
-      '掩护百姓与友军撤退，最后登船撤离南京。']) }),
+      '掩护百姓与友军撤退，带领本队登船撤离南京。']) }),
 ]);
 
 export const SELECTABLE_CAMPAIGNS = Object.freeze(CAMPAIGNS.filter(campaign => !campaign.hidden));
