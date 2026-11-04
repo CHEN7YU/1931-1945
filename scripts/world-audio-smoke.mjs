@@ -99,11 +99,16 @@ try {
     await page.goto((process.env.GAME_URL ?? 'http://127.0.0.1:5203') + (map === 'nanjing' ? '/?campaign=nanjing' : ''));
     if (map === 'taierzhuang-fort') {
       await page.locator('#confirm-campaign').click();
+      await page.locator('#confirm-identity').click();
+      await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad',
+        null, { timeout: 180000 });
       await page.locator('#redeploy-choices [data-type="tank"]').click();
       await page.locator('#confirm-deploy').click();
     } else {
       await page.waitForFunction(() => window.__battle?.state === 'menu' && window.worldAudioReview, null, { timeout: 180000 });
-      await page.locator('#deploy').click();
+      await page.locator('#confirm-identity').click();
+      await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad');
+      await page.locator('#confirm-deploy').click();
     }
     await page.waitForFunction(() => window.__battle?.state === 'playing' && window.worldAudioReview, null, { timeout: 180000 });
     await page.locator('#world').click({ position: { x: 700, y: 400 } });

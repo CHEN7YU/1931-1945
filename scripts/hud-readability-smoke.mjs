@@ -216,7 +216,7 @@ try {
       scoreboard.x + scoreboard.width <= viewport.width + 1 &&
       scoreboard.y + scoreboard.height <= viewport.height + 1, 'expanded squad scoreboard stays inside the viewport');
     assert.ok(await full.locator('#scoreboard-stats').isVisible(), 'compact battle summary available on Tab');
-    assert.equal(await full.locator('#force-status').isVisible(), false, 'technical prose is not part of the icon scoreboard');
+    assert.equal(await full.locator('#force-status').count(), 0, 'technical prose is not part of the icon scoreboard');
     assert.equal(await full.locator('.score-team').count(), 2);
     assert.equal(await full.locator('#squad-score-table thead th[aria-label="总击杀"] svg').count(), 2);
     await full.keyboard.up('Tab');

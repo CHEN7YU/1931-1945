@@ -160,7 +160,7 @@ try {
     assert.ok(data.mechanicalAudio.error);
     assert.equal(data.rifleAudio.status, 'recorded'); assert.equal(data.footstepAudio.status, 'recorded');
     await failed.locator('#deploy').click();
-    assert.match(await failed.locator('#force-status').textContent(), /步枪机械录音未加载/);
+    assert.match(await failed.locator('#hud-notice').textContent(), /步枪机械录音未加载/);
     assert.match(await failed.locator('#toast').textContent(), /步枪机械录音未加载/);
     await shoot(failed); await ready(failed);
     assert.ok(await failed.evaluate(() => window.__syntheticMechanicalStarts >= 3));

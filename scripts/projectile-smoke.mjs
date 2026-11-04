@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -54,7 +55,7 @@ try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu');
   await page.locator('#squad-choices [data-type="mortar"]').click();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await aim(0);
   stage = 'flight across manual takeover and pause';
   const original = await snapshot(), launched = await fire();
@@ -118,7 +119,7 @@ try {
 
   stage = 'actual building collision, not only arrival at a ground marker';
   await page.locator('#squad-choices [data-type="mortar"]').click();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   data = await snapshot();
   const building = [...data.town.buildings].sort((a, b) =>
     Math.hypot(a.x - data.position.x, a.z - data.position.z) - Math.hypot(b.x - data.position.x, b.z - data.position.z))[0];
@@ -136,12 +137,12 @@ try {
   await menu();
 
   stage = 'new match clears active shells and their render views';
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await aim(0);
   await fire();
   assert.equal((await snapshot()).projectileViews, 1);
   await menu();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   data = await snapshot();
   assert.deepEqual(data.projectiles, []);
   assert.deepEqual(data.projectileImpacts, []);

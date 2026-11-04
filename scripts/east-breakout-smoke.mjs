@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -97,6 +98,7 @@ try {
   });
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203', { waitUntil: 'domcontentloaded' });
   await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });

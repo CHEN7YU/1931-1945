@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,7 +25,7 @@ try {
   await page.goto(origin);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 120000 });
   await page.locator('#menu-quality').selectOption('low');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.vehicles.some(vehicle => vehicle.variant === 'chi-ha'));
   const initial = await snapshot();
   assert.equal(initial.population.enemy.alive, 96);
@@ -126,7 +127,7 @@ try {
   assert.equal((await snapshot()).counts.vehicles, 0);
   assert.equal((await snapshot()).views.count, 0);
   await page.locator('#squad-choices [data-type="tank"]').click();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   let data = await snapshot();
   assert.equal(data.vehicles.length, 3);
   assert.equal(data.vehicles.filter(vehicle => vehicle.variant === 'chi-ha').length, 2);

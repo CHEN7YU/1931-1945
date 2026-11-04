@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -55,13 +56,18 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#confirm-campaign').click();
+  assert.equal(await page.locator('#player-identity').isVisible(), true);
+  assert.equal(await page.locator('#deployment-options').isVisible(), false);
+  assert.ok(!requests.some(url => url.includes('/src/main.js') || url.includes('/assets/game/')),
+    'the identity step must not load combat resources before continuing');
+  await continueIdentitySelection(page);
   await page.locator('#deployment-options').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#overlay-title').textContent(), '台儿庄 · 城寨攻防');
+  assert.equal(await page.locator('#overlay-title').textContent(), '选择小队与出生点');
   assert.equal(await page.locator('#pause-settings').isVisible(), false);
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
-  assert.ok(!requests.some(url => url.includes('/src/main.js') || url.includes('/assets/game/')),
-    'cleaning the menu must not load combat resources before deployment');
+  assert.ok(requests.some(url => url.includes('/src/main.js')),
+    'the real tactical-map step loads its selected battlefield before final confirmation');
   await page.locator('#back-menu').click();
   assert.equal(await page.locator('#campaign-choice').inputValue(), 'taierzhuang-fort');
   const legacy = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5203');

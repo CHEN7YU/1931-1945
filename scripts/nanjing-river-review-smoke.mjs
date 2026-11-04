@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -107,7 +108,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
   await page.locator('#player-nickname').fill('渡江测试员');
   await page.locator('input[name="player-unit"][value="88"]').check();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   const stats = await page.evaluate(() => riverReview.stats());
   assert.equal(stats.players.length, 1); assert.equal(stats.players[0].unitName, '国民革命军第88师');

@@ -1,3 +1,4 @@
+import { deployFromMenu, continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -62,9 +63,10 @@ try {
     await page.goto(url.href,{waitUntil:'domcontentloaded'});
     if(map==='nanjing') {
       await page.waitForFunction(()=>window.__battle?.state==='menu',null,{timeout:180000});
-      await page.locator('#deploy').click();
+      await deployFromMenu(page);
     }else{
       await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
       await page.locator('#redeploy-choices [data-type="infantry"]').click();
       await page.locator('#confirm-deploy').click();
     }

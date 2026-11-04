@@ -96,7 +96,7 @@ export function createPlayerIdentityControls(doc = document, store = identitySto
   };
   nickname.addEventListener('change', commit); customName.addEventListener('change', commit);
   cards.addEventListener('change', commit);
-  for (const id of ['deploy', 'confirm-deploy']) doc.getElementById(id).addEventListener('click', beforeDeploy);
+  for (const id of ['deploy', 'confirm-identity', 'confirm-deploy']) doc.getElementById(id).addEventListener('click', beforeDeploy);
   report();
   return {
     show(campaign, target) {

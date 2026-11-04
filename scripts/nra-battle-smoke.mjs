@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -22,7 +23,7 @@ let failure = null;
 try {
   await page.goto(process.env.NRA_BATTLE_URL ?? 'http://127.0.0.1:5173/?character=nra88&benchmark=full&seed=1938');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.historicalCharacter?.visible);
   let data = await snapshot();
   const observed = data.force.views.find(view => data.allies.some(actor => actor.id === view.actorId && actor.role !== 'machine-gunner'));

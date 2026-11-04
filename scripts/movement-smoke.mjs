@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
@@ -40,7 +41,7 @@ function lane(distance, mode, fps) {
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForTimeout(1000);
   await page.keyboard.down('w');
   const jogging = await sample(1500);
@@ -79,7 +80,7 @@ try {
   controls.on('pageerror', error => errors.push(error.message));
   await controls.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await controls.waitForFunction(() => window.__battle?.state === 'menu');
-  await controls.locator('#deploy').click();
+  await deployFromMenu(controls);
   await controls.keyboard.down('w'); await controls.keyboard.down('Shift');
   await controls.waitForFunction(() => window.__battle.locomotion.speed > 4.6);
   const attempt = await controls.evaluate(() => new Promise(resolve => {
@@ -124,7 +125,7 @@ try {
   await controls.locator('#motion-strength').selectOption('1');
   assert.equal((await controls.evaluate(() => window.__battle)).locomotion.motionStrength, 1);
   await controls.locator('#back-menu').click();
-  await controls.locator('#deploy').click();
+  await deployFromMenu(controls);
   await controls.keyboard.down('s');
   await controls.waitForFunction(() => {
     const m = window.__battle.locomotion;
@@ -139,7 +140,7 @@ try {
   await controls.keyboard.up('s');
   await controls.keyboard.press('Escape');
   await controls.locator('#back-menu').click();
-  await controls.locator('#deploy').click();
+  await deployFromMenu(controls);
   await controls.keyboard.down('w'); await controls.keyboard.down('Shift');
   await controls.waitForFunction(() => window.__battle.locomotion.exhausted, null, { timeout: 13000 });
   await controls.keyboard.up('w'); await controls.keyboard.up('Shift');

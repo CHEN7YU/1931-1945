@@ -1,7 +1,6 @@
 export const SIGNAL_LIMITS = Object.freeze({ distance: 140, scanSeconds: .75, globalCooldown: 6,
-  friendlyCooldown: 26, enemyCooldown: 18, minimumAdvancing: 2 });
+  enemyCooldown: 10, minimumAdvancing: 2 });
 export const SIGNAL_CLIPS = Object.freeze([
-  { team: 'friendly', file: 'friendly-bugle.wav' },
   { team: 'enemy', file: 'enemy-whistle.wav' },
 ]);
 
@@ -23,7 +22,7 @@ export function advancingSignalGroups(actors, listener) {
   const distance = actor => (actor.position.x - listener.position.x) ** 2 +
     (actor.position.y - listener.position.y) ** 2 + (actor.position.z - listener.position.z) ** 2;
   for (const actor of actors) {
-    if (!['friendly', 'enemy'].includes(actor.team) || actor.health <= 0 || actor.vehicleId || actor.groundType !== 'infantry' || actor.locomotion?.speed < .5 ||
+    if (actor.team !== 'enemy' || actor.health <= 0 || actor.vehicleId || actor.groundType !== 'infantry' || actor.locomotion?.speed < .5 ||
       !Number.isFinite(actor.locomotion?.speed) || /retreat|withdraw|evacu|embark|evade|flee/.test(actor.tactics?.mode ?? '')) continue;
     const key = `${actor.team}:${actor.unitId}`;
     if (!groups.has(key)) groups.set(key, []);
@@ -42,8 +41,8 @@ export function createBattleSignals(buffers) {
     if (!buffer || buffer.numberOfChannels !== 1 || !Number.isFinite(buffer.duration) ||
       buffer.duration < .1 || buffer.duration > 12) throw new Error(`Invalid faction signal recording: ${clip.file}`);
   }
-  let output = null, active = null, nextScan = 0, globalAt = 0;
-  const next = new Map([['friendly', 4], ['enemy', 7]]), history = [];
+  let output = null, active = null, nextScan = 0, globalAt = 0, nextAt = 7;
+  const history = [];
   const stop = () => { const voice = active; if (voice) { voice.source.stop(); voice.release(); } };
   return {
     setOutput(node) { output = node; },
@@ -61,11 +60,11 @@ export function createBattleSignals(buffers) {
           if (!mix.gain) stop();
         }
       }
-      if (active || time < nextScan || time < globalAt) return null;
+      if (active || time < nextScan || time < globalAt || time < nextAt) return null;
       nextScan = time + SIGNAL_LIMITS.scanSeconds;
-      const selected = advancingSignalGroups(actors, listener).find(group => time >= (next.get(group.leader.team) ?? Infinity));
+      const selected = advancingSignalGroups(actors, listener)[0];
       if (!selected) return null;
-      const { leader, mix } = selected, clip = SIGNAL_CLIPS.find(clip => clip.team === leader.team);
+      const { leader, mix } = selected, clip = SIGNAL_CLIPS[0];
       const source = context.createBufferSource(), gain = context.createGain(), pan = context.createStereoPanner();
       source.buffer = buffers[clip.file]; gain.gain.value = mix.gain; pan.pan.value = mix.pan;
       source.connect(gain).connect(pan).connect(output ?? context.destination);
@@ -78,11 +77,11 @@ export function createBattleSignals(buffers) {
       const report = { team: leader.team, file: clip.file, soldierId: leader.id, unitId: leader.unitId,
         time, distance: mix.distance };
       history.push(report); if (history.length > 32) history.shift();
-      next.set(leader.team, time + (leader.team === 'friendly' ? SIGNAL_LIMITS.friendlyCooldown : SIGNAL_LIMITS.enemyCooldown));
+      nextAt = time + SIGNAL_LIMITS.enemyCooldown;
       globalAt = time + SIGNAL_LIMITS.globalCooldown;
       source.start(); return report;
     },
-    reset() { stop(); nextScan = globalAt = 0; next.set('friendly', 4); next.set('enemy', 7); history.length = 0; },
+    reset() { stop(); nextScan = globalAt = 0; nextAt = 7; history.length = 0; },
     get snapshot() { return { active: Boolean(active), limits: SIGNAL_LIMITS, history: history.map(item => ({ ...item })) }; },
   };
 }

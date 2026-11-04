@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -98,7 +99,7 @@ try {
     { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   await page.locator('#menu-quality').selectOption('low');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing');
   const result = await page.evaluate(() => openingReview.run());
   if (process.env.OPENING_SCREENSHOT) await page.screenshot({ path: process.env.OPENING_SCREENSHOT });

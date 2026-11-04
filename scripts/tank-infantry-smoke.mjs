@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -102,6 +103,7 @@ window.__tankInfantryFixture = {
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.locator('#confirm-campaign').waitFor({ state: 'visible', timeout: 60000 });
   await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
   await page.locator('#redeploy-choices [data-type="tank"]').click();
   await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
   await page.locator('#confirm-deploy').click();

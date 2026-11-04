@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -39,7 +40,7 @@ try {
   const deployBox = await page.locator('#deploy').boundingBox();
   assert.ok(deployBox.y >= 0 && deployBox.y + deployBox.height <= 720, 'menu quality controls leave deployment usable at 720p');
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.fov > 71.95);
   await capture('quality-low.png');
   await page.keyboard.press('Escape');

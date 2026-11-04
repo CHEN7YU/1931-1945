@@ -22,6 +22,7 @@ const groups = [
   { manifest: 'audio/battle-signals/source.json', directory: 'audio/battle-signals', use: 'runtime', evidence: [] },
   { manifest: 'audio/tactical-feedback/source.json', directory: 'audio/tactical-feedback', use: 'runtime', evidence: [] },
   { manifest: 'audio/vehicle-engines/source.json', directory: 'audio/vehicle-engines', use: 'runtime', evidence: [] },
+  { manifest: 'audio/menu-music/source.json', directory: 'audio/menu-music', use: 'runtime', evidence: [] },
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
@@ -139,16 +140,23 @@ export async function auditAssets({ root, buildRoot } = {}) {
         throw new Error('Attributed engine audio license or credits require review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Derived loops retain CC BY 3.0 and CC BY-SA 4.0 licenses with source attribution; not CC0.' });
+    } else if (group.directory === 'audio/menu-music') {
+      if (metadata.sourceKind !== 'user-supplied-menu-soundtrack' ||
+        metadata.license !== 'User-requested project use; original and redistribution rights unverified' ||
+        metadata.permission?.basis !== 'user-supplied-soundtrack-project-use' ||
+        metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
+        metadata.permission.request !== '这个bgm用于用户打开游戏 直到完全进入战斗' ||
+        metadata.files.length !== 1 || metadata.files[0].file !== 'the-last-judgement.mp3' ||
+        metadata.files[0].sha256 !== '83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7')
+        throw new Error('User-supplied menu soundtrack permission requires explicit review');
+      permissions.push({ directory: group.directory, basis: metadata.permission.basis, limitation: metadata.permission.limitation });
     } else if (group.directory === 'audio/battle-signals') {
-      if (metadata.sourceKind !== 'reviewed-instrument-recordings' || metadata.license !== 'Mixed-Public-Domain-and-CC0' ||
-        metadata.files.map(file => file.file).sort().join(',') !== 'enemy-whistle.wav,friendly-bugle.wav' ||
-        metadata.sources?.length !== 2 ||
-        metadata.sources[0].author !== 'United States Air Force Heritage of America Band' ||
-        metadata.sources[0].license !== 'Public-Domain-US-Government' ||
-        metadata.sources[0].sha256 !== 'fa717b4e7a572abc24333f26f19543ae1308bd70255e9bd4c7e58a933b16ef01' ||
-        metadata.sources[1].author !== 'SpliceSound' || metadata.sources[1].license !== 'CC0-1.0' ||
-        metadata.sources[1].sha256 !== '6659d56633874aba1b03a1639df8019eef0fe57569ea98159e16d1273041c509')
-        throw new Error('Faction signal recording provenance requires review');
+      if (metadata.sourceKind !== 'reviewed-instrument-recordings' || metadata.license !== 'CC0-1.0' ||
+        metadata.files.length !== 1 || metadata.files[0].file !== 'enemy-whistle.wav' || metadata.files[0].team !== 'enemy' ||
+        metadata.sources?.length !== 1 ||
+        metadata.sources[0].author !== 'SpliceSound' || metadata.sources[0].license !== 'CC0-1.0' ||
+        metadata.sources[0].sha256 !== '6659d56633874aba1b03a1639df8019eef0fe57569ea98159e16d1273041c509')
+        throw new Error('Enemy whistle recording provenance requires review');
     } else if (group.directory === 'audio/machine-gun') {
       if (metadata.license !== 'Pixabay-Content-License' || metadata.author !== 'Foisal72' ||
         metadata.source !== 'https://pixabay.com/sound-effects/film-special-effects-gun-fire-346766/' ||
@@ -269,7 +277,7 @@ export async function auditAssets({ root, buildRoot } = {}) {
     }
     warnings.push(`Build includes ${diagnostic.length} diagnostic-only files (${diagnostic.reduce((sum, item) => sum + item.bytes, 0)} bytes). They are not main-game downloads; this read-only audit does not remove them.`);
   }
-  for (const permission of permissions) if (['audio/machine-gun', 'loading', 'loading/colorized'].includes(permission.directory)) warnings.push(permission.limitation);
+  for (const permission of permissions) if (['audio/machine-gun', 'audio/menu-music', 'loading', 'loading/colorized'].includes(permission.directory)) warnings.push(permission.limitation);
   return { files: [...inventory.values()].sort((a, b) => a.file.localeCompare(b.file)),
     bytes: [...inventory.values()].reduce((sum, item) => sum + item.bytes, 0), permissions, warnings };
 }

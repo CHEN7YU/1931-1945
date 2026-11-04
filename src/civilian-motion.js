@@ -38,9 +38,17 @@ export function restoreCivilianMotionPose(person) {
   const stride = motion.stride;
   person.civilianLegs[0].rotation.x = -stride;
   person.civilianLegs[1].rotation.x = stride;
-  person.civilianArms[0].rotation.x = stride * .8;
-  person.civilianArms[1].rotation.x = -stride * .8;
-  for (const arm of person.civilianArms) arm.rotation.z = 0;
+  const active = Math.min(1, motion.speed / 1.2) * (1 - motion.crouch);
+  const running = Math.max(0, Math.min(1, (motion.speed - 1.8) / 1.6));
+  const ageScale = person.userData.ageGroup === 'elderly' ? .75 : 1;
+  for (const [index, side] of ['left', 'right'].entries()) {
+    const phase = person.userData.walkPhase + index * Math.PI, arm = person.civilianArms[index];
+    arm.rotation.x = Math.sin(phase) * (.25 + running * .12) * active * ageScale;
+    arm.rotation.y = Math.sin(phase - .3) * .025 * active;
+    arm.rotation.z = (index ? -1 : 1) * (.025 + .02 * running) * active;
+    person.civilianSkin.joints[`${side}Elbow`].rotation.x = .18 + active *
+      (.08 + running * .45 + (.1 + running * .12) * (.5 + .5 * Math.sin(phase - .6)));
+  }
   person.civilianTorso.rotation.x = motion.lean;
   person.civilianTorso.rotation.z = motion.sway;
   person.civilianHead.rotation.x = motion.headX;

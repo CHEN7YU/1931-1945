@@ -24,17 +24,17 @@ test('selectable battle backgrounds have sources and remain separate from the pl
   assert.match(campaignById('nanjing').history, /12月13日/);
 });
 
-test('the opening briefing follows active battle time, supports dismissal and resets for another campaign', () => {
+test('the opening briefing expires after five real seconds, supports dismissal and resets for another campaign', () => {
   const f = fixture(), campaign = campaignById('taierzhuang-fort');
   assert.equal(f.element.hidden, true);
-  f.control.show(campaign, 0);
+  assert.equal(MISSION_BRIEFING_SECONDS, 5);
+  f.control.show(campaign, 100);
   assert.equal(f.title.textContent, campaign.name);
   assert.deepEqual(f.goals.children.map(item => item.textContent), [...campaign.goals]);
-  for (let frame = 0; frame < 100; frame++) f.control.update(3);
-  assert.equal(f.element.hidden, false, 'paused simulation time does not consume the briefing');
-  f.control.update(MISSION_BRIEFING_SECONDS - .01); assert.equal(f.element.hidden, false);
-  f.control.update(MISSION_BRIEFING_SECONDS); assert.equal(f.element.hidden, true);
-  f.control.show(campaignById('nanjing'), 0);
+  f.control.update(104.99); assert.equal(f.element.hidden, false);
+  f.control.update(105); assert.equal(f.element.hidden, true, 'real time expires even if battle simulation is paused');
+  f.control.show(campaignById('nanjing'), 110);
+  f.control.update(114.99); assert.equal(f.element.hidden, false, 'new campaign gets its own full interval');
   assert.match(f.goals.children[0].textContent, /中华门/);
   f.dismiss.dispatchEvent(new Event('click')); assert.equal(f.element.hidden, true);
   assert.throws(() => f.control.show({ name: 'Incomplete' }, 0), /objectives/);

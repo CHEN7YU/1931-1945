@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -35,7 +36,7 @@ try {
   await page.goto(url);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await capture('scene-menu.png');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.state === 'playing');
   await page.waitForTimeout(1000);
   await capture('scene-after.png');

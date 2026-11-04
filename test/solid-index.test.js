@@ -44,6 +44,33 @@ test('indexed ray queries agree with the original physical meshes, including dia
     if (raw) assert.ok(Math.abs(raw.distance - indexed.distance) < 1e-8);
   }
 });
+test('one conservative swept broad phase preserves all seven grenade extent-ray hits, including moved dynamic solids', () => {
+    const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    const solids = Array.from({ length: 60 }, (_, index) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(.2 + index % 3, 3, .15 + index % 4), material);
+      mesh.position.set(index % 10 * 3 - 15, 1, Math.floor(index / 10) * 3 - 9);
+      mesh.rotation.y = index * .3; return mesh;
+    });
+    solids[0].userData.dynamicCollision = true;
+    const index = createSolidIndex(solids), ray = new THREE.Raycaster(), radius = .11;
+    solids[0].position.set(20, 2, 20); solids[0].updateMatrixWorld(true);
+    let rays = 0;
+    for (let sweep = 0; sweep < 256; sweep++) {
+      const from = new THREE.Vector3(Math.sin(sweep * 1.31) * 22, .1 + sweep % 5 * .5, Math.cos(sweep * .77) * 15);
+      const to = from.clone().add(new THREE.Vector3(Math.sin(sweep) * 9, -1.2, Math.cos(sweep) * 8));
+      const direction = to.clone().sub(from).normalize(), distance = from.distanceTo(to);
+      const candidates = index.sweptCandidates(from, to, radius);
+      for (const offset of [[0, 0, 0], [radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0], [0, 0, radius], [0, 0, -radius]]) {
+        ray.set(from.clone().add(new THREE.Vector3(...offset)), direction); ray.far = distance;
+        const expected = ray.intersectObjects(solids, false)[0], actual = ray.intersectObjects(candidates, false)[0];
+        assert.equal(actual?.object, expected?.object);
+        if (expected) assert.ok(Math.abs(actual.distance - expected.distance) < 1e-8);
+        rays++;
+      }
+    }
+    assert.equal(rays, 1792);
+    assert.throws(() => index.sweptCandidates(new THREE.Vector3(), new THREE.Vector3(), -1), RangeError);
+});
 test('nearby-actor grid includes edge neighbours and excludes unrelated distant cells', () => {
   const grid = new SpatialGrid(8), a = { health: 100, model: { position: { x: 7.9, z: 0 } } }, b = { health: 100, model: { position: { x: 8.1, z: 0 } } };
   grid.rebuild([a, b]);

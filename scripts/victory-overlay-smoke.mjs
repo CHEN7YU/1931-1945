@@ -18,6 +18,9 @@ window.__overlayFixture = kind => showOverlay(kind);` });
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203',
     { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.locator('#confirm-campaign').click();
+  await page.locator('#confirm-identity').click();
+  await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad',
+    null, { timeout: 180000 });
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
   await page.locator('#confirm-deploy').click();
@@ -28,7 +31,9 @@ window.__overlayFixture = kind => showOverlay(kind);` });
     await page.evaluate(kind => window.__overlayFixture(kind), kind);
     const ended = ['victory', 'defeat', 'draw'].includes(kind);
     assert.equal(await page.locator('#deployment-help').isVisible(), !ended);
-    assert.equal(await page.locator('#overlay [data-build-version]').isVisible(), !ended);
+    assert.equal(await page.locator('#overlay [data-build-version]').isVisible(), !ended && kind !== 'pause');
+    assert.doesNotMatch(await page.locator('#overlay').textContent(), /友军 A\/B 军服|日军旧制军服|浏览器需捕获鼠标才能瞄准/);
+    assert.equal(await page.locator('#force-status').count(), 0);
     assert.equal(await page.locator('#overlay-description').isVisible(), kind !== 'victory');
     assert.equal(await page.locator('#battle-summary').isVisible(), true);
     assert.equal(await page.locator('#back-menu').isVisible(), true);
@@ -36,5 +41,5 @@ window.__overlayFixture = kind => showOverlay(kind);` });
     assert.doesNotMatch(await page.locator('#overlay-description').textContent(),/原创玩法|不代表真实历史|玩法演示/);
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: clean victory overlay, hidden end-screen help/version, and restored pause/deployment content.');
+  console.log('PASS: clean end-screen overlays, hidden pause build label, and retained deployment metadata.');
 } finally { await browser.close(); }

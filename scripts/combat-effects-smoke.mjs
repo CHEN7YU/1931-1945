@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -35,7 +36,7 @@ async function luminance() {
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await wait(() => window.__battle?.state === 'menu');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await wait(() => window.__battle.fov > 71.9);
   assert.equal((await snapshot()).combatEffects.shaderLights, 2, 'high quality keeps two zero-intensity pooled lights in the shader before any shot');
   assert.equal((await snapshot()).combatEffects.visibleLights, 0, 'idle pooled lights do not illuminate the scene');
@@ -106,7 +107,7 @@ try {
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
   assert.equal((await snapshot()).combatEvents.pending, 0);
   assert.deepEqual((await snapshot()).combatEvents.history, []);
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   assert.deepEqual((await snapshot()).combatEvents.published, { shot: 0, impact: 0, explosion: 0, damage: 0, casualty: 0 }, 'a new battle cannot inherit old gunfire feedback');
   assert.equal(await page.locator('#hit-marker').evaluate(element => element.style.opacity), '0');
   assert.equal(await page.locator('#damage-vignette').evaluate(element => element.style.opacity), '0');

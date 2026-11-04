@@ -156,7 +156,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     const low = settings.preset === 'low';
     trimCombatParticles(state, { fragments: settings.effects.hitParticles ? low ? 32 : PARTICLE_LIMITS.fragments : 0,
       clouds: low ? 6 : PARTICLE_LIMITS.clouds, lights: low || !settings.effects.muzzle || !settings.effects.muzzleLight ? 0 : PARTICLE_LIMITS.lights },
-    cloud => cloud.kind === 'muzzle' ? settings.effects.muzzle : settings.effects.hitParticles);
+    cloud => cloud.kind === 'muzzle' ? settings.effects.muzzle : cloud.style === 'grenade' || settings.effects.hitParticles);
     display();
   };
   const emit = (position, normal, kind, time) => {
@@ -187,11 +187,13 @@ export function createCombatEffects(scene, camera, groundHeight) {
       emit(position, normal, impact.kind, time);
     },
     explosion(position, time, radius = 7, style = 'default', surface = null) {
-      const visible = settings.effects.hitParticles && camera.position.distanceTo(position) <= (style === 'tank-shell' ? 200 : 140);
+      const visible = (style === 'grenade' || settings.effects.hitParticles) &&
+        camera.position.distanceTo(position) <= (style === 'tank-shell' ? 200 : 140);
       lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
         surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };
       if (!visible) return;
       emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style,
+        debris: settings.effects.hitParticles,
         ...(surface ? { material: surface.kind, normal: surface.normal } : {}) });
     },
     update,

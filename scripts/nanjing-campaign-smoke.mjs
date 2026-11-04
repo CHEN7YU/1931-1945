@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,7 +25,7 @@ try {
     ['infantry']);
   assert.deepEqual(await page.locator('#redeploy-choices [data-type]').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
     ['infantry']);
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 30000 });
 
   const data = await page.evaluate(() => window.__battle);

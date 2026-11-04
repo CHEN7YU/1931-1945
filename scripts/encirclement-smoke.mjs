@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { PREVIEW_OBJECTIVES } from '../src/town-preview-layout.js';
@@ -12,6 +13,7 @@ try {
     await page.locator('#menu').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#campaign-choice').inputValue(), 'taierzhuang-fort');
     await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
     await page.locator(`#redeploy-choices [data-type="${type}"]`).click();
     await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
     await page.locator('#confirm-deploy').click();

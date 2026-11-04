@@ -57,9 +57,9 @@ try {
   assert.equal(await failurePage.evaluate(() => window.__battle.rifleAudio.status), 'fallback');
   await failurePage.locator('#deploy').click();
   await failurePage.waitForFunction(() => window.__battle.state === 'playing');
-  assert.match(await failurePage.locator('#force-status').textContent(), /录音未加载/);
+  assert.match(await failurePage.locator('#hud-notice').textContent(), /录音未加载/);
   samples.push({ stage: 'explicit-fallback', audio: await failurePage.evaluate(() => window.__battle.rifleAudio),
-    hud: await failurePage.locator('#force-status').textContent() });
+    hud: await failurePage.locator('#hud-notice').textContent() });
   await failurePage.screenshot({ path: join(directory, 'explicit-fallback.png') });
   await failurePage.close();
   console.log(JSON.stringify({ passed: true, directory, stages: samples.map(sample => sample.stage), errors }));

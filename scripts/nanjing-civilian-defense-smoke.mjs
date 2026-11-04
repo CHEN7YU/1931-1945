@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -291,7 +292,7 @@ try {
     { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 120000 });
   await page.locator('#menu-quality').selectOption('low');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing');
   if (process.env.ARTIFACT_DIR && process.env.RETREAT_ONLY!=='1') {
     await mkdir(process.env.ARTIFACT_DIR, { recursive: true });

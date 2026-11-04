@@ -8,7 +8,9 @@
     <title>山河 · 1931-1945</title>
   </head>
   <body>
+    <audio id="menu-music" src="/assets/audio/menu-music/the-last-judgement.mp3" preload="auto" loop></audio>
     <canvas id="world" aria-label="三维战场"></canvas>
+    <div id="blast-flash" aria-hidden="true"></div>
     <div class="grain" aria-hidden="true"></div>
     <div id="loading" class="loading-screen" aria-label="加载1931-1945 山河">
       <div class="loading-brand"><span class="loading-years">1931-1945</span><strong>山河</strong></div>
@@ -25,11 +27,12 @@
       </section>
       <div class="loading-progress-row"><progress id="loading-progress" max="100" value="0" aria-label="游戏初始化进度" aria-valuetext="0%">0%</progress><span id="loading-percentage">0%</span></div>
       <p id="loading-message" role="status">正在构建战场…</p>
+      <button type="button" class="screen-button" data-menu-music-toggle aria-pressed="true">背景音乐：开启</button>
     </div>
     <main id="menu" hidden>
       <header class="masthead">
         <a class="brand" href="./" aria-label="山河 · 1931-1945"><svg class="brand-emblem" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24 12 10 17 20 22 6 27 24" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
-        <button type="button" class="screen-button" data-fullscreen-toggle aria-pressed="false">全屏</button>
+        <div class="menu-music-controls"><button type="button" class="screen-button" data-menu-music-toggle aria-pressed="true">背景音乐：开启</button><button type="button" class="screen-button" data-fullscreen-toggle aria-pressed="false">全屏</button></div>
       </header>
       <section class="hero">
         <div class="eyebrow"><span class="line"></span> 二战中国战场 · 小队FPS</div>
@@ -226,6 +229,7 @@
           <p id="deployment-error" role="status"></p>
         </div>
         </div>
+        <button id="confirm-identity" class="primary-button" hidden>下一步 · 选择小队与阵地 <span>↗</span></button>
         <button id="confirm-deploy" class="primary-button" hidden disabled>选择小队后出击 <span>↗</span></button>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
         <details id="pause-settings" class="pause-settings">
@@ -272,9 +276,10 @@
         <div class="deployment-footer">
         <button id="back-menu" class="text-button">返回作战大厅</button>
         <button type="button" class="text-button" data-fullscreen-toggle aria-pressed="false">全屏</button>
+        <button type="button" class="text-button" data-menu-music-toggle aria-pressed="true">背景音乐：开启</button>
         <button type="button" class="text-button feedback-entry" data-feedback-open>反馈问题／提出建议 ↗</button>
         </div>
-        <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p id="encirclement-controls">Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；我方三点合围后转为东门阻击，歼灭至少2/3地面残敌获胜，最多允许1/3逃脱，仅余空中飞机不影响胜利。第一阶段日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div></details>
+        <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p id="encirclement-controls">Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；我方三点合围后转为东门阻击，歼灭至少2/3地面残敌获胜，最多允许1/3逃脱，仅余空中飞机不影响胜利。第一阶段日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p></div></details>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>

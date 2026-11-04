@@ -1,0 +1,24 @@
+{
+  "sourceKind": "user-supplied-menu-soundtrack",
+  "title": "琅琊榜 原声音乐 · 最后的审判 / Nirvana in Fire OST · The Last Judgement",
+  "originalFile": "琅琊榜 原声音乐 最后的审判 Nirvana in Fire OST The Last Judgement.mp3",
+  "license": "User-requested project use; original and redistribution rights unverified",
+  "permission": {
+    "basis": "user-supplied-soundtrack-project-use",
+    "request": "这个bgm用于用户打开游戏 直到完全进入战斗",
+    "isCC0": false,
+    "redistributionRightsIndependentlyVerified": false,
+    "limitation": "User supplied this recording for menu and loading playback. This request is not evidence of rights-holder permission for public or commercial redistribution; obtain the required music license before public distribution."
+  },
+  "processing": "Original supplied MP3 copied byte-for-byte; no re-encoding or excerpting. Playback volume and fade-out are applied at runtime.",
+  "files": [
+    {
+      "file": "the-last-judgement.mp3",
+      "bytes": 2291565,
+      "sha256": "83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7",
+      "duration": 160.008979,
+      "channels": 2,
+      "sampleRate": 48000
+    }
+  ]
+}

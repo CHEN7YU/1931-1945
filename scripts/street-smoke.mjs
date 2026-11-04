@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -55,7 +56,7 @@ async function walkTo(x, z) {
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.mouse.down({ button: 'right' });
   let data = await snapshot();
   assert.deepEqual(data.town.visibility, { doorOpening: true, wall: false, window: true, sill: false, lintel: false }, 'actual wall apertures remain distinct from the physical door leaves');

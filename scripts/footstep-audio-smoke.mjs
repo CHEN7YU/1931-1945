@@ -167,7 +167,7 @@ try {
   assert.ok(data.footstepAudio.error);
   assert.equal(data.rifleAudio.status, 'recorded', 'missing footstep must not disable the recorded rifle');
   await failed.locator('#deploy').click();
-  assert.match(await failed.locator('#force-status').textContent(), /脚步录音未加载/);
+  assert.match(await failed.locator('#hud-notice').textContent(), /脚步录音未加载/);
   await failed.keyboard.down('w');
   await failed.waitForFunction(() => window.__battle.locomotion.footsteps > 0);
   await failed.keyboard.up('w');

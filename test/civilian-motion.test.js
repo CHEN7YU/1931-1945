@@ -78,3 +78,26 @@ test('gait uses real displacement and turns toward actual motion at a bounded sp
   simulate(actor, 'cower');
   assert.equal(actor.userData.walkPhase, phase, 'a stationary sheltered person cannot march in place');
 });
+
+test('free arms swing from their shoulders with relaxed, phase-lagged elbow flexion; running bends more without adding geometry', () => {
+  for (const age of ['adult', 'elderly', 'child']) {
+    const actor = person('none', age), joints = actor.civilianSkin.joints, bends = [];
+    const geometry = actor.civilianSkin.geometry;
+    for (let frame = 0; frame < 60; frame++) {
+      advanceCivilianMotion(actor, { dt: 1 / 60, now: frame / 60, moved: 1.5 / 60, mode: 'route' });
+      updateCivilianAppearance([actor], camera);
+      bends.push(joints.leftElbow.rotation.x);
+      assert.ok(joints.leftElbow.rotation.x >= .18 && joints.rightElbow.rotation.x >= .18);
+      assert.ok(Math.abs(joints.leftArm.rotation.x) <= .26);
+    }
+    assert.ok(Math.max(...bends) - Math.min(...bends) > .07, 'elbows must articulate, not stay fixed');
+    let runningBend = 0;
+    for (let frame = 0; frame < 60; frame++) {
+      advanceCivilianMotion(actor, { dt: 1 / 60, now: 1 + frame / 60, moved: 3.2 / 60, mode: 'boarding' });
+      updateCivilianAppearance([actor], camera);
+      runningBend = Math.max(runningBend, joints.leftElbow.rotation.x);
+    }
+    assert.ok(runningBend > Math.max(...bends) + .2);
+    assert.equal(actor.civilianSkin.geometry, geometry);
+  }
+});

@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -21,7 +22,7 @@ try {
   await page.goto(process.env.NRA_BATTLE_URL ?? 'http://127.0.0.1:5173/?character=nra88&benchmark=full&seed=1938');
   await page.waitForFunction(() => window.__battle?.state === 'menu' || !document.querySelector('#fatal').hidden, null, { timeout: 60000 });
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').textContent());
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.historicalCharacter?.visible);
   await page.keyboard.down('s'); await page.waitForTimeout(600); await page.keyboard.up('s');
   await page.waitForFunction(() => window.__battle.historicalCharacter?.active === 'idle', null, { timeout: 10000 });

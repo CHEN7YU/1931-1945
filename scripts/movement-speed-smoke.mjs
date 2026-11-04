@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -13,7 +14,7 @@ let failure = null;
 try {
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5173/');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.time > 1 && window.__battle.simulationClock.pendingSeconds < .001);
   await page.keyboard.down('w');
   const data = await page.evaluate(() => new Promise(resolve => {

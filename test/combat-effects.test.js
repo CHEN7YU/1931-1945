@@ -23,6 +23,19 @@ function fixture() {
 }
 const impact = z => ({ position: { x: 0, y: .1, z }, normal: { x: 0, y: 1, z: 0 }, kind: 'stone' });
 
+test('a grenade retains a readable flash, dust and shock front even with low-quality hit debris disabled', () => {
+  const { effects } = fixture();
+  effects.configure({ preset: 'low', effects: { muzzle: false, muzzleLight: false, hitParticles: false } });
+  effects.explosion(new THREE.Vector3(0, .1, -3), .1, 7, 'grenade');
+  effects.render(.1);
+  assert.equal(effects.snapshot.lastExplosion.rendered, true);
+  assert.equal(effects.snapshot.fragments, 0);
+  assert.ok(effects.snapshot.renderedClouds >= 3 && effects.snapshot.renderedClouds <= 6);
+  assert.equal(effects.snapshot.visibleLights, 0);
+  effects.configure({ preset: 'low', effects: { muzzle: false, muzzleLight: false, hitParticles: false } });
+  assert.ok(effects.snapshot.blastClouds > 0, 'changing settings must not erase the main grenade explosion');
+});
+
 test('many simulation events share one presentation pass and retain catch-up birth flashes', () => {
   const { effects } = fixture(), before = effects.snapshot.presentationPasses;
   for (let i = 0; i < 10; i++) effects.hit(impact(-20), .25);

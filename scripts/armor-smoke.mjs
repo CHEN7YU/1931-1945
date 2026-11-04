@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
@@ -9,7 +10,7 @@ const snapshot = () => page.evaluate(() => window.__battle);
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
+  await page.locator('#squad-choices [data-type="tank"]').click(); await deployFromMenu(page);
   let data = await snapshot();
   assert.ok(data.allies.every(actor => actor.targetKind === 'closed-armor'));
   await page.keyboard.down('w');
@@ -36,7 +37,7 @@ try {
   assert.ok((await snapshot()).health > 0, 'blast damage remains effective; sealed armor is not globally invulnerable');
   assert.equal(await page.locator('#damage-vignette').evaluate(element => element.style.opacity), '0', 'disabling damage vignette changes rendering, not actual damage');
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
-  await page.locator('#squad-choices [data-type="infantry"]').click(); await page.locator('#deploy').click();
+  await page.locator('#squad-choices [data-type="infantry"]').click(); await deployFromMenu(page);
   assert.ok((await snapshot()).allies.every(actor => actor.targetKind === 'person'));
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z < 42, null, { timeout: 25000 });

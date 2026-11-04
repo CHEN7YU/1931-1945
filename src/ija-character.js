@@ -93,7 +93,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
       },
       get actorId() { return actorId; },
       get issue() { return actor?.health <= 0 ? null : pose.issue; },
-      update(person, now, controlledId) {
+      update(person, now, controlledId, rifleOperation = undefined) {
         if (person.team !== 'enemy') throw new Error('Japanese appearance cannot replace a friendly identity');
         actor = person;
         flag.visible = hasIjaRifleFlag(actor);
@@ -110,8 +110,8 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
         root.updateMatrixWorld(true);
         legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundAt);
         applyNativeUpperBody(root, bones, motion);
-        pose.update(motion);
         syncWorldWeapon(gun, actor.rifle);
+        pose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
         flag.visible = hasIjaRifleFlag(actor);
         casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
       },

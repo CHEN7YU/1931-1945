@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -67,7 +68,7 @@ try {
   for (const type of ['tank', 'plane']) {
     await page.locator(`#squad-choices [data-type="${type}"]`).click();
     assert.match(await page.locator(`#squad-choices [data-type="${type}"] small`).textContent(), type === 'tank' ? /维克斯/ : /伊-15bis/);
-    await page.locator('#deploy').click();
+    await deployFromMenu(page);
     await page.waitForFunction(type => window.__battle?.state === 'playing' && window.__battle.vehicles.some(v => v.type === type), type);
     assert.match(await page.locator('#weapon-name').textContent(), type === 'tank' ? /47毫米炮/ : /7.62毫米机枪/);
     const before = await page.evaluate(() => window.__battle);

@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,7 +26,7 @@ try {
   await page.goto(new URL('/?campaign=nanjing', origin).href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', undefined, { timeout: 60000 });
   await page.locator('#menu-quality').selectOption('low');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   for (const seconds of [15, 35, 60, 90, 120, 180]) {
     await page.waitForFunction(seconds => window.__battle.time >= seconds, seconds, { timeout: 150000 });
     const sample = await page.evaluate(() => {

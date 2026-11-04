@@ -42,7 +42,8 @@ try {
   for (const id of ['nanjing', 'taierzhuang-fort']) {
     await page.goto(id === 'nanjing' ? `${base}/?campaign=nanjing` : base);
     if (id === 'nanjing') {
-      await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
+      await page.waitForFunction(() => window.__battle?.state === 'menu' &&
+        document.getElementById('overlay').dataset.deploymentStep === 'identity', null, { timeout: 180000 });
       assert.equal(await page.locator('#menu-photo-wall').isVisible(), false);
       assert.match(await page.locator('#selected-campaign-preview img').getAttribute('src'), /nanjing\.webp/);
       assert.equal(await page.locator('#player-unit-cards label').count(), 5);
@@ -50,7 +51,9 @@ try {
       await page.locator('input[name="player-unit"][value="custom"]').check();
       await page.locator('#custom-squad-name').fill('江城自定义小队');
       await capture('nanjing-preparation.png');
-      await page.locator('#deploy').click();
+      await page.locator('#confirm-identity').click();
+      await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad');
+      await page.locator('#confirm-deploy').click();
     } else {
       await page.locator('#confirm-campaign').click();
       assert.equal(await page.locator('#menu-photo-wall').isVisible(), false);
@@ -58,8 +61,11 @@ try {
       assert.equal(await page.locator('#player-unit-cards label').count(), 4);
       await page.locator('input[name="player-unit"][value="20-corps"]').check();
       await capture('taierzhuang-unit-selection.png');
+      await page.locator('#confirm-identity').click();
+      await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad',
+        null, { timeout: 180000 });
       await page.locator('#redeploy-choices [data-type="infantry"]').click();
-      assert.match(await page.locator('#deployment-campaign-context').textContent(), /本关作战目标/);
+      assert.equal(await page.locator('#deployment-campaign-context').isVisible(), false);
       await page.locator('#confirm-deploy').click();
     }
     await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
@@ -81,7 +87,6 @@ try {
     const pausedAt = await page.evaluate(() => window.__battle.time);
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => window.__battle.time), pausedAt);
-    assert.equal(await page.locator('#mission-briefing').isVisible(), true);
     if (fullscreenSupported) {
       await page.locator('#overlay [data-fullscreen-toggle]').click();
       await page.waitForFunction(() => Boolean(document.fullscreenElement));
@@ -89,9 +94,10 @@ try {
       await page.locator('#overlay [data-fullscreen-toggle]').click();
       await page.waitForFunction(() => !document.fullscreenElement);
     }
+    await page.locator('#mission-briefing').waitFor({ state: 'hidden', timeout: 6500 });
+    assert.equal(await page.evaluate(() => window.__battle.time), pausedAt, 'briefing must expire while Esc keeps simulation paused');
+    assert.equal(await page.evaluate(() => window.__battle.state), 'pause');
     await page.locator('#resume').click();
-    await page.keyboard.press('Enter');
-    await page.locator('#mission-briefing').waitFor({ state: 'hidden' });
     missions.push({ id, text, pausedAt });
   }
   assert.deepEqual(errors, []);

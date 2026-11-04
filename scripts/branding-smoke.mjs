@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -47,7 +48,7 @@ try {
     observations.push({ width, height, title, subtitle, deploy });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.state === 'playing', null, { timeout: 20000 });
   assert.equal(await page.title(), '山河 · 1931-1945');
   assert.equal(await page.evaluate(() => window.__battle.preferences.mouseSensitivity), 1.5);

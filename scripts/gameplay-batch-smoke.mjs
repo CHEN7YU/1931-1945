@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -18,6 +19,7 @@ try {
     url.searchParams.set('campaign', campaign);
     await page.goto(url.href);
     await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
     await page.locator('#redeploy-choices [data-type="infantry"]').click();
     await page.locator('#spawn-choices [data-spawn="china-base"]').click();
     await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);

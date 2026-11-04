@@ -52,6 +52,8 @@ try {
     await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'photo-wall.png') });
   }
   await page.locator('#confirm-campaign').click();
+  assert.equal(await page.locator('#player-identity').isVisible(), true);
+  assert.equal(await page.locator('#deployment-options').isVisible(), false);
   assert.equal(await page.locator('#menu-photo-wall').isVisible(), false);
   assert.equal(await page.locator('#deployment-campaign-context').isVisible(), true);
   await page.locator('#back-menu').click();
@@ -62,9 +64,7 @@ try {
       [...copies[1].querySelectorAll('img')].every((image, index) => image.src === current[index]);
   }, photoOrder);
   await page.locator('#confirm-campaign').click();
-  await page.locator('#redeploy-choices [data-type="infantry"]').click();
-  await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
-  await page.locator('#confirm-deploy').click();
+  await page.locator('#confirm-identity').click();
   await page.locator('#loading').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#menu').isVisible(), false);
   assert.equal(await track.evaluate(element => element.style.animationPlayState), 'paused');

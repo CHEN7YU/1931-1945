@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -25,7 +26,7 @@ try {
     await mkdir(artifacts, { recursive: true });
     await page.screenshot({ path: join(artifacts, 'battle-menu.png') });
   }
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.state === 'playing');
   let data = await snapshot();
   assert.equal(data.type, 'infantry');
@@ -211,7 +212,7 @@ try {
   await key('Escape');
   await page.locator('#back-menu').click();
   await page.locator('#squad-choices [data-type="mortar"]').click();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   assert.equal((await snapshot()).type, 'mortar');
   assert.equal((await snapshot()).allies.length, 3, 'mortar team has multiple members');
   await key('y');
@@ -226,7 +227,7 @@ try {
   await key('Escape');
   await page.locator('#back-menu').click();
   await page.locator('#squad-choices [data-type="plane"]').click();
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   data = await snapshot();
   assert.equal(data.type, 'plane');
   const planeZ = data.position.z;
@@ -292,7 +293,7 @@ try {
   await page.locator('#back-menu').click();
   assert.equal((await snapshot()).state, 'menu');
   assert.deepEqual((await snapshot()).rallyViews, { count: 0, ids: [] });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   assert.ok((await snapshot()).remaining > 599, 'new match resets timer');
   assert.ok((await snapshot()).objectives.every(point => point.owner === null && point.control === 0), 'new match resets all three ownership states');
   assert.deepEqual((await snapshot()).conquest, { friendly: 0, enemy: 0, dominationTeam: null, dominationTime: 0, winner: null });

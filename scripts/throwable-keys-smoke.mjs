@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -7,6 +8,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
   await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.locator('#spawn-choices [data-spawn="china-base"]').click();
   await page.locator('#confirm-deploy').click();

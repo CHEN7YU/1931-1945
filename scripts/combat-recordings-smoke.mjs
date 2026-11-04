@@ -87,7 +87,7 @@ try {
   assert.equal(await failed.evaluate(() => window.__battle.battleVoices.status), 'ready', 'reaction failure preserves existing dialogue');
   await failed.locator('#deploy').click();
   await failed.waitForFunction(() => window.__battle.state === 'playing');
-  assert.match(await failed.locator('#force-status').textContent(), /真人战斗反应不可用/);
+  assert.match(await failed.locator('#hud-notice').textContent(), /真人战斗反应不可用/);
   await failed.close();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ decodedReactions: result.durations.length, additionalPlayed: result.extraPlaybacks.length,

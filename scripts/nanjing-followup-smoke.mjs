@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -128,7 +129,7 @@ try {
   const response = await page.goto((process.env.GAME_URL ?? 'http://127.0.0.1:5203') + '/?campaign=nanjing');
   assert.ok(response.ok());
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   const boarding = await page.evaluate(() => followupReview.boarding());
   assert.equal(boarding.slots.length, 180); assert.ok(boarding.slots.every(slot => slot.x < -59.8));

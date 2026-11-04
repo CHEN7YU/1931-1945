@@ -1,3 +1,4 @@
+import { continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -42,6 +43,7 @@ try {
   });
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
   await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
   await page.locator('#player-nickname').fill('战况测试员');
   await page.locator('input[name="player-unit"][value="31"]').check();
   await page.locator('#redeploy-choices [data-type="tank"]').click();

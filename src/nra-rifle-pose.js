@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RIFLE_CONTACTS, rifleStockSection } from './rifle-contacts.js';
+import { rifleActionPalm } from './rifle-hand-action.js';
 
 function position(bone) { return bone.getWorldPosition(new THREE.Vector3()); }
 function rotation(bone) { return bone.getWorldQuaternion(new THREE.Quaternion()); }
@@ -60,7 +61,7 @@ export function createNraRiflePose(root, bones, gun) {
   const stock = new THREE.Object3D(); stock.position.fromArray(RIFLE_CONTACTS.stock); gun.add(stock);
   root.add(gun);
   let right = null, left = null, rightTarget = new THREE.Vector3(), leftTarget = new THREE.Vector3(), contactTarget = null;
-  let fingerError = 0;
+  let fingerError = 0, rightPalmGoal = new THREE.Vector3();
   const palmPosition = side => position(bone(`${side}Hand`)).lerp(position(bone(`${side}HandMiddle1`)), .55);
   function orientHand(side, palmNormal) {
     const hand = bone(`${side}Hand`);
@@ -131,7 +132,13 @@ export function createNraRiflePose(root, bones, gun) {
         .multiply(rotation(shoulder)));
       rightTarget = root.localToWorld(new THREE.Vector3(...RIFLE_CONTACTS.triggerWrist).applyQuaternion(localRotation)
         .add(new THREE.Vector3().fromArray(carry.weaponPosition)));
-      right = placeHand('Right', position(triggerPalm), rightTarget, new THREE.Vector3(.7, -.7, .1).applyQuaternion(bodyFacing),
+      rightPalmGoal.copy(position(triggerPalm));
+      const operation = carry.rifleOperation;
+      if (operation?.hand > 0) {
+        rightPalmGoal.copy(gun.localToWorld(new THREE.Vector3(...rifleActionPalm(operation))));
+        rightTarget.add(rightPalmGoal.clone().sub(position(triggerPalm)));
+      }
+      right = placeHand('Right', rightPalmGoal, rightTarget, new THREE.Vector3(.7, -.7, .1).applyQuaternion(bodyFacing),
         new THREE.Vector3(-1, 0, 0).applyQuaternion(facing), carry.weaponBlocked ? 16 : carry.bayonet ? 8 : 4,
         carry.weaponBlocked ? .5 : 1);
       rightTarget = right.target;
@@ -145,6 +152,19 @@ export function createNraRiflePose(root, bones, gun) {
         carry.weaponBlocked ? .5 : 1);
       leftTarget = left.target;
       root.updateMatrixWorld(true);
+      if (operation?.hand > 0) {
+        for (const [joint, rest] of fingers) {
+          if (!joint.name.startsWith('RightHand')) continue;
+          const index = Number(joint.name.at(-1)) - 1;
+          if (index < 0 || index > 2) continue;
+          const desired = new THREE.Euler().setFromQuaternion(rest, 'XYZ');
+          const thumb = joint.name.includes('Thumb');
+          desired.x = thumb ? index ? .65 : .5 : operation.loading > .5 ? [.35, .85, .55][index] : [.8, 1.25, .85][index];
+          if (thumb && index === 0) desired.z += .35;
+          joint.quaternion.slerp(new THREE.Quaternion().setFromEuler(desired), operation.hand);
+        }
+        root.updateMatrixWorld(true);
+      }
       if (carry.grenade) {
         bone('LeftShoulder').quaternion.copy(leftShoulderRest);
         root.updateMatrixWorld(true);
@@ -194,7 +214,7 @@ export function createNraRiflePose(root, bones, gun) {
       return { right: result(right), left: result(left),
         rightTarget: rightTarget.toArray(), leftTarget: leftTarget.toArray(), muzzle: position(muzzle).toArray(),
         rightPalm: palmPosition('Right').toArray(), leftPalm: palmPosition('Left').toArray(),
-        rightPalmTarget: position(triggerPalm).toArray(), leftPalmTarget: position(grip).toArray(),
+        rightPalmTarget: rightPalmGoal.toArray(), leftPalmTarget: position(grip).toArray(),
         stock: position(stock).toArray(), stockTarget: contactTarget?.toArray() ?? null,
         fingerError,
         leftElbow: position(bone('LeftForeArm')).toArray(), rightElbow: position(bone('RightForeArm')).toArray(),

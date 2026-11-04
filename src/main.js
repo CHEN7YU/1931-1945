@@ -44,6 +44,8 @@ import { loadBattleVoices, createObjectiveVoiceTracker } from './battle-voices.j
 import { loadBattleSignals } from './battle-signals.js';
 import { loadTacticalFeedbackAudio } from './tactical-feedback-audio.js';
 import { loadVehicleAudio } from './vehicle-audio.js';
+import { getMenuMusic } from './menu-music.js';
+import { createGrenadeBlastAudio, grenadeBlastMix } from './grenade-blast-audio.js';
 import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion as sampleNativeMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
@@ -136,6 +138,8 @@ import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from
 import { registerBreakoutStrength, crossedEastGate } from './encirclement.js';
 import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger, shouldDepartNanjingFerry } from './nanjing-ferry.js';
 import { NANJING_FERRY_FLOOR, updateNanjingFerryRower } from './nanjing-river-details.js';
+import { troopFerryWaitPoint, beginTroopFerryBoarding, advanceTroopFerryBoarding,
+  syncTroopFerryPassengers, troopFerryReady, completeTroopFerryCrossing } from './nanjing-troop-ferry.js';
 import {civilianCombatTargets,civilianAimHeight,civilianEngagementPreferred} from './civilian-targets.js';
 import {advanceBreakoutGroups,breakoutGroupNumber,breakoutGroupDestination} from './breakout-groups.js';
 
@@ -453,6 +457,7 @@ const frameTimes = [];
 let audioContext;
 let audioMixer = null;
 let noiseBuffer;
+let grenadeBlastAudio = null, grenadeFlashUntil = 0, grenadeFlashStrength = 0;
 let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audioUnsupported = false;
 let footstepAudio = null, footstepAudioFailure = null;
 let mechanicalAudio = null, mechanicalAudioFailure = null;
@@ -511,7 +516,7 @@ try {
 try { battleSignals = await loadBattleSignals(); }
 catch (error) {
   battleSignalsFailure = error.message;
-  console.error('战场军号与哨声未加载：', error);
+  console.error('日军进攻哨声未加载：', error);
 }
 try {
   tacticalAudio = await loadTacticalFeedbackAudio({ water: typeof world.isDeepWater === 'function', ferries: Boolean(world.ferries?.length) });
@@ -576,6 +581,7 @@ function setGameState(next) {
   const active = activeStates.has(next);
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
+  getMenuMusic().setState(next);
   if (['pause', 'menu', 'victory', 'defeat', 'draw'].includes(next)) {
     performanceDiagnostics.flush(['victory', 'defeat', 'draw'].includes(next) ? 'ended' : 'pause');
   }
@@ -584,6 +590,7 @@ function setGameState(next) {
   battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
   battleSignals?.sync(activeStates.has(state));
   tacticalAudio?.sync(activeStates.has(state)); vehicleAudio?.sync(activeStates.has(state));
+  if (!activeStates.has(state)) grenadeBlastAudio?.reset();
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -673,6 +680,7 @@ function initAudio() {
     noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+    grenadeBlastAudio = createGrenadeBlastAudio(audioContext, noiseBuffer, audioMixer.output('weapons'));
   }
   if (audioContext.state === 'suspended') audioContext.resume().catch(error => {
     console.warn('游戏音效未启用：', error);
@@ -964,7 +972,15 @@ function presentCombatEvents(bornAt = time) {
       else renderImpact(position(event.position), bornAt);
     } else if (event.type === 'explosion') {
       combatEffects.explosion(position(event.position), bornAt, event.radius, event.style, event.surface ?? null);
-      if (event.sound) sound('blast');
+      if (event.sound && ['grenade', 'explosive-pack'].includes(event.style) && grenadeBlastAudio) {
+        const listener = battleAudioListener(), point = position(event.position);
+        grenadeBlastAudio.play(point, listener);
+        const mix = grenadeBlastMix(point, listener);
+        if (mix.flash > 0 && hasLine(point.clone().add(new THREE.Vector3(0, .35, 0)), listener.position, 12)) {
+          grenadeFlashStrength = Math.max(grenadeFlashStrength, mix.flash);
+          grenadeFlashUntil = performance.now() + 220;
+        }
+      } else if (event.sound) sound('blast');
     } else {
       battleStats.consume(event);
       if (event.type === 'damage') {
@@ -1257,6 +1273,8 @@ function clearActors(list, preserveCorpses = false) {
 }
 
 function clearTransient() {
+  grenadeBlastAudio?.reset(); grenadeFlashUntil = grenadeFlashStrength = 0;
+  $('blast-flash').style.opacity = '0';
   missionBriefing.hide();
   grenades.clear();
   aiThrowReservations.clear();
@@ -1289,8 +1307,11 @@ function clearTransient() {
   projectileSerial = 0;
 }
 
-function beginMatch() {
+function beginMatch(initialSpawnId = null) {
   $('player-identity').hidden = true;
+  $('initial-identity-slot').hidden = true;
+  $('confirm-identity').hidden = true;
+  delete $('overlay').dataset.deploymentStep;
   civilianCombatTime=null;civilianCombatList=[];
   footstepAudio?.sync(null, false);
   mechanicalAudio?.reset();
@@ -1308,6 +1329,11 @@ function beginMatch() {
   renderIsolation.drawFrames = renderIsolation.skippedFrames = renderIsolation.hiddenCharacterFrames = renderIsolation.characterPresentationFrames = 0;
   if (nanjingCampaignMode) {
     world.resetCampaign();
+    for (const ferry of world.ferries) {
+      ferry.userData.troopPassengers = [];
+      ferry.userData.troopBoarding = null;
+      ferry.userData.troopsLoadedAt = null;
+    }
     for (const aircraft of world.aircraft) aircraft.visible = false;
   }
   else world.doorSystem.reset();
@@ -1364,8 +1390,8 @@ function beginMatch() {
   }
   $('menu').hidden = true;
   $('hud').hidden = false;
-  deploy(selectedType);
-  if (!benchmark && !campaign.hidden && !campaign.locked) missionBriefing.show(campaign, time);
+  deploy(selectedType, initialSpawnId);
+  if (!benchmark && !campaign.hidden && !campaign.locked) missionBriefing.show(campaign, performance.now() / 1000);
 }
 
 function deploy(squadId, spawnId = null) {
@@ -1381,7 +1407,7 @@ function deploy(squadId, spawnId = null) {
   const openingSpawnId = nanjingCampaignMode && deployments === 0 && !spawnId ? 'nanjing-gate-front-0' : null;
   const spawn = openingSpawnId ? spawnPoints.find(point => point.id === openingSpawnId) : spawnPoints.find(point => (spawnId ? point.id === spawnId : !point.aiOnly && point.team === 'friendly' &&
     point.kind !== 'rally' && supportsSquad(point, type)) && (!nanjingCampaignMode ||
-    isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated)));
+    isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated) || deployments === 0 && point.initialOnly));
   const spawnError = !spawn || spawn.team !== 'friendly' || spawn.aiOnly ? '请选择己方可用重生点' : spawnBlockReason(spawn, type, hostilePositions('friendly'), deploymentObstacles());
   if (spawnError) {
     $('deployment-error').textContent = spawnError;
@@ -1502,6 +1528,8 @@ function deploy(squadId, spawnId = null) {
 }
 
 function showOverlay(kind = 'pause') {
+  delete $('overlay').dataset.deploymentStep;
+  $('confirm-identity').hidden = true;
   $('player-identity').hidden = true;
   $('initial-identity-slot').hidden = true;
   $('deployment-campaign-context').hidden = true;
@@ -1529,7 +1557,7 @@ function showOverlay(kind = 'pause') {
   $('deployment-help').hidden = ended;
   $('encirclement-controls').hidden = !encirclementMode;
   $('deployment-help').open = !dead && !ended;
-  $('overlay').querySelector('[data-build-version]').hidden = ended;
+  $('overlay').querySelector('[data-build-version]').hidden = ended || kind === 'pause';
   $('overlay-description').hidden = kind === 'victory' && !nanjingCampaignMode;
   resetConstruction();
   renderConstruction();
@@ -1595,18 +1623,68 @@ function refreshCapturedSpawns(type) {
   }));
 }
 
+export function showInitialSquadDeployment() {
+  if (state !== 'menu') throw new Error('Initial squad selection requires the lobby state');
+  if (deployments > 0) {
+    deployments = 0;
+    objectives = nanjingCampaignMode ? createNanjingObjectives()
+      : encirclementMode ? encirclementObjectives() : makeObjectives(battleLayout.objectives);
+    nanjingCampaign = nanjingCampaignMode ? createNanjingCampaign() : null;
+    encirclement = createEncirclement(); conquest = createConquest();
+    pendingSquad = pendingSpawn = null;
+    resetSpawns();
+  }
+  $('menu').hidden = true; $('overlay').hidden = false;
+  $('overlay').classList.add('deployment-overlay');
+  $('overlay').dataset.deploymentStep = 'squad';
+  $('initial-identity-slot').hidden = $('player-identity').hidden = true;
+  $('deployment-campaign-context').hidden = true;
+  $('confirm-identity').hidden = true;
+  $('confirm-deploy').hidden = false;
+  $('redeploy-choices').hidden = $('deployment-options').hidden = false;
+  for (const id of ['resume', 'battle-summary', 'battle-results', 'pause-settings']) $(id).hidden = true;
+  $('overlay-kicker').textContent = '小队与阵地 / DEPLOY';
+  $('overlay-title').textContent = '选择小队与出生点';
+  $('overlay-description').hidden = false;
+  $('overlay-description').textContent = `${campaign.name} · 已默认选择步兵与可用阵地，可直接出击，也可自行改选。`;
+  $('back-menu').textContent = '返回番号选择';
+  $('deployment-help').hidden = false; $('deployment-help').open = false;
+  $('overlay').querySelector('[data-build-version]').hidden = true;
+  $('overlay').querySelector('.dialog').scrollTop = 0;
+  getMenuMusic().setState('deployment');
+  refreshDeployment();
+}
+
+function chooseDeploymentSquad(id) {
+  const type = SQUADS[id]?.type;
+  const reason = deploymentBlockReason(state, allies, id, unit?.squadId);
+  if (reason) { $('deployment-error').textContent = reason; return false; }
+  pendingSquad = id;
+  refreshCapturedSpawns(type);
+  const candidates = deploymentSpawnChoices(type).filter(point =>
+    !spawnBlockReason(point, type, hostilePositions('friendly'), deploymentObstacles()));
+  const preferred = nanjingCampaignMode
+    ? state === 'menu' && deployments === 0 ? 'nanjing-gate-front-0'
+      : nanjingCampaign.dockActivated ? 'nanjing-west-dock' : 'nanjing-gate' : null;
+  pendingSpawn = candidates.find(point => point.id === preferred)?.id ??
+    recommendedSpawn(candidates, type, objectives, () => true)?.id ?? null;
+  $('deployment-error').textContent = pendingSpawn ? '' : '当前没有可用出生点，请等待阵地恢复或选择其他小队。';
+  return true;
+}
+
 function refreshDeployment() {
-  if (state !== 'dead') return;
+  if (state !== 'dead' && !(state === 'menu' && $('overlay').dataset.deploymentStep === 'squad')) return;
+  if (!pendingSquad) chooseDeploymentSquad('infantry');
   for (const button of $('redeploy-choices').querySelectorAll('[data-type]')) {
     const id = button.dataset.type;
     const type = SQUADS[id].type;
-    const reason = deploymentBlockReason(state, allies, id, unit.squadId);
+    const reason = deploymentBlockReason(state, allies, id, unit?.squadId);
     button.disabled = Boolean(reason);
     button.classList.toggle('selected', pendingSquad === id);
     button.setAttribute('aria-pressed', String(pendingSquad === id));
     button.querySelector('small').textContent = reason || `${TYPES[type].members} 人 · 新小队可出击`;
   }
-  $('deployment-objective').textContent = nanjingCampaignMode
+  $('deployment-objective').textContent = state === 'menu' ? '首次出击 · 初始阵地' : nanjingCampaignMode
     ? ({ 'gate-defense': '第一阶段 · 中华门第二道门内阵地防守', withdrawal: '撤往上新河渡口 · 第二阶段即将开始',
       'dock-defense': '第二阶段 · 上新河渡口防守', 'withdrawal-to-boats': '撤退阶段 · AI小队先登船' }[nanjingCampaign.stage] ?? '南京保卫战')
     : encirclementMode && encirclement.phase === 2
@@ -1655,11 +1733,12 @@ function refreshDeployment() {
 function deploymentSpawnChoices(type) {
   return type ? spawnPoints.filter(point => !point.aiOnly && point.team === 'friendly' &&
     supportsSquad(point, type) && (!nanjingCampaignMode ||
-      isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated))) : [];
+      isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated) ||
+      state === 'menu' && deployments === 0 && point.initialOnly)) : [];
 }
 
 function selectDeploymentSpawn(id) {
-  if (state !== 'dead' || !pendingSquad) return;
+  if (!pendingSquad || state !== 'dead' && !(state === 'menu' && $('overlay').dataset.deploymentStep === 'squad')) return;
   const type = SQUADS[pendingSquad].type;
   const point = deploymentSpawnChoices(type).find(candidate => candidate.id === id);
   if (!point) return;
@@ -2276,7 +2355,7 @@ function renderDeathFeedback() {
 
 function explode(position, damage, radius, source, weaponKind = 'explosion', surface = null) {
   combatEvents.publish('explosion', { position, source, sound: true, radius,
-    style: weaponKind === 'explosive-pack' ? 'explosive-pack'
+    style: weaponKind === 'grenade' ? 'grenade' : weaponKind === 'explosive-pack' ? 'explosive-pack'
       : ['tank', 'field-gun'].includes(source.weaponClass) ? 'tank-shell' : 'default',
     ...(surface ? { surface } : {}) }, time);
   combatSounds.push({ id: ++soundSerial, friendly: source.team === 'friendly',
@@ -2326,12 +2405,13 @@ function traceGrenade(from, to, radius, checkingSupport = false, ignoreVehicleId
   const length = delta.length();
   if (length < 1e-8) return null;
   const travel = delta.clone().normalize(), transports = vehicleSolids(ignoreVehicleId, null, groundVehiclesOnly);
+  const candidates = [...solidIndex.sweptCandidates(from, to, radius), ...transports];
   let closest = null, distance = length + 1;
   // Sample the small projectile's extent as well as its centre, including thin walls and doors.
   for (const offset of [[0, 0, 0], [radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0], [0, 0, radius], [0, 0, -radius]]) {
     const origin = start.clone().add(new THREE.Vector3(...offset));
     ray.set(origin, travel); ray.far = length;
-    const hit = closestHit(ray, [...solidIndex.candidates(origin, travel, length), ...transports]);
+    const hit = closestHit(ray, candidates);
     if (hit && hit.distance < distance) {
       distance = hit.distance;
       closest = { position: start.clone().addScaledVector(travel, distance), normal: captureImpact(hit, travel).normal,
@@ -4203,9 +4283,14 @@ function updateAI(dt) {
       if (tactics.cover) coverClaims.delete(tactics.cover.id);
       tactics.cover = tactics.lastSeen = actor.target = null;
       actor.stance = 'standing'; actor.firingPose = null; tactics.mode = 'embarking';
-      const x = NANJING_DOCK.x + (actor.index % 3 - 1) * 1.5;
-      const z = NANJING_DOCK.z + (Math.floor(actor.index / 3) - 1) * 1.5;
-      walkActor(actor, { x, z, y: world.groundHeight(x, z), transit: true }, 3.5, dt);
+      const ferryState = tactics.nanjingFerry;
+      if (ferryState) {
+        actor.locomotion.speed = ferryState.speed;
+        if (ferryState.phase === 'aboard') actor.stance = 'crouched';
+      } else {
+        const goal = troopFerryWaitPoint(actor, world.ferries);
+        walkActor(actor, { ...goal, y: world.groundHeight(goal.x, goal.z) }, 3.5, dt);
+      }
       continue;
     }
     if (encirclementMode && encirclement.phase === 2 &&
@@ -4842,7 +4927,6 @@ function updateNanjingMission(dt) {
   }
 
   if (nanjingCampaign.stage === 'withdrawal-to-boats') {
-    const dock = objectives.find(point => point.id === 'dock');
     const aiFormations = formations.filter(item => item.team === 'friendly' && !item.player);
     const aliveFormations = aiFormations.filter(formation => formation.members.some(actor => actor.health > 0));
     nanjingCampaign.requiredAISquads = Math.min(nanjingCampaign.requiredAISquads,
@@ -4852,16 +4936,9 @@ function updateNanjingMission(dt) {
       if (nanjingCampaign.evacuatedSquads.some(squad => squad.id === formation.id)) continue;
       const alive = formation.members.filter(actor => actor.health > 0);
       if (civiliansSafe && alive.length &&
-        alive.every(actor => Math.hypot(actor.position.x - dock.x, actor.position.z - dock.z) < dock.radius) &&
+        alive.every(actor => actor.tactics.nanjingFerry?.phase === 'evacuated') &&
         recordNanjingSquadEvacuation(nanjingCampaign, formation.id)) {
-        const removed = new Set(alive);
-        for (const actor of alive) {
-          if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
-          pathRequests.delete(actor.tactics.id);
-        }
-        clearActors(alive);
-        friendlyAI = friendlyAI.filter(actor => !removed.has(actor));
-        formation.members = formation.members.filter(actor => !removed.has(actor));
+        formation.members = formation.members.filter(actor => actor.health <= 0);
         formation.evacuated = true;
         rebuildForces();
       }
@@ -5090,8 +5167,31 @@ function updateNanjingCivilians(dt) {
 
   const allArrivalsResolved = world.civilians.every(civilian => civilian.userData.arrived || civilian.userData.dead);
   if (nanjingCampaign.dockActivated) nanjingCampaign.boardingClock = (nanjingCampaign.boardingClock ?? 0) + dt;
+  const troopsMayBoard = nanjingCampaign.stage === 'withdrawal-to-boats' &&
+    nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
   for (const ferry of world.ferries) {
     const boatState = nanjingCampaign.boats[ferry.userData.ferryId];
+    if (troopsMayBoard && ferry.userData.state === 'docked') {
+      const started = beginTroopFerryBoarding(ferry, friendlyAI, time, (actor, shore) => {
+        const path = rejoinCivilianRoute(actor.position, shore, world.civilianNavigate,
+          world.civilianNavigationObstacles, civilianNavigationLookup);
+        if (!path?.length) {
+          if (time >= (actor.tactics.ferryRouteWarningAt ?? 0)) {
+            actor.tactics.ferryRouteWarningAt = time + 10;
+            console.warn(`友军 ${actor.id} 登船路径暂不可达：${world.civilianNavigate.stats.reason}`);
+          }
+          return null;
+        }
+        return path.map(point => ({ ...point, y: world.groundHeight(point.x, point.z) }));
+      });
+      const step = started ? null : advanceTroopFerryBoarding(ferry, dt);
+      if (step?.moved > .001 && Math.floor(step.actor.walkPhase / Math.PI) !==
+        Math.floor((step.actor.walkPhase - step.moved * 3.6) / Math.PI))
+        tacticalAudio?.emit('deck-step', step.actor.position, time, step.actor.id);
+      if (troopFerryReady(ferry, friendlyAI, time) && !boatState.returning) {
+        boatState.returning = true; boatState.departures++;
+      }
+    }
     if (ferry.userData.state === 'docked') {
       let boardingStarted = false;
       if (nanjingCampaign.dockActivated && queue.length && !ferry.userData.boarding &&
@@ -5169,6 +5269,17 @@ function updateNanjingCivilians(dt) {
       ferry.position.x = Math.max(NANJING_FERRY_ROUTE.hiddenX, ferry.position.x - dt * NANJING_FERRY_ROUTE.speed);
       updateFerryVisibility(ferry);
       if (ferry.position.x <= NANJING_FERRY_ROUTE.hiddenX) {
+        const troops = completeTroopFerryCrossing(ferry);
+        if (troops.length) {
+          const removed = new Set(troops);
+          for (const actor of troops) {
+            if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
+            pathRequests.delete(actor.tactics.id);
+          }
+          clearActors(troops);
+          friendlyAI = friendlyAI.filter(actor => !removed.has(actor));
+          rebuildForces();
+        }
         completeNanjingCrossing(nanjingCampaign, boatState.id);
         for (const passenger of ferry.userData.passengers) {
           restoreFerryPassenger(passenger);
@@ -5190,8 +5301,10 @@ function updateNanjingCivilians(dt) {
         returnNanjingBoat(nanjingCampaign, boatState.id);
         ferry.userData.state = 'docked';
         ferry.userData.loadedAt = null;
+        ferry.userData.troopsLoadedAt = null;
         ferry.userData.gangplank.visible = true;
       }
+      syncTroopFerryPassengers(ferry);
     }
     updateNanjingFerryRower(ferry, time);
     tacticalAudio?.rower(ferry, time, world.impactHeight, world.isDeepWater);
@@ -5701,14 +5814,12 @@ function updateHUD() {
     missionLabel.style.color = primaryMission.color;
     $('radar').setAttribute('aria-label', `战术简图，当前目标${primaryMission.shortName}，距离${distance}米，醒目旗标表示任务位置`);
   }
-  const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const scenarioLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '干河床坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const isolationLabel = benchmark?.renderIsolation && benchmark.renderIsolation !== 'normal'
     ? `渲染隔离诊断 · ${benchmark.renderIsolationAt}秒后${benchmark.renderIsolation === 'no-draw' ? '停止绘制' : '隐藏第三人称人物'} · 战斗模拟继续　` : '';
   const diagnosticLabel = isolationLabel + scenarioLabel;
   const audioLabel = audioUnsupported ? '音效不可用　'
-    : `${tacticalAudioFailure ? '弹道与接触音效未加载　' : ''}${vehicleAudioFailure ? '载具引擎未加载　' : ''}${battleSignalsFailure ? '军号与哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
-  $('force-status').textContent = `${audioLabel}${nraCharacter ? `友军 A/B 军服／钢盔 · ${nraCharacter.issue ?? '基础动作'}　` : ''}${ijaCharacter ? '日军旧制军服／钢盔　' : ''}${diagnosticLabel}我方 ${china.units}/${china.rosterUnits}单位 · ${china.alive}人 · 载具${china.vehicles}/2　日军 ${japan.units}/${japan.rosterUnits}单位 · ${japan.alive}人 · 载具${japan.vehicles}/2`;
+    : `${tacticalAudioFailure ? '弹道与接触音效未加载　' : ''}${vehicleAudioFailure ? '载具引擎未加载　' : ''}${battleSignalsFailure ? '日军进攻哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
   if (!$('scoreboard').hidden) {
@@ -5918,7 +6029,10 @@ function tick(now) {
   renderGrenades();
   renderSniperScope();
   renderDeathFeedback();
-  missionBriefing.update(time);
+  const feedbackNow = performance.now();
+  missionBriefing.update(feedbackNow / 1000);
+  $('blast-flash').style.opacity = String(grenadeFlashStrength * Math.min(1, Math.max(0, (grenadeFlashUntil - feedbackNow) / 220)));
+  if (feedbackNow >= grenadeFlashUntil) grenadeFlashStrength = 0;
   renderConstruction();
   renderSimulationStatus();
   renderBattleBoundary();
@@ -5981,7 +6095,7 @@ document.querySelectorAll('.squad-choice').forEach(button => button.addEventList
     choice.setAttribute('aria-pressed', String(selected));
   });
 }));
-$('deploy').addEventListener('click', beginMatch);
+$('deploy').addEventListener('click', () => beginMatch());
 deploymentCards($('redeploy-choices'));
 if (nanjingCampaignMode) for (const button of $('redeploy-choices').querySelectorAll('[data-type]')) {
   if (SQUADS[button.dataset.type].type !== 'infantry') button.remove();
@@ -5990,22 +6104,7 @@ $('redeploy-choices').addEventListener('click', event => {
   const button = event.target.closest('[data-type]');
   if (!button) return;
   const id = button.dataset.type;
-  const type = SQUADS[id].type;
-  const reason = deploymentBlockReason(state, allies, id, unit?.squadId);
-  if (reason) { $('deployment-error').textContent = reason; toast(reason); return; }
-  pendingSquad = id;
-  refreshCapturedSpawns(type);
-  const preferredSpawnId = nanjingCampaignMode && nanjingCampaign.dockActivated ? 'nanjing-west-dock' : 'nanjing-gate';
-  pendingSpawn = !nanjingCampaignMode ? recommendedSpawn(spawnPoints, type, objectives, point =>
-    !spawnBlockReason(point, type, hostilePositions('friendly'), deploymentObstacles()))?.id ?? null
-    : spawnPoints.find(point => point.id === preferredSpawnId && !point.aiOnly && point.team === 'friendly' &&
-    supportsSquad(point, type) && (!nanjingCampaignMode ||
-      isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated)) &&
-    !spawnBlockReason(point, type, hostilePositions('friendly'), deploymentObstacles()))?.id ??
-    spawnPoints.find(point => !point.aiOnly && point.team === 'friendly' && supportsSquad(point, type) &&
-      (!nanjingCampaignMode || isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated)) &&
-      !spawnBlockReason(point, type, hostilePositions('friendly'), deploymentObstacles()))?.id ?? null;
-  $('deployment-error').textContent = '';
+  if (!chooseDeploymentSquad(id)) return;
   refreshDeployment();
 });
 $('spawn-choices').addEventListener('click', event => {
@@ -6013,7 +6112,7 @@ $('spawn-choices').addEventListener('click', event => {
   if (button) selectDeploymentSpawn(button.dataset.spawn);
 });
 $('deployment-map').addEventListener('click', event => {
-  if (state !== 'dead' || !pendingSquad) return;
+  if (!pendingSquad || state !== 'dead' && !(state === 'menu' && $('overlay').dataset.deploymentStep === 'squad')) return;
   const bounds = event.currentTarget.getBoundingClientRect();
   const x = (event.clientX - bounds.left) / bounds.width * 176;
   const z = (event.clientY - bounds.top) / bounds.height * 176;
@@ -6026,6 +6125,11 @@ $('deployment-map').addEventListener('click', event => {
 });
 $('confirm-deploy').addEventListener('click', () => {
   if (!pendingSquad || !pendingSpawn) { $('deployment-error').textContent = '请选择小队和重生点'; return; }
+  if (state === 'menu' && $('overlay').dataset.deploymentStep === 'squad') {
+    selectedType = pendingSquad;
+    beginMatch(pendingSpawn);
+    return;
+  }
   deploy(pendingSquad, pendingSpawn);
 });
 $('pause-button').addEventListener('click', () => { if (state === 'playing') showOverlay(); });
@@ -6098,6 +6202,7 @@ function syncPreferenceControls() {
   preferenceValues = preferences.snapshot;
   motionStrength = preferenceValues.motionStrength;
   audioMixer?.configure(preferenceValues.audio);
+  getMenuMusic().configure(preferenceValues.audio);
   for (const input of document.querySelectorAll('[data-sensitivity]')) {
     const value = preferenceValues[input.dataset.sensitivity];
     input.value = String(value);
@@ -6813,6 +6918,7 @@ performanceDiagnostics.setContext(() => {
 setLoadingProgress(100, '加载完成，即将进入战场。');
 $('loading').hidden = true;
 $('menu').hidden = false;
+getMenuMusic().setState('menu');
 // Loading and character preparation are not a rendered frame interval.
 lastFrame = performance.now();
 requestAnimationFrame(tick);

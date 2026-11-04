@@ -179,7 +179,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     get actorId() { return actorId; },
     get motionProfile() { return motionProfile; },
     get issue() { return observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
-    update(actor, now, controlledId) {
+    update(actor, now, controlledId, rifleOperation = undefined) {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && actor.id !== controlledId);
       if (!actor) return;
@@ -194,10 +194,12 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
       for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
       root.updateMatrixWorld(true);
-      legPose = applyNativeFootCycle(root, canonical, motion, restFeet, groundAt);
+      const ferrySupport = actor.tactics?.nanjingFerry;
+      legPose = applyNativeFootCycle(root, canonical, motion, restFeet,
+        ferrySupport && ['boarding', 'aboard'].includes(ferrySupport.phase) ? () => actor.position.y : groundAt);
       applyNativeUpperBody(root, canonical, motion);
-      riflePose.update(motion);
       syncWorldWeapon(gun, actor.rifle);
+      riflePose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
       if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip());
       dadaoPose?.update(motion.dadao);
       gun.visible = !motion.dadao;

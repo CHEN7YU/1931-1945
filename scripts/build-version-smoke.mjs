@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -16,7 +17,8 @@ try {
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
     null, { timeout: 60000 });
-  async function inspect(stage, selector) {
+  async function inspect(stage, selector, visible = true) {
+    if (visible) await page.locator(selector).scrollIntoViewIfNeeded();
     const data = await page.evaluate(selector => {
       const element = document.querySelector(selector), box = element.getBoundingClientRect();
       const parent = element.closest('.operation-panel,.dialog').getBoundingClientRect();
@@ -26,13 +28,15 @@ try {
         viewport: innerHeight, font: getComputedStyle(element).fontSize };
     }, selector);
     observations.push({ stage, ...data });
-    assert.equal(data.visible, true);
+    assert.equal(data.visible, visible);
     assert.equal(data.build.development, !production);
     assert.ok(data.text.includes(data.build.commit?.slice(0, 7) ?? '未知'));
     assert.match(data.text, production ? /^构建/ : /^开发预览/);
     if (production && data.build.dirty) assert.match(data.text, /含未提交改动/);
-    assert.ok(data.top >= 0 && data.bottom <= data.viewport && data.bottom <= data.parentBottom);
-    assert.ok(data.left >= data.parentLeft && data.right <= data.parentRight);
+    if (visible) {
+      assert.ok(data.top >= 0 && data.bottom <= data.viewport && data.bottom <= data.parentBottom);
+      assert.ok(data.left >= data.parentLeft && data.right <= data.parentRight);
+    }
     assert.ok(Number.parseFloat(data.font) >= 12);
     assert.ok(data.title.includes(data.build.builtAt) && data.title.includes(data.build.commit ?? '未知'));
     await page.screenshot({ path: join(directory, `${stage}.png`) });
@@ -40,13 +44,13 @@ try {
   }
   const menu = await inspect('lobby', '#menu [data-build-version]');
   assert.equal(await page.locator('[data-build-version]').count(), 2);
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.state === 'playing');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__battle.state === 'pause');
   const pausedTime = await page.evaluate(() => window.__battle.time);
   assert.ok(Number.isFinite(pausedTime));
-  const pause = await inspect('pause', '#overlay [data-build-version]');
+  const pause = await inspect('pause', '#overlay [data-build-version]', false);
   assert.equal(pause.text, menu.text);
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(() => window.__battle.time), pausedTime);

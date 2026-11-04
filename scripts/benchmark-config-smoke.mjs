@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { preview } from 'vite';
@@ -10,11 +11,11 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${process.env.GAME_URL || 'http://127.0.0.1:5173'}?benchmark=duel&seed=1938`);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   const first = await page.evaluate(() => window.__battle.spawnEvents);
   assert.equal(first.length, 10);
   assert.ok(first.every(event => event.pointId.startsWith('diagnostic-')));
-  await page.keyboard.press('Escape'); await page.locator('#back-menu').click(); await page.locator('#deploy').click();
+  await page.keyboard.press('Escape'); await page.locator('#back-menu').click(); await deployFromMenu(page);
   assert.deepEqual(await page.evaluate(() => window.__battle.spawnEvents), first, 'new diagnostic battles reset stable IDs, spawn selection and seed');
   await page.waitForFunction(() => window.__battleTelemetry.totalFrames > 2);
   const timing = await page.evaluate(() => window.__battleTelemetry);
@@ -40,7 +41,7 @@ try {
     assert.equal(await built.evaluate(() => window.__battle.queryDiagnostics), null);
     assert.equal(await built.evaluate(() => window.__battle.renderIsolation.requested), 'normal');
     assert.equal(await built.evaluate(() => window.__battle.renderIsolation.visibleNativeRoots), 2);
-    await built.locator('#deploy').click();
+    await deployFromMenu(built);
     const state = await built.evaluate(() => window.__battle.population);
     assert.equal(state.friendly.alive, 110);
     assert.equal(state.enemy.alive, 96);

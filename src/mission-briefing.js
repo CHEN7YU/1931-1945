@@ -1,4 +1,4 @@
-export const MISSION_BRIEFING_SECONDS = 15;
+export const MISSION_BRIEFING_SECONDS = 5;
 
 export function createMissionBriefing(element) {
   const title = element.querySelector('[data-mission-title]'), goals = element.querySelector('[data-mission-goals]');
@@ -7,7 +7,7 @@ export function createMissionBriefing(element) {
   let expiresAt = null;
   const hide = () => { element.hidden = true; expiresAt = null; };
   const requireTime = now => {
-    if (!Number.isFinite(now) || now < 0) throw new RangeError('Mission briefing requires finite simulation time');
+    if (!Number.isFinite(now) || now < 0) throw new RangeError('Mission briefing requires finite real elapsed time');
   };
   dismiss.addEventListener('click', hide);
   hide();

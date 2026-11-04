@@ -1,3 +1,4 @@
+import { deployFromMenu, continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { validatePerformanceBatch } from '../src/performance-schema.js';
@@ -30,9 +31,10 @@ try {
   await page.evaluate(() => document.querySelector('#menu [data-performance-diagnostics]').click());
   if (map === 'nanjing') {
     await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 120000 });
-    await page.locator('#deploy').click();
+    await deployFromMenu(page);
   } else {
     await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
     await page.locator('#redeploy-choices [data-type="infantry"]').click();
     await page.locator('#confirm-deploy').click();
   }

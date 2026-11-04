@@ -43,6 +43,22 @@ export function createSolidIndex(solids, size = 8) {
   }
   return {
     acceleration: Object.freeze(acceleration),
+    sweptCandidates(from, to, radius) {
+      if (![from?.x, from?.y, from?.z, to?.x, to?.y, to?.z, radius].every(Number.isFinite) || radius < 0)
+        throw new RangeError('Swept solid query requires a finite segment and non-negative radius');
+      const bounds = new THREE.Box3(
+        new THREE.Vector3(Math.min(from.x, to.x) - radius, Math.min(from.y, to.y) - radius, Math.min(from.z, to.z) - radius),
+        new THREE.Vector3(Math.max(from.x, to.x) + radius, Math.max(from.y, to.y) + radius, Math.max(from.z, to.z) + radius));
+      const minX = Math.floor(bounds.min.x / size), maxX = Math.floor(bounds.max.x / size);
+      const minZ = Math.floor(bounds.min.z / size), maxZ = Math.floor(bounds.max.z / size);
+      const count = (maxX - minX + 1) * (maxZ - minZ + 1);
+      if (!Number.isSafeInteger(count) || count > 100000) throw new RangeError('Swept solid query exceeds the spatial grid range');
+      const entries = new Set(global), result = [...dynamic];
+      for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++)
+        for (const entry of cells.get(`${x},${z}`) ?? []) entries.add(entry);
+      for (const entry of entries) if (bounds.intersectsBox(entry.bounds)) result.push(entry.object);
+      return result;
+    },
     candidates(origin, direction, distance) {
       if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Solid query requires a finite segment');
       if (![origin.x, origin.y, origin.z, direction.x, direction.y, direction.z].every(Number.isFinite)) throw new RangeError('Solid query requires finite position and direction');

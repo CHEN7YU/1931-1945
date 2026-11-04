@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -30,7 +31,7 @@ try {
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await wait(() => window.__battle?.state === 'menu');
     await page.locator('#menu-quality').selectOption('low');
-    await page.locator('#deploy').click();
+    await deployFromMenu(page);
     await wait(() => window.__battle.state === 'playing');
     const initial = await snapshot();
     assert.equal(initial.population.friendly.alive, 110);

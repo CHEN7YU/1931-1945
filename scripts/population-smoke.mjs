@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -13,7 +14,7 @@ try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
   await page.locator('#menu-quality').selectOption('low');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle.state === 'playing' && window.__battle.population.renderer.visible > 50, null, { timeout: 60000 });
   const initial = await snapshot();
   assert.equal(initial.allies.length, 11);
@@ -39,7 +40,7 @@ try {
     assert.ok(Math.hypot(infantry[i].spawnPosition.x - infantry[j].spawnPosition.x, infantry[i].spawnPosition.z - infantry[j].spawnPosition.z) >= 1.25 - 1e-8, 'different infantry do not spawn stacked; crew occupy seats in their own hull');
   }
   assert.equal(await page.locator('#members .member').count(), 11);
-  assert.match(await page.locator('#force-status').textContent(), /110人/);
+  assert.equal(await page.locator('#force-status').count(), 0);
   assert.ok(initial.population.renderer.procedural.batches <= 40, 'procedural opponents retain their shared instance batches');
   if (initial.historicalForce) {
     assert.equal(initial.historicalForce.assigned, 110);
@@ -88,14 +89,14 @@ try {
     }, null, 2));
   }
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
-  await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
+  await page.locator('#squad-choices [data-type="tank"]').click(); await deployFromMenu(page);
   let data = await snapshot();
   assert.equal(data.population.friendly.units, 10);
   assert.equal(data.population.friendly.alive, 102);
   assert.equal(data.population.friendly.vehicles, 1);
   assert.equal(data.allies.length, 3);
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
-  await page.locator('#squad-choices [data-type="plane"]').click(); await page.locator('#deploy').click();
+  await page.locator('#squad-choices [data-type="plane"]').click(); await deployFromMenu(page);
   data = await snapshot();
   assert.equal(data.population.friendly.alive, 100);
   assert.equal(data.population.friendly.vehicles, 1);

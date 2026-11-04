@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { infantryWeaponProfile } from './rifle-action.js';
+import { rifleHandAction } from './rifle-hand-action.js';
 import { projectHeadAim, projectUnaimedEye, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
 import { hasBayonet, bayonetCarry } from './bayonet.js';
@@ -332,7 +333,9 @@ export function sampleNraMotion(actor, includeHead = true) {
   }
   const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
     1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
-  const result = { intent: nativePoseIntent(actor), grenade, dadao, bayonet, weaponBlocked: Boolean(actor.weaponBlocked),
+  const result = { intent: nativePoseIntent(actor), grenade, dadao, bayonet,
+    rifleOperation: actor.health > 0 && !grenade && !dadao && !bayonet ? rifleHandAction(actor.rifle) : null,
+    weaponBlocked: Boolean(actor.weaponBlocked),
     idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
     runStride: gait?.runStride ?? profile.strideMeters * motion.strideScale,

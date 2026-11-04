@@ -1,3 +1,4 @@
+import { deployFromMenu, continueIdentitySelection } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {mkdir} from 'node:fs/promises';
@@ -194,7 +195,7 @@ try{
   if(process.env.RESTORE_ONLY!=='1'){
   await page.goto(base+'/?campaign=nanjing');
   await page.waitForFunction(()=>window.__battle?.state==='menu');
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(()=>window.__battle?.state==='playing');
   mobile=await page.evaluate(()=>feedbackReview.mobile());
   console.log(JSON.stringify({mobile,errors}));
@@ -209,6 +210,7 @@ try{
   }
   await page.goto(base);
   await page.locator('#confirm-campaign').click();
+  await continueIdentitySelection(page);
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(()=>window.__battle?.state==='playing');

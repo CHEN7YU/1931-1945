@@ -479,14 +479,18 @@ export function updateCivilianAppearance(civilians, camera, preset = 'high') {
     for (const [side, index] of [['left', 0], ['right', 1]]) {
       skin.joints[`${side}Knee`].rotation.x = -Math.max(0, civilian.civilianLegs[index].rotation.x) * .85;
       skin.joints[`${side}Foot`].rotation.x = -skin.joints[`${side}Knee`].rotation.x * .45;
-      skin.joints[`${side}Elbow`].rotation.x = civilian.userData.carrying === 'child' ? 1.05 : -.18;
+      if (civilian.userData.carrying === 'child') skin.joints[`${side}Elbow`].rotation.x = 1.05;
+      else if (!civilian.userData.escapeMotion && !civilian.userData.boatman) skin.joints[`${side}Elbow`].rotation.x = .18;
     }
     if (civilian.userData.carrying === 'child')
       for (const [index, arm] of civilian.civilianArms.entries()) {
         arm.rotation.x = .25;
         arm.rotation.z = index ? -.18 : .18;
       }
-    else if (civilian.userData.carrying === 'luggage') civilian.civilianArms[0].rotation.x = -.04;
+    else if (civilian.userData.carrying === 'luggage') {
+      civilian.civilianArms[0].rotation.x = -.04;
+      skin.joints.leftElbow.rotation.x = .12;
+    }
     applyCivilianProtectivePose(civilian);
   }
   for (const civilian of civilians) {

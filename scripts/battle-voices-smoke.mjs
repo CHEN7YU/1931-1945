@@ -188,7 +188,7 @@ try {
   await failed.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   assert.equal((await failed.evaluate(() => window.__battle)).battleVoices.status, 'unavailable');
   await failed.locator('#deploy').click();
-  assert.match(await failed.locator('#force-status').textContent(), /战场语音不可用/);
+  assert.match(await failed.locator('#hud-notice').textContent(), /战场语音不可用/);
   await failed.close();
   console.log(JSON.stringify({ clips: requests.size, commands: 5, objectiveAndMatchEvents: results.events.history,
     ambient: results.ambient.history, callouts: results.callouts, reviewedCharges: results.charges,

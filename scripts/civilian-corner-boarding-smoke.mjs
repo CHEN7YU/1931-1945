@@ -1,3 +1,4 @@
+import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
@@ -146,7 +147,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu'||!document.getElementById('fatal').hidden,
     null,{timeout:360000});
   assert.equal(await page.locator('#fatal').isVisible(),false,errors.join('\n'));
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   if(process.env.ARTIFACT_DIR){
     await mkdir(process.env.ARTIFACT_DIR,{recursive:true});
