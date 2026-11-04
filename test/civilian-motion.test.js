@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createCivilianCharacterFactory, updateCivilianAppearance } from '../src/civilian-character.js';
 import { advanceCivilianMotion } from '../src/civilian-motion.js';
+import { updateCivilianStreetLife } from '../src/civilian-street-life.js';
 
 const factory = createCivilianCharacterFactory();
 function person(carrying = 'none', age = 'adult') {
@@ -100,4 +101,31 @@ test('free arms swing from their shoulders with relaxed, phase-lagged elbow flex
     assert.ok(runningBend > Math.max(...bends) + .2);
     assert.equal(actor.civilianSkin.geometry, geometry);
   }
+});
+
+test('ordinary street residents use the same articulated elbows before evacuation, including after appearance projection', () => {
+  const actor = person(), elbows = [], geometry = actor.civilianSkin.geometry;
+  actor.userData.active = false;
+  actor.userData.streetLife = { wakeAt: 0, waypoint: 0, route: [{ x: 0, z: -100 }],
+    door: { x: 100, z: 100, targetAngle: 1.7, angle: 1.7 }, movementObstacles: [], navigationObstacles: [],
+    navigationLookup: { at: () => [] } };
+  for (let frame = 0; frame < 100; frame++) {
+    updateCivilianStreetLife(actor, frame / 60, 1 / 60, [actor], { interact() {} });
+    const before = actor.civilianSkin.joints.leftElbow.rotation.x;
+    updateCivilianAppearance([actor], camera);
+    assert.equal(actor.civilianSkin.joints.leftElbow.rotation.x, before, 'the render pass must not overwrite the street gait');
+    elbows.push(before);
+    assert.ok(Math.abs(actor.civilianLegs[0].rotation.x) <= .320001, 'retain the original calm street stride');
+  }
+  assert.equal(actor.userData.escapeMode, 'street');
+  assert.equal(actor.userData.active, false, 'animating the arms must not trigger evacuation');
+  assert.ok(Math.max(...elbows) - Math.min(...elbows) > .08);
+  assert.equal(actor.civilianSkin.geometry, geometry);
+  const phase = actor.userData.walkPhase, before = actor.position.clone();
+  Object.assign(actor.userData.streetLife.door, { x: actor.position.x, z: actor.position.z, targetAngle: 0, angle: 0 });
+  for (let frame = 0; frame < 60; frame++)
+    updateCivilianStreetLife(actor, 2 + frame / 60, 1 / 60, [actor], { interact() {} });
+  assert.equal(actor.position.distanceTo(before), 0);
+  assert.equal(actor.userData.walkPhase, phase, 'waiting for a door must not march in place');
+  assert.ok(Math.abs(actor.civilianArms[0].rotation.x) < .001);
 });

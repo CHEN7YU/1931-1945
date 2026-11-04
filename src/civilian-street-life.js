@@ -1,4 +1,5 @@
 import { civilianPaceMultiplier, civilianWaypointReached, moveCivilianInCrowd } from './civilian-crowd.js';
+import { advanceCivilianMotion } from './civilian-motion.js';
 
 export function resetCivilianStreetLife(person) {
   const street = person.userData.streetLife;
@@ -20,20 +21,14 @@ export function updateCivilianStreetLife(person, now, dt, peers, doorSystem) {
     person.visible = true; peers.push(person);
   }
   if (!openCivilianHomeDoor(person, doorSystem)) {
-    for (const leg of person.civilianLegs) leg.rotation.x = 0;
+    advanceCivilianMotion(person, { dt, now, moved: 0, mode: 'street' });
     return;
   }
   const dx = target.x - person.position.x, dz = target.z - person.position.z;
   const travel = Math.min(Math.hypot(dx, dz), dt * 1.15 * civilianPaceMultiplier(data.civilianId, now));
   const moved = moveCivilianInCrowd(person, target, travel, peers, street.movementObstacles, street.navigationObstacles);
   person.rotation.y = Math.atan2(-dx, -dz);
-  data.walkPhase += moved * 5;
-  const stride = moved > .001 ? Math.sin(data.walkPhase) * .32 : 0;
-  for (let index = 0; index < 2; index++) {
-    person.civilianLegs[index].rotation.x = stride * (index ? -1 : 1);
-    person.civilianArms[index].rotation.x = -stride * (index ? -1 : 1);
-  }
-  person.civilianHead.rotation.y = Math.sin(now * .7 + data.civilianId) * .16;
+  advanceCivilianMotion(person, { dt, now, moved, mode: 'street' });
   if (civilianWaypointReached(person.position, street.route, street.waypoint, street.navigationObstacles,street.navigationLookup))
     street.waypoint++;
   if (street.waypoint === street.route.length) {

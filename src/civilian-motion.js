@@ -9,14 +9,17 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
   motion.speed = approach(motion.speed, dt > 0 ? moved / dt : 0, 9, dt);
   motion.crouch = approach(motion.crouch, mode === 'cower' ? 1 : 0, 7, dt);
   motion.protective = approach(motion.protective, mode === 'cower' ? 1 : mode === 'flee' ? .35 : 0, 7, dt);
-  data.walkPhase += moved * (data.ageGroup === 'child' ? 6.3 : data.ageGroup === 'elderly' ? 5.6 : 5);
+  data.walkPhase += moved * (mode === 'street' ? 5 : data.ageGroup === 'child' ? 6.3 : data.ageGroup === 'elderly' ? 5.6 : 5);
   if (moved > .0001 && Math.hypot(dx, dz) > .0001) {
     const desired = Math.atan2(-dx, -dz);
     const delta = Math.atan2(Math.sin(desired - person.rotation.y), Math.cos(desired - person.rotation.y));
     person.rotation.y += Math.max(-3.8 * dt, Math.min(3.8 * dt, delta));
   }
   const active = Math.min(1, motion.speed / 1.2) * (1 - motion.crouch);
-  const phase = data.walkPhase, stride = Math.sin(phase) * active * (['flee', 'boarding'].includes(mode) ? .65 : .46);
+  const phase = data.walkPhase;
+  const amplitude = mode === 'street' ? moved > .001 ? .32 : 0
+    : active * (['flee', 'boarding'].includes(mode) ? .65 : .46);
+  const stride = Math.sin(phase) * amplitude;
   motion.stride = stride;
   motion.lean = mix(data.ageGroup === 'elderly' ? -.13 : -.06,
     -.26, Math.max(motion.protective, Math.min(1, motion.speed / 4)));
@@ -27,6 +30,10 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
     motion.sway += Math.sin(now * .55 + data.civilianId) * .018;
     motion.headX += Math.sin(now * .7 + data.civilianId) * .04;
     motion.headY += Math.sin(now * .65 + data.civilianId * 2.17) * .22;
+  }
+  if (mode === 'street') {
+    motion.lean = motion.sway = 0;
+    motion.headY = Math.sin(now * .7 + data.civilianId) * .16;
   }
   restoreCivilianMotionPose(person);
   data.escapeMode = mode;
