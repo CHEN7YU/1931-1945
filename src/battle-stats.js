@@ -33,7 +33,7 @@ export function createBattleStats() {
     if (!rows.has(key)) {
       const owner = playerFor(source);
       rows.set(key, { key, team: source.team, unitId: source.unitId, squadId: owner ? 'player' : source.squadId ?? source.unitId,
-        ...(owner ? { player: true } : {}), name: owner?.name ?? source.unitName ?? source.unitId,
+        ...(owner ? { player: true, unitName: owner.unitName } : {}), name: owner?.name ?? source.unitName ?? source.unitId,
         kills: Object.fromEntries(KILL_COLUMNS.map(([id]) => [id, 0])), total: 0, vehicles: 0 });
       revision++;
     }
@@ -42,13 +42,17 @@ export function createBattleStats() {
   return {
     registerSoldier(actor) { personFor(actor); },
     register(unit) {
-      if (unit.player) playerUnits.set(`${unit.team}:${unit.id}`, { name: unit.playerName || '玩家' });
+      if (unit.player) playerUnits.set(`${unit.team}:${unit.id}`, {
+        name: unit.playerName || '玩家', unitName: unit.historicalName ?? unit.scoreLabel ?? unit.id,
+      });
       const source = { team: unit.team, unitId: unit.id, squadId: unit.squadId ?? unit.id, unitName: unit.scoreLabel ?? unit.id };
       for (const [key, row] of rows) if (row.unitId === unit.id && row.team === unit.team &&
         key !== keyFor(source) && !row.total && !row.vehicles) rows.delete(key);
       const row = ensure(source);
       const name = playerFor(source)?.name ?? source.unitName;
       if (row.name !== name) { row.name = name; revision++; }
+      const owner = playerFor(source);
+      if (owner && row.unitName !== owner.unitName) { row.unitName = owner.unitName; revision++; }
     },
     consume(event) {
       const casualty = event.type === 'casualty';

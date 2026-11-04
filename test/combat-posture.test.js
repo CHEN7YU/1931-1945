@@ -88,11 +88,12 @@ test('owned posture blends lower actual eye, aim and gun height and delay firing
   assert.ok(nativeMuzzleLocal(actor).y < .79);
   actor.stance = 'prone';
   assert.equal(postureReady(actor), false);
-  for (let frame = 0; frame < 12; frame++) {
+  for (let frame = 0; frame < 20; frame++) {
     advanceNraMotion(actor, .05);
     const pose = sampleNraMotion(actor);
     assert.ok(pose.crouched + pose.prone <= 1.00001);
     assert.ok(pose.weaponPosition.every(Number.isFinite));
+    if (frame === 11) assert.equal(postureReady(actor), false, 'lowering is no longer an almost-instant pose switch');
   }
   assert.equal(postureReady(actor), true);
   assert.ok(soldierPostureHeight(actor, 'body') < .66);

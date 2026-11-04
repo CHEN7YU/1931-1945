@@ -5,7 +5,7 @@ import * as T from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { prepareNraRig } from '../src/nra-rig.js';
 import { createNraGrenadeHand } from '../src/nra-hand.js';
-import { createWeaponHands } from '../src/weapon-hands.js';
+import { createWeaponHands, WEAPON_HAND_GRIPS } from '../src/weapon-hands.js';
 import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
 import { createRifleState, infantryWeaponProfile, rifleReloadSeconds } from '../src/rifle-action.js';
 import { applyCloseWeaponPose } from '../src/weapon-close-pose.js';
@@ -102,6 +102,14 @@ test('native weapon hands preserve distinct finger bones and source skin while s
           const first = points[1].clone().sub(points[0]).normalize(), second = points[2].clone().sub(points[1]).normalize();
           const last = points[3].clone().sub(points[2]).normalize();
           assert.ok(Math.min(first.dot(second), second.dot(last)) < .95, `${finger} needs a real knuckle bend, not a straight rod`);
+        }
+        if (['rifle', 'sniper'].includes(weapon) && action === 'cycle' && frame === 16) {
+          assert.equal(view.snapshot.right.grip.weights.bolt, 1);
+          for (const finger of ['Index', 'Middle', 'Ring'])
+            assert.ok(view.snapshot.right.grip.curls[finger][0] >= .79, 'the real native hand wraps instead of pinching');
+          const grip = view.snapshot.right.grip, center = new T.Vector3(...WEAPON_HAND_GRIPS.right.bolt.center);
+          assert.ok(new T.Vector3(...grip.joints.Thumb.at(-1)).distanceTo(center) < .02);
+          assert.ok(new T.Vector3(...grip.joints.Index[2]).distanceTo(center) < .025);
         }
       }
     }

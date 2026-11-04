@@ -49,7 +49,7 @@ test('unit, person, weapon, vehicle and seat identities have independent owners'
   assert.equal(vehicle.seats[0].occupantId, actors[0].id);
   assert.equal(selectControlledSoldier(world, actors[3]), false, 'Y cannot silently cross into an autonomous unit');
 });
-test('explicit personal stance survives autonomous pose changes and restores its owned blend on takeover', () => {
+test('explicit personal stance survives autonomous pose changes without snapping its body blend on takeover', () => {
   const { world, actors, vehicle } = fixture(), actor = actors[0];
   assert.equal(leaveGroundVehicle(world, actor, { x: 3, y: 0, z: 0 }), null);
   actor.nativeMotion = { posture: { crouched: 0, prone: 0 }, profile: { crouched: {}, prone: {} } };
@@ -60,7 +60,7 @@ test('explicit personal stance survives autonomous pose changes and restores its
   actor.nativeMotion.posture = { crouched: 1, prone: 0 };
   selectControlledSoldier(world, actor);
   assert.equal(actor.stance, 'prone');
-  assert.deepEqual(actor.nativeMotion.posture, { crouched: 0, prone: 1 });
+  assert.deepEqual(actor.nativeMotion.posture, { crouched: 1, prone: 0 });
   assert.equal(actor.rifle.ammo, 3); assert.equal(actor.health, 100);
   assert.equal(seatSoldier(world, actor, vehicle, vehicle.seats[0].id), null);
   assert.equal(actor.manualStance, null);

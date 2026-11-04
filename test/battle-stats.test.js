@@ -35,7 +35,8 @@ test('vehicle destruction is separate from individual crew kills, and friendly o
 
 test('one player row accumulates 10 tank and 20 infantry kills including owned AI and delayed old-squad attacks', () => {
   const stats = createBattleStats();
-  const player = { id: 'friendly-0', team: 'friendly', player: true, playerName: '江城守军', squadId: 'tank', scoreLabel: '装甲小队' };
+  const player = { id: 'friendly-0', team: 'friendly', player: true, playerName: '江城守军',
+    historicalName: '国民革命军第31师', squadId: 'tank', scoreLabel: '装甲小队' };
   stats.register(player);
   for (let index = 0; index < 10; index++) stats.consume(event(`tank-${index}`, 'tank', {
     source: { ...source('tank'), credit: index % 2 ? 'player' : 'ally', squadId: 'tank' },
@@ -44,6 +45,7 @@ test('one player row accumulates 10 tank and 20 infantry kills including owned A
   for (let index = 0; index < 20; index++) stats.consume(event(`infantry-${index}`, 'rifle'));
   assert.equal(stats.snapshot.length, 1);
   assert.equal(stats.snapshot[0].name, '江城守军');
+  assert.equal(stats.snapshot[0].unitName, '国民革命军第31师');
   assert.equal(stats.snapshot[0].total, 30);
   assert.equal(stats.snapshot[0].kills.tank, 10); assert.equal(stats.snapshot[0].kills.rifle, 20);
   const delayed = event('late-target', 'explosive-pack', { source: { ...source('explosive-pack'), squadId: 'tank' } });

@@ -14,6 +14,7 @@ import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
+import { createNanjingFerryFactory, createShoreReeds, NANJING_FERRY_FLOOR, updateNanjingFerryRower } from './nanjing-river-details.js';
 import { obstacleLookup } from './spatial.js';
 import { planeModel } from './world.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStart,
@@ -1107,37 +1108,28 @@ export function makeNanjingBattlefield(scene, surface) {
   const rampMaterial = timber.clone(); rampMaterial.side = THREE.DoubleSide;
   const dockRamp = new THREE.Mesh(rampGeometry, rampMaterial);
   scene.add(dockRamp); solids.push(dockRamp);
+  const civilianCharacters = createCivilianCharacterFactory();
+  const makeFerry = createNanjingFerryFactory(timber), ferryRowers = [];
+  const reeds = createShoreReeds(solids.filter(mesh => mesh.userData.nanjingFeature === 'river-stone-bank'));
+  scene.add(reeds);
   for (let index = 0; index < 5; index++) {
-    const boat = new THREE.Group();
-    const hull = new THREE.Mesh(new THREE.CapsuleGeometry(.68, 4.4, 4, 8), timber);
-    hull.rotation.z = Math.PI / 2;
-    hull.scale.set(1, 1.1, 1);
-    hull.position.y = .42;
-    boat.add(hull);
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(4.9, .12, 1.25), timber);
-    deck.position.y = 1.02;
-    boat.add(deck);
-    for (const side of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(4.9, .35, .1), timber);
-      rail.position.set(0, 1.2, side * .65);
-      boat.add(rail);
-    }
-    const oar = new THREE.Mesh(new THREE.BoxGeometry(4.1, .07, .08), stone);
-    oar.rotation.y = Math.PI / 2;
-    oar.position.set(2.3, 1.1, .55);
-    boat.add(oar);
+    const boat = makeFerry(), oar = boat.userData.oar;
+    const rower = civilianCharacters.create(1000 + index, 'adult', 'man', 'none');
+    Object.assign(rower.userData, { ageGroup: 'adult', carrying: 'none', boatman: true });
+    rower.position.set(2.35, NANJING_FERRY_FLOOR, .1);
+    boat.add(rower); ferryRowers.push(rower);
     boat.position.set(NANJING_DOCK.ferryX, .05, NANJING_DOCK.z - 6 + index * 3);
     oar.visible = false;
-    boat.userData = { ferryId: index, passengers: [], boarding: null, loadedAt: null, oar, state: 'docked', originZ: boat.position.z };
-    const gangplank = addBox(-73.2, .75, boat.position.z, 2.4, .12, .8, timber);
-    gangplank.rotation.z = -.3;
+    boat.userData = { ferryId: index, passengers: [], boarding: null, loadedAt: null, oar, rower, state: 'docked', originZ: boat.position.z };
+    updateNanjingFerryRower(boat, 0);
+    const gangplank = addBox(-73.2, .42, boat.position.z, 2.4, .12, .8, timber);
+    gangplank.rotation.z = -.042;
     gangplank.userData.nanjingFeature = 'ferry-gangplank';
     boat.userData.gangplank = gangplank;
     scene.add(boat);
     ferries.push(boat);
   }
 
-  const civilianCharacters = createCivilianCharacterFactory();
   const civilianHomes = residentialBuildings.filter(house => house.floors === 1 && house.z < 0 && !house.damaged);
   for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
     const ageGroup = index % 10 === 0 ? 'child' : index % 10 === 1 ? 'elderly' : 'adult';
@@ -1468,7 +1460,7 @@ export function makeNanjingBattlefield(scene, surface) {
     armorObstacles: obstacles,
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
-    ferries, civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
+    ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
     landmarks: {
       gatehouse: { style: 'arched-stone-gate', gates: gateways, barbicans: NANJING_COURTYARDS.length,
         centerZ: (NANJING_GATE_NORTH_EDGE + NANJING_GATE_SOUTH_EDGE) / 2,
@@ -1533,6 +1525,7 @@ export function makeNanjingBattlefield(scene, surface) {
         ferry.userData.oar.visible = false;
         ferry.userData.gangplank.visible = true;
         ferry.userData.state = 'docked';
+        updateNanjingFerryRower(ferry, 0);
         ferry.position.set(NANJING_DOCK.ferryX, .05, ferry.userData.originZ);
         ferry.userData.opacity = null;
         updateFerryVisibility(ferry);

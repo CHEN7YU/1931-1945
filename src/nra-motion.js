@@ -7,6 +7,7 @@ import { grenadePose } from './grenades.js';
 import { hasBayonet, bayonetCarry } from './bayonet.js';
 import { headingError } from './ai-turning.js';
 import { INFANTRY_AIM_PITCH } from './infantry-aim.js';
+import { advancePostureBlend } from './posture-transition.js';
 
 export function nativePoseIntent(actor) {
   if (actor.weaponBlocked) return 'travel';
@@ -151,12 +152,7 @@ export function advanceNraMotion(actor, dt) {
   const stance = actor.stance ?? 'standing';
   if (!['standing', 'crouched', 'prone'].includes(stance)) throw new Error('Unknown owned soldier stance');
   const pose = ownedFiringPose(actor);
-  for (const posture of Object.keys(FIRING_POSES)) {
-    const target = pose === posture && motion.profile[posture] ? 1 : 0;
-    motion.posture[posture] += (target - motion.posture[posture]) * (1 - Math.exp(-dt / .10));
-    if (motion.posture[posture] < .001) motion.posture[posture] = 0;
-    if (motion.posture[posture] > .999) motion.posture[posture] = 1;
-  }
+  advancePostureBlend(motion, pose, dt);
   motion.speed += (measuredSpeed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
   const pace = actor.locomotion.mode;

@@ -12,7 +12,8 @@ export const WEAPON_HAND_GRIPS = Object.freeze({
   right: Object.freeze({
     trigger: { center: [0, .11, .033], depth: .032, thickness: .022 },
     pistol: { center: [0, .11, .025], depth: .022, thickness: .013 },
-    bolt: { center: [.0245, .128, .072], depth: .012, thickness: .012, round: true },
+    bolt: { center: [.011, .113, .035], depth: .012, thickness: .012, round: true },
+    charger: { center: [.0245, .128, .072], depth: .012, thickness: .012, round: true },
   }),
 });
 
@@ -94,13 +95,22 @@ export function createWeaponHands(createHand) {
     wrist.divideScalar(total);
     const loading = side === 'left' ? Math.min(1, (weights.magazine ?? 0) + (weights.press ?? 0)) : 0;
     const supportWeight = weights.support ?? 0, triggerWeight = Math.min(1, (weights.trigger ?? 0) + (weights.pistol ?? 0));
-    const shoulder = new THREE.Vector3(side === 'left' ? -.18 : .22,
+    const shoulder = new THREE.Vector3(side === 'left' ? -.18 : .22 + (weights.bolt ?? 0) * .025,
       side === 'left' ? -.31 + loading * .06 - supportWeight * supportDrop : -.20,
       side === 'left' ? -.10 - loading * .13 : -.08 + triggerWeight * .20).applyMatrix4(inverse);
     if (![...shoulder, ...wrist, ...rotation].every(Number.isFinite)) {
       throw new Error(`Native ${side} weapon arm has a non-finite pose`);
     }
-    const [upper, lower] = hand.userData.armLengths, distance = shoulder.distanceTo(wrist);
+    const [upper, lower] = hand.userData.armLengths;
+    let distance = shoulder.distanceTo(wrist);
+    if (side === 'right' && weights.bolt > 0 && distance < Math.abs(upper - lower) + .006) {
+      // Roll the shoulder slightly as the closed hand passes it; never shorten either arm bone.
+      const separation = shoulder.clone().sub(wrist);
+      if (distance < 1e-8) separation.set(1, 0, 0).transformDirection(inverse);
+      else separation.divideScalar(distance);
+      shoulder.addScaledVector(separation, Math.abs(upper - lower) + .006 - distance);
+      distance = shoulder.distanceTo(wrist);
+    }
     if (distance <= Math.abs(upper - lower) + .001 || distance >= upper + lower - .001) {
       return { contactLimited: true, side, requestedDistance: distance,
         minimumDistance: Math.abs(upper - lower), maximumDistance: upper + lower };
@@ -162,7 +172,7 @@ export function createWeaponHands(createHand) {
       const right = [
         goal('right', rightKind, rightAnchor, profile.automatic ? sideFrame : triggerFrame, 1 - boltWeight - loadWeight),
         goal('right', 'bolt', boltCenter.toArray(), wristTurn.multiply(boltFrame), boltWeight),
-        goal('right', 'bolt', [0, .13 + model.userData.rifle.clip.position.y, -.18], sideFrame, loadWeight),
+        goal('right', 'charger', [0, .13 + model.userData.rifle.clip.position.y, -.18], sideFrame, loadWeight),
       ];
       const supportHeight = profile.automatic ? -.072 : -.035;
       const support = goal('left', 'support', [0, supportHeight, -.34], supportFrame);

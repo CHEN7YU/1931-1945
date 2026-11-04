@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { campaignUnitName, campaignUnitDescription, soldierRoleLabel } from '../src/battle-units.js';
+import { campaignUnitName, campaignUnitDescription, soldierRoleLabel, friendlyAIFormationName } from '../src/battle-units.js';
+import { PLAYER_UNIT_OPTIONS } from '../src/player-identity.js';
 import { infantryLoadout } from '../src/battle-roster.js';
 
 test('the first infantry member is an explicitly labelled mortar soldier with a rifle', () => {
@@ -37,4 +38,18 @@ test('prototype support is not assigned fabricated historical regiment names and
     assert.match(campaignUnitDescription(name), /不代表.*实有独立部队番号或装备配属/);
   }
   assert.throws(() => campaignUnitName({ team: 'unknown', type: 'infantry', index: 0 }), RangeError);
+});
+
+test('friendly AI never uses the selected player formation, including custom names matching a historical alias', () => {
+  for (const [campaign, options] of Object.entries(PLAYER_UNIT_OPTIONS)) {
+    for (const player of options.filter(unit => unit.id !== 'custom')) {
+      for (let index = 1; index <= 10; index++) {
+        const ai = friendlyAIFormationName(campaign, player.name, index);
+        assert.notEqual(ai, player.name);
+        assert.ok(options.some(unit => unit.name === ai && unit.id !== 'custom'));
+        assert.notEqual(friendlyAIFormationName(campaign, player.name.replace(/^国民革命军/, ''), index), player.name);
+      }
+    }
+  }
+  assert.throws(() => friendlyAIFormationName('nanjing', '第88师', 0), RangeError);
 });

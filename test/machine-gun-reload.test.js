@@ -85,6 +85,7 @@ test('rifle cycling grips the actual moving bolt sphere rather than a free-float
       const contact = gun.userData.handContact;
       assert.equal(contact.pose, 'bolt-grip');
       assert.equal(contact.weight, 1);
+      assert.equal(contact.points.length, 4, 'three curled fingers and the opposing thumb contact the knob');
       for (const point of contact.points) {
         const distance = new Vector3(...point).distanceTo(new Vector3(...contact.target));
         assert.ok(distance >= BOLT_HANDLE.radius && distance < BOLT_HANDLE.radius + .002);

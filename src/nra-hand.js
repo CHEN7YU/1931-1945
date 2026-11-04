@@ -161,7 +161,8 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
     if (weaponRig) {
-      const curls = name === 'press' ? [.18, .24, .20] : name === 'bolt' ? [.35, .85, .55]
+      const curls = name === 'press' ? [.18, .24, .20] : name === 'bolt' ? [.80, 1.25, .85]
+        : name === 'charger' ? [.35, .85, .55]
         : name === 'magazine' ? [.55, .95, .55] : [.5, .85, .5];
       const limits = [1.25, 1.5, 1.05], adjustments = [0, .06, .09, .16];
       for (const [index, finger] of fingerNames.entries()) {
@@ -178,9 +179,19 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
       const thumb = chains.get('Thumb');
       for (let joint = 0; joint < 3; joint++) {
         const bone = thumb[joint], euler = new THREE.Euler().setFromQuaternion(rest.get(bone.name), 'XYZ');
-        euler.x = name === 'press' ? .12 : side === 'left' ? joint === 0 ? -.25 : .15 : joint === 0 ? .25 : .45;
-        if (joint === 0) euler.z += side === 'left' ? -.22 : .22;
+        euler.x = name === 'press' ? .12 : name === 'bolt' ? joint === 0 ? .50 : .65
+          : side === 'left' ? joint === 0 ? -.25 : .15 : joint === 0 ? .25 : .45;
+        if (joint === 0) euler.z += side === 'left' ? -.22 : name === 'bolt' ? .35 : .22;
         bone.quaternion.setFromEuler(euler);
+      }
+      if (name === 'bolt') {
+        root.updateMatrixWorld(true);
+        const tip = new THREE.Vector3(...center).add(new THREE.Vector3(.5, -.7, -.5).normalize().multiplyScalar(.018));
+        const target = root.localToWorld(tip.clone().add(new THREE.Vector3(0, -fingerLengths.Thumb[2], 0)));
+        const solved = solveArm(thumb[0], thumb[1], thumb[2], target,
+          new THREE.Vector3(.8, .4, .8).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())));
+        if (!solved.reachable || solved.error > .001) throw new Error('Native bolt thumb cannot oppose the wrapped fingers');
+        rotateEnd(thumb[2], thumb[3], root.localToWorld(tip));
       }
       weaponGrips.set(name, { center: [...center], rotations: new Map([...rest.keys()]
         .filter(name => name !== prefix + 'Hand').map(name => [name, bones.get(name).quaternion.clone()])) });

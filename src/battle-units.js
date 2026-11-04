@@ -6,6 +6,15 @@ const chinese = [
   ['第20军团', 1], ['第20军团', 2], ['第20军团', 3],
 ];
 
+export function friendlyAIFormationName(campaignId, playerUnitName, index) {
+  if (!Number.isInteger(index) || index < 1) throw new RangeError('AI formation index must be positive');
+  const normalize = name => name.replace(/^国民革命军/, '').split('·')[0].replace(/\s/g, '');
+  const options = PLAYER_UNIT_OPTIONS[campaignId === 'taierzhuang-streets' ? 'taierzhuang-fort' : campaignId];
+  if (!options) throw new RangeError(`Unknown campaign formations: ${campaignId}`);
+  const available = options.filter(unit => unit.id !== 'custom' && normalize(unit.name) !== normalize(playerUnitName));
+  return available[(index - 1) % available.length].name;
+}
+
 export function soldierRoleLabel(actor) {
   return { mortarman: '迫击炮手', sniper: '狙击手', 'machine-gunner': '机枪手',
     rifleman: '步枪手', tanker: '车组', pilot: '飞行员' }[actor.role] ?? actor.role;

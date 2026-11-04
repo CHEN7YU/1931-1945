@@ -263,4 +263,5 @@
 #squad-score-table .score-zero { color: #95a08e; }
 #scoreboard .scoreboard-hint { margin: 9px 0 0; text-align: center; font-size: 12px; }
 .scoreboard-hint kbd { color: #ead49d; }
+.member.dead { text-decoration: none; }
 @media(max-width:850px) { #squad-score-table { grid-template-columns: 1fr; } }

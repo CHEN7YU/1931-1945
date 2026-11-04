@@ -86,7 +86,8 @@ export function advanceLocomotion(motion, position, input, obstacles, dt, move =
     const nextX = motion.vx + deltaX * fraction, nextZ = motion.vz + deltaZ * fraction;
     const dx = (motion.vx + nextX) * .5 * h, dz = (motion.vz + nextZ) * .5 * h;
     const x = position.x, z = position.z;
-    move(position, dx, dz, .4, obstacles, input.stance === 'prone' ? .55 : input.stance === 'crouched' ? 1.15 : 1.75);
+    move(position, dx, dz, .4, obstacles, input.bodyHeight ??
+      (input.stance === 'prone' ? .55 : input.stance === 'crouched' ? 1.15 : 1.75));
     const actualX = position.x - x, actualZ = position.z - z;
     const travelled = Math.hypot(actualX, actualZ);
     distance += travelled;

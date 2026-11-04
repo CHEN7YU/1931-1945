@@ -151,9 +151,6 @@ export function selectControlledSoldier(registry, actor) {
   if (!actor || actor.health <= 0 || actor.unitId !== registry.control.unitId) return false;
   if (!actor.vehicleId && actor.manualStance != null) {
     actor.stance = actor.manualStance; actor.firingPose = null;
-    if (actor.nativeMotion) for (const pose of Object.keys(actor.nativeMotion.posture)) {
-      actor.nativeMotion.posture[pose] = pose === actor.stance && actor.nativeMotion.profile[pose] ? 1 : 0;
-    }
     syncNativeAimGoal(actor);
   }
   registry.control.soldierId = actor.id;

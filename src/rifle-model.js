@@ -180,16 +180,17 @@ function makeHand(parent, side) {
     normal.userData.contacts = readyContacts;
     hand.add(normal);
     const grip = new THREE.Group(); grip.name = 'bolt-grip';
-    sphere(grip, .027, -.003, .023, .016, .027, .026, materials.skin);
-    sphere(grip, .035, -.029, .045, .016, .019, .021, materials.skin);
+    sphere(grip, .022, -.002, .017, .017, .030, .029, materials.skin);
+    sphere(grip, .030, -.029, .040, .018, .020, .023, materials.skin);
     const contacts = [];
-    for (const [i, z] of [-.009, .004, .018, .031].entries()) {
-      const radius = i < 2 ? Math.sqrt(BOLT_HANDLE.radius ** 2 - z ** 2) + .006 : .015;
+    for (const [i, z] of [-.008, 0, .008, .022].entries()) {
+      const radius = i < 3 ? Math.sqrt(BOLT_HANDLE.radius ** 2 - z ** 2) + .006 : .015;
       const theta = -2.2, tip = [radius * Math.cos(theta), radius * Math.sin(theta), z];
-      tube(grip, [[.028, .014, z], [.009, .021, z], [-.012, .012, z], tip], .0052, materials.skin, 18);
+      tube(grip, [[.028, -.017, z + .006], [.026, .012, z], [.004, .023, z],
+        [-.015, .011, z], tip], .0052, materials.skin, 18);
       sphere(grip, ...tip, .0052, .0052, .0052, materials.skin);
       sphere(grip, .009, .020, z, .006, .006, .0055, materials.skin);
-      if (i < 2) contacts.push([tip[0] - Math.cos(theta) * .0052, tip[1] - Math.sin(theta) * .0052, z]);
+      if (i < 3) contacts.push([tip[0] - Math.cos(theta) * .0052, tip[1] - Math.sin(theta) * .0052, z]);
     }
     const thumbRadius = Math.sqrt(BOLT_HANDLE.radius ** 2 - .006 ** 2) + .0065;
     const thumb = [Math.cos(.75) * thumbRadius, Math.sin(.75) * thumbRadius, .006];
