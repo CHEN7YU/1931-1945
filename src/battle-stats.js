@@ -12,29 +12,57 @@ export function attackCategory(weapon) {
 }
 
 export function createBattleStats() {
-  const rows = new Map(), counted = new Set();
+  const rows = new Map(), counted = new Set(), playerUnits = new Map();
+  const personnel = new Map();
+  const casualties = { friendly: { deployed: 0, killed: 0, wounded: 0 }, enemy: { deployed: 0, killed: 0, wounded: 0 } };
   let revision = 0;
-  const keyFor = source => `${source.team}:${source.unitId}:${source.squadId ?? source.unitId}`;
+  const personFor = actor => {
+    if (!actor?.id || !['friendly', 'enemy'].includes(actor.team)) throw new Error('Personnel statistics require a soldier identity and team');
+    let person = personnel.get(actor.id);
+    if (person && person.team !== actor.team) throw new Error('A soldier cannot change team in casualty statistics');
+    if (!person) {
+      person = { team: actor.team, wounded: false, dead: false }; personnel.set(actor.id, person);
+      casualties[actor.team].deployed++; revision++;
+    }
+    return person;
+  };
+  const playerFor = source => playerUnits.get(`${source.team}:${source.unitId}`);
+  const keyFor = source => playerFor(source) ? `${source.team}:player` : `${source.team}:${source.unitId}:${source.squadId ?? source.unitId}`;
   const ensure = source => {
     const key = keyFor(source);
     if (!rows.has(key)) {
-      rows.set(key, { key, team: source.team, unitId: source.unitId, squadId: source.squadId ?? source.unitId,
-        name: source.unitName ?? source.unitId, kills: Object.fromEntries(KILL_COLUMNS.map(([id]) => [id, 0])), total: 0, vehicles: 0 });
+      const owner = playerFor(source);
+      rows.set(key, { key, team: source.team, unitId: source.unitId, squadId: owner ? 'player' : source.squadId ?? source.unitId,
+        ...(owner ? { player: true } : {}), name: owner?.name ?? source.unitName ?? source.unitId,
+        kills: Object.fromEntries(KILL_COLUMNS.map(([id]) => [id, 0])), total: 0, vehicles: 0 });
       revision++;
     }
     return rows.get(key);
   };
   return {
+    registerSoldier(actor) { personFor(actor); },
     register(unit) {
+      if (unit.player) playerUnits.set(`${unit.team}:${unit.id}`, { name: unit.playerName || '玩家' });
       const source = { team: unit.team, unitId: unit.id, squadId: unit.squadId ?? unit.id, unitName: unit.scoreLabel ?? unit.id };
       for (const [key, row] of rows) if (row.unitId === unit.id && row.team === unit.team &&
         key !== keyFor(source) && !row.total && !row.vehicles) rows.delete(key);
       const row = ensure(source);
-      if (row.name !== source.unitName) { row.name = source.unitName; revision++; }
+      const name = playerFor(source)?.name ?? source.unitName;
+      if (row.name !== name) { row.name = name; revision++; }
     },
     consume(event) {
       const casualty = event.type === 'casualty';
       const destroyed = event.type === 'damage' && event.target.kind === 'vehicle' && event.health === 0;
+      if (casualty || event.type === 'damage' && event.target.kind === 'soldier') {
+        const person = personFor(event.target), team = casualties[person.team];
+        if (casualty && !person.dead) {
+          person.dead = true; team.killed++;
+          if (person.wounded) { person.wounded = false; team.wounded--; }
+          revision++;
+        } else if (!person.dead && !person.wounded && event.health > 0) {
+          person.wounded = true; team.wounded++; revision++;
+        }
+      }
       if (!casualty && !destroyed || event.source.credit === 'environment' || event.source.team === event.target.team) return;
       if (!['friendly', 'enemy'].includes(event.source.team) || typeof event.source.unitId !== 'string' ||
         !KILL_COLUMNS.some(([id]) => id === event.source.weaponClass)) throw new Error('Kill statistics require the original squad and weapon class');
@@ -46,8 +74,16 @@ export function createBattleStats() {
       else { row.kills[event.source.weaponClass]++; row.total++; }
       revision++;
     },
-    clear() { rows.clear(); counted.clear(); revision++; },
+    clear() {
+      rows.clear(); counted.clear(); personnel.clear(); playerUnits.clear();
+      for (const team of Object.values(casualties)) team.deployed = team.killed = team.wounded = 0;
+      revision++;
+    },
     get revision() { return revision; },
     get snapshot() { return [...rows.values()].map(row => ({ ...row, kills: { ...row.kills } })); },
+    get casualtySummary() {
+      return Object.entries(casualties).map(([team, values]) => ({ team, ...values,
+        unhurt: values.deployed - values.killed - values.wounded }));
+    },
   };
 }

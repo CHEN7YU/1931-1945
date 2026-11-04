@@ -1,7 +1,13 @@
 export const NANJING_FERRY_ROUTE = Object.freeze({
   visibleStartX: -112, hiddenX: -144, speed: 2.8, offscreenSeconds: 6,
-  riverWidth: 2000, riverDepth: 3000,
+  riverWidth: 2000, riverDepth: 3000, maximumLoadingSeconds: 15,
 });
+
+export function shouldDepartNanjingFerry(ferry, boat, now, allArrivalsResolved, queueLength) {
+  return boat.passengers > 0 && !boat.returning && !ferry.userData.boarding &&
+    (allArrivalsResolved && queueLength === 0 ||
+      Number.isFinite(ferry.userData.loadedAt) && now - ferry.userData.loadedAt >= NANJING_FERRY_ROUTE.maximumLoadingSeconds);
+}
 
 export function ferryVisibility(x) {
   if (!Number.isFinite(x)) throw new RangeError('Ferry visibility requires a finite river position');

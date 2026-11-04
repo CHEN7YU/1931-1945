@@ -1128,7 +1128,7 @@ export function makeNanjingBattlefield(scene, surface) {
     boat.add(oar);
     boat.position.set(NANJING_DOCK.ferryX, .05, NANJING_DOCK.z - 6 + index * 3);
     oar.visible = false;
-    boat.userData = { ferryId: index, passengers: [], boarding: null, oar, state: 'docked', originZ: boat.position.z };
+    boat.userData = { ferryId: index, passengers: [], boarding: null, loadedAt: null, oar, state: 'docked', originZ: boat.position.z };
     const gangplank = addBox(-73.2, .75, boat.position.z, 2.4, .12, .8, timber);
     gangplank.rotation.z = -.3;
     gangplank.userData.nanjingFeature = 'ferry-gangplank';
@@ -1529,6 +1529,7 @@ export function makeNanjingBattlefield(scene, surface) {
       for (const ferry of ferries) {
         ferry.userData.passengers = [];
         ferry.userData.boarding = null;
+        ferry.userData.loadedAt = null;
         ferry.userData.oar.visible = false;
         ferry.userData.gangplank.visible = true;
         ferry.userData.state = 'docked';

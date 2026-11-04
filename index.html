@@ -12,20 +12,46 @@
     <div class="grain" aria-hidden="true"></div>
     <div id="loading" class="loading-screen" aria-label="加载1931-1945 山河">
       <div class="loading-brand"><span class="loading-years">1931-1945</span><strong>山河</strong></div>
+      <div id="loading-photo-wall" hidden>
       <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card">      <img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" fetchpriority="high" decoding="async" /></figure></div></div></div>
       <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
+      <span data-photo-wall-status role="status"></span>
+      </div>
+      <section id="loading-campaign-preview" class="loading-campaign-preview" data-campaign-preview hidden>
+        <figure><img data-campaign-image alt="" width="1280" height="720" decoding="async" />
+          <p data-campaign-image-status role="status" hidden></p>
+          <figcaption><strong data-campaign-name></strong> · 战场预览</figcaption></figure>
+        <strong>本关作战目标</strong><ol data-campaign-goals></ol>
+      </section>
       <div class="loading-progress-row"><progress id="loading-progress" max="100" value="0" aria-label="游戏初始化进度" aria-valuetext="0%">0%</progress><span id="loading-percentage">0%</span></div>
       <p id="loading-message" role="status">正在构建战场…</p>
-      <span data-photo-wall-status role="status"></span>
     </div>
     <main id="menu" hidden>
       <header class="masthead">
         <a class="brand" href="./" aria-label="山河 · 1931-1945"><svg class="brand-emblem" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24 12 10 17 20 22 6 27 24" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+        <button type="button" class="screen-button" data-fullscreen-toggle aria-pressed="false">全屏</button>
       </header>
       <section class="hero">
         <div class="eyebrow"><span class="line"></span> 二战中国战场 · 小队FPS</div>
         <h1 id="game-title">山河</h1>
         <p class="game-subtitle" aria-label="副标题">1931-1945</p>
+        <figure id="selected-campaign-preview" class="selected-campaign-preview" data-campaign-preview hidden>
+          <img data-campaign-image alt="" width="1280" height="720" decoding="async" />
+          <p data-campaign-image-status role="status" hidden></p>
+          <figcaption><strong data-campaign-name></strong> · 战场预览</figcaption>
+        </figure>
+        <div id="selected-identity-slot"></div>
+        <section id="player-identity" class="player-identity" hidden aria-labelledby="player-identity-title">
+          <h2 id="player-identity-title">选择你的小队番号</h2>
+          <label class="player-nickname-field" for="player-nickname">玩家昵称（战况表显示此名）
+            <input id="player-nickname" type="text" maxlength="24" autocomplete="off" />
+          </label>
+          <div id="player-unit-cards" class="player-unit-cards" role="radiogroup" aria-label="该战役真实参战番号或自定义小队"></div>
+          <label id="custom-squad-field" for="custom-squad-name" hidden>自定义小队名
+            <input id="custom-squad-name" type="text" maxlength="24" autocomplete="off" />
+          </label>
+          <p id="player-identity-status" class="player-identity-status" role="status"></p>
+        </section>
         <div id="menu-photo-wall" aria-label="战场与纪念影像">
           <div class="photo-wall-window" aria-label="横向滚动的影像墙"><div class="photo-wall-track" data-photo-wall-track><div class="photo-wall-copy"><figure class="photo-wall-card">          <img src="/assets/loading/colorized/photo-01.webp" alt="城墙上的机枪阵地（AI修复上色）" width="840" height="840" decoding="async" /></figure></div></div></div>
           <div class="photo-wall-controls"><button type="button" data-photo-wall-toggle aria-pressed="false">暂停滚动</button></div>
@@ -36,6 +62,16 @@
         <div class="panel-heading"><span>作战部署</span><span class="index">01</span></div>
         <label class="campaign-label" for="campaign-choice">战役阶段 <select id="campaign-choice"></select></label>
         <p id="campaign-description" class="map-description"></p>
+        <section id="campaign-history-panel" class="campaign-intel" aria-labelledby="campaign-history-title">
+          <h2 id="campaign-history-title">战役背景</h2>
+          <p id="campaign-history"></p>
+          <a id="campaign-history-source" target="_blank" rel="noopener noreferrer"></a>
+        </section>
+        <section class="campaign-intel" aria-labelledby="campaign-goals-title">
+          <h2 id="campaign-goals-title">本关目标</h2>
+          <ol id="campaign-goals" data-campaign-goals aria-labelledby="campaign-goals-title"></ol>
+        </section>
+        <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>普通电脑建议先选低画质，进入前生效</small></label>
         <button id="confirm-campaign" type="button" class="primary-button">选择小队 <span>→</span></button>
         <div id="squad-step" hidden>
         <button id="back-campaign" type="button" class="text-button">← 返回选择战役</button>
@@ -45,7 +81,6 @@
           <button class="squad-choice" data-type="tank" aria-pressed="false"><span class="unit-icon">▰</span><strong>装甲小队</strong><small>维克斯六吨B型 / 3人车组</small></button>
           <button class="squad-choice" data-type="plane" aria-pressed="false"><span class="unit-icon">✈</span><strong>航空小队</strong><small>伊-15bis双翼机 / 单人飞行员</small></button>
         </div>
-        <label class="menu-quality" for="menu-quality">画质 <select id="menu-quality" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select><small>可在暂停菜单分别调整效果</small></label>
         <button id="deploy" class="primary-button"><span>进入战场</span><span>DEPLOY &nbsp; ↗</span></button>
         </div>
         <button type="button" class="text-button feedback-entry" data-feedback-open>问题反馈 ↗</button>
@@ -120,6 +155,12 @@
       <div id="death-transfer" hidden><strong id="death-transfer-label"></strong><span>战场仍在继续 · 稍后接管存活队员</span></div>
       <div id="aim-label" hidden>弹着点</div>
       <div id="toast" role="status"></div>
+      <aside id="mission-briefing" class="mission-briefing" aria-labelledby="mission-briefing-title" aria-live="polite" hidden>
+        <span class="eyebrow">本关作战目标</span>
+        <h2 id="mission-briefing-title" data-mission-title></h2>
+        <ol data-mission-goals></ol>
+        <button type="button" class="text-button" data-mission-dismiss>知道了（Enter）</button>
+      </aside>
       <div id="boundary-warning" role="alert" hidden><strong>已离开作战区域 · 立即返回</strong><span id="boundary-detail"></span></div>
       <div id="interaction-prompt" role="status" hidden></div>
       <div id="weapon-support" role="status" hidden></div>
@@ -150,15 +191,29 @@
           </svg><span>车体 / 炮塔</span>
         </div>
       </div>
-      <div id="minimap"><canvas id="radar" width="176" height="176"></canvas><span>N ↑ / 战术简图</span></div>
-      <div id="scoreboard" hidden aria-label="台儿庄战况"><div class="scoreboard-heading"><div id="scoreboard-objectives" aria-label="据点控制"></div><span id="scoreboard-clock" aria-label="剩余时间">10:00</span><div id="scoreboard-stats"></div></div><div id="squad-score-table" aria-label="各小队按武器分类的本局击杀"></div><p class="scoreboard-hint"><kbd>Tab</kbd> 战况　<kbd>Alt</kbd> 交互 · 班号为游戏分组</p></div>
+      <div id="minimap"><canvas id="radar" width="176" height="176" aria-label="战术简图"></canvas><span id="minimap-mission" hidden></span><span>N ↑ / 战术简图</span></div>
+      <div id="scoreboard" hidden aria-label="战局统计"><div class="scoreboard-heading"><div id="scoreboard-objectives" aria-label="据点控制"></div><span id="scoreboard-clock" aria-label="剩余时间">10:00</span><div id="scoreboard-stats"></div></div><div id="scoreboard-casualties"></div><div id="squad-score-table" aria-label="玩家与各小队按武器分类的本局击杀"></div><p class="scoreboard-hint"><kbd>Tab</kbd> 战况　<kbd>Alt</kbd> 交互 · 玩家直属小队击杀跨兵种累计</p></div>
     </section>
     <section id="overlay" class="overlay" hidden>
       <div class="dialog">
         <span class="eyebrow" id="overlay-kicker">作战暂停</span>
         <h2 id="overlay-title">重整队伍，再出发。</h2>
         <p id="overlay-description">当前小队仍在作战；整队阵亡后才能选择其他小队。</p>
+        <section id="deployment-campaign-context" class="deployment-campaign-context" hidden aria-label="已选战役预览与目标">
+          <figure><img data-campaign-image alt="" width="1280" height="720" decoding="async" />
+            <p data-campaign-image-status role="status" hidden></p>
+            <figcaption data-campaign-name></figcaption></figure>
+          <div><strong>本关作战目标</strong><ol data-campaign-goals></ol></div>
+        </section>
         <div id="battle-summary"></div>
+        <section id="battle-results" hidden aria-labelledby="battle-results-title">
+          <h3 id="battle-results-title">本局战况</h3>
+          <p id="result-player-score"></p>
+          <div id="result-casualties"></div>
+          <small>本局累计，包含增援；撤离与逃脱不计阵亡。负伤者后续阵亡仅计入阵亡。</small>
+          <details><summary>玩家与各小队击杀明细</summary><div id="result-squad-scores"></div></details>
+        </section>
+        <div id="initial-identity-slot" hidden></div>
         <div class="deployment-workspace">
         <div id="redeploy-choices" class="redeploy-choices" aria-label="选择新战斗小队"></div>
         <div id="deployment-options" hidden>
@@ -216,12 +271,14 @@
         </details>
         <div class="deployment-footer">
         <button id="back-menu" class="text-button">返回作战大厅</button>
+        <button type="button" class="text-button" data-fullscreen-toggle aria-pressed="false">全屏</button>
         <button type="button" class="text-button feedback-entry" data-feedback-open>反馈问题／提出建议 ↗</button>
         </div>
         <details id="deployment-help"><summary>操作说明</summary><div class="dialog-hint"><p id="battle-controls"></p><p id="squad-hint">Y 切换存活队员</p><p id="encirclement-controls">Tab 战况详情 · M 展开地图 · Esc 暂停。A补给点必须进入高楼内部占领，日军夺回后恢复补给；我军按作战时间分批增援，占点不额外增员或撤走日军。中立点占领12秒、敌占点反夺24秒；我方三点合围后转为东门阻击，歼灭至少2/3地面残敌获胜，最多允许1/3逃脱，仅余空中飞机不影响胜利。第一阶段日军占齐三点后有90秒反夺宽限，中和或夺回任一点即可解除倒计时。</p><p id="force-status" class="force-status"></p><p>浏览器需捕获鼠标才能瞄准；如不支持鼠标捕获，可按住右键拖动瞄准。</p></div></details>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
       </div>
     </section>
+    <p id="fullscreen-status" class="fullscreen-status" role="status" hidden></p>
     <div id="fatal" class="overlay" role="alertdialog" aria-modal="true" aria-labelledby="fatal-title" hidden><div class="dialog"><h2 id="fatal-title">战场未能加载</h2><p id="fatal-message"></p><label for="fatal-details">本页诊断信息</label><textarea id="fatal-details" readonly spellcheck="false" aria-label="可复制的错误与构建信息"></textarea><button id="fatal-copy" class="text-button">复制诊断信息</button><p id="fatal-copy-status" role="status"></p><button onclick="location.reload()" class="primary-button">重新加载</button></div></div>
     <dialog id="feedback-dialog" aria-labelledby="feedback-title">
       <div class="dialog">

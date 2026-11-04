@@ -145,7 +145,7 @@ export function advanceGrenadeFlight(grenade, dt, trace) {
             return;
           }
         }
-        continue;
+        return;
       }
       grenade.resting = false;
     }

@@ -33,6 +33,40 @@ test('vehicle destruction is separate from individual crew kills, and friendly o
   assert.equal(attackCategory({ type: 'tank', mount: 'coax' }), 'tank-machine-gun');
 });
 
+test('one player row accumulates 10 tank and 20 infantry kills including owned AI and delayed old-squad attacks', () => {
+  const stats = createBattleStats();
+  const player = { id: 'friendly-0', team: 'friendly', player: true, playerName: '江城守军', squadId: 'tank', scoreLabel: '装甲小队' };
+  stats.register(player);
+  for (let index = 0; index < 10; index++) stats.consume(event(`tank-${index}`, 'tank', {
+    source: { ...source('tank'), credit: index % 2 ? 'player' : 'ally', squadId: 'tank' },
+  }));
+  stats.register({ ...player, squadId: 'infantry', scoreLabel: '步兵小队' });
+  for (let index = 0; index < 20; index++) stats.consume(event(`infantry-${index}`, 'rifle'));
+  assert.equal(stats.snapshot.length, 1);
+  assert.equal(stats.snapshot[0].name, '江城守军');
+  assert.equal(stats.snapshot[0].total, 30);
+  assert.equal(stats.snapshot[0].kills.tank, 10); assert.equal(stats.snapshot[0].kills.rifle, 20);
+  const delayed = event('late-target', 'explosive-pack', { source: { ...source('explosive-pack'), squadId: 'tank' } });
+  stats.consume(delayed); stats.consume(delayed);
+  assert.equal(stats.snapshot[0].total, 31);
+});
+
+test('casualty totals retain replacements, friendly fire and accidents without treating healthy removal as death', () => {
+  const stats = createBattleStats();
+  for (const [id, team] of [['one', 'friendly'], ['two', 'friendly'], ['enemy-one', 'enemy']]) stats.registerSoldier({ id, team });
+  const wounded = { type: 'damage', health: 65, amount: 35, source: source('rifle'),
+    target: { kind: 'soldier', id: 'one', unitId: 'friendly-0', team: 'friendly' } };
+  stats.consume(wounded); stats.consume(wounded);
+  assert.deepEqual(stats.casualtySummary[0], { team: 'friendly', deployed: 2, killed: 0, wounded: 1, unhurt: 1 });
+  stats.consume(event('one', 'rifle', { source: { credit: 'environment' }, target: wounded.target }));
+  stats.consume(wounded);
+  stats.registerSoldier({ id: 'replacement', team: 'friendly' });
+  assert.deepEqual(stats.casualtySummary[0], { team: 'friendly', deployed: 3, killed: 1, wounded: 0, unhurt: 2 });
+  assert.equal(stats.casualtySummary[1].killed, 0, 'removing or evacuating a live actor does not emit a casualty');
+  stats.clear();
+  assert.ok(stats.casualtySummary.every(row => row.deployed + row.killed + row.wounded === 0));
+});
+
 test('all displayed weapon classes have distinct local vector icons rather than text glyph or remote image dependencies', () => {
   const keys = ['rifle', 'sniper', 'machine-gun', 'grenade', 'explosive-pack', 'tank', 'tank-machine-gun', 'mortar', 'plane', 'total', 'destroyed'];
   assert.equal(new Set(keys.map(key => SCORE_ICON_PATHS[key])).size, keys.length);

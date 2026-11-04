@@ -58,7 +58,9 @@ export const NANJING_SPAWNS = Object.freeze([
   Object.freeze({ id: 'nanjing-south-armor', name: 'Yuhua Road桥南日军装甲点', team: 'enemy', kind: 'garage', x: -24, z: 92, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-north-armor', name: '渡口北路日军装甲点', team: 'enemy', kind: 'garage', x: 90, z: -93, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-south-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: 98, altitude: 28, aiOnly: true }),
-  Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口', team: 'friendly', kind: 'base', x: NANJING_DOCK.x, z: NANJING_DOCK.z, altitude: 0 }),
+  Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口及附近', team: 'friendly', kind: 'base',
+    x: NANJING_DOCK.x, z: NANJING_DOCK.z, altitude: 0, allowNearbyEnemies: true,
+    deploymentZone: Object.freeze({ minX: -71, maxX: -46, minZ: -92, maxZ: -68 }) }),
   Object.freeze({ id: 'nanjing-west-ai-1', name: '渡口东侧阵地', team: 'friendly', kind: 'base', x: -58, z: NANJING_DOCK.z, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-west-ai-2', name: '渡口北侧阵地', team: 'friendly', kind: 'base', x: -58, z: NANJING_DOCK.z - 10, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-reserve-1', name: '城内中部预备队集结点', team: 'friendly', kind: 'base',
@@ -275,6 +277,14 @@ export function recordNanjingSquadEvacuation(campaign, squadId, isPlayer = false
     advanceNanjingCampaign(campaign, 0);
   }
   return true;
+}
+
+export function nanjingCivilianEvacuationStatus(campaign, civilians) {
+  const enRoute = civilians.reduce((count, civilian) =>
+    count + Number(!civilian.userData.dead && !civilian.userData.arrived && !civilian.userData.evacuated), 0);
+  return { enRoute, waiting: campaign.civiliansWaiting, aboard: campaign.civiliansAboard,
+    evacuated: campaign.civiliansEvacuated,
+    ready: enRoute === 0 && campaign.civiliansWaiting === 0 && campaign.civiliansAboard === 0 };
 }
 
 export function overrunNanjingDock(campaign) {

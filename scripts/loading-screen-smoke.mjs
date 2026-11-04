@@ -8,7 +8,7 @@ let withheld = null;
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.route('**/src/main.js', route => { withheld = route; return new Promise(() => {}); });
+  await page.route('**/src/main.js*', route => { withheld = route; return new Promise(() => {}); });
   await page.goto(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
   await page.locator('#menu').waitFor({ state: 'visible' });
   const photoCount = await page.evaluate(async () => {
@@ -35,12 +35,14 @@ try {
   });
   assert.equal(horizontalRow, true, 'each photograph keeps its original aspect ratio and fits the horizontal viewing window');
   const track = page.locator('#menu-photo-wall [data-photo-wall-track]');
+  const photoOrder = await track.evaluate(element => [...element.querySelector('.photo-wall-copy').querySelectorAll('img')].map(image => image.src));
   const offset = element => new DOMMatrixReadOnly(getComputedStyle(element).transform).m41;
   const before = await track.evaluate(offset);
   await page.waitForTimeout(1000);
   const after = await track.evaluate(offset);
   assert.ok(before - after > 60 && before - after < 90, 'the entire wall must move left continuously at about 72 pixels/second');
   await page.locator('#menu-photo-wall [data-photo-wall-toggle]').click();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const paused = await track.evaluate(offset);
   await page.waitForTimeout(1000);
   assert.ok(Math.abs(await track.evaluate(offset) - paused) < 1, 'pause preserves the current wall position');
@@ -49,6 +51,16 @@ try {
     await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
     await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'photo-wall.png') });
   }
+  await page.locator('#confirm-campaign').click();
+  assert.equal(await page.locator('#menu-photo-wall').isVisible(), false);
+  assert.equal(await page.locator('#deployment-campaign-context').isVisible(), true);
+  await page.locator('#back-menu').click();
+  await page.waitForFunction(order => {
+    const copies = [...document.querySelectorAll('#menu-photo-wall .photo-wall-copy')];
+    const current = [...copies[0].querySelectorAll('img')].map(image => image.src);
+    return current.some((source, index) => source !== order[index]) &&
+      [...copies[1].querySelectorAll('img')].every((image, index) => image.src === current[index]);
+  }, photoOrder);
   await page.locator('#confirm-campaign').click();
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.waitForFunction(() => !document.getElementById('confirm-deploy').disabled);
@@ -61,11 +73,14 @@ try {
   const message = await page.locator('#loading-message').textContent();
   assert.match(message, /正在加载/);
   const loadingTrack = page.locator('#loading [data-photo-wall-track]');
-  const loadingBefore = await loadingTrack.evaluate(offset);
   await page.waitForTimeout(1000);
-  assert.ok(await loadingTrack.evaluate(offset) < loadingBefore - 60, 'the loading photo wall must also move horizontally');
+  assert.equal(await page.locator('#loading-photo-wall').isVisible(), false, 'selected loading must not show the unrelated wall');
+  assert.equal(await page.locator('#loading-campaign-preview').isVisible(), true);
+  assert.match(await page.locator('#loading-campaign-preview img').getAttribute('src'), /taierzhuang-fort\.webp/);
+  assert.equal(await page.locator('#loading-campaign-preview li').count(), 3);
+  assert.equal(await loadingTrack.evaluate(element => element.style.animationPlayState), 'paused');
   assert.equal(await page.locator('#loading-message').textContent(), message, 'photo movement cannot overwrite actual stage text');
-  assert.equal(await page.locator('#loading img').first().evaluate(image => getComputedStyle(image).objectFit), 'contain');
+  assert.equal(await page.locator('#loading-campaign-preview img').evaluate(image => getComputedStyle(image).objectFit), 'contain');
   if (process.env.ARTIFACT_DIR) {
     await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'loading.png') });
     await writeFile(join(process.env.ARTIFACT_DIR, 'loading.json'), JSON.stringify({

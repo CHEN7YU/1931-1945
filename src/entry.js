@@ -6,14 +6,35 @@ import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { SELECTABLE_CAMPAIGNS, DEFAULT_CAMPAIGN, campaignById } from './campaigns.js';
 import { createFeedback } from './feedback.js';
 import { deploymentCards, deploymentMarker, DEPLOYMENT_SQUADS } from './deployment-view.js';
+import { createFullscreenControls } from './fullscreen.js';
+import { createCampaignPresentation } from './campaign-presentation.js';
+import { createPlayerIdentityControls } from './player-identity.js';
+import { getPlayerPreferences } from './player-preferences.js';
 
 const params = new URLSearchParams(location.search);
 getPerformanceDiagnostics();
 const menu = document.getElementById('menu'), loading = document.getElementById('loading');
-createPhotoWall(loading);
-createPhotoWall(document.getElementById('menu-photo-wall'), { visibilityElement: menu });
+createFullscreenControls();
+let photoWallsReady = false, initialCampaignSelection = true;
+const ensurePhotoWalls = () => {
+  if (photoWallsReady) return;
+  createPhotoWall(document.getElementById('loading-photo-wall'), { visibilityElement: loading });
+  createPhotoWall(document.getElementById('menu-photo-wall'), { visibilityElement: menu });
+  photoWallsReady = true;
+};
+const campaignPresentation = createCampaignPresentation();
+const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
+const launcherPreferences = getPlayerPreferences(), quality = document.getElementById('menu-quality');
+quality.value = launcherPreferences.snapshot.quality.preset;
+if (launcherPreferences.status.problem)
+  document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
+quality.addEventListener('change', () => {
+  if (loaded) return;
+  launcherPreferences.update({ quality: { ...launcherPreferences.snapshot.quality, preset: quality.value } });
+  document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
+});
 let initialSquad = null, initialSpawn = null;
 let tacticalMapReady = false;
 const $ = id => document.getElementById(id);
@@ -46,10 +67,14 @@ function refreshInitialDeployment() {
 async function openInitialDeployment() {
   const campaign = campaignById(selector.value);
   if (campaign.locked || campaign.hidden) throw new RangeError('该战役尚未开放');
+  campaignPresentation.select(campaign);
+  $('initial-identity-slot').hidden = false;
+  playerIdentity.show(campaign, $('initial-identity-slot'));
+  $('deployment-campaign-context').hidden = false;
   $('overlay').hidden = false; $('overlay').classList.add('deployment-overlay');
   $('overlay-kicker').textContent = '作战部署 / DEPLOY';
   $('overlay-title').textContent = campaign.name;
-  $('overlay-description').textContent = '选择小队卡片，点击地图上的初始出生标记，再确认出击。';
+  $('overlay-description').textContent = '选择小队和初始出生位置，再确认出击。';
   for (const id of ['resume', 'battle-summary', 'pause-settings', 'control-settings', 'motion-settings', 'audio-settings', 'quality-settings']) $(id).hidden = true;
   $('redeploy-choices').hidden = $('deployment-options').hidden = false;
   $('confirm-deploy').hidden = false;
@@ -105,6 +130,9 @@ createFeedback({ build: `${__BUILD_STAMP__.commit?.slice(0, 7) ?? 'unknown'}${__
 const squadStep = document.getElementById('squad-step');
 const confirmCampaign = document.getElementById('confirm-campaign');
 function campaignStep() {
+  if (!initialCampaignSelection || params.get('campaign') !== 'nanjing' && !params.has('benchmark')) ensurePhotoWalls();
+  playerIdentity.hide();
+  campaignPresentation.reset();
   squadStep.hidden = true;
   confirmCampaign.hidden = false;
 }
@@ -131,6 +159,12 @@ function selectCampaign(id) {
   selector.value = id;
   campaignStep();
   document.getElementById('campaign-description').textContent = campaign.description;
+  $('campaign-history').textContent = campaign.history;
+  $('campaign-history-source').href = campaign.historySource.url;
+  $('campaign-history-source').textContent = `史料来源：${campaign.historySource.name} ↗`;
+  $('campaign-goals').replaceChildren(...campaign.goals.map(goal => {
+    const item = document.createElement('li'); item.textContent = goal; return item;
+  }));
 }
 selector.addEventListener('change', () => {
   if (loaded) {
@@ -139,6 +173,7 @@ selector.addEventListener('change', () => {
     location.assign(url); return;
   }
   selectCampaign(selector.value);
+  initialCampaignSelection = false;
 });
 for (const button of document.querySelectorAll('.squad-choice')) button.addEventListener('click', () => {
   if (loaded) return;
@@ -172,6 +207,11 @@ $('confirm-deploy').addEventListener('click', async event => {
 });
 // Existing diagnostic URLs intentionally bypass the campaign launcher.
 if (params.has('benchmark') || params.get('campaign') === 'nanjing') {
+  if (params.get('campaign') === 'nanjing') {
+    const campaign = campaignById('nanjing');
+    campaignPresentation.select(campaign);
+    playerIdentity.show(campaign, $('selected-identity-slot'));
+  }
   squadStep.hidden = false; confirmCampaign.hidden = true;
   menu.hidden = true; loading.hidden = false;
   await import('./main.js');

@@ -41,7 +41,7 @@ for (const kind of ['grenade', 'explosive-pack']) {
     assert.equal(f.queries, 2, 'movement invalidates the old contact');
     f.clear = false;
     advanceGrenadeFlight(grenade, .05, f.trace);
-    assert.ok(f.queries >= 7, 'a vehicle/door entering the region forces normal support tracing');
+    assert.equal(f.queries, 3, 'a vehicle/door entering the region forces one fresh query in this simulation step');
     f.clear = true;
     advanceGrenadeFlight(grenade, .05, f.trace);
     f.solids.length = 0;
@@ -91,12 +91,16 @@ test('doors, moving vehicles, skins and dynamic geometry never become static sup
   assert.equal(valid(), false, 'analytic terrain changes invalidate ground contact');
 });
 
-test('dynamic/uncacheable support retains every check and changing tracer or velocity invalidates reuse', () => {
+test('dynamic support rechecks each simulation step, not six identical substeps, and tracer or velocity changes invalidate reuse', () => {
   const grenade = { position: { x: 0, y: GRENADE.size, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, resting: true, collisions: 0 };
   let queries = 0, present = true;
   const dynamicTrace = () => { queries++; return present ? { normal: { x: 0, y: 1, z: 0 } } : null; };
   advanceGrenadeFlight(grenade, .05, dynamicTrace);
-  assert.equal(queries, 6);
+  assert.equal(queries, 1);
+  const resting = structuredClone(grenade);
+  advanceGrenadeFlight(grenade, .05, dynamicTrace);
+  assert.equal(queries, 2, 'uncacheable supports are still queried again on the next simulation step');
+  assert.deepEqual(grenade, resting);
   present = false;
   advanceGrenadeFlight(grenade, .05, dynamicTrace);
   assert.equal(grenade.resting, false);
@@ -129,7 +133,8 @@ test('cached and original paths preserve flight/bounce/fuse/explosion source at 
     assert.deepEqual(cached.blasts, original.blasts, 'same deadline, position, collisions and immutable source');
     assert.deepEqual(cached.history, original.history);
     assert.deepEqual(cached.inventory, original.inventory);
-    assert.ok(cached.queries < original.queries / 2, 'resting saves real trace calls, not physics time');
+    assert.ok(cached.queries < original.queries,
+      'static reuse still saves queries against the newly optimized once-per-step uncached path');
   }
 });
 

@@ -1,0 +1,55 @@
+{
+  "sourceKind": "original-in-game-scene-captures",
+  "provider": "Project-authored campaign scenes",
+  "source": "src/main.js and src/campaign-layout.js",
+  "license": "Project source license; not independently relicensed CC0",
+  "generator": "scripts/prepare-campaign-previews.mjs",
+  "description": "Original captures of the actual campaign geometry, without HUD or combat actors. Not historical photographs.",
+  "materialRights": "Underlying game material provenance remains in its existing source records; these captures do not reclassify those materials as CC0.",
+  "files": [
+    {
+      "campaign": "taierzhuang-fort",
+      "file": "taierzhuang-fort.webp",
+      "alt": "台儿庄东门 · 游戏战场预览",
+      "width": 1280,
+      "height": 720,
+      "bytes": 104776,
+      "sha256": "60a5ec99ca175c65eda88165a7e899de666877a35ab9ff242677968f284958f4",
+      "camera": {
+        "position": [
+          44,
+          4.2,
+          -4
+        ],
+        "target": [
+          58,
+          3.6,
+          3
+        ],
+        "fov": 65
+      }
+    },
+    {
+      "campaign": "nanjing",
+      "file": "nanjing.webp",
+      "alt": "中华门防线 · 游戏战场预览",
+      "width": 1280,
+      "height": 720,
+      "bytes": 86652,
+      "sha256": "83be61682191025d9ba76f6c488aaf9019546b86e78385350cd0233032a20e63",
+      "camera": {
+        "position": [
+          -35,
+          6,
+          45
+        ],
+        "target": [
+          0,
+          7.5,
+          17
+        ],
+        "fov": 65
+      }
+    }
+  ]
+}

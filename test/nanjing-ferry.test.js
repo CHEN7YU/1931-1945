@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { ferryVisibility, updateFerryVisibility, restoreFerryPassenger, NANJING_FERRY_ROUTE } from '../src/nanjing-ferry.js';
+import { ferryVisibility, updateFerryVisibility, restoreFerryPassenger, NANJING_FERRY_ROUTE,
+  shouldDepartNanjingFerry } from '../src/nanjing-ferry.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { rejoinCivilianRoute } from '../src/civilian-crowd.js';
 import { segmentClear } from '../src/core.js';
@@ -12,6 +13,20 @@ test('ferries fade at a distant water horizon rather than the old visible opposi
   assert.equal(ferryVisibility((NANJING_FERRY_ROUTE.visibleStartX + NANJING_FERRY_ROUTE.hiddenX) / 2), .5);
   assert.equal(ferryVisibility(NANJING_FERRY_ROUTE.hiddenX), 0);
   assert.throws(() => ferryVisibility(NaN), RangeError);
+});
+
+test('partly loaded boats stop waiting for distant civilians but never leave during a physical boarding action', () => {
+  const ferry = { userData: { boarding: null, loadedAt: 10 } }, boat = { passengers: 2, returning: false };
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 24.9, false, 8), false);
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 25, false, 8), true);
+  ferry.userData.boarding = { civilian: {} };
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 30, true, 0), false);
+  ferry.userData.boarding = null;
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 11, true, 0), true);
+  boat.passengers = 0;
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 30, true, 0), false);
+  boat.passengers = 2; boat.returning = true;
+  assert.equal(shouldDepartNanjingFerry(ferry, boat, 30, true, 0), false);
 });
 
 test('boat and passenger fades never change shared city or civilian materials and restore the original passenger resources', () => {

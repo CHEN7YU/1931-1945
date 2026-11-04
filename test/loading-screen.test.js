@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import metadata from '../public/assets/loading/source.json' with { type: 'json' };
 import { createPhotoWall, LOADING_PHOTOS, PHOTO_WALL_SPEED, PHOTO_WALL_BOTTOM_TRIMS } from '../src/loading-screen.js';
 
-function fixture({ hidden = false, reduced = false } = {}) {
+function fixture({ hidden = false, reduced = false, random = () => 0 } = {}) {
   class Node extends EventTarget {
     hidden = false;
     textContent = '';
@@ -33,11 +33,11 @@ function fixture({ hidden = false, reduced = false } = {}) {
   let observed, callback;
   class Observer {
     constructor(cb) { callback = cb; }
-    observe(target) { observed = target; }
+    observe(target) { observed ??= target; }
     disconnect() { callback = null; }
   }
   class Resize { observe() {} disconnect() {} }
-  const control = createPhotoWall(element, { document: doc, Observer, Resize, visibilityElement: root, reducedMotion: motion });
+  const control = createPhotoWall(element, { document: doc, Observer, Resize, visibilityElement: root, reducedMotion: motion, random });
   return { element, root, doc, track, status, toggle, control, motion,
     get observed() { return observed; },
     visibility(value) { root.hidden = value; callback(); } };
@@ -95,7 +95,8 @@ test('the wall has two identical collections for seamless horizontal scrolling, 
   const [first, duplicate] = f.track.children;
   assert.equal(first.children.length, 23);
   assert.equal(duplicate.attributes.get('aria-hidden'), 'true');
-  assert.deepEqual(first.querySelectorAll('img').map(image => image.src), LOADING_PHOTOS.map(photo => photo.src));
+  assert.deepEqual(first.querySelectorAll('img').map(image => image.src).sort(), LOADING_PHOTOS.map(photo => photo.src).sort());
+  assert.notDeepEqual(first.querySelectorAll('img').map(image => image.src), LOADING_PHOTOS.map(photo => photo.src));
   assert.deepEqual(duplicate.querySelectorAll('img').map(image => image.src), first.querySelectorAll('img').map(image => image.src));
   assert.equal(f.track.style['--photo-wall-duration'], `${600 / PHOTO_WALL_SPEED}s`);
   assert.equal(f.track.style.animationPlayState, 'running');
@@ -107,12 +108,13 @@ test('seven display-only bottom trims apply consistently to both copies without 
   assert.equal(Object.keys(PHOTO_WALL_BOTTOM_TRIMS).length, 7);
   for (const copy of f.track.children) {
     assert.equal(copy.children.filter(card => card.classes.has('photo-wall-trimmed')).length, 7);
-    for (const [index, photo] of LOADING_PHOTOS.entries()) {
+    for (const card of copy.children) {
+      const photo = LOADING_PHOTOS.find(photo => photo.src === card.querySelectorAll('img')[0].src);
       const trim = PHOTO_WALL_BOTTOM_TRIMS[photo.src.split('/').at(-1).replace(/\.[^.]+$/, '')];
       if (!trim) continue;
       assert.ok(trim > 0 && trim <= .14);
-      assert.equal(copy.children[index].style['--photo-trim-scale'], String(1 / (1 - trim)));
-      assert.equal(copy.children[index].style['--photo-trim-ratio'], String(photo.width / (photo.height * (1 - trim))));
+      assert.equal(card.style['--photo-trim-scale'], String(1 / (1 - trim)));
+      assert.equal(card.style['--photo-trim-ratio'], String(photo.width / (photo.height * (1 - trim))));
     }
   }
   f.control.dispose();
@@ -127,6 +129,24 @@ test('hidden loading/menu screens and background tabs pause the wall without res
   assert.equal(f.track.style.animationPlayState, 'paused');
   f.doc.hidden = false; f.doc.dispatchEvent(new Event('visibilitychange'));
   assert.equal(f.track.style.animationPlayState, 'running');
+  f.control.dispose();
+});
+
+test('opening the photo wall reshuffles both copies without changing captions or reshuffling on pause or tab focus', () => {
+  const f = fixture();
+  const sources = () => f.track.children[0].querySelectorAll('img').map(image => image.src);
+  const initial = sources(), images = [...f.track.querySelectorAll('img')];
+  f.toggle.dispatchEvent(new Event('click'));
+  f.doc.hidden = true; f.doc.dispatchEvent(new Event('visibilitychange'));
+  f.doc.hidden = false; f.doc.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(sources(), initial);
+  f.visibility(true); f.visibility(false);
+  assert.notDeepEqual(sources(), initial);
+  assert.deepEqual([...sources()].sort(), LOADING_PHOTOS.map(photo => photo.src).sort());
+  assert.deepEqual(f.track.children[1].querySelectorAll('img').map(image => image.src), sources());
+  assert.ok(f.track.querySelectorAll('img').every(image => images.includes(image)), 'reopening reuses images instead of reloading them');
+  for (const image of f.track.querySelectorAll('img'))
+    assert.equal(image.alt, LOADING_PHOTOS.find(photo => photo.src === image.src).alt);
   f.control.dispose();
 });
 

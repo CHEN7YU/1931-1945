@@ -8,7 +8,7 @@ import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { formationPositions } from '../src/battle-roster.js';
 
 test('Nanjing defense spawns retain enemy blocking while the northern rampart offers a separate counterattack entry', () => {
-  for (const id of ['nanjing-gate', 'nanjing-west-dock', 'nanjing-gate-north-wall']) {
+  for (const id of ['nanjing-gate', 'nanjing-gate-north-wall']) {
     const point = NANJING_SPAWNS.find(point => point.id === id);
     const enemy = { x: point.x, z: point.z, health: 100, altitude: point.altitude };
     assert.equal(spawnBlockReason(point, 'infantry', [enemy], []), '附近有敌军，暂时无法部署');
@@ -29,6 +29,29 @@ test('Nanjing defense spawns retain enemy blocking while the northern rampart of
     [{ x: rampart.x, y: 0, z: rampart.z }], [groundEnemy]);
   assert.equal(positions.length, 11);
   assert.ok(positions.every(position => Math.abs(position.z - rampart.z) <= .71));
+});
+
+test('Nanjing dock deployment permits nearby enemies but retains body, geometry, bounded-area and squad-type clearance', () => {
+  const point = NANJING_SPAWNS.find(point => point.id === 'nanjing-west-dock');
+  const enemy = { x: point.x, z: point.z, health: 100, altitude: 0 };
+  assert.equal(spawnBlockReason(point, 'infantry', [enemy], []), null);
+  const occupied = [{ x: point.x + 3, y: .36, z: point.z - 2 }];
+  const positions = formationPositions(point, 11, [], occupied, [enemy]);
+  assert.equal(positions.length, 11);
+  for (const position of positions) {
+    assert.ok(Math.hypot(position.x - enemy.x, position.z - enemy.z) >= 1.25);
+    assert.ok(Math.hypot(position.x - point.x, position.z - point.z) <= 20);
+    assert.ok(position.x >= point.deploymentZone.minX && position.x <= point.deploymentZone.maxX);
+    assert.ok(position.z >= point.deploymentZone.minZ && position.z <= point.deploymentZone.maxZ);
+    assert.ok(occupied.every(other => Math.hypot(position.x - other.x, position.z - other.z) >= 1.25));
+  }
+  assert.equal(spawnBlockReason(point, 'tank', [enemy], []), '该重生点不支持此小队');
+  const wreck = { minX: point.x - 3, maxX: point.x + 3, minZ: point.z - 3, maxZ: point.z + 3 };
+  assert.equal(spawnBlockReason(point, 'infantry', [enemy], [wreck]), null, 'a blocked central marker still permits a nearby clear area');
+  assert.ok(formationPositions(point, 11, [wreck], occupied, [enemy]).every(position =>
+    !circleBlocked(position.x, position.z, .48, [wreck])));
+  assert.equal(spawnBlockReason(point, 'infantry', [enemy],
+    [{ minX: -73, maxX: -40, minZ: -95, maxZ: -65 }]), '重生区域受阻');
 });
 
 const wiped = [{ health: 0 }, { health: 0 }];

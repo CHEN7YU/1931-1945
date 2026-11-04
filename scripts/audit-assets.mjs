@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const groups = [
   { manifest: 'sources.json', directory: '', use: 'runtime', evidence: [] },
   { manifest: 'maps/source.json', directory: 'maps', use: 'runtime', evidence: [] },
+  { manifest: 'campaign-previews/source.json', directory: 'campaign-previews', use: 'runtime', evidence: [] },
   { manifest: 'loading/source.json', directory: 'loading', use: 'runtime', evidence: [] },
   { manifest: 'loading/colorized/source.json', directory: 'loading/colorized', use: 'runtime', evidence: [] },
   { manifest: 'audio/kenney-impact/source.json', directory: 'audio/kenney-impact', use: 'runtime', evidence: ['License.txt'] },
@@ -184,6 +185,14 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: metadata.permission.limitation });
+    } else if (group.directory === 'campaign-previews') {
+      if (metadata.sourceKind !== 'original-in-game-scene-captures' ||
+        metadata.provider !== 'Project-authored campaign scenes' ||
+        metadata.source !== 'src/main.js and src/campaign-layout.js' ||
+        metadata.license !== 'Project source license; not independently relicensed CC0' ||
+        metadata.files.map(file => file.file).sort().join(',') !== 'nanjing.webp,taierzhuang-fort.webp' ||
+        metadata.files.some(file => file.file !== `${file.campaign}.webp` || !file.alt ||
+          file.width !== 1280 || file.height !== 720)) throw new Error('Campaign preview provenance requires review');
     } else if (group.directory === 'maps') {
       if (metadata.provider !== 'Project-authored tactical layout' ||
         metadata.source !== 'src/campaign-layout.js and src/town-layout.js' ||

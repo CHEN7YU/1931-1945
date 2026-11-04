@@ -3,6 +3,8 @@ import { defaultAudioSettings, validateAudioSettings } from './audio-mixer.js';
 
 export const PREFERENCES_KEY = 'embers-of-china.preferences.v1';
 export const SENSITIVITY_LIMITS = Object.freeze({ min: .25, max: 3, step: .05 });
+let sharedPreferences = null;
+export function getPlayerPreferences() { return sharedPreferences ??= createPlayerPreferences(); }
 const motionValues = [0, .35, 1];
 export function defaultPreferences() {
   return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, tankCrushing: true, audio: defaultAudioSettings(),

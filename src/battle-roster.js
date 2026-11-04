@@ -1,5 +1,5 @@
 import { TYPES, circleBlocked } from './core.js';
-import { spawnBlockReason, supportsSquad } from './spawns.js';
+import { SPAWN_RULES, spawnBlockReason, supportsSquad, groundSpawnCandidates } from './spawns.js';
 import { CHI_HA, japaneseArmorRoster } from './chi-ha.js';
 import { NANJING_SPAWNS } from './nanjing-campaign.js';
 
@@ -69,7 +69,7 @@ export function stagingSpawns() {
 
 export function formationPositions(point, count, obstacles, occupied = [], hostiles = []) {
   const candidates = [];
-  const hostileClearance = point.permanent ? 1.25 : 18;
+  const hostileClearance = point.permanent || point.allowNearbyEnemies ? 1.25 : SPAWN_RULES.enemyBlockRadius;
   if (point.layout === 'wall' || point.layout === 'cave') {
     const columns = point.layout === 'wall' ? 2 : 3;
     if (point.layout === 'wall' && point.formationZones?.length) {
@@ -96,10 +96,7 @@ export function formationPositions(point, count, obstacles, occupied = [], hosti
       }
     }
   } else {
-    for (let z = -9; z <= 9; z++) for (let x = -9; x <= 9; x++) {
-      const px = point.x + x * 1.55, pz = point.z + z * 1.55;
-      candidates.push({ x: px, z: pz, score: x * x + z * z });
-    }
+    candidates.push(...groundSpawnCandidates(point));
   }
   const feetY = point.altitude ?? 0;
   const clearCandidates = candidates.filter(candidate => {
@@ -115,7 +112,17 @@ export function formationPositions(point, count, obstacles, occupied = [], hosti
   });
   candidates.length = 0;
   candidates.push(...clearCandidates);
-  candidates.sort((a, b) => a.score - b.score || a.z - b.z || a.x - b.x);
+  if (point.allowNearbyEnemies) {
+    const nearbyHostiles = hostiles.filter(actor => actor.health > 0 &&
+      Math.abs((actor.position?.y ?? actor.altitude ?? 0) - feetY) < 4);
+    for (const candidate of candidates) {
+      let nearest = Infinity;
+      for (const actor of nearbyHostiles) nearest = Math.min(nearest,
+        Math.hypot((actor.position?.x ?? actor.x) - candidate.x, (actor.position?.z ?? actor.z) - candidate.z));
+      candidate.danger = Math.max(0, SPAWN_RULES.enemyBlockRadius - nearest);
+    }
+  }
+  candidates.sort((a, b) => (a.danger ?? 0) - (b.danger ?? 0) || a.score - b.score || a.z - b.z || a.x - b.x);
   const placed = [];
   for (const point of candidates) {
     if ([...occupied, ...placed].some(other => Math.abs((other.y ?? feetY) - feetY) < 1.75 &&

@@ -18,6 +18,7 @@ export const PHOTO_WALL_BOTTOM_TRIMS = Object.freeze({
 export function createPhotoWall(element, {
   document: doc = document, Observer = MutationObserver, Resize = ResizeObserver,
   photos = LOADING_PHOTOS, visibilityElement = element,
+  random = Math.random,
   reducedMotion = doc.defaultView?.matchMedia('(prefers-reduced-motion: reduce)'),
 } = {}) {
   const track = element.querySelector('[data-photo-wall-track]');
@@ -58,13 +59,32 @@ export function createPhotoWall(element, {
     return copy;
   });
   track.replaceChildren(...copies); track.setAttribute('data-ready', '');
+  const cards = copies.map(copy => [...copy.children]);
+  let order = photos.map((photo, index) => index), wasVisible = false;
+  const reshuffle = () => {
+    const previous = [...order];
+    for (let index = order.length - 1; index > 0; index--) {
+      const value = random();
+      if (!Number.isFinite(value) || value < 0 || value >= 1) throw new RangeError('Photo shuffle requires a random value in [0, 1)');
+      const other = Math.floor(value * (index + 1));
+      [order[index], order[other]] = [order[other], order[index]];
+    }
+    if (order.length > 1 && order.every((value, index) => value === previous[index])) order.push(order.shift());
+    copies.forEach((copy, index) => copy.replaceChildren(...order.map(value => cards[index][value])));
+    track.style.animationName = 'none';
+    track.getBoundingClientRect();
+    track.style.animationName = '';
+  };
   const updateSpeed = () => {
     const width = copies[0].getBoundingClientRect().width;
     if (width > 0) track.style.setProperty('--photo-wall-duration', `${width / PHOTO_WALL_SPEED}s`);
   };
   const sync = () => {
+    const visible = !visibilityElement.hidden && !element.hidden;
+    if (!disposed && visible && !wasVisible) reshuffle();
+    wasVisible = visible;
     updateSpeed();
-    track.style.animationPlayState = !disposed && !paused && !visibilityElement.hidden && !doc.hidden ? 'running' : 'paused';
+    track.style.animationPlayState = !disposed && !paused && visible && !doc.hidden ? 'running' : 'paused';
     toggle.textContent = paused ? '继续滚动' : '暂停滚动';
     toggle.setAttribute('aria-pressed', String(paused));
   };
@@ -75,6 +95,7 @@ export function createPhotoWall(element, {
   reducedMotion?.addEventListener('change', onMotionChange);
   const observer = new Observer(sync), resize = new Resize(updateSpeed);
   observer.observe(visibilityElement, { attributes: true, attributeFilter: ['hidden'] });
+  if (element !== visibilityElement) observer.observe(element, { attributes: true, attributeFilter: ['hidden'] });
   resize.observe(copies[0]);
   sync();
   return {

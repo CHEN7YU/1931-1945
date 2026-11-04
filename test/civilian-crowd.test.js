@@ -4,7 +4,22 @@ import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
 import { obstacleLookup } from '../src/spatial.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
-  releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute } from '../src/civilian-crowd.js';
+  releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute,
+  activateCivilianEvacuation } from '../src/civilian-crowd.js';
+
+test('visible residents can start evacuating at legal crowd spacing without applying the hidden-emergence gate twice', () => {
+  const people = [0, .73].map((x, index) => ({ visible: true, position: { x, z: 0 },
+    userData: { civilianId: index, active: false, releaseAt: 0 } }));
+  for (const person of people) assert.equal(activateCivilianEvacuation(person, 1, people), true);
+  assert.equal(people.length, 2, 'visible people already belong to the peer list');
+  const hidden = { visible: false, position: { x: .1, z: 0 }, userData: { active: false, releaseAt: 0 } };
+  assert.equal(activateCivilianEvacuation(hidden, 1, people), false, 'hidden people cannot emerge through an occupied body');
+  hidden.position.x = 2;
+  assert.equal(activateCivilianEvacuation(hidden, 1, people), true);
+  assert.equal(people.length, 3);
+  assert.equal(activateCivilianEvacuation(hidden, 2, people), true);
+  assert.equal(people.length, 3, 'already-active people are not inserted again');
+});
 
 test('sixty bridge refugees have independent exterior positions, and the 120 residents do not emerge before the retreat order', () => {
   const starts = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianStart(index));

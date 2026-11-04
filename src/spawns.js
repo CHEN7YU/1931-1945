@@ -105,12 +105,22 @@ export function capturedSpawnPoints(objectives, base, type, safe) {
   return result;
 }
 
+export function groundSpawnCandidates(point) {
+  const candidates = [];
+  for (let z = -9; z <= 9; z++) for (let x = -9; x <= 9; x++) {
+    const px = point.x + x * 1.55, pz = point.z + z * 1.55, zone = point.deploymentZone;
+    if (zone && (px < zone.minX || px > zone.maxX || pz < zone.minZ || pz > zone.maxZ)) continue;
+    candidates.push({ x: px, z: pz, score: x * x + z * z });
+  }
+  return candidates;
+}
+
 export function spawnBlockReason(point, type, hostiles, obstacles) {
   if (point.enabled === false) return '重生点已被合围部队永久关闭';
   if (!supportsSquad(point, type)) return '该重生点不支持此小队';
   if (point.kind === 'rally' && point.health <= 0) return '集结点已被摧毁';
   const floor = point.altitude ?? 0;
-  if (!point.permanent && point.kind !== 'air' && hostiles.some(actor => {
+  if (!point.permanent && !point.allowNearbyEnemies && point.kind !== 'air' && hostiles.some(actor => {
     const x = actor.position?.x ?? actor.x, z = actor.position?.z ?? actor.z;
     const height = actor.position?.y ?? actor.altitude ?? 0;
     return actor.health > 0 && Math.abs(height - floor) < 4 &&
@@ -118,6 +128,9 @@ export function spawnBlockReason(point, type, hostiles, obstacles) {
   })) return '附近有敌军，暂时无法部署';
   const radius = type === 'tank' ? 2.2 : point.kind === 'air' ? 0
     : point.layout === 'wall' || point.layout === 'cave' ? .8 : SPAWN_RULES.placementRadius;
+  if (point.allowNearbyEnemies && !groundSpawnCandidates(point)
+    .some(candidate => !circleBlocked(candidate.x, candidate.z, .48, obstacles, floor))) return '重生区域受阻';
+  if (point.allowNearbyEnemies) return null;
   if (radius && circleBlocked(point.x, point.z, radius, obstacles, point.altitude ?? 0)) return '重生区域受阻';
   return null;
 }

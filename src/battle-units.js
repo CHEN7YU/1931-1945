@@ -1,3 +1,5 @@
+import { PLAYER_UNIT_OPTIONS } from './player-identity.js';
+
 const chinese = [
   ['第31师', 1], ['第31师', 3], ['第31师', 4], ['第31师', 5],
   ['第27师', 1], ['第27师', 2], ['第27师', 3],
@@ -12,6 +14,7 @@ export function soldierRoleLabel(actor) {
 export function campaignUnitName(unit) {
   if (!['friendly', 'enemy'].includes(unit.team) || !Number.isInteger(unit.index) || unit.index < 0 ||
     !['infantry', 'mortar', 'tank', 'plane'].includes(unit.type)) throw new RangeError('Campaign labels require a valid game formation');
+  if (unit.historicalName) return unit.player ? unit.historicalName : `${unit.historicalName}·${unit.index + 1}班`;
   if (unit.type !== 'infantry') {
     const role = { mortar: '炮兵', tank: '装甲', plane: '航空' }[unit.type];
     const number = unit.team === 'enemy' && unit.type === 'tank' && unit.index >= 8 ? unit.index - 7 : unit.index + 1;
@@ -25,6 +28,8 @@ export function campaignUnitName(unit) {
 }
 
 export function campaignUnitDescription(name) {
+  const selected = Object.values(PLAYER_UNIT_OPTIONS).flat().find(unit => unit.id !== 'custom' && name.startsWith(unit.name));
+  if (selected) return selected.description;
   const formations = [
     ['第31师', '国民革命军第2集团军第31师，台儿庄守备部队'],
     ['第27师', '国民革命军第2集团军第27师，台儿庄参战部队'],
@@ -34,5 +39,5 @@ export function campaignUnitDescription(name) {
   ];
   const historical = formations.find(([prefix]) => name.startsWith(prefix));
   return historical ? `${historical[1]}。末尾班号为游戏分组，不是史实编制或兵力比例。`
-    : `${name}：保留的游戏支援编制，不代表台儿庄实有独立部队番号或装备配属。`;
+    : `${name}：保留的游戏支援编制，不代表该战役实有独立部队番号或装备配属。`;
 }

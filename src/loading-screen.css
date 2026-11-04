@@ -10,6 +10,29 @@
 .loading-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--gold); }
 .loading-years { font: 16px/1.5 monospace; letter-spacing: 6px; }
 .loading-brand strong { font: 52px/1.2 "STSong", "SimSun", serif; letter-spacing: 12px; padding-left: 12px; }
+#loading-photo-wall [data-photo-wall-status] { display: block; margin-top: 6px; }
+.selected-campaign-preview { margin: 0; border: 1px solid #cfb27855; background: #101813; }
+.selected-campaign-preview img { display: block; width: 100%; height: auto; object-fit: contain; }
+.selected-campaign-preview figcaption { padding: 10px 14px; color: var(--gold); font-size: 13px; }
+#menu[data-campaign-selected] .hero > .eyebrow,
+#menu[data-campaign-selected] #game-title,
+#menu[data-campaign-selected] .game-subtitle,
+#menu[data-campaign-selected] #campaign-description,
+#menu[data-campaign-selected] #campaign-history-panel { display: none; }
+.loading-campaign-preview { width: min(840px,92vw); text-align: left; }
+.loading-campaign-preview figure { margin: 0 0 10px; text-align: center; }
+.loading-campaign-preview img { display: block; width: 100%; max-height: 36vh; object-fit: contain; }
+.loading-campaign-preview figcaption { margin-top: 6px; font-size: 13px; color: var(--gold); }
+.loading-campaign-preview > strong { color: var(--gold); font-size: 12px; }
+.loading-campaign-preview ol { margin: 6px 0 0; padding-left: 20px; color: #e4e6d6; font-size: 12px; line-height: 1.7; }
+.deployment-campaign-context { display: flex; align-items: center; gap: 16px; flex: none; margin: 8px 0; }
+.deployment-campaign-context figure { width: 32%; margin: 0; flex: none; }
+.deployment-campaign-context img { display: block; width: 100%; max-height: 150px; object-fit: contain; }
+.deployment-campaign-context figcaption { margin-top: 4px; color: var(--gold); font-size: 11px; }
+.deployment-campaign-context strong { color: var(--gold); font-size: 12px; }
+.deployment-campaign-context ol { margin: 5px 0; padding-left: 18px; font-size: 11px; line-height: 1.6; }
+[data-campaign-image-status] { color: #efc484; font-size: 12px; line-height: 1.6; }
+@media(max-height:700px) { .deployment-campaign-context img { max-height: 90px; } }
 .photo-wall-window {
   width: min(1000px, 92vw);
   height: min(58vh, 560px);

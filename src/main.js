@@ -82,6 +82,7 @@ import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonP
 import { infantrySteering as steerInfantry, advanceInfantryPath as advanceInfantryRoute, sampledRouteClear } from './infantry-spacing.js';
 import { updateInfantryAimPitch } from './infantry-aim.js';
 import { civilianEscapeSpeed, frightenCivilian } from './civilian-panic.js';
+import { createMissionBriefing } from './mission-briefing.js';
 import { civilianStepAvoidsThreats, updateCivilianThreatResponse } from './civilian-threat.js';
 import { advanceCivilianMotion } from './civilian-motion.js';
 import { traceCivilianBullet } from './civilian-hits.js';
@@ -102,12 +103,15 @@ import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, m
 import { deploymentMapPoint, deploymentMapView } from './deployment-map.js';
 import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
 import { createFatalReporter } from './fatal-report.js';
-import { createPlayerPreferences, lookSensitivity } from './player-preferences.js';
+import { getPlayerPreferences, lookSensitivity } from './player-preferences.js';
 import { AUDIO_CHANNELS, createAudioMixer, defaultAudioSettings } from './audio-mixer.js';
 import { weaponRestriction } from './weapon-feedback.js';
 import { applyCloseWeaponPose } from './weapon-close-pose.js';
 import { MORTAR, createMortar, mortarTarget as calculateMortarTarget, stowMortar, adjustMortarRange, mortarObjectiveRanges, mortarPlacement } from './mortar.js';
-import { drawFacingSector } from './minimap-view.js';
+import { drawFacingSector, drawMissionMarker } from './minimap-view.js';
+import { missionTargets } from './mission-targets.js';
+import { soldierRoleIcon } from './soldier-role-icons.js';
+import { getPlayerIdentity, playerUnitOptions } from './player-identity.js';
 import { advanceAircraftAI, AIRCRAFT_GUN } from './aircraft-ai.js';
 import { deploymentCards, deploymentMarker, deploymentMarkerPositions } from './deployment-view.js';
 import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
@@ -117,16 +121,17 @@ import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from 
 import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
   nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation, registerCivilianArrival,
-  registerCivilianCasualties, returnNanjingBoat } from './nanjing-campaign.js';
+  registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from './nanjing-defense.js';
 import { civilianWaypointReached, moveCivilianInCrowd, releaseNanjingCivilianWave,
-  civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute } from './civilian-crowd.js';
+  civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
+  activateCivilianEvacuation } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
 import { registerBreakoutStrength, crossedEastGate } from './encirclement.js';
-import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger } from './nanjing-ferry.js';
+import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger, shouldDepartNanjingFerry } from './nanjing-ferry.js';
 import {civilianCombatTargets,civilianAimHeight,civilianEngagementPreferred} from './civilian-targets.js';
 import {advanceBreakoutGroups,breakoutGroupNumber,breakoutGroupDestination} from './breakout-groups.js';
 
@@ -166,13 +171,21 @@ const battleStats = createBattleStats();
 let scoreboardRevision = -1;
 
 function registerBattleScore(formation) {
+  if (formation.player) {
+    const identity = getPlayerIdentity(campaign.id);
+    formation.playerName = identity.nickname; formation.historicalName = identity.unitName; formation.customIdentity = identity.custom;
+  } else if (nanjingCampaignMode && formation.team === 'friendly') {
+    const historical = playerUnitOptions('nanjing').filter(unit => unit.id !== 'custom');
+    formation.historicalName = historical[(formation.index - 1 + historical.length) % historical.length].name;
+  }
   formation.scoreLabel = campaignUnitName(formation);
   battleStats.register(formation);
 }
 
-function renderSquadScores() {
-  if ($('scoreboard').hidden || scoreboardRevision === battleStats.revision) return;
-  const container = $('squad-score-table'); container.replaceChildren();
+function renderSquadScores(container = $('squad-score-table')) {
+  const scoreboard = container === $('squad-score-table');
+  if (scoreboard && ($('scoreboard').hidden || scoreboardRevision === battleStats.revision)) return;
+  container.replaceChildren();
   for (const team of ['friendly', 'enemy']) {
     const section = document.createElement('section'); section.className = `score-team ${team}`;
     const caption = document.createElement('div'); caption.className = 'score-team-caption';
@@ -181,7 +194,7 @@ function renderSquadScores() {
     const table = document.createElement('table'); table.className = 'score-team-table';
     table.setAttribute('aria-label', `${caption.textContent}各小队击杀`);
     const head = document.createElement('thead'), heading = document.createElement('tr');
-    for (const [kind, title] of [['squad', '小队'], ['total', '总击杀'], ...KILL_COLUMNS, ['destroyed', '毁车']]) {
+    for (const [kind, title] of [['squad', '玩家／小队'], ['total', '总击杀'], ...KILL_COLUMNS, ['destroyed', '毁车']]) {
       const cell = document.createElement('th'); cell.scope = 'col'; cell.title = title; cell.setAttribute('aria-label', title);
       cell.dataset.stat = kind; cell.append(scoreIcon(kind)); heading.append(cell);
     }
@@ -191,11 +204,11 @@ function renderSquadScores() {
     for (const [rank, row] of rows.entries()) {
       const line = document.createElement('tr'), label = document.createElement('th');
       const current = entities.units.get(entities.control.unitId);
-      if (row.unitId === current?.id && row.squadId === (current.squadId ?? current.id)) line.className = 'controlled';
+      if (row.player || row.unitId === current?.id && row.squadId === (current.squadId ?? current.id)) line.className = 'controlled';
       label.scope = 'row'; label.setAttribute('aria-label', row.name);
       const number = document.createElement('span'); number.className = 'score-rank'; number.textContent = String(rank + 1);
-      label.append(number, document.createTextNode(row.name.replace(/^(我方|日军)/, '').replace(/\s+(\d+)$/, '$1')));
-      label.title = campaignUnitDescription(row.name); line.append(label);
+      label.append(number, document.createTextNode(row.player ? row.name : row.name.replace(/^(我方|日军)/, '').replace(/\s+(\d+)$/, '$1')));
+      label.title = row.player ? '玩家及直属小队累计击杀，跨兵种和重生保留。' : campaignUnitDescription(row.name); line.append(label);
       for (const value of [row.total, ...KILL_COLUMNS.map(([key]) => row.kills[key]), row.vehicles]) {
         const cell = document.createElement('td'); cell.textContent = String(value);
         if (!value) cell.className = 'score-zero';
@@ -205,7 +218,26 @@ function renderSquadScores() {
     }
     table.append(body); scroll.append(table); section.append(scroll); container.append(section);
   }
-  scoreboardRevision = battleStats.revision;
+  if (scoreboard) scoreboardRevision = battleStats.revision;
+}
+
+function renderCasualtyStats(container) {
+  if (container.dataset.revision === String(battleStats.revision)) return;
+  const table = document.createElement('table'); table.className = 'casualty-table';
+  const head = document.createElement('thead'), heading = document.createElement('tr');
+  for (const label of ['阵营', '累计参战', '阵亡', '负伤存活', '未伤存活']) {
+    const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; heading.append(cell);
+  }
+  head.append(heading); table.append(head);
+  const body = document.createElement('tbody');
+  for (const row of battleStats.casualtySummary) {
+    const line = document.createElement('tr'); line.dataset.team = row.team;
+    for (const value of [row.team === 'friendly' ? '我军' : '日军', row.deployed, row.killed, row.wounded, row.unhurt]) {
+      const cell = document.createElement('td'); cell.textContent = String(value); line.append(cell);
+    }
+    body.append(line);
+  }
+  table.append(body); container.replaceChildren(table); container.dataset.revision = String(battleStats.revision);
 }
 const boundaryStates = new Map();
 const simulationClock = createSimulationClock(performance.now());
@@ -215,6 +247,7 @@ let pausedFrom = 'playing';
 let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
 const $ = id => document.getElementById(id);
+const missionBriefing = createMissionBriefing($('mission-briefing'));
 if (nanjingCampaignMode) {
   $('hud').classList.add('nanjing-campaign');
   document.title = '南京保卫战 · 山河 1931-1945';
@@ -241,7 +274,7 @@ const fatalReporter = createFatalReporter({ document, window,
   getContext: () => readFailureContext(),
   onFatal: () => { fatal = true; stopAfterFailure(); },
 });
-const preferences = createPlayerPreferences();
+const preferences = getPlayerPreferences();
 let preferenceValues = preferences.snapshot;
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
@@ -723,6 +756,7 @@ function actorAt(friendly, x, z, index, spawn, formation) {
     actor.nativeMotion = createNraMotion(ijaCharacter.motionProfile, actor);
   }
   registerSoldier(entities, actor);
+  battleStats.registerSoldier(actor);
   registerWeapon(entities, Object.assign(actor.rifle, { nextShot: 0, reloadUntil: 0 }), `${actor.id}:rifle`, actor.id, 'infantry');
   if (actor.role === 'mortarman') actor.mortar = registerWeapon(entities, createMortar(), `${actor.id}:mortar`, actor.id, 'mortar');
   registerWeapon(entities, actor.grenades, `${actor.id}:grenades`, actor.id, 'grenade');
@@ -757,6 +791,14 @@ function movementObstacles(x, z, ignoreVehicleId = null) {
 
 function deploymentObstacles() {
   return entities.vehicles.size ? [...world.obstacles, ...[...entities.vehicles.values()].filter(item => item.type === 'tank').map(vehicleCollider)] : world.obstacles;
+}
+
+function deploymentOccupiedPositions(actors) {
+  const positions = actors.filter(actor => actor.health > 0).map(actor => actor.position);
+  if (nanjingCampaignMode) for (const civilian of world.civilians) {
+    if (civilian.visible && civilian.parent === scene && !civilian.userData.dead) positions.push(civilian.position);
+  }
+  return positions;
 }
 
 function vehicleSolids(ignoreVehicleId = null, from = null, groundOnly = false) {
@@ -1069,7 +1111,7 @@ function spawnFormation(formation, initial = false) {
   // Indoor guards use collision-checked room slots, not the outdoor spawn's 2.8m centre clearance.
   const reason = supplyGuard ? null : spawn ? spawnBlockReason(spawn, 'infantry', hostiles, deploymentObstacles()) : '无可用步兵重生点';
   if (reason) { formation.blockedReason = reason; formation.spawnRetryAt = formation.respawnAt = time + 2; return false; }
-  const occupied = allForces.filter(actor => actor.health > 0).map(actor => actor.position);
+  const occupied = deploymentOccupiedPositions(allForces);
   let positions;
   try {
     positions = supplyGuard ? supplyGarrisonPositions(formation.memberCount, deploymentObstacles(), occupied, hostiles)
@@ -1180,6 +1222,7 @@ function clearActors(list, preserveCorpses = false) {
 }
 
 function clearTransient() {
+  missionBriefing.hide();
   grenades.clear();
   aiThrowReservations.clear();
   grenadeRenderer.clear();
@@ -1209,6 +1252,7 @@ function clearTransient() {
 }
 
 function beginMatch() {
+  $('player-identity').hidden = true;
   civilianCombatTime=null;civilianCombatList=[];
   footstepAudio?.sync(null, false);
   mechanicalAudio?.reset();
@@ -1283,6 +1327,7 @@ function beginMatch() {
   $('menu').hidden = true;
   $('hud').hidden = false;
   deploy(selectedType);
+  if (!benchmark && !campaign.hidden && !campaign.locked) missionBriefing.show(campaign, time);
 }
 
 function deploy(squadId, spawnId = null) {
@@ -1315,7 +1360,7 @@ function deploy(squadId, spawnId = null) {
   const initialPitch = type === 'mortar' ? -.18 : 0;
   try {
     if (type !== 'tank' && type !== 'plane') positions = formationPositions(spawn, memberCount, deploymentObstacles(),
-      [...friendlyAI, ...enemies].filter(actor => actor.health > 0).map(actor => actor.position), hostilePositions('friendly'));
+      deploymentOccupiedPositions([...friendlyAI, ...enemies]), hostilePositions('friendly'));
   } catch (error) {
     if (!(error instanceof FormationPlacementError)) throw error;
     $('deployment-error').textContent = error.message; toast(error.message); return;
@@ -1380,7 +1425,9 @@ function deploy(squadId, spawnId = null) {
   if (type === 'infantry') weapon.position.set(.18, -.22, -.14);
   toolEquipped = false;
   resetConstruction();
-  $('unit-title').textContent = SQUADS[squadId].name;
+  $('unit-title').textContent = formation.customIdentity ? formation.historicalName
+    : formation.historicalName?.replace(/^国民革命军/, '') ?? SQUADS[squadId].name;
+  $('unit-title').title = `${formation.historicalName ?? SQUADS[squadId].name} · ${SQUADS[squadId].name}`;
   $('weapon-name').textContent = TYPES[type].weapon;
   $('ammo-max').textContent = `/ ${TYPES[type].magazine}`;
   $('aim-label').hidden = type !== 'mortar';
@@ -1417,6 +1464,9 @@ function deploy(squadId, spawnId = null) {
 }
 
 function showOverlay(kind = 'pause') {
+  $('player-identity').hidden = true;
+  $('initial-identity-slot').hidden = true;
+  $('deployment-campaign-context').hidden = true;
   if (kind === 'pause') pausedFrom = state === 'transferring' ? 'transferring' : 'playing';
   else resetDeathTransfer(deathTransfer);
   setGameState(kind);
@@ -1427,6 +1477,15 @@ function showOverlay(kind = 'pause') {
   const ended = ['victory', 'defeat', 'draw'].includes(kind);
   if (ended) battleVoiceEvent(kind, { eventKey: `match:${kind}` });
   const dead = kind === 'dead';
+  if (ended || dead) missionBriefing.hide();
+  $('battle-results').hidden = !ended;
+  if (ended) {
+    renderCasualtyStats($('result-casualties')); renderSquadScores($('result-squad-scores'));
+    const playerScore = battleStats.snapshot.find(row => row.player);
+    $('result-player-score').hidden = !playerScore;
+    $('result-player-score').textContent = playerScore
+      ? `${playerScore.name} · 累计击杀 ${playerScore.total} · 击毁载具 ${playerScore.vehicles}` : '';
+  }
   $('overlay').classList.toggle('deployment-overlay', dead);
   $('confirm-deploy').hidden = !dead;
   $('deployment-help').hidden = ended;
@@ -1537,7 +1596,8 @@ function refreshDeployment() {
     button.style.top = `${position.y}%`;
     const nearest = objectives.reduce((a, b) => Math.hypot(a.x - point.x, a.z - point.z) <= Math.hypot(b.x - point.x, b.z - point.z) ? a : b);
     const detail = reason || (nanjingCampaignMode
-      ? point.kind === 'rally' ? `工兵建造 · 耐久 ${Math.ceil(point.health)}` : point.layout === 'wall' ? '城墙高处 · 可部署' : '默认重生点'
+      ? point.allowNearbyEnemies ? '渡口附近分散重生 · 不因近敌关闭'
+        : point.kind === 'rally' ? `工兵建造 · 耐久 ${Math.ceil(point.health)}` : point.layout === 'wall' ? '城墙高处 · 可部署' : '默认重生点'
       : `${point.permanent ? '永久启用 · ' : ''}距${nearest.id} ${Math.round(Math.hypot(nearest.x - point.x, nearest.z - point.z))}米`);
     button.querySelector('small').textContent = detail;
     button.title = `${point.name} · ${detail}`;
@@ -2065,8 +2125,8 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null, hitDi
     if (actor.friendly) actor.tactics.decisionAt = Math.min(actor.tactics.decisionAt, time + .1);
   }
   const selected = actor === controlledSoldier(entities);
-  if (previous > actor.health) combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
-    amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time);
+  if (previous > actor.health) battleStats.consume(combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
+    amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time));
   if (selected && actor.health === 0) {
     beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : weaponKind === 'bayonet' ? '刺刀突刺'
       : weaponKind === 'dadao' ? '大刀斩击' : weaponKind === 'collision' ? '坦克碾压'
@@ -2107,7 +2167,7 @@ function finishActorDeath(actor, source) {
       if (credit === 'player') kills++;
       else if (credit === 'ally') teamKills++;
     }
-    combatEvents.publish('casualty', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team }, health: 0 }, time);
+    battleStats.consume(combatEvents.publish('casualty', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team }, health: 0 }, time));
   }
 }
 
@@ -2118,9 +2178,9 @@ function damageVehicle(transport, damage, source, weaponKind) {
   const observer = controlledSoldier(entities);
   const observerId = observer?.health > 0 && occupiedVehicle(entities, observer)?.id === transport.id ? observer.id : null;
   const result = damageVehicleEntity(entities, transport, damage);
-  if (result.damage > 0) combatEvents.publish('damage', { source,
+  if (result.damage > 0) battleStats.consume(combatEvents.publish('damage', { source,
     target: { kind: 'vehicle', id: transport.id, unitId: transport.unitId, team: transport.team },
-    amount: result.damage, health: transport.health, observerId }, time);
+    amount: result.damage, health: transport.health, observerId }, time));
   for (const actor of result.casualties) {
     finishActorDeath(actor, source);
     if (actor === allies[current]) beginDeathFeedback(actor, weaponKind === 'boundary' ? '脱离战区' : result.destroyed ? '载具被毁' : '车组成员阵亡');
@@ -2178,7 +2238,8 @@ function renderDeathFeedback() {
 
 function explode(position, damage, radius, source, weaponKind = 'explosion', surface = null) {
   combatEvents.publish('explosion', { position, source, sound: true, radius,
-    style: weaponKind === 'explosive-pack' ? 'explosive-pack' : source.weaponClass === 'tank' ? 'tank-shell' : 'default',
+    style: weaponKind === 'explosive-pack' ? 'explosive-pack'
+      : ['tank', 'field-gun'].includes(source.weaponClass) ? 'tank-shell' : 'default',
     ...(surface ? { surface } : {}) }, time);
   combatSounds.push({ id: ++soundSerial, friendly: source.team === 'friendly',
     x: position.x, y: position.y, z: position.z, time, radius, kind: 'explosion' });
@@ -3966,6 +4027,8 @@ function moveNanjingDefender(actor, goal, dt) {
 
 function updateAI(dt) {
   const player = allies[current];
+  const finalNanjingWithdrawal = nanjingCampaignMode && nanjingCampaign.stage === 'withdrawal-to-boats' &&
+    nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
   if (nanjingCampaignMode && nanjingCampaign.stage === 'gate-defense' &&
     time >= (nanjingCampaign.defenseUpdateAt ?? 0)) {
     nanjingCampaign.defenseUpdateAt = time + 3;
@@ -4087,6 +4150,16 @@ function updateAI(dt) {
     actor.aimWalking = false;
     actor.rifleReady = false; actor.turningThisStep = false;
     const tactics = actor.tactics, previousCover = tactics.cover;
+    if (finalNanjingWithdrawal && actor.friendly && !actor.playerUnit && !actor.vehicleId && !actor.grenades.action) {
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'embarking');
+      if (tactics.cover) coverClaims.delete(tactics.cover.id);
+      tactics.cover = tactics.lastSeen = actor.target = null;
+      actor.stance = 'standing'; actor.firingPose = null; tactics.mode = 'embarking';
+      const x = NANJING_DOCK.x + (actor.index % 3 - 1) * 1.5;
+      const z = NANJING_DOCK.z + (Math.floor(actor.index / 3) - 1) * 1.5;
+      walkActor(actor, { x, z, y: world.groundHeight(x, z), transit: true }, 3.5, dt);
+      continue;
+    }
     if (encirclementMode && encirclement.phase === 2 &&
       encirclement.breakout?.stage !== 'breakout' && !actor.vehicleId) {
       cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'east-gate-assembly');
@@ -4691,7 +4764,7 @@ function updateNanjingMission(dt) {
         if (!spawnFormation(formation, true)) toast(`渡口进攻部队暂时无法集结：${formation.blockedReason}，稍后继续尝试。`, 5);
       }
     } else if (stage === 'withdrawal-to-boats') {
-      toast('撤退命令！AI小队先登船，最后由你撤离。按 F 登船。', 7);
+      toast('撤退命令！先护送百姓安全过江，再由AI小队撤离，最后靠近返航木船按 F 登船。', 7);
       for (const formation of formations.filter(item => item.team === 'friendly' && !item.player)) formation.objectiveId = 'dock';
     }
   }
@@ -4726,8 +4799,7 @@ function updateNanjingMission(dt) {
     const aliveFormations = aiFormations.filter(formation => formation.members.some(actor => actor.health > 0));
     nanjingCampaign.requiredAISquads = Math.min(nanjingCampaign.requiredAISquads,
       aliveFormations.length + nanjingCampaign.evacuatedSquads.filter(squad => !squad.isPlayer).length);
-    const civiliansSafe = world.civilians.every(civilian => civilian.userData.arrived || civilian.userData.dead) &&
-      nanjingCampaign.civiliansWaiting === 0 && nanjingCampaign.civiliansAboard === 0;
+    const civiliansSafe = nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
     for (const formation of aiFormations) {
       if (nanjingCampaign.evacuatedSquads.some(squad => squad.id === formation.id)) continue;
       const alive = formation.members.filter(actor => actor.health > 0);
@@ -4868,6 +4940,8 @@ function updateNanjingCivilians(dt) {
       continue;
     }
     if (data.boarding || civilian.parent !== scene) continue;
+    if (!data.active && civilian.visible && frightenCivilian(data, civilian.position, combatSounds, time))
+      data.releaseAt = Math.min(data.releaseAt, time);
     if (data.streetLife && !data.active && !data.streetEvacuating) {
       const danger = civilian.visible ? updateCivilianThreatResponse(data, civilian.position, data.streetLife.exit,
         enemies, data.streetLife.navigationObstacles, time, visibleThreat, concealed,
@@ -4879,14 +4953,7 @@ function updateNanjingCivilians(dt) {
       if (danger?.threats.length) data.releaseAt = time;
       beginCivilianStreetEvacuation(civilian);
     }
-    if (!data.active) {
-      if (time < data.releaseAt) continue;
-      if (peers.some(other => other !== civilian &&
-        Math.hypot(other.position.x - civilian.position.x, other.position.z - civilian.position.z) < .74)) continue;
-      data.active = true;
-      civilian.visible = true;
-      peers.push(civilian);
-    }
+    if (!activateCivilianEvacuation(civilian, time, peers)) continue;
     let response = null;
     const routeTarget = data.arrived ? civilian.position : data.route[data.waypoint];
     if (routeTarget) response = updateCivilianThreatResponse(data, civilian.position, routeTarget, enemies,
@@ -5020,6 +5087,7 @@ function updateNanjingCivilians(dt) {
         }
         if (civilian.position.distanceTo(new THREE.Vector3(target.x, target.y, target.z)) < .015) path.shift();
         if (!path.length && boardCivilian(nanjingCampaign, boatState.id)) {
+          if (boatState.passengers === 1) ferry.userData.loadedAt = time;
           for (const limb of [...civilian.civilianArms, ...civilian.civilianLegs]) limb.rotation.x = 0;
           if (civilian.civilianTorso) civilian.civilianTorso.rotation.x = 0;
           if (civilian.civilianTorso) civilian.civilianTorso.rotation.z = 0;
@@ -5032,7 +5100,7 @@ function updateNanjingCivilians(dt) {
           ferry.userData.boarding = null;
         }
       }
-      if (nanjingCampaign.dockActivated && allArrivalsResolved && queue.length === 0 && !ferry.userData.boarding) {
+      if (nanjingCampaign.dockActivated && shouldDepartNanjingFerry(ferry, boatState, time, allArrivalsResolved, queue.length)) {
         departNanjingBoat(nanjingCampaign, boatState.id);
       }
       if (boatState.returning) {
@@ -5073,6 +5141,7 @@ function updateNanjingCivilians(dt) {
       if (ferry.position.x >= NANJING_DOCK.ferryX) {
         returnNanjingBoat(nanjingCampaign, boatState.id);
         ferry.userData.state = 'docked';
+        ferry.userData.loadedAt = null;
         ferry.userData.gangplank.visible = true;
       }
     }
@@ -5308,6 +5377,7 @@ function drawRadar(ctx = radarContext, deployment = false) {
   const displayedSpawns = deploymentMap ? deploymentSpawnChoices(SQUADS[pendingSquad]?.type) : spawnPoints;
   for (const point of displayedSpawns) {
     if (point.enabled === false) continue;
+    if (!deployment && !deploymentMap && point.aiOnly) continue;
     if (!nanjingCampaignMode && !deployment && !point.permanent) continue;
     if (point.kind === 'air' || (point.kind === 'rally' && point.health <= 0)) continue;
     if (point.team === 'enemy' && point.kind === 'rally' && allies[current]?.position.distanceTo(new THREE.Vector3(point.x, 0, point.z)) > 35) continue;
@@ -5335,7 +5405,55 @@ function drawRadar(ctx = radarContext, deployment = false) {
     ctx.fillStyle = actor === allies[current] ? '#f6e0a9' : '#94bea1';
     ctx.beginPath(); ctx.arc(x, z, actor === allies[current] ? 3 : 2, 0, Math.PI * 2); ctx.fill();
   }
+  for (const target of currentMissionTargets()) {
+    const [x, z] = map(target.x, target.z);
+    drawMissionMarker(ctx, x, z, size, target);
+  }
   ctx.restore();
+}
+
+function currentMissionTargets() {
+  return missionTargets({ map: campaign.id, stage: nanjingCampaign?.stage, phase: encirclement.phase,
+    objectives, player: allies[current]?.position, eastGate: EAST_BREAKOUT });
+}
+
+function renderMemberRoles(deployedType) {
+  const container = $('members'), foot = ['infantry', 'mortar'].includes(deployedType);
+  const signature = `${deployedType}:${allies.map(actor => actor.id).join('|')}`;
+  if (container.dataset.signature !== signature) {
+    container.replaceChildren(...allies.map(() => {
+      const member = document.createElement('span'); member.className = 'member'; member.setAttribute('role', 'img'); return member;
+    }));
+    container.dataset.signature = signature;
+  }
+  allies.forEach((actor, index) => {
+    const member = container.children[index], dead = actor.health <= 0;
+    const seat = deployedType === 'tank' ? ['车长', '炮手', '驾驶员'][index] : '飞行员';
+    const kind = foot ? dead ? 'dead' : actor.role : dead ? 'dead-seat' : seat;
+    if (member.dataset.kind !== kind) {
+      if (foot) {
+        const number = document.createElement('small'); number.className = 'member-index'; number.textContent = String(index + 1);
+        member.replaceChildren(soldierRoleIcon(kind), number);
+      } else member.textContent = dead ? '×' : seat;
+      member.dataset.kind = kind;
+    }
+    const role = foot ? soldierRoleLabel(actor) : seat;
+    member.title = `${index + 1}号 ${role} · ${dead ? '阵亡' : `生命 ${Math.ceil(actor.health)}`} · ${actor.mortar ? '按2选择迫击炮' : infantryWeaponProfile(actor.rifle).name}`;
+    member.setAttribute('aria-label', member.title);
+    member.setAttribute('aria-current', String(index === current));
+    member.classList.toggle('active', index === current); member.classList.toggle('dead', dead);
+  });
+  const section = $('section-status'), actor = allies[current];
+  section.hidden = deployedType !== 'infantry';
+  if (!section.hidden) {
+    const living = allies.filter(actor => actor.health > 0).length;
+    const key = `${actor.role}:${living}:${allies.length}`;
+    if (section.dataset.signature !== key) {
+      section.replaceChildren(soldierRoleIcon(actor.role), document.createTextNode(`本班 ${living}/${allies.length}`));
+      section.dataset.signature = key;
+      section.title = soldierRoleLabel(actor); section.setAttribute('aria-label', `${soldierRoleLabel(actor)}，本班 ${living}/${allies.length}`);
+    }
+  }
 }
 
 function renderWeaponReload() {
@@ -5475,6 +5593,7 @@ function updateHUD() {
     };
     const [title, help] = stageNames[nanjingCampaign.stage];
     const aiEvacuated = nanjingCampaign.evacuatedSquads.filter(squad => !squad.isPlayer).length;
+    const civilianEvacuation = nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians);
     const gateThreat = nanjingCampaign.gateCaptureSeconds > 0;
     const gateLabel = nanjingCampaign.gateContested ? '门内争夺中 · 占领中断' : gateThreat
       ? `日军正在夺门 · ${Math.ceil(NANJING_GATE_CAPTURE_SECONDS - nanjingCampaign.gateCaptureSeconds)}秒后城门失守`
@@ -5487,7 +5606,9 @@ function updateHUD() {
     $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense' ? gateLabel
       : nanjingCampaign.stage === 'dock-defense' ? `掩护百姓登船 · 已撤离 ${nanjingCampaign.civiliansEvacuated} 人`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
-          ? `AI小队先撤 ${aiEvacuated}/${nanjingCampaign.requiredAISquads} · 完成后按 F 登船` : help;
+          ? !civilianEvacuation.ready
+            ? `百姓撤离 · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard}`
+            : `AI小队先撤 ${aiEvacuated}/${nanjingCampaign.requiredAISquads} · 完成后靠近返航木船按 F 登船` : help;
     $('capture-fill').style.width = `${nanjingCampaign.stage === 'gate-defense'
       ? nanjingCampaign.gateCaptureSeconds / NANJING_GATE_CAPTURE_SECONDS * 100 : Math.min(100, aiEvacuated / 4 * 100)}%`;
     $('capture-fill').style.background = gateThreat ? '#ed9d8b' : '#9aaa78';
@@ -5520,12 +5641,16 @@ function updateHUD() {
     : `${unit.type === 'tank' ? '装甲' : '生命'} ${Math.ceil(health)}`;
   const deployedType = entities.units.get(entities.control.unitId).type;
   $('members').classList.toggle('platoon-members', deployedType === 'infantry');
-  $('members').innerHTML = allies.map((actor, index) => {
-    const label = unit.type === 'tank' ? ['车长', '炮手', '驾驶员'][index] : unit.type === 'plane' ? '飞行员' :
-      actor.role === 'mortarman' ? '迫' : actor.role === 'sniper' ? '狙' : actor.role === 'machine-gunner' ? '机' : index + 1;
-    const title = `${Math.floor(index / BATTLE_RULES.sectionMembers) + 1}班 ${index + 1}号 ${soldierRoleLabel(actor)} · ${actor.mortar ? '步枪／手榴弹／迫击炮，按2选炮' : infantryWeaponProfile(actor.rifle).name}`;
-    return `<span title="${title}" aria-label="${label}${actor.health <= 0 ? ' 阵亡' : ''}" class="member ${index === current ? 'active' : ''} ${actor.health <= 0 ? 'dead' : ''}">${actor.health <= 0 ? '×' : label}</span>`;
-  }).join('');
+  renderMemberRoles(deployedType);
+  const primaryMission = currentMissionTargets().find(target => target.primary), missionLabel = $('minimap-mission');
+  missionLabel.hidden = !primaryMission;
+  if (primaryMission) {
+    const distance = Math.round(Math.hypot(position.x - primaryMission.x, position.z - primaryMission.z));
+    const text = `${primaryMission.shortName} · ${distance}米`;
+    if (missionLabel.textContent !== text) missionLabel.textContent = text;
+    missionLabel.style.color = primaryMission.color;
+    $('radar').setAttribute('aria-label', `战术简图，当前目标${primaryMission.shortName}，距离${distance}米，醒目旗标表示任务位置`);
+  }
   const china = battleSummary('friendly'), japan = battleSummary('enemy');
   const scenarioLabel = benchmark?.diagnostic ? benchmark.scenario === 'cover' ? '掩体交互诊断 · 非交火基准　' : benchmark.scenario === 'shop-art' ? '首街美术样例 · 非战斗诊断　' : benchmark.scenario === 'ford' ? '干河床坦克通行诊断 · 非交火基准　' : benchmark.scenario === 'control' ? 'G2控制诊断 · 非正式人口　' : benchmark.scenario === 'bridge' ? '桥面几何诊断 · 非交火基准　' : benchmark.scenario === 'interior' ? '门与室内几何诊断 · 非交火基准　' : '5v5诊断 · 非正式人口　' : '';
   const isolationLabel = benchmark?.renderIsolation && benchmark.renderIsolation !== 'normal'
@@ -5537,6 +5662,7 @@ function updateHUD() {
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
   if (!$('scoreboard').hidden) {
+    renderCasualtyStats($('scoreboard-casualties'));
     $('scoreboard-clock').textContent = $('timer').textContent;
     const points = $('scoreboard-objectives'); points.replaceChildren();
     for (const point of objectives) {
@@ -5552,8 +5678,6 @@ function updateHUD() {
       chip.append(scoreIcon(kind), document.createTextNode(String(value))); summary.append(chip);
     }
   }
-  $('section-status').hidden = deployedType !== 'infantry';
-  $('section-status').textContent = deployedType === 'infantry' ? `${soldierRoleLabel(allies[current])} · 本班 ${allies.filter(actor => actor.health > 0).length}/${allies.length}` : '';
   const feedEntries = combatFeedback.entries(time);
   const feedKey = feedEntries.map(entry => `${entry.targetId}:${entry.until}:${entry.text}:${entry.icon}`).join('|');
   if (feedKey !== renderedFeedKey) {
@@ -5728,6 +5852,7 @@ function tick(now) {
   renderGrenades();
   renderSniperScope();
   renderDeathFeedback();
+  missionBriefing.update(time);
   renderConstruction();
   renderSimulationStatus();
   renderBattleBoundary();
@@ -5874,6 +5999,8 @@ $('back-menu').addEventListener('click', () => {
   $('overlay').hidden = true;
   $('hud').hidden = true;
   $('menu').hidden = false;
+  $('selected-identity-slot').append($('player-identity'));
+  $('player-identity').hidden = false;
   document.getElementById('squad-step').hidden = false;
   document.getElementById('confirm-campaign').hidden = true;
 });
@@ -6027,9 +6154,9 @@ function performControlCommand(command) {
     const atNanjingDock = nanjingCampaignMode && dock &&
       Math.hypot(allies[current].position.x - dock.x, allies[current].position.z - dock.z) <= dock.radius + 3;
     if (atNanjingDock && nanjingCampaign.stage === 'withdrawal-to-boats') {
-      if (world.civilians.some(civilian => !civilian.userData.dead && !civilian.userData.arrived) ||
-        nanjingCampaign.civiliansWaiting > 0 || nanjingCampaign.civiliansAboard > 0) {
-        toast('百姓尚未全部安全过江，继续掩护渡口。');
+      const civilianEvacuation = nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians);
+      if (!civilianEvacuation.ready) {
+        toast(`百姓尚未全部安全过江：在途 ${civilianEvacuation.enRoute}、候船 ${civilianEvacuation.waiting}、在船 ${civilianEvacuation.aboard}。`);
       } else if (!world.ferries.some(ferry => ferry.userData.state === 'docked' &&
         Math.hypot(allies[current].position.x - ferry.position.x, allies[current].position.z - ferry.position.z) <= 4)) {
         toast('靠近已返回渡口的木船，再按 F 登船。');
@@ -6173,6 +6300,9 @@ document.addEventListener('keydown', event => {
       ['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   if (event.code === 'Escape' && state === 'transferring' && !event.repeat) { showOverlay(); return; }
   if (event.repeat || state !== 'playing') return;
+  if (event.code === 'Enter' && !$('mission-briefing').hidden && !event.target.closest('button, a')) {
+    event.preventDefault(); missionBriefing.hide(); return;
+  }
   keys.add(event.code);
   if (event.code === 'Space' && unit.type === 'plane') { toast('当前航空小队尚未配备炸弹'); return; }
   const action = keyActions[event.code];
@@ -6605,6 +6735,8 @@ performanceDiagnostics.setContext(() => {
 setLoadingProgress(100, '加载完成，即将进入战场。');
 $('loading').hidden = true;
 $('menu').hidden = false;
+// Loading and character preparation are not a rendered frame interval.
+lastFrame = performance.now();
 requestAnimationFrame(tick);
 $('shop-art-entry').hidden = !import.meta.env.DEV;
 if (benchmark?.scenario === 'shop-art') {

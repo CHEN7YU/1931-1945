@@ -1,4 +1,46 @@
 :root{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#eeeade;background:#171c19;font-synthesis:none;font-weight:400;color-scheme:dark;--gold:#cfb278;--muted:#9a9f91;--border:rgba(216,216,186,.18)}
+.screen-button { padding: 8px 14px; border: 1px solid var(--border); background: #18201ae8; color: var(--gold); font-size: 12px; }
+.player-identity { margin-top: 12px; padding: 12px; background: #18231def; border: 1px solid var(--border); }
+.player-identity h2 { margin: 0 0 8px; font-size: 14px; color: var(--gold); }
+.player-identity input[type=text] { width: 100%; padding: 7px; margin: 5px 0 8px; background: #111b15; color: #eeeade; border: 1px solid var(--border); font: inherit; }
+.player-identity label { font-size: 12px; }
+.player-unit-cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.player-unit-card { display: grid; grid-template-columns: auto 1fr; gap: 5px; align-content: start; padding: 9px; border: 1px solid var(--border); cursor: pointer; }
+.player-unit-card:has(input:checked) { border-color: var(--gold); background: #cfb27814; }
+.player-unit-card input { accent-color: var(--gold); margin: 0; }
+.player-unit-card strong { font-size: 12px; line-height: 1.5; }
+.player-unit-card small { grid-column: 1 / -1; color: #c4cdb9; font-size: 11px; line-height: 1.6; }
+.player-identity-status { margin: 7px 0 0; color: #aebf9d; font-size: 10px; }
+.player-identity-status[data-problem=true] { color: #ffb49f; }
+.deployment-overlay:has(#initial-identity-slot:not([hidden])) > .dialog { display: block; width: min(1120px,96vw); height: auto; max-height: 96dvh; overflow: auto; }
+.deployment-overlay:has(#initial-identity-slot:not([hidden])) .deployment-workspace { height: 380px; min-height: 380px; }
+#menu[data-campaign-selected] .selected-campaign-preview img { max-height: 32vh; object-fit: contain; }
+.soldier-role-icon { width: 16px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+#hud .member .soldier-role-icon { display: block; margin: 0 auto; }
+#hud .member .member-index { display: block; font: 8px/10px monospace; }
+#hud #section-status { display: inline-flex; align-items: center; gap: 4px; }
+#minimap #minimap-mission { color: var(--gold); font-size: 10px; line-height: 14px; letter-spacing: 0; font-weight: bold; }
+.casualty-table { width: 100%; border-collapse: collapse; font: 12px/1.7 "Microsoft YaHei",sans-serif; margin: 10px 0; text-align: center; }
+.casualty-table th,.casualty-table td { border: 1px solid var(--border); padding: 5px 7px; }
+.casualty-table th { background: #27392b; font-weight: normal; color: #e3e6d6; }
+.casualty-table tr[data-team=friendly] { color: #bde0cb; }
+.casualty-table tr[data-team=enemy] { color: #efc0b4; }
+#result-squad-scores { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+#battle-results > small { color: #b3c0a8; font-size: 10px; }
+@media(max-width:800px) { .player-unit-cards { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.fullscreen-status { position: fixed; right: 20px; top: 70px; z-index: 20; max-width: min(420px,calc(100vw - 40px)); padding: 10px 14px; background: #20271bf2; border: 1px solid var(--gold); font-size: 12px; line-height: 1.6; }
+.campaign-intel { border-top: 1px solid var(--border); margin: 12px 0; padding-top: 2px; }
+.campaign-intel h2 { font-size: 12px; color: var(--gold); letter-spacing: 1px; margin: 12px 0 6px; }
+.campaign-intel p, .campaign-intel li { font-size: 12px; line-height: 1.7; color: #d3d7c6; }
+.campaign-intel p { margin: 0 0 6px; }
+.campaign-intel ol { padding-left: 20px; margin: 0; }
+.campaign-intel li + li { margin-top: 4px; }
+.campaign-intel a { font-size: 10px; line-height: 1.6; color: #b4c29f; text-decoration: underline; }
+#hud .mission-briefing { position: absolute; left: 20px; top: 24%; z-index: 5; width: min(340px,calc(50vw - 32px)); max-height: 60vh; overflow: auto; padding: 16px; border: 1px solid #cfb27880; background: #142019ed; pointer-events: auto; }
+#hud .mission-briefing h2 { margin: 8px 0; font: 20px/1.5 "SimSun",serif; color: #eeeade; }
+#hud .mission-briefing ol { margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.8; }
+#hud .mission-briefing li + li { margin-top: 6px; }
+#hud .mission-briefing .text-button { margin-top: 10px; padding: 7px 0; font-size: 12px; }
 #hud.nanjing-campaign .battle-time { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); text-align: center; padding: 3px 12px; border: 1px solid #b75f53; }
 #hud.nanjing-campaign .battle-time small { color: #ffd2c9; margin: 0; font-size: 11px; line-height: 16px; }
 #hud.nanjing-campaign #timer { color: #ff887b; font: bold 32px/36px monospace; }
@@ -114,7 +156,7 @@
 #hud #stamina-meter { height: 4px; background: rgba(216, 216, 186, .3); }
 #hud .hud-bottom { bottom: 20px; left: 20px; right: 20px; }
 #hud .hud-label { font-size: 12px; line-height: 16px; letter-spacing: 0; margin-bottom: 0; }
-#hud .squad-status { position: absolute; left: 0; bottom: calc(var(--map-size) + 26px); width: 228px; max-width: 45vw; }
+#hud .squad-status { position: absolute; left: 0; bottom: calc(var(--map-size) + 54px); width: 228px; max-width: 45vw; }
 .squad-heading { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; width: max-content; max-width: 100%; padding: 2px 4px; background: var(--hud-backing); }
 .squad-heading kbd { font: 12px/16px monospace; color: #f0d397; }
 #hud #members { display: flex; gap: 3px; }

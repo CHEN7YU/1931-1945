@@ -158,3 +158,21 @@ test('shell smoke and light remain outside an inclined roof underside rather tha
   const light = state.lights[0];
   assert.ok((light.x - position.x) * n.x + (light.y - position.y) * n.y >= .34);
 });
+
+test('shell bursts emphasize debris and dust without increasing global pools or leaving a long fireball', () => {
+  for (const low of [false, true]) {
+    const shell = createParticleState(), grenade = createParticleState();
+    emitExplosionParticles(shell, position, 0, { low, radius: 9, style: 'tank-shell' });
+    emitExplosionParticles(grenade, position, 0, { low, radius: 9 });
+    assert.equal(shell.fragments.length, low ? 16 : 48);
+    assert.ok(shell.clouds.find(cloud => cloud.kind === 'blast-flash').size >
+      grenade.clouds.find(cloud => cloud.kind === 'blast-flash').size * 3);
+    assert.ok(shell.fragments.some(particle => particle.size > .1));
+    assert.ok(shell.clouds.length <= (low ? 6 : PARTICLE_LIMITS.clouds));
+    advanceCombatParticles(shell, .4, () => .45, .4);
+    assert.ok(!shell.clouds.some(cloud => ['blast-fire', 'blast-flash'].includes(cloud.kind)));
+    assert.ok(shell.clouds.some(cloud => cloud.kind === 'blast-dust'));
+    advanceCombatParticles(shell, 3.6, () => .45, 4);
+    assert.equal(shell.fragments.length + shell.clouds.length + shell.lights.length, 0);
+  }
+});

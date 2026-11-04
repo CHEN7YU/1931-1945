@@ -53,6 +53,20 @@ export function releaseNanjingCivilianWave(civilians, now) {
   }
 }
 
+export function activateCivilianEvacuation(civilian, now, peers) {
+  const data = civilian.userData;
+  if (data.active) return true;
+  if (now < data.releaseAt) return false;
+  if (!civilian.visible) {
+    if (peers.some(other => other !== civilian &&
+      Math.hypot(other.position.x - civilian.position.x, other.position.z - civilian.position.z) < .74)) return false;
+    civilian.visible = true;
+    peers.push(civilian);
+  }
+  data.active = true;
+  return true;
+}
+
 export function civilianWaypointReached(position, route, index, obstacles, lookup = null) {
   const target = route[index], next = route[index + 1];
   const distance = Math.hypot(target.x - position.x, target.z - position.z);
