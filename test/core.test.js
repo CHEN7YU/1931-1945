@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceCapture, makeObjectives, CAPTURE_SECONDS, DOMINATION_SECONDS, createConquest, advanceConquest, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
+import { INFANTRY_WEAPONS } from '../src/rifle-action.js';
+
+test('player-facing weapon names are concise and deployment uses the same rifle label as combat', () => {
+  assert.equal(INFANTRY_WEAPONS.rifle.name, '中正式步枪');
+  assert.equal(INFANTRY_WEAPONS.sniper.name, '狙击步枪');
+  assert.equal(TYPES.infantry.weapon, INFANTRY_WEAPONS.rifle.name);
+  for (const name of [...Object.values(INFANTRY_WEAPONS).map(profile => profile.name),
+    ...Object.values(TYPES).map(type => type.weapon)]) {
+    assert.doesNotMatch(name, /风格|比例|样枪/);
+  }
+});
 
 test('objectives require a full uncontested twelve seconds and do not share mutable state', () => {
   const [point] = makeObjectives();

@@ -2,8 +2,8 @@ import { getPlayerPreferences } from './player-preferences.js';
 import { validateAudioSettings } from './audio-mixer.js';
 
 export const MENU_MUSIC_VOLUME = .28;
-export const MENU_MUSIC_START_SECONDS = 29;
-const NAVIGATION_KEY = 'shanhe.menu-music.youjing.navigation.v1';
+export const MENU_MUSIC_START_SECONDS = 0;
+const NAVIGATION_KEY = 'shanhe.menu-music.youjing-trim29.navigation.v1';
 let sharedMusic = null;
 
 export function createMenuMusic({ audio, settings, onChange = () => {}, onError = console.error, fadeMs = 450,
@@ -136,7 +136,7 @@ export function getMenuMusic() {
         for (const button of document.querySelectorAll('[data-menu-music-toggle]')) {
           button.textContent = `背景音乐：${failure ? '加载失败' : muted ? '静音' : waiting ? '点击开启' : '开启'}`;
           button.setAttribute('aria-pressed', String(!muted));
-          button.title = failure ?? '谭晶《游京（长征版）》；从29秒循环，受总音量控制，进入战斗后停止';
+          button.title = failure ?? '谭晶《游京（长征版）》· 已截掉原曲前29秒；片段循环，受总音量控制，进入战斗后停止';
         }
       },
       onError: error => console.error('大厅背景音乐不可用：', error),

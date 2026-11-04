@@ -1,8 +1,9 @@
 {
   "sourceKind": "user-supplied-menu-soundtrack",
   "title": "游京（长征版） - 谭晶；保留原《最后的审判》录音",
-  "activeFile": "youjing-long-march.mp3",
-  "startSeconds": 29,
+  "activeFile": "youjing-long-march-from-29s.mp3",
+  "startSeconds": 0,
+  "trimStartSeconds": 29,
   "license": "User-requested project use; original and redistribution rights unverified",
   "permission": {
     "basis": "user-supplied-soundtrack-project-use",
@@ -11,7 +12,7 @@
     "redistributionRightsIndependentlyVerified": false,
     "limitation": "User supplied this recording for menu and loading playback. This request is not evidence of rights-holder permission for public or commercial redistribution; obtain the required music license before public distribution."
   },
-  "processing": "Both user-supplied MP3 files retained byte-for-byte without re-encoding or excerpting. Active track starts at 29 seconds, loops from its end back to 29 seconds, and preserves playback position during deployment choices and campaign navigation. Volume and battle-entry fade are applied at runtime.",
+  "processing": "Both user-supplied originals retained byte-for-byte. A separate playback MP3 removes the first 1278900 decoded samples (exactly 29 seconds at 44100 Hz), resets timestamps and encodes the remaining audio using libmp3lame at 192 kbps stereo with a Xing header. The clipped resource starts and loops at its own zero, without seeking 29 seconds into either file. Deployment choices and campaign navigation preserve playback position; volume and battle-entry fade are applied at runtime.",
   "files": [
     {
       "file": "the-last-judgement.mp3",
@@ -27,6 +28,16 @@
       "originalFile": "游京（长征版） - 谭晶.mp3",
       "bytes": 5697092,
       "sha256": "819dc0934692ef4c8cf26fc9f1d4a4caae11bb4f27f9bed892d2d91100daf063"
+    },
+    {
+      "file": "youjing-long-march-from-29s.mp3",
+      "derivedFrom": "youjing-long-march.mp3",
+      "removedDecodedSamples": 1278900,
+      "bytes": 4144108,
+      "sha256": "9c9abcfdd55154d726f43e571842d0e2e062104bbe6407b0828ff9c5f3595877",
+      "duration": 172.6,
+      "sampleRate": 44100,
+      "channels": 2
     }
   ]
 }

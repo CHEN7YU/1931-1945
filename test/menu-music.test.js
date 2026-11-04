@@ -88,16 +88,16 @@ test('a late successful play cannot leak music into battle, and real decoding fa
   assert.equal(audio.paused, true); music.dispose();
 });
 
-test('playback begins at 29 seconds, loops back to 29 rather than zero, and mute preserves the playhead', async () => {
+test('the physically trimmed resource starts and loops at zero, while mute preserves the playhead', async () => {
   const { audio, music } = fixture();
   await music.activate();
-  assert.equal(audio.currentTime, 29);
+  assert.equal(audio.currentTime, 0);
   audio.currentTime = 87;
   music.toggle(); music.toggle(); await settle();
   assert.equal(audio.currentTime, 87);
   audio.currentTime = audio.duration; audio.paused = true;
   audio.listeners.get('ended')(); await settle();
-  assert.equal(audio.currentTime, 29); assert.equal(audio.paused, false);
+  assert.equal(audio.currentTime, 0); assert.equal(audio.paused, false);
   music.dispose();
 });
 
@@ -125,21 +125,22 @@ test('metadata arriving after activation applies the initial seek once, while an
   await music.activate();
   audio.duration = 240;
   audio.readyState = 1; audio.currentTime = 0; audio.listeners.get('loadedmetadata')();
-  assert.equal(audio.currentTime, 29);
+  assert.equal(audio.currentTime, 0);
   audio.currentTime = 44; audio.listeners.get('loadedmetadata')();
   assert.equal(audio.currentTime, 44);
   assert.deepEqual(errors, []); music.dispose();
-  const short = fixture({ audio: { readyState: 0, duration: 20 } });
+  const short = fixture({ audio: { readyState: 0, duration: 0 } });
   short.audio.readyState = 1; short.audio.listeners.get('loadedmetadata')();
   assert.equal(short.errors.length, 1);
   assert.equal(short.audio.paused, true); short.music.dispose();
 });
 
-test('both copied MP3s retain their exact hashes and unverified redistribution notice', async () => {
+test('both original MP3s and the independently clipped playback file retain exact hashes and provenance', async () => {
   const root = new URL('../public/assets/audio/menu-music/', import.meta.url);
   const source = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
-  assert.equal(source.activeFile, 'youjing-long-march.mp3'); assert.equal(source.startSeconds, 29);
-  assert.equal(source.files.length, 2);
+  assert.equal(source.activeFile, 'youjing-long-march-from-29s.mp3'); assert.equal(source.startSeconds, 0);
+  assert.equal(source.trimStartSeconds, 29); assert.equal(source.files[2].removedDecodedSamples, 29 * 44100);
+  assert.equal(source.files.length, 3);
   for (const file of source.files) {
     const bytes = await readFile(new URL(file.file, root));
     assert.equal(bytes.length, file.bytes);
