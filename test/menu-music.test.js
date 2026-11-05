@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createMenuMusic, MENU_MUSIC_VOLUME, MENU_MUSIC_START_SECONDS } from '../src/menu-music.js';
 import { defaultAudioSettings } from '../src/audio-mixer.js';
@@ -88,7 +88,7 @@ test('a late successful play cannot leak music into battle, and real decoding fa
   assert.equal(audio.paused, true); music.dispose();
 });
 
-test('the physically trimmed resource starts and loops at zero, while mute preserves the playhead', async () => {
+test('the full chorus recording starts and loops at zero, while mute preserves the playhead', async () => {
   const { audio, music } = fixture();
   await music.activate();
   assert.equal(audio.currentTime, 0);
@@ -135,12 +135,18 @@ test('metadata arriving after activation applies the initial seek once, while an
   assert.equal(short.audio.paused, true); short.music.dispose();
 });
 
-test('both original MP3s and the independently clipped playback file retain exact hashes and provenance', async () => {
+test('the untrimmed chorus replaces both old Youjing files and preserves The Last Judgement with exact hashes', async () => {
   const root = new URL('../public/assets/audio/menu-music/', import.meta.url);
   const source = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
-  assert.equal(source.activeFile, 'youjing-long-march-from-29s.mp3'); assert.equal(source.startSeconds, 0);
-  assert.equal(source.trimStartSeconds, 29); assert.equal(source.files[2].removedDecodedSamples, 29 * 44100);
-  assert.equal(source.files.length, 3);
+  assert.equal(source.activeFile, 'youjing-chorus.mp3'); assert.equal(source.startSeconds, 0);
+  assert.equal(source.trimStartSeconds, 0);
+  assert.equal(source.files.length, 2);
+  assert.deepEqual((await readdir(root)).filter(file => file.endsWith('.mp3')).sort(),
+    ['the-last-judgement.mp3', 'youjing-chorus.mp3']);
+  assert.equal(source.files[0].sha256, '83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7');
+  assert.equal(source.files[1].sha256, '5b86e06209e59bbd8d1f1e265aa9c6032b89881c1f132aa49b02798bf65f5627');
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(html.includes(`id="menu-music" src="/assets/audio/menu-music/${source.activeFile}"`));
   for (const file of source.files) {
     const bytes = await readFile(new URL(file.file, root));
     assert.equal(bytes.length, file.bytes);

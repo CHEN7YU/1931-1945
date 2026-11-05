@@ -35,7 +35,7 @@ try {
     await wait(() => window.__battle.state === 'playing');
     const initial = await snapshot();
     assert.equal(initial.population.friendly.alive, 110);
-    assert.equal(initial.population.enemy.alive, 96);
+    assert.equal(initial.population.enemy.alive, 98);
     for (const unit of initial.population.units.filter(unit => unit.type === 'infantry')) {
       assert.equal(unit.memberCount, 11);
       assert.equal(unit.members.filter(actor => actor.role === 'sniper').length, 1);

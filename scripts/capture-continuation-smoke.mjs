@@ -30,7 +30,7 @@ try {
         population: { friendly: state.population.friendly.alive, enemy: state.population.enemy.alive } };
     });
     samples.push(data);
-    if (!previous) assert.deepEqual(data.population, { friendly: 110, enemy: 96 });
+    if (!previous) assert.deepEqual(data.population, { friendly: 110, enemy: 98 });
     assert.deepEqual(errors, []);
     if (previous) for (const point of data.objectives) {
       if (point.owner !== 'friendly' || previous.objectives.find(old => old.id === point.id).owner === 'friendly') continue;

@@ -28,7 +28,7 @@ try {
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.vehicles.some(vehicle => vehicle.variant === 'chi-ha'));
   const initial = await snapshot();
-  assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.enemy.alive, 98);
   assert.equal(initial.population.enemy.vehicles, 2);
   assert.equal(initial.population.friendly.alive, 110);
   assert.equal(initial.units.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);

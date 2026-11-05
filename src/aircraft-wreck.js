@@ -1,3 +1,12 @@
+export const AIRCRAFT_WRECK_LIMIT = 18;
+
+export function expiredAircraftWrecks(vehicles) {
+  const settled = [...vehicles].filter(vehicle => vehicle.type === 'plane' && vehicle.health <= 0 &&
+    (vehicle.fall?.grounded || vehicle.fall?.sunk));
+  settled.sort((a, b) => a.destroyedAt - b.destroyedAt);
+  return settled.slice(0, Math.max(0, settled.length - AIRCRAFT_WRECK_LIMIT));
+}
+
 export function createAircraftFall(vehicle) {
   if (![vehicle.position.x, vehicle.position.y, vehicle.position.z, vehicle.heading, vehicle.pitch,
     vehicle.speed, vehicle.roll].every(Number.isFinite)) throw new RangeError('Aircraft fall requires its last finite flight pose');

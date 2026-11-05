@@ -133,7 +133,9 @@ test('supply changes cannot bypass physical spawn retries, alter living soldiers
   for (const point of points) point.owner = 'friendly';
   advanceEncirclement(match, points, roster);
   points[0].owner = 'enemy'; advanceEncirclementSupport(match, points, roster, 20);
-  assert.ok(roster.filter(candidate => candidate.team === 'enemy').every(candidate => candidate.respawnEnabled === false && candidate.respawnAt === null));
+  assert.ok(roster.filter(candidate => candidate.team === 'enemy' && candidate.type !== 'plane')
+    .every(candidate => candidate.respawnEnabled === false && candidate.respawnAt === null));
+  assert.equal(living.respawnEnabled, true);
   assert.equal(ENCIRCLEMENT_RULES.cutEnemyDelay, 35);
 });
 
@@ -190,7 +192,7 @@ test('capture ownership transitions count recaptures, not steady ownership or co
   assert.equal(match.unlocked.length, 1);
 });
 
-test('three simultaneous owned points immediately and irreversibly stop all enemy respawns, not win', () => {
+test('three simultaneous owned points stop ground respawns but preserve air reinforcements, not win', () => {
   const { roster, match, points } = setup();
   for (const point of points) {
     captureEncirclement(match, roster, point.id, 0);
@@ -202,7 +204,7 @@ test('three simultaneous owned points immediately and irreversibly stop all enem
   assert.equal(match.unlocked.length, 3);
   assert.equal(active(roster, 'friendly').length, 6, 'capturing all three points does not bypass timed waves');
   for (const unit of roster.filter(unit => unit.team === 'enemy')) {
-    assert.equal(unit.respawnEnabled, false);
+    assert.equal(unit.respawnEnabled, unit.type === 'plane');
     assert.equal(unit.respawnAt, null);
     unit.members.forEach(actor => { actor.health = 0; });
     assert.equal(reinforcementDue(unit, 9999), false, 'includes instant-respawning tanks');
@@ -371,7 +373,7 @@ test('permanent rear spawns support players, survive ownership loss and disperse
 test('local aircraft and mortarmen survive integration but a lone seated pilot cannot block cleanup victory', () => {
   const { roster, match, points } = setup();
   assert.equal(armySummary(roster, 'friendly').alive, 66);
-  assert.equal(armySummary(roster, 'enemy').alive, 71);
+  assert.equal(armySummary(roster, 'enemy').alive, 73);
   const pilot = roster.find(unit => unit.team === 'enemy' && unit.type === 'plane');
   assert.equal(pilot.spawnId, 'japan-air');
   const spawns = encirclementSpawns();
@@ -383,7 +385,7 @@ test('local aircraft and mortarmen survive integration but a lone seated pilot c
   }
   assert.equal(battleSpawn(pilot, spawns, [], []).id, 'japan-air');
   assert.equal(advanceEncirclement(match, points, roster), null);
-  assert.equal(pilot.respawnEnabled, false);
+  assert.equal(pilot.respawnEnabled, true);
   pilot.members[0].health = 0;
   assert.equal(reinforcementDue(pilot, 999), false);
   pilot.members[0].health = 1;

@@ -145,7 +145,7 @@ try {
   const full = await open('full');
   await full.locator('#deploy').click();
   data = await save(full, 'native-110v110-startup');
-  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 96);
+  assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 98);
   await shoot(full); await ready(full);
   data = await save(full, 'native-110v110-personal-cycle');
   assert.ok(data.mechanicalAudio.history.some(item => item.cue === 'extract'));

@@ -5,7 +5,7 @@ import { makeBaseSpawns } from '../src/spawns.js';
 import { makeTownLayout } from '../src/town-layout.js';
 import { BATTLE_RULES, battleRoster, nanjingBattleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, FormationPlacementError, reinforcementDue, battleSpawn, holdDestination, infantryLoadout, sectionOffset } from '../src/battle-roster.js';
 
-test('default armies keep ten units and 110/96 people with enemy armor and aviation', () => {
+test('default armies keep ten units and 110/98 people with enemy armor and three-plane aviation', () => {
   const roster = battleRoster();
   validateRoster(roster);
   assert.equal(TYPES.infantry.members, 11);
@@ -19,7 +19,21 @@ test('default armies keep ten units and 110/96 people with enemy armor and aviat
     const army = battleRoster(type);
     const count = team => army.filter(unit => unit.team === team).reduce((sum, unit) => sum + (unit.memberCount ?? 4), 0);
     assert.equal(count('friendly'), 110);
-    assert.equal(count('enemy'), 96);
+    assert.equal(count('enemy'), 98);
+  }
+});
+test('both maps use three-plane enemy squads and replace only a whole wiped squad after the existing cooldown', () => {
+  for (const roster of [battleRoster(), nanjingBattleRoster()]) {
+    const unit = roster.find(formation => formation.team === 'enemy' && formation.type === 'plane');
+    assert.equal(unit.aircraftCount, 3); assert.equal(unit.memberCount, 3);
+    for (let wave = 0; wave < 5; wave++) {
+      unit.members = [{ health: 0 }, { health: 0 }, { health: 100 }];
+      unit.respawnAt = wave * 30 + BATTLE_RULES.respawnSeconds;
+      assert.equal(reinforcementDue(unit, wave * 30 + 100), false);
+      unit.members[2].health = 0;
+      assert.equal(reinforcementDue(unit, unit.respawnAt - .01), false);
+      assert.equal(reinforcementDue(unit, unit.respawnAt), true);
+    }
   }
 });
 test('Nanjing roster stays isolated from the default ten-versus-ten battle roster', () => {

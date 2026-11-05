@@ -64,7 +64,7 @@ try {
     const start = await sample(), observations = [start];
     inProgress = { round, squad: tank ? 'tank' : 'infantry', observations };
     assert.equal(start.population.friendly.alive, tank ? 102 : 110, 'original full friendly roster is intact');
-    assert.equal(start.population.enemy.alive, 96, 'enemy population is not reduced for this check');
+    assert.equal(start.population.enemy.alive, 98, 'enemy population is not reduced for this check');
     let walking = !tank, lastShot = -30, loggedAt = 0;
     const startedAt = Date.now(), wallLimit = Math.max(seconds * 3, 180) * 1000;
     if (walking) await page.keyboard.down('w');

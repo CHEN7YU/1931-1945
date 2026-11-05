@@ -1,12 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAircraftFall, advanceAircraftFall } from '../src/aircraft-wreck.js';
+import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks, AIRCRAFT_WRECK_LIMIT } from '../src/aircraft-wreck.js';
 
 const wreck = () => {
   const vehicle = { health: 0, position: { x: 0, y: 35, z: 0 }, heading: .7, pitch: 0, roll: -.2, speed: 24 };
   vehicle.fall = createAircraftFall(vehicle);
   return vehicle;
 };
+test('repeated air reinforcements retain bounded settled wrecks without deleting living or still-falling aircraft', () => {
+  const vehicles = Array.from({ length: AIRCRAFT_WRECK_LIMIT + 5 }, (_, id) => ({
+    id, type: 'plane', health: 0, destroyedAt: id, fall: { grounded: id % 2 === 0, sunk: id % 2 !== 0 },
+  }));
+  const airborne = { type: 'plane', health: 0, destroyedAt: -2, fall: { grounded: false } };
+  const alive = { type: 'plane', health: 100, destroyedAt: -1, fall: { grounded: true } };
+  const tank = { type: 'tank', health: 0, destroyedAt: -3, fall: { grounded: true } };
+  assert.deepEqual(expiredAircraftWrecks([...vehicles].reverse().concat(airborne, alive, tank))
+    .map(vehicle => vehicle.id), [0, 1, 2, 3, 4]);
+  assert.deepEqual(expiredAircraftWrecks(vehicles.slice(0, AIRCRAFT_WRECK_LIMIT)), []);
+});
 test('destroyed aircraft keeps horizontal momentum and falls instead of freezing in the sky', () => {
   for (const hz of [30, 60, 144]) {
     const vehicle = wreck();

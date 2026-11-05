@@ -20,7 +20,7 @@ try {
   assert.equal(initial.allies.length, 11);
   assert.equal(initial.population.units.length, 20);
   assert.deepEqual(initial.population.friendly, { units: 10, rosterUnits: 10, alive: 110, vehicles: 0 });
-  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 96, vehicles: 2 });
+  assert.deepEqual(initial.population.enemy, { units: 10, rosterUnits: 10, alive: 98, vehicles: 2 });
   assert.ok(initial.population.units.every(unit => unit.memberCount === (unit.type === 'tank' ? 4 : 11) && unit.alive === unit.memberCount));
   const members = initial.population.units.flatMap(unit => unit.members);
   assert.equal(new Set(members.map(actor => actor.id)).size, 206);
@@ -64,7 +64,7 @@ try {
   assert.equal(movedUnits, 19, `all nineteen autonomous units act in the world, not just in the counters: ${JSON.stringify(stalledUnits)}`);
   await page.waitForFunction(() => {
     const data = window.__battle;
-    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 110 || data.population.enemy.alive < 96);
+    return data.combatStats.aiRifleShots > 0 && (data.population.friendly.alive < 110 || data.population.enemy.alive < 98);
   }, null, { timeout: 120000 });
   const combat = await snapshot();
   await page.keyboard.press('Escape');
@@ -101,7 +101,7 @@ try {
   assert.equal(data.population.friendly.alive, 100);
   assert.equal(data.population.friendly.vehicles, 1);
   assert.equal(data.allies.length, 1);
-  assert.equal(data.population.enemy.alive, 96);
+  assert.equal(data.population.enemy.alive, 98);
   assert.deepEqual(errors, []);
   console.log(`PASS: 206 actual members, 20 real units including two enemy tanks, eleven-person control, safe origins, ${movedUnits} autonomous units moving, one selected vehicle and ${advanced.performance.drawCalls} draw calls / ${advanced.performance.averageFrameMs.toFixed(1)}ms observed mean frame.`);
 } catch (error) {

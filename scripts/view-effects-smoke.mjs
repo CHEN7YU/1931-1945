@@ -56,7 +56,7 @@ try {
   await page.waitForFunction(() => window.__battle.fov > 71.9, null, { timeout: 30000 });
   const initial = await page.evaluate(() => window.__battle.population);
   assert.equal(initial.friendly.alive, 110);
-  assert.equal(initial.enemy.alive, 96);
+  assert.equal(initial.enemy.alive, 98);
   await page.keyboard.down('w');
   try {
     await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state === 'dead',

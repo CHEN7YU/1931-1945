@@ -110,9 +110,9 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
       preferred.find(actor=>visible(start,aimPoint(actor)));
     const militaryTarget=preferredTarget??(retainedVisible&&!retained.civilian?retained:
       candidates.find(actor=>!actor.civilian&&visible(start,aimPoint(actor))));
-    const priority=exposedCivilian
+    const priority=preferredTarget??(exposedCivilian
       ? !militaryTarget||bearingCost(exposedCivilian)+15<bearingCost(militaryTarget)?exposedCivilian:militaryTarget
-      :preferredTarget;
+      :null);
     state.targetId = priority?.id ?? (retainedVisible ? retained.id : candidates.find(actor => visible(start, aimPoint(actor)))?.id ?? null);
   }
   const target = targets.find(actor => actor.id === state.targetId && actor.health > 0);

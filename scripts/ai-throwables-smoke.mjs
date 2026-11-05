@@ -82,7 +82,7 @@ try {
   if (!armorOnly) {
     await load('full');
     data = await snapshot();
-    assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 96);
+    assert.equal(data.population.friendly.alive, 110); assert.equal(data.population.enemy.alive, 98);
     const started = Date.now();
     while (Date.now() - started < 260000) {
       data = await snapshot(); collect(data, 'full');

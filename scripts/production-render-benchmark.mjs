@@ -67,7 +67,7 @@ async function main() {
             return { population: data.population, graphics: data.graphics, build: data.build };
           });
           assert.equal(initial.population.friendly.alive, 110);
-          assert.equal(initial.population.enemy.alive, 96);
+          assert.equal(initial.population.enemy.alive, 98);
           stage = 'walking';
           await page.waitForTimeout(3000);
           await page.keyboard.down('w');

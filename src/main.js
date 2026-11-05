@@ -32,7 +32,7 @@ import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleAr
 import { createDaylight, configureSunShadow } from './lighting.js';
 import { createCombatEffects, captureImpact } from './combat-effects.js';
 import { createTracerPool } from './tracer-pool.js';
-import { BATTLE_RULES, battleRoster, nanjingBattleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
+import { BATTLE_RULES, AIRCRAFT_SQUAD_SIZE, battleRoster, nanjingBattleRoster, stagingSpawns, formationPositions, validateRoster, armySummary, sectionOffset, holdDestination, isVehicleUnit, FormationPlacementError, reinforcementDue, battleSpawn, infantryLoadout } from './battle-roster.js';
 import { SpatialGrid, obstacleLookup } from './spatial.js';
 import { createSolidIndex } from './solid-index.js';
 import { createSoldierRenderer } from './soldier-renderer.js';
@@ -124,7 +124,7 @@ import { getPlayerIdentity } from './player-identity.js';
 import { advanceAircraftAI, AIRCRAFT_GUN } from './aircraft-ai.js';
 import { deploymentCards, deploymentMarker, deploymentMarkerPositions } from './deployment-view.js';
 import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
-import { createAircraftFall, advanceAircraftFall } from './aircraft-wreck.js';
+import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks } from './aircraft-wreck.js';
 import { updateMortarModel } from './mortar-model.js';
 import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from './player-aircraft.js';
 import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
@@ -1331,7 +1331,7 @@ function spawnJapaneseAircraft(formation) {
     }
   }
   formation.members = [];
-  for (let index = 0; index < (formation.aircraftCount ?? 1); index++) {
+  for (let index = 0; index < formation.aircraftCount; index++) {
     const transport = createVehicleEntity(entities, { id: `${formation.id}:plane-${formation.generation + 1}-${index}`,
       unitId: formation.id, type: 'plane', team: 'enemy',
       position: new THREE.Vector3(spawn.x + index * 24, spawn.altitude + index * 4, spawn.z + index * 18) });
@@ -3056,9 +3056,10 @@ function updateVehicles(dt) {
       const pilot = transport.seats.map(seat => entities.soldiers.get(seat.occupantId)).find(actor => actor?.health > 0);
       const eastAirSupport=encirclementMode&&encirclement.phase===2;
       const shot = advanceAircraftAI(transport, dt, time, { targets: eastAirSupport
-        ? friendlyForces.filter(actor=>Math.hypot(actor.position.x-EAST_BREAKOUT.x,actor.position.z-EAST_BREAKOUT.z)<75)
+        ? friendlyForces.filter(actor=>actor.unitId===controlledSoldier(entities)?.unitId ||
+          Math.hypot(actor.position.x-EAST_BREAKOUT.x,actor.position.z-EAST_BREAKOUT.z)<75)
         : nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces,
-        preferredUnitId: nanjingCampaignMode ? controlledSoldier(entities)?.unitId : null,
+        preferredUnitId: controlledSoldier(entities)?.unitId,
         canFire: Boolean(pilot) && (!eastAirSupport || encirclement.breakout?.stage === 'breakout') &&
           (!nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal' && !nanjingCampaign.outcome),
         obstacles: world.obstacles, groundHeight: world.groundHeight,
@@ -4213,7 +4214,8 @@ function restoreBreakoutForces() {
   let formation=formations.find(unit=>unit.id===task.id);
   if(!formation){
     formation={id:task.id,index:10+breakout.restoration.indexOf(task),team:'enemy',type:'plane',
-      members:[],memberCount:1,generation:0,active:true,respawnEnabled:false,player:false};
+      members:[],memberCount:AIRCRAFT_SQUAD_SIZE,aircraftCount:AIRCRAFT_SQUAD_SIZE,
+      spawnId:'japan-air',generation:0,active:true,respawnEnabled:true,player:false};
     formations.push(formation);registerUnit(entities,formation);registerBattleScore(formation);
   }
   const player=controlledSoldier(entities);
@@ -4905,8 +4907,20 @@ function updateAI(dt) {
     enemies = enemies.filter(retainActor);
     friendlyAI = friendlyAI.filter(retainActor);
     rebuildForces();
-    for (const formation of formations.filter(item => !item.player && !item.aerialSupport && item.active !== false && item.respawnEnabled !== false)) {
-      if (formation.reserve || formation.evacuated || nanjingCampaignMode && formation.team === 'enemy' && nanjingCampaign.reinforcementStopped) continue;
+    for (const wreck of expiredAircraftWrecks(entities.vehicles.values())) {
+      entities.vehicles.delete(wreck.id); entities.weapons.delete(wreck.weapon.id);
+    }
+    for (const formation of formations.filter(item => !item.player && item.active !== false && item.respawnEnabled !== false)) {
+      const aircraft = formation.team === 'enemy' && formation.type === 'plane';
+      if (formation.reserve || formation.evacuated || !aircraft && nanjingCampaignMode &&
+        formation.team === 'enemy' && nanjingCampaign.reinforcementStopped) continue;
+      if (aircraft && (battleEnding.fading || nanjingCampaignMode && nanjingCampaign.outcome ||
+        encirclementMode && encirclement.winner)) continue;
+      if (aircraft && [...entities.vehicles.values()].some(vehicle =>
+        vehicle.unitId === formation.id && vehicle.type === 'plane' && vehicle.health > 0)) {
+        formation.respawnAt = formation.reinforcementStartedAt = null;
+        continue;
+      }
       if (formation.members.some(actor => actor.health > 0)) continue;
       if (nanjingCampaignMode && formation.team === 'friendly' && nanjingCampaign.stage === 'withdrawal-to-boats') continue;
       if (encirclementMode && formation.team === 'enemy') scheduleEncirclementRespawn(encirclement, formation, time);

@@ -167,7 +167,7 @@ export function advanceEncirclement(match, points, formations, dt = 0, { restore
       escapedIds: [], killed: 0, elapsed: 0, stage: restoreForces ? 'forming' : 'regroup',
       reinforcing: restoreForces };
     for (const unit of formations.filter(unit => unit.team === 'enemy')) {
-      unit.respawnEnabled = false; unit.respawnAt = null;
+      unit.respawnEnabled = unit.type === 'plane'; unit.respawnAt = null;
       unit.spawnRetryAt = unit.reinforcementStartedAt = null;
     }
   }

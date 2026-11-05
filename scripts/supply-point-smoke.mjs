@@ -56,7 +56,7 @@ window.__supplyTest = {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__battle.state === 'pause');
   const initial = await page.evaluate(() => window.__supplyTest.read());
-  assert.equal(initial.friendly.alive, 66); assert.equal(initial.enemy.alive, 71);
+  assert.equal(initial.friendly.alive, 66); assert.equal(initial.enemy.alive, 73);
   assert.equal(initial.owner, 'enemy'); assert.equal(initial.guards.length, 2);
   assert.ok(initial.guards.every(unit => unit.positions.length === 11 && unit.fixedObjectiveId === 'A'));
   for (const unit of initial.guards) for (const [x, y, z] of unit.positions) {

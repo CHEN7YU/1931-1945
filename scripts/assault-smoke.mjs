@@ -20,7 +20,7 @@ try {
   await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
   const initial = await page.evaluate(() => window.__battle);
-  assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.enemy.alive, 98);
   assert.equal(initial.population.enemy.vehicles, 2);
   assert.equal(initial.population.friendly.alive, 110);
   const starts = new Map(initial.population.units.flatMap(unit => unit.members.map(actor => [actor.soldierId, actor.spawnPosition])));

@@ -58,7 +58,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
   await page.locator('#deploy').click();
   const initial = await page.evaluate(() => window.__battle.population);
-  assert.equal(initial.friendly.alive, 110); assert.equal(initial.enemy.alive, 96);
+  assert.equal(initial.friendly.alive, 110); assert.equal(initial.enemy.alive, 98);
   await page.keyboard.down('w');
   try {
     await page.waitForFunction(() => window.__battle.position.z <= 42 || window.__battle.state === 'dead',
@@ -79,7 +79,7 @@ try {
   assert.deepEqual(cleared, { capacity: 64, active: 0, retained: 0, idle: 0, created: 0, reused: 0, disposed: 0 });
   await page.locator('#deploy').click();
   const restarted = await page.evaluate(() => ({ population: window.__battle.population, tracers: window.__battle.tracers }));
-  assert.equal(restarted.population.friendly.alive, 110); assert.equal(restarted.population.enemy.alive, 96);
+  assert.equal(restarted.population.friendly.alive, 110); assert.equal(restarted.population.enemy.alive, 98);
   assert.equal(restarted.tracers.active, 0);
   assert.deepEqual(errors, []);
   if (directory) {

@@ -4,6 +4,7 @@ import { CHI_HA, japaneseArmorRoster } from './chi-ha.js';
 import { NANJING_SPAWNS } from './nanjing-campaign.js';
 
 export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
+export const AIRCRAFT_SQUAD_SIZE = 3;
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
 export function infantryLoadout(team, index, type = 'infantry') {
   if (!['friendly', 'enemy'].includes(team) || !Number.isInteger(index) || index < 0 || !TYPES[type]) throw new RangeError('Invalid infantry loadout');
@@ -30,7 +31,8 @@ export function battleRoster(playerType = 'infantry') {
     spawnId: index === 0 ? team === 'friendly' ? 'china-base' : 'japan-base' : `${team}-staging-${index}`,
   })));
   return [...infantry, japaneseArmorRoster()[0], { id: 'enemy-9', team: 'enemy', index: 9, type: 'plane',
-    player: false, memberCount: 1, members: [], generation: 0, respawnAt: null, spawnId: 'japan-air' }];
+    player: false, memberCount: AIRCRAFT_SQUAD_SIZE, aircraftCount: AIRCRAFT_SQUAD_SIZE,
+    members: [], generation: 0, respawnAt: null, spawnId: 'japan-air' }];
 }
 
 export function nanjingBattleRoster(playerType = 'infantry') {
@@ -52,7 +54,8 @@ export function nanjingBattleRoster(playerType = 'infantry') {
   armor.index = 8;
   armor.spawnId = 'nanjing-south-armor';
   const aircraft = { id: 'enemy-9', team: 'enemy', index: 9, type: 'plane', player: false,
-    aerialSupport: true, aircraftCount: 3, members: [], generation: 0, respawnAt: null, spawnId: 'nanjing-south-air' };
+    aerialSupport: true, memberCount: AIRCRAFT_SQUAD_SIZE, aircraftCount: AIRCRAFT_SQUAD_SIZE,
+    members: [], generation: 0, respawnAt: null, spawnId: 'nanjing-south-air' };
   if (NANJING_SPAWNS.filter(spawn => spawn.team === 'friendly').length < friendly.length ||
     NANJING_SPAWNS.filter(spawn => spawn.team === 'enemy').length < enemyInfantry.length + 2) {
     throw new Error('Nanjing campaign spawn configuration is incomplete');

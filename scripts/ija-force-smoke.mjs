@@ -25,10 +25,10 @@ try {
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
   await page.locator('#menu-quality').selectOption('high');
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.enemyHistoricalForce?.assigned === 96);
+  await page.waitForFunction(() => window.__battle.enemyHistoricalForce?.assigned === 98);
   const initial = await snapshot();
   assert.equal(Boolean(initial.benchmark), !production, 'diagnostic fixtures must remain development-only');
-  assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.enemy.alive, 98);
   assert.equal(initial.population.friendly.alive, 110);
   assert.equal(initial.entityCounts.soldiers, 206);
   assert.equal(initial.enemies.length, 96);
@@ -55,9 +55,9 @@ try {
   await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 0);
   await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click();
-  await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 96);
+  await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 98);
   const redeployed = await snapshot();
-  assert.equal(redeployed.population.enemy.alive, 96);
+  assert.equal(redeployed.population.enemy.alive, 98);
   assert.ok(redeployed.force.near <= 3 && redeployed.force.poolSize <= 6);
   assert.ok(redeployed.force.members.every(actor => actor.uniform === 'ija1938'));
   observations.push({ stage: 'low-quality-redeployment', ...redeployed });

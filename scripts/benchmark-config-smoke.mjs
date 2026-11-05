@@ -44,7 +44,7 @@ try {
     await deployFromMenu(built);
     const state = await built.evaluate(() => window.__battle.population);
     assert.equal(state.friendly.alive, 110);
-    assert.equal(state.enemy.alive, 96);
+    assert.equal(state.enemy.alive, 98);
     assert.equal(state.units.length, 20, 'a production URL cannot silently lower the real roster to a diagnostic fixture');
     await built.waitForFunction(() => window.__battle.drawCalls > 0);
   }

@@ -147,14 +147,12 @@ export async function auditAssets({ root, buildRoot } = {}) {
         metadata.permission?.basis !== 'user-supplied-soundtrack-project-use' ||
         metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
         metadata.permission.request !== '这个bgm用于用户打开游戏 直到完全进入战斗' ||
-        metadata.activeFile !== 'youjing-long-march-from-29s.mp3' || metadata.startSeconds !== 0 || metadata.trimStartSeconds !== 29 ||
-        metadata.files.length !== 3 || metadata.files[0].file !== 'the-last-judgement.mp3' ||
+        metadata.activeFile !== 'youjing-chorus.mp3' || metadata.startSeconds !== 0 || metadata.trimStartSeconds !== 0 ||
+        metadata.files.length !== 2 || metadata.files[0].file !== 'the-last-judgement.mp3' ||
         metadata.files[0].sha256 !== '83812ffe5cb82fe1d2bc7c36baf3c7fa2f6daf2971e4baf086c504d3db4bf9a7' ||
-        metadata.files[1].file !== 'youjing-long-march.mp3' ||
-        metadata.files[1].sha256 !== '819dc0934692ef4c8cf26fc9f1d4a4caae11bb4f27f9bed892d2d91100daf063' ||
-        metadata.files[2].file !== 'youjing-long-march-from-29s.mp3' ||
-        metadata.files[2].removedDecodedSamples !== 1278900 ||
-        metadata.files[2].sha256 !== '9c9abcfdd55154d726f43e571842d0e2e062104bbe6407b0828ff9c5f3595877')
+        metadata.files[1].file !== 'youjing-chorus.mp3' ||
+        metadata.files[1].bytes !== 1170300 ||
+        metadata.files[1].sha256 !== '5b86e06209e59bbd8d1f1e265aa9c6032b89881c1f132aa49b02798bf65f5627')
         throw new Error('User-supplied menu soundtrack permission requires explicit review');
       permissions.push({ directory: group.directory, basis: metadata.permission.basis, limitation: metadata.permission.limitation });
     } else if (group.directory === 'audio/battle-signals') {

@@ -20,7 +20,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 120000 });
   const initial = await page.evaluate(() => window.__battle);
   assert.equal(initial.population.friendly.alive, 110);
-  assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.enemy.alive, 98);
   assert.equal(initial.type, 'plane');
   await page.screenshot({ path: join(directory, 'friendly-cockpit.png') });
   await page.waitForFunction(() => window.__battle.vehicles.some(vehicle => vehicle.team === 'enemy' &&

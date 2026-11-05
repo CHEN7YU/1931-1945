@@ -36,7 +36,7 @@ try {
     await wait(() => window.__battle.state === 'playing');
     const initial = await snapshot();
     assert.equal(initial.population.friendly.alive, 110);
-    assert.equal(initial.population.enemy.alive, 96);
+    assert.equal(initial.population.enemy.alive, 98);
     assert.equal(initial.entityCounts.soldiers, 206);
     assert.equal(initial.entityCounts.weapons, 206 * 3 + 2 + 4,
       'each soldier owns a primary weapon, grenade inventory and pack; tank primary and machine guns are independent');
@@ -51,7 +51,7 @@ try {
       assert.equal(unit.members[10].weaponModel, unit.team === 'friendly' ? 'zb26' : 'type11');
     }
     if (appearance === 'native') {
-      await wait(() => window.__battle.historicalForce?.assigned === 110 && window.__battle.enemyHistoricalForce?.assigned === 96);
+      await wait(() => window.__battle.historicalForce?.assigned === 110 && window.__battle.enemyHistoricalForce?.assigned === 98);
       const forces = await snapshot();
       assert.equal(forces.historicalForce.members.filter(actor => actor.weaponModel === 'zb26').length, 10);
       assert.equal(forces.enemyHistoricalForce.members.filter(actor => actor.weaponModel === 'type11').length, 8);

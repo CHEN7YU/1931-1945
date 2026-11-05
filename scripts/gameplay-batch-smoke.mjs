@@ -31,7 +31,7 @@ try {
     const initial = await page.evaluate(() => window.__battle);
     assert.equal(initial.state, 'playing', JSON.stringify(errors));
     assert.equal(initial.population.friendly.alive, 110);
-    assert.equal(initial.population.enemy.alive, 96);
+    assert.equal(initial.population.enemy.alive, 98);
     assert.equal(initial.allies[0].role, 'mortarman');
     assert.ok(initial.population.units.some(unit => unit.team === 'enemy' && unit.type === 'plane' && unit.alive === 1));
     assert.ok(!initial.spawnPoints.some(point => point.kind === 'rally'));

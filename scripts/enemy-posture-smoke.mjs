@@ -20,7 +20,7 @@ try {
   await page.locator('#menu-quality').selectOption('low');
   await page.locator('#deploy').click(); await page.waitForFunction(() => window.__battle.state === 'playing');
   const initial = await page.evaluate(() => window.__battle);
-  assert.equal(initial.population.friendly.alive, 110); assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.friendly.alive, 110); assert.equal(initial.population.enemy.alive, 98);
   await page.keyboard.down('w');
   await page.waitForFunction(() => window.__battle.position.z <= 61 || window.__battle.state !== 'playing');
   await page.keyboard.up('w');

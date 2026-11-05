@@ -26,7 +26,7 @@ try {
     assert.equal(snapshot.population.friendly.rosterUnits, 6);
     assert.equal(snapshot.population.friendly.alive, 66);
     assert.equal(snapshot.population.enemy.rosterUnits, 8);
-    assert.equal(snapshot.population.enemy.alive, 71);
+    assert.equal(snapshot.population.enemy.alive, 73);
     assert.equal(snapshot.population.enemy.vehicles, 2);
     assert.equal(snapshot.population.units.filter(unit => unit.team === 'enemy' && unit.type === 'plane').length, 1);
     if (type === 'infantry') assert.equal(snapshot.allies[0].role, 'mortarman');

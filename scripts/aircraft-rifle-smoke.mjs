@@ -26,7 +26,7 @@ try {
   const initial = await snapshot(), planeId = initial.vehicles.find(vehicle => vehicle.team === 'friendly' && vehicle.type === 'plane').id;
   assert.equal(initial.benchmark?.scenario, 'full');
   assert.equal(initial.population.friendly.alive, 100, 'one actual pilot replaces an eleven-person infantry unit');
-  assert.equal(initial.population.enemy.alive, 96);
+  assert.equal(initial.population.enemy.alive, 98);
   assert.equal(initial.health, TYPES.plane.health);
   assert.ok(initial.allies.every(actor => actor.targetKind === 'aircraft'));
   record('air-entry', initial);

@@ -18,11 +18,15 @@ test('ordinary military-only battles retain a visible target instead of switchin
   assert.equal(aircraft.aiFlight.targetId,retained.id);
 });
 
-test('an exposed civilian in the forward attack lane is a valid target even while the retained player squad is nearby off-axis',()=>{
+test('a visible player squad takes priority over an easier civilian in the forward attack lane',()=>{
   const aircraft=plane(),player={...target,id:'player',unitId:'squad',position:{x:80,y:0,z:-80}};
   const civilian={...target,id:'civilian:1',unitId:'nanjing-civilians',civilian:{},aimHeight:.8};
   aircraft.aiFlight.targetId=player.id;
   advanceAircraftAI(aircraft,.01,1,{targets:[player,civilian],preferredUnitId:'squad',canFire:true,visible:()=>true});
+  assert.equal(aircraft.aiFlight.targetId,player.id);
+  aircraft.aiFlight.nextSense=0;
+  advanceAircraftAI(aircraft,.01,2,{targets:[player,civilian],preferredUnitId:'squad',canFire:true,
+    visible:(_from,to)=>to.x===0});
   assert.equal(aircraft.aiFlight.targetId,civilian.id);
 });
 

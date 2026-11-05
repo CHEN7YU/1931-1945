@@ -293,7 +293,7 @@ async function main() {
             collisionAcceleration: data.collisionAcceleration ?? null, shaderPrograms: data.shaderPrograms };
         });
         assert.equal(initial.population.friendly.alive, scenario === 'duel' ? 5 : 110);
-        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 96);
+        assert.equal(initial.population.enemy.alive, scenario === 'duel' ? 5 : 98);
         if (renderSplit) assert.equal(initial.graphics.shadowsEnabled, variant !== 'no-shadows');
         await page.waitForTimeout(warmup * 1000);
         if (scenario === 'full') {

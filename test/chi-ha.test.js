@@ -45,7 +45,7 @@ test('one tank, one aircraft and eight infantry squads occupy exactly ten Japane
   assert.equal(battleSpawn(support, [...garages, { team: 'enemy', kind: 'rally' }], [], [], false), garage);
   assert.equal(garage.kind, 'garage');
   roster.forEach(unit => { unit.members = Array.from({ length: unit.memberCount ?? 4 }, () => ({ health: 100 })); });
-  assert.deepEqual(armySummary(roster, 'enemy'), { units: 10, rosterUnits: 10, alive: 96, vehicles: 2 });
+  assert.deepEqual(armySummary(roster, 'enemy'), { units: 10, rosterUnits: 10, alive: 98, vehicles: 2 });
   roster.find(unit => unit.team === 'enemy' && unit.type === 'infantry').type = 'tank';
   assert.throws(() => validateRoster(roster), /vehicle limit/);
 });
