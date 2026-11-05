@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
@@ -60,7 +61,7 @@ async function main() {
           assert.equal(setup.benchmark, null);
           assert.equal(setup.hasGameTelemetry, false);
           assert.equal(setup.probe.attached, true);
-          await page.locator('#menu-quality').selectOption('high');
+          await setQualityPreset(page, 'high');
           await page.locator('#deploy').click();
           const initial = await page.evaluate(() => {
             const data = window.__battle;

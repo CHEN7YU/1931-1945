@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ try {
   await page.goto(new URL('/?benchmark=full&seed=1938', origin).href);
   await page.waitForFunction(() => window.__battle?.state === 'menu' || !document.querySelector('#fatal').hidden, null, { timeout: 120000 });
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
-  await page.locator('#menu-quality').selectOption('high');
+  await setQualityPreset(page, 'high');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.enemyHistoricalForce?.assigned === 98);
   const initial = await snapshot();
@@ -53,7 +54,7 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('#back-menu').click();
   await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 0);
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.enemyHistoricalForce.assigned === 98);
   const redeployed = await snapshot();
@@ -69,7 +70,7 @@ try {
     await page.goto(new URL('/?benchmark=duel&seed=1938', origin).href);
     await page.waitForFunction(() => window.__battle?.state === 'menu' || !document.querySelector('#fatal').hidden, null, { timeout: 120000 });
     assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
-    await page.locator('#menu-quality').selectOption('high');
+    await setQualityPreset(page, 'high');
     await page.locator('#deploy').click();
     await page.keyboard.down('w');
     try {

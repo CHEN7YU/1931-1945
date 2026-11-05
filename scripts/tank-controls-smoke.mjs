@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -161,7 +162,7 @@ try {
   if (captured) await page.waitForFunction(() => Boolean(document.pointerLockElement));
   url.searchParams.set('benchmark', 'full');
   await page.goto(url.href); await page.waitForFunction(() => window.__battle?.state === 'menu');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#squad-choices [data-type="infantry"]').click(); await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.state === 'playing');
   await elapsed(5.5); await levelView();

@@ -1,4 +1,4 @@
-import { deployFromMenu } from './game-entry.mjs';
+import { setQualityPreset, deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -42,7 +42,7 @@ try {
   });
   await page.goto(`${process.env.GAME_URL || 'http://127.0.0.1:5173'}/?campaign=nanjing`);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing');
   await page.evaluate(() => defenseReview.isolate());

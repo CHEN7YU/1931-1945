@@ -1,4 +1,4 @@
-import { deployFromMenu } from './game-entry.mjs';
+import { setQualityPreset, deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -30,7 +30,7 @@ try {
     if (appearance === 'procedural') url.searchParams.set('character', 'procedural');
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await wait(() => window.__battle?.state === 'menu');
-    await page.locator('#menu-quality').selectOption('low');
+    await setQualityPreset(page, 'low');
     await deployFromMenu(page);
     await wait(() => window.__battle.state === 'playing');
     const initial = await snapshot();

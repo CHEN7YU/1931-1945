@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { cpus, totalmem, platform, release } from 'node:os';
@@ -279,7 +280,7 @@ async function main() {
         if (driverTrace) assert.equal(await page.evaluate(() => window.__driverProbe.materialAttached), true);
         if (renderSplit) assert.equal(await page.evaluate(() => window.__battle.benchmark.renderIsolation), isolationMode);
         if (baselineSources) assert.ok(poseModules.every(name => poseRequests.has(name)), 'paired run must load every selected baseline module');
-        await page.locator('#menu-quality').selectOption(quality);
+        await setQualityPreset(page, quality);
         if (variant === 'no-shadows') await page.evaluate(() => {
           const toggle = document.querySelector('[data-quality-effect="shadows"]');
           if (!toggle) throw new Error('Shadow isolation requires the existing graphics control');

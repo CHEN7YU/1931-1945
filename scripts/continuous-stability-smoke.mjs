@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -47,7 +48,7 @@ try {
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await wait(() => window.__battle?.state === 'menu');
   assert.equal((await snapshot()).benchmark.scenario, 'interior', 'requires a development diagnostic, not reduced formal population');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   let initialCounts;
   for (let round = 1; round <= 2; round++) {
     await page.locator('#deploy').click();

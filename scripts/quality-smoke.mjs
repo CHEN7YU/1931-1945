@@ -1,4 +1,4 @@
-import { deployFromMenu } from './game-entry.mjs';
+import { setQualityPreset, deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -28,7 +28,7 @@ try {
   assertShadowCoverage(data);
   assert.equal(data.graphics.pixelRatio, 1.6);
   assert.equal(data.graphics.canvasWidth, 2304, 'high profile caps actual retina drawing buffer at 1.6x');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.waitForFunction(() => window.__battle.graphics.shadowMapWidth === 1024);
   data = await snapshot();
   assertShadowCoverage(data);

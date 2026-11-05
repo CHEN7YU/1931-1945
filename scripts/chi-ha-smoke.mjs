@@ -1,4 +1,4 @@
-import { deployFromMenu } from './game-entry.mjs';
+import { setQualityPreset, deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,7 +24,7 @@ const tank = data => data.vehicles.find(vehicle => vehicle.variant === 'chi-ha')
 try {
   await page.goto(origin);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 120000 });
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.vehicles.some(vehicle => vehicle.variant === 'chi-ha'));
   const initial = await snapshot();

@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -28,7 +29,7 @@ try {
       await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
       if (kind !== 'loading') {
         await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
-        await page.locator('#menu-quality').selectOption('low');
+        await setQualityPreset(page, 'low');
         await page.locator('#deploy').click();
         await page.waitForFunction(() => window.__battle.state === 'playing');
         assert.deepEqual(errors, [], 'no unexpected pre-injection runtime errors');

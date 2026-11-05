@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -76,7 +77,7 @@ try {
   if (process.env.GAME_PRODUCTION !== '1') url.searchParams.set('benchmark', 'interior');
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.locator('#menu').waitFor({ state: 'visible', timeout: 90000 });
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   await wait(() => window.__battle.audioMix.contextState === 'running');
   await wait(() => window.__audioGraphProbe.routes.some(route => route.includes('voices')));

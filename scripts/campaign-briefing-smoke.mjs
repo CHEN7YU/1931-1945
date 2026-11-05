@@ -21,13 +21,16 @@ try {
   await page.goto(base);
   await page.locator('#menu').waitFor({ state: 'visible' });
   assert.match(await page.locator('#campaign-history').textContent(), /徐州会战/);
+  assert.equal(await page.locator('#campaign-history-source').count(), 0);
+  assert.equal(await page.locator('#menu-quality').count(), 0);
+  assert.equal(await page.locator('#nanjing-menu-entry, #nanjing-menu-return').count(), 0);
   assert.equal(await page.locator('#campaign-goals li').count(), 3);
   await capture('taierzhuang-selection.png');
   await page.locator('#campaign-choice').selectOption('nanjing');
   assert.match(await page.locator('#campaign-history').textContent(), /12月13日南京沦陷/);
   assert.match(await page.locator('#campaign-goals').textContent(), /中华门.*上新河.*本队登船撤离南京/);
   assert.doesNotMatch(await page.locator('#campaign-goals').textContent(), /按\s*F|返航木船/);
-  assert.match(await page.locator('#campaign-history-source').getAttribute('href'), /19371213\.com\.cn/);
+  assert.equal(await page.locator('#campaign-history-source').count(), 0);
   await capture('nanjing-selection.png');
   const fullscreenSupported = await page.evaluate(() => document.fullscreenEnabled);
   if (fullscreenSupported) {

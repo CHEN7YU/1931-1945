@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -92,7 +93,7 @@ try {
   url.searchParams.set('benchmark', 'cover'); url.searchParams.set('seed', '1938');
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await wait(() => window.__battle?.state === 'menu');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   await wait(() => window.__battle.state === 'playing');
   assert.equal((await snapshot()).population.enemy.alive, 0, 'labelled real-map geometry fixture, not a combat performance claim');

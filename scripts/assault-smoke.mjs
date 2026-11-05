@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -17,7 +18,7 @@ try {
   url.searchParams.set('seed', process.env.ASSAULT_SEED || '1938');
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   const initial = await page.evaluate(() => window.__battle);
   assert.equal(initial.population.enemy.alive, 98);

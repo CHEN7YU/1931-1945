@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -81,7 +82,7 @@ try {
   await page.goto(`${process.env.GAME_URL ?? 'http://127.0.0.1:5203'}/?campaign=nanjing`,
     { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.evaluate(() => document.getElementById('deploy').click());
   await page.waitForFunction(() => window.__battle?.time >= 1, null, { timeout: 60000 });
   const setup = await page.evaluate(() => staticRenderReview.freeze());

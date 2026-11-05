@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -61,7 +62,7 @@ try {
   assert.ok(decoded['steel/roughnessMap'].left - decoded['steel/roughnessMap'].right > 20, 'real bevel has lower roughness');
   assert.ok(decoded['steel/metalnessMap'].mean > 210, 'bare steel remains predominantly metallic');
   assert.ok(decoded['cotton/roughnessMap'].mean > 218, 'cloth stays matte rather than shiny');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   await page.keyboard.press('3');
   await page.waitForFunction(() => window.__battle.dadao?.phase === 'ready');

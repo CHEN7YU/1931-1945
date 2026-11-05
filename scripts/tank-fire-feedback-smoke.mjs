@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -105,7 +106,7 @@ try {
   await page.goto(url.href); await page.waitForFunction(() => window.__battle?.state === 'menu' ||
     !document.querySelector('#fatal').hidden, null, { timeout: 90000 });
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
-  await page.locator('#menu-quality').selectOption('high');
+  await setQualityPreset(page, 'high');
   await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.state === 'playing');
   vehicleId = (await snapshot()).controlInput.owner.vehicleId;

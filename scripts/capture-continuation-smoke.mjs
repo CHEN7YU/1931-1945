@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -15,7 +16,7 @@ try {
   const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5213/');
   url.search = '?benchmark=full&seed=1938';
   await page.goto(url.href); await page.waitForFunction(() => window.__battle?.state === 'menu');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click(); await page.waitForFunction(() => window.__battle.state === 'playing');
   assert.equal(await page.evaluate(() => window.__battle.benchmark?.scenario), 'full', 'use the development full-battle fixture');
   let previous = null, success = null;

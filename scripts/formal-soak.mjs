@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -52,7 +53,7 @@ try {
   assert.equal(url.searchParams.has('benchmark'), false, 'formal soak must not use a diagnostic roster');
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.locator('#menu').waitFor({ state: 'visible', timeout: 120000 });
-  await page.locator('#menu-quality').selectOption(process.env.SOAK_QUALITY || 'low');
+  await setQualityPreset(page, process.env.SOAK_QUALITY || 'low');
   const initial = await sample();
   assert.equal(initial.build.development, false, 'use an immutable production build, not a hot-reloading server');
   for (let round = 1; round <= matches; round++) {

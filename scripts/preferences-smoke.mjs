@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -73,7 +74,7 @@ try {
   await setSlider('#menu-mouse-sensitivity', 2);
   await setSlider('#menu-aim-sensitivity', .5);
   await page.locator('#menu-motion-strength').selectOption('0.35');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   assert.equal(await page.locator('#mouse-sensitivity').inputValue(), '2', 'menu edits update paused controls too');
   assert.equal(await page.locator('#aim-sensitivity').inputValue(), '0.5');
   await page.locator('#deploy').click();

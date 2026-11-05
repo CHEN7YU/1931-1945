@@ -1,3 +1,21 @@
+import { createPlayerPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
+
+export async function setQualityPreset(page, preset) {
+  if (!['high', 'low'].includes(preset)) throw new RangeError('Invalid smoke-test quality preset');
+  if (await page.evaluate(() => Boolean(window.__battle))) {
+    await page.locator('#qualityToggle').selectOption(preset, { force: true });
+    return;
+  }
+  let saved = await page.evaluate(key => localStorage.getItem(key), PREFERENCES_KEY);
+  const preferences = createPlayerPreferences({
+    storage: () => ({ getItem: () => saved, setItem: (_key, value) => { saved = value; } }),
+    warn: message => { throw new Error(message); },
+  });
+  preferences.update({ quality: { ...preferences.snapshot.quality, preset } });
+  await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: PREFERENCES_KEY, value: saved });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+}
+
 export async function continueIdentitySelection(page) {
   await page.waitForFunction(() => {
     const overlay = document.getElementById('overlay');

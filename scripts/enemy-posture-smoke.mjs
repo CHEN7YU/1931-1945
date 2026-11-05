@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -17,7 +18,7 @@ try {
   await page.goto(url.href); await page.waitForFunction(() => window.__battle?.state === 'menu' ||
     !document.querySelector('#fatal').hidden, null, { timeout: 90000 });
   assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').innerText());
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click(); await page.waitForFunction(() => window.__battle.state === 'playing');
   const initial = await page.evaluate(() => window.__battle);
   assert.equal(initial.population.friendly.alive, 110); assert.equal(initial.population.enemy.alive, 98);

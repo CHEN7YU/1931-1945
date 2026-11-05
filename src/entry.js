@@ -26,7 +26,7 @@ const campaignPresentation = createCampaignPresentation();
 const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
-const launcherPreferences = getPlayerPreferences(), quality = document.getElementById('menu-quality');
+const launcherPreferences = getPlayerPreferences();
 const menuMusic = getMenuMusic();
 const activateMusic = event => {
   if (!(event.target instanceof Element && event.target.closest('[data-menu-music-toggle]'))) void menuMusic.activate();
@@ -36,14 +36,8 @@ document.addEventListener('keydown', activateMusic, { capture: true });
 for (const button of document.querySelectorAll('[data-menu-music-toggle]'))
   button.addEventListener('click', () => menuMusic.toggle());
 menuMusic.setState('menu');
-quality.value = launcherPreferences.snapshot.quality.preset;
 if (launcherPreferences.status.problem)
   document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
-quality.addEventListener('change', () => {
-  if (loaded) return;
-  launcherPreferences.update({ quality: { ...launcherPreferences.snapshot.quality, preset: quality.value } });
-  document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
-});
 const $ = id => document.getElementById(id);
 function openInitialDeployment() {
   menuMusic.setState('deployment');
@@ -118,8 +112,6 @@ function selectCampaign(id) {
   campaignStep();
   document.getElementById('campaign-description').textContent = campaign.description;
   $('campaign-history').textContent = campaign.history;
-  $('campaign-history-source').href = campaign.historySource.url;
-  $('campaign-history-source').textContent = `史料来源：${campaign.historySource.name} ↗`;
   $('campaign-goals').replaceChildren(...campaign.goals.map(goal => {
     const item = document.createElement('li'); item.textContent = goal; return item;
   }));

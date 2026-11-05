@@ -1,3 +1,4 @@
+import { setQualityPreset } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -25,7 +26,7 @@ async function load(scenario, type = 'infantry') {
   const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5213/');
   url.searchParams.set('benchmark', scenario); url.searchParams.set('seed', '1938');
   await page.goto(url.href); await page.waitForFunction(() => window.__battle?.state === 'menu');
-  await page.locator('#menu-quality').selectOption('low');
+  await setQualityPreset(page, 'low');
   await page.locator(`#squad-choices [data-type="${type}"]`).click();
   await page.locator('#deploy').click(); await page.waitForFunction(() => window.__battle.state === 'playing');
 }
