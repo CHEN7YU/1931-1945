@@ -26,3 +26,32 @@ test('dense Nanjing alleys connect all 180 residents to their real waiting place
       `${data.homeId} must reach its actual waiting place, not a nearby fallback cell`);
   }
 });
+
+test('all sixty roadside rest places leave walkable gaps and connect to the unchanged city evacuation route', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const lookup = obstacleLookup(world.civilianNavigationObstacles, .8);
+  const refugees = world.civilians.filter(person => person.userData.openingWave);
+  assert.equal(refugees.length, 60);
+  for (const person of refugees) {
+    const data = person.userData, rest = data.refugeeRestPoint;
+    assert.ok(refugees.every(other => other === person ||
+      Math.hypot(rest.x - other.userData.refugeeRestPoint.x, rest.z - other.userData.refugeeRestPoint.z) >= 1.25));
+    for (const [route, start] of [[data.refugeeRestRoute, { x: data.startX, z: data.startZ }],
+      [data.refugeeResumeRoute, rest]]) {
+      let from = start;
+      for (const point of route) {
+        assert.ok(segmentClear(from, point, .36, world.civilianNavigationObstacles, (x, z) => lookup.at(x, z)));
+        from = point;
+      }
+    }
+    assert.deepEqual(data.refugeeRestRoute.at(-1), rest);
+    assert.deepEqual(data.refugeeResumeRoute.at(-1), data.homeRoute.at(-1));
+  }
+  world.civilianFlight.encounterAt = 180;
+  Object.assign(refugees[0].userData, { fleeReleased: true, resting: true, restPoseWeight: 1,
+    route: refugees[0].userData.refugeeResumeRoute });
+  world.resetCampaign();
+  assert.equal(world.civilianFlight.encounterAt, null);
+  assert.ok(refugees.every(person => !person.userData.fleeReleased && !person.userData.resting &&
+    person.userData.restPoseWeight === 0 && person.userData.route === person.userData.refugeeRestRoute));
+});

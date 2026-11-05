@@ -39,7 +39,9 @@ test('the Yangtze continues beyond the northern boundary and the city reuses Tai
   assert.ok(views.every(mesh => mesh.geometry.attributes.color && mesh.position.y === -.16));
   for (const civilian of world.civilians) {
     const { x, z } = civilian.userData.waitingSlot;
-    assert.deepEqual(civilian.userData.route.at(-1), { x, z });
+    assert.deepEqual(civilian.userData.homeRoute.at(-1), { x, z });
+    assert.deepEqual(civilian.userData.route.at(-1),
+      civilian.userData.refugeeRestPoint ?? { x, z });
   }
 });
 
@@ -902,7 +904,8 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
       // Door traversal and rebasing from street positions are exercised by civilian-street-life.test.js.
       position.set(home.exit.x, 0, home.exit.z);
     } else assert.deepEqual({ x: position.x, z: position.z }, home.exit);
-    const route = civilian.userData.route;
+    const data = civilian.userData;
+    const route = data.openingWave ? [...data.refugeeRestRoute, ...data.refugeeResumeRoute] : data.route;
     for (const waypoint of route) {
       world.moveInfantry(position, waypoint.x - position.x, waypoint.z - position.z, .3);
       assert.ok(Math.hypot(position.x - waypoint.x, position.z - waypoint.z) < .05,

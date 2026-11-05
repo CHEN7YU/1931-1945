@@ -51,7 +51,8 @@ export function openCivilianHomeDoor(person, doorSystem) {
 export function beginCivilianStreetEvacuation(person) {
   const data = person.userData, street = data.streetLife;
   const exitPath = street.navigate(person.position, street.exit);
-  if (!exitPath.length) throw new Error(`Street civilian ${data.civilianId} cannot return to its evacuation route: ` +
+  if (!exitPath.length && Math.hypot(person.position.x - street.exit.x, person.position.z - street.exit.z) > .02)
+    throw new Error(`Street civilian ${data.civilianId} cannot return to its evacuation route: ` +
     `${street.navigate.stats.reason}, ${JSON.stringify(person.position)} -> ${JSON.stringify(street.exit)}`);
   data.route = [...exitPath, ...data.homeRoute];
   data.waypoint = 0;

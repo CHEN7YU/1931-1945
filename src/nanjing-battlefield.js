@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createCivilianCharacterFactory } from './civilian-character.js';
 import { resetCivilianStreetLife } from './civilian-street-life.js';
+import { placeRefugeeRestGroups, resetCivilianFlight } from './civilian-refugees.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { circleBlocked, createNavigator } from './core.js';
 import { createDoorWorld } from './door-world.js';
@@ -1228,6 +1229,8 @@ export function makeNanjingBattlefield(scene, surface) {
     group.visible = false;
     Object.assign(group.userData, { civilianId: index, homeId: home.id, startX, startZ,
       openingWave: index < 60, openingStraggler: index >= 48 && index < 60,
+      populationKind: index < 60 ? 'refugee' : 'resident', flightReleaseAt: null, fleeReleased: false,
+      resting: false, restPoseWeight: 0,
       withdrawalWave: index >= 60, releaseAt: index >= 60 ? Infinity : nanjingOpeningCivilianReleaseAt(index),
       ageGroup, presentation, carrying, walkPhase: index * .71,
       waypoint: 0, arrived: false, dead: false, health: 100, waitingSlot: civilianWaitingSlot(index) });
@@ -1443,6 +1446,26 @@ export function makeNanjingBattlefield(scene, surface) {
       resetCivilianStreetLife(civilian);
     }
   }
+  const firstRefugeeRoute = civilians[0].userData.homeRoute;
+  const cityStart = firstRefugeeRoute.findIndex(point => Math.hypot(point.x, point.z + 12) < .02);
+  const cityEnd = firstRefugeeRoute.findIndex((point, index) => index > cityStart && Math.hypot(point.x + 56, point.z + 60) < .02);
+  if (cityStart < 0 || cityEnd <= cityStart) throw new Error('Refugee route lacks its inspected city segment');
+  const cityRoute = firstRefugeeRoute.slice(cityStart, cityEnd + 1);
+  const restLookup = obstacleLookup(civilianNavigationObstacles, .8);
+  const restPlaces = placeRefugeeRestGroups(cityLayout.streets, cityRoute, civilianNavigationObstacles, restLookup);
+  for (const civilian of civilians.filter(person => person.userData.openingWave)) {
+    const data = civilian.userData, place = restPlaces[data.civilianId];
+    const start = data.homeRoute.findIndex(point => Math.hypot(point.x, point.z + 12) < .02);
+    if (start < 0) throw new Error(`Refugee ${data.civilianId} cannot reach its city rest point`);
+    data.refugeeRestPoint = { x: place.x, z: place.z };
+    data.restGroup = place.group; data.restPose = place.pose; data.restHeading = place.heading;
+    data.refugeeRestRoute = [...data.homeRoute.slice(0, start + place.connection.index + 1),
+      { ...place.connection.join }, data.refugeeRestPoint];
+    data.refugeeResumeRoute = [{ ...place.connection.join }, ...data.homeRoute.slice(start + place.connection.index + 1)];
+    data.route = data.refugeeRestRoute;
+  }
+  const civilianFlight = {};
+  resetCivilianFlight(civilianFlight);
   const walkSupports = [
     ...NANJING_WALL_WALKS.map(walk => ({ ...walk })),
     ...flankWalkSupports,
@@ -1543,7 +1566,8 @@ export function makeNanjingBattlefield(scene, surface) {
     armorObstacles: obstacles,
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
-    ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
+    ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianFlight,
+    civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
     isDeepWater: (x, z) => x < -72 && x > -72 - NANJING_FERRY_ROUTE.riverWidth &&
       Math.abs(z) < NANJING_FERRY_ROUTE.riverDepth / 2 || Math.abs(z - 52) < 13 && x > -105 && x < 105,
     landmarks: {
@@ -1579,6 +1603,7 @@ export function makeNanjingBattlefield(scene, surface) {
     },
     resetCampaign() {
       civilianQueue.length = 0;
+      resetCivilianFlight(civilianFlight);
       for (const civilian of civilians) {
         restoreFerryPassenger(civilian);
         civilian.removeFromParent();
@@ -1598,7 +1623,8 @@ export function makeNanjingBattlefield(scene, surface) {
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
-          streetEvacuating: false, route: data.homeRoute,
+          streetEvacuating: false, route: data.refugeeRestRoute ?? data.homeRoute,
+          flightReleaseAt: null, fleeReleased: false, resting: false, restPoseWeight: 0,
           releaseAt: data.withdrawalWave ? Infinity : nanjingOpeningCivilianReleaseAt(data.civilianId) });
         for (const bone of civilian.civilianSkin.skeleton.bones) bone.rotation.set(0, 0, 0);
         civilian.civilianSkin.joints.root.position.y = 0;

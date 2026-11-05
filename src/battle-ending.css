@@ -1,0 +1,32 @@
+.battle-ending {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  color: #fff;
+  pointer-events: none;
+  overflow: hidden;
+}
+.battle-ending[data-phase="history"] { pointer-events: auto; }
+.battle-ending-page {
+  width: min(840px, calc(100vw - 48px));
+  max-height: calc(100vh - 90px);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  box-sizing: border-box;
+  font-size: clamp(14px, 2.1vh, 23px);
+  line-height: 1.65;
+}
+.battle-ending-page h2 { font-size: 1.55em; margin: 0 0 .2em; letter-spacing: .08em; }
+.battle-ending-page h3 { font-size: 1em; margin: .85em 0 .2em; }
+.battle-ending-page p { margin: .3em 0; }
+.battle-ending-date { opacity: .7; }
+.battle-ending-sources { font-size: .65em; opacity: .7; margin-top: 1em; }
+.battle-ending-sources a { color: #fff; margin-right: 1em; }
+.battle-ending-continue { position: absolute; bottom: 18px; right: 24px; color: #fff; background: #000; border: 1px solid #777; padding: 8px 16px; cursor: pointer; }
+.battle-ending-warning { position: absolute; bottom: 18px; left: 24px; font-size: 13px; }
+@media (max-height: 600px) {
+  .battle-ending-page { font-size: 14px; line-height: 1.5; width: min(960px, calc(100vw - 40px)); }
+  .battle-ending-page h3 { margin-top: .5em; }
+}

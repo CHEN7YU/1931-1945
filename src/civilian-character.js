@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { applyCivilianProtectivePose, restoreCivilianMotionPose } from './civilian-motion.js';
+import { applyCivilianRestPose } from './civilian-refugees.js';
 import { setFerryPassengerMaterial } from './nanjing-ferry.js';
 
 const CLOTH = [0x797366, 0x526266, 0x89765f, 0x675957, 0x555c50, 0x8e8879];
@@ -492,6 +493,7 @@ export function updateCivilianAppearance(civilians, camera, preset = 'high') {
       skin.joints.leftElbow.rotation.x = .12;
     }
     applyCivilianProtectivePose(civilian);
+    applyCivilianRestPose(civilian);
   }
   for (const civilian of civilians) {
     if (!civilian.visible || !civilian.parent) continue;

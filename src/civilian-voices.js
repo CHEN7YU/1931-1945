@@ -3,9 +3,17 @@ import { battleVoiceMix, soldierVoiceVariant } from './battle-voices.js';
 
 export function createCivilianVoiceDirector(clips = civilianVoiceClips(), random = Math.random) {
   const usedAt = new Map(), speakerAt = new Map();
-  let nextAt = 0;
+  const encounterClips = clips.filter(clip => Number.isInteger(clip.encounterOrder)).sort((a, b) => a.encounterOrder - b.encounterOrder);
+  let nextAt = 0, encounterAt = null, encounterIndex = 0;
   return {
-    reset() { usedAt.clear(); speakerAt.clear(); nextAt = 0; },
+    reset() { usedAt.clear(); speakerAt.clear(); nextAt = 0; encounterAt = null; encounterIndex = 0; },
+    encounter(now) {
+      if (!Number.isFinite(now) || now < 0) throw new RangeError('Invalid civilian encounter time');
+      if (encounterAt !== null || !encounterClips.length) return false;
+      encounterAt = now; nextAt = now;
+      return true;
+    },
+    get encounterPending() { return encounterAt !== null && encounterIndex < encounterClips.length; },
     select(civilians, listener, stage, now, soldiers = [], hostiles = []) {
       if (!Number.isFinite(now) || now < 0) throw new RangeError('Invalid civilian voice time');
       if (!['gate-defense', 'withdrawal', 'dock-defense', 'withdrawal-to-boats'].includes(stage) || now < nextAt) return null;
@@ -13,12 +21,26 @@ export function createCivilianVoiceDirector(clips = civilianVoiceClips(), random
       const candidates = civilians.filter(person => person.visible && person.userData.active &&
         !person.userData.dead && !person.userData.boarding && !person.userData.evacuated &&
         (!opening || person.userData.openingWave && person.position.z > -10) &&
-        now >= (speakerAt.get(person.userData.civilianId) ?? 0) &&
+        (encounterAt !== null && encounterIndex < encounterClips.length ||
+          now >= (speakerAt.get(person.userData.civilianId) ?? 0)) &&
         Math.hypot(person.position.x - listener.position.x, person.position.z - listener.position.z) < 34);
       if (!candidates.length) return null;
+      if (!opening && encounterAt !== null && encounterIndex < encounterClips.length) {
+        if (now - encounterAt < 40) {
+          const clip = encounterClips[encounterIndex];
+          const person = candidates.filter(person => person.userData.ageGroup === clip.age &&
+            person.userData.presentation === clip.presentation)
+            .sort((a, b) => Math.hypot(a.position.x - listener.position.x, a.position.z - listener.position.z) -
+              Math.hypot(b.position.x - listener.position.x, b.position.z - listener.position.z))[0];
+          if (!person) { nextAt = now + .25; return null; }
+          encounterIndex++; nextAt = now + .1; usedAt.set(clip.text, now);
+          return { clip, person };
+        }
+        encounterIndex = encounterClips.length;
+      }
       let choices = candidates.flatMap(person => {
         const zone = opening ? 'gate' : person.position.x < -39 && person.position.z < -65 ? 'dock' : 'city';
-        return clips.filter(clip => clip.phase === (opening ? 'opening' : 'retreat') &&
+        return clips.filter(clip => clip.encounterOrder === undefined && clip.phase === (opening ? 'opening' : 'retreat') &&
           clip.speakerKind === 'civilian' && clip.age === person.userData.ageGroup &&
           clip.presentation === person.userData.presentation && (clip.zone === 'both' || clip.zone === zone))
           .map(clip => ({ clip, person }));
@@ -62,7 +84,7 @@ export function createCivilianVoices(buffers) {
     if (!buffer || buffer.numberOfChannels !== 1 || buffer.duration <= .1 || buffer.duration > 15)
       throw new Error(`Invalid civilian audio buffer: ${clip.file}`);
   }
-  const playing = new Set(), counts = { spoken: 0 };
+  const playing = new Set(), counts = { spoken: 0, encounters: 0, encounterSpoken: 0 };
   let output;
   const stop = () => {
     for (const voice of playing) voice.source.stop();
@@ -70,7 +92,8 @@ export function createCivilianVoices(buffers) {
   };
   return {
     setOutput(node) { output = node; },
-    reset() { stop(); director.reset(); counts.spoken = 0; },
+    reset() { stop(); director.reset(); counts.spoken = counts.encounters = counts.encounterSpoken = 0; },
+    encounter(now) { if (director.encounter(now)) { stop(); counts.encounters++; } },
     sync(enabled) { if (!enabled) stop(); },
     get snapshot() { return { ...counts, active: playing.size, clips: clips.length }; },
     update(context, civilians, listener, stage, now, enabled, priority, soldiers = [], hostiles = []) {
@@ -86,7 +109,8 @@ export function createCivilianVoices(buffers) {
         voice.gain.gain.setTargetAtTime(mix.gain * (priority ? .12 : .8), context.currentTime, .08);
         voice.pan.pan.setTargetAtTime(mix.pan, context.currentTime, .08);
       }
-      if (priority || playing.size >= 2) return;
+      if (priority || playing.size >= 2 || director.encounterPending && playing.size > 0 ||
+        [...playing].some(voice => voice.encounter)) return;
       const choice = director.select(civilians, listener, stage, now, soldiers, hostiles);
       if (!choice) return;
       const source = context.createBufferSource(), gain = context.createGain(), pan = context.createStereoPanner();
@@ -95,9 +119,11 @@ export function createCivilianVoices(buffers) {
       gain.gain.value = mix.gain * .8; pan.pan.value = mix.pan;
       filter.type = 'lowpass'; filter.frequency.value = mix.cutoff;
       source.connect(filter).connect(gain).connect(pan).connect(output);
-      const voice = { source, gain, pan, person: choice.person, phase: choice.clip.phase };
+      const voice = { source, gain, pan, person: choice.person, phase: choice.clip.phase,
+        encounter: Number.isInteger(choice.clip.encounterOrder) };
       source.onended = () => { playing.delete(voice); source.disconnect(); filter.disconnect(); gain.disconnect(); pan.disconnect(); };
       playing.add(voice); counts.spoken++;
+      if (voice.encounter) counts.encounterSpoken++;
       source.start();
     },
   };

@@ -1,3 +1,5 @@
+import { civilianBodyHeight } from './civilian-refugees.js';
+
 export function traceCivilianBullet(civilians, start, direction, maximumDistance, positionOf=person=>person.position) {
   let closest = maximumDistance, result = null;
   for (const civilian of civilians) {
@@ -5,7 +7,7 @@ export function traceCivilianBullet(civilians, start, direction, maximumDistance
     if (!civilian.visible || data.dead || data.evacuated) continue;
     const scale = civilian.civilianSkin?.profile.height ?? 1;
     const position=positionOf(civilian);
-    const height = scale * (1.72 - (data.escapeMotion?.crouch ?? 0) * .65);
+    const height = civilianBodyHeight(civilian);
     const radius = scale * .22;
     for (const y of [radius + .08, height * .53, height - radius]) {
       const dx = position.x - start.x, dy = position.y + y - start.y, dz = position.z - start.z;

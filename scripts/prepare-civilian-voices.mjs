@@ -4,14 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { azureToken, voiceSSML, VOICE_FORMAT } from './prepare-battle-voices.mjs';
 import { civilianVoiceClips } from '../src/civilian-voice-lines.js';
+import { endingVoiceClips } from '../src/battle-ending.js';
 
 const cacheOnly = process.argv.includes('--cache-only');
+const encounterOnly = process.argv.includes('--encounter-only');
+const endingOnly = process.argv.includes('--ending-only');
 const region = process.env.AZURE_SPEECH_REGION, resource = process.env.AZURE_SPEECH_RESOURCE_ID;
 if (!cacheOnly && (!/^[a-z0-9]+$/.test(region ?? '') ||
   !/^\/subscriptions\/[a-f0-9-]+\/resourceGroups\/[\w.-]+\/providers\/Microsoft\.CognitiveServices\/accounts\/[\w.-]+$/i.test(resource ?? '')))
   throw new Error('Set AZURE_SPEECH_REGION and AZURE_SPEECH_RESOURCE_ID for an existing resource');
 const hash = data => createHash('sha256').update(data).digest('hex');
-const root = fileURLToPath(new URL('../public/assets/audio/civilian-voices/', import.meta.url));
+const root = fileURLToPath(new URL(`../public/assets/audio/${endingOnly ? 'battle-endings' : 'civilian-voices'}/`, import.meta.url));
 await mkdir(root, { recursive: true });
 let previous = { files: [] };
 try { previous = JSON.parse(await readFile(join(root, 'source.json'), 'utf8')); }
@@ -24,13 +27,14 @@ const manifest = { provider: 'Azure AI Speech', format: VOICE_FORMAT,
   source: 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech',
   license: 'Azure-generated-speech',
   licenseUrl: 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA',
-  provenance: 'Original fictional civilian dialogue. Stock neural voices with supported age roles; not historical recordings, real survivors, cloned voices or CC0.',
+  provenance: endingOnly ? 'User-approved fictional game ending narration. Stock male neural voice; not historical recordings, cloned commanders or CC0.'
+    : 'Original fictional civilian dialogue. Stock neural voices with supported age roles; not historical recordings, real survivors, cloned voices or CC0.',
   generatedAt: new Date().toISOString(), requestedBudgetUSD: 50, requestSSMLCharacterLimit: 200000,
-  budgetPerPhaseUSD: { retreat: 50, opening: 50 },
+  budgetPerPhaseUSD: endingOnly ? { ending: 50 } : { retreat: 50, opening: 50 },
   budgetBasis: '200,000 SSML characters per phase, including retries. Standard S1 Neural retail meter in Sweden Central: USD 15 per million characters (2026-11-02). Counting full XML overestimates billable text; this is a synthesis guard, not an Azure subscription spending cap or invoice.',
   attemptedSSMLCharacters: previous.attemptedSSMLCharacters ?? 0,
   attemptedCharactersByPhase: previous.attemptedCharactersByPhase ??
-    { retreat: previous.attemptedSSMLCharacters ?? 0, opening: 0 }, files: [...previous.files] };
+    (endingOnly ? { ending: previous.attemptedSSMLCharacters ?? 0 } : { retreat: previous.attemptedSSMLCharacters ?? 0, opening: 0 }), files: [...previous.files] };
 const replaceFile = async (from, to) => {
   for (let attempt = 0; ; attempt++) {
     try { await rename(from, to); return; }
@@ -52,7 +56,7 @@ const publish = async () => {
   await writeFile(join(root, 'source.json.tmp'), `${JSON.stringify(manifest, null, 2)}\n`);
   await replaceFile(join(root, 'source.json.tmp'), join(root, 'source.json'));
 };
-const clips = civilianVoiceClips();
+const clips = endingOnly ? endingVoiceClips() : civilianVoiceClips().filter(clip => !encounterOnly || Number.isInteger(clip.encounterOrder));
 // Validate the whole requested batch before sending any billable synthesis requests.
 if (!cacheOnly) for (const clip of clips) {
   const voice = available.find(item => item.ShortName === clip.voice &&
@@ -60,7 +64,7 @@ if (!cacheOnly) for (const clip of clips) {
   if (!voice?.StyleList?.includes(clip.style) || clip.role && !voice.RolePlayList?.includes(clip.role))
     throw new Error(`Unsupported voice, style or age role: ${clip.file}`);
 }
-for (const clip of clips) {
+for (const [clipIndex, clip] of clips.entries()) {
   const ssml = voiceSSML(clip), synthesisHash = hash(`${VOICE_FORMAT}\n${ssml}`);
   const old = manifest.files.find(file => file.file === clip.file && file.synthesisHash === synthesisHash);
   let bytes;
@@ -96,6 +100,6 @@ for (const clip of clips) {
   manifest.files = manifest.files.filter(file => file.file !== clip.file);
   manifest.files.push({ ...clip, bytes: bytes.length, sha256: hash(bytes), synthesisHash });
   await publish();
-  console.log(`${manifest.files.length}/${clips.length} ${clip.file}`);
+  console.log(`${clipIndex + 1}/${clips.length} ${clip.file} (${manifest.files.length} cached total)`);
 }
 console.log(`Cached ${manifest.files.length} civilian clips; ${manifest.attemptedSSMLCharacters} SSML characters requested in total.`);

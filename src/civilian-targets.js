@@ -1,8 +1,8 @@
 import { Vector3 } from 'three';
+import { civilianBodyHeight } from './civilian-refugees.js';
 
 export function civilianAimHeight(person) {
-  const scale=person.civilianSkin?.profile.height??1;
-  return scale*(1.72-(person.userData.escapeMotion?.crouch??0)*.65)*.53;
+  return civilianBodyHeight(person)*.53;
 }
 
 export function civilianCombatTargets(civilians) {

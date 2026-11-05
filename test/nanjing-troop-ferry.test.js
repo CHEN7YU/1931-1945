@@ -43,6 +43,24 @@ test('being inside the dock does not evacuate a soldier: actual walking, boardin
   assert.deepEqual(completeTroopFerryCrossing(ferry), [actor]);
   assert.equal(actor.tactics.nanjingFerry.phase, 'evacuated');
 });
+
+test('the controlled passenger can look independently while staying attached, and ending deck motion preserves stance and speed', () => {
+  const { ferry, actors, board } = fixture();
+  board(0);
+  const actor = actors[0];
+  actor.heading = .8;
+  ferry.rotation.y = .2;
+  syncTroopFerryPassengers(ferry, actor.id);
+  assert.equal(actor.heading, .8);
+  assert.equal(actor.stance, 'crouched');
+  const passenger = ferry.userData.troopPassengers[0];
+  passenger.deckControlled = true; passenger.local.z = 0;
+  actor.stance = 'standing'; actor.locomotion.speed = 1.5;
+  syncTroopFerryPassengers(ferry, actor.id);
+  assert.equal(actor.stance, 'standing');
+  assert.equal(actor.locomotion.speed, 1.5);
+  assert.ok(actor.position.distanceTo(ferry.localToWorld(passenger.local.clone())) < 1e-8);
+});
 test('troop ferries keep ten real seat slots, wait for boarding and allow a partially full final departure', () => {
   const { ferry, actors, board, route } = fixture(12);
   for (let index = 0; index < 10; index++) assert.equal(board(index), true);

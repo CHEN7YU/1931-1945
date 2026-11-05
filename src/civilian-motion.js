@@ -41,8 +41,13 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
 
 export function restoreCivilianMotionPose(person) {
   const motion = person.userData.escapeMotion;
-  if (!motion) return;
+  if (!motion || person.userData.dead) return;
   const stride = motion.stride;
+  if (person.userData.refugeeRestPoint) for (const side of ['left', 'right'])
+    for (const part of ['Leg', 'Knee', 'Foot']) {
+      person.civilianSkin.joints[`${side}${part}`].rotation.y = 0;
+      person.civilianSkin.joints[`${side}${part}`].rotation.z = 0;
+    }
   person.civilianLegs[0].rotation.x = -stride;
   person.civilianLegs[1].rotation.x = stride;
   const active = Math.min(1, motion.speed / 1.2) * (1 - motion.crouch);
@@ -64,7 +69,7 @@ export function restoreCivilianMotionPose(person) {
 
 export function applyCivilianProtectivePose(person) {
   const motion = person.userData.escapeMotion;
-  if (!motion) return;
+  if (!motion || person.userData.dead) return;
   const { joints, profile } = person.civilianSkin;
   const childHeld = profile.carrying === 'child', luggage = profile.carrying === 'luggage';
   const crouch = motion.crouch * (childHeld ? .75 : 1);

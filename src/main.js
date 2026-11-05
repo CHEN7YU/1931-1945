@@ -73,6 +73,9 @@ import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
 import { createAdaptiveAI, idleAIForReduction } from './adaptive-ai.js';
 import { createAdaptiveQuality } from './adaptive-quality.js';
+import { advanceCivilianFlight } from './civilian-refugees.js';
+import './battle-ending.css';
+import { BATTLE_HISTORY, createBattleEnding, loadEndingNarration, playEndingNarration } from './battle-ending.js';
 import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { tankSweptContact, chooseTankEvasion as planTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
@@ -130,7 +133,7 @@ import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJI
   recordNanjingAISquadBoarding, nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from './nanjing-defense.js';
-import { civilianWaypointReached, moveCivilianInCrowd, releaseNanjingCivilianWave,
+import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
@@ -411,6 +414,43 @@ const automaticQuality = createAdaptiveQuality({ onChange({ level }) {
   graphics.setAutomaticLevel(level);
   syncQualityControls();
 } });
+const endingNarration = {}, endingNarrationFailures = {};
+let endingVoice = null, endingPageHeight = 0;
+const endingCampaign = nanjingCampaignMode ? 'nanjing' : 'taierzhuang-fort';
+const battleEnding = createBattleEnding({
+  onBlack() {
+    endingVoice?.stop(); endingVoice = null;
+    setGameState('pause'); releaseMouse();
+    performanceDiagnostics.suspend('pause');
+    $('battle-ending').hidden = false;
+    const history = BATTLE_HISTORY[endingCampaign], page = $('battle-ending-page');
+    page.replaceChildren();
+    const title = document.createElement('h2'); title.textContent = history.title; page.append(title);
+    const date = document.createElement('p'); date.className = 'battle-ending-date'; date.textContent = history.date; page.append(date);
+    for (const [heading, text] of history.sections) {
+      const h = document.createElement('h3'), p = document.createElement('p');
+      h.textContent = heading; p.textContent = text; page.append(h, p);
+    }
+    const sources = document.createElement('p'); sources.className = 'battle-ending-sources';
+    for (const [label, url] of history.sources) {
+      const link = document.createElement('a'); link.textContent = label; link.href = url;
+      link.target = '_blank'; link.rel = 'noopener noreferrer'; sources.append(link);
+    }
+    page.append(sources); page.hidden = false;
+    page.style.fontSize = '';
+    const height = page.scrollHeight, available = innerHeight - 85;
+    if (height > available)
+      page.style.fontSize = `${Math.max(12, parseFloat(getComputedStyle(page).fontSize) * available / height)}px`;
+    endingPageHeight = page.scrollHeight;
+  },
+  onFinish(kind) { $('battle-ending').hidden = true; showOverlay(kind); },
+});
+for (const outcome of ['victory', 'defeat', 'draw'])
+  void loadEndingNarration(endingCampaign, outcome).then(buffer => { endingNarration[outcome] = buffer; }).catch(error => {
+    endingNarrationFailures[outcome] = error.message;
+    console.warn(`战役结尾${outcome}旁白暂不可用：`, error);
+  });
+$('battle-ending-continue').addEventListener('click', () => battleEnding.finish());
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.armorObstacles ?? world.obstacles);
 world.doorSystem.onNavigationChanged = (bounds, regions = [bounds]) => {
@@ -605,6 +645,14 @@ function setGameState(next) {
   const active = activeStates.has(next);
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
+  if (battleEnding.fading) {
+    if (next === 'pause') endingVoice?.pause();
+    else if (active) endingVoice?.resume();
+  }
+  if (next === 'menu') {
+    endingVoice?.stop(); endingVoice = null; battleEnding.reset();
+    $('battle-ending').hidden = true;
+  }
   if (['menu', 'victory', 'defeat', 'draw'].includes(next)) automaticQuality.leaveBattle();
   getMenuMusic().setState(next);
   if (['pause', 'menu', 'victory', 'defeat', 'draw'].includes(next)) {
@@ -1061,7 +1109,8 @@ function presentRifleReports() {
   const listener = battleAudioListener();
   tacticalAudio?.flush(audioContext, listener, time, entities.vehicles.values());
   vehicleAudio?.update(audioContext, entities.vehicles.values(), listener, time, activeStates.has(state));
-  const signalsEnabled = enemySignalsEnabled(activeStates.has(state), nanjingCampaignMode ? nanjingCampaign?.stage ?? null : null);
+  const chatterEnabled = activeStates.has(state) && !battleEnding.fading;
+  const signalsEnabled = enemySignalsEnabled(chatterEnabled, nanjingCampaignMode ? nanjingCampaign?.stage ?? null : null);
   const signal = battleSignals?.update(audioContext, allForces, listener, time, signalsEnabled);
   if (signal?.team === 'enemy') {
     const speaker = friendlyForces.filter(actor => actor.health > 0 && !actor.vehicleId && actor.id !== listener.soldierId)
@@ -1069,13 +1118,15 @@ function presentRifleReports() {
     if (speaker) battleVoices?.signalWarning(audioContext, speaker, listener, time);
   }
   rifleAudio?.playBatch(audioContext, rifleReports.splice(0), listener);
-  battleVoices?.update(audioContext, allForces, listener, time, activeStates.has(state), (observer, target) => {
+  battleVoices?.update(audioContext, allForces, listener, time, chatterEnabled, (observer, target) => {
     const eye = soldierEyePosition(observer);
     return Boolean(visibleTargetPoint(target, point => hasLine(new THREE.Vector3(eye.x, eye.y, eye.z), point, 75, target.vehicleId)));
   });
-  battleReactions?.update(audioContext, allForces, listener, time, battleVoices?.priorityActive ?? false, activeStates.has(state));
+  battleReactions?.update(audioContext, allForces, listener, time, battleVoices?.priorityActive ?? false, chatterEnabled);
   if (nanjingCampaignMode) civilianVoices?.update(audioContext, world.civilians, listener, nanjingCampaign.stage,
-    time, ['playing', 'transferring'].includes(state), battleVoices?.priorityActive ?? false, friendlyForces, enemies);
+    time, ['playing', 'transferring'].includes(state) && !battleEnding.fading &&
+      (nanjingCampaign.stage === 'gate-defense' || world.civilianFlight.encounterAt !== null ||
+        world.civilianFlight.allReleasedAt !== null), battleVoices?.priorityActive ?? false, friendlyForces, enemies);
 }
 
 function battleVoiceEvent(cue, options = {}) {
@@ -1359,6 +1410,8 @@ function clearTransient() {
 }
 
 function beginMatch(initialSpawnId = null) {
+  endingVoice?.stop(); endingVoice = null; battleEnding.reset();
+  $('battle-ending').hidden = true;
   $('player-identity').hidden = true;
   $('initial-identity-slot').hidden = true;
   $('confirm-identity').hidden = true;
@@ -1580,6 +1633,26 @@ function deploy(squadId, spawnId = null) {
 }
 
 function showOverlay(kind = 'pause') {
+  if (['victory', 'defeat', 'draw'].includes(kind) && !battleEnding.complete) {
+    if (battleEnding.start(kind, performance.now(), endingNarration[kind]?.duration ?? 0)) {
+      $('battle-ending').hidden = false;
+      $('battle-ending').style.opacity = '0';
+      $('battle-ending').dataset.phase = 'fade';
+      $('battle-ending-page').hidden = true;
+      $('battle-ending-continue').hidden = true;
+      $('battle-ending-warning').hidden = true;
+      battleVoices?.sync(false); civilianVoices?.sync(false); battleSignals?.sync(false);
+      if (endingNarration[kind] && audioContext?.state === 'running')
+        endingVoice = playEndingNarration(audioContext, endingNarration[kind], audioMixer.output('voices'));
+      else {
+        $('battle-ending-warning').textContent = `结尾旁白暂不可用：${endingNarrationFailures[kind] ?? '音效尚未启用或未加载完成'}`;
+        $('battle-ending-warning').hidden = false;
+        battleVoiceEvent(kind, { eventKey: `match:${kind}` });
+      }
+    }
+    return;
+  }
+  if (kind === 'dead' && battleEnding.fading) { setGameState('dead'); return; }
   delete $('overlay').dataset.deploymentStep;
   $('confirm-identity').hidden = true;
   $('player-identity').hidden = true;
@@ -1593,7 +1666,7 @@ function showOverlay(kind = 'pause') {
   $('battle-summary').hidden = false;
   $('back-menu').textContent = '返回作战大厅';
   const ended = ['victory', 'defeat', 'draw'].includes(kind);
-  if (ended) battleVoiceEvent(kind, { eventKey: `match:${kind}` });
+  if (ended && !battleEnding.complete) battleVoiceEvent(kind, { eventKey: `match:${kind}` });
   const dead = kind === 'dead';
   if (ended || dead) missionBriefing.hide();
   $('battle-results').hidden = !ended;
@@ -3173,6 +3246,32 @@ function updatePlayer(dt) {
   const actor = allies[current];
   const playerFerry = nanjingPlayerFerry();
   if (playerFerry) {
+    if (battleEnding.fading && actor.tactics.nanjingFerry?.phase === 'aboard') {
+      const passenger = playerFerry.userData.troopPassengers?.find(passenger => passenger.actor === actor);
+      if (!passenger) throw new Error('Controlled ending passenger is missing its ferry seat');
+      passenger.deckControlled = true;
+      const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
+      const side = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
+      const yaw = controlPose.yaw - playerFerry.rotation.y;
+      const x = Math.max(-2.1, Math.min(2.1, passenger.local.x + (-Math.sin(yaw) * forward + Math.cos(yaw) * side) * dt * 1.5));
+      const z = Math.max(-.45, Math.min(.45, passenger.local.z + (-Math.cos(yaw) * forward - Math.sin(yaw) * side) * dt * 1.5));
+      let moved = 0;
+      if (!playerFerry.userData.troopPassengers.some(other => other !== passenger && other.actor.health > 0 &&
+        Math.hypot(other.local.x - x, other.local.z - z) < .35)) {
+        moved = Math.hypot(passenger.local.x - x, passenger.local.z - z);
+        passenger.local.set(x, NANJING_FERRY_FLOOR, z);
+      }
+      actor.position.copy(passenger.local).applyMatrix4(playerFerry.matrixWorld);
+      actor.heading = controlPose.yaw; actor.stance = controlPose.stance;
+      actor.locomotion.speed = dt > 0 ? moved / dt : 0; actor.locomotion.mode = moved > .001 ? 'walk' : 'idle';
+      const previousPhase = actor.walkPhase; actor.walkPhase += moved * 3.6;
+      if (Math.floor(previousPhase / Math.PI) !== Math.floor(actor.walkPhase / Math.PI))
+        tacticalAudio?.emit('deck-step', actor.position, time, actor.id);
+      actor.rifleReady = Boolean(held.aiming || held.primary);
+      if (actor.nativeMotion) advanceNraMotion(actor, dt);
+      if (held.primary) fire();
+      updateCamera(dt); return;
+    }
     actor.rifleReady = false; actor.firingPose = null;
     held.primary = held.aiming = false;
     const support = actor.tactics.nanjingFerry;
@@ -4921,7 +5020,6 @@ function updateNanjingMission(dt) {
     nanjingCampaign.presentedStage = stage;
     if (stage === 'withdrawal') {
       toast('中华门坚守完成！掩护百姓撤往上新河渡口。', 6);
-      releaseNanjingCivilianWave(world.civilians, time);
       let regroupSlot = 0;
       for (const actor of enemies.filter(actor => actor.health > 0 && !actor.vehicleId)) {
         actor.tactics.nanjingRegroup = nanjingGateRegroupPost(regroupSlot++);
@@ -5146,6 +5244,12 @@ function applyCivilianDamage(civilian, damage, source) {
 
 function updateNanjingCivilians(dt) {
   civilianCrowdPlanner.beginStep();
+  advanceCivilianFlight(world.civilians, world.civilianFlight, controlledSoldier(entities)?.position,
+    nanjingCampaign.stage, nanjingCampaign.dockActivated, time);
+  if (world.civilianFlight.encounterAt !== null && !world.civilianFlight.voiceNotified && civilianVoices) {
+    civilianVoices.encounter(time);
+    world.civilianFlight.voiceNotified = true;
+  }
   const threatBudget={remaining:6};
   const queue = world.civilianQueue;
   const peers = world.civilians.filter(other => other.visible && other.parent === scene && !other.userData.dead);
@@ -5161,12 +5265,18 @@ function updateNanjingCivilians(dt) {
       continue;
     }
     if (data.boarding || civilian.parent !== scene) continue;
-    if (!data.active && civilian.visible && frightenCivilian(data, civilian.position, combatSounds, time))
+    if (!data.active && civilian.visible && (!data.withdrawalWave || data.fleeReleased) &&
+      frightenCivilian(data, civilian.position, combatSounds, time))
       data.releaseAt = Math.min(data.releaseAt, time);
     if (data.streetLife && !data.active && !data.streetEvacuating) {
       const danger = civilian.visible ? updateCivilianThreatResponse(data, civilian.position, data.streetLife.exit,
         enemies, data.streetLife.navigationObstacles, time, visibleThreat, concealed,
         data.streetLife.navigationLookup,threatBudget) : null;
+      if (!data.fleeReleased) {
+        if (danger?.threats.length) advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'cower' });
+        else updateCivilianStreetLife(civilian, time, dt, peers, world.doorSystem);
+        continue;
+      }
       if (time < data.releaseAt && !danger?.threats.length) {
         updateCivilianStreetLife(civilian, time, dt, peers, world.doorSystem);
         continue;
@@ -5175,8 +5285,14 @@ function updateNanjingCivilians(dt) {
       beginCivilianStreetEvacuation(civilian);
     }
     if (!activateCivilianEvacuation(civilian, time, peers)) continue;
+    if (data.fleeReleased && data.restPoseWeight > 0) {
+      data.restPoseWeight = Math.max(0, data.restPoseWeight - dt / .9);
+      advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'waiting' });
+      continue;
+    }
     let response = null;
-    const routeTarget = data.arrived ? civilian.position : data.route[data.waypoint];
+    const routeTarget = data.arrived ? civilian.position : data.route[data.waypoint] ??
+      (data.resting ? data.refugeeRestPoint : null);
     if (routeTarget) response = updateCivilianThreatResponse(data, civilian.position, routeTarget, enemies,
       data.streetEvacuating ? data.streetLife.navigationObstacles : world.civilianNavigationObstacles,
       time, visibleThreat, concealed, data.streetEvacuating ? data.streetLife.navigationLookup : civilianNavigationLookup,threatBudget);
@@ -5206,13 +5322,24 @@ function updateNanjingCivilians(dt) {
     if (response?.mode==='flee'&&response.target&&civilian.position.distanceTo(new THREE.Vector3(response.target.x,
       civilian.position.y,response.target.z))<.3)response.nextThinkAt=Math.min(response.nextThinkAt,time+.15);
     if (response?.mode === 'cower') {
+      data.restPoseWeight = Math.max(0, data.restPoseWeight - dt * 3);
       advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'cower' });
       continue;
     }
+    if (data.resting && !data.fleeReleased && !response?.threats.length &&
+      Math.hypot(civilian.position.x - data.refugeeRestPoint.x, civilian.position.z - data.refugeeRestPoint.z) < .15) {
+      data.restPoseWeight = Math.min(1, data.restPoseWeight + dt / .8);
+      civilian.rotation.y += Math.atan2(Math.sin(data.restHeading - civilian.rotation.y),
+        Math.cos(data.restHeading - civilian.rotation.y)) * Math.min(1, dt * 3);
+      advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'waiting' });
+      continue;
+    }
+    if (response?.threats.length) data.restPoseWeight = Math.max(0, data.restPoseWeight - dt * 3);
     if (!data.arrived || response?.mode === 'flee') {
       const waypoints = data.route;
       frightenCivilian(data, civilian.position, combatSounds, time);
-      const target = response?.mode === 'flee' ? response.target : waypoints[data.waypoint];
+      const target = response?.mode === 'flee' ? response.target : waypoints[data.waypoint] ??
+        (data.resting ? data.refugeeRestPoint : null);
       if (target) {
         const dx = target.x - civilian.position.x, dz = target.z - civilian.position.z;
         const distance = Math.hypot(dx, dz);
@@ -5239,6 +5366,10 @@ function updateNanjingCivilians(dt) {
           data.streetEvacuating ? data.streetLife.navigationLookup : groundCollision)) data.waypoint++;
       }
       if (!data.arrived && data.waypoint >= waypoints.length) {
+        if (data.openingWave && !data.fleeReleased) {
+          data.resting = true;
+          continue;
+        }
         data.arrived = true;
         registerCivilianArrival(nanjingCampaign);
         queue.push(civilian);
@@ -5406,7 +5537,7 @@ function updateNanjingCivilians(dt) {
         ferry.userData.gangplank.visible = true;
       }
     }
-    syncTroopFerryPassengers(ferry);
+    syncTroopFerryPassengers(ferry, entities.control.soldierId);
     updateNanjingFerryRower(ferry, time);
     tacticalAudio?.rower(ferry, time, world.impactHeight, world.isDeepWater);
   }
@@ -6096,6 +6227,20 @@ function renderSimulationStatus() {
 function tick(now) {
   const callbackEnteredAt = benchmark ? performance.now() : 0;
   if (fatal) return;
+  battleEnding.update(performance.now(), document.hidden || battleEnding.fading && state === 'pause');
+  const ending = battleEnding.snapshot;
+  if (battleEnding.fading || battleEnding.black) {
+    const screen = $('battle-ending');
+    screen.hidden = battleEnding.fading && state === 'pause';
+    screen.dataset.phase = ending.phase; screen.style.opacity = String(ending.opacity);
+    $('battle-ending-continue').hidden = !ending.canContinue;
+    if (battleEnding.black)
+      $('battle-ending-page').style.transform = `translate(-50%, -50%) translateY(${(innerHeight + endingPageHeight) * .5 * (1 - ending.pageProgress)}px)`;
+  }
+  if (battleEnding.black || battleEnding.complete && ['victory', 'defeat', 'draw'].includes(state)) {
+    renderSimulationStatus();
+    lastFrame = now; requestAnimationFrame(tick); return;
+  }
   tacticalAudio?.beginFrame();
   footstepAudio?.beginBatch(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   const mechanical = mechanicalPlayback();
@@ -6398,7 +6543,8 @@ function performControlCommand(command) {
   const { action, payload } = command;
   const foot = unit.type === 'infantry' || unit.type === 'mortar';
   const actor = allies[current];
-  if (nanjingPlayerFerry() && !['look', 'pause', 'releaseFire', 'releaseAim'].includes(action)) {
+  if (battleEnding.black) return;
+  if (nanjingPlayerFerry() && !battleEnding.fading && !['look', 'pause', 'releaseFire', 'releaseAim'].includes(action)) {
     toast('正在登船撤离 · 可观察四周或按Esc暂停', 3);
     return;
   }
@@ -6502,6 +6648,7 @@ function performControlCommand(command) {
   }
   else if (action === 'jump' && foot && !actor.vehicleId && actor.traversal.kind === 'grounded') {
     if (controlPose.stance !== 'standing') controlPose.stance = 'standing';
+    else if (hasFerrySupport(actor)) { toast('船上不能跳跃或翻越，仍可移动和射击'); return; }
     else {
       const plan = findVault(actor.position, controlPose.yaw,
         deploymentObstacles(), world.walkHeight);
@@ -6606,6 +6753,11 @@ document.addEventListener('wheel', event => {
 }, { passive: false });
 
 document.addEventListener('keydown', event => {
+  if (battleEnding.black) {
+    if (event.code === 'Tab' || event.code === 'F11' ||
+      ['Enter', 'Space'].includes(event.code) && $('battle-ending').contains(document.activeElement)) return;
+    event.preventDefault(); return;
+  }
   if (fatal) return;
   if ($('feedback-dialog').open || event.target.closest('input, textarea, select')) return;
   if (['playing', 'transferring'].includes(state) &&
@@ -6692,7 +6844,9 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('pointerlockerror', () => { scoreboardRestoring = false; });
 window.addEventListener('blur', () => { if (['playing', 'transferring'].includes(state)) showOverlay(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && ['playing', 'transferring'].includes(state)) showOverlay(); });
+document.addEventListener('visibilitychange', () => battleEnding.update(performance.now(), true));
 window.addEventListener('resize', () => {
+  if (battleEnding.black) endingPageHeight = $('battle-ending-page').scrollHeight;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   graphics.resize(innerWidth, innerHeight);
@@ -6799,6 +6953,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   performanceDiagnostics: performanceDiagnostics.snapshot,
   adaptiveAI: adaptiveAI.snapshot,
   automaticQuality: automaticQuality.snapshot,
+  battleEnding: battleEnding.snapshot,
   queryDiagnostics: queryDiagnostics?.snapshot ?? null,
   tracers: tracerPool.snapshot,
   renderIsolation: { ...renderIsolation, requested: benchmark?.renderIsolation ?? 'normal',

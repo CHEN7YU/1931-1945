@@ -1,0 +1,57 @@
+{
+  "provider": "Azure AI Speech",
+  "format": "audio-24khz-48kbitrate-mono-mp3",
+  "source": "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech",
+  "license": "Azure-generated-speech",
+  "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
+  "provenance": "User-approved fictional game ending narration. Stock male neural voice; not historical recordings, cloned commanders or CC0.",
+  "generatedAt": "2026-11-05T13:19:08.020Z",
+  "requestedBudgetUSD": 50,
+  "requestSSMLCharacterLimit": 200000,
+  "budgetPerPhaseUSD": {
+    "ending": 50
+  },
+  "budgetBasis": "200,000 SSML characters per phase, including retries. Standard S1 Neural retail meter in Sweden Central: USD 15 per million characters (2026-11-02). Counting full XML overestimates billable text; this is a synthesis guard, not an Azure subscription spending cap or invoice.",
+  "attemptedSSMLCharacters": 675,
+  "attemptedCharactersByPhase": {
+    "ending": 675
+  },
+  "files": [
+    {
+      "id": "ending-taierzhuang-fort",
+      "file": "ending-taierzhuang-fort.mp3",
+      "campaign": "taierzhuang-fort",
+      "text": "感谢有你，我们第一次在正面战场围歼了日军！",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "gender": "Male",
+      "style": "serious",
+      "styledegree": "1.6",
+      "rate": "-5%",
+      "pitch": "-5%",
+      "volume": "loud",
+      "phase": "ending",
+      "bytes": 28368,
+      "sha256": "716e6c24ca9b4a0f31275269119ba4b0eb04e7d9007fce1e44c0d98c0d689793",
+      "synthesisHash": "d29dfc3c8fc414e4aebf5da2ff1d8a9d72fa3bc12c164a1113df47e6b7819a04"
+    },
+    {
+      "id": "ending-nanjing",
+      "file": "ending-nanjing.mp3",
+      "campaign": "nanjing",
+      "text": "感谢你在城外拖延日军，感谢你在渡口掩护百姓和友军撤退，唐司令命令我们撤离南京，我们会再打回来了！",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "gender": "Male",
+      "style": "serious",
+      "styledegree": "1.6",
+      "rate": "-5%",
+      "pitch": "-5%",
+      "volume": "loud",
+      "phase": "ending",
+      "bytes": 60336,
+      "sha256": "407ac7653567633c3c9c8aebe629dfc3e83d97c07f00847145626583ced37e79",
+      "synthesisHash": "24f38cb7c781bfc10bde8ce82fae3f2e49fc1490b34fb8376cb3ce13310c5c85"
+    }
+  ]
+}

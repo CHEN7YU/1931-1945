@@ -144,6 +144,15 @@ const openingSoldiers = [
 ];
 
 export function civilianVoiceClips() {
+  const encounter = [
+    ['woman', '日本人来了，快跑啊！'],
+    ['man', '当兵的也跑了，我们往哪里跑啊？'],
+    ['grandmother', '听说渡口有船，可以离开南京，是真的吗？'],
+  ].map(([profile, text], encounterOrder) => ({
+    ...profiles[profile], locale: 'zh-CN', styledegree: '1.6', volume: 'loud', phase: 'retreat',
+    speakerKind: 'civilian', zone: 'city', encounterOrder,
+    id: `withdrawal-encounter-${encounterOrder + 1}`, file: `withdrawal-encounter-${encounterOrder + 1}.mp3`, text,
+  }));
   const retreat = Object.entries(dialogue).flatMap(([profile, lines]) => lines.map(([zone, text], index) => ({
     ...profiles[profile], locale: 'zh-CN', styledegree: '1.4', volume: 'medium',
     phase: 'retreat', speakerKind: 'civilian',
@@ -162,7 +171,7 @@ export function civilianVoiceClips() {
       id: `opening-soldier-${voiceIndex}-${index + 1}`, file: `opening-soldier-${voiceIndex}-${index + 1}.mp3`, text,
     })));
   const urgentCalls=new Set(['girl-1','girl-2','boy-1','boy-2','opening-girl-1','opening-boy-1']);
-  return [...retreat, ...opening, ...soldiers].map(clip=>urgentCalls.has(clip.id)?{
+  return [...retreat, ...opening, ...soldiers, ...encounter].map(clip=>urgentCalls.has(clip.id)?{
     ...clip,style:'fearful',styledegree:'2',rate:'+16%',volume:'loud',pauseMs:110,audioRevision:'fearful-2',
   }:clip);
 }

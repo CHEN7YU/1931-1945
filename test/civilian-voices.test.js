@@ -22,11 +22,12 @@ function context() {
     createGain: node, createStereoPanner: node, createBiquadFilter: node };
 }
 
-test('132 original recordings cover opening civilians, protective soldier calls, and retreat dialogue for both sexes and all three age groups', () => {
+test('135 recordings cover opening, retreat and the three dedicated encounter lines', () => {
   const clips = civilianVoiceClips();
-  assert.equal(clips.length, 132);
-  assert.equal(new Set(clips.map(clip => clip.file)).size, 132);
-  assert.equal(clips.filter(clip => clip.phase === 'retreat').length, 80);
+  assert.equal(clips.length, 135);
+  assert.equal(new Set(clips.map(clip => clip.file)).size, 135);
+  assert.equal(clips.filter(clip => clip.phase === 'retreat').length, 83);
+  assert.equal(clips.filter(clip => Number.isInteger(clip.encounterOrder)).length, 3);
   assert.equal(clips.filter(clip => clip.speakerKind === 'soldier').length, 12);
   for (const phase of ['opening', 'retreat']) for (const age of ['child', 'elderly', 'adult'])
     for (const presentation of ['man', 'woman'])
@@ -39,7 +40,7 @@ test('every real MP3 matches its synthesis hash and provenance, with independent
   const root = new URL('../public/assets/audio/civilian-voices/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
-  assert.equal(manifest.files.length, 132);
+  assert.equal(manifest.files.length, 135);
   for (const clip of civilianVoiceClips()) {
     const record = manifest.files.find(file => file.file === clip.file);
     const bytes = await readFile(new URL(clip.file, root));
@@ -65,7 +66,7 @@ test('the actual voice loader requests revised URLs for changed takes and keeps 
   globalThis.fetch=async url=>{requests.push(url);return new Response(new Uint8Array([0]));};
   try{
     await loadCivilianVoices();
-    assert.equal(requests.length,132);
+    assert.equal(requests.length,135);
     assert.equal(requests.filter(url=>url.includes('?v=fearful-2')).length,6);
     assert.ok(requests.includes('/assets/audio/civilian-voices/man-1.mp3'));
   }finally{globalThis.fetch=previousFetch;globalThis.OfflineAudioContext=previousAudio;}

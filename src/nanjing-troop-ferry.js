@@ -64,7 +64,7 @@ export function advanceTroopFerryBoarding(ferry, dt) {
   return { actor, moved };
 }
 
-export function syncTroopFerryPassengers(ferry) {
+export function syncTroopFerryPassengers(ferry, controlledId = null) {
   const data = ferry.userData;
   if (!data.troopPassengers?.length) return;
   data.troopPassengers = data.troopPassengers.filter(({ actor }) => {
@@ -73,15 +73,18 @@ export function syncTroopFerryPassengers(ferry) {
     return false;
   });
   ferry.updateWorldMatrix(true, false);
-  for (const { actor, local } of data.troopPassengers) {
+  for (const { actor, local, deckControlled } of data.troopPassengers) {
     actor.position.copy(local).applyMatrix4(ferry.matrixWorld);
     if (actor.nativeMotion) {
       // Carrier motion is not a walking stride made by the passenger.
       actor.nativeMotion.position.x = actor.position.x;
       actor.nativeMotion.position.z = actor.position.z;
     }
-    actor.heading = ferry.rotation.y; actor.stance = 'crouched';
-    actor.locomotion.speed = 0; actor.locomotion.mode = 'idle'; actor.walkPoseReady = false;
+    if (!deckControlled) {
+      if (actor.id !== controlledId) actor.heading = ferry.rotation.y;
+      actor.stance = 'crouched';
+      actor.locomotion.speed = 0; actor.locomotion.mode = 'idle'; actor.walkPoseReady = false;
+    }
   }
 }
 
