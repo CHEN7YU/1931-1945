@@ -99,13 +99,14 @@ export function createTankNavigation(obstacles) {
       moveGround(position, dx, dz, CHI_HA.clearance, [...obstacles, ...traffic]);
       return { yielding: false, reversing: false };
     },
-    refresh(bounds) {
-      staticNavigate?.refresh(bounds);
+    refreshMany(regions) {
+      staticNavigate?.refreshMany(regions);
       for (const view of views.values()) {
         view.source.splice(0, view.source.length, ...obstacles, ...view.traffic);
-        view.navigate.refresh(bounds);
+        view.navigate.refreshMany(regions);
       }
     },
+    refresh(bounds) { this.refreshMany([bounds]); },
     reset() { views.clear(); staticNavigate = null; },
   };
 }

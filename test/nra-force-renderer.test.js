@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { bakeNraGeometry, createNraForceRenderer, createNraForceRendererAsync } from '../src/nra-force-renderer.js';
+import { bakeNraGeometry, createNraForceRenderer, createNraForceRendererAsync, settledNraGeometry } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { createCasualtyState } from '../src/casualties.js';
@@ -11,6 +11,28 @@ import { createBayonetState } from '../src/bayonet.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 import { createDadaoState } from '../src/dadao.js';
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
+
+test('settled LOD preserves the selected pose without cloning or retaining discarded morph frames', () => {
+  const source = new THREE.BoxGeometry(1, 2, 1);
+  source.morphAttributes.position = Array.from({ length: 6 }, (_, index) => {
+    const attribute = source.attributes.position.clone();
+    for (let vertex = 0; vertex < attribute.count; vertex++) attribute.setY(vertex, attribute.getY(vertex) + index * .1);
+    return attribute;
+  });
+  source.morphAttributes.normal = Array.from({ length: 6 }, () => source.attributes.normal.clone());
+  const expected = source.clone();
+  expected.setAttribute('position', source.morphAttributes.position.at(-1).clone());
+  expected.setAttribute('normal', source.morphAttributes.normal.at(-1).clone());
+  expected.morphAttributes = {}; expected.computeBoundingBox(); expected.computeBoundingSphere();
+  for (const attributes of Object.values(source.morphAttributes)) for (const attribute of attributes.slice(0, -1))
+    attribute.clone = () => { throw new Error('Unused morph frame was copied'); };
+  const actual = settledNraGeometry(source, true);
+  for (const name of Object.keys(expected.attributes)) assert.deepEqual(actual.attributes[name].array, expected.attributes[name].array);
+  assert.deepEqual(actual.morphAttributes, {});
+  assert.deepEqual(actual.boundingBox, expected.boundingBox);
+  assert.deepEqual(actual.boundingSphere, expected.boundingSphere);
+  actual.dispose(); expected.dispose(); source.dispose();
+});
 
 test('distant shared geometry preserves actual transformed skin vertices, normals, UVs and material groups', () => {
   const geometry = new THREE.BoxGeometry(1, 1, 1);

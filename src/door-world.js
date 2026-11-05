@@ -41,6 +41,14 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
   let onNavigationChanged = () => {};
   let onRequested = () => {};
   let blockedDoors = [];
+  const updateStats = { navigationBatches: 0, changedDoors: 0, sphereUpdates: 0 };
+  const notifyRegions = regions => {
+    if (!regions.length) return;
+    updateStats.navigationBatches++; updateStats.changedDoors += regions.length;
+    onNavigationChanged({ minX: Math.min(...regions.map(region => region.minX)),
+      maxX: Math.max(...regions.map(region => region.maxX)), minZ: Math.min(...regions.map(region => region.minZ)),
+      maxZ: Math.max(...regions.map(region => region.maxZ)) }, regions);
+  };
   const activate = (door, actor, openOnly = false) => {
     const changed = requestDoor(door, actor, openOnly);
     if (changed) onRequested(door);
@@ -72,34 +80,43 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
     Object.assign(colliders[index], doorCollider(door));
     leaf.instanceMatrix.needsUpdate = bands.instanceMatrix.needsUpdate = handles.instanceMatrix.needsUpdate = true;
   };
-  const syncNavigation = index => {
+  const syncNavigation = (index, notify = true) => {
     const collider = colliders[index], door = doors[index], at = navigationObstacles.indexOf(collider);
     // Closed doors are traversable planning portals: AI must open them before walking through.
     if (door.state === 'open' && at < 0) navigationObstacles.push(collider);
     if (door.state === 'closed' && at >= 0) navigationObstacles.splice(at, 1);
-    onNavigationChanged({ minX: door.x - door.width - 1, maxX: door.x + door.width + 1, minZ: door.z - door.width - 1, maxZ: door.z + door.width + 1 });
+    const bounds = { minX: door.x - door.width - 1, maxX: door.x + door.width + 1,
+      minZ: door.z - door.width - 1, maxZ: door.z + door.width + 1 };
+    if (notify) onNavigationChanged(bounds, [bounds]);
+    return bounds;
   };
   doors.forEach((door, index) => { draw(index); syncNavigation(index); });
+  leaf.computeBoundingSphere(); updateStats.sphereUpdates++;
   const cast = new THREE.Raycaster();
   const portal = new THREE.Plane();
   const hitPoint = new THREE.Vector3();
   return {
-    doors, navigationObstacles, raycastStats,
+    doors, navigationObstacles, raycastStats, updateStats,
     set onNavigationChanged(callback) { onNavigationChanged = callback; },
     set onRequested(callback) { onRequested = callback; },
     update(dt, occupants) {
+      const regions = [];
+      let moved = false;
       for (const [index, door] of doors.entries()) {
         const revision = door.revision;
-        if (advanceDoor(door, dt, occupants)) draw(index);
-        if (door.revision !== revision) syncNavigation(index);
+        if (advanceDoor(door, dt, occupants)) { draw(index); moved = true; }
+        if (door.revision !== revision) regions.push(syncNavigation(index, false));
       }
       blockedDoors = doors.filter(door => door.blocked);
-      leaf.computeBoundingSphere();
+      if (moved) { leaf.computeBoundingSphere(); updateStats.sphereUpdates++; }
+      notifyRegions(regions);
     },
     reset() {
       resetDoors(doors);
       blockedDoors = [];
-      doors.forEach((door, index) => { draw(index); syncNavigation(index); });
+      const regions = doors.map((door, index) => { draw(index); return syncNavigation(index, false); });
+      leaf.computeBoundingSphere(); updateStats.sphereUpdates++;
+      notifyRegions(regions);
     },
     focus(camera) {
       const direction = camera.getWorldDirection(new THREE.Vector3());

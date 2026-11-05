@@ -41,3 +41,33 @@ test('saved graphics settings apply on construction without first allocating the
   assert.throws(() => createQualitySettings({ ...options, initialEffects: { unknown: true } }), RangeError);
   assert.throws(() => createQualitySettings({ ...options, initialEffects: { fog: 0 } }), RangeError);
 });
+
+test('automatic levels reduce actual pixels and optional effects while preserving manual preferences and combat feedback', () => {
+  let ratio = 1.5;
+  const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xffffff, 1, 100);
+  const renderer = { capabilities: { maxTextureSize: 8192 }, shadowMap: { enabled: true },
+    getPixelRatio: () => ratio, setPixelRatio(value) { ratio = value; },
+    domElement: { width: 1280, height: 720 }, info: { memory: { textures: 0 } } };
+  const settings = createQualitySettings({ renderer, scene, sun: new THREE.DirectionalLight(),
+    smoke: Array.from({ length: 30 }, () => ({ visible: true })), grain: {}, deviceRatio: () => 1.5 });
+  const manual = settings.snapshot.requested;
+  settings.setAutomaticLevel(1);
+  assert.equal(settings.snapshot.pixelRatio, 1);
+  assert.equal(settings.snapshot.shadowSize, 1024);
+  settings.setAutomaticLevel(2);
+  assert.equal(settings.snapshot.pixelRatio, .8);
+  assert.equal(settings.snapshot.shadowsEnabled, false);
+  settings.setAutomaticLevel(3);
+  assert.equal(settings.snapshot.pixelRatio, .6);
+  assert.equal(settings.snapshot.visibleSmoke, 0);
+  assert.equal(settings.snapshot.effects.muzzle, true);
+  assert.equal(settings.snapshot.effects.hitParticles, true);
+  assert.equal(settings.snapshot.effects.damageVignette, true);
+  assert.equal(settings.snapshot.effects.fog, true);
+  assert.deepEqual(settings.snapshot.requested, manual);
+  settings.setAutomaticLevel(0);
+  assert.equal(settings.snapshot.pixelRatio, 1.5);
+  assert.equal(settings.snapshot.preset, 'high');
+  assert.deepEqual(settings.snapshot.requested, manual);
+  assert.throws(() => settings.setAutomaticLevel(4), RangeError);
+});

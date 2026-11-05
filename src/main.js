@@ -71,7 +71,8 @@ import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
 import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
-import { createAdaptiveAI } from './adaptive-ai.js';
+import { createAdaptiveAI, idleAIForReduction } from './adaptive-ai.js';
+import { createAdaptiveQuality } from './adaptive-quality.js';
 import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { tankSweptContact, chooseTankEvasion as planTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
@@ -405,10 +406,15 @@ const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.creat
 const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHand) : null;
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain'),
   initialPreset: preferenceValues.quality.preset, initialEffects: preferenceValues.quality.effects });
+const automaticQuality = createAdaptiveQuality({ onChange({ level }) {
+  performanceDiagnostics.checkpoint();
+  graphics.setAutomaticLevel(level);
+  syncQualityControls();
+} });
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.armorObstacles ?? world.obstacles);
-world.doorSystem.onNavigationChanged = bounds => {
-  navigate.refresh(bounds); armorNavigate.refresh(bounds); groundCollision.rebuild();
+world.doorSystem.onNavigationChanged = (bounds, regions = [bounds]) => {
+  navigate.refreshMany(regions); armorNavigate.refreshMany(regions); groundCollision.rebuild();
   civilianCrowdPlanner.invalidate(); civilianNavigationLookup?.rebuild();
 };
 world.doorSystem.onRequested = door => controlEvents.publish('door.requested', { doorId: door.id, opening: door.targetAngle !== 0,
@@ -599,6 +605,7 @@ function setGameState(next) {
   const active = activeStates.has(next);
   if (simulationClock.active !== active) simulationClock.setActive(active, performance.now());
   state = next;
+  if (['menu', 'victory', 'defeat', 'draw'].includes(next)) automaticQuality.leaveBattle();
   getMenuMusic().setState(next);
   if (['pause', 'menu', 'victory', 'defeat', 'draw'].includes(next)) {
     performanceDiagnostics.flush(['victory', 'defeat', 'draw'].includes(next) ? 'ended' : 'pause');
@@ -4301,7 +4308,8 @@ function updateAI(dt) {
       return actor.nativeMotion && actor.tactics.lastSeen &&
         (actor.tactics.postureNeedsChoice || time >= (actor.tactics.postureDecisionAt ?? 0));
     }, (actor, kind) => adaptiveAI.intervalFor(kind, actor.position, camera.position,
-      aiDecisionView.intersects(actor.position, 2), actor.target?.id === entities.control.soldierId));
+      aiDecisionView.intersects(actor.position, 2), actor.target?.id === entities.control.soldierId,
+      { idle: idleAIForReduction(actor, time), emergencyLevel: automaticQuality.snapshot.level }));
   let completedPaths = 0;
   for (const [id, request] of pathRequests) {
     if (request.actor.health <= 0 || request.actor === player || request.actor.vehicleId) {
@@ -6073,11 +6081,13 @@ function cleanupBattleCorpses() {
 function renderSimulationStatus() {
   const status = simulationClock.snapshot, element = $('simulation-status');
   const reduced = adaptiveAI.snapshot.level > 0;
+  const graphicsLevel = automaticQuality.snapshot.level;
   const backlog = status.pendingSeconds >= SIMULATION_CLOCK.lagWarningSeconds;
-  element.hidden = !status.active || !backlog && !reduced;
+  element.hidden = !status.active || !backlog && !reduced && !graphicsLevel;
   if (!element.hidden) {
     const text = [backlog ? `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶` : '',
-      reduced ? '自动减负 · 远处AI思考降频' : ''].filter(Boolean).join(' · ');
+      reduced ? '自动减负 · 远处AI思考降频' : '',
+      graphicsLevel ? `自动画面减负 · ${graphicsLevel}档` : ''].filter(Boolean).join(' · ');
     if (element.textContent !== text) element.textContent = text;
     element.title = `模拟追赶上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃时间；自动减负不暂停移动、交火、伤害或占点`;
   }
@@ -6095,6 +6105,8 @@ function tick(now) {
   const activeFrame = activeStates.has(state);
   performanceDiagnostics.beginFrame(Math.max(0, frameInterval), state, !document.hidden);
   adaptiveAI.observeFrame(Math.max(0, frameInterval), activeFrame && !document.hidden);
+  automaticQuality.observe(Math.max(0, frameInterval), { active: activeFrame && !benchmark?.renderIsolation,
+    visible: !document.hidden, backlogSeconds: simulationClock.snapshot.pendingSeconds, now });
   const presentationTime = time + simulationClock.beginFrame(performance.now());
   if (benchmark && activeFrame) telemetry.begin(now, frameInterval, 0);
   if (state === 'playing') {
@@ -6140,8 +6152,10 @@ function tick(now) {
   const charactersVisible = isolationMode !== 'no-characters';
   const displayed = [...new Set([...allForces.filter(actor => actor.health > 0), ...corpses.values()])];
   performanceDiagnostics.measure('presentation', () => {
-    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, graphics.snapshot.preset);
-    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, graphics.snapshot.preset);
+    const settings = graphics.snapshot;
+    const detailLimit = settings.automaticLevel === 3 ? 1 : settings.automaticLevel === 2 ? 2 : undefined;
+    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, settings.preset, { detailLimit });
+    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, settings.preset, { detailLimit });
   });
   uniformExcludedIds.clear();
   for (const force of [nraCharacter, ijaCharacter]) for (const id of force?.excludedIds ?? []) uniformExcludedIds.add(id);
@@ -6355,21 +6369,25 @@ function syncQualityControls() {
     weapon.userData.rifle.flash.visible &&= settings.effects.muzzle;
   }
   $('damage-vignette').style.opacity = settings.effects.damageVignette ? String(combatFeedback.flash) : '0';
-  for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.value = settings.preset;
-  for (const checkbox of document.querySelectorAll('[data-quality-effect]')) checkbox.checked = settings.effects[checkbox.dataset.qualityEffect];
-  $('quality-status').textContent = `${settings.preset === 'high' ? '高' : '低'}画质 · ${settings.pixelRatio.toFixed(2)}× · 阴影${settings.shadowsEnabled ? settings.shadowSize : '关闭'}`;
+  for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.value = settings.requested.preset;
+  for (const checkbox of document.querySelectorAll('[data-quality-effect]')) checkbox.checked = settings.requested.effects[checkbox.dataset.qualityEffect];
+  $('quality-status').textContent = `${settings.preset === 'high' ? '高' : '低'}画质 · ${settings.pixelRatio.toFixed(2)}× · 阴影${settings.shadowsEnabled ? settings.shadowSize : '关闭'}${settings.automaticLevel ? ` · 自动减负${settings.automaticLevel}档（保留手动偏好）` : ''}`;
 }
 for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.addEventListener('change', () => {
-  graphics.setPreset(selector.value);
-  const { preset, effects } = graphics.snapshot;
+  const selectedPreset = selector.value;
+  automaticQuality.manualChange();
+  graphics.setPreset(selectedPreset);
+  const { preset, effects } = graphics.snapshot.requested;
   preferences.update({ quality: { preset, effects } });
   syncPreferenceControls();
   syncQualityControls();
 });
 for (const checkbox of document.querySelectorAll('[data-quality-effect]')) checkbox.addEventListener('change', () => {
   if (!QUALITY_EFFECTS.includes(checkbox.dataset.qualityEffect)) throw new RangeError('Unknown graphics effect control');
-  graphics.setEffect(checkbox.dataset.qualityEffect, checkbox.checked);
-  const { preset, effects } = graphics.snapshot;
+  const enabled = checkbox.checked;
+  automaticQuality.manualChange();
+  graphics.setEffect(checkbox.dataset.qualityEffect, enabled);
+  const { preset, effects } = graphics.snapshot.requested;
   preferences.update({ quality: { preset, effects } });
   syncPreferenceControls();
   syncQualityControls();
@@ -6780,6 +6798,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   aiDecisions: aiDecisions.snapshot,
   performanceDiagnostics: performanceDiagnostics.snapshot,
   adaptiveAI: adaptiveAI.snapshot,
+  automaticQuality: automaticQuality.snapshot,
   queryDiagnostics: queryDiagnostics?.snapshot ?? null,
   tracers: tracerPool.snapshot,
   renderIsolation: { ...renderIsolation, requested: benchmark?.renderIsolation ?? 'normal',
@@ -7028,12 +7047,14 @@ performanceDiagnostics.setContext(() => {
   return { map: campaign.id, state, time, stage: nanjingCampaignMode ? nanjingCampaign.stage :
       encirclementMode ? encirclement.phase === 1 ? 'encirclement' : 'east-breakout' : 'conquest',
     quality: graphics.snapshot.preset, adaptiveLevel: adaptiveAI.snapshot.level,
+    automaticLoad: { ...automaticQuality.statistics, aiReductions: adaptiveAI.snapshot.reductions,
+      aiRecoveries: adaptiveAI.snapshot.recoveries },
     allies, enemies, corpses: corpses.size, vehicles, reinforcementWaves: encirclement.reinforcementWaves,
     drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
     backlogSeconds: clock.pendingSeconds, simulationSteps: clock.stepsThisFrame, unit: unit?.type ?? 'none',
     ...(nanjingCampaignMode?{civilianCasualties:nanjingCampaign.civilianCasualties,
       civilianShots:nanjingCampaign.civilianShots??0,civilianAircraftHits:nanjingCampaign.civilianAircraftHits??0}:{}) };
-});
+}, { onSessionStart() { automaticQuality.resetStatistics(); adaptiveAI.resetStatistics(); } });
 setLoadingProgress(100, '加载完成，即将进入战场。');
 reportLoading('ready');
 $('loading').hidden = true;

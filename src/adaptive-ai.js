@@ -8,8 +8,17 @@ const INTERVALS = Object.freeze([
   Object.freeze({ sensor: 2.8, path: 6, cover: 4, posture: 3 }),
 ]);
 
+export function idleAIForReduction(actor, now) {
+  if (!Number.isFinite(now) || !actor || !actor.tactics) throw new RangeError('Invalid idle AI state');
+  const tactics = actor.tactics;
+  return actor.health > 0 && !actor.vehicleId && !actor.target && !tactics.lastSeen && !actor.grenades?.action &&
+    now >= (tactics.suppressedUntil ?? 0) && now - (actor.lastHit?.time ?? -Infinity) > 4 &&
+    now - (tactics.lastShot?.time ?? -Infinity) > 4;
+}
+
 export function createAdaptiveAI() {
   let level = 0, active = false, warmup = 0, slow = 0, smooth = 0, average = 1000 / 60, transitions = 0;
+  let reductions = 0, recoveries = 0;
   return {
     observeFrame(frameMs, playing) {
       if (!Number.isFinite(frameMs) || frameMs < 0 || typeof playing !== 'boolean') {
@@ -27,25 +36,29 @@ export function createAdaptiveAI() {
       slow = overloaded ? slow + elapsed : 0;
       smooth = average <= ADAPTIVE_AI_RULES.recoverFrameMs ? smooth + elapsed : 0;
       if (level < 2 && slow >= (level === 0 ? .5 : .8)) {
-        level++; transitions++; slow = smooth = 0;
+        level++; transitions++; reductions++; slow = smooth = 0;
       } else if (level > 0 && smooth >= ADAPTIVE_AI_RULES.recoverSeconds) {
-        level--; transitions++; slow = smooth = 0;
+        level--; transitions++; recoveries++; slow = smooth = 0;
       }
     },
-    intervalFor(kind, position, observer, inView, threatensPlayer = false) {
+    intervalFor(kind, position, observer, inView, threatensPlayer = false, { idle = false, emergencyLevel = 0 } = {}) {
       if (!(kind in INTERVALS[0]) || typeof inView !== 'boolean' || typeof threatensPlayer !== 'boolean' ||
+        typeof idle !== 'boolean' || !Number.isInteger(emergencyLevel) || emergencyLevel < 0 || emergencyLevel > 3 ||
         ![position.x, position.y, position.z, observer.x, observer.y, observer.z].every(Number.isFinite)) {
         throw new RangeError('Adaptive AI requires a known decision and finite view relevance');
       }
-      if (level === 0 || inView || threatensPlayer ||
-        Math.hypot(position.x - observer.x, position.y - observer.y, position.z - observer.z) <= ADAPTIVE_AI_RULES.nearDistance) return 0;
+      const distance = Math.hypot(position.x - observer.x, position.y - observer.y, position.z - observer.z);
+      if (idle && emergencyLevel >= 2 && !threatensPlayer && distance > ADAPTIVE_AI_RULES.nearDistance)
+        return Math.max(INTERVALS[level][kind], INTERVALS[1][kind]);
+      if (level === 0 || inView || threatensPlayer || distance <= ADAPTIVE_AI_RULES.nearDistance) return 0;
       return INTERVALS[level][kind];
     },
     reset() {
       level = transitions = 0; active = false; warmup = slow = smooth = 0; average = 1000 / 60;
     },
+    resetStatistics() { reductions = recoveries = 0; },
     get snapshot() {
-      return { level, smoothedFrameMs: average, transitions, intervals: { ...INTERVALS[level] },
+      return { level, smoothedFrameMs: average, transitions, reductions, recoveries, intervals: { ...INTERVALS[level] },
         nearDistance: ADAPTIVE_AI_RULES.nearDistance };
     },
   };

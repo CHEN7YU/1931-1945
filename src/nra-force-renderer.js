@@ -50,6 +50,22 @@ function* bakeNraGeometryWork(mesh) {
   return geometry;
 }
 
+export function settledNraGeometry(source, finalFrame = false) {
+  const geometry = new THREE.BufferGeometry();
+  if (source.index) geometry.setIndex(source.index.clone());
+  for (const [name, attribute] of Object.entries(source.attributes)) {
+    const selected = finalFrame && ['position', 'normal'].includes(name)
+      ? source.morphAttributes[name]?.at(-1) : attribute;
+    if (!selected) throw new Error(`Settled casualty pose lacks ${name}`);
+    geometry.setAttribute(name, selected.clone());
+  }
+  geometry.groups = source.groups.map(group => ({ ...group }));
+  geometry.boundingBox = source.boundingBox?.clone() ?? null;
+  geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
+  if (finalFrame) { geometry.computeBoundingBox(); geometry.computeBoundingSphere(); }
+  return geometry;
+}
+
 export function createNraForceRenderer(scene, camera, template, capacity = 330, { team = 'friendly', uniform = 'nra88' } = {}) {
   return finishStartupWork(createNraForceRendererWork(scene, camera, template, capacity, { team, uniform }));
 }
@@ -346,14 +362,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         if (bank.rifleAction) continue;
         await yieldStartupTask();
         const source = bank.parts[0].geometry;
-        const settled = bank.deathStance || bank.postureMorph ? source.clone() : source;
-        if (bank.deathStance) {
-          settled.setAttribute('position', source.morphAttributes.position.at(-1).clone());
-          settled.setAttribute('normal', source.morphAttributes.normal.at(-1).clone());
-          settled.morphAttributes = {};
-          settled.computeBoundingBox(); settled.computeBoundingSphere();
-        }
-        if (bank.postureMorph) settled.morphAttributes = {};
+        const settled = bank.deathStance || bank.postureMorph ? settledNraGeometry(source, Boolean(bank.deathStance)) : source;
         const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(settled), atlas.material, bank.capacity);
         if (settled !== source) settled.dispose();
         mesh.name = 'distant-coarse-body';
@@ -384,7 +393,9 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         slot.actorId = null; slot.view.bind(null);
       }
     },
-    update(actors, now, controlledId, preset) {
+    update(actors, now, controlledId, preset, { detailLimit = null } = {}) {
+      if (detailLimit !== null && (!Number.isInteger(detailLimit) || detailLimit < 0 || detailLimit > 6))
+        throw new RangeError('Invalid native presentation detail limit');
       const nextCoarseIds = new Set();
       for (const attachment of optionalAttachments) attachment.update?.(now);
       excludedIds.clear(); tiers.clear();
@@ -399,7 +410,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       summary.coarseWeapons = 0;
       camera.updateMatrixWorld();
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(projection);
-      const candidates = [], visible = [], budget = preset === 'low' ? 3 : 6, limit = preset === 'low' ? 18 : 28;
+      const candidates = [], visible = [], budget = Math.min(preset === 'low' ? 3 : 6, detailLimit ?? 6),
+        limit = preset === 'low' ? 18 : 28;
       for (const actor of actors) {
         if (!actor.nativeMotion) continue;
         if (actor.team !== team) throw new Error(`A ${actor.team} identity cannot use the ${team} uniform renderer`);

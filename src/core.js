@@ -292,8 +292,7 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     return smooth;
   };
   findPath.rebuild = rebuild;
-  findPath.refresh = bounds => {
-    lookup.rebuild();
+  const refreshRegion = bounds => {
     const minX = Math.max(0, Math.floor((bounds.minX - radius) / step) + half);
     const maxX = Math.min(width - 1, Math.ceil((bounds.maxX + radius) / step) + half);
     const minZ = Math.max(0, Math.floor((bounds.minZ - radius) / step) + half);
@@ -304,6 +303,14 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
     }
     linkPairs(Math.max(0, minX - 1), Math.min(width - 1, maxX + 1), Math.max(0, minZ - 1), Math.min(width - 1, maxZ + 1));
   };
+  findPath.refreshMany = regions => {
+    if (!Array.isArray(regions) || !regions.length) throw new RangeError('Navigation refresh requires changed regions');
+    for (const bounds of regions) if (!bounds || !['minX', 'maxX', 'minZ', 'maxZ'].every(key => Number.isFinite(bounds[key])) ||
+      bounds.minX > bounds.maxX || bounds.minZ > bounds.maxZ) throw new RangeError('Invalid navigation refresh region');
+    lookup.rebuild();
+    for (const bounds of regions) refreshRegion(bounds);
+  };
+  findPath.refresh = bounds => findPath.refreshMany([bounds]);
   Object.defineProperty(findPath, 'stats', { get: () => ({ ...stats }) });
   return findPath;
 }

@@ -19,7 +19,7 @@ const integer = (value, max = 1e9) => Number.isInteger(value) && number(value, m
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const contextNames = ['map', 'state', 'time', 'quality', 'adaptiveLevel', 'allies', 'enemies', 'corpses', 'vehicles',
   'reinforcementWaves', 'drawCalls', 'triangles', 'backlogSeconds', 'simulationSteps', 'unit', 'stage',
-  'civilianCasualties','civilianShots','civilianAircraftHits'];
+  'civilianCasualties','civilianShots','civilianAircraftHits', 'automaticLoad'];
 const civilianCounters=['civilianCasualties','civilianShots','civilianAircraftHits'];
 function context(value) {
   return keys(value, contextNames) && PERFORMANCE_MAPS.includes(value.map) && PERFORMANCE_STATES.includes(value.state) &&
@@ -28,10 +28,17 @@ function context(value) {
       'encirclement', 'east-breakout', 'conquest'].includes(value.stage) ||
       value.state === 'loading' && PERFORMANCE_LOADING_STAGES.includes(value.stage)) &&
     civilianCounters.every(name=>value[name]===undefined||integer(value[name],1e7))&&
-    contextNames.filter(name => !['map', 'state', 'quality', 'unit', 'stage',...civilianCounters].includes(name))
+    (value.automaticLoad === undefined || automaticLoad(value.automaticLoad)) &&
+    contextNames.filter(name => !['map', 'state', 'quality', 'unit', 'stage', 'automaticLoad',...civilianCounters].includes(name))
       .every(name => number(value[name])) && integer(value.adaptiveLevel, 2) &&
     integer(value.allies, 1000) && integer(value.enemies, 1000) && integer(value.corpses, 10000) &&
     integer(value.vehicles, 100) && integer(value.reinforcementWaves, 100);
+}
+function automaticLoad(value) {
+  return keys(value, ['level', 'peak', 'activations', 'reductions', 'recoveries', 'activeSeconds', 'aiReductions', 'aiRecoveries']) &&
+    integer(value.level, 3) && integer(value.peak, 3) && value.peak >= value.level &&
+    ['activations', 'reductions', 'recoveries', 'aiReductions', 'aiRecoveries'].every(name => integer(value[name], 1e6)) &&
+    value.activations <= value.reductions && number(value.activeSeconds);
 }
 function scopes(value) {
   return keys(value, PERFORMANCE_SCOPES) && Object.entries(value).every(([name, item]) =>

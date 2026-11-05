@@ -70,6 +70,19 @@ test('diagnostics collect nothing until enabled, then upload bounded validated a
   assert.equal(f.sent[0].windows[2].slowFrames.length, 1);
   assert.deepEqual(f.warnings, []);
 });
+
+test('each new opt-in session resets owner counters once without resetting them for normal time windows', async () => {
+  const f = fixture();
+  let starts = 0;
+  f.diagnostics.setContext(() => ({ ...f.context }), { onSessionStart() { starts++; } });
+  f.diagnostics.setEnabled(true);
+  assert.equal(starts, 1);
+  f.frame(); f.advance(5001); f.frame(); f.diagnostics.flush(); await settle();
+  assert.equal(starts, 1);
+  f.diagnostics.setEnabled(false); f.diagnostics.setEnabled(true);
+  assert.equal(starts, 2);
+  f.diagnostics.setEnabled(false);
+});
 test('returning from a hidden tab does not upload background elapsed time as a gameplay stall', async () => {
   const f = fixture();
   f.diagnostics.setEnabled(true); f.frame(); f.frame(16);

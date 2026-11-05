@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAdaptiveAI } from '../src/adaptive-ai.js';
+import { createAdaptiveAI, idleAIForReduction } from '../src/adaptive-ai.js';
 import { createAIDecisionScheduler } from '../src/ai-decisions.js';
+
+test('emergency visible-idle deferral never weakens nearby, engaged or player-targeting actors and is counted separately', () => {
+  const control = createAdaptiveAI(), far = { x: 100, y: 0, z: 0 }, observer = { x: 0, y: 0, z: 0 };
+  assert.equal(control.intervalFor('sensor', far, observer, true, false), 0);
+  assert.equal(control.intervalFor('sensor', far, observer, true, false, { idle: true, emergencyLevel: 3 }), 1.4);
+  assert.equal(control.intervalFor('sensor', far, observer, true, false, { idle: false, emergencyLevel: 3 }), 0);
+  assert.equal(control.intervalFor('sensor', far, observer, true, true, { idle: true, emergencyLevel: 3 }), 0);
+  assert.equal(control.intervalFor('sensor', { x: 20, y: 0, z: 0 }, observer, true, false, { idle: true, emergencyLevel: 3 }), 0);
+  frames(control, 60, 5);
+  assert.equal(control.snapshot.reductions, 2);
+  control.reset();
+  assert.equal(control.snapshot.level, 0);
+  assert.equal(control.snapshot.reductions, 2);
+});
+
+test('recent fire, incoming hits, suppression, active grenades and target memory exclude an actor from idle reduction', () => {
+  const actor = { health: 100, vehicleId: null, target: null, tactics: { suppressedUntil: 0 },
+    grenades: { action: null } };
+  assert.equal(idleAIForReduction(actor, 10), true);
+  for (const change of [
+    { lastHit: { time: 9 } }, { target: {} }, { grenades: { action: 'throw' } },
+    { tactics: { suppressedUntil: 12 } }, { tactics: { lastSeen: {} } }, { tactics: { lastShot: { time: 9 } } },
+  ]) assert.equal(idleAIForReduction({ ...actor, ...change }, 10), false);
+});
 
 function frames(control, ms, seconds, active = true) {
   for (let elapsed = 0; elapsed < seconds; elapsed += ms / 1000) control.observeFrame(ms, active);

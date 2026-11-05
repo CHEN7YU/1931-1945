@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { advanceCapture, makeObjectives, CAPTURE_SECONDS, DOMINATION_SECONDS, createConquest, advanceConquest, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
 import { INFANTRY_WEAPONS } from '../src/rifle-action.js';
 
+test('batched navigation regions preserve the exact paths of sequential refreshes after obstacle changes', () => {
+  const obstacles = [
+    { minX: -6, maxX: -4, minZ: -4, maxZ: 4 },
+    { minX: 4, maxX: 6, minZ: -4, maxZ: 4 },
+  ];
+  const sequential = createNavigator(obstacles), batched = createNavigator(obstacles);
+  obstacles[0].maxZ = -1; obstacles[1].minZ = 1;
+  const regions = [{ minX: -8, maxX: -2, minZ: -6, maxZ: 6 }, { minX: 2, maxX: 8, minZ: -6, maxZ: 6 }];
+  for (const region of regions) sequential.refresh(region);
+  batched.refreshMany(regions);
+  for (const start of [{ x: -10, z: 0 }, { x: 0, z: -6 }, { x: 10, z: 0 }])
+    for (const end of [{ x: 10, z: 0 }, { x: -10, z: 0 }, { x: 0, z: 6 }])
+      assert.deepEqual(batched(start, end), sequential(start, end));
+});
+
 test('player-facing weapon names are concise and deployment uses the same rifle label as combat', () => {
   assert.equal(INFANTRY_WEAPONS.rifle.name, '中正式步枪');
   assert.equal(INFANTRY_WEAPONS.sniper.name, '狙击步枪');

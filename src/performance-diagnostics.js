@@ -23,7 +23,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
   send = (payload, signal) => fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload), keepalive: true, signal }),
   uuid = () => crypto.randomUUID(), changed = () => {}, warn = console.warn } = {}) {
-  let enabled = false, context = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
+  let enabled = false, context = null, sessionStarted = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
   let frameScopes = emptyScopes(), frameStarted = 0, intervalMs = 0, queue = [], pending = null, controller = null;
   let recording = false;
   let loadingStarted = null, loadingTimer = null;
@@ -91,10 +91,18 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       clearTimeout(loadingTimer); loadingTimer = null; loadingStarted = null;
       recording = false;
       queue = []; current = null; frameScopes = emptyScopes(); started = lastSend = now();
-      if (value) { sessionId = uuid(); sequence = saved = dropped = failures = 0; }
+      if (value) {
+        sessionId = uuid(); sequence = saved = dropped = failures = 0;
+        sessionStarted?.();
+      }
       notify(value ? '性能诊断已开启 · 每30秒汇总上传，可随时关闭' : '性能诊断已关闭 · 不再收集或上传');
     },
-    setContext(reader) { if (typeof reader !== 'function') throw new TypeError('Diagnostics context must be a function'); context = reader; },
+    setContext(reader, { onSessionStart = null } = {}) {
+      if (typeof reader !== 'function' || onSessionStart !== null && typeof onSessionStart !== 'function')
+        throw new TypeError('Diagnostics context and session callback must be functions');
+      context = reader; sessionStarted = onSessionStart;
+      if (enabled) sessionStarted?.();
+    },
     recordLoading({ map, quality, stage }) {
       if (!enabled) return;
       if (!PERFORMANCE_MAPS.includes(map) || !['high', 'low'].includes(quality) ||
@@ -153,6 +161,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       if (now() - started >= 5000) collect('interval');
       if (now() - lastSend >= 30000) { lastSend = now(); void upload(); }
     },
+    checkpoint(reason = 'manual') { if (enabled) collect(reason); },
     flush(reason = 'manual') {
       if (!enabled) return;
       collect(reason); lastSend = now(); void upload();

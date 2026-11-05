@@ -65,6 +65,35 @@ test('loading breadcrumbs persist independently and never inflate battle FPS, CP
     assert.equal((await worker.fetch(f.post(body), f.env)).status, 400);
   } finally { f.sqlite.close(); }
 });
+test('automatic load counters deduplicate sessions across quality changes and reject invalid statistics', async () => {
+  const f = fixture();
+  try {
+    const sessionId = crypto.randomUUID();
+    for (const quality of ['high', 'low', 'low']) {
+      const body = f.batch(); body.sessionId = sessionId;
+      Object.assign(body.windows[0].context, { quality, automaticLoad: {
+        level: 3, peak: 3, activations: 2, reductions: 4, recoveries: 1, activeSeconds: 80,
+        aiReductions: 2, aiRecoveries: 1,
+      } });
+      assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    }
+    const legacy = f.batch();
+    assert.equal((await worker.fetch(f.post(legacy), f.env)).status, 201);
+    const summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
+    assert.equal(summary.groups.length, 2);
+    assert.equal(summary.automaticLoad.reportingSessions, 1);
+    assert.equal(summary.automaticLoad.activations, 2);
+    assert.equal(summary.automaticLoad.reductions, 4);
+    assert.equal(summary.automaticLoad.activeSeconds, 80);
+    assert.equal(summary.automaticLoad.aiReductions, 2);
+    const invalid = f.batch(); invalid.windows[0].context.automaticLoad = {
+      level: 4, peak: 3, activations: 2, reductions: 1, recoveries: 0, activeSeconds: 0,
+      aiReductions: 0, aiRecoveries: 0,
+    };
+    assert.equal((await worker.fetch(f.post(invalid), f.env)).status, 400);
+  } finally { f.sqlite.close(); }
+});
+
 test('production diagnostic ingestion persists, deduplicates receipts and keeps all reads authenticated', async () => {
   const f = fixture();
   try {

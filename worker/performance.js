@@ -94,6 +94,27 @@ function loadingSummaries(rows) {
   }
   return [...sessions.values()];
 }
+function automaticLoadSummary(rows) {
+  const sessions = new Map();
+  for (const row of rows) {
+    const batch = JSON.parse(row.payload);
+    for (const window of batch.windows) {
+      const load = window.context.automaticLoad;
+      if (!load || window.context.state === 'loading') continue;
+      const previous = sessions.get(batch.sessionId);
+      if (!previous) sessions.set(batch.sessionId, { ...load });
+      else for (const key of ['peak', 'activations', 'reductions', 'recoveries', 'activeSeconds', 'aiReductions', 'aiRecoveries'])
+        previous[key] = Math.max(previous[key], load[key]);
+    }
+  }
+  const values = [...sessions.values()];
+  return { reportingSessions: values.length,
+    sessionsWithGraphicsReduction: values.filter(value => value.peak > 0).length,
+    maximumLevel: Math.max(0, ...values.map(value => value.peak)),
+    ...Object.fromEntries(['activations', 'reductions', 'recoveries', 'activeSeconds', 'aiReductions', 'aiRecoveries']
+      .map(key => [key, values.reduce((sum, value) => sum + value[key], 0)])),
+    counting: 'Per-session maximum cumulative counters, not a sum of repeated windows. Partial/date-filtered sessions may include earlier activity; undelivered final counters are not recoverable.' };
+}
 export async function handlePerformance(request, env, authorized) {
   const url = new URL(request.url);
   const enabled = env.PERFORMANCE_DIAGNOSTICS_ENABLED === 'true';
@@ -116,6 +137,7 @@ export async function handlePerformance(request, env, authorized) {
       return json({ schemaVersion: 1, since: query.since, until: query.until, reports: included.length,
         truncated: results.length > summaryLimit, nextCursor: included.at(-1)?.sequence ?? 0,
         histogramBoundsMs: FRAME_BUCKETS_MS, groups: summaries(included), loading: loadingSummaries(included),
+        automaticLoad: automaticLoadSummary(included),
         notice: 'Percentiles are merged-histogram upper bounds, not averaged FPS. Scope timings overlap. calls counts timed samples; sampleEvery=32 totals cover sampled calls only, not total CPU time. CPU render submission is not GPU execution. Truncated results are partial; export raw pages for full aggregation.' });
     }
     const after = url.searchParams.get('after') ?? '0', limit = url.searchParams.get('limit') ?? '50';
