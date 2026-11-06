@@ -13,7 +13,7 @@ try {
   for (const campaign of campaigns) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('pageerror', error => { errors.push(error.message); console.error(error.stack ?? error.message); });
     const settings = defaultPreferences(); settings.quality.preset = 'low';
     await page.addInitScript(({ key, settings }) =>
       localStorage.setItem(key, JSON.stringify({ version: 1, settings })), { key: PREFERENCES_KEY, settings });
@@ -37,7 +37,8 @@ window.__supportSetup=()=>{
     actor:actor.id,emplacement:point.id};
 };
 window.__supportScreenshot=()=>{
-  const actor=enemies.find(actor=>actor.discharger?.presentationActive&&actor.health>0);
+  const actor=enemies.find(actor=>actor.discharger?.presentationActive&&actor.discharger.shots>0&&
+    actor.supportWeaponPose?.phase==='operate'&&actor.health>0);
   if(!actor)return false;
   showOverlay('pause');missionBriefing.hide();$('overlay').hidden=true;if(weapon)weapon.visible=false;
   const forward=new THREE.Vector3(-Math.sin(actor.heading),0,-Math.cos(actor.heading));
@@ -47,6 +48,8 @@ window.__supportScreenshot=()=>{
   camera.updateMatrixWorld(true);return actor.id;
 };
 window.__supportContacts=id=>ijaCharacter.snapshot.views.find(view=>view.actorId===id)?.supportGrip;
+window.__supportAimingReady=()=>enemies.some(actor=>actor.discharger?.presentationActive&&actor.discharger.shots>0&&
+  actor.supportWeaponPose?.phase==='operate'&&actor.health>0);
 window.__supportOfficerScreenshot=team=>{
   const actor=allForces.find(actor=>actor.team===team&&actor.health>0&&!actor.vehicleId&&__supportOfficer(actor));
   if(!actor)throw new Error('No living infantry officer for native screenshot');
@@ -63,7 +66,15 @@ window.__supportOfficerScreenshot=team=>{
     url.searchParams.set('campaign', campaign);
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
     if (await page.locator('#confirm-campaign').isVisible()) await page.locator('#confirm-campaign').click();
-    await deployFromMenu(page);
+    try {
+      await deployFromMenu(page);
+    } catch (error) {
+      await writeFile(join(directory, `${campaign}-startup-error.json`), JSON.stringify({
+        message: error.message, errors, text: await page.locator('body').innerText(),
+      }, null, 2));
+      await page.screenshot({ path: join(directory, `${campaign}-startup-error.png`) });
+      throw error;
+    }
     await page.waitForFunction(() => window.__supportInitial && window.__battle?.state === 'playing',
       null, { timeout: 180000 });
     const initial = await page.evaluate(() => window.__supportInitial);
@@ -91,25 +102,30 @@ window.__supportOfficerScreenshot=team=>{
     const impact = await page.evaluate(() => window.__battle.projectileImpacts.find(event =>
       event.source.weaponClass === 'grenade-discharger'));
     assert.ok(impact.damage > 0); assert.ok(impact.radius > 0);
+    await page.waitForFunction(()=>window.__supportAimingReady(),null,{timeout:10000});
     const view = await page.evaluate(() => window.__supportScreenshot());
+    assert.ok(view, 'A living discharger operator must be observed in its actual aiming phase');
     await setQualityPreset(page, 'high');
     if (view) {
       await page.waitForFunction(id=>Boolean(window.__supportContacts(id)), view, {timeout:10000});
       const contacts=await page.evaluate(id=>window.__supportContacts(id),view);
       assert.equal(contacts.contactLimited,false,JSON.stringify(contacts));
+      assert.equal(contacts.phase,'operate');assert.ok(contacts.gaze.error<.01);
+      assert.ok(contacts.gaze.direction[1]>-.5,'firing operator looks toward its target instead of down at the tube');
       for(const hand of Object.values(contacts.hands)){
         assert.ok(hand.wristError<.04);assert.ok(hand.palmError<.008);
       }
       await page.screenshot({ path: join(directory, `${campaign}-tube-operator.png`) });
     }
     const officers = [];
-    for (const team of ['friendly', 'enemy']) {
+    const captureOfficers = process.env.SUPPORT_OFFICER_SCREENSHOTS !== '0';
+    for (const team of captureOfficers ? ['friendly', 'enemy'] : []) {
       officers.push(await page.evaluate(team => window.__supportOfficerScreenshot(team), team));
       await page.waitForTimeout(250);
       await page.screenshot({ path: join(directory, `${campaign}-${team}-officer.png`) });
     }
     assert.deepEqual(errors, []);
-    const result = { campaign, initial, setup, flight, paused, impact, screenshotActor: view, officers, errors,
+    const result = { campaign, initial, setup, flight, paused, impact, screenshotActor: view, captureOfficers, officers, errors,
       limitation: 'Natural AI fire; camera only moved after the real flight and collision/impact checks.' };
     await writeFile(join(directory, `${campaign}-support.json`), JSON.stringify(result, null, 2));
     console.log(JSON.stringify({ campaign, passed: true, squads: initial.squads.length,

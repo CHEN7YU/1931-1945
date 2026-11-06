@@ -460,8 +460,13 @@ function updateSupportGripMarkers() {
       : tube.phase === 'ready' && time < tube.nextShot - 4.8 ? 'loading' : 'operate';
     supportActorFrame.position.copy(actor.position); supportActorFrame.rotation.set(0, actor.heading, 0);
     supportActorFrame.updateMatrixWorld(true);
+    const supportTarget = tubeActive ? entities.soldiers.get(tube.targetId) : null;
+    const targetEye = supportTarget ? soldierEyePosition(supportTarget) : null;
+    const ownEye = tubeActive ? soldierEyePosition(actor) : null;
+    const gazePitch = targetEye ? Math.atan2(targetEye.y - ownEye.y,
+      Math.hypot(targetEye.x - ownEye.x, targetEye.z - ownEye.z)) : 0;
     actor.supportWeaponPose = { active: true, kind: point?.profile ?? 'type89', phase,
-      pitch: point?.pitch ?? 0, targets: supportWeaponTargets(model, supportActorFrame, phase) };
+      pitch: point?.pitch ?? 0, gazePitch, targets: supportWeaponTargets(model, supportActorFrame, phase) };
   }
 }
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain'),

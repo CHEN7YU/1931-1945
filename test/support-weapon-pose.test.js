@@ -154,6 +154,39 @@ test('authored palm anchors are on actual tube, handles and control geometry inc
   }
 });
 
+test('Type89 operating gaze stays raised toward the target while both native hands retain real contacts', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const native = rig(team), { root, bones } = native;
+    const head = bones.get('Head'), neck = bones.get('Neck');
+    const forward = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()).invert());
+    native.profile.headAim = { forward: forward.toArray() };
+    for (const heading of [0, 1.3, Math.PI]) for (const pitch of [-.2, 0, .25]) {
+      const setup = fixture('type89', heading);
+      native.apply('kneeling'); root.position.copy(setup.operator); root.rotation.y = heading; root.updateMatrixWorld(true);
+      const base = { head: head.quaternion.clone(), neck: neck.quaternion.clone() };
+      const pose = createSupportWeaponPose(root, bones);
+      const actor = { id: 'raised-tube-operator', health: 100, nativeMotion: { profile: native.profile },
+        supportWeaponPose: { active: true, kind: 'type89', phase: 'operate', gazePitch: pitch } };
+      const result = pose.update(actor, 1, setup.model);
+      assert.equal(result.contactLimited, false, JSON.stringify(result));
+      assert.ok(result.gaze.error < 1e-6);
+      assert.ok(Math.abs(result.gaze.direction[1] - Math.sin(pitch)) < 1e-6);
+      for (const hand of Object.values(result.hands)) {
+        assert.ok(hand.wristError < .04); assert.ok(hand.palmError < .008);
+      }
+      actor.supportWeaponPose.phase = 'loading';
+      const loading = pose.update(actor, 2, setup.model);
+      assert.equal(loading.gaze, null);
+      const loadingForward = forward.clone().applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
+      assert.ok(loadingForward.y < -.2, 'looking down is retained only for handling the next round');
+      pose.reset();
+      assert.deepEqual(head.quaternion.toArray(), base.head.toArray());
+      assert.deepEqual(neck.quaternion.toArray(), base.neck.toArray());
+    }
+  }
+});
+
 test('Type89 loading hand touches its rim, brace remains held and actor-local targets match transformed model targets', () => {
   const native = rig('enemy'), { root, bones } = native, setup = fixture('type89', 2.1);
   native.apply('kneeling'); root.position.copy(setup.operator); root.rotation.y = setup.heading; root.updateMatrixWorld(true);

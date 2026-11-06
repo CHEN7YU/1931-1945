@@ -99,6 +99,11 @@ export function createSupportWeaponPose(root, bones, {
   const required = ['Spine', ...['Left', 'Right'].flatMap(side =>
     ['Shoulder', 'Arm', 'ForeArm', 'Hand', 'HandMiddle1', 'HandIndex1', 'HandPinky1'].map(name => side + name))];
   for (const name of required) if (!bones.has(name)) throw new Error(`Missing native support joint: ${name}`);
+  const head = bones.get('Head'), neck = bones.get('Neck');
+  if (!head || !neck || head.parent !== neck) throw new Error('Support aiming requires the native neck/head chain');
+  root.updateMatrixWorld(true);
+  const headForward = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation(root))
+    .applyQuaternion(rotation(head).invert());
   const modified = new Map();
   let owner = null, snapshot = null;
   const restore = () => {
@@ -172,6 +177,7 @@ export function createSupportWeaponPose(root, bones, {
           setRotation(spine, new THREE.Quaternion().setFromAxisAngle(axis, angle).multiply(baseSpine));
           const score = reachScore();
           if (score < bestScore) { bestScore = score; lean = angle; }
+          if (marker.kind === 'type89' && marker.phase === 'operate' && score <= .9) break;
         }
         setRotation(spine, new THREE.Quaternion().setFromAxisAngle(axis, lean).multiply(baseSpine));
       }
@@ -209,10 +215,29 @@ export function createSupportWeaponPose(root, bones, {
           reachable: solved.reachable, solveError: solved.error, lengths,
           distance: position(upper).distanceTo(desired), maximumReach: lengths[0] + lengths[1] };
       }
+      let gaze = null;
+      if (marker.kind === 'type89' && marker.phase === 'operate') {
+        const calibratedForward = actor.nativeMotion?.profile?.headAim?.forward;
+        const localForward = calibratedForward ? new THREE.Vector3(...calibratedForward) : headForward;
+        const pitch = marker.gazePitch ?? 0;
+        if (!Number.isFinite(pitch)) throw new RangeError('Support aiming pitch must be finite');
+        const boundedPitch = THREE.MathUtils.clamp(pitch, -.45, .45);
+        const desired = new THREE.Vector3(0, Math.sin(boundedPitch), -Math.cos(boundedPitch)).applyQuaternion(facing);
+        remember(neck); remember(head);
+        const current = localForward.clone().applyQuaternion(rotation(head)).normalize();
+        const swing = new THREE.Quaternion().setFromUnitVectors(current, desired);
+        setRotation(neck, new THREE.Quaternion().slerp(swing, .6).multiply(rotation(neck)));
+        const remaining = new THREE.Quaternion().setFromUnitVectors(
+          localForward.clone().applyQuaternion(rotation(head)).normalize(), desired);
+        setRotation(head, remaining.multiply(rotation(head)));
+        const actual = localForward.clone().applyQuaternion(rotation(head)).normalize();
+        gaze = { pitch: boundedPitch, direction: actual.toArray(), targetDirection: desired.toArray(),
+          error: actual.angleTo(desired) };
+      }
       for (const [bone, state] of modified) state.applied = bone.quaternion.clone();
       const limited = Object.values(hands).some(hand => !hand.reachable ||
         hand.wristError > SUPPORT_CONTACT.wristTolerance || hand.palmError > SUPPORT_CONTACT.palmTolerance);
-      snapshot = { owner, kind: marker.kind, phase: marker.phase, bankIndex: index, lean, hands, contactLimited: limited };
+      snapshot = { owner, kind: marker.kind, phase: marker.phase, bankIndex: index, lean, hands, gaze, contactLimited: limited };
       return snapshot;
     },
     get snapshot() { return snapshot; },
