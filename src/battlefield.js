@@ -16,6 +16,7 @@ import { streetGrimePatches, grimePatchGeometry, sandbagGeometry, sandbagCollisi
 import { SHOP_ART_STYLES, shopAwningGeometry, shopAwningFrame, shopNoticeGeometry, shopPrintMaterial,
   shopContactMaterial, shopContactPatches } from './shop-art.js';
 import { makeNanjingBattlefield } from './nanjing-battlefield.js';
+import { makeSihangBattlefield } from './sihang-battlefield.js';
 import { createRoofGeometry } from './roof-geometry.js';
 export { createRoofGeometry } from './roof-geometry.js';
 
@@ -28,6 +29,7 @@ export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82],
 
 export function makeWorld(scene, surface, options = {}) {
   if (options.campaign === 'nanjing') return makeNanjingBattlefield(scene, surface);
+  if (options.campaign === 'sihang') return makeSihangBattlefield(scene, surface);
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
   const town = options.town ?? makeTownLayout();
   const BRIDGE = options.bridge ?? DEFAULT_BRIDGE;

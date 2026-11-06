@@ -10,6 +10,7 @@ import { createCampaignPresentation } from './campaign-presentation.js';
 import { createPlayerIdentityControls } from './player-identity.js';
 import { getPlayerPreferences } from './player-preferences.js';
 import { getMenuMusic } from './menu-music.js';
+import { getEndingMusic } from './ending-music.js';
 
 const params = new URLSearchParams(location.search);
 getPerformanceDiagnostics();
@@ -28,13 +29,16 @@ const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
 const launcherPreferences = getPlayerPreferences();
 const menuMusic = getMenuMusic();
+const endingMusic = getEndingMusic();
 const activateMusic = event => {
-  if (!(event.target instanceof Element && event.target.closest('[data-menu-music-toggle]'))) void menuMusic.activate();
+  if (!(event.target instanceof Element && event.target.closest('[data-menu-music-toggle]'))) {
+    void menuMusic.activate(); void endingMusic.activate();
+  }
 };
 document.addEventListener('pointerdown', activateMusic, { capture: true });
 document.addEventListener('keydown', activateMusic, { capture: true });
 for (const button of document.querySelectorAll('[data-menu-music-toggle]'))
-  button.addEventListener('click', () => menuMusic.toggle());
+  button.addEventListener('click', () => { menuMusic.toggle(); endingMusic.setMuted(menuMusic.snapshot.muted); });
 menuMusic.setState('menu');
 if (launcherPreferences.status.problem)
   document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
@@ -81,14 +85,14 @@ function campaignStep() {
   menuMusic.setState('menu');
   menu.hidden = false;
   loading.hidden = true;
-  if (!initialCampaignSelection || params.get('campaign') !== 'nanjing' && !params.has('benchmark')) ensurePhotoWalls();
+  if (!initialCampaignSelection || !['nanjing', 'sihang'].includes(params.get('campaign')) && !params.has('benchmark')) ensurePhotoWalls();
   playerIdentity.hide();
   campaignPresentation.reset();
   squadStep.hidden = true;
   confirmCampaign.hidden = false;
 }
 confirmCampaign.addEventListener('click', () => {
-  if (!loaded && selector.value === 'nanjing') {
+  if (!loaded && ['nanjing', 'sihang'].includes(selector.value)) {
     menuMusic.prepareNavigation();
     const url = new URL(location.href); url.searchParams.set('campaign', selector.value); location.assign(url); return;
   }
@@ -160,9 +164,9 @@ deploy.addEventListener('click', event => {
   openInitialDeployment();
 });
 // Existing diagnostic URLs intentionally bypass the campaign launcher.
-if (params.has('benchmark') || params.get('campaign') === 'nanjing') {
-  if (params.get('campaign') === 'nanjing') {
-    const campaign = campaignById('nanjing');
+if (params.has('benchmark') || ['nanjing', 'sihang'].includes(params.get('campaign'))) {
+  if (['nanjing', 'sihang'].includes(params.get('campaign'))) {
+    const campaign = campaignById(params.get('campaign'));
     campaignPresentation.select(campaign);
     playerIdentity.show(campaign, $('selected-identity-slot'));
   }

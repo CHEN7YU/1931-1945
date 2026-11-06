@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { finishStartupWork } from './startup-work.js';
+import { officerRegionShader } from './officer-appearance.js';
 
-export function createNraAtlas(root, uniformMaterials = new Map()) {
+export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam = null) {
   const materials = new Map(), keys = new Map();
   const uniformKeys = new Map();
   const register = material => {
@@ -60,8 +61,12 @@ export function createNraAtlas(root, uniformMaterials = new Map()) {
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
       '#include <common>\nvarying vec3 vNraSkinTint;')
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vNraSkinTint;');
+    if (officerTeam) officerRegionShader(shader, { instanced: true, team: officerTeam });
   };
-  material.customProgramCacheKey = () => hasUniformVariants ? 'nra-atlas-squad-uniform-v2' : 'nra-atlas-skin-v1';
+  material.customProgramCacheKey = () => {
+    const key = hasUniformVariants ? 'nra-atlas-squad-uniform-v2' : 'nra-atlas-skin-v1';
+    return officerTeam ? `${key}:${officerTeam}` : key;
+  };
   const point = new THREE.Vector2();
   return {
     material, hasUniformVariants,
@@ -108,7 +113,7 @@ export function* mergeNraPoseWork(parts, atlas, { weld = true } = {}) {
     expanded.setAttribute('nraSkinRegion', new THREE.Float32BufferAttribute(
       new Float32Array(expanded.attributes.position.count).fill(skin ? 1 : 0), 1));
     expanded.clearGroups();
-    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv'].includes(name)) expanded.deleteAttribute(name);
+    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv', 'nativeOfficerRegion'].includes(name)) expanded.deleteAttribute(name);
     geometries.push(expanded);
     yield;
   }

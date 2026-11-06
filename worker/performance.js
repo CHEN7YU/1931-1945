@@ -25,7 +25,7 @@ function filters(url) {
   const values = [], conditions = [];
   for (const [parameter, column, pattern] of [
     ['build', 'build', /^[a-f0-9]{7,40}$/], ['session', 'session_id', /^[a-f0-9-]{36}$/],
-    ['map', 'map', /^(taierzhuang-fort|taierzhuang-streets|taierzhuang|nanjing)$/],
+    ['map', 'map', /^(taierzhuang-fort|taierzhuang-streets|taierzhuang|nanjing|sihang)$/],
   ]) {
     const value = url.searchParams.get(parameter);
     if (value !== null) {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { batchStaticScene, staticGeometryBatches, STATIC_BATCH_CELL_SIZE } from '../src/static-scene-batches.js';
+import { batchStaticScene, createStaticSceneBatchRescue, staticGeometryBatches, STATIC_BATCH_CELL_SIZE } from '../src/static-scene-batches.js';
 import { bakeSurfaceGeometry } from '../src/surface-uv.js';
 
 function tuples(geometries) {
@@ -132,4 +132,122 @@ test('scene batching preserves authored UVs, colors, flags and original collisio
       mesh.receiveShadow === source.receiveShadow && mesh.renderOrder === source.renderOrder);
     assert.ok(matching.length);
   }
+});
+
+function rescueFixture() {
+  const scene = new THREE.Scene(), parent = new THREE.Group();
+  scene.add(parent);
+  const material = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+  const sources = [4, 36, 68, 100].map(x => {
+    const geometry = new THREE.BoxGeometry(2, 4, 3).toNonIndexed();
+    geometry.translate(x, 2, 4); geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.staticSceneBatch = true; mesh.castShadow = true; mesh.receiveShadow = true;
+    parent.add(mesh); return mesh;
+  });
+  return { scene, parent, sources, material };
+}
+function finishRescue(rescue) {
+  for (let frame = 0; frame < 10000 && !rescue.snapshot.ready; frame++)
+    rescue.update({ enabled: true, budgetMs: 2, maxChunks: 16 });
+  assert.equal(rescue.snapshot.ready, true);
+}
+
+test('emergency batches cooperatively reduce submissions with every geometry bit, material and parent visibility intact', () => {
+  const { scene, parent, sources, material } = rescueFixture();
+  const original = tuples(sources.map(source => source.geometry));
+  const rescue = createStaticSceneBatchRescue(scene);
+  rescue.update();
+  assert.equal(rescue.snapshot.updates, 0, 'ordinary defaults never start a rebuild');
+  rescue.update({ enabled: true, maxChunks: 1 });
+  assert.equal(rescue.snapshot.copiedBytes, 0, 'one chunk does not synchronously rebuild the scene');
+  assert.equal(parent.children.length, 4, 'incomplete geometry never replaces sources');
+  finishRescue(rescue);
+  const batches = parent.children.filter(mesh => mesh.userData.staticSceneRescue);
+  assert.equal(batches.length, 1);
+  assert.equal(rescue.snapshot.savedSubmissions, 3);
+  assert.deepEqual(tuples(batches.map(mesh => mesh.geometry)), original);
+  assert.equal(batches[0].material, material);
+  assert.equal(batches[0].material.map, material.map);
+  assert.equal(batches[0].castShadow, true);
+  assert.equal(batches[0].receiveShadow, true);
+  parent.position.set(17, 3, 5); parent.rotation.y = .3;
+  scene.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(new THREE.Vector3(4, 10, 4).applyMatrix4(parent.matrixWorld),
+    new THREE.Vector3(0, -1, 0));
+  assert.ok(ray.intersectObject(batches[0]).length, 'the replacement follows its original parent transform');
+  assert.ok(batches[0].geometry.boundingBox.equals(
+    sources.reduce((box, source) => box.union(source.geometry.boundingBox), new THREE.Box3())));
+  parent.visible = false;
+  const visible = [];
+  scene.traverseVisible(object => visible.push(object));
+  assert.equal(visible.includes(batches[0]), false, 'ruin/intact parent toggles still control the replacement');
+  rescue.update({ enabled: false });
+  assert.deepEqual(new Set(parent.children), new Set(sources));
+  assert.equal(parent.visible, false, 'restoring does not override hierarchy visibility');
+  rescue.update({ enabled: true });
+  assert.equal(parent.children.length, 1);
+  rescue.dispose();
+  assert.deepEqual(new Set(parent.children), new Set(sources));
+  assert.equal(rescue.snapshot.enabled, false);
+});
+
+test('authoritative collision meshes, ordinary meshes, doors, transparent meshes and different parents are never merged together', () => {
+  const { scene, parent, sources, material } = rescueFixture();
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1, 2, .2), material);
+  parent.add(door);
+  const collider = sources[0];
+  const otherParent = new THREE.Group(); scene.add(otherParent);
+  otherParent.add(sources[1]);
+  const transparent = sources[2];
+  transparent.material = new THREE.MeshStandardMaterial({ transparent: true });
+  const rescue = createStaticSceneBatchRescue(scene, { protectedMeshes: [collider] });
+  const ray = new THREE.Raycaster(new THREE.Vector3(4, 10, 4), new THREE.Vector3(0, -1, 0));
+  scene.updateMatrixWorld(true);
+  const before = ray.intersectObject(collider)[0];
+  finishRescue(rescue);
+  assert.equal(rescue.snapshot.savedSubmissions, 0);
+  assert.equal(collider.parent, parent);
+  assert.equal(door.parent, parent);
+  assert.equal(transparent.parent, parent);
+  assert.equal(sources[1].parent, otherParent);
+  const after = ray.intersectObject(collider)[0];
+  assert.equal(after.distance, before.distance);
+  assert.deepEqual(after.face.normal, before.face.normal);
+});
+
+test('copy and per-update chunk limits bound extra buffers and generation work', () => {
+  const { scene } = rescueFixture();
+  const rescue = createStaticSceneBatchRescue(scene, { now: () => 0 });
+  let previousBytes = 0;
+  for (let i = 0; i < 1000 && !rescue.snapshot.ready; i++) {
+    rescue.update({ enabled: true, maxChunks: 1 });
+    assert.ok(rescue.snapshot.copiedBytes - previousBytes <= 4096 * 4);
+    previousBytes = rescue.snapshot.copiedBytes;
+  }
+  assert.equal(rescue.snapshot.ready, true);
+  assert.ok(rescue.snapshot.updates > 10);
+  rescue.dispose();
+  const capped = createStaticSceneBatchRescue(scene, { maxBytes: 1 });
+  finishRescue(capped);
+  assert.equal(capped.snapshot.savedSubmissions, 0);
+  assert.equal(capped.snapshot.copiedBytes, 0);
+  const small = createStaticSceneBatchRescue(scene, { maxBatchVertices: 72 });
+  finishRescue(small);
+  assert.equal(small.snapshot.activeBatches, 2);
+  assert.equal(small.snapshot.savedSubmissions, 2);
+  small.dispose();
+});
+
+test('cancellation disposes partially allocated buffers without removing original geometry', () => {
+  const { scene, parent, sources } = rescueFixture();
+  const rescue = createStaticSceneBatchRescue(scene, { now: () => 0 });
+  for (let frame = 0; frame < 1000 && rescue.snapshot.copiedBytes === 0; frame++)
+    rescue.update({ enabled: true, maxChunks: 1 });
+  assert.ok(rescue.snapshot.copiedBytes > 0);
+  assert.equal(rescue.snapshot.ready, false);
+  rescue.dispose();
+  assert.deepEqual(new Set(parent.children), new Set(sources));
+  rescue.update({ enabled: true });
+  assert.equal(rescue.snapshot.activeBatches, 0);
 });

@@ -18,6 +18,7 @@ import { createNraGrenadeHand } from './nra-hand.js';
 import { createNraDadaoPose } from './nra-dadao-pose.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
+import { createOfficerAppearance } from './officer-appearance.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -132,6 +133,9 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
   const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
     .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone(), position: canonical.get(name).position.clone() }));
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache, uniformVariants);
+  const clothingMeshes = [];
+  avatar.traverse(node => { if (node.isMesh) clothingMeshes.push(node); });
+  const officer = createOfficerAppearance(root, canonical, clothingMeshes, 'friendly');
   const headProbe = createHeadAimProbe(root, canonical, meshes);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
@@ -154,7 +158,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
   return {
-    root, uniformMaterials,
+    root, uniformMaterials, officerAppearance: true,
+    optionalAttachments: [officer.attachment],
     get appearanceResources() {
       return { geometryIds: [...appearanceCache.geometries.values()].map(geometry => geometry.uuid),
         materialEntries: appearanceCache.materials.size, limits: nraAppearanceResourceBudget(meshes) };
@@ -168,6 +173,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     createGrenadeHand: side => createNraGrenadeHand(normalized, side, { fullArm: true }),
     createWeaponHand: side => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig: true }),
     bind(id) {
+      officer.restore();
       actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; casualtyPose = null; resets++;
       mixer.stopAllAction();
       for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
@@ -183,7 +189,9 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && actor.id !== controlledId);
       if (!actor) return;
+      officer.restore();
       if (!collision) appearance.apply(actor.avatarAppearance ?? null);
+      if (!collision) officer.apply(actor);
       motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime;
       const upright = motion.upright;
@@ -223,6 +231,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
         headAim: motion?.headAim && observedActor?.health > 0 ? headProbe(motion.headAim, motion) : null,
         casualty: casualtyPose,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,
+        officer: officer.snapshot,
         uniformParts: meshes.filter(mesh => mesh.geometry.userData.uniformVariant === 'B').map(mesh => mesh.name),
         motion: motion ? { weight: motion.weight, jog: motion.jog, ...motion.postures,
           idleTime: motion.idleTime, runTime: motion.runTime, walkTime: motion.walkTime, resets } : null,

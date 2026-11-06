@@ -4,6 +4,10 @@ const taierzhuangSource = 'https://cpc.people.com.cn/n1/2018/1219/c421684-304769
 const nanjingSource = 'https://www.19371213.com.cn/information/news/202112/t20211209_3226524.html';
 const custom = unit('custom', '自定义小队', '最后也可以使用自己的小队名字，不选择历史番号。', null);
 export const PLAYER_UNIT_OPTIONS = Object.freeze({
+  sihang: Object.freeze([
+    unit('524', '国民革命军第88师262旅524团', '淞沪会战后期，第524团一部坚守四行仓库。末尾班号为游戏分组。', nanjingSource),
+    custom,
+  ]),
   'taierzhuang-fort': Object.freeze([
     unit('31', '国民革命军第31师', '孙连仲第2集团军所属部队。台儿庄战役中承担城内防御，进行激烈巷战。', taierzhuangSource),
     unit('27', '国民革命军第27师', '孙连仲第2集团军所属部队。参加台儿庄及周边作战，与友军协同抗击日军。', taierzhuangSource),
@@ -27,7 +31,7 @@ export function playerUnitOptions(campaignId) {
   return options;
 }
 const defaultIdentity = () => ({ nickname: '玩家', customName: '我的小队',
-  selections: { 'taierzhuang-fort': '31', nanjing: '88' } });
+  selections: { 'taierzhuang-fort': '31', nanjing: '88', sihang: '524' } });
 function name(value, label) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > 24 || /[\u0000-\u001f\u007f]/.test(value))
     throw new RangeError(`${label}须为1–24个字符，不能包含控制字符`);
@@ -49,7 +53,9 @@ export function createPlayerIdentityStore({ storage = () => window.localStorage,
     if (saved !== null) {
       const record = JSON.parse(saved);
       if (record.version !== 1) throw new Error('不支持的身份设置版本');
-      state = validatePlayerIdentity(record.identity);
+      const identity = record.identity;
+      state = validatePlayerIdentity(identity?.selections && !Object.hasOwn(identity.selections, 'sihang')
+        ? { ...identity, selections: { ...identity.selections, sihang: '524' } } : identity);
     }
   } catch (error) { failure('无法读取身份设置，本次先使用默认值', error); }
   return {

@@ -102,6 +102,10 @@ test('stage labels and civilian timing survive ingestion while old contexts rema
   assert.equal(validatePerformanceBatch(payload),null);
   assert.equal(payload.windows[0].context.stage,'dock-defense');
   assert.equal(payload.windows[0].scopes.civilians.totalMs,8);
+  for (const stage of ['sihang-defense', 'sihang-retreat']) {
+    payload.windows[0].context.map = 'sihang'; payload.windows[0].context.stage = stage;
+    assert.equal(validatePerformanceBatch(payload), null);
+  }
   delete payload.windows[0].context.stage;
   assert.equal(validatePerformanceBatch(payload),null);
   payload.windows[0].context.stage='arbitrary player text';

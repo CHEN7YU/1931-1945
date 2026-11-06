@@ -7,19 +7,24 @@ const NAVIGATION_KEY = 'shanhe.menu-music.youjing-chorus.navigation.v1';
 let sharedMusic = null;
 
 export function createMenuMusic({ audio, settings, onChange = () => {}, onError = console.error, fadeMs = 450,
-  startSeconds = MENU_MUSIC_START_SECONDS, resumeTime = startSeconds, initialMuted = false, onNavigate = () => {} }) {
+  startSeconds = MENU_MUSIC_START_SECONDS, resumeTime = startSeconds, initialMuted = false, onNavigate = () => {},
+  playStates = ['menu', 'deployment', 'loading'], loopOnEnd = true }) {
   if (!Number.isFinite(startSeconds) || startSeconds < 0 || !Number.isFinite(resumeTime) || resumeTime < startSeconds)
     throw new RangeError('Music playback offsets must be finite and at or after the loop start');
+  if (!Array.isArray(playStates) || !playStates.length ||
+    playStates.some(state => typeof state !== 'string' || !state) || typeof loopOnEnd !== 'boolean')
+    throw new RangeError('Invalid background music lifecycle');
   settings = validateAudioSettings(settings);
   let state = 'menu', muted = initialMuted, waiting = false, failure = null, pending = null, timer = null, envelope = 1;
-  let initialSeek = false;
+  let initialSeek = false, finished = false;
   let generation = 0;
-  const wanted = () => ['menu', 'deployment', 'loading'].includes(state) && !muted && !failure;
+  const wanted = () => playStates.includes(state) && !muted && !failure;
   const volume = () => { audio.volume = MENU_MUSIC_VOLUME * (settings.master.muted ? 0 : settings.master.volume) * envelope; };
   const cancelFade = () => { clearInterval(timer); timer = null; };
   const pause = (rewind = true) => {
     generation++; audio.pause();
     if (rewind) {
+      finished = false;
       resumeTime = startSeconds;
       if (audio.readyState > 0) audio.currentTime = startSeconds;
       else initialSeek = false;
@@ -47,7 +52,7 @@ export function createMenuMusic({ audio, settings, onChange = () => {}, onError 
     }, 20);
   }
   function play() {
-    if (!wanted()) return Promise.resolve();
+    if (!wanted() || finished) return Promise.resolve();
     seekInitial();
     if (!wanted()) return Promise.resolve();
     cancelFade(); envelope = 1; volume();
@@ -73,6 +78,7 @@ export function createMenuMusic({ audio, settings, onChange = () => {}, onError 
   const errorHandler = () => fail(new Error(`背景音乐加载失败：${audio.error?.message || `媒体错误 ${audio.error?.code ?? 'unknown'}`}`));
   const endedHandler = () => {
     if (!wanted()) return;
+    if (!loopOnEnd) { finished = true; return; }
     audio.currentTime = startSeconds;
     void play();
   };
@@ -93,6 +99,13 @@ export function createMenuMusic({ audio, settings, onChange = () => {}, onError 
     toggle() {
       if (waiting && !muted) { void play(); return; }
       muted = !muted; waiting = false;
+      if (muted) { cancelFade(); pause(false); } else void play();
+      notify();
+    },
+    setMuted(value) {
+      if (typeof value !== 'boolean') throw new RangeError('Invalid background music mute');
+      if (value === muted) return;
+      muted = value; waiting = false;
       if (muted) { cancelFade(); pause(false); } else void play();
       notify();
     },
@@ -136,7 +149,7 @@ export function getMenuMusic() {
         for (const button of document.querySelectorAll('[data-menu-music-toggle]')) {
           button.textContent = `背景音乐：${failure ? '加载失败' : muted ? '静音' : waiting ? '点击开启' : '开启'}`;
           button.setAttribute('aria-pressed', String(!muted));
-          button.title = failure ?? '《游京》合唱版 · 完整原曲从头循环，受总音量控制，进入战斗后停止';
+          button.title = failure ?? '背景音乐 · 受总音量控制，可单独静音；大厅和片尾分别播放';
         }
       },
       onError: error => console.error('大厅背景音乐不可用：', error),

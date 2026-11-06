@@ -40,11 +40,15 @@ test('prototype support is not assigned fabricated historical regiment names and
   assert.throws(() => campaignUnitName({ team: 'unknown', type: 'infantry', index: 0 }), RangeError);
 });
 
-test('friendly AI never uses the selected player formation, including custom names matching a historical alias', () => {
+test('friendly AI uses other referenced formations except the single-regiment Sihang defense', () => {
   for (const [campaign, options] of Object.entries(PLAYER_UNIT_OPTIONS)) {
     for (const player of options.filter(unit => unit.id !== 'custom')) {
       for (let index = 1; index <= 10; index++) {
         const ai = friendlyAIFormationName(campaign, player.name, index);
+        if (campaign === 'sihang') {
+          assert.equal(ai, options[0].name);
+          continue;
+        }
         assert.notEqual(ai, player.name);
         assert.ok(options.some(unit => unit.name === ai && unit.id !== 'custom'));
         assert.notEqual(friendlyAIFormationName(campaign, player.name.replace(/^国民革命军/, ''), index), player.name);

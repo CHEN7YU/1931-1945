@@ -37,6 +37,14 @@ try {
         allies[current].position.set(person.position.x+3,0,person.position.z+2);updateCamera(0);
         return this.step(.1);
       },
+      displaceResting() {
+        const person=world.civilians.find(p=>p.userData.resting&&p.userData.waypoint===p.userData.route.length);
+        if(!person)throw new Error('No completed rest route for the production crash regression');
+        person.position.x+=.25;
+        this.step(2);
+        return {id:person.userData.civilianId,arrived:person.userData.arrived,
+          waypoint:person.userData.waypoint,length:person.userData.route.length};
+      },
       pump() {
         const elder=world.civilians.find(p=>p.userData.openingWave&&p.userData.ageGroup==='elderly'&&
           p.userData.presentation==='woman'&&!p.userData.dead);
@@ -84,6 +92,9 @@ try {
     'all sixty unobstructed refugees must physically reach their rest places');
   assert.equal(seated.waiting, 0); assert.equal(seated.rescued, 0);
   assert.ok(seated.people.every(person => !person.released));
+  const displaced = await page.evaluate(() => refugeeReview.displaceResting());
+  assert.equal(displaced.arrived, false, 'a completed city rest route must never count as dock arrival');
+  assert.equal(displaced.waypoint, displaced.length);
   await page.evaluate(() => refugeeReview.view());
   await page.screenshot({ path: join(directory, 'roadside-rest.png') });
   await page.evaluate(() => refugeeReview.view(true));

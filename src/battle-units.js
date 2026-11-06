@@ -8,6 +8,7 @@ const chinese = [
 
 export function friendlyAIFormationName(campaignId, playerUnitName, index) {
   if (!Number.isInteger(index) || index < 1) throw new RangeError('AI formation index must be positive');
+  if (campaignId === 'sihang') return PLAYER_UNIT_OPTIONS.sihang[0].name;
   const normalize = name => name.replace(/^国民革命军/, '').split('·')[0].replace(/\s/g, '');
   const options = PLAYER_UNIT_OPTIONS[campaignId === 'taierzhuang-streets' ? 'taierzhuang-fort' : campaignId];
   if (!options) throw new RangeError(`Unknown campaign formations: ${campaignId}`);
@@ -16,7 +17,7 @@ export function friendlyAIFormationName(campaignId, playerUnitName, index) {
 }
 
 export function soldierRoleLabel(actor) {
-  return { mortarman: '迫击炮手', sniper: '狙击手', 'machine-gunner': '机枪手',
+  return { mortarman: '迫击炮手', 'grenade-discharger': '掷弹筒手', sniper: '狙击手', 'machine-gunner': '机枪手',
     rifleman: '步枪手', tanker: '车组', pilot: '飞行员' }[actor.role] ?? actor.role;
 }
 
@@ -24,9 +25,13 @@ export function campaignUnitName(unit) {
   if (!['friendly', 'enemy'].includes(unit.team) || !Number.isInteger(unit.index) || unit.index < 0 ||
     !['infantry', 'mortar', 'tank', 'plane'].includes(unit.type)) throw new RangeError('Campaign labels require a valid game formation');
   if (unit.historicalName) return unit.player ? unit.historicalName : `${unit.historicalName}·${unit.index + 1}班`;
+  if (unit.sihangDemolition) return '日军爆破小队·游戏编制';
+  if (unit.campaign === 'sihang' && unit.team === 'enemy' && unit.type === 'infantry')
+    return `日军步兵·游戏${unit.index + 1}班`;
   if (unit.type !== 'infantry') {
     const role = { mortar: '炮兵', tank: '装甲', plane: '航空' }[unit.type];
-    const number = unit.team === 'enemy' && unit.type === 'tank' && unit.index >= 8 ? unit.index - 7 : unit.index + 1;
+    const number = unit.armorSlot !== undefined ? unit.armorSlot + 1
+      : unit.team === 'enemy' && unit.type === 'tank' && unit.index >= 8 ? unit.index - 7 : unit.index + 1;
     return `${role}支援·游戏${unit.player ? '' : number}`;
   }
   if (unit.team === 'friendly') {

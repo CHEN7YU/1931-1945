@@ -6,6 +6,23 @@ import { advanceAITurn } from '../src/ai-turning.js';
 import { circleBlocked, createNavigator, moveGround, segmentClear } from '../src/core.js';
 
 const person = (id, x, z, heading = 0) => ({ id: `person-${id}`, health: 100, position: { x, y: 0, z }, heading, tactics: { id } });
+test('short authored stair nodes do not inspect terrain beyond their actual destination', () => {
+  const actor = person(1, 0, 0);
+  const blocked = point => point.z < -.3;
+  const options = { spacing: 1.2, constrained: true, blocked, lookAhead: .2 };
+  const result = infantrySteering(actor, [], { x: 0, z: -.2 }, options);
+  assert.deepEqual(result, { x: 0, z: -1, speed: 1, waitingFor: null });
+  assert.throws(() => infantrySteering(actor, [], { x: 0, z: -.2 }, { ...options, lookAhead: 0 }), RangeError);
+});
+
+test('a bounded authored arrival radius still cannot skip a different floor or unseen route node', () => {
+  const position = { x: 0, y: 4.2, z: -15 };
+  const path = [{ x: .15, y: 4.2, z: -15 }, { x: 0, y: 0, z: -37 }];
+  assert.equal(advanceInfantryPath(position, path, () => false, .2), path[0]);
+  assert.deepEqual(path, [{ x: 0, y: 0, z: -37 }]);
+  assert.throws(() => advanceInfantryPath(position, path, () => false, NaN), RangeError);
+});
+
 test('open-ground soldiers keep a consistent passing side instead of running into a shared stopping point', () => {
   const actor = person(2, 0, 0), other = person(1, 0, -1.6);
   const result = infantrySteering(actor, [actor, other], { x: 0, z: -1 }, { spacing: 2.2, constrained: false, blocked: () => false });

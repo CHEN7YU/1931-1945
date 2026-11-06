@@ -7,8 +7,10 @@ const sameOwner = (a, b) => Boolean(a && b && ownerFields.every(field => a[field
 export function createControlInput() {
   const keys = new Set(), held = { primary: false, secondary: false, aiming: false, orderStarted: null };
   const issued = new WeakSet(), consumed = new WeakSet(), decisions = [];
-  let owner = null, revision = 0, serial = 0, enabled = false;
+  let owner = null, revision = 0, serial = 0, enabled = false, pendingFire = null;
+  const clearFire = () => { held.primary = false; pendingFire = null; };
   const clearHeld = () => {
+    clearFire();
     keys.clear();
     Object.assign(held, { primary: false, secondary: false, aiming: false, orderStarted: null });
   };
@@ -19,7 +21,20 @@ export function createControlInput() {
     return result;
   };
   return {
-    keys, held, clearHeld,
+    keys, held, clearHeld, clearFire,
+    pressFire() {
+      if (!enabled || !owner) return;
+      if (!held.primary) pendingFire = { owner, revision };
+      held.primary = true;
+    },
+    releaseFire() { held.primary = false; },
+    // Drain before any simulation-step fire gates, including gates that reject the shot.
+    consumeFire(currentOwner, playing) {
+      const press = pendingFire;
+      pendingFire = null;
+      if (!enabled || !playing || !sameOwner(owner, currentOwner)) { held.primary = false; return false; }
+      return held.primary || Boolean(press && press.revision === revision && sameOwner(press.owner, currentOwner));
+    },
     bind(nextOwner, allowInput = true) {
       if (!nextOwner?.unitId || !nextOwner.soldierId || !nextOwner.weaponId) throw new Error('Controlled input requires unit, soldier and weapon identities');
       const next = Object.freeze(Object.fromEntries(ownerFields.map(field => [field, nextOwner[field] ?? null])));
@@ -48,7 +63,7 @@ export function createControlInput() {
       perform(command);
       return record(command, 'applied');
     },
-    get snapshot() { return { owner: owner ? { ...owner } : null, revision, enabled, keys: [...keys], held: { ...held },
+    get snapshot() { return { owner: owner ? { ...owner } : null, revision, enabled, keys: [...keys], held: { ...held }, pendingFire: Boolean(pendingFire),
       decisions: decisions.map(decision => ({ ...decision })) }; },
   };
 }

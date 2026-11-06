@@ -1,4 +1,5 @@
 import previews from '../public/assets/campaign-previews/source.json' with { type: 'json' };
+import { SIHANG_PREVIEW } from './sihang-preview.js';
 
 function campaignPreview(id) {
   const record = previews.files.find(file => file.campaign === id);
@@ -20,6 +21,15 @@ export const CAMPAIGNS = Object.freeze([
       '目标歼灭至少2/3、逃脱不超过1/3；全部地面残敌解决后结算。']) }),
   Object.freeze({ id: 'shanghai', name: '淞沪会战', year: 1937, region: '上海', locked: true,
     x: 85, y: 61, description: '战场设计待提交，当前不可进入。' }),
+  Object.freeze({ id: 'sihang', name: '上海四行仓库', year: 1937, region: '上海',
+    preview: SIHANG_PREVIEW, x: 86, y: 62,
+    description: '坚守四行仓库四分钟，掩护友军经桥梁退往苏州河南岸租界。',
+    history: '1937年淞沪会战后期，第88师第262旅第524团一部坚守四行仓库，掩护主力撤退。游戏采用三层仓库、东侧桥梁与限时撤退的改编布局。',
+    historySource: Object.freeze({ name: '南京大屠杀遇难同胞纪念馆 · 第88师史料',
+      url: 'https://www.19371213.com.cn/information/news/202112/t20211209_3226524.html' }),
+    goals: Object.freeze(['坚守仓库一楼4分钟，阻止日军占领与北墙爆破。',
+      '全军累计400人（含开局44人）；撤退命令下达后不再补充。',
+      '5分钟内掩护AI友军过桥；其他友军撤离或阵亡后，操纵本队幸存士兵抵达南岸。']) }),
   Object.freeze({ id: 'nanjing', name: '南京保卫战', year: 1937, region: '南京',
     preview: campaignPreview('nanjing'),
     x: 81, y: 58, description: '坚守中华门，沿陆路撤往上新河渡口，掩护百姓渡江后登船撤离。',

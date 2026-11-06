@@ -8,6 +8,7 @@ export const SCORE_ICON_PATHS = Object.freeze({
   tank: 'M5 14h22l3 6H2z M8 14V9h12l4 5 M16 10V6h5 M19 9h12 M6 18h20',
   'tank-machine-gun': 'M5 14h22l3 6H2z M8 14V9h12l4 5 M6 18h20 M19 9h9 M27 5h4 M29 9h2 M27 13h4',
   mortar: 'M9 19l10-15 4 3-10 15 M17 11l9 10 M17 11l-2 10 M4 22h22 M19 3l5 3',
+  'grenade-discharger': 'M10 21l9-17 4 2-9 17 M8 22h12 M18 3l6 3',
   'field-gun': 'M5 18a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M10 13l16-9 2 3-16 9 M17 11v9l11 2 M15 9l-3-4',
   plane: 'M15 2h3v7l12 6v3l-12-3v5l5 2H10l5-2v-5L3 18v-3l12-6z',
   'tank-crush': 'M5 10h22l3 6H2z M8 10V5h12l4 5 M19 5h12 M6 14h20 M16 17v6 M12 20l4 3 4-3',

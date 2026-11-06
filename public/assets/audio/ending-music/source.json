@@ -1,0 +1,24 @@
+{
+  "sourceKind": "user-supplied-ending-soundtrack",
+  "title": "李嘉佳《往事成追忆》",
+  "activeFile": "wangshi-cheng-zhuiyi.mp3",
+  "startSeconds": 0,
+  "loop": false,
+  "license": "User-requested project use; original and redistribution rights unverified",
+  "permission": {
+    "basis": "user-supplied-soundtrack-project-use",
+    "request": "战斗结束后播放这段片尾曲",
+    "isCC0": false,
+    "redistributionRightsIndependentlyVerified": false,
+    "limitation": "User supplied this recording for game-ending playback. This request is not evidence of rights-holder permission for public or commercial redistribution; obtain the required music license before public distribution."
+  },
+  "processing": "Copied byte-for-byte without trimming or transcoding. Starts once at zero after the narrated fade reaches the black historical page, continues through contribution settlement without restarting, and stops on returning to the lobby or entering a new match. Shares the background-music mute and master volume; never overlaps the opening soundtrack.",
+  "files": [
+    {
+      "file": "wangshi-cheng-zhuiyi.mp3",
+      "originalFile": "李嘉佳_往事成追忆_7697606681623379109.mp3",
+      "bytes": 3667962,
+      "sha256": "21049d11c496e810ccbc9e9d5f5538b84b74c9d397783d85ce39b22ec04b4b4b"
+    }
+  ]
+}

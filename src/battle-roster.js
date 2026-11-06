@@ -6,8 +6,14 @@ import { NANJING_SPAWNS } from './nanjing-campaign.js';
 export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
 export const AIRCRAFT_SQUAD_SIZE = 3;
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
-export function infantryLoadout(team, index, type = 'infantry') {
+export function infantryLoadout(team, index, type = 'infantry', formation = null) {
   if (!['friendly', 'enemy'].includes(team) || !Number.isInteger(index) || index < 0 || !TYPES[type]) throw new RangeError('Invalid infantry loadout');
+  if (formation?.sihangDemolition) return { role: 'rifleman', model: 'rifle' };
+  if (team === 'enemy' && type === 'infantry') {
+    if (index === 0 || index === 1) return { role: 'grenade-discharger', model: 'rifle' };
+    if (index === 8 || index === 10) return { role: 'machine-gunner', model: 'type11' };
+    return { role: index === 9 ? 'sniper' : 'rifleman', model: index === 9 ? 'sniper' : 'rifle' };
+  }
   if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 10) {
     return { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' };
   }
@@ -15,6 +21,12 @@ export function infantryLoadout(team, index, type = 'infantry') {
     return { role: 'sniper', model: 'sniper' };
   }
   return { role: team === 'friendly' && type === 'infantry' && index % BATTLE_RULES.sectionMembers === 0 ? 'mortarman' : 'rifleman', model: 'rifle' };
+}
+export function infantryEquipment(team, index, type = 'infantry', formation = null) {
+  const loadout = infantryLoadout(team, index, type, formation);
+  return { ...loadout, handGrenades: 1,
+    explosivePacks: team === 'enemy' && ['machine-gunner', 'grenade-discharger'].includes(loadout.role) ? 0 : 1,
+    discharger: loadout.role === 'grenade-discharger' };
 }
 const lanes = [-88, -66, -44, -22, 22, 44, 66, 88, 96];
 export class FormationPlacementError extends Error {}

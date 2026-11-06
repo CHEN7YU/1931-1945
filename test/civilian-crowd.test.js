@@ -14,6 +14,17 @@ test('boarding chooses the physically nearest waiting civilian independently of 
   for (const age of ['adult', 'elderly', 'child']) assert.ok(civilianBoardingSpeed(age) >= 2.4);
 });
 
+test('a displaced resting civilian with a completed route cannot dereference a nonexistent target or fabricate an arrival', () => {
+  const route = [{ x: 0, z: -18 }];
+  const displaced = { x: .6, z: -18 };
+  assert.equal(civilianWaypointReached(displaced, route, route.length, []), false);
+  assert.equal(civilianWaypointReached({ x: 0, z: -18 }, route, route.length, []), false);
+  assert.equal(civilianWaypointReached(displaced, [], 0, []), false);
+  assert.throws(() => civilianWaypointReached(displaced, route, 2, []), RangeError);
+  assert.throws(() => civilianWaypointReached(displaced, [undefined], 0, []), RangeError);
+  assert.equal(civilianWaypointReached({ x: 0, z: -18 }, route, 0, []), true);
+});
+
 test('visible residents can start evacuating at legal crowd spacing without applying the hidden-emergence gate twice', () => {
   const people = [0, .73].map((x, index) => ({ visible: true, position: { x, z: 0 },
     userData: { civilianId: index, active: false, releaseAt: 0 } }));

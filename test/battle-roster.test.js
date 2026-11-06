@@ -74,10 +74,11 @@ test('all 198 staged infantry have clear, separated, registered spawn positions'
 test('friendly sections equip a mortarman, not an engineer, alongside the existing sniper and gunner', () => {
   for (const team of ['friendly', 'enemy']) {
     const loadouts = Array.from({ length: TYPES.infantry.members }, (_, index) => infantryLoadout(team, index));
-    assert.deepEqual(loadouts[0], { role: team === 'friendly' ? 'mortarman' : 'rifleman', model: 'rifle' });
-    assert.ok(loadouts.slice(1, 9).every(item => item.role === 'rifleman' && item.model === 'rifle'));
+    assert.deepEqual(loadouts[0], { role: team === 'friendly' ? 'mortarman' : 'grenade-discharger', model: 'rifle' });
+    assert.ok(loadouts.slice(team === 'friendly' ? 1 : 2, team === 'friendly' ? 9 : 8)
+      .every(item => item.role === 'rifleman' && item.model === 'rifle'));
     assert.deepEqual(loadouts[9], { role: 'sniper', model: 'sniper' });
-    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, team === 'friendly' ? 8 : 9);
+    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, team === 'friendly' ? 8 : 6);
     assert.deepEqual(loadouts[10], { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' });
     assert.equal(loadouts.filter(item => item.role === 'engineer').length, 0);
     for (let index = 0; index < 10; index++) assert.deepEqual(sectionOffset(index),
@@ -86,7 +87,8 @@ test('friendly sections equip a mortarman, not an engineer, alongside the existi
     for (const type of ['mortar', 'tank', 'plane']) for (const index of [0, 9, 10]) {
       assert.equal(infantryLoadout(team, index, type).model, 'rifle');
     }
-    assert.deepEqual(infantryLoadout(team, 20), loadouts[9], 'additional sections keep the same role slot');
+    assert.deepEqual(infantryLoadout(team, 20), team === 'friendly' ? loadouts[9] : { role: 'rifleman', model: 'rifle' },
+      'friendly additional sections retain their roles; extra enemy members are ordinary riflemen');
   }
   assert.throws(() => infantryLoadout('unknown', 0), /Invalid/);
 });

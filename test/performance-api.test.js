@@ -136,10 +136,10 @@ test('strict payloads, body size, origin, disabling and rate caps cannot bypass 
     assert.equal((await (await worker.fetch(f.get('/api/performance/status'), f.env)).json()).available, true);
   } finally { f.sqlite.close(); }
 });
-test('shared performance APIs store and filter independent Nanjing and Taierzhuang reports', async () => {
+test('shared performance APIs store and filter independent Nanjing, Sihang and Taierzhuang reports', async () => {
   const f = fixture();
   try {
-    for (const map of ['nanjing', 'taierzhuang-fort']) {
+    for (const map of ['nanjing', 'sihang', 'taierzhuang-fort']) {
       const body = f.batch();
       body.windows[0].context.map = map;
       assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
@@ -147,8 +147,11 @@ test('shared performance APIs store and filter independent Nanjing and Taierzhua
     const raw = await (await worker.fetch(f.get('/api/performance?map=nanjing'), f.env)).json();
     assert.equal(raw.items.length, 1);
     assert.equal(raw.items[0].batch.windows[0].context.map, 'nanjing');
+    const sihang = await (await worker.fetch(f.get('/api/performance?map=sihang'), f.env)).json();
+    assert.equal(sihang.items.length, 1);
+    assert.equal(sihang.items[0].batch.windows[0].context.map, 'sihang');
     const summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
-    assert.deepEqual(summary.groups.map(group => group.map).sort(), ['nanjing', 'taierzhuang-fort']);
+    assert.deepEqual(summary.groups.map(group => group.map).sort(), ['nanjing', 'sihang', 'taierzhuang-fort']);
   } finally { f.sqlite.close(); }
 });
 test('civilian combat counters round-trip and reject invalid counts while older batches remain valid', async () => {

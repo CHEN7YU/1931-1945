@@ -2,9 +2,94 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createControlInput } from '../src/control-input.js';
 import { createControlEvents } from '../src/control-events.js';
+import { createSimulationClock } from '../src/simulation-clock.js';
 
 const owner = (soldierId = 's1', vehicleId = null) => ({ unitId: 'u1', soldierId, vehicleId,
   seatId: vehicleId ? `${vehicleId}:seat-0` : null, weaponId: vehicleId ? `${vehicleId}:primary` : `${soldierId}:rifle` });
+test('down/up before a real simulation step preserves exactly one fire attempt, not a delayed held button', () => {
+  const input = createControlInput(), source = owner(), clock = createSimulationClock();
+  input.bind(source); clock.setActive(true, 0);
+  input.execute(input.capture('pressFire'), source, true, () => input.pressFire());
+  input.releaseFire();
+  assert.equal(input.held.primary, false);
+  assert.equal(input.snapshot.pendingFire, true);
+  assert.equal(clock.takeStep(), 0, 'input does not itself advance the clock or attempt a shot');
+  clock.beginFrame(1000);
+  let attempts = 0;
+  for (let dt; (dt = clock.takeStep()) > 0;) if (input.consumeFire(source, true)) attempts++;
+  assert.equal(attempts, 1, 'catch-up steps do not replay the click');
+  assert.equal(input.snapshot.pendingFire, false);
+  assert.equal(input.held.primary, false);
+});
+test('released clicks rejected by a fire gate never retry when that gate becomes eligible later', () => {
+  const input = createControlInput(), source = owner();
+  input.bind(source); input.pressFire(); input.releaseFire();
+  let eligible = false, attempts = 0, shots = 0;
+  const step = () => {
+    if (!input.consumeFire(source, true)) return;
+    attempts++;
+    if (eligible) shots++;
+  };
+  step();
+  eligible = true;
+  for (let i = 0; i < 20; i++) step();
+  assert.equal(attempts, 1);
+  assert.equal(shots, 0, 'cooldown/ammo/other gates cannot resurrect a drained click');
+});
+test('holding retains existing per-step fire requests and multiple pre-step clicks are bounded to one intent', () => {
+  const input = createControlInput(), source = owner();
+  input.bind(source); input.pressFire();
+  for (let step = 0; step < 10; step++) assert.equal(input.consumeFire(source, true), true);
+  input.releaseFire();
+  assert.equal(input.consumeFire(source, true), false, 'the press was already consumed while held');
+  for (let click = 0; click < 10000; click++) { input.pressFire(); input.releaseFire(); }
+  assert.equal(input.consumeFire(source, true), true);
+  assert.equal(input.consumeFire(source, true), false);
+  assert.equal(input.snapshot.pendingFire, false);
+});
+test('pause, death, menu, reset, scoreboard clearing and equipment changes erase unconsumed fire presses', () => {
+  for (const clear of [
+    input => input.block(), input => input.bind(owner(), false), input => input.reset(),
+    input => input.clearHeld(), input => input.clearFire(),
+  ]) {
+    const input = createControlInput(), source = owner();
+    input.bind(source); input.pressFire(); input.releaseFire(); clear(input);
+    assert.equal(input.snapshot.pendingFire, false);
+    assert.equal(input.consumeFire(source, false), false);
+    input.bind(source);
+    assert.equal(input.consumeFire(source, true), false);
+  }
+});
+test('fire intents cannot cross soldier, weapon, vehicle or seat ownership, even if the old owner returns', () => {
+  const source = owner('s1', 'v1');
+  for (const next of [owner('s2', 'v1'), owner('s1'), { ...source, weaponId: 'other-gun' },
+    { ...source, seatId: 'v1:seat-1' }]) {
+    const input = createControlInput();
+    input.bind(source); input.pressFire(); input.releaseFire();
+    input.bind(next);
+    assert.equal(input.consumeFire(next, true), false);
+    input.bind(source);
+    assert.equal(input.consumeFire(source, true), false);
+    input.pressFire(); input.releaseFire();
+    assert.equal(input.consumeFire(next, true), false, 'a stale current-owner check drains rather than queues');
+    assert.equal(input.consumeFire(source, true), false);
+  }
+});
+test('immediate grenade/dadao commands do not automatically register a second simulation fire intent', () => {
+  const input = createControlInput(), source = owner();
+  input.bind(source);
+  let immediate = 0;
+  for (const action of ['prepareGrenade', 'pressFire']) {
+    input.execute(input.capture(action), source, true, () => immediate++);
+    input.releaseFire();
+    assert.equal(input.consumeFire(source, true), false);
+  }
+  assert.equal(immediate, 2);
+  const command = input.capture('pressFire');
+  input.block();
+  input.execute(command, source, true, () => input.pressFire());
+  assert.equal(input.snapshot.pendingFire, false, 'rejected control commands never latch');
+});
 test('immediate commands are owned by the actual soldier and cannot be applied twice', () => {
   const input = createControlInput(), source = owner();
   input.bind(source);

@@ -5,10 +5,10 @@ import { campaignLayout } from '../src/campaign-layout.js';
 import { capturedSpawnPoints, supportsSquad, deploymentBlockReason, SQUADS, recommendedSpawn } from '../src/spawns.js';
 import { createMortar, MORTAR, mortarTarget, stowMortar, adjustMortarRange, mortarObjectiveRanges } from '../src/mortar.js';
 
-test('the launcher exposes independent Taierzhuang and Nanjing campaigns while retaining hidden and locked layouts', () => {
-  assert.equal(CAMPAIGNS.length, 4);
+test('the launcher exposes independent Taierzhuang, Sihang and Nanjing campaigns while retaining hidden and locked layouts', () => {
+  assert.equal(CAMPAIGNS.length, 5);
   assert.deepEqual(Object.keys(SQUADS), ['infantry', 'tank', 'plane']);
-  assert.deepEqual(SELECTABLE_CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaign.id), ['taierzhuang-fort', 'nanjing']);
+  assert.deepEqual(SELECTABLE_CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaign.id), ['taierzhuang-fort', 'sihang', 'nanjing']);
   assert.equal(DEFAULT_CAMPAIGN.id, 'taierzhuang-fort');
   assert.equal(campaignById('taierzhuang-streets').hidden, true);
   assert.equal(SELECTABLE_CAMPAIGNS.some(campaign => campaign.id === 'taierzhuang-streets'), false);
@@ -18,7 +18,7 @@ test('the launcher exposes independent Taierzhuang and Nanjing campaigns while r
   assert.ok(fortress.town.pieces.length > 100 && fortress.town.obstacles.length > 100);
   assert.equal(campaignLayout('nanjing').campaign, 'nanjing');
   assert.deepEqual(campaignLayout('nanjing').objectives.map(point => point.id), ['gate', 'dock']);
-  assert.equal(new Set(layouts.map(layout => JSON.stringify(layout.objectives))).size, 3);
+  assert.equal(new Set(layouts.map(layout => JSON.stringify(layout.objectives))).size, 4);
   for (const id of ['shanghai']) {
     assert.equal(campaignById(id).locked, true);
     assert.throws(() => campaignLayout(id), /awaiting the user design brief/);

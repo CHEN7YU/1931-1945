@@ -69,7 +69,13 @@ export function activateCivilianEvacuation(civilian, now, peers) {
 }
 
 export function civilianWaypointReached(position, route, index, obstacles, lookup = null) {
+  if (!Array.isArray(route) || !Number.isInteger(index) || index < 0 || index > route.length)
+    throw new RangeError('Civilian route cursor is outside its route');
+  // A resting civilian may be displaced after consuming its final waypoint.
+  if (index === route.length) return false;
   const target = route[index], next = route[index + 1];
+  if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z))
+    throw new RangeError('Civilian route waypoint must have finite coordinates');
   const distance = Math.hypot(target.x - position.x, target.z - position.z);
   if (!next) return distance <= .015;
   return distance <= .12 || distance <= .8 && segmentClear(position, next, .36, obstacles,

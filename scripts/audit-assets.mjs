@@ -23,8 +23,10 @@ const groups = [
   { manifest: 'audio/tactical-feedback/source.json', directory: 'audio/tactical-feedback', use: 'runtime', evidence: [] },
   { manifest: 'audio/vehicle-engines/source.json', directory: 'audio/vehicle-engines', use: 'runtime', evidence: [] },
   { manifest: 'audio/menu-music/source.json', directory: 'audio/menu-music', use: 'runtime', evidence: [] },
+  { manifest: 'audio/ending-music/source.json', directory: 'audio/ending-music', use: 'runtime', evidence: [] },
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/battle-endings/source.json', directory: 'audio/battle-endings', use: 'runtime', evidence: [] },
+  { manifest: 'audio/sihang-voices/source.json', directory: 'audio/sihang-voices', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -109,7 +111,8 @@ export async function auditAssets({ root, buildRoot } = {}) {
       }
       permissions.push({ directory: group.directory, basis: metadata.permission.basis,
         limitation: 'Adapted from the user-authorized original; not CC0 or an independently accepted historical reconstruction.' });
-    } else if (group.directory === 'audio/battle-voices' || group.directory === 'audio/civilian-voices' || group.directory === 'audio/battle-endings') {
+    } else if (group.directory === 'audio/battle-voices' || group.directory === 'audio/civilian-voices' ||
+      group.directory === 'audio/battle-endings' || group.directory === 'audio/sihang-voices') {
       if (metadata.provider !== 'Azure AI Speech' || metadata.license !== 'Azure-generated-speech' ||
         metadata.source !== 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech' ||
         metadata.licenseUrl !== 'https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA' ||
@@ -141,6 +144,18 @@ export async function auditAssets({ root, buildRoot } = {}) {
         throw new Error('Attributed engine audio license or credits require review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Derived loops retain CC BY 3.0 and CC BY-SA 4.0 licenses with source attribution; not CC0.' });
+    } else if (group.directory === 'audio/ending-music') {
+      if (metadata.sourceKind !== 'user-supplied-ending-soundtrack' ||
+        metadata.license !== 'User-requested project use; original and redistribution rights unverified' ||
+        metadata.permission?.basis !== 'user-supplied-soundtrack-project-use' ||
+        metadata.permission.isCC0 !== false || metadata.permission.redistributionRightsIndependentlyVerified !== false ||
+        metadata.permission.request !== '战斗结束后播放这段片尾曲' ||
+        metadata.activeFile !== 'wangshi-cheng-zhuiyi.mp3' || metadata.startSeconds !== 0 || metadata.loop !== false ||
+        metadata.files.length !== 1 ||
+        metadata.files[0].file !== metadata.activeFile || metadata.files[0].bytes !== 3667962 ||
+        metadata.files[0].sha256 !== '21049d11c496e810ccbc9e9d5f5538b84b74c9d397783d85ce39b22ec04b4b4b')
+        throw new Error('User-supplied ending soundtrack permission requires explicit review');
+      permissions.push({ directory: group.directory, basis: metadata.permission.basis, limitation: metadata.permission.limitation });
     } else if (group.directory === 'audio/menu-music') {
       if (metadata.sourceKind !== 'user-supplied-menu-soundtrack' ||
         metadata.license !== 'User-requested project use; original and redistribution rights unverified' ||

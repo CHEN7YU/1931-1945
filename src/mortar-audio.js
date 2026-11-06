@@ -8,11 +8,11 @@ export async function loadMortarLaunch() {
   return buffer;
 }
 
-export function playMortarLaunch(context, buffer, mixer) {
+export function playMortarLaunch(context, buffer, mixer, volume = .9) {
   if (context.state !== 'running') return false;
   const source = context.createBufferSource(), gain = context.createGain();
   source.buffer = buffer;
-  gain.gain.value = .9;
+  gain.gain.value = volume;
   source.connect(gain).connect(mixer.output('weapons'));
   mixer.track(source, [gain], 'weapons');
   source.start();
