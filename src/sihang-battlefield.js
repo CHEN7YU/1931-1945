@@ -6,18 +6,107 @@ import { createCivilianCharacterFactory } from './civilian-character.js';
 import { advanceCivilianMotion } from './civilian-motion.js';
 import { staticGeometryBatches } from './static-scene-batches.js';
 import { obstacleLookup } from './spatial.js';
+import { createSihangFlag } from './sihang-flag.js';
+import { createSihangCity } from './sihang-city.js';
 import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER as R, SIHANG_BRIDGE as B,
   SIHANG_CAPTURE_AREA, SIHANG_STAIRWELLS, SIHANG_STAIR_ROUTES,
+  SIHANG_LEVELS, SIHANG_NORTH_WINDOWS, SIHANG_EAST_DEFENSE_WINDOWS, SIHANG_FIRING_POSTS,
+  sihangStairHeight, sihangRiverBounds, sihangSouthBank,
 } from './sihang-layout.js';
 
 const within = (x, z, rect) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
 const bridgeHeight = z => 1.15 * Math.sin(Math.PI * THREE.MathUtils.clamp((z - R.northZ) / 24, 0, 1));
-const levels = [0, 4.2, 8.4, 12.6];
+const levels = SIHANG_LEVELS;
+
+function createDamagedPlaster() {
+  const size = 512, pixels = new Uint8Array(size * size * 4);
+  let seed = 1937;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const noiseFields = [8, 16, 32].map(count => ({ count,
+    values: Float32Array.from({ length: count * count }, random) }));
+  const noiseAt = (field, x, y) => {
+    const u = x / size * field.count, v = y / size * field.count;
+    const ix = Math.floor(u), iy = Math.floor(v), fx = u - ix, fy = v - iy;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const sample = (dx, dy) => field.values[((iy + dy) % field.count) * field.count + (ix + dx) % field.count];
+    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(sample(0, 0), sample(1, 0), sx),
+      THREE.MathUtils.lerp(sample(0, 1), sample(1, 1), sx), sy);
+  };
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const noise = random() * 12;
+    const patch = noiseAt(noiseFields[0], x, y) * .6 + noiseAt(noiseFields[1], x, y) * .28 +
+      noiseAt(noiseFields[2], x, y) * .12 > .59;
+    const mortar = y % 3 === 0 || (x + (Math.floor(y / 3) % 2) * 4) % 8 === 0;
+    const color = patch ? (mortar ? [132, 125, 109] : [135, 101, 78]) : [190, 185, 168];
+    const i = (y * size + x) * 4;
+    pixels.set([color[0] - noise, color[1] - noise, color[2] - noise, 255], i);
+  }
+  for (let i = 0; i < 850; i++) {
+    const x = Math.floor(random() * size), y = Math.floor(random() * size), radius = i % 6 === 0 ? 2 : 1;
+    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      if (dx * dx + dy * dy > radius * radius || x + dx < 0 || y + dy < 0 || x + dx >= size || y + dy >= size) continue;
+      pixels.set([66, 61, 51, 255], ((y + dy) * size + x + dx) * 4);
+    }
+  }
+  const texture = new THREE.DataTexture(pixels, size, size);
+  texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true; texture.anisotropy = 4;
+  texture.repeat.set(.055, .055); texture.needsUpdate = true;
+  const material = new THREE.MeshStandardMaterial({ map: texture, roughness: .96 });
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>',
+      '#include <common>\nvarying vec3 vSihangWallPosition;')
+      .replace('#include <project_vertex>',
+        '#include <project_vertex>\nvSihangWallPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
+      '#include <common>\nvarying vec3 vSihangWallPosition;')
+      .replace('#include <map_fragment>', `#ifdef USE_MAP
+        diffuseColor *= texture2D(map, vec2((vSihangWallPosition.x + vSihangWallPosition.z) * 0.055,
+          vSihangWallPosition.y * 0.055));
+      #endif`);
+  };
+  material.customProgramCacheKey = () => 'sihang-continuous-world-plaster-v1';
+  return material;
+}
+
+function createWarehouseName() {
+  const canvas = typeof document === 'undefined' ? null : document.createElement('canvas');
+  const context = canvas?.getContext?.('2d');
+  let texture;
+  if (context) {
+    canvas.width = 1024; canvas.height = 128;
+    context.font = 'bold 112px SimSun, serif'; context.textAlign = 'center';
+    context.fillStyle = 'rgba(45,42,34,0.9)';
+    [...'四行倉庫'].forEach((letter, index) => context.fillText(letter, 128 + index * 256, 105));
+    texture = new THREE.CanvasTexture(canvas);
+  } else texture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+  texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(25, 1),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }));
+  mesh.name = 'sihang-original-warehouse-lettering';
+  mesh.userData.sihangFeature = 'warehouse-name';
+  mesh.position.set(-36.42, 24.4, -25); mesh.rotation.y = -Math.PI / 2;
+  return mesh;
+}
 
 export function makeSihangBattlefield(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], civilians = [];
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const plates = [0, 1, 2].map(axis => {
+    const geometry = boxGeometry.clone();
+    geometry.setIndex(Array.from(boxGeometry.index.array.slice(axis * 12, axis * 12 + 12)));
+    geometry.clearGroups();
+    return geometry;
+  });
+  const decorativeFaces = [12, 30].map(offset => {
+    const geometry = boxGeometry.clone();
+    geometry.setIndex(Array.from(boxGeometry.index.array.slice(offset, offset + 6)));
+    geometry.clearGroups();
+    return geometry;
+  });
+  const rubbleGeometry = new THREE.TetrahedronGeometry(.7);
   const intact = new THREE.Group(), rubble = new THREE.Group();
   intact.name = 'sihang-warehouse-standing'; rubble.name = 'sihang-warehouse-demolished';
   scene.add(intact, rubble);
@@ -34,7 +123,16 @@ export function makeSihangBattlefield(scene, surface) {
   };
   const pending = new Map(), standingObstacles = [], standingSolids = [];
   function box(x, y, z, w, h, d, material, { parent = scene, block = false, feature } = {}) {
-    const mesh = new THREE.Mesh(boxGeometry, material);
+    // Thin decorative plates need only their two broad faces; tactical cover keeps all six faces.
+    const dimensions = [w, h, d], minimum = Math.min(...dimensions);
+    const axis = dimensions.indexOf(minimum);
+    let geometry = !block && minimum / Math.max(...dimensions) < .12 ? plates[axis] : boxGeometry;
+    if (!block && feature === 'sihang-city') {
+      if (h < .5 && w < 1 && d < 1) geometry = rubbleGeometry;
+      else if (axis === 2 && d < .15) geometry = decorativeFaces[1];
+      else if (axis === 1 && h < .31) geometry = decorativeFaces[0];
+    }
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x, y, z); mesh.scale.set(w, h, d);
     mesh.castShadow = mesh.receiveShadow = true;
     if (feature) mesh.userData.sihangFeature = feature;
@@ -55,10 +153,49 @@ export function makeSihangBattlefield(scene, surface) {
       maxX - minX, .24, maxZ - minZ, materials.concrete, { parent, block: true });
     obstacles.at(-1).walkable = true;
   }
-  // Separate dry banks leave the river physically and visually open.
-  box(0, -.2, -50, 216, .4, 116, materials.earth);
-  box(0, -.2, 70, 216, .4, 76, materials.street);
-  for (const z of [-55, -3, 43, 82]) {
+  // Every strip uses the same analytic river as safety, ray clipping and foot support.
+  const riverVertices = [], riverIndices = [], bankVertices = [[], []], bankIndices = [];
+  const riverBlocks = [];
+  for (let i = 0; i <= 108; i++) {
+    const x = -108 + i * 2, bounds = sihangRiverBounds(x);
+    riverVertices.push(x, R.waterY, bounds.northZ, x, R.waterY, bounds.southZ);
+    bankVertices[0].push(x, 0, -108, x, 0, bounds.northZ);
+    bankVertices[1].push(x, 0, bounds.southZ, x, 0, 108);
+    if (i) {
+      const j = i * 2;
+      riverIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
+      bankIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
+    }
+    if (i === 108 || x >= 44 && x < 52) continue;
+    const end = sihangRiverBounds(x + 2);
+    // Outer envelopes conservatively close all water cells; no chord supports a shortcut.
+    const north = Math.min(bounds.northZ, end.northZ), south = Math.max(bounds.southZ, end.southZ);
+    const collider = { minX: x, maxX: x + 2, minZ: north, maxZ: south, minY: -10, height: 40, water: true };
+    riverBlocks.push(collider);
+    for (const bank of ['northZ', 'southZ']) {
+      const middle = sihangRiverBounds(x + 1)[bank], slope = (end[bank] - bounds[bank]) / 2;
+      const rail = box(x + 1, 1.05, middle, Math.hypot(2, 2 * slope), .1, .12, materials.iron);
+      rail.rotation.y = -Math.atan(slope);
+      box(x + 1, -.8, middle, 2.01, 1.6, .5, materials.concrete);
+      box(x, .52, bounds[bank], .1, 1.04, .1, materials.iron);
+      obstacles.push({ minX: x, maxX: x + 2, minZ: Math.min(bounds[bank], end[bank]) - .3,
+        maxZ: Math.max(bounds[bank], end[bank]) + .3, minY: -.2, height: 1.1, bankRail: true });
+    }
+  }
+  function strip(vertices, indices, material, name) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const uv = [];
+    for (let i = 0; i < vertices.length; i += 3) uv.push(vertices[i] / 4, vertices[i + 2] / 4);
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geometry.setIndex(indices); geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name; mesh.receiveShadow = true; scene.add(mesh);
+    return mesh;
+  }
+  solids.push(strip(bankVertices[0], bankIndices, materials.earth, 'sihang-north-dry-bank'));
+  solids.push(strip(bankVertices[1], bankIndices, materials.street, 'sihang-south-dry-bank'));
+  for (const z of [-55, 43, 82]) {
     box(0, -.025, z, 216, .05, 8, materials.street);
     town.streets.push({ x: 0, z, width: 216, depth: 8 });
   }
@@ -67,23 +204,8 @@ export function makeSihangBattlefield(scene, surface) {
     town.streets.push({ x, z: -50, width: 10, depth: 116 });
   }
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(216, 24, 18, 8), waterMaterial);
-  water.rotation.x = -Math.PI / 2; water.position.set(0, R.waterY, 20);
-  water.name = 'suzhou-river'; scene.add(water);
-  const riverBlocks = [
-    { minX: -108, maxX: B.x - B.width / 2, minZ: 8, maxZ: 32, minY: -10, height: 40, water: true },
-    { minX: B.x + B.width / 2, maxX: 108, minZ: 8, maxZ: 32, minY: -10, height: 40, water: true },
-  ];
+  const water = strip(riverVertices, riverIndices, waterMaterial, 'suzhou-river');
   obstacles.push(...riverBlocks);
-  for (const z of [8, 32]) {
-    for (const [left, right] of [[-108, 44], [52, 108]]) {
-      box((left + right) / 2, -1.05, z, right - left, 2.1, .7, materials.concrete, { block: true });
-      box((left + right) / 2, 1.05, z + (z === 8 ? -.3 : .3),
-        right - left, .1, .12, materials.iron, { block: true });
-      for (let x = left + 1; x < right; x += 3)
-        box(x, .52, z, .1, 1.04, .1, materials.iron, { block: true });
-    }
-  }
   // A continuous arched walking surface, not a flat collider floating above a decorative arch.
   const bridgeVertices = [], bridgeIndices = [];
   for (let step = 0; step <= 48; step++) {
@@ -123,74 +245,150 @@ export function makeSihangBattlefield(scene, surface) {
       slab(W.minX, W.maxX, W.minZ, W.maxZ, y);
       continue;
     }
-    const strips = [
-      { minX: W.minX, maxX: W.maxX, minZ: W.minZ, maxZ: -36 },
-      { minX: W.minX, maxX: W.maxX, minZ: -16, maxZ: W.maxZ },
-      { minX: W.minX, maxX: -34.5, minZ: -36, maxZ: -16 },
-      { minX: -29.5, maxX: 21.5, minZ: -36, maxZ: -16 },
-      { minX: 26.5, maxX: W.maxX, minZ: -36, maxZ: -16 },
-    ];
+    let strips = [{ ...W.bounds }];
+    for (const shaft of SIHANG_STAIRWELLS) strips = strips.flatMap(rect => {
+      if (rect.maxX <= shaft.minX || rect.minX >= shaft.maxX || rect.maxZ <= shaft.minZ || rect.minZ >= shaft.maxZ)
+        return [rect];
+      const result = [];
+      if (rect.minZ < shaft.minZ) result.push({ ...rect, maxZ: shaft.minZ });
+      if (rect.maxZ > shaft.maxZ) result.push({ ...rect, minZ: shaft.maxZ });
+      const minZ = Math.max(rect.minZ, shaft.minZ), maxZ = Math.min(rect.maxZ, shaft.maxZ);
+      if (rect.minX < shaft.minX) result.push({ minX: rect.minX, maxX: shaft.minX, minZ, maxZ });
+      if (rect.maxX > shaft.maxX) result.push({ minX: shaft.maxX, maxX: rect.maxX, minZ, maxZ });
+      return result;
+    });
     for (const rect of strips) {
       slab(rect.minX, rect.maxX, rect.minZ, rect.maxZ, y);
       floorRects.push({ ...rect, height: y });
     }
   }
+  const turnLandings = [];
   for (const route of SIHANG_STAIR_ROUTES) {
-    const base = route.bottom.y, stair = SIHANG_STAIRWELLS.find(item => item.x === route.x);
-    for (let step = 0; step < 28; step++) {
-      const height = (step + 1) * W.floorHeight / 28;
-      box(stair.x, base + height - .1, -36 + (step + .5) * 20 / 28,
-        stair.width, .2, 20 / 28 + .01, materials.concrete, { parent: intact });
-    }
-    // Both sides have real sloping stringers; the central five-metre tread width stays clear.
-    for (const x of [stair.minX + .08, stair.maxX - .08]) {
-      const beam = box(x, base + 2.1 - .25, -26, .12, .28, Math.hypot(20, 4.2),
-        materials.iron, { parent: intact });
-      beam.rotation.x = -Math.atan2(4.2, 20);
+    slab(route.landing.minX, route.landing.maxX, route.landing.minZ, route.landing.maxZ, route.landing.height);
+    turnLandings.push(route.landing);
+    for (const flight of route.flights) {
+      const run = Math.abs(flight.end.z - flight.start.z), rise = flight.end.y - flight.start.y;
+      const profile = new THREE.Shape();
+      profile.moveTo(0, -.18); profile.lineTo(0, 0);
+      for (let step = 0; step < flight.steps; step++) {
+        profile.lineTo(run * step / flight.steps, rise * (step + 1) / flight.steps);
+        profile.lineTo(run * (step + 1) / flight.steps, rise * (step + 1) / flight.steps);
+      }
+      profile.lineTo(run, rise - .18); profile.closePath();
+      const geometry = new THREE.ExtrudeGeometry(profile, { depth: flight.width, bevelEnabled: false, steps: 1 });
+      geometry.translate(0, 0, -flight.width / 2);
+      geometry.rotateY(-Math.sign(flight.end.z - flight.start.z) * Math.PI / 2);
+      geometry.translate(flight.start.x, flight.start.y, flight.start.z);
+      const steps = new THREE.Mesh(geometry, materials.concrete);
+      steps.castShadow = steps.receiveShadow = true; steps.userData.sihangFeature = 'closed-stair-flight';
+      intact.add(steps); pending.get(intact).push(steps);
+      for (const x of [flight.minX + .06, flight.maxX - .06]) {
+        const beam = box(x, (flight.start.y + flight.end.y) / 2 - .3,
+          (flight.start.z + flight.end.z) / 2, .12, .25, Math.hypot(run, rise),
+          materials.iron, { parent: intact });
+        beam.rotation.x = -Math.atan2(rise, flight.end.z - flight.start.z);
+      }
     }
   }
   const breaches = [];
-  for (let floor = 0; floor < 3; floor++) {
-    const base = floor * W.floorHeight;
-    for (const z of [W.minZ, W.maxZ]) {
-      for (let bay = 0; bay < 8; bay++) {
-        const x = -32 + bay * 8;
-        const blown = bay === 4 || floor === 0 && bay === 3;
-        box(x - 4, base + 2.1, z, .7, 4.2, .8, materials.brick, { parent: intact, block: true });
-        box(x, base + 3.95, z, 7.3, .5, .8, materials.concrete, { parent: intact, block: true });
-        if (!blown)
-          box(x, base + .55, z, 7.3, 1.1, .8, materials.brick, { parent: intact, block: true });
-        if (!blown) {
-          for (const offset of [-1.23, 1.23])
-            box(x + offset, base + 2.4, z, .38, 2.6, .8, materials.brick, { parent: intact, block: true });
-          for (const offset of [-2.46, 0, 2.46])
-            box(x + offset, base + 2.45, z, 2.02, .08, .16, materials.iron, { parent: intact, block: true });
-        } else {
-          box(x - 3.35, base + .22, z, .55, .44, .9, materials.dark, { parent: intact, block: true });
-        }
-        breaches.push({ x, y: base + 1.8, z, width: blown ? 6 : 2, floor, blown });
+  const wallMaterial = createDamagedPlaster();
+  function facade(axis, fixed, low, high, openings) {
+    // Exact stepped outlines are both visible geometry and physical collision, not decals over walls.
+    const bands = [0, W.roofY, ...openings.flatMap(hole => [hole.bottom, hole.top,
+      ...(hole.irregular ? Array.from({ length: 9 }, (_, i) => hole.bottom + (hole.top - hole.bottom) * (i + 1) / 10) : [])])];
+    bands.sort((a, b) => a - b);
+    for (let i = 1; i < bands.length; i++) {
+      const bottom = bands[i - 1], top = bands[i];
+      if (top - bottom < .001) continue;
+      const middle = (bottom + top) / 2;
+      const gaps = openings.filter(h => middle > h.bottom && middle < h.top).map(h => {
+        const fraction = (middle - h.bottom) / (h.top - h.bottom);
+        const band = Math.min(9, Math.floor(fraction * 10));
+        const left = h.irregular ? h.width * [.21, .08, .14, .02, .10, 0, .12, .04, .16, .24][band] : 0;
+        const right = h.irregular ? h.width * [.12, .19, .04, .11, 0, .13, .06, .18, .07, .16][band] : 0;
+        return { left: h.u - h.width / 2 + left, right: h.u + h.width / 2 - right };
+      }).sort((a, b) => a.left - b.left);
+      let cursor = low;
+      function wall(left, right) {
+        if (right - left < .001) return;
+        const thickness = axis === 'x' && fixed === W.minZ ? .5 : .8;
+        box(axis === 'x' ? (left + right) / 2 : fixed, middle,
+          axis === 'x' ? fixed : (left + right) / 2,
+          axis === 'x' ? right - left : thickness, top - bottom, axis === 'x' ? thickness : right - left,
+          wallMaterial, { parent: intact, block: true });
       }
-      box(W.maxX, base + 2.1, z, .7, 4.2, .8, materials.brick, { parent: intact, block: true });
+      for (const gap of gaps) { wall(cursor, gap.left); cursor = gap.right; }
+      wall(cursor, high);
     }
-    for (const x of [W.minX, W.maxX]) {
-      for (const z of [-38, -30, -22, -14]) {
-        box(x, base + 2.1, z - 4, .8, 4.2, .65, materials.brick, { parent: intact, block: true });
-        box(x, base + 3.95, z, .8, .5, 7.35, materials.concrete, { parent: intact, block: true });
-        if (floor || z === -30 || z === -22) {
-          box(x, base + .55, z, .8, 1.1, 7.35, materials.brick, { parent: intact, block: true });
-          for (const offset of [-1.23, 1.23])
-            box(x, base + 2.4, z + offset, .8, 2.6, .38, materials.brick, { parent: intact, block: true });
-        }
+    for (const h of openings) {
+      breaches.push({ ...h, axis, x: axis === 'x' ? h.u : fixed, z: axis === 'x' ? fixed : h.u,
+        y: (h.bottom + h.top) / 2, floor: Math.floor(h.bottom / W.floorHeight), blown: !!h.irregular });
+      if (h.kind === 'window') {
+        // Frames stay at the edges so the existing standing defense posts retain clear sight lines.
+        box(axis === 'x' ? h.u : fixed, h.bottom - .08, axis === 'x' ? fixed : h.u,
+          axis === 'x' ? h.width + .2 : 1, .14, axis === 'x' ? 1 : h.width + .2,
+          materials.concrete, { parent: intact, block: true });
       }
-    }
-    for (const x of [-12, 4]) for (const z of [-33, -17]) {
-      box(x, base + 2.1, z, .65, 4.2, .65, materials.concrete, { parent: intact, block: true });
-      box(x, base + 3.9, -25, .48, .6, 32, materials.concrete, { parent: intact, block: true });
     }
   }
-  // Broken parapets leave roof firing positions, without sealing the stair exits.
-  for (const z of [-42, -8]) for (let x = -32; x < 28; x += 8)
-    if (x !== 0) box(x, 12.95, z, 4.5, .7, .55, materials.brick, { parent: intact, block: true });
+  const northOpenings = [{ id: 'north-gate', u: -20, width: 7, bottom: 0, top: 3.4, kind: 'gate' }];
+  for (const u of SIHANG_NORTH_WINDOWS) northOpenings.push({
+    id: `north-defense-${u}`, u, width: 4.8, bottom: W.floorHeight + .8, top: W.floorHeight + 4.7, kind: 'window',
+  });
+  northOpenings.push({ id: 'north-shell-upper', u: 8, width: 3.4, bottom: 18.2, top: 23.2, kind: 'breach', irregular: true });
+  facade('x', W.minZ, W.minX, W.maxX, northOpenings);
+  const riverWindows = [];
+  for (let floor = 0; floor < 3; floor++) for (const u of [-24, -16, -8, 0, 8, 16, 24])
+    riverWindows.push({ id: `river-window-${floor}-${u}`, u, width: 2.6,
+      bottom: floor * W.floorHeight + .8, top: floor * W.floorHeight + 4.7, kind: 'window' });
+  facade('x', W.maxZ, W.minX, W.maxX, riverWindows);
+  const eastOpenings = [];
+  for (let floor = 0; floor < 3; floor++) for (const u of floor === 1 ? SIHANG_EAST_DEFENSE_WINDOWS : [-38, -30, -22, -14])
+    eastOpenings.push({ id: `east-${floor}-${u}`, u, width: floor === 0 && (u === -38 || u === -14) ? 4.8 : 2.5,
+      bottom: floor * W.floorHeight + (floor === 0 && (u === -38 || u === -14) ? 0 : .8),
+      top: floor * W.floorHeight + 4.7, kind: floor === 0 && (u === -38 || u === -14) ? 'door' : 'window' });
+  facade('z', W.maxX, W.minZ, W.maxZ, eastOpenings);
+  facade('z', W.minX, W.minZ, W.maxZ, [
+    { id: 'west-shell-middle', u: -29, width: 3.5, bottom: 10.1, top: 14.8, kind: 'breach', irregular: true },
+    { id: 'west-shell-upper', u: -18, width: 2.6, bottom: 18.1, top: 23.8, kind: 'breach', irregular: true },
+  ]);
+  const partitions = [];
+  for (let floor = 0; floor < 3; floor++) {
+    const base = floor * W.floorHeight;
+    for (const x of [-12, 4]) for (const z of [-33, -17]) {
+      box(x, base + W.floorHeight / 2, z, .65, W.floorHeight, .65, materials.concrete, { parent: intact, block: true });
+      box(x, base + W.floorHeight - .3, -25, .48, .6, 32, materials.concrete, { parent: intact, block: true });
+    }
+    const height = W.floorHeight - .6;
+    for (const [left, right] of [[-12, -4], [0, 12]]) {
+      box((left + right) / 2, base + height / 2, -20, right - left, height, .3,
+        materials.plaster, { parent: intact, block: true });
+      partitions.push({ floor, minX: left, maxX: right, minZ: -20.15, maxZ: -19.85 });
+    }
+    for (const x of [-12, 12]) for (const [north, south] of [[-39, -35], [-13, -9]]) {
+      box(x, base + height / 2, (north + south) / 2, .3, height, south - north,
+        materials.plaster, { parent: intact, block: true });
+      partitions.push({ floor, minX: x - .15, maxX: x + .15, minZ: north, maxZ: south });
+    }
+  }
+  // Strong continuous cornices and corners distinguish a surviving masonry warehouse.
+  for (const z of [W.minZ, W.maxZ]) {
+    box(W.x, W.roofY - .1, z, W.width + 1, .35, 1.15, materials.concrete, { parent: intact, block: true });
+    box(W.x, W.roofY + .4, z, W.width, .75, .6, wallMaterial, { parent: intact, block: true });
+  }
+  for (const x of [W.minX, W.maxX]) {
+    box(x, W.roofY - .1, W.z, 1.15, .35, W.depth, materials.concrete, { parent: intact, block: true });
+    box(x, W.roofY + .4, W.z, .6, .75, W.depth, wallMaterial, { parent: intact, block: true });
+  }
+  for (const x of [-28, -12]) {
+    for (let row = 0; row < 3; row++) for (let bag = 0; bag < 7; bag++)
+      box(x + (bag - 3) * .75 + (row % 2) * .18, .2 + row * .34, -49.4,
+        .8, .36, .55, materials.earth, { block: true });
+    for (const side of [-1, 1]) for (let row = 0; row < 2; row++) for (let bag = 0; bag < 3; bag++)
+      box(x + side * 2.7, .2 + row * .34, -48.5 + bag * .7,
+        .55, .36, .8, materials.earth, { block: true });
+    town.fortifications.push({ id: `north-gate-sandbags-${x}`, x, z: -49.4, use: 'machine-gun-cover' });
+  }
   // Bounded debris sits outside doorways, squad origins and the demolition assembly space.
   for (let i = 0; i < 36; i++) {
     const x = -34 + (i % 12) * 5.3, z = i < 12 ? -44.5 : i < 24 ? -6 : -46;
@@ -200,70 +398,30 @@ export function makeSihangBattlefield(scene, surface) {
   }
   const warehouse = { id: 'sihang-warehouse', ...W, floors: 3, accessible: true,
     historicalAdaptation: 'three-playable-storeys', breaches, stairwells: SIHANG_STAIRWELLS,
-    stairRoutes: SIHANG_STAIR_ROUTES, intact, rubble, destructible: false };
+    stairRoutes: SIHANG_STAIR_ROUTES, firingPosts: SIHANG_FIRING_POSTS, partitions, intact, rubble, destructible: false };
   town.buildings.push(warehouse);
-
-  function house(id, x, z, w, d, south) {
-    const building = { id, x, z, width: w, depth: d, floors: 2, accessible: true,
-      exit: { x, z: z - d / 2 - 1 }, use: south ? 'shop' : 'residence', style: 'shanghai-masonry-1937' };
-    town.buildings.push(building);
-    const north = z - d / 2, back = z + d / 2, left = x - w / 2, right = x + w / 2;
-    box(x, -.08, z, w, .16, d, materials.concrete);
-    for (const side of [-1, 1])
-      box(x + side * w / 2, 3.1, z, .45, 6.2, d, materials.brick, { block: true });
-    box(x, 3.1, back, w, 6.2, .45, materials.brick, { block: true });
-    for (const side of [-1, 1])
-      box(x + side * (w / 4 + .7), 1.4, north, w / 2 - 1.4, 2.8, .45,
-        materials.plaster, { block: true });
-    box(x, 2.95, north, w, .3, .45, materials.concrete, { block: true });
-    for (let offset = -w / 2; offset <= w / 2; offset += w / 4)
-      box(x + offset, 4.7, north, .35, 3, .45, materials.brick, { block: true });
-    box(x, 3.5, north, w, .8, .45, materials.plaster, { block: true });
-    box(x, 6.3, z, w + .6, .35, d + .6, materials.dark, { block: true });
-    box(x, 2.85, north - .7, w * .85, .12, 1.4, materials.wood);
-    box(left + .8, .35, north + 1, .8, .7, 1, materials.wood, { block: true });
-    box(right - .8, .35, back - 1, .8, .7, 1, materials.wood, { block: true });
-    town.passages.push({ id: `${id}-front-door`, x, z: north, width: 2.8, height: 2.8, axis: 'x', openAngle: Math.PI / 2 });
-    return building;
+  intact.add(createWarehouseName());
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 96;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#33342e'; context.font = 'bold 76px serif';
+    context.textAlign = 'center'; context.textBaseline = 'middle';
+    context.fillText('四　行　仓　库', 512, 48);
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const labelMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(27, .5), labelMaterial);
+    label.name = 'sihang-warehouse-name'; label.position.set(W.minX - .41, W.roofY - .55, W.z);
+    label.rotation.y = -Math.PI / 2; intact.add(label);
   }
-  // Building lots never pinch the three broad northern armour approaches.
-  for (const [i, x] of [-94, -40, 35, 96].entries()) house(`north-home-${i}`, x, -72, 12, 10, false);
-  for (const [i, x] of [-90, -66, -42, -18, 12, 76, 98].entries())
-    house(`concession-shop-${i}`, x, 64, 15, 13, true);
-  for (const [i, x] of [-90, -60, -26, 8, 76, 100].entries())
-    house(`concession-home-${i}`, x, 96, 13, 12, true);
+
+  const city = createSihangCity({ scene, box, town, materials });
 
   const markerMaterial = new THREE.MeshStandardMaterial({ color: 0x557ca5, roughness: .8 });
   const marker = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, .08, 16), markerMaterial);
   marker.position.set(-4, .05, -25); intact.add(marker); flags.push(marker);
-  const roofFlag = new THREE.Group(); roofFlag.name = 'sihang-roof-roc-flag';
-  roofFlag.position.set(-4, 12.6, -12); intact.add(roofFlag);
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .065, 5, 8), materials.iron);
-  pole.position.y = 2.5; roofFlag.add(pole);
-  const blue = new THREE.MeshBasicMaterial({ color: 0x143581, side: THREE.DoubleSide });
-  const white = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  const cloth = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 1.65, 10, 6), blue);
-  cloth.position.set(1.25, 4, 0); roofFlag.add(cloth);
-  const sunShape = new THREE.Shape();
-  for (let i = 0; i < 24; i++) {
-    const angle = i * Math.PI / 12, radius = i % 2 ? .3 : .56;
-    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
-    if (!i) sunShape.moveTo(x, y); else sunShape.lineTo(x, y);
-  }
-  sunShape.closePath();
-  const sun = new THREE.Mesh(new THREE.ShapeGeometry(sunShape), white);
-  sun.position.set(1.25, 4, .015); roofFlag.add(sun);
-  const gun = new THREE.Group(); gun.name = 'sihang-roof-aa-display';
-  gun.position.set(5, 12.6, -12); intact.add(gun);
-  for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(boxGeometry, materials.iron);
-    leg.position.set(side * .4, .45, 0); leg.scale.set(.12, 1.2, .12); leg.rotation.z = side * .45; gun.add(leg);
-  }
-  const receiver = new THREE.Mesh(boxGeometry, materials.iron);
-  receiver.position.y = 1.25; receiver.scale.set(.3, .35, .8); gun.add(receiver);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.045, .06, 1.9, 8), materials.iron);
-  barrel.position.set(0, 1.8, -.85); barrel.rotation.x = -.9; gun.add(barrel);
-  warehouse.roofFlag = roofFlag; warehouse.antiAircraftGun = gun;
+  const flagAnimation = createSihangFlag(materials.iron), roofFlag = flagAnimation.group;
+  roofFlag.position.set(-4, W.roofY, -12); intact.add(roofFlag);
+  warehouse.roofFlag = roofFlag;
 
   // Demolition is a visibility switch over prebuilt assets, not an ordinary bullet-damage system.
   for (let i = 0; i < 84; i++) {
@@ -284,8 +442,14 @@ export function makeSihangBattlefield(scene, surface) {
   scene.updateMatrixWorld(true);
   for (const [parent, objects] of pending) {
     staticRendering.sources += objects.length;
-    // World-space baking keeps raycast solids identical to the visible damaged shell.
-    for (const [material, cells] of staticGeometryBatches(objects, { spatial: true })) {
+    // Bounded 64m cells keep dense street blocks culled, with fewer material submissions.
+    const regions = new Map();
+    for (const object of objects) {
+      const key = `${Math.floor(object.position.x / 64)},${Math.floor(object.position.z / 64)}`;
+      if (!regions.has(key)) regions.set(key, []);
+      regions.get(key).push(object);
+    }
+    for (const region of regions.values()) for (const [material, cells] of staticGeometryBatches(region)) {
       for (const geometries of cells.values()) {
         const geometry = mergeGeometries(geometries);
         const mesh = new THREE.Mesh(geometry, material);
@@ -308,7 +472,8 @@ export function makeSihangBattlefield(scene, surface) {
     let route;
     if (i < 24) {
       const x = -98 + i * 8.3;
-      route = [{ x, z: 35.5 }, { x: x + (i % 2 ? 1.5 : 0), z: 35.5 }];
+      route = [{ x, z: sihangRiverBounds(x).southZ + 3.5 },
+        { x: x + (i % 2 ? 1.5 : 0), z: sihangRiverBounds(x + (i % 2 ? 1.5 : 0)).southZ + 3.5 }];
     } else {
       const home = town.buildings.filter(building => building.id.startsWith('concession-shop'))[(i - 24) % 7];
       route = [{ x: home.x, z: 48 + (i % 2) * 2 }, { x: home.x, z: home.z - 1 }];
@@ -321,24 +486,29 @@ export function makeSihangBattlefield(scene, surface) {
   }
   let ruined = false;
   function isDeepWater(x, z) {
-    return z > R.northZ && z < R.southZ && (x < 44 || x > 52);
+    if (![x, z].every(Number.isFinite)) return false;
+    const bounds = sihangRiverBounds(x);
+    return z > bounds.northZ && z < bounds.southZ && (x < 44 || x > 52);
   }
   function groundHeight(x, z) {
-    if (z >= 8 && z <= 32) return x >= 44 && x <= 52 ? bridgeHeight(z) : R.waterY;
+    if (![x, z].every(Number.isFinite)) throw new RangeError('Sihang ground requires finite coordinates');
+    const bounds = sihangRiverBounds(x);
+    if (z >= bounds.northZ && z <= bounds.southZ) return x >= 44 && x <= 52 ? bridgeHeight(z) : R.waterY;
     return 0;
   }
+  const stairFlights = SIHANG_STAIR_ROUTES.flatMap(route => route.flights);
   function walkHeight(x, z, referenceY = groundHeight(x, z), step = .25) {
+    if (![x, z, referenceY, step].every(Number.isFinite) || step < 0)
+      throw new RangeError('Sihang walk height requires finite coordinates and a nonnegative step');
     let height = groundHeight(x, z);
     if (ruined || !within(x, z, W)) return height;
     for (const rect of floorRects)
       if (within(x, z, rect) && rect.height <= referenceY + step && rect.height > height) height = rect.height;
-    for (const stair of SIHANG_STAIRWELLS) {
-      if (!within(x, z, stair)) continue;
-      const rise = (z + 36) / 20 * W.floorHeight;
-      for (let floor = 0; floor < 3; floor++) {
-        const candidate = floor * W.floorHeight + rise;
-        if (candidate <= referenceY + step && candidate > height) height = candidate;
-      }
+    for (const landing of turnLandings)
+      if (within(x, z, landing) && landing.height <= referenceY + step && landing.height > height) height = landing.height;
+    for (const flight of stairFlights) if (within(x, z, flight)) {
+      const candidate = sihangStairHeight(flight, z);
+      if (candidate <= referenceY + step && candidate > height) height = candidate;
     }
     return height;
   }
@@ -348,6 +518,8 @@ export function makeSihangBattlefield(scene, surface) {
     const candidates = movementObstacles === obstacles && radius <= 3.5 ? movementLookup.at(x, z) : movementObstacles;
     if (y - referenceY > .26 || referenceY - y > .32 ||
       circleBlocked(x, z, radius, candidates.filter(o => !o.walkable || o.height > y + .25), y, bodyHeight)) return null;
+    if (!ruined && stairFlights.some(flight => within(x, z, flight) &&
+      sihangStairHeight(flight, z) > y + .5 && sihangStairHeight(flight, z) - .18 < y + bodyHeight)) return null;
     return y;
   }
   function moveInfantry(position, dx, dz, radius = .42, movementObstacles = obstacles, bodyHeight = 1.75) {
@@ -381,6 +553,14 @@ export function makeSihangBattlefield(scene, surface) {
     return Math.abs(feet.y - goal.y) <= .025 ? path : [];
   }
   function floorPath(start, goal, level) {
+    const finishAtGoal = path => {
+      if (!path.length) return [];
+      const last = path[path.length - 1];
+      if (Math.hypot(last.x - goal.x, last.z - goal.z) < .001) return path;
+      const finish = physicalConnector(last,
+        { ...goal, y: level ? levels[level] : groundHeight(goal.x, goal.z) }, level > 0);
+      return finish.length ? [...path, ...finish] : [];
+    };
     let navigator = navigators.get(level);
     if (!navigator) {
       const y = levels[level];
@@ -390,10 +570,10 @@ export function makeSihangBattlefield(scene, surface) {
         .map(o => ({ ...o, minY: -10, height: 40 }));
       if (level && !ruined) {
         projected.push(
-          { minX: -108, maxX: -35.55, minZ: -108, maxZ: 108 },
-          { minX: 27.55, maxX: 108, minZ: -108, maxZ: 108 },
-          { minX: -108, maxX: 108, minZ: -108, maxZ: -41.55 },
-          { minX: -108, maxX: 108, minZ: -8.45, maxZ: 108 },
+          { minX: -108, maxX: W.minX, minZ: -108, maxZ: 108 },
+          { minX: W.maxX, maxX: 108, minZ: -108, maxZ: 108 },
+          { minX: -108, maxX: 108, minZ: -108, maxZ: W.minZ },
+          { minX: -108, maxX: 108, minZ: W.maxZ, maxZ: 108 },
         );
       }
       if (!ruined) for (const stair of SIHANG_STAIRWELLS) projected.push({ ...stair, height: 40 });
@@ -416,65 +596,85 @@ export function makeSihangBattlefield(scene, surface) {
         if (!prefix.length) continue;
         const remainder = navigator(candidate, goal);
         if (!remainder.length) continue;
-        return [...prefix, ...remainder.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) }))];
+        return finishAtGoal([...prefix, ...remainder.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) }))]);
       }
     }
-    return path.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) }));
+    return finishAtGoal(path.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) })));
   }
   doorSystem.onNavigationChanged = () => { navigators.clear(); movementLookup.rebuild(); };
-  function rampAt(point) {
-    if (ruined || point.z <= -36 || point.z >= -16) return null;
+  function stairAt(point) {
+    if (ruined || ![point?.x, point?.y, point?.z].every(Number.isFinite)) return null;
     return SIHANG_STAIR_ROUTES.find(route =>
-      Math.abs(point.x - route.x) <= 2.5 &&
-      Math.abs(point.y - (route.bottom.y + (point.z + 36) / 20 * 4.2)) < .26);
+      within(point.x, point.z, route.landing) && Math.abs(point.y - route.landing.height) < .025 ||
+      route.flights.some(flight => within(point.x, point.z, flight) &&
+        Math.abs(point.y - sihangStairHeight(flight, point.z)) < .025));
   }
-  function rampPath(from, to, route) {
-    const safeX = x => THREE.MathUtils.clamp(x, route.x - 1.9, route.x + 1.9);
-    const entry = { ...from, x: safeX(from.x) }, exit = { ...to, x: safeX(to.x) };
-    const path = [];
-    if (entry.x !== from.x) {
-      // Move sideways at the current height before descending away from a slab overlapped by the capsule.
-      const recenter = physicalConnector(from, entry, true);
-      if (!recenter.length) return [];
-      path.push(...recenter);
+  function stairProjection(point, route) {
+    let best = null, progress = 0;
+    for (let i = 1; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i - 1], b = route.waypoints[i], dx = b.x - a.x, dz = b.z - a.z;
+      const length = Math.hypot(dx, dz);
+      const t = THREE.MathUtils.clamp(((point.x - a.x) * dx + (point.z - a.z) * dz) / (length * length), 0, 1);
+      const x = a.x + dx * t, z = a.z + dz * t;
+      const y = i === 2 ? sihangStairHeight(route.flights[0], z)
+        : i === 6 ? sihangStairHeight(route.flights[1], z) : a.y;
+      if (Math.abs(y - point.y) > .025) { progress += length; continue; }
+      const distance = Math.hypot(point.x - x, point.z - z);
+      if (!best || distance < best.distance) best = { x, y, z, distance, progress: progress + length * t };
+      progress += length;
     }
-    const count = Math.max(1, Math.ceil(Math.hypot(exit.x - entry.x, exit.z - entry.z) / .5));
+    return best;
+  }
+  function stairPath(from, to, route) {
+    const entry = stairProjection(from, route), exit = stairProjection(to, route);
+    if (!entry || !exit) return [];
+    const path = [], prefix = physicalConnector(from, entry, true);
+    if (!prefix.length && entry.distance > .001) return [];
+    path.push(...prefix);
+    let progress = 0;
+    const middle = [];
+    for (let i = 1; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i - 1], b = route.waypoints[i];
+      progress += Math.hypot(b.x - a.x, b.z - a.z);
+      if (progress > Math.min(entry.progress, exit.progress) + .001 &&
+        progress < Math.max(entry.progress, exit.progress) - .001) middle.push({ ...b, progress });
+    }
+    if (exit.progress < entry.progress) middle.reverse();
     let previous = entry;
-    for (let i = 1; i <= count; i++) {
-      const t = i / count, z = entry.z + (exit.z - entry.z) * t;
-      const next = { x: entry.x + (exit.x - entry.x) * t, z,
-        y: route.bottom.y + THREE.MathUtils.clamp((z + 36) / 20, 0, 1) * 4.2 };
-      if (!physicalConnector(previous, next).length) return [];
-      path.push(next); previous = next;
+    for (const next of [...middle, exit]) {
+      const segment = physicalConnector(previous, next);
+      if (!segment.length && Math.hypot(previous.x - next.x, previous.z - next.z) > .001) return [];
+      path.push(...segment); previous = next;
     }
-    if (exit.x !== to.x) {
-      const finish = physicalConnector(exit, to, true);
-      if (!finish.length) return [];
-      path.push(...finish);
-    }
-    return path;
+    const finish = physicalConnector(exit, to, true);
+    if (!finish.length && exit.distance > .001) return [];
+    path.push(...finish);
+    return path.length ? path : [{ x: to.x, y: to.y, z: to.z }];
   }
-  function elevatedPath(start, goal) {
-    const startRamp = rampAt(start), goalRamp = rampAt(goal);
-    if (startRamp && goalRamp === startRamp) return rampPath(start, goal, startRamp);
+  function elevatedPath(start, goal, preferredStair = null) {
+    if (![start?.x, start?.z, start?.y ?? 0, goal?.x, goal?.z, goal?.y ?? 0].every(Number.isFinite))
+      throw new RangeError('Sihang path requires finite endpoints');
+    const startRamp = stairAt(start), goalRamp = stairAt(goal);
+    if (startRamp && goalRamp === startRamp) return stairPath(start, goal, startRamp);
     if (startRamp) {
       const exit = (goal.y ?? 0) <= startRamp.bottom.y ? startRamp.bottom : startRamp.top;
-      const remainder = elevatedPath(exit, goal);
-      const prefix = rampPath(start, exit, startRamp);
+      const remainder = elevatedPath(exit, goal, preferredStair);
+      const prefix = stairPath(start, exit, startRamp);
       return remainder.length && prefix.length ? [...prefix, ...remainder] : [];
     }
     if (goalRamp) {
       const entry = (start.y ?? 0) <= goalRamp.bottom.y ? goalRamp.bottom : goalRamp.top;
-      const approach = elevatedPath(start, entry);
-      const finish = rampPath(entry, goal, goalRamp);
+      const approach = elevatedPath(start, entry, preferredStair);
+      const finish = stairPath(entry, goal, goalRamp);
       return approach.length && finish.length ? [...approach, ...finish] : [];
     }
-    const from = Math.round((start.y ?? groundHeight(start.x, start.z)) / 4.2);
-    const to = Math.round((goal.y ?? groundHeight(goal.x, goal.z)) / 4.2);
+    const from = Math.round((start.y ?? groundHeight(start.x, start.z)) / W.floorHeight);
+    const to = Math.round((goal.y ?? groundHeight(goal.x, goal.z)) / W.floorHeight);
     if (from < 0 || from > 3 || to < 0 || to > 3 || ruined && (from || to)) return [];
     if (from === to) return floorPath(start, goal, from);
     let best = null, bestCost = Infinity;
     for (const stair of SIHANG_STAIRWELLS) {
+      if (preferredStair && stair.id !== preferredStair) continue;
       const path = [], direction = Math.sign(to - from);
       let cursor = start, valid = true;
       for (let level = from; level !== to; level += direction) {
@@ -483,12 +683,9 @@ export function makeSihangBattlefield(scene, surface) {
         const exit = direction > 0 ? route.top : route.bottom;
         const approach = floorPath(cursor, entry, level);
         if (!approach.length) { valid = false; break; }
-        path.push(...approach);
-        // Preserve the actual ramp, including level landings, in both traversal directions.
-        for (let i = 1; i <= 44; i++) {
-          const z = entry.z + (exit.z - entry.z) * i / 44;
-          path.push({ x: stair.x, z, y: route.bottom.y + THREE.MathUtils.clamp((z + 36) / 20, 0, 1) * 4.2 });
-        }
+        const connection = stairPath(entry, exit, route);
+        if (!connection.length) { valid = false; break; }
+        path.push(...approach, ...connection);
         cursor = exit;
       }
       if (!valid) continue;
@@ -499,7 +696,7 @@ export function makeSihangBattlefield(scene, surface) {
       for (const p of path) { cost += Math.hypot(p.x - previous.x, p.z - previous.z); previous = p; }
       if (cost < bestCost) { best = path; bestCost = cost; }
     }
-    return best ?? [];
+    return best ?? (preferredStair ? elevatedPath(start, goal) : []);
   }
   function updateCivilians(dt, now) {
     for (const person of civilians) {
@@ -518,14 +715,18 @@ export function makeSihangBattlefield(scene, surface) {
     }
   }
   const world = {
-    solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath,
-    groundSurface: (x, z) => within(x, z, W) || z > 32 || x >= 44 && x <= 52 ? 'stone' : 'earth',
+    solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
+    groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || x >= 44 && x <= 52 ? 'stone' : 'earth',
     armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem,
-    sceneArt: { staticRendering, warehouseBreaches: breaches.length, shopAwnings: 17 }, staticRendering,
+    sceneArt: { staticRendering, warehouseBreaches: breaches.filter(h => h.blown).length,
+      shopAwnings: city.budget.awnings, city: city.budget, flag: { vertices: 425, triangles: 768 } }, staticRendering,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
     bridgeSurfaces: { deck: 1.15, northRamp: 0, southRamp: 0, heightAt: bridgeHeight },
     riverSurfaces: { water: -1, northBank: 0, southBank: 0, street: 0 },
-    impactHeight: groundHeight, isDeepWater,
+    impactHeight: groundHeight, isDeepWater, riverBounds: sihangRiverBounds,
+    updateFlag: flagAnimation.update,
+    setNightLighting: city.setNightLighting,
+    get concessionLighting() { return city.lighting; },
     landmarks: { warehouse, bridge: { ...B, deck: bridgeDeck, heightAt: bridgeHeight },
       bridges: [{ ...B, type: 'arched-stone-bridge' }], streets: town.streets, buildings: town.buildings,
       cityStreets: town.streets, residentialBuildings: town.buildings.slice(1), river: R, roofFlag },
@@ -544,7 +745,8 @@ export function makeSihangBattlefield(scene, surface) {
         solids.push(...standingSolids); obstacles.push(...standingObstacles);
       }
       ruined = false; intact.visible = true; rubble.visible = false;
-      marker.material.color.setHex(0x557ca5); smoke.length = 0;
+      marker.material.color.setHex(0x557ca5); smoke.length = 0; flagAnimation.update(0);
+      smoke.push(...city.smoke);
       doorSystem.reset(); navigators.clear(); movementLookup.rebuild();
       for (const person of civilians) {
         const data = person.userData;

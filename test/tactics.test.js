@@ -6,6 +6,18 @@ import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, adv
 import { makeObjectives, advanceCapture } from '../src/core.js';
 import { battleRoster } from '../src/battle-roster.js';
 
+test('a standing shield carrier can be observed through a genuinely visible head, never through an opaque shield', () => {
+  const state = createTactics(1, 1, 0), target = { id: 'shield-carrier', targetKind: 'person',
+    position: { x: 0, y: 0, z: -30 }, stance: 'standing',
+    nativeMotion: { profile: {}, posture: {} }, sihangShield: { active: true } };
+  assert.equal(observeVisualThreat(state, target, 1, () => false), null);
+  const head = observeVisualThreat(state, target, 2, point => point.y > 1.55);
+  assert.ok(head.y > 1.55);
+  assert.equal(state.threatId, target.id);
+  target.sihangShield.active = false;
+  assert.equal(observeVisualThreat(state, target, 3, point => point.y > 1.55), null);
+});
+
 test('sandbag firing peeks stay behind the barrier instead of stepping through its collision volume', () => {
   const slot = { kind: 'sandbag', x: 1, z: 2 };
   assert.deepEqual(coverPeeks(slot), [{ x: 1, z: 2 }]);

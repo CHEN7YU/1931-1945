@@ -5,7 +5,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { createOfficerAppearance, isNativeOfficer, officerSlot, nativeOfficerRegions, officerRegionShader,
-  OFFICER_PROVENANCE } from '../src/officer-appearance.js';
+  OFFICER_PROVENANCE, OFFICER_COLORS, createOfficerVisorGeometry, createOfficerCapCrown,
+  nativeOfficerHandWeights, createOfficerHandAppearance } from '../src/officer-appearance.js';
+import { createNraGrenadeHand } from '../src/nra-hand.js';
+import { createWeaponHands } from '../src/weapon-hands.js';
+import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
+import { prepareNraRig } from '../src/nra-rig.js';
 import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
@@ -65,6 +70,7 @@ async function nativeNra() {
   const manager = new THREE.LoadingManager();
   manager.addHandler(/\.(png|jpe?g|dds)$/i, { setPath() { return this; }, load() { return new THREE.Texture(); } });
   const avatar = new FBXLoader(manager).parse(binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength), '');
+  prepareNraRig(avatar);
   const root = new THREE.Group();
   const box = new THREE.Box3().setFromObject(avatar);
   root.scale.setScalar(1.78 / (box.max.y - box.min.y)); root.rotation.y = Math.PI;
@@ -94,7 +100,7 @@ for (const team of ['friendly', 'enemy']) test(`${team}: native helmet replaceme
   assert.equal(costume.snapshot.officer, true);
   assert.equal(costume.snapshot.badge, team === 'friendly' ? 'ROC-white-sun' : 'gold-star-red-band');
   assert.equal(costume.snapshot.decorativeSword, team === 'enemy');
-  assert.ok(costume.snapshot.triangles < 1000, 'single bounded accessory submission');
+  assert.ok(costume.snapshot.triangles < 1600, 'detailed costume remains one bounded accessory submission');
   assert.equal(costume.mesh.skeleton.bones.length, 65);
   let removedHelmetTriangles = 0;
   for (let i = 0; i < meshes.length; i++) {
@@ -109,6 +115,21 @@ for (const team of ['friendly', 'enemy']) test(`${team}: native helmet replaceme
     'field cap is fitted to skull crown, not the Head pivot at the base of the face');
   assert.equal(sharedGeometry.userData.officerProvenance, OFFICER_PROVENANCE);
   assert.equal(OFFICER_PROVENANCE.historicalAcceptance, false);
+  assert.ok(costume.snapshot.details.includes('curved-visor'));
+  assert.ok(costume.snapshot.details.includes('shoulder-strap'));
+  assert.ok(costume.snapshot.details.includes('strap-buckle'));
+  if (team === 'friendly') assert.ok(costume.snapshot.details.includes('white-chest-cloth'));
+  else assert.ok(costume.snapshot.details.includes('officer-holster'));
+  const nativeHand = meshes.find(mesh => team === 'friendly' ? mesh.name === '手部' : mesh.name === 'near-14-10');
+  const handRegion = nativeOfficerRegions(nativeHand, team), handWeights = nativeOfficerHandWeights(nativeHand);
+  assert.ok(handRegion.array.some(region => region === 4), 'both factions have real native gloves');
+  for (let vertex = 0; vertex < handRegion.count; vertex++) assert.equal(handRegion.getX(vertex) === 4, Boolean(handWeights.getX(vertex)));
+  const faceMesh = meshes.find(mesh => team === 'friendly' ? mesh.name === '臉部' : mesh.name === 'near-14-8');
+  assert.ok(nativeOfficerRegions(faceMesh, team).array.every(region => region === 0), 'face is never recolored as a glove');
+  if (team === 'enemy') {
+    const farHand = meshes.find(mesh => mesh.name === 'far-11-6');
+    assert.ok(nativeOfficerRegions(farHand, team).array.some(region => region === 4), 'far LOD retains bone-weight gloves');
+  }
   for (const [boneName, angle] of [['Spine2', -.8], ['Head', .2], ['LeftLeg', 1.2], ['Hips', 1.4]]) {
     const bone = bones.get(boneName); bone.rotation.x += angle; root.updateMatrixWorld(true);
     const baked = bakeNraGeometry(costume.mesh), index = costume.mesh.geometry.attributes.skinIndex;
@@ -142,7 +163,113 @@ test('far shader replaces helmet fragments and colors only officers, preserving 
     assert.match(shader.vertexShader, /attribute float nativeOfficer;/);
     assert.match(shader.fragmentShader, /vOfficer > 0.5/);
     assert.match(shader.fragmentShader, /discard/);
+    assert.match(shader.fragmentShader, /dot\(diffuseColor\.rgb/, 'source cloth texture variation survives recoloring');
   }
+});
+
+test('field-cap visor is a thin rounded taper with a bowed surface, not a rectangular box', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const visor = createOfficerVisorGeometry(team), positions = visor.attributes.position;
+    const layerSize = positions.count / 2, stride = visor.userData.officerDetail.segments + 1;
+    assert.equal(visor.userData.officerDetail.thickness, .0025);
+    for (let at = 0; at < layerSize; at++) {
+      assert.ok(Math.abs(positions.getX(at) - positions.getX(at + layerSize)) < 1e-7);
+      assert.ok(Math.abs(positions.getZ(at) - positions.getZ(at + layerSize)) < 1e-7);
+      assert.ok(Math.abs(positions.getY(at) - positions.getY(at + layerSize) - .0025) < 1e-7);
+    }
+    const edge = stride * 2, middle = edge + (stride - 1) / 2;
+    assert.ok(positions.getZ(middle) < positions.getZ(edge) - .075, 'front edge bows forward between tapered tips');
+    assert.ok(positions.getY(middle) < positions.getY(edge) - .015, 'visor slopes downward gently rather than forming a slab');
+    assert.ok(Math.abs(positions.getZ(edge) - positions.getZ(0)) < 1e-6, 'visor tip tapers into cap attachment arc');
+    assert.ok([...visor.attributes.normal.array].every(Number.isFinite));
+    assert.ok(visor.index.count / 3 < 300);
+    const crown = createOfficerCapCrown(team);
+    crown.computeBoundingBox();
+    assert.ok(crown.boundingBox.max.y > .04);
+    assert.ok(new Set([...crown.attributes.position.array].filter((_, i) => i % 3 === 1).map(y => y.toFixed(4))).size >= 7,
+      'rounded crown has multiple tapered heights instead of a cylinder with a flat top');
+    visor.dispose(); crown.dispose();
+  }
+  const friendly = new THREE.Color(OFFICER_COLORS.friendly[0]), enemy = new THREE.Color(OFFICER_COLORS.enemy[0]);
+  assert.ok(enemy.r > enemy.g * 1.25 && enemy.g > enemy.b * 1.6, 'Japanese coat is warm brown/yellow, not green');
+  assert.ok(enemy.r + enemy.g + enemy.b > (friendly.r + friendly.g + friendly.b) * 1.8, 'Chinese olive coat is substantially darker');
+  assert.ok(Math.hypot(...enemy.toArray().map((value, i) => value - friendly.toArray()[i])) > .12);
+});
+
+test('glove mask follows palm/finger bone ownership, excluding forearms and faces, without shared material mutations', () => {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], 3));
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0], 4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute([.8, .2, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, .5, .5, 0, 0], 4));
+  const bones = ['LeftHandIndex1', 'LeftForeArm', 'Head'].map(name => { const bone = new THREE.Bone(); bone.name = name; return bone; });
+  const material = new THREE.MeshStandardMaterial({ color: '#ae8c6e' });
+  const mesh = new THREE.SkinnedMesh(geometry, material); mesh.bind(new THREE.Skeleton(bones));
+  assert.deepEqual([...nativeOfficerHandWeights(mesh).array], [1, 0, 0, 1]);
+  const originalColor = material.color.clone(), appearance = createOfficerHandAppearance(mesh);
+  assert.notEqual(mesh.geometry, geometry); assert.notEqual(mesh.material, material);
+  assert.equal(geometry.attributes.nativeOfficerGlove, undefined);
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>',
+    fragmentShader: '#include <common>\n#include <color_fragment>' };
+  mesh.material.onBeforeCompile(shader);
+  appearance.setOfficerAppearance(true);
+  assert.equal(shader.uniforms.nativeOfficerGloves.value, 1);
+  mesh.material.color.set('#7a5a44');
+  assert.match(shader.fragmentShader, /nativeOfficerGloves > 0.5 && vOfficerGlove > 0.5/);
+  const materialId = mesh.material.uuid, geometryId = mesh.geometry.uuid;
+  for (let frame = 0; frame < 30; frame++) appearance.setOfficerAppearance(Boolean(frame % 2));
+  assert.equal(mesh.material.uuid, materialId); assert.equal(mesh.geometry.uuid, geometryId);
+  appearance.setOfficerAppearance(false); assert.equal(shader.uniforms.nativeOfficerGloves.value, 0);
+  assert.deepEqual(material.color, originalColor);
+  assert.throws(() => appearance.setOfficerAppearance('officer'), /boolean/);
+});
+
+test('native grenade/dadao and rifle hand hooks restore after officer switching without complexion tint undoing white gloves', async () => {
+  const source = await nativeNra();
+  const sourceMesh = source.getObjectByName('手部'), sourceFace = source.getObjectByName('臉部');
+  const originalMaterial = Array.isArray(sourceMesh.material) ? sourceMesh.material[0] : sourceMesh.material;
+  const originalColor = originalMaterial.color.clone(), faceMaterial = sourceFace.material;
+  const direct = createNraGrenadeHand(source, 'right');
+  const sibling = createNraGrenadeHand(source, 'left');
+  const geometryId = direct.getObjectByName('手部').geometry.uuid, materialId = direct.getObjectByName('手部').material.uuid;
+  for (const kind of ['grenade', 'explosive-pack', 'dadao']) {
+    direct.setOfficerAppearance(true); direct.poseGrip(1, 0, kind);
+    assert.equal(direct.officerAppearanceSnapshot.officer, true);
+    assert.ok(direct.officerAppearanceSnapshot.gloveVertices > 100);
+    direct.setOfficerAppearance(false);
+    assert.equal(direct.officerAppearanceSnapshot.officer, false);
+  }
+  assert.equal(sibling.officerAppearanceSnapshot.officer, false);
+  assert.equal(direct.getObjectByName('手部').geometry.uuid, geometryId);
+  assert.equal(direct.getObjectByName('手部').material.uuid, materialId);
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  const state = createRifleState(), rifle = rifleModel(state); rifle.position.set(.18, -.22, -.14);
+  updateRifleModel(rifle, state);
+  const materials = view.root.children.map(hand => hand.getObjectByName('手部').material);
+  const shaders = materials.map(material => {
+    const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>',
+      fragmentShader: '#include <common>\n#include <color_fragment>' };
+    material.onBeforeCompile(shader); return shader;
+  });
+  const sleeveShaders = view.root.children.map(hand => {
+    const sleeve = hand.getObjectByName('衣服'), shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>',
+      fragmentShader: '#include <common>\n#include <color_fragment>' };
+    sleeve.material.onBeforeCompile(shader); return shader;
+  });
+  for (let frame = 0; frame < 12; frame++) {
+    const officer = Boolean(frame % 2);
+    view.update(rifle, state, { officer, appearance: { skin: frame % 3 ? '#d7b797' : '#7a5a44', key: `skin-${frame % 3}` } });
+    for (let side = 0; side < 2; side++) {
+      assert.equal(view.root.children[side].officerAppearanceSnapshot.officer, officer);
+      assert.equal(view.root.children[side].getObjectByName('手部').material, materials[side]);
+      assert.equal(shaders[side].uniforms.nativeOfficerGloves.value, Number(officer));
+      assert.equal(sleeveShaders[side].uniforms.nativeOfficerSleeves.value, Number(officer));
+      assert.equal(view.root.children[side].officerAppearanceSnapshot.sleeveMaterials, 1);
+    }
+    assert.equal(view.snapshot.officer, officer);
+  }
+  view.update(rifle, state, { stowed: true, officer: false });
+  assert.ok(shaders.every(shader => shader.uniforms.nativeOfficerGloves.value === 0));
+  assert.deepEqual(originalMaterial.color, originalColor); assert.equal(sourceFace.material, faceMaterial);
 });
 
 test('instanced officer attachment follows every morph bank without extra near slots, survives culling and removal', () => {

@@ -45,7 +45,7 @@ test('every logical 11/14/22-person Japanese squad has precisely two tubes and t
   }
 });
 
-test('all maps retain roster populations, aircraft-three and rifle/bomb-only shield sappers', () => {
+test('all maps retain roster populations and aircraft-three; shield sappers have only their installation charge', () => {
   for (const roster of [battleRoster(), nanjingBattleRoster(), sihangBattleRoster()]) {
     for (const formation of roster.filter(formation => formation.team === 'enemy')) {
       const equipment = Array.from({ length: formation.memberCount ?? 11 }, (_, index) =>
@@ -55,7 +55,8 @@ test('all maps retain roster populations, aircraft-three and rifle/bomb-only shi
       assert.equal(equipment.filter(item => item.model === 'type11').length, normal ? 2 : 0);
       if (formation.sihangDemolition) {
         assert.equal(equipment.length, 20);
-        assert.ok(equipment.every(item => item.model === 'rifle' && item.explosivePacks === 1));
+        assert.ok(equipment.every(item => item.unarmed && item.demolitionCharge &&
+          item.explosivePacks === 0 && item.handGrenades === 0 && !item.discharger));
       }
       if (formation.type === 'plane') assert.equal(formation.memberCount, 3);
     }
@@ -151,7 +152,7 @@ test('ammo/reload and active-shell caps use simulation time and never allocate n
     view.traverse(child => { if (child.isMesh) { geometries.add(child.geometry); materials.add(child.material); } });
     view.removeFromParent();
   }
-  assert.equal(geometries.size, 5); assert.equal(materials.size, 2);
+  assert.equal(geometries.size, 6); assert.equal(materials.size, 2);
 });
 
 test('native integration uses actual collision/explosion, rifle fallback, ownership cleanup and bounded AI queries', () => {

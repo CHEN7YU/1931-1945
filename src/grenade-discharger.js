@@ -1,4 +1,5 @@
 import { createProjectile, advanceProjectile } from './projectiles.js';
+import { sihangNorthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
 
 // Gameplay values; the compact model is original geometry, not a measured historical asset.
 export const GRENADE_DISCHARGER = Object.freeze({
@@ -27,8 +28,8 @@ export function dischargerTargetAllowed(operator, target, { sihang = false, nanj
   const range = Math.hypot(target.position.x - operator.position.x, target.position.z - operator.position.z);
   if (range < GRENADE_DISCHARGER.minRange || range > GRENADE_DISCHARGER.maxRange) return false;
   // Leave a blast/spread margin in front of the neutral bank, not merely a legal centre point.
-  if (sihang && (operator.position.z >= 32 ||
-    target.position.z + GRENADE_DISCHARGER.radius + GRENADE_DISCHARGER.spread >= 32)) return false;
+  if (sihang && (!sihangNorthBank(operator.position) ||
+    !sihangBlastClearOfSouthBank(target.position, GRENADE_DISCHARGER.radius + GRENADE_DISCHARGER.spread))) return false;
   if (nanjingStage === 'withdrawal' && !(target.position.z > -12 &&
     Math.hypot(target.position.x, target.position.z - 27) < 40)) return false;
   return true;

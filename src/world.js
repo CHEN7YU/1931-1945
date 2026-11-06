@@ -134,6 +134,12 @@ export function soldierModel(friendly = false, detail = 'near', weapon = 'rifle'
     blade.quaternion.copy(stroke.rotation);
     blade.position.copy(wrist).sub(new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(stroke.rotation));
     group.add(blade);
+  } else if (weapon === 'unarmed') {
+    for (const side of [-1, 1]) {
+      limb(group, [side * .24, 1.32, 0], [side * .31, 1.12, -.12], .065, uniform);
+      limb(group, [side * .31, 1.12, -.12], [side * .25, 1.06, -.32], .052, uniform);
+      sphere(group, side * .25, 1.06, -.32, .037, .035, .055, actorMaterials.skin);
+    }
   } else {
     limb(group, [-.24, 1.32, 0], [-.09, 1.13, -.26], .065, uniform);
     limb(group, [-.09, 1.13, -.26], [.10, 1.325, -.43], .055, uniform);

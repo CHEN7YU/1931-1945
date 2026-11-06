@@ -7,6 +7,8 @@ import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_CAPTURE_AREA,
   SIHANG_DEMOLITION_POINT, SIHANG_EVACUATION, SIHANG_DEFENSE_POSTS,
   SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS, SIHANG_STAIR_ROUTES,
+  sihangRiverBounds, sihangSouthBank, SIHANG_RESERVED_LANES, SIHANG_LEVELS,
+  SIHANG_STAIRWELLS, sihangStairHeight,
 } from '../src/sihang-layout.js';
 
 let scene, world;
@@ -59,9 +61,9 @@ describe('independent Sihang Warehouse battlefield', () => {
 
   it('exports the coordinate contract and a complete standalone world', () => {
     assert.equal(W.width, 64); assert.equal(W.depth, 34);
-    assert.equal(W.floorHeight, 4.2); assert.equal(W.floors, 3); assert.equal(W.roofY, 12.6);
+    assert.equal(W.floorHeight, 8.4); assert.equal(W.floors, 3); assert.equal(W.roofY, 25.2);
     assert.deepEqual(SIHANG_RIVER, { northZ: 8, southZ: 32, waterY: -1 });
-    assert.deepEqual(SIHANG_BRIDGE, { x: 48, width: 8, northZ: 8, southZ: 32 });
+    assert.deepEqual(SIHANG_BRIDGE, { name: '西藏路桥', x: 48, width: 8, northZ: 8, southZ: 32 });
     assert.equal(SIHANG_CAPTURE_AREA.maxY, 2.4);
     assert.deepEqual(SIHANG_DEMOLITION_POINT, { x: 0, y: 0, z: -43.5 });
     assert.equal(SIHANG_EVACUATION.southZ, 36);
@@ -95,12 +97,12 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.equal(spawns.length, 44);
     scene.updateMatrixWorld(true);
     for (const p of spawns) {
-      close(world.walkHeight(p.x, p.z, p.y), 4.2, 'Spawn floor support');
+      close(world.walkHeight(p.x, p.z, p.y), W.floorHeight, 'Spawn floor support');
       assert.equal(circleBlocked(p.x, p.z, .45, world.obstacles, p.y), false, `Spawn collides: ${JSON.stringify(p)}`);
-      const ray = new THREE.Raycaster(point({ ...p, y: 4.3 }), new THREE.Vector3(0, -1, 0), 0, .3);
+      const ray = new THREE.Raycaster(point({ ...p, y: W.floorHeight + .1 }), new THREE.Vector3(0, -1, 0), 0, .3);
       const hit = ray.intersectObjects(world.solids, false)[0];
       assert.ok(hit, 'Visible floor supports spawn feet');
-      close(hit.point.y, 4.2, 'Physical second-floor mesh');
+      close(hit.point.y, W.floorHeight, 'Physical second-floor mesh');
     }
     for (let i = 0; i < spawns.length; i++) for (let j = i + 1; j < spawns.length; j++)
       assert.ok(Math.hypot(spawns[i].x - spawns[j].x, spawns[i].z - spawns[j].z) >= 1.25);
@@ -118,58 +120,51 @@ describe('independent Sihang Warehouse battlefield', () => {
     }
   });
 
-  it('walks actual feet up and down every flight in both connected stairwells', () => {
+  it('walks closed 24-riser flights and U-turn landings in all three stairwells on every storey', () => {
+    assert.equal(SIHANG_STAIRWELLS.length, 3);
+    assert.equal(SIHANG_STAIR_ROUTES.length, 9);
     for (const route of SIHANG_STAIR_ROUTES) {
       const up = follow(route.bottom, route.top);
-      assert.ok(up.heights.size > 20, 'Gradual supported ascent');
+      assert.ok(up.heights.size >= 49, 'All 48 actual risers plus floor-level support');
+      assert.ok(up.route.some(p => p.z > -25.8 && p.y === route.landing.height), 'Uses the intermediate landing');
+      assert.ok(up.route.some(p => p.x < route.x) && up.route.some(p => p.x > route.x), 'Switches flight lanes');
+      for (const flight of route.flights) {
+        assert.equal(flight.steps, 24);
+        close(Math.abs(flight.end.z - flight.start.z), 7.2, 'Compact flight run');
+        close((flight.end.y - flight.start.y) / flight.steps, .175, 'Human-scale riser');
+      }
       follow(route.top, route.bottom);
     }
-    const result = follow({ x: 0, y: 0, z: -60 }, { x: 0, y: 12.6, z: -12 });
-    for (const y of [0, 4.2, 8.4, 12.6]) assert.ok(result.heights.has(y));
-    follow({ x: 0, y: 12.6, z: -12 }, { x: -78, y: 0, z: -88 });
+    const result = follow({ x: 0, y: 0, z: -60 }, { x: 0, y: W.roofY, z: -12 });
+    for (const y of SIHANG_LEVELS) assert.ok(result.heights.has(y));
+    follow({ x: 0, y: W.roofY, z: -12 }, { x: -78, y: 0, z: -88 });
   });
 
-  it('replans from mid-flight without teleporting and routes to supported stair goals', () => {
-    follow({ x: 24, y: 6.3, z: -26 }, { x: -18, y: 8.4, z: -31 });
-    follow({ x: -32, y: 10.5, z: -26 }, { x: 0, y: 0, z: -60 });
-    follow({ x: 18, y: 4.2, z: -31 }, { x: 24, y: 6.3, z: -26 });
-    follow({ x: 24, y: .84, z: -32 }, { x: 24, y: 3.36, z: -20 });
-  });
-
-  it('physically recenters exact live retreat edge cases before descending and rejoins landing collars', () => {
+  it('replans mid-flight and on turn landings without vertical jumps, shortcuts or skipped storeys', () => {
     const goal = { x: 48, y: 0, z: 48 };
-    const starts = [
-      { x: 21.508886, y: 4.021943, z: -16.847888 },
-      { x: 26.150014, y: 4.168407, z: -16.150445 },
-      { x: 25.208039, y: 4.2, z: -15.623339 },
-      { x: 21.232936, y: 0, z: -33.74558 },
-    ];
-    for (const [index, start] of starts.entries()) {
-      const path = world.elevatedPath(start, goal);
-      assert.ok(path.length, `Live edge case ${index} has a physical escape route`);
-      if (index < 2) {
-        const safe = path.findIndex(p => p.x >= 22.1 - .001 && p.x <= 25.9 + .001);
-        assert.ok(safe >= 0, 'First rejoin reaches a capsule-safe ramp lane');
-        for (let i = 0; i <= safe; i++) {
-          close(path[i].z, start.z, 'Recenter first, without descending', .001);
-          close(path[i].y, start.y, 'Recenter retains physical support', .001);
-        }
-      } else {
-        close(path[0].y, start.y, 'Projected-navigation rejoin preserves the starting floor');
-        assert.ok(Math.hypot(path[0].x - start.x, path[0].z - start.z) <= .12);
+    for (const route of SIHANG_STAIR_ROUTES) {
+      for (const flight of route.flights) {
+        const z = (flight.start.z + flight.end.z) / 2;
+        const start = { x: flight.start.x, y: sihangStairHeight(flight, z), z };
+        follow(start, goal);
+        follow(route.bottom, start);
       }
-      follow(start, goal, path);
+      follow({ x: route.x, y: route.landing.height, z: -24.8 }, goal);
     }
   });
 
-  it('keeps ramp-edge rejoining physical on both stairwells and every storey', () => {
+  it('rejoins capsule-safe flight lanes and artificial landing collars in three shafts', () => {
     const goal = { x: 48, y: 0, z: 48 };
-    for (const x of [-32, 24]) for (let floor = 0; floor < 3; floor++) {
-      for (const offset of [-2.491114, 2.150014]) {
-        const z = -16.847888, y = floor * 4.2 + (z + 36) * .21;
-        follow({ x: x + offset, y, z }, goal);
+    for (const route of SIHANG_STAIR_ROUTES) {
+      for (const flight of route.flights) for (const offset of [-.65, .65]) {
+        const z = -29.4, y = sihangStairHeight(flight, z);
+        const start = { x: flight.start.x + offset, y, z };
+        const path = world.elevatedPath(start, goal);
+        assert.ok(path.length);
+        close(path[0].y, start.y, 'Lateral rejoin keeps tread support');
+        follow(start, goal, path);
       }
-      follow({ x: x + 1.208039, y: (floor + 1) * 4.2, z: -15.623339 }, goal);
+      follow({ x: route.top.x, y: route.top.y, z: -33.55 }, goal);
     }
     assert.deepEqual(world.elevatedPath({ x: -12, y: 0, z: -42 }, goal), [],
       'A real masonry obstruction cannot be bypassed by a projected-start fallback');
@@ -177,36 +172,96 @@ describe('independent Sihang Warehouse battlefield', () => {
 
   it('has real floor cutouts, not transparent floors spanning the stairs', () => {
     scene.updateMatrixWorld(true);
-    for (const x of [-32, 24]) {
-      const ray = new THREE.Raycaster(new THREE.Vector3(x, 13, -26), new THREE.Vector3(0, -1, 0), 0, 3);
+    for (const shaft of SIHANG_STAIRWELLS) {
+      const route = SIHANG_STAIR_ROUTES.find(r => r.stairId === shaft.id && r.floor === 2);
+      const flight = route.flights[1], z = -29.29;
+      const ray = new THREE.Raycaster(new THREE.Vector3(flight.start.x, W.roofY + .2, z), new THREE.Vector3(0, -1, 0), 0, 5);
       const hits = ray.intersectObjects(world.solids, false);
       assert.ok(hits.length, 'Top flight exists below the roof cutout');
-      assert.ok(hits[0].point.y < 11 && hits[0].point.y > 10, 'Roof slab does not cap the stairwell');
-      const feet = new THREE.Vector3(x === 24 ? 20.5 : -28.5, 8.4, -26);
-      world.moveInfantry(feet, x === 24 ? 3.5 : -3.5, 0, .42);
-      assert.ok(Math.abs(feet.x - x) > 2, 'Cannot side-step into an unsupported stair void');
+      close(hits[0].point.y, sihangStairHeight(flight, z), 'Visible riser supports the analytic foot height', .005);
+      assert.ok(hits[0].point.y < W.roofY - 1, 'Roof slab does not cap the stairwell');
+      const direction = shaft.x === -32 ? -1 : 1;
+      const feet = new THREE.Vector3(shaft.x - direction * 3.6, W.floorHeight, z);
+      world.moveInfantry(feet, direction * 3.6, 0, .42);
+      assert.ok(Math.abs(feet.x - shaft.x) > 2.5, 'Cannot side-step into an unsupported shaft void');
     }
   });
 
-  it('has real shot openings on every storey and second-floor defense firing apertures', () => {
-    for (const y of [1.65, 5.85, 10.05]) {
-      assert.equal(horizontalHits(0, y, -46, [0, 0, 1], 6).length, 0, 'North central breach is open');
-      assert.equal(horizontalHits(0, y, -4, [0, 0, -1], 6).length, 0, 'South central breach is open');
-      assert.ok(horizontalHits(-12, y, -46, [0, 0, 1], 6).length, 'Visible masonry pier still stops shots');
+  it('blocks low stair undersides while permitting real headroom beneath higher treads', () => {
+    const shaft = SIHANG_STAIRWELLS[1], flight = SIHANG_STAIR_ROUTES.find(r => r.stairId === shaft.id && r.floor === 0).flights[0];
+    const low = new THREE.Vector3(shaft.minX - .6, 0, -31.2);
+    world.moveInfantry(low, 2.1, 0, .42);
+    assert.ok(low.x < flight.minX, 'A body cannot enter a low concrete stair underside');
+    const high = new THREE.Vector3(shaft.minX - .6, 0, -28);
+    world.moveInfantry(high, 2.1, 0, .42);
+    close(high.x, flight.start.x, 'High flight has usable ground-floor headroom');
+    close(high.y, 0, 'Walking underneath does not snap upward onto the staircase');
+    assert.equal(world.stairAt(null), null);
+    assert.equal(world.stairAt({ x: 0, y: Infinity, z: 0 }), null);
+    assert.throws(() => world.walkHeight(0, -20, NaN), RangeError);
+    assert.throws(() => world.elevatedPath({ x: 0, y: 0, z: Infinity }, { x: 48, y: 0, z: 48 }), RangeError);
+    assert.throws(() => sihangStairHeight(flight, NaN), RangeError);
+  });
+
+  it('keeps solid masonry, local irregular breaches, the north gate and actual defense apertures', () => {
+    for (const y of SIHANG_LEVELS.slice(0, 3).map(y => y + 1.65))
+      assert.ok(horizontalHits(-35, y, -46, [0, 0, 1], 6).length, 'Strong uninterrupted masonry corners');
+    const holes = world.landmarks.warehouse.breaches;
+    assert.equal(holes.filter(h => h.blown).length, 3, 'Only selected panels have shell breaches');
+    for (const hole of holes) {
+      const west = hole.x === W.minX, east = hole.x === W.maxX;
+      const direction = hole.axis === 'z' ? [west ? 1 : -1, 0, 0] : [0, 0, hole.z === W.minZ ? 1 : -1];
+      const startX = hole.axis === 'z' ? hole.x + (west ? -2 : 2) : hole.x;
+      const startZ = hole.axis === 'x' ? hole.z + (hole.z === W.minZ ? -2 : 2) : hole.z;
+      assert.equal(horizontalHits(startX, hole.y, startZ, direction, 3).length, 0, `Real aperture ${hole.id}`);
+      assert.equal(east || west || hole.axis === 'x', true);
     }
-    assert.equal(SIHANG_DEFENSE_POSTS.length, 4);
+    for (const x of [W.minX, W.maxX]) for (const z of [-41, -9])
+      assert.ok(horizontalHits(x + (x === W.minX ? -2 : 2), 6, z,
+        [x === W.minX ? 1 : -1, 0, 0], 3).length, 'Intact corners support the shell');
+    assert.equal(SIHANG_DEFENSE_POSTS.length, 22);
     for (const p of SIHANG_DEFENSE_POSTS) {
       assert.equal(circleBlocked(p.x, p.z, .42, world.obstacles, p.y), false);
-      close(world.walkHeight(p.x, p.z, p.y), 4.2, 'Defense floor');
+      close(world.walkHeight(p.x, p.z, p.y), W.floorHeight, 'Defense floor');
       assert.equal(horizontalHits(p.x, p.y + 1.5, p.z,
-        [0, 0, p.z < -25 ? -1 : 1], 5).length, 0, 'Defense post fires through an actual opening');
+        p.facade === 'north' ? [0, 0, -1] : [1, 0, 0], 2).length, 0, 'Defense post fires through an actual opening');
     }
-    const feet = new THREE.Vector3(0, 0, -46);
+    const feet = new THREE.Vector3(-20, 0, -46);
     world.moveInfantry(feet, 0, 8, .42);
-    close(feet.z, -38, 'Ground breach is also a walkable entrance');
+    close(feet.z, -38, 'The north gate is a genuine walkable entrance');
     const pier = new THREE.Vector3(-12, 0, -46);
     world.moveInfantry(pier, 0, 8, .42);
     assert.ok(pier.z < -42.7, 'Movement respects surviving wall piers');
+  });
+
+  it('provides 22 distinct low-sill firing positions with clear downward eye and muzzle rays', () => {
+    assert.equal(new Set(SIHANG_DEFENSE_POSTS.map(p => `${p.x},${p.z}`)).size, 22);
+    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'north').length, 16);
+    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'east').length, 6);
+    for (const p of SIHANG_DEFENSE_POSTS) {
+      const aperture = world.landmarks.warehouse.breaches.find(h => h.id === p.apertureId);
+      assert.ok(aperture, `Registered aperture for ${p.id}`);
+      assert.equal(p.sillY, W.floorHeight + .8);
+      assert.equal(aperture.bottom, p.sillY);
+      for (const height of [1.35, 1.6]) {
+        const origin = new THREE.Vector3(p.x, p.y + height, p.z);
+        const direction = new THREE.Vector3(p.aimProbe.x, p.aimProbe.y, p.aimProbe.z).sub(origin).normalize();
+        scene.updateMatrixWorld(true);
+        assert.equal(new THREE.Raycaster(origin, direction, 0, 2.5).intersectObjects(world.solids, false).length, 0,
+          `${p.id} has a downward ${height === 1.35 ? 'muzzle' : 'eye'} ray through its window`);
+      }
+      assert.equal(circleBlocked(p.x, p.z, .42, world.obstacles, p.y), false);
+      follow({ x: 0, y: W.floorHeight, z: -38 }, p);
+    }
+  });
+
+  it('adds real partition walls and usable room doors on every warehouse storey', () => {
+    assert.equal(world.landmarks.warehouse.partitions.length, 18);
+    for (const y of SIHANG_LEVELS.slice(0, 3)) {
+      assert.ok(horizontalHits(-8, y + 1.5, -22, [0, 0, 1], 4).length, 'Room wall blocks actual rays');
+      assert.equal(horizontalHits(-2, y + 1.5, -22, [0, 0, 1], 4).length, 0, 'Four-metre interior doorway stays open');
+      follow({ x: -2, y, z: -22 }, { x: -2, y, z: -18 });
+    }
   });
 
   it('routes second-floor squads onto a smooth arched bridge and the south-bank evacuation area', () => {
@@ -233,13 +288,14 @@ describe('independent Sihang Warehouse battlefield', () => {
 
   it('rejects river shortcuts across the full width and routes ground traffic over the only bridge', () => {
     for (const x of [-107, -80, 0, 40, 56, 90, 107]) {
-      assert.equal(world.isDeepWater(x, 20), true);
-      const feet = new THREE.Vector3(x, 0, 5);
+      const bounds = sihangRiverBounds(x);
+      assert.equal(world.isDeepWater(x, (bounds.northZ + bounds.southZ) / 2), true);
+      const feet = new THREE.Vector3(x, 0, bounds.northZ - 3);
       world.moveInfantry(feet, 0, 35, .42);
-      assert.ok(feet.z < 8, 'Cannot wade or tunnel through the north bank');
-      const south = new THREE.Vector3(x, 0, 35);
+      assert.ok(feet.z < bounds.northZ, 'Cannot wade or tunnel through the curved north bank');
+      const south = new THREE.Vector3(x, 0, bounds.southZ + 3);
       world.moveInfantry(south, 0, -35, .42);
-      assert.ok(south.z > 32, 'Cannot wade from the south either');
+      assert.ok(south.z > bounds.southZ, 'Cannot wade from the curved south bank either');
     }
     assert.equal(world.isDeepWater(48, 20), false);
     assert.equal(world.impactHeight(0, 20), -1);
@@ -258,14 +314,14 @@ describe('independent Sihang Warehouse battlefield', () => {
     for (const person of world.civilians) {
       ages.add(person.userData.ageGroup); presentations.add(person.userData.presentation);
       assert.ok(person.civilianSkin.mesh.isSkinnedMesh);
-      assert.ok(person.userData.route.every(p => p.z > 32));
+      assert.ok(person.userData.route.every(p => sihangSouthBank(p, 3)));
     }
     assert.equal(ages.size, 3); assert.equal(presentations.size, 2);
     for (let tick = 0; tick < 300; tick++) {
       world.doorSystem.update(.25, world.civilians.map(person => ({ ...person.position, radius: .27 })));
       world.updateCivilians(.25, tick * .25);
       for (const person of world.civilians) {
-        assert.ok(person.position.z > 32, 'Civilian never crosses the river');
+        assert.ok(sihangSouthBank(person.position, 3), 'Civilian never crosses the curved river');
         assert.equal(circleBlocked(person.position.x, person.position.z, .26, world.obstacles), false);
         if (person.position.z > 58) enteredShops.add(person.userData.civilianId);
       }
@@ -286,9 +342,9 @@ describe('independent Sihang Warehouse battlefield', () => {
       world.ruinWarehouse(); world.ruinWarehouse();
       assert.equal(world.warehouseRuined, true);
       assert.equal(warehouse.intact.visible, false); assert.equal(warehouse.rubble.visible, true);
-      assert.equal(world.walkHeight(0, -25, 12.6), 0);
-      assert.equal(horizontalHits(-12, 5.85, -46, [0, 0, 1], 6).length, 0, 'No invisible standing shell');
-      assert.deepEqual(world.elevatedPath({ x: 0, y: 12.6, z: -12 }, { x: 0, y: 0, z: -60 }), []);
+      assert.equal(world.walkHeight(10, -25, W.roofY), 0);
+      assert.equal(horizontalHits(-35, W.floorHeight + 1.65, -46, [0, 0, 1], 6).length, 0, 'No invisible standing shell');
+      assert.deepEqual(world.elevatedPath({ x: 0, y: W.roofY, z: -12 }, { x: 0, y: 0, z: -60 }), []);
       world.civilians[0].userData.dead = true; world.civilians[0].visible = false;
       world.civilians[0].position.set(0, -1, 20);
       world.flags[0].material.color.setHex(0xff0000);
@@ -298,16 +354,16 @@ describe('independent Sihang Warehouse battlefield', () => {
       assert.equal(world.solids.length, normalSolids); assert.equal(world.obstacles.length, normalObstacles);
       assert.equal(new Set(world.obstacles).size, normalObstacles);
       assert.equal(world.civilians[0].userData.dead, false); assert.equal(world.civilians[0].visible, true);
-      assert.ok(world.civilians[0].position.z > 32);
+      assert.ok(sihangSouthBank(world.civilians[0].position, 3));
       assert.equal(world.flags[0].material.color.getHex(), 0x557ca5);
-      assert.ok(horizontalHits(-12, 5.85, -46, [0, 0, 1], 6).length);
-      close(world.walkHeight(0, -25, 12.6), 12.6, 'Roof restored');
+      assert.ok(horizontalHits(-35, W.floorHeight + 1.65, -46, [0, 0, 1], 6).length);
+      close(world.walkHeight(10, -25, W.roofY), W.roofY, 'Roof restored');
     }
     const after = [];
     scene.traverse(object => { if (object.isMesh) after.push(object); });
     assert.equal(after.length, meshes.length);
     assert.deepEqual(new Set(after.map(mesh => mesh.geometry)), geometries);
-    follow({ x: 18, y: 4.2, z: -31 }, { x: 48, y: 0, z: 48 });
+    follow({ x: 18, y: W.floorHeight, z: -31 }, { x: 48, y: 0, z: 48 });
   });
 
   it('rebuilds movement colliders after ruin and reset independently of door navigation subscribers', () => {
@@ -326,7 +382,7 @@ describe('independent Sihang Warehouse battlefield', () => {
       close(walkThroughPier().z, -38, 'Ruined pier no longer blocks movement');
       resetWorld.resetCampaign();
       close(walkThroughPier().z, before.z, 'Restored pier blocks movement again');
-      const breach = new THREE.Vector3(0, 0, -46);
+      const breach = new THREE.Vector3(-20, 0, -46);
       resetWorld.moveInfantry(breach, 0, 8, .42);
       close(breach.z, -38, 'Reset does not seal genuine wall openings');
     }
@@ -346,5 +402,33 @@ describe('independent Sihang Warehouse battlefield', () => {
       world.moveInfantry(feet, Math.sign(x) * 10, 0, .42);
       assert.ok(Math.abs(feet.x) <= 107.58);
     }
+  });
+
+  it('provides coherent intact and damaged street blocks, bounded smoke, and reserved combat lanes', () => {
+    const buildings = world.town.buildings.slice(1);
+    assert.ok(buildings.filter(b => b.damaged).length >= 30);
+    assert.ok(buildings.filter(b => !b.damaged).length >= 20);
+    assert.ok(buildings.every(b => b.floors === 1 && b.playableFloors.length === 1), 'No invented playable upper floors');
+    for (const building of buildings.filter(b => b.damageOpening)) {
+      const h = building.damageOpening;
+      assert.equal(horizontalHits(h.x, h.y, h.z - 2, [0, 0, 1], 3).length, 0,
+        `North city breach ${building.id} is genuinely open`);
+    }
+    for (const lane of SIHANG_RESERVED_LANES) for (const building of buildings)
+      assert.ok(!(building.bounds.minX < lane.maxX && building.bounds.maxX > lane.minX &&
+        building.bounds.minZ < lane.maxZ && building.bounds.maxZ > lane.minZ), `${building.id} blocks ${lane.id}`);
+    const uses = new Set(buildings.filter(b => !b.damaged).map(b => b.use));
+    for (const use of ['hotel', 'restaurant', 'theatre', 'dance-hall', 'inn', 'shop']) assert.ok(uses.has(use));
+    assert.equal(world.smoke.length, 30);
+    assert.equal(new Set(world.smoke.map(p => p.userData.homeId)).size, 6);
+    for (const puff of world.smoke) {
+      assert.ok(['originX', 'originY', 'originZ', 'phase'].every(k => Number.isFinite(puff.userData[k])));
+      assert.ok(buildings.find(b => b.id === puff.userData.homeId)?.damaged);
+    }
+    assert.equal(world.sceneArt.city.vegetationDrawCalls, 3);
+    assert.ok(world.sceneArt.city.vegetationTriangles < 4000);
+    assert.equal(world.sceneArt.city.signDrawCalls, 1);
+    assert.ok(world.sceneArt.city.trees >= 14);
+    assert.equal(world.town.fortifications.length, 2);
   });
 });

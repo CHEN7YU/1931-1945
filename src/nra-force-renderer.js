@@ -15,7 +15,11 @@ import { RIFLE_HAND_SAMPLES, rifleHandAction, rifleHandWeights } from './rifle-h
 import { finishStartupWork, runStartupWork, yieldStartupTask } from './startup-work.js';
 import { SIHANG_SHIELD_BANKS, sihangShieldPoseIndex, sihangShieldInstalling, sihangShieldWalkWeights } from './sihang-shield-pose.js';
 import { isNativeOfficer, nativeOfficerRegions } from './officer-appearance.js';
-import { nativeDischargerPresentation } from './native-weapon-presentation.js';
+import { nativeSupportWeaponPresentation } from './native-weapon-presentation.js';
+import { SUPPORT_WEAPON_BANKS, supportWeaponPoseIndex, supportWeaponTargets } from './support-weapon-pose.js';
+import { createGrenadeDischargerModel } from './grenade-discharger-model.js';
+import { createEmplacement, EMPLACEMENT_PROFILES } from './emplacements.js';
+import { createEmplacementModel } from './emplacement-model.js';
 
 export function bakeNraGeometry(mesh) {
   return finishStartupWork(bakeNraGeometryWork(mesh));
@@ -166,22 +170,42 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   const deathBanks = profile.footCycleGait ? deathKinds * deathStances.length : 0;
   const shieldStart = livingBanks + deathBanks;
   const shieldBanks = team === 'enemy' && uniform === 'ija1938' && template.sihangShieldPoses ? SIHANG_SHIELD_BANKS.length : 0;
-  for (let bank = 0; bank < shieldStart + shieldBanks; bank++) {
-    const shield = bank >= shieldStart;
+  const supportStart = shieldStart + shieldBanks;
+  const supportBanks = template.supportWeaponPoses ? SUPPORT_WEAPON_BANKS.length : 0;
+  const supportModels = SUPPORT_WEAPON_BANKS.slice(0, supportBanks).map(definition => {
+    if (definition.kind === 'type89') {
+      const model = createGrenadeDischargerModel(); model.position.fromArray(definition.modelOffset);
+      return { model, point: null, pitches: [0] };
+    }
+    const point = createEmplacement({ id: `native-${definition.kind}-reference`, profile: definition.kind,
+      x: definition.modelOffset[0], z: definition.modelOffset[2], heading: 0 });
+    const settings = EMPLACEMENT_PROFILES[definition.kind];
+    return { model: createEmplacementModel(point), point,
+      pitches: Array.from({ length: 5 }, (_, index) => settings.minPitch + (settings.maxPitch - settings.minPitch) * index / 4) };
+  });
+  for (let bank = 0; bank < supportStart + supportBanks; bank++) {
+    const support = bank >= supportStart;
+    const supportDefinition = support ? SUPPORT_WEAPON_BANKS[bank - supportStart] : null;
+    const supportModel = support ? supportModels[bank - supportStart] : null;
+    const supportSamples = support ? (supportDefinition.kind === 'bofors75' ? ['operate', 'loading', 'march'] : ['operate', 'loading']).flatMap(phase =>
+      supportModel.pitches.map(pitch => ({ phase, pitch }))) : null;
+    const shield = bank >= shieldStart && bank < supportStart;
     const shieldWalk = shield && bank - shieldStart < 2 && profile.footCycleGait;
-    const dead = !shield && bank >= livingBanks;
-    const rifleAction = !shield && !dead && bank >= actionStart;
+    const dead = !shield && !support && bank >= livingBanks;
+    const rifleAction = !shield && !support && !dead && bank >= actionStart;
     const deathStance = dead ? deathStances[Math.floor((bank - livingBanks) / deathKinds)] : null;
-    const closing = !shield && !dead && !rifleAction && bank >= closeStart;
-    const turning = !shield && !dead && !rifleAction && !closing && bank >= turnStart;
-    const melee = !shield && !dead && !rifleAction && !closing && !turning && bank >= meleeStart;
-    const firingBank = !shield && !dead && !rifleAction && !closing && !melee && !turning && bank >= baseBanks;
-    const posture = shield ? null : rifleAction ? actionStances[bank - actionStart] === 'standing' ? null : actionStances[bank - actionStart]
+    const closing = !shield && !support && !dead && !rifleAction && bank >= closeStart;
+    const turning = !shield && !support && !dead && !rifleAction && !closing && bank >= turnStart;
+    const melee = !shield && !support && !dead && !rifleAction && !closing && !turning && bank >= meleeStart;
+    const firingBank = !shield && !support && !dead && !rifleAction && !closing && !melee && !turning && bank >= baseBanks;
+    const posture = support ? supportDefinition.firingPose : shield ? SIHANG_SHIELD_BANKS[bank - shieldStart].installing ? 'kneeling' : null
+      : rifleAction ? actionStances[bank - actionStart] === 'standing' ? null : actionStances[bank - actionStart]
       : dead && deathStance !== 'standing' ? deathStance : closing ? postures[bank - closeStart - 1] ?? null
       : dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = turning ? 'idle' : melee ? bank < meleeStart + phases ? 'charge' : 'idle'
-      : bank === 0 || posture || firingBank || closing || dead || rifleAction || shield ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
-    if (shield) sampleActor.sihangShield = SIHANG_SHIELD_BANKS[bank - shieldStart];
+      : bank === 0 || posture || firingBank || closing || dead || rifleAction || shield || support ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+    sampleActor.sihangShield = shield ? SIHANG_SHIELD_BANKS[bank - shieldStart] : null;
+    sampleActor.supportWeaponPose = null;
     sampleActor.weaponBlocked = closing;
     sampleActor.bayonet = melee && team === 'enemy' ? { mode: mode === 'charge' ? 'charge' : 'thrust',
       extension: mode === 'charge' ? 0 : (bank - meleeStart - phases) / 2 } : null;
@@ -212,17 +236,30 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     sampleActor.health = dead ? 0 : 100;
     sampleActor.casualty = dead ? createCasualtyState(sampleActor, 0, sampleNraMotion(sampleActor),
       { variant: Math.floor(((bank - livingBanks) % deathKinds) / 2), retainGun: (bank - livingBanks) % 2 === 1 }) : null;
-    const postureMorph = !dead && !rifleAction && posture === 'prone';
+    const postureMorph = !dead && !rifleAction && !support && posture === 'prone';
     const poses = [], casualtyWeapons = [], attachmentFrames = new Map();
-    for (let frame = 0; frame < (shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : postureMorph ? 3 : 1); frame++) {
+    for (let frame = 0; frame < (support ? supportSamples.length : shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : postureMorph ? 3 : 1); frame++) {
+      if (support) {
+        const sample = supportSamples[frame];
+        if (supportModel.point) {
+          supportModel.point.pitch = sample.pitch; supportModel.model.userData.update();
+        }
+        const firingPose = sample.phase === 'march' ? null : supportDefinition.firingPose;
+        sampleActor.stance = sample.phase === 'march' ? 'standing' : supportDefinition.stance;
+        sampleActor.firingPose = firingPose;
+        for (const pose of Object.keys(sampleActor.nativeMotion.posture))
+          sampleActor.nativeMotion.posture[pose] = Number(pose === firingPose);
+        sampleActor.supportWeaponPose = { active: true, kind: supportDefinition.kind, phase: sample.phase,
+          pitch: sample.pitch, targets: supportWeaponTargets(supportModel.model, bankTemplate.root, sample.phase) };
+      }
       if (shieldWalk) {
         sampleActor.nativeMotion.weight = frame === 0 ? 0 : 1;
         sampleActor.nativeMotion.speed = frame === 0 ? 0 : 1.75;
         sampleActor.nativeMotion.gaitCycles = frame === 2 ? .75 : .25;
         sampleActor.nativeMotion.phaseDistance = sampleActor.nativeMotion.distance;
-        if (sampleActor.sihangShield.mode === 'roof') sampleActor.sihangShield = {
-          ...SIHANG_SHIELD_BANKS[bank - shieldStart], handTarget: [-.3, 1.88 - nativeGaitDrop(sampleActor), 0],
-        };
+        const base = SIHANG_SHIELD_BANKS[bank - shieldStart];
+        sampleActor.sihangShield = { ...base,
+          handTarget: [base.handTarget[0], base.handTarget[1] - nativeGaitDrop(sampleActor), base.handTarget[2]] };
         syncNativeAimGoal(sampleActor);
       }
       if (postureMorph) {
@@ -259,7 +296,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
       }
       if (!gunMatrix) throw new Error('Distant uniform pose lacks its owned weapon transform');
-      const geometry = yield* mergeNraPoseWork(baked, atlas, { weld: !dead && !postureMorph && !rifleAction && !shieldWalk });
+      const geometry = yield* mergeNraPoseWork(baked, atlas, { weld: !dead && !postureMorph && !rifleAction && !shieldWalk && !support });
       for (const part of baked) part.geometry.dispose();
       poses.push({ geometry, gunMatrix });
       yield;
@@ -271,7 +308,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       bankTemplate.update(sampleActor, 0, null);
     }
     const geometry = poses[0].geometry, gunMatrix = (postureMorph ? poses[0] : poses.at(-1)).gunMatrix;
-    if (dead || postureMorph || rifleAction || shieldWalk) {
+    if (dead || postureMorph || rifleAction || shieldWalk || support) {
       for (const pose of poses) if (pose.geometry.attributes.position.count !== geometry.attributes.position.count)
         throw new Error('Casualty morph poses must preserve their source vertex topology');
       geometry.morphAttributes.position = poses.slice(1).map(pose => pose.geometry.attributes.position);
@@ -279,7 +316,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     }
     const instance = new THREE.InstancedMesh(geometry, atlas.material, capacity);
-    if (dead || postureMorph || rifleAction || shieldWalk) instance.setMorphAt(0, { morphTargetInfluences: Array(poses.length - 1).fill(0) });
+    if (dead || postureMorph || rifleAction || shieldWalk || support)
+      instance.setMorphAt(0, { morphTargetInfluences: Array(poses.length - 1).fill(0) });
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
       .setUsage(THREE.DynamicDrawUsage));
     if (atlas.hasUniformVariants) instance.geometry.setAttribute('nraUniformVariant',
@@ -322,10 +360,12 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       footprint.push(...corpseFootprint(geometry)); geometry.dispose();
     }
     banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, deathStance, postureMorph, rifleAction, shieldWalk, bounds,
+      supportSamples, supportPitches: supportModel?.pitches,
+      supportControl: support ? { morphTargetInfluences: Array(supportSamples.length - 1).fill(0) } : null,
       gunFrames: poses.map(pose => pose.gunMatrix),
       footprint: footprint ? Object.freeze(footprint) : null });
     for (const pose of poses.slice(1)) pose.geometry.dispose();
-    yield { completed: bank + 1, total: shieldStart + shieldBanks };
+    yield { completed: bank + 1, total: supportStart + supportBanks };
   }
   bankTemplate.bind(null);
   const casualtyShapes = Array.from({ length: deathBanks ? deathKinds : 0 }, (_, kind) => {
@@ -518,10 +558,12 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             ? rifleHandAction(actor.rifle) : null;
           const actionStance = posture === 'prone' ? 'prone' : ['crouched', 'kneeling'].includes(posture) ? 'crouched' : 'standing';
           const shield = shieldBanks ? sihangShieldPoseIndex(actor) : -1;
+          const support = supportBanks ? supportWeaponPoseIndex(actor) : -1;
           const index = dead
             ? livingBanks + Math.max(0, deathStances.indexOf(stance)) * deathKinds +
               actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
             : shield >= 0 ? shieldStart + shield + (sihangShieldInstalling(actor) ? 2 : 0)
+            : support >= 0 ? supportStart + support
             : operation?.hand > .001 ? actionStart + Math.max(0, actionStances.indexOf(actionStance))
             : actor.weaponBlocked && closeBanks ? closeStart + (posture ? 1 + postures.indexOf(posture) : 0)
             : turning ? turnStart + (actor.nativeMotion.turn.direction > 0 ? phases : 0) + Math.round(turnPhase * phases) % phases
@@ -571,11 +613,11 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             matrix.elements[12] += actor.casualty.offset.x * Math.sqrt(deathProgress);
             matrix.elements[14] += actor.casualty.offset.z * Math.sqrt(deathProgress);
           }
-          const coarse = lodReady && !bank.rifleAction && !(bank.shieldWalk && pose.weight > .001) &&
+          const coarse = lodReady && !bank.rifleAction && !bank.supportSamples && !(bank.shieldWalk && pose.weight > .001) &&
             !actor.nativeMotion.postureTransition && (!dead || deathElapsed === 1) &&
             useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
           const installing = sihangShieldInstalling(actor);
-          const weapons = installing || nativeDischargerPresentation(actor) ? null
+          const weapons = installing || nativeSupportWeaponPresentation(actor) ? null
             : weaponGroupFor(sword ? 'dadao' : actor.rifle.model ?? 'rifle', coarse);
           if (weapons) {
             if (weapons.count >= weapons.capacity) {
@@ -613,12 +655,24 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           if (bank.rifleAction) rifleMorphControl.morphTargetInfluences = rifleHandWeights(operation).slice(1);
           if (bank.shieldWalk) shieldMorphControl.morphTargetInfluences = sihangShieldWalkWeights(
             profile.walk ? pose.walkTime / profile.walk.duration : phase, pose.weight);
+          if (bank.supportControl) {
+            const weights = bank.supportControl.morphTargetInfluences, pitches = bank.supportPitches;
+            weights.fill(0);
+            const value = THREE.MathUtils.clamp(actor.supportWeaponPose.pitch ?? pitches[0], pitches[0], pitches.at(-1));
+            const position = pitches.length === 1 ? 0 : (value - pitches[0]) / (pitches.at(-1) - pitches[0]) * (pitches.length - 1);
+            const lower = Math.min(pitches.length - 1, Math.floor(position)), blend = position - lower;
+            const start = actor.supportWeaponPose.phase === 'march' ? pitches.length * 2
+              : actor.supportWeaponPose.phase === 'loading' ? pitches.length : 0;
+            if (start + lower > 0) weights[start + lower - 1] = 1 - blend;
+            if (blend && lower + 1 < pitches.length) weights[start + lower] = blend;
+          }
           for (const mesh of coarse ? bank.coarseParts : bank.parts) {
             mesh.setMatrixAt(bodyIndex, matrix);
             if (dead && !coarse) mesh.setMorphAt(bodyIndex, morphControl);
             if (bank.postureMorph && !coarse) mesh.setMorphAt(bodyIndex, postureMorphControl);
             if (bank.rifleAction) mesh.setMorphAt(bodyIndex, rifleMorphControl);
             if (bank.shieldWalk && !coarse) mesh.setMorphAt(bodyIndex, shieldMorphControl);
+            if (bank.supportControl) mesh.setMorphAt(bodyIndex, bank.supportControl);
             mesh.geometry.attributes.nraSkinTint.setXYZ(bodyIndex, tint.r, tint.g, tint.b);
             mesh.geometry.attributes.nraUniformVariant?.setX(bodyIndex, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
             mesh.geometry.attributes.nativeOfficer?.setX(bodyIndex, Number(isNativeOfficer(actor)));
@@ -628,7 +682,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             attachment.mesh.setMatrixAt(attachment.count, matrix);
             if (attachment.poseFollowing && attachment.mesh.morphTexture) {
               attachment.mesh.setMorphAt(attachment.count, dead ? morphControl : bank.postureMorph ? postureMorphControl
-                : bank.rifleAction ? rifleMorphControl : shieldMorphControl);
+                : bank.rifleAction ? rifleMorphControl : bank.supportControl ?? shieldMorphControl);
             }
             attachment.count++;
           }

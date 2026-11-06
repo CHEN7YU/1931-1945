@@ -1,5 +1,6 @@
 import { CHI_HA } from './chi-ha.js';
-import { SIHANG_CAPTURE_AREA, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS } from './sihang-layout.js';
+import { SIHANG_CAPTURE_AREA, SIHANG_WAREHOUSE, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS,
+  sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
 
 export function sihangBattleRoster(playerType = 'infantry') {
   if (playerType !== 'infantry') throw new RangeError('四行仓库仅可选择步兵');
@@ -47,16 +48,20 @@ export function sihangObjectives() {
 
 export const SIHANG_EMPLACEMENTS = Object.freeze([
   Object.freeze({ id: 'sihang-roof-aa', team: 'friendly', profile: 'maxim24aa',
-    x: -14, z: -33, altitude: 12.6, heading: Math.PI }),
+    x: -14, z: -33, altitude: SIHANG_WAREHOUSE.roofY, heading: Math.PI }),
+  Object.freeze({ id: 'sihang-north-gate-west', team: 'friendly', profile: 'maxim24',
+    x: -28, z: -47.5, altitude: 0, heading: 0 }),
+  Object.freeze({ id: 'sihang-north-gate-east', team: 'friendly', profile: 'maxim24',
+    x: -12, z: -47.5, altitude: 0, heading: 0 }),
 ]);
 
 export function sihangEnemyTargetAllowed(actor) {
-  return Boolean(actor?.position && actor.position.z < 32);
+  return Boolean(actor?.position && Number.isFinite(actor.position.x) &&
+    Number.isFinite(actor.position.z) && !sihangSouthBank(actor.position));
 }
 
 export function sihangEnemyRayRange(origin, direction, range) {
-  if (origin.z >= 32) return 0;
-  return direction.z > 0 ? Math.max(0, Math.min(range, (32 - origin.z) / direction.z)) : range;
+  return sihangRiverRayRange(origin, direction, range);
 }
 
 export function sihangRetreatGoal(actor) {

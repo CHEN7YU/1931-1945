@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EMPLACEMENT_PROFILES } from './emplacements.js';
 import { sandbagGeometry } from './scene-details.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { addSupportGrip } from './support-weapon-pose.js';
 
 export function createEmplacementModel(point) {
   const profile = EMPLACEMENT_PROFILES[point.profile], cannon = point.profile === 'bofors75';
@@ -33,6 +34,8 @@ export function createEmplacementModel(point) {
   root.position.set(point.x, 0, point.z);
   root.rotation.y = point.heading;
   swivel.position.y = profile.muzzleHeight; root.add(swivel); swivel.add(barrel);
+  const grips = {}, loading = {};
+  const trailConnections = [];
   if (cannon) {
     for (const sign of [-1, 1]) {
       const wheel = new THREE.Mesh(new THREE.TorusGeometry(.48, .085, 8, 24), dark);
@@ -40,7 +43,16 @@ export function createEmplacementModel(point) {
       for (let spoke = 0; spoke < 8; spoke++) {
         const beam = box(wheel, 0, 0, 0, .035, .85, .045, wood); beam.rotation.z = spoke * Math.PI / 4;
       }
-      box(root, sign * .38, .25, .95, .15, .16, 1.9).rotation.y = sign * .3;
+      const pivot = new THREE.Vector3(sign * .38, .57, .08);
+      const end = new THREE.Vector3(sign * .95, .11, 1.9), direction = end.clone().sub(pivot);
+      trailConnections.push({ side: sign < 0 ? 'left' : 'right', pivot: pivot.toArray(), end: end.toArray() });
+      const trail = new THREE.Mesh(new THREE.BoxGeometry(.15, .18, direction.length()), steel);
+      trail.name = sign < 0 ? 'bofors75-left-connected-trail' : 'bofors75-right-connected-trail';
+      trail.position.copy(pivot).lerp(end, .5);
+      trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());
+      root.add(trail);
+      box(root, pivot.x, pivot.y, pivot.z, .24, .26, .28, dark);
+      box(root, end.x, .06, end.z, .30, .12, .32, dark);
     }
     box(root, 0, .6, 0, 1.6, .18, .24);
     for (const sign of [-1, 1]) box(swivel, sign * .52, .12, -.18, .61, 1.05, .06);
@@ -50,10 +62,23 @@ export function createEmplacementModel(point) {
     tube(barrel, 0, -.19, -.3, .11, 1.2);
     box(barrel, 0, 0, .5, .3, .3, .36);
     tube(barrel, 0, 0, -profile.barrel + .015, .068, .04, dark);
+    for (const [side, sign] of [['left', -1], ['right', 1]]) {
+      const control = ring(swivel, sign * .29, -.04, .76, .095, .012, dark);
+      control.rotation.y = Math.PI / 2;
+      rod(swivel, [sign * .29, -.04, .76], [sign * .29, -.04, .85], .008);
+      rod(swivel, [sign * .29, -.04, .85], [sign * .36, -.04, .85], .016, wood);
+      grips[side] = addSupportGrip(swivel, `bofors75-${side}-${side === 'left' ? 'traverse' : 'elevation'}`,
+        { center: [sign * .325, -.04, .85], radius: .016, axis: [1, 0, 0],
+          normal: [0, 0, 1], forward: [0, 1, 0] });
+    }
+    rod(barrel, [.15, .02, .55], [.22, .02, .55], .012);
+    rod(barrel, [.22, -.065, .55], [.22, .265, .55], .016, wood);
+    loading.right = addSupportGrip(barrel, 'bofors75-right-breech-control',
+      { center: [.22, .03, .55], radius: .016, normal: [1, 0, 0], forward: [0, 0, -1] });
   } else {
     const tall = profile.antiAircraft;
     for (let leg = 0; leg < 3; leg++) {
-      const angle = leg * Math.PI * 2 / 3, x = Math.sin(angle) * .55, z = Math.cos(angle) * .55;
+      const angle = Math.PI / 3 + leg * Math.PI * 2 / 3, x = Math.sin(angle) * .55, z = Math.cos(angle) * .55;
       rod(root, [0, tall ? 1 : .58, 0], [x, .06, z], .027);
       box(root, x, .025, z, .13, .05, .13, dark);
       rod(root, [0, .34, 0], [x * .7, .33, z * .7], .014);
@@ -103,6 +128,9 @@ export function createEmplacementModel(point) {
         const head = tube(barrel, sign * .096, -.025, -.14 + rivet * .08, .008, .012, dark);
         head.rotation.set(0, 0, Math.PI / 2);
       }
+      grips[sign < 0 ? 'left' : 'right'] = addSupportGrip(barrel,
+        `${point.profile}-${sign < 0 ? 'left' : 'right'}-spade-handle`,
+        { center: [sign * .14, 0, .43], radius: .022, normal: [0, 0, 1], forward: [0, 1, 0] });
     }
     box(barrel, 0, .015, .42, .035, .05, .035, dark);
     if (profile.antiAircraft) {
@@ -122,15 +150,24 @@ export function createEmplacementModel(point) {
     }
     if (!profile.antiAircraft) for (const side of [-1, 1]) for (const z of [0, .65]) for (let row = 0; row < 2; row++) {
       const bag = new THREE.Mesh(sandbagGeometry(), sand);
-      bag.position.set(side * 1.1, .18 + row * .32, z);
+      bag.position.set(side * 1.55, .18 + row * .32, z);
       bag.scale.set(.35, .3, .4); root.add(bag);
       bag.userData.emplacementCover = true;
     }
   }
+  root.userData.supportWeapon = { kind: point.profile, grips, loading,
+    operator: { x: 0, y: 0, z: cannon ? 1.02 : profile.antiAircraft ? .68 : .76 },
+    operatorFollowsTraverse: true,
+    stance: profile.antiAircraft ? 'standing' : 'crouched',
+    firingPose: profile.antiAircraft ? null : 'kneeling' };
+  if (cannon) root.userData.artilleryTrails = trailConnections;
   root.userData.update = () => {
     root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
     swivel.rotation.y = point.yaw - point.heading;
     barrel.rotation.x = point.pitch;
+    const standing = profile.antiAircraft || cannon && point.position === 'march';
+    root.userData.supportWeapon.stance = standing ? 'standing' : 'crouched';
+    root.userData.supportWeapon.firingPose = standing ? null : 'kneeling';
     root.updateMatrixWorld(true);
   };
   root.userData.update();

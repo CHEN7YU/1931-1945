@@ -25,6 +25,20 @@ function fixture() {
   return { registry, actors, support, tank, plane };
 }
 
+test('genuinely unarmed sappers never acquire, reload or advance a hidden registered rifle', () => {
+  const { registry } = fixture();
+  const unit = registerUnit(registry, { id: 'sappers', type: 'infantry', team: 'enemy' });
+  const rifle = createRifleState(); rifle.ammo = 0; rifle.reserve = 0;
+  const actor = registerSoldier(registry, { id: 'unarmed-sapper', unitId: unit.id, team: 'enemy',
+    groundType: 'infantry', health: 100, position: { x: 0, y: 0, z: -50 }, hasFirearm: false, rifle });
+  const before = structuredClone(rifle);
+  advanceOwnedWeapons(registry, 1, 1, false, true);
+  assert.deepEqual(actor.rifle, before);
+  assert.equal([...registry.weapons.values()].some(weapon => weapon.ownerId === actor.id), false);
+  actor.rifle.ammo = 1;
+  assert.throws(() => advanceOwnedWeapons(registry, 1, 2, false, true), /Unarmed soldier/);
+});
+
 test('only the selected equipped personal rifle advances; cues identify its actual soldier and weapon', () => {
   const { registry, actors } = fixture();
   assert.deepEqual(advanceOwnedWeapons(registry, .15, .15, true), [

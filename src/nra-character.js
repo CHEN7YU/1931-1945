@@ -19,6 +19,8 @@ import { createNraDadaoPose } from './nra-dadao-pose.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
 import { createOfficerAppearance } from './officer-appearance.js';
+import { nativeSupportWeaponPresentation } from './native-weapon-presentation.js';
+import { createSupportWeaponPose } from './support-weapon-pose.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -146,6 +148,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
   }
   const gun = rifleWorldModel();
   const riflePose = createNraRiflePose(root, canonical, gun);
+  const supportPose = createSupportWeaponPose(root, canonical);
   let dadaoPose = null;
   const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
@@ -158,7 +161,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
   return {
-    root, uniformMaterials, officerAppearance: true,
+    root, uniformMaterials, officerAppearance: true, supportWeaponPoses: true,
     optionalAttachments: [officer.attachment],
     get appearanceResources() {
       return { geometryIds: [...appearanceCache.geometries.values()].map(geometry => geometry.uuid),
@@ -173,6 +176,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     createGrenadeHand: side => createNraGrenadeHand(normalized, side, { fullArm: true }),
     createWeaponHand: side => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig: true }),
     bind(id) {
+      supportPose.reset();
       officer.restore();
       actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; casualtyPose = null; resets++;
       mixer.stopAllAction();
@@ -184,8 +188,10 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     },
     get actorId() { return actorId; },
     get motionProfile() { return motionProfile; },
-    get issue() { return observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
+    get issue() { return observedActor?.health <= 0 ? null : supportPose.snapshot
+      ? supportPose.issue : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
     update(actor, now, controlledId, rifleOperation = undefined) {
+      supportPose.reset();
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && actor.id !== controlledId);
       if (!actor) return;
@@ -210,7 +216,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
       riflePose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
       if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip());
       dadaoPose?.update(motion.dadao);
-      gun.visible = !motion.dadao;
+      supportPose.update(actor, now);
+      gun.visible = !motion.dadao && !nativeSupportWeaponPresentation(actor);
       casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
     },
     sampleAnatomy,
@@ -227,7 +234,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,
         dadao: dadaoPose?.snapshot ?? null,
-        heading: root.rotation.y, issue: observedActor?.health <= 0 ? null : motion?.dadao ? dadaoPose?.issue : riflePose.issue,
+        heading: root.rotation.y, issue: this.issue, supportGrip: supportPose.snapshot,
         headAim: motion?.headAim && observedActor?.health > 0 ? headProbe(motion.headAim, motion) : null,
         casualty: casualtyPose,
         appearance: observedActor?.avatarAppearance ? { ...observedActor.avatarAppearance } : null,

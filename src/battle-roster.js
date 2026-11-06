@@ -8,7 +8,7 @@ export const AIRCRAFT_SQUAD_SIZE = 3;
 export const isVehicleUnit = type => type === 'tank' || type === 'plane';
 export function infantryLoadout(team, index, type = 'infantry', formation = null) {
   if (!['friendly', 'enemy'].includes(team) || !Number.isInteger(index) || index < 0 || !TYPES[type]) throw new RangeError('Invalid infantry loadout');
-  if (formation?.sihangDemolition) return { role: 'rifleman', model: 'rifle' };
+  if (formation?.sihangDemolition) return { role: 'sapper', model: 'rifle', unarmed: true };
   if (team === 'enemy' && type === 'infantry') {
     if (index === 0 || index === 1) return { role: 'grenade-discharger', model: 'rifle' };
     if (index === 8 || index === 10) return { role: 'machine-gunner', model: 'type11' };
@@ -24,6 +24,8 @@ export function infantryLoadout(team, index, type = 'infantry', formation = null
 }
 export function infantryEquipment(team, index, type = 'infantry', formation = null) {
   const loadout = infantryLoadout(team, index, type, formation);
+  if (loadout.unarmed) return { ...loadout, handGrenades: 0, explosivePacks: 0,
+    discharger: false, demolitionCharge: true };
   return { ...loadout, handGrenades: 1,
     explosivePacks: team === 'enemy' && ['machine-gunner', 'grenade-discharger'].includes(loadout.role) ? 0 : 1,
     discharger: loadout.role === 'grenade-discharger' };

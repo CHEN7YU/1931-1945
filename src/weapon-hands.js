@@ -72,7 +72,7 @@ export function createWeaponHands(createHand) {
     for (const [name, shape] of Object.entries(WEAPON_HAND_GRIPS[side])) hand.prepareWeaponGrip(name, shape);
     const skin = hand.getObjectByName('\u624b\u90e8');
     if (!skin?.isSkinnedMesh || Array.isArray(skin.material)) throw new Error('Weapon hand lacks its isolated native skin material');
-    skin.material = skin.material.clone();
+    if (!hand.setOfficerAppearance) skin.material = skin.material.clone();
     skins[side] = { material: skin.material, original: skin.material.color.clone() };
     hands[side] = hand; root.add(hand);
   }
@@ -140,7 +140,8 @@ export function createWeaponHands(createHand) {
   }
   return {
     root,
-    update(model, state, { stowed = false, appearance = null } = {}) {
+    update(model, state, { stowed = false, appearance = null, officer = false } = {}) {
+      if (typeof officer !== 'boolean') throw new TypeError('Weapon hand officer appearance requires a boolean');
       if (bound !== model) {
         model.add(root); bound = model;
         for (const side of ['left', 'right']) {
@@ -151,9 +152,10 @@ export function createWeaponHands(createHand) {
         if (appearance) skin.material.color.set(appearance.skin);
         else skin.material.color.copy(skin.original);
       }
+      for (const hand of Object.values(hands)) hand.setOfficerAppearance?.(officer);
       root.visible = !stowed;
       if (stowed) {
-        if (observation) observation = { ...observation, visible: false };
+        if (observation) observation = { ...observation, visible: false, officer };
         return;
       }
       const profile = infantryWeaponProfile(state), pose = riflePose(state);
@@ -197,13 +199,13 @@ export function createWeaponHands(createHand) {
       if (limited.length) {
         root.visible = false;
         observation = { source: 'nra-authorized-skinned-weapon-hands', visible: false,
-          reachLimited: true, reason: 'weapon-outside-arm-workspace', contacts: limited };
+          reachLimited: true, reason: 'weapon-outside-arm-workspace', contacts: limited, officer };
         if (!reachWarningActive) console.warn('Weapon view stowed outside native arm reach; battle simulation continues', limited);
         reachWarningActive = true;
         return;
       }
       reachWarningActive = false;
-      observation = { source: 'nra-authorized-skinned-weapon-hands', visible: true, reachLimited: false, appearance: appearance?.key ?? null,
+      observation = { source: 'nra-authorized-skinned-weapon-hands', visible: true, reachLimited: false, appearance: appearance?.key ?? null, officer,
         left: leftPose, right: rightPose };
       root.updateMatrixWorld(true);
     },

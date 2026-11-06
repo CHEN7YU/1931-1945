@@ -40,10 +40,13 @@ window.__supportScreenshot=()=>{
   const actor=enemies.find(actor=>actor.discharger?.presentationActive&&actor.health>0);
   if(!actor)return false;
   showOverlay('pause');missionBriefing.hide();$('overlay').hidden=true;if(weapon)weapon.visible=false;
-  camera.position.copy(actor.position).add(new THREE.Vector3(3.2,2.4,3.8));
+  const forward=new THREE.Vector3(-Math.sin(actor.heading),0,-Math.cos(actor.heading));
+  camera.position.copy(actor.position).addScaledVector(forward,1.8)
+    .add(new THREE.Vector3(-forward.z*.8,1.25,forward.x*.8));
   camera.lookAt(actor.position.clone().add(new THREE.Vector3(0,.6,0)));
   camera.updateMatrixWorld(true);return actor.id;
 };
+window.__supportContacts=id=>ijaCharacter.snapshot.views.find(view=>view.actorId===id)?.supportGrip;
 window.__supportOfficerScreenshot=team=>{
   const actor=allForces.find(actor=>actor.team===team&&actor.health>0&&!actor.vehicleId&&__supportOfficer(actor));
   if(!actor)throw new Error('No living infantry officer for native screenshot');
@@ -91,7 +94,12 @@ window.__supportOfficerScreenshot=team=>{
     const view = await page.evaluate(() => window.__supportScreenshot());
     await setQualityPreset(page, 'high');
     if (view) {
-      await page.waitForTimeout(200);
+      await page.waitForFunction(id=>Boolean(window.__supportContacts(id)), view, {timeout:10000});
+      const contacts=await page.evaluate(id=>window.__supportContacts(id),view);
+      assert.equal(contacts.contactLimited,false,JSON.stringify(contacts));
+      for(const hand of Object.values(contacts.hands)){
+        assert.ok(hand.wristError<.04);assert.ok(hand.palmError<.008);
+      }
       await page.screenshot({ path: join(directory, `${campaign}-tube-operator.png`) });
     }
     const officers = [];

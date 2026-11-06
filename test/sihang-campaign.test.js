@@ -66,9 +66,9 @@ test('an installed charge survives its installer and is no longer a defense obje
   advanceSihangCampaign(withdrawing, 240, { friendly: [player] });
   advanceSihangDemolition(withdrawing, 30, {});
   assert.equal(withdrawing.outcome, null);
-  assert.equal(sihangEnemyMayAttack({ z: 32 }), false);
-  assert.equal(sihangEnemyMayAttack({ z: 31 }), true);
-  assert.equal(sihangSafePosition({ z: 40, y: 4.2 }), true, 'a survivor in a south-bank house is already in the concession');
+  assert.equal(sihangEnemyMayAttack({ x: 48, z: 32 }), false);
+  assert.equal(sihangEnemyMayAttack({ x: 48, z: 31 }), true);
+  assert.equal(sihangSafePosition({ x: 48, z: 40, y: 0 }), true, 'a survivor in a south-bank house is already in the concession');
 });
 
 test('occupation, exhausted forces, last squad loss and retreat deadline are terminal and cannot flip after later events', () => {

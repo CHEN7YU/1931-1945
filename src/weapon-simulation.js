@@ -9,7 +9,7 @@ function requireWeapon(registry, weapon, ownerId, type) {
 export function syncControlledRifleTiming(registry, now, stowed) {
   if (!Number.isFinite(now) || now < 0 || typeof stowed !== 'boolean') throw new RangeError('Rifle timing requires simulation time and explicit stowed state');
   const actor = controlledSoldier(registry);
-  if (!actor || actor.health <= 0 || occupiedVehicle(registry, actor) || actor.groundType !== 'infantry') return false;
+  if (!actor || actor.hasFirearm === false || actor.health <= 0 || occupiedVehicle(registry, actor) || actor.groundType !== 'infantry') return false;
   requireWeapon(registry, actor.rifle, actor.id, 'infantry');
   actor.rifle.reloadUntil = !stowed && actor.rifle.action === 'reload' ? now + rifleReloadSeconds(actor.rifle) - actor.rifle.elapsed : 0;
   return true;
@@ -36,6 +36,11 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false, a
   }
   const selected = controlledSoldier(registry);
   for (const actor of registry.soldiers.values()) {
+    if (actor.hasFirearm === false) {
+      if (actor.rifle?.id || actor.rifle?.ammo !== 0 || actor.rifle?.reserve !== 0)
+        throw new Error(`Unarmed soldier has an active firearm: ${actor.id}`);
+      continue;
+    }
     const autonomous = actor !== selected && aiActive;
     const active = autonomous || actor === selected && personalActive && actor.groundType === 'infantry';
     if (!active || actor.health <= 0 || actor.vehicleId || actor.emplacementWeaponId || actor.grenades?.action) continue;

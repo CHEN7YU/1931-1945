@@ -13,6 +13,7 @@ import { objectiveContainsPosition, circleBlocked } from '../src/core.js';
 import { createEmplacement, emplacementPose } from '../src/emplacements.js';
 import { friendlyAIFormationName, campaignUnitName } from '../src/battle-units.js';
 import { PERFORMANCE_MAPS } from '../src/performance-schema.js';
+import { SIHANG_WAREHOUSE as W } from '../src/sihang-layout.js';
 
 test('Sihang deploys four eleven-person squads and ten distinct enemy units without reducing the 20 sappers', () => {
   const roster = sihangBattleRoster(), friendly = roster.filter(unit => unit.team === 'friendly');
@@ -81,10 +82,10 @@ test('neutral-bank target filter excludes soldiers and vehicles at or south of z
   for (const z of [-90, 8, 31.99]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 0, z } }), true);
   for (const z of [32, 36, 100]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 50, z } }), false);
   assert.equal(sihangEnemyTargetAllowed(null), false);
-  assert.equal(sihangEnemyRayRange({ z: 8 }, { z: 1 }, 220), 24);
-  assert.equal(sihangEnemyRayRange({ z: 32 }, { z: -1 }, 220), 0);
-  assert.equal(sihangEnemyRayRange({ z: 4 }, { z: -1 }, 220), 220);
-  assert.equal(sihangRetreatGoal({ index: 0, position: { x: 0, y: 4.2, z: -25 } }).z, 4);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), 24);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 32 }, { x: 0, z: -1 }, 220), 0);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 4 }, { x: 0, z: -1 }, 220), 220);
+  assert.equal(sihangRetreatGoal({ index: 0, position: { x: 0, y: W.floorHeight, z: -25 } }).z, 4);
   assert.equal(sihangRetreatGoal({ index: 0, position: { x: 48, y: 0, z: 15 } }).z, 36.5);
 });
 
@@ -105,10 +106,10 @@ test('real warehouse geometry supports all four complete opening formations, ene
   }
   const point = sihangObjectives()[0];
   assert.equal(objectiveContainsPosition(point, { x: -4, y: 0, z: -25 }), true);
-  assert.equal(objectiveContainsPosition(point, { x: -4, y: 4.2, z: -25 }), false);
+  assert.equal(objectiveContainsPosition(point, { x: -4, y: W.floorHeight, z: -25 }), false);
   const aa = createEmplacement(SIHANG_EMPLACEMENTS[0]), pose = emplacementPose(aa, aa.altitude);
   assert.equal(circleBlocked(pose.operator.x, pose.operator.z, .43, world.obstacles, pose.operator.y), false);
-  assert.equal(world.walkHeight(pose.operator.x, pose.operator.z, pose.operator.y), 12.6);
+  assert.equal(world.walkHeight(pose.operator.x, pose.operator.z, pose.operator.y), W.roofY);
   assert.equal(world.civilians.length, 36);
   assert.equal(world.ferries, undefined);
 });

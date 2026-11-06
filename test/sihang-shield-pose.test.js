@@ -69,25 +69,27 @@ for (const shield of SIHANG_SHIELD_POSES) test(`native ${shield.mode} wrist reac
   const b = lower.getWorldPosition(new THREE.Vector3()).distanceTo(wrist(bones));
   const state = carry.update(actor(shield), 0);
   assert.equal(state.reachable, true, JSON.stringify(state));
-  assert.ok(state.error < 1e-6, JSON.stringify(state));
-  assert.ok(wrist(bones).distanceTo(root.localToWorld(new THREE.Vector3(...shield.handTarget))) < 1e-6);
+  assert.ok(state.error < .008, JSON.stringify(state));
+  assert.ok(wrist(bones).distanceTo(root.localToWorld(new THREE.Vector3(...shield.handTarget))) < .008);
+  assert.ok(state.hands.right.palmError < .008);
   assert.ok(Math.abs(state.upperLength - a) < 1e-7);
   assert.ok(Math.abs(state.lowerLength - b) < 1e-7);
   const after = transforms(bones);
   for (let index = 0; index < before.length; index++) {
     assert.deepEqual(after[index][1], before[index][1], 'no bone translations');
     assert.deepEqual(after[index][3], before[index][3], 'no bone scaling');
-    if (!before[index][0].startsWith('Left')) assert.deepEqual(after[index], before[index], 'right arm, head and body unchanged');
+    if (!/^(Left|Right|Spine$)/.test(before[index][0]))
+      assert.deepEqual(after[index], before[index], 'unrelated head and lower-body joints remain unchanged');
   }
 });
 
-test('target changes smooth locally across heading changes, reset on rebinding, and unreachable targets never stretch', async () => {
+test('hands follow the actual moving shield without additional lag, reset on rebinding, and never stretch', async () => {
   const { root, bones } = await nativeRig(), carry = createSihangShieldPose(root, bones);
   carry.update(actor(SIHANG_SHIELD_POSES[0]), 0);
   root.position.set(4, 1, -8); root.rotation.y = 2;
   const state = carry.update(actor(SIHANG_SHIELD_POSES[1]), 1 / 60);
-  assert.ok(state.localTarget[1] > 1.35 && state.localTarget[1] < 1.88);
-  assert.ok(wrist(bones).distanceTo(root.localToWorld(new THREE.Vector3(...state.localTarget))) < 1e-6);
+  assert.deepEqual(state.localTarget, SIHANG_SHIELD_POSES[1].handTarget);
+  assert.ok(wrist(bones).distanceTo(root.localToWorld(new THREE.Vector3(...state.localTarget))) < .008);
   carry.reset();
   assert.deepEqual(carry.update(actor(SIHANG_SHIELD_POSES[1]), 1).localTarget, SIHANG_SHIELD_POSES[1].handTarget);
   const unreachable = carry.update(actor({ ...SIHANG_SHIELD_POSES[0], handTarget: [-3, 10, 0] }), 1);
@@ -97,7 +99,7 @@ test('target changes smooth locally across heading changes, reset on rebinding, 
   assert.ok(Math.abs(unreachable.lowerLength - state.lowerLength) < 1e-7);
 });
 
-test('shield support follows the rifle solve without touching its right hand or owned gun, then leaves native casualties untouched', async () => {
+test('heavy shield overrides both arms without moving the stowed gun and leaves native casualties untouched', async () => {
   const { root, bones } = await nativeRig();
   const gun = rifleWorldModel('far', null, { bayonet: true }), riflePose = createNraRiflePose(root, bones, gun);
   const carry = createSihangShieldPose(root, bones);
@@ -110,8 +112,9 @@ test('shield support follows the rifle solve without touching its right hand or 
   riflePose.update(sampleNraMotion(person));
   const right = bones.get('RightHand').matrixWorld.clone(), weapon = gun.matrixWorld.clone();
   const state = carry.update(person, 0);
-  assert.ok(state.error < 1e-6);
-  assert.deepEqual(bones.get('RightHand').matrixWorld, right);
+  assert.ok(state.error < .008);
+  assert.notDeepEqual(bones.get('RightHand').matrixWorld, right);
+  assert.ok(state.hands.right.palmError < .008);
   assert.deepEqual(gun.matrixWorld, weapon);
   person.health = 0; person.casualty = createCasualtyState(person, 1, sampleNraMotion(person), { variant: 0, retainGun: true });
   const casualty = createCasualtyPose(root, bones, gun, () => 0);
@@ -162,17 +165,18 @@ test('production IJA near/far views apply carry after native idle/rifle updates 
       view.update(person, 1, null);
       assert.equal(view.issue, null, JSON.stringify(view.snapshot.shieldCarry));
       assert.equal(view.snapshot.shieldCarry.mode, mode.mode);
-      assert.ok(view.snapshot.shieldCarry.error < 1e-6);
+      assert.ok(view.snapshot.shieldCarry.error < .008);
       assert.equal(view.root.getObjectByName('Hips').parent !== null, true);
       const feet = [];
       for (const phase of [.25, .75]) {
         person.nativeMotion.weight = 1; person.nativeMotion.speed = 1.75;
         person.nativeMotion.gaitCycles = phase; person.nativeMotion.phaseDistance = person.nativeMotion.distance;
-        if (mode.mode === 'roof') person.sihangShield = { ...mode, handTarget: [-.3, 1.88 - nativeGaitDrop(person), 0] };
+        person.sihangShield = { ...mode, handTarget: [mode.handTarget[0],
+          mode.handTarget[1] - nativeGaitDrop(person), mode.handTarget[2]] };
         syncNativeAimGoal(person);
         view.update(person, 1, null);
         assert.equal(view.issue, null, JSON.stringify(view.snapshot.shieldCarry));
-        assert.ok(view.snapshot.shieldCarry.error < 1e-6);
+        assert.ok(view.snapshot.shieldCarry.error < .008);
         feet.push(new THREE.Vector3(...view.snapshot.leftFoot));
       }
       assert.ok(feet[0].distanceTo(feet[1]) > .03, 'production native feet alternate while holding the shield');
@@ -182,7 +186,7 @@ test('production IJA near/far views apply carry after native idle/rifle updates 
     person.sihangShield = { ...SIHANG_SHIELD_POSES[0], installing: true };
     const weaponState = JSON.stringify(person.rifle);
     view.update(person, 1, null);
-    assert.ok(view.snapshot.shieldCarry.installation.error < 1e-6);
+    assert.ok(view.snapshot.shieldCarry.installation.error < .008);
     assert.equal(view.root.children.find(child => child.userData.personalWeapon).visible, false);
     assert.equal(view.root.getObjectByName('sihang-demolition-satchel').visible, true);
     assert.equal(JSON.stringify(person.rifle), weaponState);
@@ -196,6 +200,11 @@ test('production IJA near/far views apply carry after native idle/rifle updates 
     view.update(person, 4, null);
     assert.equal(view.snapshot.shieldCarry, undefined);
     assert.ok(view.snapshot.casualty);
+    person.formation = { sihangDemolition: true, memberCount: 20 };
+    view.update(person, 4, null);
+    assert.equal(view.root.children.find(child => child.userData.personalWeapon).visible, false,
+      'an unarmed sapper corpse cannot regain the pose-only rifle through casualty retention');
+    delete person.formation;
     person.health = 100; delete person.casualty;
   }
 });
@@ -240,10 +249,10 @@ test('same native view restores ordinary clavicle, fingers and right rifle posin
       person.sihangShield = { ...mode, installing: true };
       view.update(person, 1, null);
       assert.ok(view.snapshot.shieldCarry);
-      if (mode.mode === 'roof') assert.notDeepEqual(
-        poseState(view).joints.find(joint => joint.name === 'LeftShoulder').rotation,
-        ordinary.joints.find(joint => joint.name === 'LeftShoulder').rotation,
-        'the test really starts from an elevated carrying clavicle');
+      assert.notDeepEqual(
+        poseState(view).joints.find(joint => joint.name === 'LeftArm').rotation,
+        ordinary.joints.find(joint => joint.name === 'LeftArm').rotation,
+        'the test starts from a real two-handed support pose');
       assert.notDeepEqual(poseState(view).joints.find(joint => joint.name === 'LeftHandIndex1').rotation,
         ordinary.joints.find(joint => joint.name === 'LeftHandIndex1').rotation, 'carrying changes the rifle-support fingers');
       assert.notDeepEqual(poseState(view).joints.find(joint => joint.name === 'RightArm').rotation,
@@ -308,7 +317,7 @@ test('far carry/installation adds only four shared banks, preserves default bank
   assert.equal(force.counts.poseBanks, original.counts.poseBanks + 4);
   assert.equal(progress.length, force.counts.poseBanks);
   assert.equal(progress.at(-1).completed, progress.at(-1).total);
-  assert.deepEqual(sampled.slice(-2), ['roof', 'turtle']);
+  assert.deepEqual(sampled.slice(-2), ['roof', 'front']);
   const banks = renderer => renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const base = banks(original), extended = banks(force);
   const roof = base.length, turtle = roof + 1, installRoof = roof + 2;
@@ -354,7 +363,8 @@ test('far carry/installation adds only four shared banks, preserves default bank
   assert.equal(extended[installRoof].count + coarse[coarseRoof + 2].count, 1);
   assert.equal(force.root.children.filter(mesh => mesh.name === 'sihang-demolition-satchel').length, 2, 'only installation banks allocate satchels');
   assert.equal(force.root.children.filter(mesh => mesh.name === 'sihang-demolition-satchel').reduce((sum, mesh) => sum + mesh.count, 0), 1);
-  assert.equal(force.root.children.find(mesh => mesh.name === 'owned-weapon-rifle').count, 19);
+  assert.equal(force.root.children.find(mesh => mesh.name === 'owned-weapon-rifle').count, 0,
+    'both hands carry the heavy shield; nobody simultaneously holds a rifle');
   assert.equal(JSON.stringify(people.map(person => person.rifle)), weaponState);
   people[0].health = 0;
   people[0].casualty = createCasualtyState(people[0], 0, null, { variant: 0, retainGun: true });

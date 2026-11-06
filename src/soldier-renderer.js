@@ -65,7 +65,8 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
         const pose = actor.dadao?.pose;
         const phase = pose && ['windup', 'cut', 'recover'].includes(pose.phase) ? pose.phase : 'ready';
         const frame = phase === 'ready' ? 0 : Math.min(3, Math.floor(pose.progress * 3) + 1);
-        const group = groupFor(actor.friendly, detail, sword ? `dadao-${phase}-${frame}` : actor.rifle?.model ?? 'rifle');
+        const group = groupFor(actor.friendly, detail, actor.hasFirearm === false ? 'unarmed'
+          : sword ? `dadao-${phase}-${frame}` : actor.rifle?.model ?? 'rifle');
         if (group.count >= group.capacity) {
           if (actor.health > 0) throw new Error('Soldier instance capacity exceeded; no combatants were silently removed');
           group.capacity *= 2;

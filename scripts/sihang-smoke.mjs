@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { deployFromMenu, setQualityPreset } from './game-entry.mjs';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
+import { SIHANG_WAREHOUSE } from '../src/sihang-layout.js';
 
 const root = resolve(process.env.ARTIFACT_DIR ?? 'asset-research', 'sihang');
 await mkdir(root, { recursive: true });
@@ -54,7 +55,7 @@ try {
         missionBriefing.hide();
         $('overlay').hidden=true;if(weapon)weapon.visible=false;
         if(kind==='shields'){camera.position.set(7,7,-55);camera.lookAt(0,1.5,-47);}
-        else{camera.position.set(53,11,48);camera.lookAt(-4,5,-25);}
+        else{camera.position.set(62,25,58);camera.lookAt(-4,13,-25);}
         camera.updateMatrixWorld(true);
       },
       arm() {
@@ -103,7 +104,7 @@ try {
   assert.equal(initial.troops.filter(f => f.team === 'friendly').reduce((n, f) => n + f.members, 0), 44);
   assert.equal(initial.troops.filter(f => f.team === 'enemy').reduce((n, f) => n + f.members, 0), 97);
   assert.equal(initial.campaign.reserve, 356);
-  assert.equal(initial.position[1], 4.2);
+  assert.equal(initial.position[1], SIHANG_WAREHOUSE.floorHeight);
   assert.equal(initial.voices.clips, 8);
   assert.equal(initial.narration, true);
   const arranged = await page.evaluate(() => sihangReview.arrange());

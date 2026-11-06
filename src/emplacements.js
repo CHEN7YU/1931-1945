@@ -91,8 +91,14 @@ export function emplacementLook(point, yaw, pitch) {
 
 export function emplacementPose(point, floor = 0) {
   const profile = EMPLACEMENT_PROFILES[point.profile], c = Math.cos(point.yaw), s = Math.sin(point.yaw);
+  const operatorDistance = point.profile === 'bofors75' ? 1.02 : profile.antiAircraft ? .68 : .76;
+  const standing = profile.antiAircraft || point.profile === 'bofors75' && point.position === 'march';
   return {
-    operator: { x: point.x + Math.sin(point.heading) * 1.5, y: floor, z: point.z + Math.cos(point.heading) * 1.5 },
+    operator: { x: point.x + s * operatorDistance, y: floor,
+      z: point.z + c * operatorDistance },
+    operatorDistance,
+    stance: standing ? 'standing' : 'crouched',
+    firingPose: standing ? null : 'kneeling',
     eye: { x: point.x + s * .75, y: floor + profile.muzzleHeight + .25, z: point.z + c * .75 },
     muzzle: { x: point.x - s * Math.cos(point.pitch) * profile.barrel,
       y: floor + profile.muzzleHeight + Math.sin(point.pitch) * profile.barrel,
@@ -101,17 +107,23 @@ export function emplacementPose(point, floor = 0) {
 }
 
 export function emplacementObstacles(point) {
-  const bounds = [{ minX: -.65, maxX: .65, minZ: -.65, maxZ: .65,
+  const cannon = point.profile === 'bofors75';
+  const bounds = [{ minX: cannon ? -.65 : -.23, maxX: cannon ? .65 : .23,
+    minZ: cannon ? -.65 : -.16, maxZ: cannon ? .25 : .16,
     height: EMPLACEMENT_PROFILES[point.profile].antiAircraft ? 1.8 : 1.4 }];
   if (point.profile === 'maxim24') bounds.push(
     { minX: -1.32, maxX: 1.32, minZ: -.98, maxZ: -.32, height: .85 },
-    { minX: -1.48, maxX: -.72, minZ: -.3, maxZ: 1.05, height: .85 },
-    { minX: .72, maxX: 1.48, minZ: -.3, maxZ: 1.05, height: .85 });
+    { minX: -1.88, maxX: -1.18, minZ: -.3, maxZ: 1.05, height: .85 },
+    { minX: 1.18, maxX: 1.88, minZ: -.3, maxZ: 1.05, height: .85 });
   const c = Math.cos(point.heading), s = Math.sin(point.heading);
   return bounds.map((box, index) => {
     const corners = [[box.minX, box.minZ], [box.minX, box.maxZ], [box.maxX, box.minZ], [box.maxX, box.maxZ]]
       .map(([x, z]) => ({ x: point.x + x * c + z * s, z: point.z - x * s + z * c }));
-    return { id: `${point.id}:obstacle-${index}`, minX: Math.min(...corners.map(p => p.x)),
+    const centerX = (box.minX + box.maxX) / 2, centerZ = (box.minZ + box.maxZ) / 2;
+    return { id: `${point.id}:obstacle-${index}`, oriented: true, angle: point.heading, cos: c, sin: s,
+      cx: point.x + centerX * c + centerZ * s, cz: point.z - centerX * s + centerZ * c,
+      hx: (box.maxX - box.minX) / 2, hz: (box.maxZ - box.minZ) / 2,
+      minX: Math.min(...corners.map(p => p.x)),
       maxX: Math.max(...corners.map(p => p.x)), minZ: Math.min(...corners.map(p => p.z)),
       maxZ: Math.max(...corners.map(p => p.z)), minY: point.altitude ?? 0, height: (point.altitude ?? 0) + box.height };
   });

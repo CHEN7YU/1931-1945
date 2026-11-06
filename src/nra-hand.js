@@ -3,6 +3,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { solveArm } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
 import { DADAO_GRIP } from './dadao.js';
+import { createOfficerHandAppearance, createOfficerSleeveAppearance } from './officer-appearance.js';
 
 function trimSleeveAtShoulder(mesh, upper, lower) {
   const origin = upper.getWorldPosition(new THREE.Vector3()), axis = lower.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
@@ -68,6 +69,17 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   if (kept.length < 60) throw new Error('Inspected hand has no isolated finger surface');
   geometry.clearGroups(); geometry.setIndex(kept); handMesh.geometry = geometry;
   if (Array.isArray(handMesh.material)) handMesh.material = handMesh.material[0];
+  const officerAppearance = createOfficerHandAppearance(handMesh, { geometryOwned: true });
+  const officerSleeves = [];
+  root.userData.officerGloves = false;
+  root.setOfficerAppearance = officer => {
+    officerAppearance.setOfficerAppearance(officer);
+    for (const sleeve of officerSleeves) sleeve.setOfficerAppearance(officer);
+    root.userData.officerGloves = officer;
+  };
+  Object.defineProperty(root, 'officerAppearanceSnapshot', {
+    get: () => ({ ...officerAppearance.snapshot, sleeveMaterials: officerSleeves.length }),
+  });
   const sleeves = [];
   if (fullArm) {
     for (const mesh of meshes.filter(mesh => ['衣服', '臂章'].includes(mesh.name))) {
@@ -103,6 +115,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
         trimSleeveAtShoulder(mesh, bones.get(prefix + 'Arm'), bones.get(prefix + 'ForeArm'));
       }
       if (Array.isArray(mesh.material)) mesh.material = mesh.material[0];
+      if (mesh.name === '衣服') officerSleeves.push(createOfficerSleeveAppearance(mesh));
       sleeves.push(mesh);
     }
     if (!sleeves.length) throw new Error('Native throwable arm is missing its authorized sleeve');

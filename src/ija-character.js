@@ -17,7 +17,8 @@ import { shoulderPocket } from './rifle-contacts.js';
 import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 import { createSihangShieldPose, createSihangSatchel, sihangShieldInstalling } from './sihang-shield-pose.js';
 import { createOfficerAppearance } from './officer-appearance.js';
-import { nativeDischargerPresentation } from './native-weapon-presentation.js';
+import { nativeSupportWeaponPresentation } from './native-weapon-presentation.js';
+import { createSupportWeaponPose } from './support-weapon-pose.js';
 
 export async function loadIjaCharacter(walkHeightAt = walkHeight) {
   const base = '/assets/game/ija-1938/';
@@ -72,6 +73,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
     const gun = rifleWorldModel(level, null, { bayonet: true }), pose = createNraRiflePose(root, bones, gun);
     const satchel = createSihangSatchel(); root.add(satchel);
     const shieldPose = createSihangShieldPose(root, bones, satchel);
+    const supportPose = createSupportWeaponPose(root, bones);
     const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
     const flag = createIjaRifleFlag(); gun.add(flag);
@@ -83,18 +85,19 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
     let actorId = null, actor = null, active = 'idle', motion = null, legPose = null, casualtyPose = null;
     root.visible = false;
     return {
-      root, motionProfile, createView, sihangShieldPoses: true, officerAppearance: true,
+      root, motionProfile, createView, sihangShieldPoses: true, officerAppearance: true, supportWeaponPoses: true,
       get drawBatches() {
         let count = 0;
         root.traverseVisible(node => { if (node.isMesh) count += Array.isArray(node.material) ? node.geometry.groups.length : 1; });
         return count;
       },
-      optionalAttachments: [{ mesh: flag, enabled: person => hasIjaRifleFlag(person) && !sihangShieldInstalling(person) && !nativeDischargerPresentation(person),
+      optionalAttachments: [{ mesh: flag, enabled: person => hasIjaRifleFlag(person) && !sihangShieldInstalling(person) && !nativeSupportWeaponPresentation(person),
         bake: bakeIjaRifleFlag, update: updateIjaRifleFlagTime },
       { mesh: satchel, enabled: sihangShieldInstalling, includeBank: sihangShieldInstalling },
       officer.attachment],
       createFarView: () => createView('far'),
       bind(id) {
+        supportPose.reset();
         officer.restore();
         actorId = id; actor = null; root.visible = false; motion = null; casualtyPose = null; flag.visible = false;
         shieldPose.reset();
@@ -105,10 +108,12 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
       },
       get actorId() { return actorId; },
       get issue() {
-        return actor?.health <= 0 ? null : shieldPose.snapshot?.error > .015 ? '钢板左手握点超出可达范围'
-          : shieldPose.snapshot?.installation?.error > .015 ? '炸药包右手握点超出可达范围' : pose.issue;
+        return actor?.health <= 0 ? null : shieldPose.snapshot
+          ? shieldPose.snapshot.contactLimited ? '钢板或炸药双手握点超出可达范围' : null
+          : supportPose.snapshot ? supportPose.issue : pose.issue;
       },
       update(person, now, controlledId, rifleOperation = undefined) {
+        supportPose.reset();
         if (person.team !== 'enemy') throw new Error('Japanese appearance cannot replace a friendly identity');
         actor = person;
         officer.restore(); officer.apply(actor);
@@ -129,9 +134,11 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
         syncWorldWeapon(gun, actor.rifle);
         pose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
         shieldPose.update(actor, now);
-        gun.visible = !sihangShieldInstalling(actor) && !nativeDischargerPresentation(actor);
+        supportPose.update(actor, now);
+        gun.visible = !sihangShieldInstalling(actor) && !nativeSupportWeaponPresentation(actor);
         flag.visible = hasIjaRifleFlag(actor) && gun.visible;
         casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
+        if (actor.formation?.sihangDemolition) { gun.visible = false; flag.visible = false; }
       },
       sampleAnatomy,
       get anatomy() { return readAnatomicalBones(bones); },
@@ -150,6 +157,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
           headAim: motion?.headAim && actor?.health > 0 ? headProbe(motion.headAim, motion) : null,
           casualty: casualtyPose,
           officer: officer.snapshot,
+          supportGrip: supportPose.snapshot,
           ...(shieldPose.snapshot ? { shieldCarry: shieldPose.snapshot } : {}),
           soldier: actor ? { id: actor.id, health: actor.health, ammo: actor.rifle.ammo, shots: actor.rifle.shots } : null,
           geometry: source.levels[level], historicalAcceptance: false };

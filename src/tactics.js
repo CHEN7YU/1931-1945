@@ -58,7 +58,8 @@ export function visibleTargetPoint(target, canSee) {
     return result;
   };
   let visible = query(point);
-  if (!visible && !target.vehicleId && target.nativeMotion && soldierPostureHeight(target) < 1.55) {
+  if (!visible && !target.vehicleId && target.nativeMotion &&
+    (soldierPostureHeight(target) < 1.55 || target.sihangShield?.active)) {
     const head = soldierEyePosition(target);
     if (query(head)) { point = head; visible = true; }
   }

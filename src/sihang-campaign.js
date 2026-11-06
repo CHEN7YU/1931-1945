@@ -1,3 +1,5 @@
+import { sihangSouthBank } from './sihang-layout.js';
+
 export const SIHANG_RULES = Object.freeze({
   defenseSeconds: 240, retreatSeconds: 300, troopLimit: 400, squadMembers: 11,
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 10, defuseSeconds: 10,
@@ -27,12 +29,11 @@ export function registerSihangDeployment(campaign, count) {
 }
 
 export function sihangSafePosition(position) {
-  return Boolean(position && Number.isFinite(position.z) && Number.isFinite(position.y) &&
-    position.z >= 36 && position.y >= -.25);
+  return Boolean(position && Number.isFinite(position.y) && position.y >= -.25 && sihangSouthBank(position, 4));
 }
 
 export function sihangEnemyMayAttack(position) {
-  return Boolean(position && Number.isFinite(position.z) && position.z < 32);
+  return Boolean(position && Number.isFinite(position.x) && Number.isFinite(position.z) && !sihangSouthBank(position));
 }
 
 export function advanceSihangDemolition(campaign, dt, { operatorId = null, defusing = false, defuserId = null } = {}) {
