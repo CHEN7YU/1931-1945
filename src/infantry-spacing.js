@@ -120,6 +120,12 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     return result(forward.x, forward.z, speed, ahead.other.id, 'queue');
   }
   const yields = opposing && actor.tactics.id > ahead.other.tactics.id;
+  const oncoming = opposing && Boolean(ahead.other.intent || ahead.other.locomotion?.speed > .1);
+  if (constrained && oncoming && !yields) {
+    if (directClear) return result(forward.x, forward.z, 1, null, 'right-of-way');
+    if (traffic.waitSeconds < 1.5)
+      return result(forward.x, forward.z, 0, ahead.other.id, 'wait-for-oncoming-yield');
+  }
   const angles = constrained && yields ? [Math.PI / 2, -Math.PI / 2, Math.PI] : [.42, -.42, .85, -.85, Math.PI / 2, -Math.PI / 2];
   if (traffic.waitSeconds >= 1.5 && !angles.includes(Math.PI)) angles.push(2.3, -2.3, Math.PI);
   for (const angle of angles) {

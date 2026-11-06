@@ -1,10 +1,31 @@
 import { TYPES, shotState } from './core.js';
 import { headingError } from './ai-turning.js';
+import { obstacleLookup } from './spatial.js';
 
 export const AIRCRAFT_TURN = Object.freeze({ rate: .6, headingGain: 1.8, bankRate: .65, bankResponse: .25 });
 export const AIRCRAFT_AVOIDANCE = Object.freeze({ lookAhead: 4, sampleStep: .2, halfSpan: 5.2,
   clearance: 6, pullUpAltitude: 22, climbPitch: .38, holdSeconds: 2 });
 export const AIRCRAFT_GUN = Object.freeze({ range: 220, spread: .012 });
+
+function validObstacle(obstacle) {
+  return obstacle && ['minX', 'maxX', 'minZ', 'maxZ', 'height'].every(key => Number.isFinite(obstacle[key])) &&
+    obstacle.minX <= obstacle.maxX && obstacle.minZ <= obstacle.maxZ;
+}
+
+export function createAircraftObstacleLookup(obstacles) {
+  const validate = () => {
+    if (!Array.isArray(obstacles) || obstacles.some(obstacle => !validObstacle(obstacle)))
+      throw new RangeError('Aircraft obstacle index requires finite ordered geometry');
+  };
+  validate();
+  // Every predicted segment travels at most speed * sampleStep; its midpoint query includes both wing tips.
+  const radius = AIRCRAFT_AVOIDANCE.halfSpan + TYPES.plane.speed * AIRCRAFT_AVOIDANCE.sampleStep / 2;
+  const lookup = obstacleLookup(obstacles, radius);
+  return {
+    rebuild() { validate(); lookup.rebuild(); },
+    at: (from, to) => lookup.at((from.x + to.x) / 2, (from.z + to.z) / 2),
+  };
+}
 
 export function aircraftMuzzle(vehicle) {
   const forward = vehicle.team === 'enemy' ? 3.55 : 2.8, height = vehicle.team === 'enemy' ? .17 : .1;
@@ -38,7 +59,7 @@ function rectangleContact(from, to, obstacle) {
   return { entry, exit };
 }
 
-function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHeight) {
+function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHeight, collisionLookup) {
   const point = { ...vehicle.position };
   let heading = vehicle.heading, pitch = vehicle.pitch, threat = null, recovering = false;
   const step = AIRCRAFT_AVOIDANCE.sampleStep;
@@ -60,7 +81,7 @@ function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHe
       threat ??= { time: elapsed, altitude: floor + AIRCRAFT_AVOIDANCE.clearance, reason: 'terrain' };
       threat.altitude = Math.max(threat.altitude, floor + AIRCRAFT_AVOIDANCE.clearance);
     }
-    for (const obstacle of obstacles) {
+    for (const obstacle of collisionLookup ? collisionLookup.at(previous, point) : obstacles) {
       if (Math.min(previous.y, point.y) >= obstacle.height + AIRCRAFT_AVOIDANCE.clearance) continue;
       const contact = rectangleContact(previous, point, obstacle);
       if (!contact) continue;
@@ -76,14 +97,13 @@ function flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHe
 }
 
 export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible, obstacles = [], groundHeight = () => 0,
-  patrolCenter = { x: 0, z: 0 }, preferredUnitId = null }) {
+  patrolCenter = { x: 0, z: 0 }, preferredUnitId = null, collisionLookup = null }) {
   if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(now) || now < 0 ||
     ![vehicle.position.x, vehicle.position.y, vehicle.position.z, vehicle.heading, vehicle.pitch, vehicle.roll].every(Number.isFinite) ||
     typeof canFire !== 'boolean' || typeof visible !== 'function' || typeof groundHeight !== 'function' ||
     !Number.isFinite(patrolCenter.x) || !Number.isFinite(patrolCenter.z) ||
-    !Array.isArray(obstacles) || obstacles.some(obstacle =>
-      !['minX', 'maxX', 'minZ', 'maxZ', 'height'].every(key => Number.isFinite(obstacle[key])) ||
-      obstacle.minX > obstacle.maxX || obstacle.minZ > obstacle.maxZ)) {
+    (collisionLookup ? typeof collisionLookup.at !== 'function' :
+      !Array.isArray(obstacles) || obstacles.some(obstacle => !validObstacle(obstacle)))) {
     throw new RangeError('Aircraft AI requires owned finite state, visibility and obstacle geometry');
   }
   if (dt === 0 || vehicle.health <= 0) return null;
@@ -142,12 +162,12 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   if (state.avoidance) {
     desiredHeading = state.avoidance.heading; desiredPitch = AIRCRAFT_AVOIDANCE.climbPitch;
   }
-  const threat = flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHeight);
+  const threat = flightThreat(vehicle, desiredHeading, desiredPitch, obstacles, groundHeight, collisionLookup);
   if (threat) {
     if (!state.avoidance) {
       const options = [0, -.8, .8].map(offset => {
         const heading = headingError(0, vehicle.heading + offset);
-        const risk = flightThreat(vehicle, heading, AIRCRAFT_AVOIDANCE.climbPitch, obstacles, groundHeight);
+        const risk = flightThreat(vehicle, heading, AIRCRAFT_AVOIDANCE.climbPitch, obstacles, groundHeight, collisionLookup);
         return { heading, risk: risk?.time ?? Infinity, turn: Math.abs(offset) };
       }).sort((a, b) => b.risk - a.risk || a.turn - b.turn);
       state.avoidance = { heading: options[0].heading, altitude: threat.altitude,

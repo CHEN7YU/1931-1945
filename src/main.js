@@ -101,7 +101,7 @@ import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, adva
 import { CORPSE_RULES, createCasualtyState, expiredCorpses, placeCasualty } from './casualties.js';
 import { GRENADE, EXPLOSIVE_PACK, throwableProfile, throwableStock, throwableVehicleDamage, createGrenadeInventory, createGrenadeSystem, grenadePose, grenadeCanDamage } from './grenades.js';
 import { createGrenadeRenderer } from './grenade-renderer.js';
-import { advanceTankMachineGun, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
+import { advanceTankMachineGun, advanceTankDriving, tankConvergedDirection, tankHeading, tankCannonPose, tankObservationPose } from './player-tank.js';
 import { infantrySteering as steerInfantry, advanceInfantryPath as advanceInfantryRoute, sampledRouteClear } from './infantry-spacing.js';
 import { updateInfantryAimPitch } from './infantry-aim.js';
 import { civilianEscapeSpeed, frightenCivilian } from './civilian-panic.js';
@@ -139,7 +139,7 @@ import { drawFacingSector, drawMissionMarker } from './minimap-view.js';
 import { missionTargets } from './mission-targets.js';
 import { soldierRoleIcon } from './soldier-role-icons.js';
 import { getPlayerIdentity } from './player-identity.js';
-import { advanceAircraftAI, AIRCRAFT_GUN } from './aircraft-ai.js';
+import { advanceAircraftAI, AIRCRAFT_GUN, createAircraftObstacleLookup } from './aircraft-ai.js';
 import { deploymentCards, deploymentMarker, deploymentMarkerPositions } from './deployment-view.js';
 import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
 import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks } from './aircraft-wreck.js';
@@ -430,6 +430,7 @@ const soldierHits = createSoldierHitSystem((actor, now) => {
 });
 const bodyRay = new THREE.Raycaster();
 const groundCollision = obstacleLookup(world.obstacles, 2.5, 4);
+const aircraftCollision = createAircraftObstacleLookup(world.obstacles);
 const civilianCrowdPlanner = createCivilianCrowdPlanner();
 const civilianNavigationLookup = nanjingCampaignMode ? obstacleLookup(world.civilianNavigationObstacles, .8) : null;
 const movementCollision = createMovementObstacles(groundCollision, entities.vehicles, vehicleCollider);
@@ -517,7 +518,7 @@ $('battle-ending-continue').addEventListener('click', () => battleEnding.finish(
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.armorObstacles ?? world.obstacles);
 world.doorSystem.onNavigationChanged = (bounds, regions = [bounds]) => {
-  navigate.refreshMany(regions); armorNavigate.refreshMany(regions); groundCollision.rebuild();
+  navigate.refreshMany(regions); armorNavigate.refreshMany(regions); groundCollision.rebuild(); aircraftCollision.rebuild();
   civilianCrowdPlanner.invalidate(); civilianNavigationLookup?.rebuild();
 };
 world.doorSystem.onRequested = door => controlEvents.publish('door.requested', { doorId: door.id, opening: door.targetAngle !== 0,
@@ -1564,7 +1565,7 @@ function beginMatch(initialSpawnId = null) {
   renderIsolation.mode = 'normal';
   renderIsolation.drawFrames = renderIsolation.skippedFrames = renderIsolation.hiddenCharacterFrames = renderIsolation.characterPresentationFrames = 0;
   if (sihangCampaignMode) {
-    world.resetCampaign(); sihangCombat.reset(); groundCollision.rebuild();
+    world.resetCampaign(); sihangCombat.reset(); groundCollision.rebuild(); aircraftCollision.rebuild();
     navigate.refreshMany([{ minX: -108, maxX: 108, minZ: -108, maxZ: 108 }]);
   }
   else if (nanjingCampaignMode) {
@@ -2276,7 +2277,7 @@ function syncArtilleryCollision(point) {
   const all=[...previous,...updated];
   const bounds={minX:Math.min(...all.map(box=>box.minX))-2,maxX:Math.max(...all.map(box=>box.maxX))+2,
     minZ:Math.min(...all.map(box=>box.minZ))-2,maxZ:Math.max(...all.map(box=>box.maxZ))+2};
-  groundCollision.rebuild();navigate.refresh(bounds);armorNavigate.refresh(bounds);
+  groundCollision.rebuild();aircraftCollision.rebuild();navigate.refresh(bounds);armorNavigate.refresh(bounds);
   world.civilianNavigate.refresh(bounds);civilianNavigationLookup.rebuild();civilianCrowdPlanner.invalidate();
 }
 
@@ -3272,7 +3273,7 @@ function updateVehicles(dt) {
         preferredUnitId: controlledSoldier(entities)?.unitId,
         canFire: Boolean(pilot) && (!eastAirSupport || encirclement.breakout?.stage === 'breakout') &&
           (!nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal' && !nanjingCampaign.outcome),
-        obstacles: world.obstacles, groundHeight: world.groundHeight,
+        obstacles: world.obstacles, collisionLookup: aircraftCollision, groundHeight: world.groundHeight,
         patrolCenter: nanjingCampaignMode ? objectives.find(point => point.id === (nanjingCampaign.dockActivated ? 'dock' : 'gate'))
           : eastAirSupport ? EAST_BREAKOUT : undefined,
         visible: (from, to) => (!sihangCampaignMode || !sihangSouthBank(to)) && hasLine(new THREE.Vector3(from.x, from.y, from.z),
@@ -3304,10 +3305,15 @@ function updateVehicles(dt) {
       if (position.y < 1.8 || colliding) { damageVehicle(transport, transport.health, 'crash', 'collision'); continue; }
     } else {
       transport.roll = 0;
-      transport.heading -= sideways * dt * .8;
-      const speed = TYPES.tank.speed * forward;
-      moveGround(position, -Math.sin(transport.heading) * speed * dt, -Math.cos(transport.heading) * speed * dt, 1.9,
+      const driving = advanceTankDriving(transport, forward, sideways, dt);
+      transport.heading -= driving.turn;
+      const beforeX = position.x, beforeZ = position.z;
+      moveGround(position, -Math.sin(transport.heading) * driving.distance, -Math.cos(transport.heading) * driving.distance, 1.9,
         movementObstacles(position.x, position.z, transport.id));
+      const traveled = Math.hypot(position.x - beforeX, position.z - beforeZ);
+      if (Math.abs(driving.distance) > .000001 && traveled < Math.abs(driving.distance) * .95)
+        transport.speed *= traveled / Math.abs(driving.distance);
+      transport.trackDistance += Math.sign(driving.distance) * traveled;
       position.y = world.groundHeight(position.x, position.z);
     }
     for (const seat of transport.seats) {
@@ -5468,7 +5474,7 @@ function updateSihangMission(dt) {
     if (sihangCampaign.outcome === 'demolished') {
       world.ruinWarehouse();
       camera.position.set(48, 1.7, 46); camera.lookAt(-4, 5, -25);
-      groundCollision.rebuild(); armorNavigate.reset();
+      groundCollision.rebuild(); aircraftCollision.rebuild(); armorNavigate.reset();
     }
     showOverlay(sihangCampaign.outcome === 'evacuated' ? 'victory' : 'defeat');
   }

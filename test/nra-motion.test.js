@@ -88,6 +88,34 @@ test('dead, prone and travelling soldiers do not start an upright stationary tur
   }
 });
 
+test('reversing a turn releases its original foot cycle before changing direction, without fake movement', () => {
+  for (const fps of [30, 60, 144]) {
+    const person = actor();
+    Object.assign(person, { health: 100, tactics: {}, stance: 'standing' });
+    for (let frame = 0; frame < fps; frame++) {
+      person.heading += 1.5 / fps;
+      advanceNraMotion(person, 1 / fps);
+    }
+    const previous = { ...person.nativeMotion.turn }, distance = person.nativeMotion.distance;
+    person.heading -= 1.5 / fps;
+    advanceNraMotion(person, 1 / fps);
+    assert.equal(person.nativeMotion.turn.direction, 1);
+    assert.ok(person.nativeMotion.turn.weight < previous.weight);
+    for (let frame = 0; frame < fps; frame++) {
+      const before = { ...person.nativeMotion.turn };
+      person.heading -= 1.5 / fps;
+      advanceNraMotion(person, 1 / fps);
+      if (before.direction !== person.nativeMotion.turn.direction) {
+        assert.ok(before.weight <= .05, 'the old planted-foot cycle must be released before it is mirrored');
+        assert.ok(person.nativeMotion.turn.angle <= 1.5 / fps + 1e-9);
+      }
+    }
+    assert.equal(person.nativeMotion.turn.direction, -1);
+    assert.ok(person.nativeMotion.turn.weight > .99);
+    assert.equal(person.nativeMotion.distance, distance);
+  }
+});
+
 test('stationary turning has bounded knee clearance without fake travel or altered bone lengths', () => {
   const person = actor();
   person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);

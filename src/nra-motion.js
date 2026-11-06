@@ -140,11 +140,15 @@ export function advanceNraMotion(actor, dt) {
   turn.heading = heading;
   const stepping = actor.health > 0 && actor.tactics && actor.locomotion.speed < .2 &&
     (actor.stance ?? 'standing') === 'standing' && Math.abs(angularStep) / dt > .12;
-  if (stepping) {
+  const direction = Math.sign(angularStep);
+  const reversingStep = stepping && turn.direction !== direction && turn.weight > .05;
+  if (stepping && !reversingStep) {
+    if (turn.direction !== direction) turn.angle = 0;
     turn.angle += Math.abs(angularStep);
-    turn.direction = Math.sign(angularStep);
+    turn.direction = direction;
   }
-  turn.weight += ((stepping ? 1 : 0) - turn.weight) * (1 - Math.exp(-dt / .08));
+  // Release the old support step before mirroring it; a direction change must not snap both planted feet.
+  turn.weight += ((stepping && !reversingStep ? 1 : 0) - turn.weight) * (1 - Math.exp(-dt / .08));
   if (turn.weight < .001) { turn.weight = 0; turn.angle = 0; }
   const beforeGait = motion.profile.footCycleGait ? nativeGaitParameters(motion) : null;
   motion.distance += traveled;

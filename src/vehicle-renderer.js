@@ -2,6 +2,7 @@ import { tankModel, planeModel } from './world.js';
 import { chiHaModel, animateChiHa } from './chi-ha-model.js';
 import { CHI_HA } from './chi-ha.js';
 import { InstancedMesh, InstancedBufferAttribute, Matrix4 } from 'three';
+import { animateVickersTracks } from './vehicle-model.js';
 
 export function createVehicleRenderer(scene) {
   const views = new Map(), wreckMaterials = new Map(), wreckBatches = new Map();
@@ -99,7 +100,8 @@ export function createVehicleRenderer(scene) {
         if (!views.has(vehicle.id)) {
           const model = vehicle.variant === CHI_HA.id ? chiHaModel() : vehicle.type === 'tank' ? tankModel() : planeModel(vehicle.team);
           model.traverse(object => { if (object.isMesh) object.userData.vehicleId = vehicle.id; });
-          views.set(vehicle.id, { model, type: vehicle.type, variant: vehicle.variant, team: vehicle.team });
+          views.set(vehicle.id, { model, type: vehicle.type, variant: vehicle.variant, team: vehicle.team,
+            initialHeading: vehicle.heading });
           scene.add(model);
         }
         const view = views.get(vehicle.id);
@@ -114,6 +116,8 @@ export function createVehicleRenderer(scene) {
         if (vehicle.type === 'tank') {
           view.model.userData.turret.rotation.y = vehicle.turretYaw - vehicle.heading;
           view.model.userData.gun.rotation.x = vehicle.turretPitch;
+          if (vehicle.variant === null)
+            animateVickersTracks(view.model, vehicle.trackDistance, vehicle.heading - view.initialHeading);
         } else if (vehicle.health > 0) view.model.userData.propeller.rotation.z = time * 95;
         if (vehicle.variant === CHI_HA.id && !view.charred) {
           if (!vehicle.machineGuns?.every(gun => Number.isFinite(gun.yaw) && Number.isFinite(gun.pitch))) {

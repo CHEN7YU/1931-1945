@@ -6,6 +6,37 @@ import { advanceAITurn } from '../src/ai-turning.js';
 import { circleBlocked, createNavigator, moveGround, segmentClear } from '../src/core.js';
 
 const person = (id, x, z, heading = 0) => ({ id: `person-${id}`, health: 100, position: { x, y: 0, z }, heading, tactics: { id } });
+test('oncoming narrow-door traffic gives one member a stable right of way while the other actually backs out', () => {
+  const priority = person(1, 0, 0), yielding = person(2, 0, -1.2, Math.PI);
+  priority.intent = { x: 0, z: -1 }; yielding.intent = { x: 0, z: 1 };
+  const options = { spacing: 1.2, constrained: true, dt: .05, now: 1,
+    blocked: point => Math.abs(point.x) > .1 };
+  const waiting = infantrySteering(priority, [yielding], { x: 0, z: -1 }, options);
+  const retreat = infantrySteering(yielding, [priority], { x: 0, z: 1 }, options);
+  assert.equal(waiting.speed, 0);
+  assert.equal(priority.tactics.traffic.reason, 'wait-for-oncoming-yield');
+  assert.ok(retreat.speed > 0 && retreat.z < 0);
+  yielding.position.z = -1.7;
+  assert.equal(infantrySteering(priority, [yielding], { x: 0, z: -1 }, options).speed, 1);
+  assert.equal(priority.tactics.traffic.reason, 'right-of-way');
+});
+
+test('a right-of-way wait cannot suppress the existing bounded escape attempts indefinitely', () => {
+  const actor = person(1, 0, 0), other = person(2, 0, -1.2, Math.PI);
+  other.intent = { x: 0, z: 1 };
+  const options = { spacing: 1.2, constrained: true, dt: .05, now: 1, blocked: () => false };
+  for (let step = 0; step < 31; step++) infantrySteering(actor, [other], { x: 0, z: -1 }, options);
+  assert.notEqual(actor.tactics.traffic.reason, 'wait-for-oncoming-yield');
+});
+
+test('a stationary guard merely facing the corridor does not receive oncoming movement priority', () => {
+  const actor = person(1, 0, 0), guard = person(2, 0, -1.2, Math.PI);
+  const result = infantrySteering(actor, [guard], { x: 0, z: -1 }, {
+    spacing: 1.2, constrained: true, dt: .05, now: 1, blocked: () => false,
+  });
+  assert.ok(result.speed > 0);
+  assert.notEqual(actor.tactics.traffic.reason, 'wait-for-oncoming-yield');
+});
 test('short authored stair nodes do not inspect terrain beyond their actual destination', () => {
   const actor = person(1, 0, 0);
   const blocked = point => point.z < -.3;

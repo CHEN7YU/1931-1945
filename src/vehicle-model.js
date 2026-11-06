@@ -26,6 +26,42 @@ const materials = {
 };
 const templates = new Map();
 const decalTessellation = new TessellateModifier(.12, 6);
+const treadFrame = new THREE.Object3D();
+const TRACK_RADIUS = .48, TRACK_HALF = 1.9, TRACK_Y = .54, TRACK_COUNT = 80;
+export const VICKERS_TRACK_LENGTH = TRACK_HALF * 4 + Math.PI * TRACK_RADIUS * 2;
+
+export function vickersTrackPose(travel) {
+  if (!Number.isFinite(travel)) throw new RangeError('Track travel must be finite');
+  let distance = ((travel % VICKERS_TRACK_LENGTH) + VICKERS_TRACK_LENGTH) % VICKERS_TRACK_LENGTH;
+  const straight = TRACK_HALF * 2;
+  if (distance < straight) return { z: -TRACK_HALF + distance, y: TRACK_Y + TRACK_RADIUS, angle: 0 };
+  distance -= straight;
+  if (distance < Math.PI * TRACK_RADIUS) {
+    const angle = distance / TRACK_RADIUS;
+    return { z: TRACK_HALF + Math.sin(angle) * TRACK_RADIUS, y: TRACK_Y + Math.cos(angle) * TRACK_RADIUS, angle };
+  }
+  distance -= Math.PI * TRACK_RADIUS;
+  if (distance < straight) return { z: TRACK_HALF - distance, y: TRACK_Y - TRACK_RADIUS, angle: Math.PI };
+  const angle = Math.PI + (distance - straight) / TRACK_RADIUS;
+  return { z: -TRACK_HALF + Math.sin(angle) * TRACK_RADIUS, y: TRACK_Y + Math.cos(angle) * TRACK_RADIUS, angle };
+}
+
+export function animateVickersTracks(model, distance, turn) {
+  if (![distance, turn].every(Number.isFinite)) throw new RangeError('Tank tracks require owned finite travel and turn');
+  if (model.userData.trackDistance === distance && model.userData.trackTurn === turn) return;
+  for (const side of [-1, 1]) {
+    const track = model.getObjectByName(`vickers-track-${side}`);
+    if (!track?.isInstancedMesh) throw new Error('Vickers track instances are missing');
+    for (let index = 0; index < TRACK_COUNT; index++) {
+      const pose = vickersTrackPose(index * VICKERS_TRACK_LENGTH / TRACK_COUNT - distance - side * turn * 1.025);
+      treadFrame.position.set(side * 1.025, pose.y, pose.z);
+      treadFrame.rotation.set(pose.angle, 0, 0); treadFrame.updateMatrix();
+      track.setMatrixAt(index, treadFrame.matrix);
+    }
+    track.instanceMatrix.needsUpdate = true;
+  }
+  model.userData.trackDistance = distance; model.userData.trackTurn = turn;
+}
 
 function mesh(parent, geometry, material, position = [0, 0, 0], scale = [1, 1, 1]) {
   const object = new THREE.Mesh(geometry, material);
@@ -129,19 +165,13 @@ function track(parent, side) {
   const beltMesh = mesh(parent, belt, materials.dark, [x - .15, 0, 0]);
   beltMesh.rotation.y = Math.PI / 2;
   const straight = half * 2, circumference = straight * 2 + Math.PI * radius * 2;
-  for (let i = 0; i < 80; i++) {
-    let distance = i * circumference / 80, z, y, angle;
-    if (distance < straight) { z = -half + distance; y = centerY + radius; angle = 0; }
-    else if ((distance -= straight) < Math.PI * radius) {
-      angle = distance / radius; z = half + Math.sin(angle) * radius; y = centerY + Math.cos(angle) * radius;
-    } else if ((distance -= Math.PI * radius) < straight) {
-      z = half - distance; y = centerY - radius; angle = Math.PI;
-    } else {
-      angle = Math.PI + (distance - straight) / radius;
-      z = -half + Math.sin(angle) * radius; y = centerY + Math.cos(angle) * radius;
-    }
-    const shoe = block(parent, materials.steel, [x, y, z], [.32, .055, .115]);
-    shoe.rotation.x = angle;
+  const shoes = new THREE.InstancedMesh(new THREE.BoxGeometry(.32, .055, .115), materials.steel, TRACK_COUNT);
+  shoes.name = `vickers-track-${side}`; shoes.castShadow = shoes.receiveShadow = true;
+  shoes.boundingSphere = new THREE.Sphere(new THREE.Vector3(x, centerY, 0), 2.6);
+  for (let i = 0; i < TRACK_COUNT; i++) {
+    const pose = vickersTrackPose(i * circumference / TRACK_COUNT);
+    treadFrame.position.set(x, pose.y, pose.z); treadFrame.rotation.set(pose.angle, 0, 0); treadFrame.updateMatrix();
+    shoes.setMatrixAt(i, treadFrame.matrix);
   }
   for (const z of [-1.94, 1.94]) {
     wheel(parent, x, centerY, z, .39, .21, materials.olive);
@@ -160,11 +190,12 @@ function track(parent, side) {
       block(parent, materials.steel, [x + side * .12, .68 + spring * .025, bogie], [.07, .018, .66 - spring * .1]);
   }
   for (const z of [-1.25, 0, 1.25]) wheel(parent, x, .86, z, .11, .23, materials.olive);
+  return shoes;
 }
 
 function tankTemplate() {
   const hull = new THREE.Group(), turret = new THREE.Group(), gun = new THREE.Group();
-  for (const side of [-1, 1]) track(hull, side);
+  const tracks = [-1, 1].map(side => track(hull, side));
   block(hull, materials.olive, [0, .88, 0], [1.73, .67, 4.25]);
   block(hull, materials.olive, [0, 1.22, -.35], [1.68, .47, 2.5]);
   block(hull, materials.olive, [0, 1.18, 1.36], [1.7, .15, 1.34]);
@@ -207,6 +238,7 @@ function tankTemplate() {
   mesh(gun, disk, materials.dark, [-.08, 0, -1.122], [.027, .027, 1]).rotation.y = Math.PI;
   tube(gun, materials.steel, [TANK_GUN_MOUNT.coax[0], TANK_GUN_MOUNT.coax[1], -.08], TANK_GUN_MOUNT.coax, .025);
   batch(hull); batch(turret); batch(gun);
+  hull.add(...tracks);
   turret.name = 'turret'; turret.position.fromArray(TANK_GUN_MOUNT.turret);
   gun.name = 'gun'; gun.position.fromArray(TANK_GUN_MOUNT.pivot);
   const coax = new THREE.Object3D(); coax.name = 'coax-muzzle'; coax.position.fromArray(TANK_GUN_MOUNT.coax); gun.add(coax);

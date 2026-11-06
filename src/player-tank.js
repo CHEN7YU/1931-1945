@@ -1,8 +1,39 @@
-import { shotState } from './core.js';
+import { shotState, TYPES } from './core.js';
 import { headingError } from './ai-turning.js';
 
 export const TANK_MACHINE_GUN = Object.freeze({ magazine: 100, reload: 4, interval: .1,
   damage: 35, range: 120, spread: .006 });
+
+export const TANK_DRIVING = Object.freeze({ acceleration: 1.6, reverseAcceleration: 1.2,
+  braking: 3.2, reverseSpeed: 2.4, turnRate: .6 });
+
+export function advanceTankDriving(vehicle, forward, turn, dt) {
+  if (vehicle?.type !== 'tank' || vehicle.variant !== null ||
+    ![vehicle.speed, vehicle.health, forward, turn, dt].every(Number.isFinite) ||
+    dt < 0 || Math.abs(forward) > 1 || Math.abs(turn) > 1)
+    throw new RangeError('Tank driving requires its owned finite speed and bounded controls');
+  if (!dt) return { distance: 0, turn: 0, speed: vehicle.speed };
+  if (vehicle.health <= 0) { vehicle.speed = 0; return { distance: 0, turn: 0, speed: 0 }; }
+  const target = forward * (forward < 0 ? TANK_DRIVING.reverseSpeed : TYPES.tank.speed);
+  let remaining = dt, distance = 0;
+  // Reverse first brakes to zero, then accelerates; integrate both intervals rather than switching signs instantly.
+  for (let phase = 0; phase < 2 && remaining > 0; phase++) {
+    const start = vehicle.speed;
+    const opposite = start * target < 0, goal = opposite ? 0 : target;
+    const slowing = opposite || Math.abs(goal) < Math.abs(start);
+    const acceleration = slowing ? TANK_DRIVING.braking :
+      goal < 0 ? TANK_DRIVING.reverseAcceleration : TANK_DRIVING.acceleration;
+    const sign = Math.sign(goal - start);
+    const duration = Math.min(remaining, Math.abs(goal - start) / acceleration);
+    distance += start * duration + sign * acceleration * duration * duration / 2;
+    vehicle.speed = start + sign * acceleration * duration;
+    remaining -= duration;
+    if (Math.abs(vehicle.speed - goal) < 1e-10) vehicle.speed = goal;
+    if (!opposite) { distance += vehicle.speed * remaining; remaining = 0; }
+  }
+  return { distance, speed: vehicle.speed,
+    turn: turn * TANK_DRIVING.turnRate * dt / (1 + Math.abs(vehicle.speed) * .07) };
+}
 
 export const TANK_GUN_MOUNT = Object.freeze({
   turret: Object.freeze([-.3, 1.36, -.38]), pivot: Object.freeze([0, .37, -.62]),

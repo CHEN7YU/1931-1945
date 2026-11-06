@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceAircraftAI, AIRCRAFT_TURN, AIRCRAFT_AVOIDANCE } from '../src/aircraft-ai.js';
+import { advanceAircraftAI, AIRCRAFT_TURN, AIRCRAFT_AVOIDANCE, createAircraftObstacleLookup } from '../src/aircraft-ai.js';
 import { historicalVehicleModel, JAPANESE_AIRCRAFT_PROFILE } from '../src/vehicle-model.js';
 import { Scene, Vector3 } from 'three';
 import { createVehicleRenderer } from '../src/vehicle-renderer.js';
@@ -10,6 +10,47 @@ const plane = () => ({ team: 'enemy', health: 180, position: { x: 0, y: 35, z: -
   heading: Math.PI, pitch: -.2, roll: 0, weapon: { type: 'plane', ammo: 60, nextShot: 0, reloadUntil: 0 },
   aiFlight: { phase: 'approach', until: 0, targetId: null, nextSense: 0 } });
 const target = { id: 'friendly', team: 'friendly', health: 100, position: { x: 0, y: 0, z: 0 } };
+
+test('indexed aircraft sweeps preserve the full obstacle scan, target, ammo and avoidance state', () => {
+  const obstacles = Array.from({ length: 1500 }, (_, index) => ({
+    minX: index % 50 * 4 - 100, maxX: index % 50 * 4 - 99,
+    minZ: Math.floor(index / 50) * 7 - 105, maxZ: Math.floor(index / 50) * 7 - 102,
+    height: 8 + index % 30,
+  }));
+  const lookup = createAircraftObstacleLookup(obstacles);
+  for (let index = 0; index < 80; index++) {
+    const original = plane();
+    Object.assign(original.position, { x: index % 10 * 15 - 75, y: 8 + index % 45, z: -90 + index });
+    original.heading = index * .37; original.pitch = -.5 + index % 10 * .08;
+    const indexed = structuredClone(original);
+    for (let step = 1; step <= 12; step++) {
+      const context = { targets: [target], canFire: true, visible: () => true, obstacles };
+      const oldShot = advanceAircraftAI(original, .05, step * .05, context);
+      const newShot = advanceAircraftAI(indexed, .05, step * .05, { ...context, collisionLookup: lookup });
+      assert.deepEqual(newShot, oldShot);
+      assert.deepEqual(indexed, original);
+    }
+  }
+});
+
+test('aircraft midpoint broad phase includes wing-edge contacts and rebuilds moved geometry', () => {
+  const wing = { minX: 4, maxX: 9, minZ: -65, maxZ: -50, height: 34 };
+  const distant = Array.from({ length: 500 }, (_, index) => ({
+    minX: 500 + index * 3, maxX: 502 + index * 3, minZ: 500, maxZ: 510, height: 50,
+  }));
+  const lookup = createAircraftObstacleLookup([wing, ...distant]);
+  const candidates = lookup.at({ x: 0, z: -65 }, { x: 0, z: -60.2 });
+  assert.ok(candidates.includes(wing)); assert.ok(candidates.length < 10);
+  const aircraft = plane();
+  advanceAircraftAI(aircraft, .05, .05, {
+    targets: [target], canFire: true, visible: () => true, collisionLookup: lookup,
+  });
+  assert.equal(aircraft.aiFlight.avoidance.reason, 'building');
+  wing.minX = 100; wing.maxX = 110; lookup.rebuild();
+  assert.ok(!lookup.at({ x: 0, z: -65 }, { x: 0, z: -60.2 }).includes(wing));
+  wing.height = NaN;
+  assert.throws(() => lookup.rebuild(), /finite ordered geometry/);
+});
 
 test('ordinary military-only battles retain a visible target instead of switching every sensing tick',()=>{
   const aircraft=plane(),retained={...target,id:'retained',position:{x:30,y:0,z:0}};
