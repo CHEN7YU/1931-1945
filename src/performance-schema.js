@@ -11,6 +11,36 @@ export const PERFORMANCE_LOADING_STAGES = Object.freeze([
   'scene-materials', 'friendly-model', 'friendly-poses', 'enemy-model', 'enemy-poses',
   'friendly-rendering', 'enemy-rendering', 'ready',
 ]);
+export const RUNTIME_ERROR_CODES = Object.freeze(['native-gait-reach', 'equipment-view-metadata', 'unclassified-runtime']);
+
+export function sanitizedRuntimeError(error, { recovered, stage, position = null, side = null, team = null } = {}) {
+  if (!(error instanceof Error) || typeof recovered !== 'boolean') throw new TypeError('Runtime logging requires an Error and recovery status');
+  const code = error.code === 'equipment-view-metadata' ? 'equipment-view-metadata'
+    : error.name === 'NativeGaitReachError' ? 'native-gait-reach'
+    : error instanceof TypeError && /reading '(bolt|rifle)'/.test(error.message) ? 'equipment-view-metadata' : 'unclassified-runtime';
+  const frames = [...(error.stack ?? '').matchAll(/([A-Za-z0-9_.-]+\.js:\d+(?::\d+)?)/g)]
+    .map(match => match[1]).slice(0, 4);
+  const coordinate = Array.isArray(position) && position.length === 3 &&
+    position.every(value => Number.isFinite(value) && Math.abs(value) <= 10000)
+    ? position.map(value => Math.round(value * 10) / 10) : null;
+  return { code, name: ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError'].includes(error.name) ? error.name : 'Error',
+    recovered, stage: ['native-gait', 'battle', 'initialization'].includes(stage) ? stage : 'battle',
+    side: ['Left', 'Right'].includes(side) ? side : null,
+    team: ['friendly', 'enemy'].includes(team) ? team : null,
+    position: coordinate, frames, count: 1 };
+}
+
+function runtimeErrors(value) {
+  return Array.isArray(value) && value.length <= 8 && value.every(entry =>
+    keys(entry, ['code', 'name', 'recovered', 'stage', 'side', 'team', 'position', 'frames', 'count']) &&
+    RUNTIME_ERROR_CODES.includes(entry.code) && ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError'].includes(entry.name) &&
+    typeof entry.recovered === 'boolean' && ['native-gait', 'battle', 'initialization'].includes(entry.stage) &&
+    [null, 'Left', 'Right'].includes(entry.side) && [null, 'friendly', 'enemy'].includes(entry.team) &&
+    (entry.position === null || Array.isArray(entry.position) && entry.position.length === 3 &&
+      entry.position.every(number => Number.isFinite(number) && Math.abs(number) <= 10000)) &&
+    integer(entry.count, 10000) && entry.count > 0 && Array.isArray(entry.frames) && entry.frames.length <= 4 &&
+    entry.frames.every(frame => typeof frame === 'string' && frame.length <= 90 && /^[A-Za-z0-9_.-]+\.js:\d+(?::\d+)?$/.test(frame)));
+}
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) => object(value) && Object.keys(value).every(key => names.includes(key));
@@ -65,7 +95,7 @@ export function validatePerformanceBatch(value) {
   const sequences = new Set();
   for (const window of value.windows) {
     if (!keys(window, ['sequence', 'durationMs', 'reason', 'frames', 'frameMs', 'maxFrameMs', 'longFrames',
-      'scopes', 'context', 'slowFrames', 'errors']) ||
+      'scopes', 'context', 'slowFrames', 'errors', 'runtimeErrors']) ||
       !integer(window.sequence, 1e6) || sequences.has(window.sequence) || !number(window.durationMs, 120000) ||
       !['interval', 'hidden', 'pagehide', 'pause', 'ended', 'manual'].includes(window.reason) ||
       !integer(window.frames, 100000) || !Array.isArray(window.frameMs) || window.frameMs.length !== FRAME_BUCKETS_MS.length ||
@@ -73,8 +103,9 @@ export function validatePerformanceBatch(value) {
       window.frameMs.reduce((sum, count) => sum + count, 0) !== window.frames ||
       !number(window.maxFrameMs, 60000) || !integer(window.longFrames, window.frames) ||
       !context(window.context) || !scopes(window.scopes) ||
-      !keys(window.errors, ['error', 'unhandledrejection', 'webglcontextlost']) ||
+      !keys(window.errors, ['error', 'unhandledrejection', 'webglcontextlost', 'pose-recovered']) ||
       !Object.values(window.errors).every(count => integer(count, 10000)) ||
+      window.runtimeErrors !== undefined && !runtimeErrors(window.runtimeErrors) ||
       !Array.isArray(window.slowFrames) || window.slowFrames.length > 3 ||
       !window.slowFrames.every(frame => keys(frame, ['frameMs', 'callbackMs', 'scopes']) &&
         number(frame.frameMs, 60000) && number(frame.callbackMs, 60000) && scopes(frame.scopes))) return 'Invalid performance window';

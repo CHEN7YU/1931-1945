@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { addSupportGrip } from './support-weapon-pose.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { dischargerShellDirection } from './grenade-discharger.js';
 
 const steel = new THREE.MeshStandardMaterial({ color: 0x394034, roughness: .84, metalness: .45 });
 const bore = new THREE.MeshStandardMaterial({ color: 0x111611, roughness: .95 });
@@ -9,6 +11,38 @@ const stemGeometry = new THREE.CylinderGeometry(.018, .02, .23, 8);
 const plateGeometry = new THREE.BoxGeometry(.16, .024, .11);
 const baseGeometry = new THREE.CircleGeometry(.029, 10);
 const controlGeometry = new THREE.CylinderGeometry(.015, .015, .07, 8);
+const shellPaint = new THREE.MeshStandardMaterial({ color: 0x222720, roughness: .75, metalness: .45 });
+const shellFuze = new THREE.MeshStandardMaterial({ color: 0x827351, roughness: .65, metalness: .6 });
+const shellBand = new THREE.MeshStandardMaterial({ color: 0x887135, roughness: .85, metalness: .15 });
+const shellRed = new THREE.MeshStandardMaterial({ color: 0x75352b, roughness: .85 });
+const shellShape = new THREE.LatheGeometry([new THREE.Vector2(0, -.070), new THREE.Vector2(.023, -.070),
+  new THREE.Vector2(.025, -.056), new THREE.Vector2(.025, .019), new THREE.Vector2(.022, .035),
+  new THREE.Vector2(.014, .052), new THREE.Vector2(.011, .056), new THREE.Vector2(0, .056)], 12);
+const shellFuzeGeometry = new THREE.CylinderGeometry(.008, .011, .018, 8).translate(0, .065, 0);
+const shellBaseGeometry = new THREE.CylinderGeometry(.025, .025, .008, 12).translate(0, -.060, 0);
+const shellMetalGeometry = mergeGeometries([shellFuzeGeometry, shellBaseGeometry]);
+shellFuzeGeometry.dispose(); shellBaseGeometry.dispose();
+const shellBandGeometry = new THREE.CylinderGeometry(.0252, .0252, .008, 12, 1, true).translate(0, -.008, 0);
+const shellRedGeometry = new THREE.CylinderGeometry(.0222, .024, .006, 12, 1, true).translate(0, .031, 0);
+const shellAxis = new THREE.Vector3(0, 1, 0), shellFlight = new THREE.Vector3();
+
+export function createGrenadeDischargerShellModel() {
+  const model = new THREE.Group(); model.name = 'type89-he-shell';
+  for (const [geometry, material] of [[shellShape, shellPaint], [shellMetalGeometry, shellFuze],
+    [shellBandGeometry, shellBand], [shellRedGeometry, shellRed]]) model.add(new THREE.Mesh(geometry, material));
+  model.userData.ammunition = { type: 'type89-50mm-he', diameter: .05, length: .144,
+    provenance: 'Original geometry; 1943 Intelligence Bulletin black enamel, red nose band, yellow body band and copper rotating band',
+    historicalDimensionsVerified: false };
+  return model;
+}
+
+export function updateGrenadeDischargerShellModel(model, shell) {
+  const vector = dischargerShellDirection(shell);
+  shellFlight.set(vector.x, vector.y, vector.z);
+  model.position.copy(shell.position);
+  model.quaternion.setFromUnitVectors(shellAxis, shellFlight);
+  model.rotateY(shell.elapsed * 24);
+}
 
 export function createGrenadeDischargerModel() {
   const group = new THREE.Group(), barrel = new THREE.Group();

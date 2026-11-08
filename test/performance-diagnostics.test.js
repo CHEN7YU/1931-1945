@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPerformanceDiagnostics, performanceEnvironment } from '../src/performance-diagnostics.js';
-import { validatePerformanceBatch, FRAME_BUCKETS_MS, histogramPercentile } from '../src/performance-schema.js';
+import { validatePerformanceBatch, FRAME_BUCKETS_MS, histogramPercentile, sanitizedRuntimeError } from '../src/performance-schema.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 function fixture(send) {
@@ -28,6 +28,33 @@ function fixture(send) {
       diagnostics.finishFrame(context.state);
     } };
 }
+
+test('recoverable errors reach the opt-in private diagnostic batch as bounded anonymous signatures, not raw stacks or messages', async () => {
+  const f = fixture(), error = new Error('private-player-name and secret credential must not be sent');
+  error.name = 'NativeGaitReachError';
+  error.stack = 'NativeGaitReachError\n at sample (https://game.test/assets/nra-gait-abc.js:12:34)\n at hidden (https://game.test/file.js?token=secret:1:2)';
+  const details = { recovered: true, stage: 'native-gait', side: 'Left', team: 'enemy',
+    position: [-14.292, 0, 27.4401] };
+  f.diagnostics.runtimeError(error, details); f.diagnostics.flush();
+  assert.equal(f.sent.length, 0, 'no upload without existing diagnostic opt-in');
+  f.diagnostics.setEnabled(true);
+  for (let i = 0; i < 3; i++) f.diagnostics.runtimeError(error, details);
+  f.diagnostics.error('pose-recovered'); f.diagnostics.flush();
+  await settle();
+  const batch = f.sent[0];
+  assert.equal(validatePerformanceBatch(batch), null);
+  const item = batch.windows[0].runtimeErrors[0];
+  assert.equal(item.count, 3); assert.equal(item.code, 'native-gait-reach');
+  assert.deepEqual(item.position, [-14.3, 0, 27.4]);
+  assert.deepEqual(item.frames, ['nra-gait-abc.js:12:34']);
+  assert.equal(batch.windows[0].errors['pose-recovered'], 1);
+  const text = JSON.stringify(batch);
+  assert.ok(!text.includes('private-player-name') && !text.includes('secret') && !text.includes('https://game.test'));
+  const sanitized = sanitizedRuntimeError(new TypeError("Cannot read properties of undefined (reading 'bolt')"),
+    { recovered: false, stage: 'battle' });
+  assert.equal(sanitized.code, 'equipment-view-metadata');
+  f.diagnostics.setEnabled(false);
+});
 test('opt-in startup markers upload before combat context exists, use bounded stages and contain no battle samples', async () => {
   const f = fixture();
   const context = { map: 'nanjing', quality: 'high', stage: 'friendly-model' };

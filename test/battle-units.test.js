@@ -9,7 +9,8 @@ test('the first infantry member is an explicitly labelled mortar soldier with a 
   assert.deepEqual(loadout, { role: 'mortarman', model: 'rifle' });
   assert.equal(soldierRoleLabel(loadout), '迫击炮手');
   assert.equal(infantryLoadout('friendly', 1).role, 'engineer');
-  assert.equal(infantryLoadout('friendly', 4).role, 'assault');
+  assert.equal(infantryLoadout('friendly', 2).role, 'assault');
+  assert.equal(infantryLoadout('friendly', 4).role, 'rifleman');
   assert.equal(infantryLoadout('friendly', 9).role, 'sniper');
   assert.equal(infantryLoadout('friendly', 10).role, 'machine-gunner');
 });

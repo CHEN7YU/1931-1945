@@ -7,9 +7,18 @@ import { infantryLoadout } from '../src/battle-roster.js';
 import { submachineGunModel } from '../src/submachine-gun-model.js';
 import { attackCategory } from '../src/battle-stats.js';
 import { SOLDIER_ROLE_PATHS } from '../src/soldier-role-icons.js';
+import { isNativeOfficer } from '../src/officer-appearance.js';
 
 test('one original Chinese rifle slot becomes an assault weapon without replacing engineer, sniper, machine gun or unarmed demolition slots', () => {
-  assert.deepEqual(infantryLoadout('friendly', 4), { role: 'assault', model: 'sigm1920' });
+  assert.deepEqual(infantryLoadout('friendly', 2), { role: 'assault', model: 'sigm1920' });
+  assert.deepEqual(infantryLoadout('friendly', 4), { role: 'rifleman', model: 'rifle' });
+  assert.equal(isNativeOfficer({ team: 'friendly', index: 2, formation: { memberCount: 11 } }), true);
+  for (const memberCount of [11, 14, 19, 22]) {
+    const formation = { type: 'infantry', memberCount };
+    const loadouts = Array.from({ length: memberCount }, (_, index) => infantryLoadout('friendly', index, 'infantry', formation));
+    assert.equal(loadouts.filter(loadout => loadout.model === 'sigm1920').length, 1);
+    assert.ok(isNativeOfficer({ team: 'friendly', index: loadouts.findIndex(loadout => loadout.model === 'sigm1920'), formation }));
+  }
   assert.equal(infantryLoadout('friendly', 1).role, 'engineer');
   assert.equal(infantryLoadout('friendly', 9).role, 'sniper');
   assert.equal(infantryLoadout('friendly', 10).role, 'machine-gunner');

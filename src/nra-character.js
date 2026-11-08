@@ -9,7 +9,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator, nraAppearanceResourceBudget } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeRestStance, applyNativeUpperBody } from './nra-gait.js';
+import { createNativeGaitProfile, createNativeGaitProjection, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
@@ -42,7 +42,7 @@ export function attachNraHelmet(head, helmet, texture, settings) {
   return helmet;
 }
 
-export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudget = null } = {}) {
+export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudget = null, onPoseRecovery = null } = {}) {
   const base = '/assets/game/nra-88/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Character manifest: HTTP ${response.status}`);
@@ -157,11 +157,12 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
     observedActor?.health <= 0 && observedActor.tactics?.corpseFerry
       ? observedActor.position.y : walkHeightAt(x, z, referenceY);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
+  const projectGait = createNativeGaitProjection(root, canonical, restFeet, groundAt, onPoseRecovery);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
   let actorId = null, active = 'idle', speed = 0, motion = null, resets = 0;
-  let observedActor = null, legPose = null, casualtyPose = null;
+  let observedActor = null, legPose = null, restStance = null, casualtyPose = null;
   for (const action of Object.values(actions)) { action.play(); action.paused = true; }
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
@@ -214,9 +215,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
       root.updateMatrixWorld(true);
       const ferrySupport = actor.tactics?.nanjingFerry;
-      if (actor.health > 0) applyNativeRestStance(root, canonical, motion, restFeet, groundAt);
-      legPose = applyNativeFootCycle(root, canonical, motion, restFeet,
-        ferrySupport && ['boarding', 'aboard'].includes(ferrySupport.phase) ? () => actor.position.y : groundAt);
+      ({ legPose, restStance } = projectGait(actor, motion,
+        ferrySupport && ['boarding', 'aboard'].includes(ferrySupport.phase) ? () => actor.position.y : groundAt));
       applyNativeUpperBody(root, canonical, motion);
       syncWorldWeapon(gun, actor.rifle);
       const engineering = nativeEngineerPresentation(actor);
@@ -239,7 +239,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
         firingPose: observedActor ? ownedFiringPose(observedActor) : null,
         gait: motion ? { source: 'native-foot-cycle', style: motion.travelStyle, runStride: motion.runStride,
           walkStride: motion.walkStride, runContact: motion.runContact, legLift: motion.legLift, strideScale: observedActor.nativeMotion.strideScale,
-          bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose } : null,
+          bodyLean: motion.bodyLean, runLean: observedActor.nativeMotion.runLean, fireLean: observedActor.nativeMotion.fireLean, legPose, restStance } : null,
         hips: point('Hips'), head: point('Head'), headTop: point('HeadTop_End'), leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
         leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'), rightToes: point('RightToeBase'),
         rightHand: point('RightHand'), leftHand: point('LeftHand'), riflePose: riflePose.snapshot,

@@ -8,7 +8,7 @@ import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer, createNraForceRendererAsync } from './nra-force-renderer.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeRestStance, applyNativeUpperBody } from './nra-gait.js';
+import { createNativeGaitProfile, createNativeGaitProjection, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
@@ -21,7 +21,7 @@ import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './n
 import { engineerAssemblyTools } from './engineer.js';
 import { createSupportWeaponPose } from './support-weapon-pose.js';
 
-export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudget = null } = {}) {
+export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudget = null, onPoseRecovery = null } = {}) {
   const base = '/assets/game/ija-1938/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Japanese character manifest: HTTP ${response.status}`);
@@ -83,13 +83,14 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
     const supportPose = createSupportWeaponPose(root, bones);
     const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
+    const projectGait = createNativeGaitProjection(root, bones, restFeet, groundAt, onPoseRecovery);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
     const actions = { idle: mixer.clipAction(clips.get('idle')),
       ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, mixer.clipAction(value.clip)])) };
     for (const action of Object.values(actions)) { action.play(); action.paused = true; }
-    let actorId = null, actor = null, active = 'idle', motion = null, legPose = null, casualtyPose = null;
+    let actorId = null, actor = null, active = 'idle', motion = null, legPose = null, restStance = null, casualtyPose = null;
     root.visible = false;
     return {
       root, motionProfile, createView, sihangShieldPoses: true, officerAppearance: true, supportWeaponPoses: true,
@@ -136,8 +137,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         for (const joint of animated) { joint.rotation.copy(joint.bone.quaternion); joint.position.copy(joint.bone.position); }
         root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
         root.updateMatrixWorld(true);
-        if (actor.health > 0) applyNativeRestStance(root, bones, motion, restFeet, groundAt);
-        legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundAt);
+        ({ legPose, restStance } = projectGait(actor, motion));
         applyNativeUpperBody(root, bones, motion);
         syncWorldWeapon(gun, actor.rifle);
         const engineering = nativeEngineerPresentation(actor);
@@ -161,7 +161,8 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
           rifleFlag: flag.visible, bayonet: gun.getObjectByName('fixed-bayonet').visible, proportions: source.proportions,
           animationSources: Object.values(actions).map(action => action.getClip().name),
           gait: motion ? { source: 'native-foot-cycle', style: motion.travelStyle, runStride: motion.runStride,
-            walkStride: motion.walkStride, runContact: motion.runContact, weight: motion.weight, speed: motion.speed, bodyLean: motion.bodyLean, legPose } : null,
+            walkStride: motion.walkStride, runContact: motion.runContact, weight: motion.weight, speed: motion.speed,
+            bodyLean: motion.bodyLean, legPose, restStance } : null,
           position: root.position.toArray(), head: point('Head'), headTop: point('HeadTop_End'), hips: point('Hips'),
           leftKnee: point('LeftLeg'), rightKnee: point('RightLeg'),
           leftFoot: point('LeftFoot'), rightFoot: point('RightFoot'),

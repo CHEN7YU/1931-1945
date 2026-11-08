@@ -27,6 +27,15 @@ function follow(start, goal, route = world.elevatedPath(start, goal)) {
     const dx = (waypoint.x - feet.x) / steps, dz = (waypoint.z - feet.z) / steps;
     for (let i = 0; i < steps; i++) {
       const oldY = feet.y;
+      const door = world.doorSystem.openAhead(feet, waypoint);
+      if (door) {
+        for (let frame = 0; frame < 60; frame++)
+          world.doorSystem.update(1 / 60, [{ x: feet.x, y: feet.y, z: feet.z, radius: .42 }]);
+        assert.equal(door.state, 'open', 'the route waits until the real leaf clears its sweep');
+        const updated = follow({ x: feet.x, y: feet.y, z: feet.z }, goal);
+        updated.heights = new Set([...heights, ...updated.heights]);
+        return updated;
+      }
       world.moveInfantry(feet, dx, dz, .42);
       assert.ok(Math.abs(feet.y - oldY) <= .26, 'No teleport or unsupported vertical jump');
       assert.equal(world.isDeepWater(feet.x, feet.z), false, 'Route never wades through the river');
@@ -209,13 +218,17 @@ describe('independent Sihang Warehouse battlefield', () => {
     for (const y of SIHANG_LEVELS.slice(0, 3).map(y => y + 1.65))
       assert.ok(horizontalHits(-35, y, -46, [0, 0, 1], 6).length, 'Strong uninterrupted masonry corners');
     const holes = world.landmarks.warehouse.breaches;
-    assert.equal(holes.filter(h => h.blown).length, 3, 'Only selected panels have shell breaches');
+    assert.equal(holes.filter(h => h.blown).length, 7, 'Only selected panels have shell breaches');
+    const gate = world.doorSystem.doors.find(door => door.groupId === 'sihang-warehouse-north-gate');
+    assert.equal(gate.state, 'closed');
+    world.doorSystem.interact(gate, { x: -20, z: -45 });
+    for (let frame = 0; frame < 60; frame++) world.doorSystem.update(1 / 60, []);
     for (const hole of holes) {
       const west = hole.x === W.minX, east = hole.x === W.maxX;
       const direction = hole.axis === 'z' ? [west ? 1 : -1, 0, 0] : [0, 0, hole.z === W.minZ ? 1 : -1];
       const startX = hole.axis === 'z' ? hole.x + (west ? -2 : 2) : hole.x;
       const startZ = hole.axis === 'x' ? hole.z + (hole.z === W.minZ ? -2 : 2) : hole.z;
-      assert.equal(horizontalHits(startX, hole.y, startZ, direction, 3).length, 0, `Real aperture ${hole.id}`);
+      assert.equal(horizontalHits(startX, hole.y, startZ, direction, 2.5).length, 0, `Real facade aperture ${hole.id}`);
       assert.equal(east || west || hole.axis === 'x', true);
     }
     for (const x of [W.minX, W.maxX]) for (const z of [-41, -9])
@@ -395,14 +408,21 @@ describe('independent Sihang Warehouse battlefield', () => {
       close(walkThroughPier().z, before.z, 'Restored pier blocks movement again');
       const breach = new THREE.Vector3(-20, 0, -46);
       resetWorld.moveInfantry(breach, 0, 8, .42);
-      close(breach.z, -38, 'Reset does not seal genuine wall openings');
+      assert.ok(breach.z < -42.4, 'Reset closes the new actual gate while keeping its architectural opening');
+      const gate = resetWorld.doorSystem.doors.find(door => door.groupId === 'sihang-warehouse-north-gate');
+      resetWorld.doorSystem.interact(gate, { x: -20, z: -46 });
+      for (let frame = 0; frame < 60; frame++) resetWorld.doorSystem.update(1 / 60, []);
+      const opened = new THREE.Vector3(-20, 0, -46);
+      resetWorld.moveInfantry(opened, 0, 8, .42);
+      close(opened.z, -38, 'Opening the gate restores the original doorway passage');
     }
   });
 
   it('bounds static geometry and render submissions and stays within the playable map', () => {
     assert.ok(world.staticRendering.sources > 1000, 'Detailed original shell and city geometry');
     assert.ok(world.staticRendering.batches < 200, 'Static geometry is batched, not one draw per brick');
-    assert.ok(world.staticRendering.triangles < 25000);
+    assert.ok(world.staticRendering.triangles < 29000,
+      'Bounded expanded neighborhood, seven shell holes and 120 first-floor sandbags');
     let drawCalls = 0;
     scene.traverseVisible(object => { if (object.isMesh) drawCalls++; });
     assert.ok(drawCalls < 250, `Bounded draw count: ${drawCalls}`);
@@ -440,6 +460,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.ok(world.sceneArt.city.vegetationTriangles < 4000);
     assert.equal(world.sceneArt.city.signDrawCalls, 1);
     assert.ok(world.sceneArt.city.trees >= 14);
-    assert.equal(world.town.fortifications.length, 2);
+    assert.ok(world.town.fortifications.length >= 8);
+    assert.equal(world.town.fortifications.filter(point => point.id.startsWith('warehouse-ground-sandbags')).length, 6);
   });
 });

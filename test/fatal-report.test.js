@@ -38,6 +38,19 @@ test('fatal report retains exact build, original error and minimal context witho
   assert.throws(() => makeFatalReport({ kind: 'ignored' }), RangeError);
 });
 
+test('a recorded local pose recovery does not activate the fatal overlay or stop combat, and is grouped rather than spammed', t => {
+  const f = fixture(), warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const error = new Error('Native resting foot is unreachable: Left'); error.name = 'NativeGaitReachError';
+  for (let i = 0; i < 20; i++) f.reporter.recordRecovery(error, { stage: 'native-gait', details: { side: 'Left' } });
+  assert.equal(f.stopped, 0); assert.equal(f.reporter.failed, false);
+  assert.equal(f.nodes.get('fatal').hidden, true);
+  assert.equal(f.reporter.recoveries.length, 1); assert.equal(f.reporter.recoveries[0].count, 20);
+  assert.equal(warnings.length, 1);
+  const copy = f.reporter.recoveries; copy[0].count = 0;
+  assert.equal(f.reporter.recoveries[0].count, 20);
+});
+
 test('startup failures keep their first diagnostic when the rethrow arrives globally', () => {
   const f = fixture();
   const error = new Error('material missing');

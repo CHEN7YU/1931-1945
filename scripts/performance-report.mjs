@@ -6,12 +6,12 @@ const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
   const name = process.argv[index], value = process.argv[index + 1];
   if (!['--mode', '--since', '--until', '--build', '--map', '--session', '--out'].includes(name) || !value) {
-    throw new Error('Use --mode summary|export [--since ISO --until ISO --build SHA --map ID --session UUID --out FILE]');
+    throw new Error('Use --mode summary|export|errors [--since ISO --until ISO --build SHA --map ID --session UUID --out FILE]');
   }
   args.set(name.slice(2), value);
 }
 const mode = args.get('mode') ?? 'summary';
-if (!['summary', 'export'].includes(mode)) throw new Error('Mode must be summary or export');
+if (!['summary', 'export', 'errors'].includes(mode)) throw new Error('Mode must be summary, export or errors');
 const tokenFromWindows = () => execFileSync('python', ['-c', `
 import base64, ctypes, json, os
 from pathlib import Path
@@ -61,6 +61,37 @@ if (mode === 'summary') {
   const result = await get('/api/performance/summary');
   if (args.has('out')) await writeFile(resolve(args.get('out')), JSON.stringify(result, null, 2), { flag: 'wx' });
   console.log(JSON.stringify(result, null, 2));
+} else if (mode === 'errors') {
+  const status = await get('/api/performance/status');
+  if (status.runtimeErrorDetails !== true)
+    throw new Error('Detailed runtime-error collection is not deployed yet; an empty report would not prove there are no errors.');
+  const groups = new Map();
+  let after = 0, reports = 0, complete = false;
+  for (let page = 0; page < 200; page++) {
+    params.set('after', String(after)); params.set('limit', '50');
+    const result = await get('/api/performance');
+    if (!Number.isInteger(result.nextCursor) || result.nextCursor < after ||
+      result.hasMore && result.nextCursor === after) throw new Error('Non-advancing runtime-error cursor');
+    for (const item of result.items) {
+      reports++;
+      for (const window of item.batch.windows) for (const error of window.runtimeErrors ?? []) {
+        const key = [item.batch.build.commit, window.context.map, error.code, error.recovered,
+          error.side, error.team, ...error.frames].join(':');
+        if (!groups.has(key)) groups.set(key, { build: item.batch.build.commit, map: window.context.map,
+          ...error, count: 0, firstSeen: item.createdAt, lastSeen: item.createdAt });
+        const group = groups.get(key);
+        group.count += error.count; group.lastSeen = item.createdAt; group.position = error.position;
+      }
+    }
+    after = result.nextCursor;
+    if (!result.hasMore) { complete = true; break; }
+  }
+  if (!complete) throw new Error('Runtime error export page bound reached; refusing an incomplete weekly report');
+  const report = { complete, reports, since: params.get('since'), until: params.get('until'),
+    groups: [...groups.values()].sort((a, b) => b.count - a.count),
+    privacy: 'Private administrator read; sanitized codes/source-frame locations only. No nicknames, contacts, credentials or raw error messages.' };
+  if (args.has('out')) await writeFile(resolve(args.get('out')), JSON.stringify(report, null, 2), { flag: 'wx' });
+  console.log(JSON.stringify(report, null, 2));
 } else {
   if (!args.has('out')) throw new Error('Export requires --out for a new private JSONL output file');
   const path = resolve(args.get('out')), file = await open(path, 'wx');

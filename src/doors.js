@@ -5,26 +5,32 @@ export function makeDoors(town) {
     const building = town.buildings.find(item => passage.id.startsWith(`${item.id}-`));
     const initialAngle = passage.openAngle ?? (passage.id === 'west-0-east-door' || passage.id === 'courtyard-shop-east-door'
       ? 0 : passage.axis === 'z' && building ? Math.sign(building.x - passage.x) * Math.PI / 2 : Math.PI / 2);
-    return { ...passage, height: building ? 2.42 : passage.height - .05, initialAngle, angle: initialAngle, targetAngle: initialAngle,
+    const height = passage.leafHeight ?? (building ? 2.42 : passage.height - .05);
+    const hingeDirection = passage.hingeDirection ?? 1, thickness = passage.thickness ?? .13;
+    if (!Number.isFinite(height) || height <= 0 || ![-1, 1].includes(hingeDirection) ||
+      !Number.isFinite(thickness) || thickness <= 0) throw new Error('Invalid authored door dimensions or hinge side');
+    return { ...passage, height, hingeDirection, thickness, initialAngle, angle: initialAngle, targetAngle: initialAngle,
       state: initialAngle ? 'open' : 'closed', blocked: false, revision: 0 };
   });
 }
 
 export function doorCollider(door, angle = door.angle) {
   const along = door.width / 2;
-  const hx = door.axis === 'x' ? along : .065, hz = door.axis === 'z' ? along : .065;
-  const hingeX = door.x - (door.axis === 'x' ? along : 0);
-  const hingeZ = door.z - (door.axis === 'z' ? along : 0);
+  const sign = door.hingeDirection ?? 1, halfThickness = (door.thickness ?? .13) / 2;
+  const hx = door.axis === 'x' ? along : halfThickness, hz = door.axis === 'z' ? along : halfThickness;
+  const hingeX = door.x - (door.axis === 'x' ? sign * along : 0);
+  const hingeZ = door.z - (door.axis === 'z' ? sign * along : 0);
   const c = Math.cos(angle), s = Math.sin(angle);
-  const cx = hingeX + (door.axis === 'x' ? along * c : along * s);
-  const cz = hingeZ + (door.axis === 'x' ? -along * s : along * c);
+  const cx = hingeX + sign * (door.axis === 'x' ? along * c : along * s);
+  const cz = hingeZ + sign * (door.axis === 'x' ? -along * s : along * c);
   const ex = Math.abs(c) * hx + Math.abs(s) * hz, ez = Math.abs(s) * hx + Math.abs(c) * hz;
   return { id: door.id, door: true, angle, cos: c, sin: s, cx, cz, hx, hz, height: door.height,
     minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez };
 }
 
 function awayAngle(door, actor) {
-  return door.axis === 'z' ? (actor.x >= door.x ? -1 : 1) * Math.PI / 2 : (actor.z >= door.z ? 1 : -1) * Math.PI / 2;
+  return (door.hingeDirection ?? 1) * (door.axis === 'z' ? (actor.x >= door.x ? -1 : 1) * Math.PI / 2
+    : (actor.z >= door.z ? 1 : -1) * Math.PI / 2);
 }
 
 export function requestDoor(door, actor, openOnly = false) {

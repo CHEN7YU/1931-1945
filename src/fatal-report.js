@@ -28,9 +28,10 @@ export function makeFatalReport({ kind, error, stage, build, context, occurredAt
   return { ...failureCopy[kind], message, text: JSON.stringify(details, null, 2) };
 }
 
-export function createFatalReporter({ document, window, build, getContext, onFatal }) {
+export function createFatalReporter({ document, window, build, getContext, onFatal, onRecorded = () => {} }) {
   const element = id => document.getElementById(id);
   let ready = false, report = null;
+  const recovered = [];
   function show(error, { kind = ready ? 'runtime' : 'loading', stage = ready ? 'battle' : 'initialization' } = {}) {
     if (report) return report;
     report = makeFatalReport({ kind, error, stage, build, context: getContext() });
@@ -41,6 +42,7 @@ export function createFatalReporter({ document, window, build, getContext, onFat
     element('loading').hidden = true;
     element('fatal').hidden = false;
     onFatal();
+    onRecorded(error, { recovered: false, stage: ready ? 'battle' : 'initialization', position: getContext()?.position ?? null });
     return report;
   }
   window.addEventListener('error', event => show(event.error ?? event.message));
@@ -63,5 +65,25 @@ export function createFatalReporter({ document, window, build, getContext, onFat
       element('fatal-copy-status').textContent = `自动复制失败：${error.message}。已选中诊断信息，请按 Ctrl+C 手动复制。`;
     }
   });
-  return { show, ready() { ready = true; }, get failed() { return Boolean(report); } };
+  return {
+    show, ready() { ready = true; }, get failed() { return Boolean(report); },
+    recordRecovery(error, context) {
+      if (!(error instanceof Error)) throw new TypeError('Recovered failure requires an Error');
+      const key = `${error.name}:${context.stage}:${context.details?.side ?? ''}`;
+      const now = Date.now(), existing = recovered.find(entry => entry.key === key);
+      if (existing) {
+        existing.count++; existing.occurredAt = new Date(now).toISOString(); existing.context = context;
+        if (now - existing.loggedAt >= 30000) {
+          console.warn('Recovered character pose error; battle continues', error, context);
+          existing.loggedAt = now;
+        }
+      } else {
+        if (recovered.length >= 32) recovered.shift();
+        recovered.push({ key, count: 1, loggedAt: now, occurredAt: new Date(now).toISOString(), build,
+          context, error: { name: error.name, message: error.message, stack: error.stack } });
+        console.warn('Recovered character pose error; battle continues', error, context);
+      }
+    },
+    get recoveries() { return recovered.map(({ loggedAt, ...entry }) => structuredClone(entry)); },
+  };
 }

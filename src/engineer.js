@@ -98,7 +98,7 @@ export function engineerAssemblyTools() {
   hammer.rotation.x = -Math.PI / 2;
   const brace = new THREE.Mesh(new THREE.BoxGeometry(.055, .06, .10), toolWood);
   brace.position.fromArray(RIFLE_CONTACTS.supportPalm); brace.position.y += .03;
-  tools.add(hammer, brace); tools.userData.personalWeapon = true;
+  tools.add(hammer, brace); tools.userData.personalWeapon = true; tools.userData.engineeringTool = true;
   tools.name = 'engineer-assembly-tools';
   return tools;
 }

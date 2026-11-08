@@ -40,6 +40,15 @@ try {
         actor.nativeMotion = createNraMotion(template.motionProfile, actor);
         if (stance !== 'standing') actor.nativeMotion.posture[stance] = 1;
         view.bind(actor.id); scene.add(view.root);
+        if (stance === 'standing') {
+          view.update(actor, 0, null);
+          for (const [angle, position] of [['front', [0, 1.65, -.8]], ['side', [.8, 1.65, -.1]]]) {
+            camera.position.fromArray(position); camera.lookAt(0, 1.68, 0);
+            renderer.render(scene, camera);
+            images.push({ name: `${team}-officer-cap-${angle}.png`, data: renderer.domElement.toDataURL() });
+          }
+          camera.position.set(3, 1.5, -3); camera.lookAt(0, .9, 0);
+        }
         let totalTravel = 0, maximumJump = 0, jumpFrame = null, last = null, maximumLift = 0;
         const stages = new Set(), lengths = new Map();
         for (let frame = 0; frame < 240; frame++) {

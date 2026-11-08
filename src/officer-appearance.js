@@ -25,6 +25,10 @@ export const OFFICER_COLORS = Object.freeze({
   friendly: Object.freeze(['#52533d', '#62462f', '#20211e', '#a99565', '#786746', '#e1ded2', '#123d79', '#625e46']),
   enemy: Object.freeze(['#7d6d50', '#493b2b', '#3e3226', '#b8a06a', '#8c2926', '#e1ded2', '#b8a06a', '#948265']),
 });
+export const OFFICER_CAP_FIT = Object.freeze({
+  friendly: Object.freeze({ crownOffset: -.024, radialScale: 1.08 }),
+  enemy: Object.freeze({ crownOffset: -.018, radialScale: 1.04 }),
+});
 const colors = OFFICER_COLORS;
 
 export function nativeOfficerHandWeights(mesh) {
@@ -276,15 +280,17 @@ export function createOfficerAppearance(root, bones, meshes, team) {
       }
       box([width * .75, .003, .006], [x, y, z - .001], bone, 3, null, detail);
     };
-    const capY = crown.y + .008, capZ = crown.z + .03, front = capZ - .074;
-    add(createOfficerCapCrown(team), [head.x, capY, capZ], 'Head', 0, null, 'rounded-cap-crown');
+    const fit = OFFICER_CAP_FIT[team], capY = crown.y + fit.crownOffset, capZ = crown.z + .03,
+      front = capZ - .074 * fit.radialScale;
+    const capGeometry = geometry => geometry.scale(fit.radialScale, 1, fit.radialScale);
+    add(capGeometry(createOfficerCapCrown(team)), [head.x, capY, capZ], 'Head', 0, null, 'rounded-cap-crown');
     const band = new THREE.CylinderGeometry(.0855, .0855, team === 'enemy' ? .014 : .006, 20, 1, true);
     band.scale(team === 'enemy' ? 1 : 1.06, 1, team === 'enemy' ? 1.13 : 1.08);
-    add(band, [head.x, capY - .024, capZ], 'Head', team === 'enemy' ? 4 : 7, null, 'cap-band');
-    add(createOfficerVisorGeometry(team), [head.x, capY - .031, capZ], 'Head', 2, null, 'curved-visor');
+    add(capGeometry(band), [head.x, capY - .024, capZ], 'Head', team === 'enemy' ? 4 : 7, null, 'cap-band');
+    add(capGeometry(createOfficerVisorGeometry(team)), [head.x, capY - .031, capZ], 'Head', 2, null, 'curved-visor');
     const seam = new THREE.CylinderGeometry(.086, .086, .0015, 20, 1, true);
     seam.scale(team === 'enemy' ? 1 : 1.06, 1, team === 'enemy' ? 1.13 : 1.08);
-    add(seam, [head.x, capY - .017, capZ], 'Head', 7, null, 'crown-seam');
+    add(capGeometry(seam), [head.x, capY - .017, capZ], 'Head', 7, null, 'crown-seam');
     const badge = new THREE.Shape(), rays = team === 'friendly' ? 24 : 10;
     for (let i = 0; i < rays; i++) {
       const angle = i / rays * Math.PI * 2 + Math.PI / 2, radius = i % 2 ? .006 : .014;
@@ -369,6 +375,7 @@ export function createOfficerAppearance(root, bones, meshes, team) {
     get snapshot() {
       return { officer: enabled, slotPolicy: 'original-index', team, helmetReplaced: enabled,
         badge: team === 'friendly' ? 'ROC-white-sun' : 'gold-star-red-band',
+        capFit: { ...OFFICER_CAP_FIT[team] },
         decorativeSword: enabled && team === 'enemy', triangles: mesh.geometry.attributes.position.count / 3,
         submissions: enabled ? 1 : 0, sharedAccessoryGeometries: accessories.size,
         sharedAccessoryMaterials: palettes.size, paletteBytes: colors[team].length * 32 * 32 * 4,

@@ -8,10 +8,13 @@ import { createCombatEvents } from '../src/combat-events.js';
 import { attackSourceLabel } from '../src/combat-feedback.js';
 import { createBattleStats } from '../src/battle-stats.js';
 import { createRifleState, infantryWeaponProfile } from '../src/rifle-action.js';
-import { createGrenadeDischargerModel } from '../src/grenade-discharger-model.js';
+import { createGrenadeDischargerModel, createGrenadeDischargerShellModel,
+  updateGrenadeDischargerShellModel } from '../src/grenade-discharger-model.js';
+import * as THREE from 'three';
 import { GRENADE_DISCHARGER as RULES, createGrenadeDischarger, stowGrenadeDischarger,
   dischargerTargetAllowed, dischargerPriority, selectDischargerTargets,
-  createDischargerShell, dischargerTrajectoryClear, loadDischargerRound, advanceDischargerShell } from '../src/grenade-discharger.js';
+  createDischargerShell, dischargerTrajectoryClear, loadDischargerRound, advanceDischargerShell,
+  dischargerAccuracy, dischargerShellDirection, dischargerAimTrajectory, dischargerTrajectoryImpact } from '../src/grenade-discharger.js';
 
 const soldier = (id, x, z, extra = {}) => ({ id, team: 'friendly', health: 100,
   targetKind: 'person', position: { x, y: 0, z }, ...extra });
@@ -160,8 +163,88 @@ test('native integration uses actual collision/explosion, rifle fallback, owners
   assert.match(source, /if \(operateAIDischarger\(actor, dt\)\) continue/);
   assert.match(source, /dischargerQueryBudget = 2/);
   assert.match(source, /advanceDischargerShell\(shell, dt, \(from, to\) => traceDischargerSegment\(from, to, shell\)\)/);
-  assert.match(source, /dischargerTrajectoryClear\(shell, traceDischargerSegment\)/);
+  assert.match(source, /dischargerTrajectoryClear\(aimShell, traceDischargerSegment\)/);
   assert.match(source, /weapon\.rejected = 'target-occluded'; stowGrenadeDischarger\(weapon\); return false/);
   assert.match(source, /function finishActorDeath\(actor, source\)[\s\S]*?clearActorDischarger\(actor\)/);
   assert.match(source, /entities\.weapons\.delete\(actor\.discharger\.id\)/);
+});
+
+test('defined aiming probability means a real landing within three metres, not a random damage exemption', () => {
+  const { source } = ownedShell(), target = { x: 15, y: .035, z: 70 }, start = { x: 0, y: .5, z: -50 };
+  let seed = 1937, close = 0;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let shot = 0; shot < 20000; shot++) {
+    const shell = createDischargerShell({ id: `shell-${shot}`, source, start, target, firedAt: 0, accuracy: .25, random });
+    const error = Math.hypot(shell.target.x - target.x, shell.target.z - target.z);
+    if (shell.aim.closeAim) {
+      close++; assert.ok(error >= .75 - 1e-8 && error <= 3 + 1e-8);
+    } else assert.ok(error >= 8 - 1e-8 && error <= 18 + 1e-8);
+    assert.equal(shell.damage, RULES.damage); assert.equal(shell.radius, RULES.radius);
+    assert.deepEqual(shell.aim.intended, target);
+  }
+  assert.ok(Math.abs(close / 20000 - .25) < .01, `Measured landing probability ${close / 20000}`);
+});
+
+test('miss dispersion may strike an obstruction without being resampled into a perfect shot, while intended aim still requires clear trajectory', () => {
+  const { shell } = ownedShell();
+  assert.equal(shell.aim.closeAim, false);
+  const original = JSON.stringify(shell);
+  const aim = dischargerAimTrajectory(shell);
+  assert.deepEqual(aim.target, shell.aim.intended);
+  assert.equal(dischargerTrajectoryClear(aim, () => null), true);
+  const blocked = { x: -2, y: 5, z: 12 };
+  assert.deepEqual(dischargerTrajectoryImpact(shell, () => blocked).position, blocked);
+  assert.equal(dischargerTrajectoryClear(aim, () => blocked), false, 'an actually blocked intended shot is not authorized');
+  assert.equal(JSON.stringify(shell), original, 'planning cannot mutate or reroll the original miss');
+});
+
+test('long range, moving targets and suppressed operators reduce close-landing probability without rerolling aim during flight', () => {
+  const actor = operator();
+  actor.tactics = { suppressedUntil: 0 };
+  const target = soldier('target', 0, 50, { locomotion: { speed: 0 } });
+  assert.ok(Math.abs(dischargerAccuracy(actor, target, 0) - .24375) < 1e-9);
+  const stationary = dischargerAccuracy(actor, target, 0);
+  target.locomotion.speed = 2.7;
+  assert.equal(dischargerAccuracy(actor, target, 0), stationary * .5);
+  actor.tactics.suppressedUntil = 1;
+  assert.equal(dischargerAccuracy(actor, target, 0), stationary * .5 * .6);
+  assert.equal(dischargerAccuracy(actor, target, 1), stationary * .5);
+  const { shell } = ownedShell(), frozen = { ...shell.target };
+  target.position.x += 20;
+  advanceDischargerShell(shell, .1, () => null);
+  assert.deepEqual(shell.target, frozen, 'movement cannot steer an already fired projectile');
+  assert.throws(() => dischargerAccuracy(actor, target, NaN), RangeError);
+  assert.throws(() => createDischargerShell({ accuracy: NaN }), RangeError);
+  assert.throws(() => createDischargerShell({ random: () => 1 }), RangeError);
+});
+
+test('Type 89 HE shell is a reusable 50mm elongated non-emissive model, with fuze and narrow markings, not a yellow ball', () => {
+  const models = Array.from({ length: 16 }, createGrenadeDischargerShellModel), first = models[0];
+  const geometries = new Set(), materials = new Set();
+  for (const model of models) {
+    assert.equal(model.name, 'type89-he-shell');
+    model.traverse(node => {
+      if (!node.isMesh) return;
+      assert.notEqual(node.geometry.type, 'SphereGeometry');
+      assert.equal(node.material.emissive.getHex(), 0);
+      geometries.add(node.geometry); materials.add(node.material);
+    });
+  }
+  assert.equal(geometries.size, 4); assert.equal(materials.size, 4);
+  const bounds = new THREE.Box3().setFromObject(first), size = bounds.getSize(new THREE.Vector3());
+  assert.ok(Math.abs(size.x - .05) < .001 && Math.abs(size.y - .144) < .001);
+  const { shell } = ownedShell();
+  for (const phase of [0, .5, 1]) {
+    shell.elapsed = shell.duration * phase;
+    updateGrenadeDischargerShellModel(first, shell);
+    const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(first.quaternion);
+    const expected = dischargerShellDirection(shell);
+    assert.ok(forward.distanceTo(new THREE.Vector3(expected.x, expected.y, expected.z)) < 1e-9);
+    const paused = first.quaternion.clone();
+    updateGrenadeDischargerShellModel(first, shell);
+    assert.ok(paused.angleTo(first.quaternion) < 1e-7, 'paused spin cannot accumulate');
+    assert.deepEqual(first.position.toArray(), [shell.position.x, shell.position.y, shell.position.z]);
+  }
+  shell.elapsed = 0; assert.ok(dischargerShellDirection(shell).y > 0);
+  shell.elapsed = shell.duration; assert.ok(dischargerShellDirection(shell).y < 0);
 });

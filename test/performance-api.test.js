@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import worker from '../worker/feedback.js';
-import { FRAME_BUCKETS_MS } from '../src/performance-schema.js';
+import { FRAME_BUCKETS_MS, sanitizedRuntimeError } from '../src/performance-schema.js';
 
 function fixture() {
   const sqlite = new DatabaseSync(':memory:');
   for (const name of ['0001_feedback.sql', '0002_performance.sql']) {
     sqlite.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
   }
+
   const db = { prepare(sql) {
     return { async first() { return sqlite.prepare(sql).get() ?? null; }, bind(...values) { return {
       async first() { return sqlite.prepare(sql).get(...values) ?? null; },
@@ -37,6 +38,20 @@ function fixture() {
   const get = path => new Request(`https://game.test${path}`, { headers: { Authorization: `Bearer ${token}` } });
   return { sqlite, env, batch, post, get };
 }
+test('sanitized runtime errors persist in the existing private database and are readable only with administrator authorization', async () => {
+  const f = fixture();
+  try {
+    const body = f.batch(), error = new Error('not stored');
+    error.name = 'NativeGaitReachError'; error.stack = 'at draw (https://game.test/assets/nra-gait.js:1:88)';
+    body.windows[0].runtimeErrors = [sanitizedRuntimeError(error, { recovered: true, stage: 'native-gait', side: 'Left', team: 'enemy' })];
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    assert.equal((await worker.fetch(new Request('https://game.test/api/performance'), f.env)).status, 401);
+    const stored = await (await worker.fetch(f.get('/api/performance'), f.env)).json();
+    assert.deepEqual(stored.items[0].batch.windows[0].runtimeErrors, body.windows[0].runtimeErrors);
+    body.id = crypto.randomUUID(); body.windows[0].runtimeErrors[0].rawStack = 'private data';
+    assert.equal((await worker.fetch(f.post(body), f.env)).status, 400, 'server rejects raw sensitive fields');
+  } finally { f.sqlite.close(); }
+});
 test('loading breadcrumbs persist independently and never inflate battle FPS, CPU time or session counts', async () => {
   const f = fixture();
   try {

@@ -108,7 +108,7 @@ export const SIHANG_EVACUATION = Object.freeze({ x: 92, z: 4, radius: 12, southZ
 export const SIHANG_NORTH_WINDOWS = Object.freeze([-30, -22, -14, -6, 2, 10, 18, 25]);
 export const SIHANG_EAST_DEFENSE_WINDOWS = Object.freeze([-39, -36, -21, -18, -15, -12]);
 export const SIHANG_FIRING_POSTS = Object.freeze([
-  ...SIHANG_NORTH_WINDOWS.flatMap((x, window) => [-1.1, 1.1].map((offset, side) => ({
+  ...SIHANG_NORTH_WINDOWS.flatMap((x, window) => [-.8, .8].map((offset, side) => ({
     id: `north-firing-${window}-${side}`, x: x + offset, y: 8.4, z: -41,
     heading: 0, facade: 'north', apertureId: `north-defense-${x}`,
     sillY: SIHANG_WAREHOUSE.floorHeight + .8, setback: 1, aimProbe: Object.freeze({ x: x + offset, y: 1.2, z: -78 }),

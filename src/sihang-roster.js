@@ -49,6 +49,8 @@ export function sihangObjectives() {
 export const SIHANG_EMPLACEMENTS = Object.freeze([
   Object.freeze({ id: 'sihang-roof-aa', team: 'friendly', profile: 'maxim24aa',
     x: -14, z: -33, altitude: SIHANG_WAREHOUSE.roofY, heading: Math.PI }),
+  Object.freeze({ id: 'sihang-ground-entrance-mg', team: 'friendly', profile: 'maxim24',
+    x: -20, z: -39, altitude: 0, heading: 0 }),
   Object.freeze({ id: 'sihang-north-gate-west', team: 'friendly', profile: 'maxim24',
     x: -28, z: -47.5, altitude: 0, heading: 0 }),
   Object.freeze({ id: 'sihang-north-gate-east', team: 'friendly', profile: 'maxim24',
@@ -73,4 +75,24 @@ export function sihangRetreatGoal(actor) {
     return { ...sihangBridgePoint(1 + 4 / SIHANG_BRIDGE.length, lane), y: 0, transit: true };
   return { x: SIHANG_EVACUATION.x + lane, y: 0,
     z: SIHANG_EVACUATION.z + Math.floor(actor.index / 5) * 1.5, transit: true };
+}
+
+export function sihangPursuitGoal(actor) {
+  const position = actor.position, tactics = actor.tactics;
+  if (!tactics || ![position?.x, position?.y, position?.z, actor.index].every(Number.isFinite))
+    throw new Error('Sihang pursuit requires an original soldier and its finite position');
+  if (position.y >= -.2 && position.y < SIHANG_WAREHOUSE.floorHeight - .5 &&
+    position.x > SIHANG_WAREHOUSE.minX + 1 && position.x < SIHANG_WAREHOUSE.maxX - 1 &&
+    position.z > SIHANG_WAREHOUSE.minZ + 5 && position.z < SIHANG_WAREHOUSE.maxZ - 1)
+    tactics.sihangEnteredWarehouse = true;
+  if (!tactics.sihangEnteredWarehouse) {
+    tactics.sihangPursuit = 'enter-warehouse';
+    const east = (actor.formation?.index ?? 0) % 3 === 2;
+    return east ? { x: 25, y: 0, z: -14 + (actor.index % 3 - 1) * .7, transit: true }
+      : { x: -20 + (actor.index % 3 - 1) * 1.15, y: 0,
+        z: -35 + Math.floor(actor.index / 3) % 3 * .7, transit: true };
+  }
+  tactics.sihangPursuit = 'intercept-withdrawal';
+  return { x: SIHANG_BRIDGE.northX - 3 + (actor.index % 3 - 1) * 1.1, y: 0,
+    z: SIHANG_BRIDGE.northZ - 3 - Math.floor(actor.index / 3) % 3 * 1.1, transit: true };
 }

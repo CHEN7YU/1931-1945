@@ -1,5 +1,5 @@
 import { FRAME_BUCKETS_MS, PERFORMANCE_SCHEMA_VERSION, PERFORMANCE_SCOPES, PERFORMANCE_SCOPE_SAMPLE_EVERY,
-  PERFORMANCE_MAPS, PERFORMANCE_LOADING_STAGES } from './performance-schema.js';
+  PERFORMANCE_MAPS, PERFORMANCE_LOADING_STAGES, sanitizedRuntimeError } from './performance-schema.js';
 
 const STORAGE_KEY = 'shanhe.performance-diagnostics.v1';
 const activeStates = new Set(['playing', 'transferring', 'dead']);
@@ -26,6 +26,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
   let enabled = false, context = null, sessionStarted = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
   let frameScopes = emptyScopes(), frameStarted = 0, intervalMs = 0, queue = [], pending = null, controller = null;
   let recording = false;
+  let runtimeLimitWarned = false;
   let loadingStarted = null, loadingTimer = null;
   const scopeSerial = {};
   let lastSend = now(), saved = 0, dropped = 0, failures = 0, status = '未开启性能诊断', generation = 0;
@@ -42,7 +43,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
     if (!snapshot) return;
     current.durationMs = Math.max(0, Math.min(120000, current.durationMs));
     current.reason = reason; current.context = snapshot;
-    queue.push(current); current = null; started = now();
+    queue.push(current); current = null; started = now(); runtimeLimitWarned = false;
     if (queue.length > 12) { dropped += queue.shift().frames; warn('Performance diagnostics queue full; oldest unsent window dropped'); }
   }
   async function upload() {
@@ -168,8 +169,22 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
     },
     suspend(reason) { this.flush(reason); recording = false; },
     error(kind) {
-      if (enabled && ['error', 'unhandledrejection', 'webglcontextlost'].includes(kind)) {
+      if (enabled && ['error', 'unhandledrejection', 'webglcontextlost', 'pose-recovered'].includes(kind)) {
         const errors = window().errors; errors[kind] = Math.min(10000, (errors[kind] ?? 0) + 1);
+      }
+    },
+    runtimeError(error, details) {
+      if (!enabled) return;
+      const entry = sanitizedRuntimeError(error, details), item = window();
+      const entries = item.runtimeErrors ??= [];
+      const key = value => [value.code, value.name, value.recovered, value.stage, value.side, value.team, ...value.frames].join(':');
+      const existing = entries.find(value => key(value) === key(entry));
+      if (existing) {
+        existing.count = Math.min(10000, existing.count + 1); existing.position = entry.position;
+      } else if (entries.length < 8) entries.push(entry);
+      else if (!runtimeLimitWarned) {
+        runtimeLimitWarned = true;
+        warn('Runtime diagnostics signature limit reached; additional distinct errors were not retained');
       }
     },
     get enabled() { return enabled; },

@@ -19,7 +19,7 @@ export const CAMPAIGNS = Object.freeze([
     goals: Object.freeze(['进入A点粮栈夺取补给点，再合围A/B/C三点。',
       '合围后在C点布防20秒，阻击日军从东门突围。',
       '目标歼灭至少2/3、逃脱不超过1/3；全部地面残敌解决后结算。']) }),
-  Object.freeze({ id: 'shanghai', name: '淞沪会战', year: 1937, region: '上海', locked: true,
+  Object.freeze({ id: 'shanghai', name: '淞沪会战', year: 1937, region: '上海', locked: true, hidden: true,
     x: 85, y: 61, description: '战场设计待提交，当前不可进入。' }),
   Object.freeze({ id: 'sihang', name: '上海四行仓库', year: 1937, region: '上海',
     preview: SIHANG_PREVIEW, x: 86, y: 62,

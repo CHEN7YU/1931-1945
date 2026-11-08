@@ -2,6 +2,7 @@ import { TYPES, circleBlocked } from './core.js';
 import { SPAWN_RULES, spawnBlockReason, supportsSquad, groundSpawnCandidates } from './spawns.js';
 import { CHI_HA, japaneseArmorRoster } from './chi-ha.js';
 import { NANJING_SPAWNS } from './nanjing-campaign.js';
+import { officerSlot } from './officer-appearance.js';
 
 export const BATTLE_RULES = Object.freeze({ unitsPerTeam: 10, infantryMembers: TYPES.infantry.members, sectionMembers: 11, vehicleLimit: 2, respawnSeconds: 17, maxSpawnDistance: 20 });
 export const AIRCRAFT_SQUAD_SIZE = 3;
@@ -17,7 +18,9 @@ export function infantryLoadout(team, index, type = 'infantry', formation = null
   }
   if (team === 'friendly' && type === 'infantry' && index === 1)
     return { role: 'engineer', model: 'rifle' };
-  if (team === 'friendly' && type === 'infantry' && index === 4)
+  const officerIndex = officerSlot({ ...formation, type,
+    memberCount: formation?.memberCount ?? TYPES[type].members });
+  if (team === 'friendly' && type === 'infantry' && index === officerIndex)
     return { role: 'assault', model: 'sigm1920' };
   if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 10) {
     return { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' };

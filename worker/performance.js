@@ -122,7 +122,7 @@ export async function handlePerformance(request, env, authorized) {
   if (url.pathname === '/api/performance/status' && request.method === 'GET') {
     if (enabled && configured) await env.FEEDBACK_DB.prepare('SELECT sequence FROM performance_batches LIMIT 1').first();
     return json({ available: enabled && configured, schemaVersion: PERFORMANCE_SCHEMA_VERSION,
-      retentionDays, windowSeconds: 5, uploadSeconds: 30, maximumBodyBytes });
+      runtimeErrorDetails: true, retentionDays, windowSeconds: 5, uploadSeconds: 30, maximumBodyBytes });
   }
   if (!['/api/performance', '/api/performance/summary'].includes(url.pathname)) return json({ error: 'Not found' }, 404);
   if (request.method === 'GET') {

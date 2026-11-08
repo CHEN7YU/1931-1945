@@ -328,7 +328,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       const baked = [];
       let gunMatrix = null;
       bankTemplate.root.traverse(mesh => {
-        if (mesh.userData.personalWeapon) gunMatrix = mesh.matrixWorld.clone();
+        if (mesh.userData.personalWeapon && !mesh.userData.engineeringTool) gunMatrix = mesh.matrixWorld.clone();
       });
       const meshes = [];
       bankTemplate.root.traverseVisible(mesh => {
@@ -489,7 +489,6 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         bank.gunFrames[frame].decompose(gunPositionB, gunRotationB, gunScaleB);
         gunPositionA.lerp(gunPositionB, blend); gunRotationA.slerp(gunRotationB, blend); gunScaleA.lerp(gunScaleB, blend);
       }
-      if (bank.turnControl) bank.turnControl.morphTargetInfluences = turnWeights(pose, actor.nativeMotion.turn).slice(1);
       return gunBlend.compose(gunPositionA, gunRotationA, gunScaleA);
     }
     if (!bank.deathStance) return bank.gunMatrix;
@@ -737,6 +736,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             postureMorphControl.morphTargetInfluences[0] = Math.max(0, 1 - pose.prone - pose.kneeling - pose.crouched);
             postureMorphControl.morphTargetInfluences[1] = pose.kneeling + pose.crouched;
           }
+          if (bank.turnControl) bank.turnControl.morphTargetInfluences = turnWeights(pose, actor.nativeMotion.turn).slice(1);
           if (bank.rifleAction) rifleMorphControl.morphTargetInfluences = rifleHandWeights(operation).slice(1);
           if (bank.shieldWalk) shieldMorphControl.morphTargetInfluences = sihangShieldWalkWeights(
             profile.walk ? pose.walkTime / profile.walk.duration : phase, pose.weight);

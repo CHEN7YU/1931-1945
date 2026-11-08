@@ -34,6 +34,11 @@ export async function deployFromMenu(page) {
     await page.locator('#deploy').click();
     return;
   }
+  const automaticCampaign = ['sihang', 'nanjing'].includes(new URL(page.url()).searchParams.get('campaign'));
+  if (automaticCampaign && !await page.evaluate(() => Boolean(window.__battle))) {
+    await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep ||
+      !document.getElementById('fatal').hidden, null, { timeout: 180000 });
+  }
   if (await page.locator('#confirm-campaign').isVisible()) await page.locator('#confirm-campaign').click();
   await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep ||
     !document.getElementById('menu').hidden || !document.getElementById('fatal').hidden,

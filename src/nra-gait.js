@@ -1,5 +1,11 @@
 import { Vector3, Quaternion } from 'three';
 import { solveArm } from './nra-rifle-pose.js';
+
+export class NativeGaitReachError extends Error {
+  constructor(message, details) {
+    super(message); this.name = 'NativeGaitReachError'; this.details = details;
+  }
+}
 import { firingCarryPosition } from './rifle-contacts.js';
 import { applyHeadAim } from './head-aim.js';
 
@@ -123,8 +129,8 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     }
 
     const solved = solveArm(upper, knee, foot, target, new Vector3(0, 0, -1).applyQuaternion(facing));
-    if (!solved.reachable || solved.error > .01) throw new Error(`Native low-step foot is unreachable: ${side}, ` +
-      `target=${target.toArray()}, origin=${origin.toArray()}, reach=${reach}, error=${solved.error}`);
+    if (!solved.reachable || solved.error > .01) throw new NativeGaitReachError(`Native low-step foot is unreachable: ${side}`, {
+      side, target: target.toArray(), origin: origin.toArray(), reach, error: solved.error });
     upper.quaternion.copy(upperBefore.slerp(upper.quaternion, weight));
     knee.quaternion.copy(kneeBefore.slerp(knee.quaternion, weight));
     upper.updateMatrixWorld(true);
@@ -145,19 +151,34 @@ export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
   if (motion.upright < .99 || motion.weight > .001 || (motion.turn?.weight ?? 0) > .001) return;
   const facing = root.getWorldQuaternion(new Quaternion()), forward = new Vector3(0, 0, -1).applyQuaternion(facing);
   const centerZ = (restFeet.Left.z + restFeet.Right.z) / 2;
+  const result = { kind: 'native-resting-stance', limited: false, feet: {} };
   for (const side of ['Left', 'Right']) {
     const upper = bones.get(`${side}UpLeg`), knee = bones.get(`${side}Leg`), foot = bones.get(`${side}Foot`);
     const sign = side === 'Left' ? -1 : 1;
     const target = root.localToWorld(new Vector3(sign * .125, 0, centerZ + sign * .025));
     target.y = groundAt(target.x, target.z) + restFeet[side].y;
+    const requested = target.clone();
     const origin = upper.getWorldPosition(new Vector3()), bend = knee.getWorldPosition(new Vector3()),
       source = foot.getWorldPosition(new Vector3());
-    const reach = origin.distanceTo(bend) + bend.distanceTo(source) - 1e-5;
+    const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);
+    const reach = upperLength + lowerLength - 1e-5, minimum = Math.abs(upperLength - lowerLength) + 1e-5;
     const horizontal = Math.hypot(target.x - origin.x, target.z - origin.z);
     target.y = Math.max(target.y, origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal)));
+    if (origin.distanceTo(target) < minimum) {
+      const outward = new Vector3(target.x - origin.x, 0, target.z - origin.z);
+      if (outward.lengthSq() < 1e-10) outward.set(sign, 0, .2).applyQuaternion(facing);
+      outward.normalize().multiplyScalar(Math.sqrt(Math.max(0, minimum * minimum - (target.y - origin.y) ** 2)));
+      target.x = origin.x + outward.x; target.z = origin.z + outward.z;
+    }
+    const displacement = target.clone().sub(origin);
+    if (displacement.length() > reach) target.copy(origin).add(displacement.clampLength(minimum, reach));
     const previousRotation = foot.getWorldQuaternion(new Quaternion());
     const solved = solveArm(upper, knee, foot, target, new Vector3(sign * .08, 0, -1).applyQuaternion(facing));
-    if (!solved.reachable || solved.error > .01) throw new Error(`Native resting foot is unreachable: ${side}, ${solved.error}`);
+    if (!solved.reachable || solved.error > .01) throw new NativeGaitReachError(`Native resting foot is unreachable: ${side}`, {
+      side, requested: requested.toArray(), target: target.toArray(), error: solved.error });
+    const adjustment = requested.distanceTo(target);
+    result.limited ||= adjustment > .001;
+    result.feet[side.toLowerCase()] = { requested: requested.toArray(), target: target.toArray(), adjustment, error: solved.error };
     foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert().multiply(previousRotation));
     foot.updateMatrixWorld(true);
     const toe = bones.get(`${side}ToeBase`);
@@ -171,4 +192,33 @@ export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
       }
     }
   }
+  return result;
+}
+
+export function createNativeGaitProjection(root, bones, restFeet, groundAt, onRecovery = null) {
+  const restored = ['Hips', ...['Left', 'Right'].flatMap(side => ['UpLeg', 'Leg', 'Foot'].map(part => side + part))]
+    .map(name => {
+      const bone = bones.get(name);
+      if (!bone) throw new Error(`Gait projection lacks ${name}`);
+      return { bone, position: bone.position.clone(), rotation: bone.quaternion.clone() };
+    });
+  return (actor, motion, supportAt = groundAt) => {
+    for (const entry of restored) {
+      entry.position.copy(entry.bone.position); entry.rotation.copy(entry.bone.quaternion);
+    }
+    try {
+      const restStance = actor.health > 0 ? applyNativeRestStance(root, bones, motion, restFeet, supportAt) : null;
+      return { restStance: restStance ?? null, legPose: applyNativeFootCycle(root, bones, motion, restFeet, supportAt) };
+    } catch (error) {
+      if (!(error instanceof NativeGaitReachError) || !onRecovery || actor.id === 'pose-bake') throw error;
+      for (const entry of restored) {
+        entry.bone.position.copy(entry.position); entry.bone.quaternion.copy(entry.rotation);
+      }
+      root.updateMatrixWorld(true);
+      onRecovery(error, { stage: 'native-gait', soldierId: actor.id, team: actor.team, stance: actor.stance,
+        position: actor.position.toArray ? actor.position.toArray() : [actor.position.x, actor.position.y, actor.position.z],
+        details: error.details });
+      return { restStance: null, legPose: { kind: 'native-animation-base-pose', weight: 0, recovered: true } };
+    }
+  };
 }

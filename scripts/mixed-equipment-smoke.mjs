@@ -18,8 +18,8 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu');
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing');
-  for (let index = 0; index < 4; index++) await page.keyboard.press('y');
-  await page.waitForFunction(() => window.__battle.current === 4);
+  for (let index = 0; index < 2; index++) await page.keyboard.press('y');
+  await page.waitForFunction(() => window.__battle.current === 2);
   const before = await page.evaluate(() => {
     const battle = window.__battle; return { actor: battle.allies[battle.current], ammo: battle.ammo };
   });

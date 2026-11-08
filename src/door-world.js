@@ -39,28 +39,42 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
     }
   };
   let onNavigationChanged = () => {};
+  const navigationListeners = new Set();
   let onRequested = () => {};
   let blockedDoors = [];
   const updateStats = { navigationBatches: 0, changedDoors: 0, sphereUpdates: 0 };
   const notifyRegions = regions => {
     if (!regions.length) return;
     updateStats.navigationBatches++; updateStats.changedDoors += regions.length;
-    onNavigationChanged({ minX: Math.min(...regions.map(region => region.minX)),
+    const bounds = { minX: Math.min(...regions.map(region => region.minX)),
       maxX: Math.max(...regions.map(region => region.maxX)), minZ: Math.min(...regions.map(region => region.minZ)),
-      maxZ: Math.max(...regions.map(region => region.maxZ)) }, regions);
+      maxZ: Math.max(...regions.map(region => region.maxZ)) };
+    for (const listener of navigationListeners) listener(bounds, regions);
+    onNavigationChanged(bounds, regions);
   };
   const activate = (door, actor, openOnly = false) => {
-    const changed = requestDoor(door, actor, openOnly);
+    const group = door.groupId ? doors.filter(peer => peer.groupId === door.groupId) : [door];
+    const opening = openOnly || group.every(peer => Math.abs(peer.targetAngle) < .01);
+    let changed = false;
+    for (const peer of group) {
+      if (opening) changed = requestDoor(peer, actor, true) || changed;
+      else if (Math.abs(peer.targetAngle) >= .01) changed = requestDoor(peer, actor) || changed;
+    }
     if (changed) onRequested(door);
     return changed;
   };
   const draw = index => {
-    const door = doors[index], along = door.width / 2;
-    pivot.position.set(door.x - (door.axis === 'x' ? along : 0), 0, door.z - (door.axis === 'z' ? along : 0));
+    const door = doors[index], along = door.width / 2, sign = door.hingeDirection;
+    pivot.position.set(door.x - (door.axis === 'x' ? sign * along : 0), 0,
+      door.z - (door.axis === 'z' ? sign * along : 0));
     pivot.rotation.y = door.angle;
-    child.position.set(door.axis === 'x' ? along : 0, door.height / 2 + .01, door.axis === 'z' ? along : 0);
+    child.position.set(door.axis === 'x' ? sign * along : 0, door.height / 2 + .01,
+      door.axis === 'z' ? sign * along : 0);
     child.rotation.set(0, 0, 0);
-    child.scale.set(door.axis === 'x' ? door.width - .04 : .07, door.height, door.axis === 'z' ? door.width - .04 : .07);
+    const thickness = door.groupId ? door.thickness : .07;
+    const leafWidth = door.groupId ? door.width + .015 : door.width - .04;
+    child.scale.set(door.axis === 'x' ? leafWidth : thickness, door.height,
+      door.axis === 'z' ? leafWidth : thickness);
     pivot.updateMatrixWorld(true);
     leaf.setMatrixAt(index, child.matrixWorld);
     for (let band = 0; band < 3; band++) {
@@ -70,8 +84,8 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
       bands.setMatrixAt(index * 3 + band, child.matrixWorld);
     }
     for (let side = 0; side < 2; side++) {
-      child.position.set(door.axis === 'x' ? door.width - .23 : (side ? -.1 : .1), door.height * .48,
-        door.axis === 'z' ? door.width - .23 : (side ? -.1 : .1));
+      child.position.set(door.axis === 'x' ? sign * (door.width - .23) : (side ? -.1 : .1), door.height * .48,
+        door.axis === 'z' ? sign * (door.width - .23) : (side ? -.1 : .1));
       child.rotation.set(0, door.axis === 'z' ? Math.PI / 2 : 0, 0);
       child.scale.set(1, 1, 1);
       pivot.updateMatrixWorld(true);
@@ -98,6 +112,11 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
   return {
     doors, navigationObstacles, raycastStats, updateStats,
     set onNavigationChanged(callback) { onNavigationChanged = callback; },
+    addNavigationListener(callback) {
+      if (typeof callback !== 'function') throw new TypeError('Door navigation listener must be a function');
+      navigationListeners.add(callback);
+      return () => navigationListeners.delete(callback);
+    },
     set onRequested(callback) { onRequested = callback; },
     update(dt, occupants) {
       const regions = [];
@@ -130,7 +149,8 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
         if (distance > nearest || hitPoint.y < 0 || hitPoint.y > door.height || Math.abs(door.axis === 'z' ? hitPoint.z - door.z : hitPoint.x - door.x) > door.width / 2 + .15) continue;
         cast.far = distance - .03;
         const blocker = cast.intersectObjects(solids, false)[0];
-        if (blocker && !(blocker.object === leaf && doors[blocker.instanceId]?.id === door.id)) continue;
+        if (blocker && !(blocker.object === leaf && (doors[blocker.instanceId]?.id === door.id ||
+          door.groupId && doors[blocker.instanceId]?.groupId === door.groupId))) continue;
         nearest = distance; selected = door;
       }
       return selected;
@@ -141,8 +161,8 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
         if (Math.hypot(position.x - door.x, position.z - door.z) > door.width + 1) continue;
         const travel = Math.sign(door.targetAngle - door.angle) * Math.min(.025, Math.abs(door.targetAngle - door.angle));
         if (!travel || !circleBlocked(position.x, position.z, radius, [doorCollider(door, door.angle + travel)])) continue;
-        const hx = door.x - (door.axis === 'x' ? door.width / 2 : 0);
-        const hz = door.z - (door.axis === 'z' ? door.width / 2 : 0);
+        const hx = door.x - (door.axis === 'x' ? door.hingeDirection * door.width / 2 : 0);
+        const hz = door.z - (door.axis === 'z' ? door.hingeDirection * door.width / 2 : 0);
         const dx = position.x - hx, dz = position.z - hz, length = Math.max(.01, Math.hypot(dx, dz));
         const candidates = [
           { x: position.x + dx / length * .9, z: position.z + dz / length * .9 },

@@ -116,6 +116,8 @@ for (const team of ['friendly', 'enemy']) test(`${team}: native helmet replaceme
   assert.equal(sharedGeometry.userData.officerProvenance, OFFICER_PROVENANCE);
   assert.equal(OFFICER_PROVENANCE.historicalAcceptance, false);
   assert.ok(costume.snapshot.details.includes('curved-visor'));
+  assert.ok(costume.snapshot.capFit.crownOffset < 0, 'the band is seated below the crown rather than floating above it');
+  assert.ok(costume.snapshot.capFit.radialScale > 1, 'the cap circumference wraps the native skull');
   assert.ok(costume.snapshot.details.includes('shoulder-strap'));
   assert.ok(costume.snapshot.details.includes('strap-buckle'));
   if (team === 'friendly') assert.ok(costume.snapshot.details.includes('white-chest-cloth'));

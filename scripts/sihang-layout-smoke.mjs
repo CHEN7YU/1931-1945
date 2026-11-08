@@ -39,7 +39,7 @@ try {
   assert.equal(data.ring.type, 'RingGeometry'); assert.equal(data.ring.emptyCenter, true);
   assert.ok(data.bridge.southX > data.bridge.northX && data.bridge.southZ > data.bridge.northZ);
   assert.ok(data.city.usableGroundFloors >= 60);
-  assert.ok(data.geometry.triangles < 25000); assert.deepEqual(errors, []);
+  assert.ok(data.geometry.triangles < 29000); assert.deepEqual(errors, []);
   await writeFile(join(directory, 'sihang-overhead-current.png'), Buffer.from(data.overview.split(',')[1], 'base64'));
   await writeFile(join(directory, 'sihang-ground-capture-ring.png'), Buffer.from(data.capture.split(',')[1], 'base64'));
   delete data.overview; delete data.capture;

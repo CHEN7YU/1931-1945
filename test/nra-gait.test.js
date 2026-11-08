@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Group, Bone, Vector3 } from 'three';
-import { lowStepTarget, runningStepTarget, turningStepTarget, applyNativeFootCycle, applyNativeBodyLean } from '../src/nra-gait.js';
+import { lowStepTarget, runningStepTarget, turningStepTarget, applyNativeFootCycle, applyNativeRestStance,
+  createNativeGaitProjection, NativeGaitReachError, applyNativeBodyLean } from '../src/nra-gait.js';
 
 function legs() {
   const root = new Group(), bones = new Map(), hips = new Bone();
@@ -13,10 +14,45 @@ function legs() {
     hips.add(upper); upper.add(knee); knee.add(foot);
     for (const [name, bone] of [['UpLeg', upper], ['Leg', knee], ['Foot', foot]]) bones.set(`${side}${name}`, bone);
   }
+
   root.updateMatrixWorld(true);
   const restFeet = Object.fromEntries(['Left', 'Right'].map(side => [side, bones.get(`${side}Foot`).getWorldPosition(new Vector3())]));
   return { root, bones, restFeet };
 }
+
+test('resting legs on raised local support resolve the inner reach without stretching or throwing during anatomy sampling', () => {
+  for (const floor of [.73, .75, .77, 1.2]) for (const yaw of [0, 1.3, Math.PI]) {
+    const { root, bones, restFeet } = legs();
+    root.rotation.y = yaw; root.updateMatrixWorld(true);
+    const lengths = ['Left', 'Right'].flatMap(side => [bones.get(side + 'Leg').position.length(),
+      bones.get(side + 'Foot').position.length()]);
+    applyNativeRestStance(root, bones, { upright: 1, weight: 0, turn: { weight: 0 } }, restFeet, () => floor);
+    assert.deepEqual(['Left', 'Right'].flatMap(side => [bones.get(side + 'Leg').position.length(),
+      bones.get(side + 'Foot').position.length()]), lengths);
+    assert.ok([...bones.values()].every(bone => bone.quaternion.toArray().every(Number.isFinite)));
+  }
+});
+
+test('only a classified live pose failure rolls back modified legs and reports recovery while leaving anatomy intact', () => {
+  const { root, bones, restFeet } = legs(), reports = [];
+  const original = [...bones].map(([name, bone]) => [name, bone.position.toArray(), bone.quaternion.toArray()]);
+  let calls = 0;
+  const failure = new NativeGaitReachError('Native resting foot is unreachable: Right', { side: 'Right', error: .068 });
+  const project = createNativeGaitProjection(root, bones, restFeet, () => {
+    if (++calls === 2) throw failure;
+    return 0;
+  }, (error, context) => reports.push({ error, context }));
+  const actor = { id: 'original-soldier', health: 100, team: 'enemy', stance: 'standing', position: new Vector3() };
+  const motion = { upright: 1, weight: 0, turn: { weight: 0 } };
+  assert.equal(project(actor, motion).legPose.recovered, true);
+  assert.deepEqual([...bones].map(([name, bone]) => [name, bone.position.toArray(), bone.quaternion.toArray()]), original);
+  assert.equal(reports.length, 1); assert.equal(reports[0].error, failure);
+  assert.equal(reports[0].context.soldierId, actor.id);
+  const invalid = createNativeGaitProjection(root, bones, restFeet, () => { throw new Error('corrupt collision'); }, () => {});
+  assert.throws(() => invalid(actor, motion), /corrupt collision/);
+  const initialization = createNativeGaitProjection(root, bones, restFeet, () => { throw failure; }, () => {});
+  assert.throws(() => initialization({ ...actor, id: 'pose-bake' }, motion), NativeGaitReachError);
+});
 
 test('low steps use bounded foot trajectories without stretching legs or changing simulation state', () => {
   const results = [];

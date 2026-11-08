@@ -12,7 +12,8 @@ import { sihangCoverContext, sihangCoverCandidates, sihangOutsideCover, sihangCo
 import { loadSihangVoices } from './sihang-voices.js';
 import { createAdaptiveStepBudget } from './adaptive-step-budget.js';
 import { createStaticSceneBatchRescue } from './static-scene-batches.js';
-import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS, sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal } from './sihang-roster.js';
+import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS,
+  sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal, sihangPursuitGoal } from './sihang-roster.js';
 import { SIHANG_DEFENSE_POSTS, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
   SIHANG_EVACUATION, SIHANG_STAIRWELLS, sihangBridgePoint, sihangRiverBounds,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
@@ -137,8 +138,10 @@ import { applyCloseWeaponPose } from './weapon-close-pose.js';
 import { MORTAR, createMortar, mortarTarget as calculateMortarTarget, stowMortar, adjustMortarRange, mortarObjectiveRanges, mortarPlacement } from './mortar.js';
 import { GRENADE_DISCHARGER, createGrenadeDischarger, stowGrenadeDischarger,
   selectDischargerTargets, dischargerTargetAllowed, createDischargerShell,
-  dischargerTrajectoryClear, loadDischargerRound, advanceDischargerShell } from './grenade-discharger.js';
-import { createGrenadeDischargerModel } from './grenade-discharger-model.js';
+  dischargerTrajectoryClear, loadDischargerRound, advanceDischargerShell, dischargerAccuracy,
+  dischargerAimTrajectory, dischargerTrajectoryImpact } from './grenade-discharger.js';
+import { createGrenadeDischargerModel, createGrenadeDischargerShellModel,
+  updateGrenadeDischargerShellModel } from './grenade-discharger-model.js';
 import { drawFacingSector, drawMissionMarker } from './minimap-view.js';
 import { missionTargets } from './mission-targets.js';
 import { soldierRoleIcon } from './soldier-role-icons.js';
@@ -326,12 +329,23 @@ const fatalReporter = createFatalReporter({ document, window,
   build: { ...buildStamp, development: import.meta.env.DEV },
   getContext: () => readFailureContext(),
   onFatal: () => { fatal = true; stopAfterFailure(); },
+  onRecorded: (error, details) => {
+    if (error instanceof Error) {
+      performanceDiagnostics.runtimeError(error, details); performanceDiagnostics.flush('ended');
+    }
+  },
 });
 const preferences = getPlayerPreferences();
 let preferenceValues = preferences.snapshot;
 const startupResources = startupResourceProfile(new URLSearchParams(location.search).get('resources') ??
   preferenceValues.resourceMode, navigator.deviceMemory ?? null);
 const textureBudget = createStartupTextureBudget(startupResources);
+const recordRecoveredFailure = (error, context) => {
+  fatalReporter.recordRecovery(error, context);
+  if (context.stage === 'native-gait') performanceDiagnostics.error('pose-recovered');
+  performanceDiagnostics.runtimeError(error, { recovered: true, stage: context.stage,
+    position: context.position, side: context.details?.side, team: context.team });
+};
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 650);
@@ -413,7 +427,7 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     reportLoading('friendly-model');
     const { loadNraCharacter } = await import('./nra-character.js');
     const { createNraForceRendererAsync } = await import('./nra-force-renderer.js');
-    const nraTemplate = await loadNraCharacter(world.walkHeight, { textureBudget });
+    const nraTemplate = await loadNraCharacter(world.walkHeight, { textureBudget, onPoseRecovery: recordRecoveredFailure });
     reportLoading('friendly-poses');
     nraCharacter = await createNraForceRendererAsync(scene, camera, nraTemplate, 330, {
       lowMemory: startupResources.lowMemory,
@@ -423,7 +437,7 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     setLoadingProgress(80, '第三阶段 · 加载日军士兵与人物动作…');
     reportLoading('enemy-model');
     const { loadIjaCharacter, createIjaForceRendererAsync } = await import('./ija-character.js');
-    const ijaTemplate = await loadIjaCharacter(world.walkHeight, { textureBudget });
+    const ijaTemplate = await loadIjaCharacter(world.walkHeight, { textureBudget, onPoseRecovery: recordRecoveredFailure });
     reportLoading('enemy-poses');
     ijaCharacter = await createIjaForceRendererAsync(scene, camera, ijaTemplate, 330, {
       lowMemory: startupResources.lowMemory,
@@ -1481,7 +1495,7 @@ function presentControlEvents() {
       toast(event.queued ? '拉栓后装填 · 动作与成员状态保留' : '正在装填…', event.duration);
     } else if (event.type === 'weapon.mechanical') {
       mechanicalSound(event);
-    } else if (event.type === 'equipment.changed') renderEquippedTool();
+    } else if (event.type === 'equipment.changed') updateControlHelp();
   });
   if (count) renderConstruction();
 }
@@ -2282,6 +2296,7 @@ function equipTool(equipped) {
   held.primary = held.aiming = held.secondary = false;
   unit.nextShot = Math.max(unit.nextShot, time + .3);
   syncRifleUnit();
+  renderEquippedTool();
   emitControlEvent('equipment.changed', { equipped });
 }
 
@@ -2472,6 +2487,7 @@ function switchMember(index) {
   stopLocomotion(allies[current].locomotion);
   bindControlInput();
   unit.nextShot = Math.max(unit.nextShot, time + .35);
+  refreshControlSurface();
   recoil = 0;
   eyeHeight = controlPose.eyeHeight;
   emitControlEvent('control.changed', { index, reason: state === 'transferring' ? 'death' : 'manual' });
@@ -3365,7 +3381,8 @@ function updateJapaneseArmor(transport, dt) {
     .filter(target => target.team !== transport.team &&
       (!sihangCampaignMode || !sihangSouthBank(target.position)));
   const cannonTargets = [...targets, ...artillery];
-  const objective = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat'
+  const warehouseEntered = sihangCampaignMode && enemies.some(actor => actor.tactics.sihangEnteredWarehouse);
+  const objective = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && warehouseEntered
     ? { id: 'sihang-bridge', x: SIHANG_BRIDGE.northX, z: SIHANG_BRIDGE.northZ - 1.3, radius: 5, owner: 'friendly' }
     : encirclementMode && encirclement.phase === 2
     ? { id: 'east-breakout', x: EAST_BREAKOUT.x, z: EAST_BREAKOUT.z, radius: 8, owner: 'friendly' }
@@ -3959,6 +3976,14 @@ function updateCamera(dt) {
       updateDadaoView(weapon, dadaoPhase(allies[current].dadao, time), motion, camera);
       weapon.userData.dadaoArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
     } else if (unit.type === 'infantry' && !toolEquipped) {
+      if (!weapon.userData.rifle?.bolt || !weapon.userData.rifle.clip || !weapon.userData.rifle.muzzle) {
+        const error = new Error('First-person rifle view lacked required metadata; rebuilt from the controlled soldier');
+        error.code = 'equipment-view-metadata';
+        renderEquippedTool();
+        if (!weapon.userData.rifle?.bolt || !weapon.userData.rifle.clip || !weapon.userData.rifle.muzzle)
+          throw new Error('Rebuilt first-person rifle view is still invalid');
+        recordRecoveredFailure(error, { stage: 'battle', team: allies[current].team, position: allies[current].position.toArray() });
+      }
       const pose = updateRifleModel(weapon, allies[current].rifle);
       weapon.userData.rifle.flash.visible &&= graphics.snapshot.effects.muzzle;
       const swayScale = aim ? .025 : 1;
@@ -4705,8 +4730,7 @@ function formationDestination(actor, active) {
         return { ...post, transit: true };
       }
     }
-    if (sihangCampaign.stage === 'sihang-retreat')
-      return { x: 40 + actor.formation.index % 4 * 3, y: 0, z: 1 + actor.index % 3 * 1.5, transit: true };
+    if (sihangCampaign.stage === 'sihang-retreat') return sihangPursuitGoal(actor);
   }
   if (encirclementMode && encirclement.phase === 2) return breakoutDestination(actor);
   const point = formationObjective(actor, active);
@@ -4999,6 +5023,8 @@ function operateAIDischarger(actor, dt) {
       emplacements, context);
     const chosen = candidates.find(({ target }) => dischargerTargetVisible(actor, target));
     target = chosen?.target; weapon.targetId = target?.id ?? null;
+    weapon.aimPoint = target ? { x: target.position.x, y: target.position.y + .035,
+      z: target.position.z } : null;
     weapon.priority = chosen?.priority ?? null;
     weapon.rejected = target ? null : 'no-visible-legal-target';
   }
@@ -5033,7 +5059,7 @@ function operateAIDischarger(actor, dt) {
   weapon.phase = 'ready';
   if (finalBoardingFireHeld(nanjingCampaign, time) || time < weapon.nextShot || shells.length >= PROJECTILE_LIMIT ||
     shells.filter(shell => shell.kind === 'grenade-discharger').length >= GRENADE_DISCHARGER.activeLimit) return true;
-  // One trajectory query per operator/cadence. No blind remembered-position bombardment.
+  // Validate observed aim before dispersion; an otherwise-safe miss may hit real masonry.
   if (!dischargerQueryBudget) return true;
   dischargerQueryBudget--;
   if (!dischargerTargetVisible(actor, target)) {
@@ -5041,15 +5067,23 @@ function operateAIDischarger(actor, dt) {
   }
   const start = view.userData.discharger.muzzle.getWorldPosition(new THREE.Vector3());
   const source = captureAttackSource(entities, actor, weapon);
+  if (!weapon.aimPoint) throw new Error('Discharger has no observed aim position');
   const shell = createDischargerShell({ id: `shell-${++projectileSerial}`, source, start,
-    target: { x: target.position.x, y: target.position.y + .15, z: target.position.z },
+    target: weapon.aimPoint, accuracy: dischargerAccuracy(actor, target, time),
     firedAt: time, random: battleRandom });
   shell.target = Object.freeze({ ...shell.target,
-    y: world.walkHeight(shell.target.x, shell.target.z, target.position.y) + .15 });
-  const unsafe = enemies.some(friend => friend.health > 0 &&
-    Math.hypot(friend.position.x - shell.target.x, friend.position.y - shell.target.y,
-      friend.position.z - shell.target.z) < GRENADE_DISCHARGER.radius + 1);
-  if (unsafe || !dischargerTrajectoryClear(shell, traceDischargerSegment)) {
+    y: world.walkHeight(shell.target.x, shell.target.z, target.position.y) + .035 });
+  if (sihangCampaignMode && !sihangBlastClearOfSouthBank(shell.target, GRENADE_DISCHARGER.radius)) {
+    weapon.rejected = 'neutral-bank-danger'; weapon.nextShot = time + GRENADE_DISCHARGER.querySeconds;
+    return true;
+  }
+  const aimShell = dischargerAimTrajectory(shell);
+  const clearAim = dischargerTrajectoryClear(aimShell, traceDischargerSegment);
+  const impact = clearAim ? dischargerTrajectoryImpact(shell, traceDischargerSegment).position : shell.target;
+  const unsafe = clearAim && enemies.some(friend => friend.health > 0 &&
+    Math.hypot(friend.position.x - impact.x, friend.position.y - impact.y,
+      friend.position.z - impact.z) < GRENADE_DISCHARGER.radius + 1);
+  if (unsafe || !clearAim) {
     weapon.rejected = unsafe ? 'friendly-danger' : 'blocked-trajectory';
     weapon.blockedTargetId = target.id; weapon.blockedUntil = time + 3;
     weapon.nextShot = time + GRENADE_DISCHARGER.querySeconds;
@@ -5057,7 +5091,8 @@ function operateAIDischarger(actor, dt) {
   }
   if (!loadDischargerRound(weapon, time, shells.filter(shell => shell.kind === 'grenade-discharger').length)) return true;
   weapon.rejected = null;
-  const mesh = new THREE.Mesh(projectileGeometry, shellMaterial);
+  const mesh = createGrenadeDischargerShellModel();
+  updateGrenadeDischargerShellModel(mesh, shell);
   mesh.position.copy(start); mesh.userData.projectileId = shell.id;
   scene.add(mesh); shellViews.set(shell.id, mesh); shells.push(shell);
   combatEvents.publish('shot', { source, weaponType: 'mortar', start, sound: 'blast', recoil: 0 }, time);
@@ -5518,8 +5553,8 @@ function updateAI(dt) {
       const demolitionGoal = sihangCombat.goalFor(actor, sihangCampaign);
       const withdrawing = actor.friendly && sihangCampaign.stage === 'sihang-retreat';
       const defending = actor.friendly && !actor.playerUnit && sihangCampaign.stage === 'sihang-defense';
-      const blockingBridge = !actor.friendly && sihangCampaign.stage === 'sihang-retreat';
-      if (demolitionGoal || withdrawing || defending || blockingBridge) {
+      const pursuingRetreat = !actor.friendly && sihangCampaign.stage === 'sihang-retreat';
+      if (demolitionGoal || withdrawing || defending || pursuingRetreat) {
         cancelAIMelee(actor);
         if (tactics.cover) coverClaims.delete(tactics.cover.id);
         tactics.cover = tactics.armorEscort = null;
@@ -5527,6 +5562,8 @@ function updateAI(dt) {
           ? { x: 39 + actor.index % 5 * 2, y: 0, z: 2 - Math.floor(actor.index / 5) * 2, transit: true }
           : formationDestination(actor, objective));
         tactics.mode = demolitionGoal ? 'sihang-demolition' : withdrawing ? 'sihang-retreat' : defending ? 'sihang-defense' : 'sihang-intercept';
+        if (pursuingRetreat && !demolitionGoal)
+          tactics.mode = tactics.sihangPursuit === 'enter-warehouse' ? 'sihang-enter-warehouse' : 'sihang-intercept';
         const arrival = demolitionGoal || tactics.sihangDuty === 'wall-fire' ? .22 : .8;
         const moving = Math.hypot(position.x - goal.x, position.z - goal.z) > arrival ||
           Math.abs(position.y - (goal.y ?? 0)) > .4;
@@ -6433,7 +6470,9 @@ function updateProjectiles(dt) {
       ray.far = Infinity;
       return hit?.point || null;
     });
-    shellViews.get(shell.id).position.copy(shell.position);
+    const shellView = shellViews.get(shell.id);
+    if (shell.kind === 'grenade-discharger') updateGrenadeDischargerShellModel(shellView, shell);
+    else shellView.position.copy(shell.position);
     if (event) {
       scene.remove(shellViews.get(shell.id));
       shellViews.delete(shell.id);
@@ -7567,8 +7606,10 @@ function performControlCommand(command) {
   if (action === 'interact') {
     if (sihangCampaignMode && sihangCombat.defuseAvailable(sihangCampaign, actor)) return;
     if (actor.emplacementId) { releaseEmplacement(actor); return; }
-    if (enterEmplacement(actor)) return;
     updateCamera(0);
+    const focusedDoor = !toolEquipped && world.doorSystem.focus(camera);
+    if (focusedDoor) { world.doorSystem.interact(focusedDoor, actor.position); return; }
+    if (enterEmplacement(actor)) return;
     const dock = objectives.find(point => point.id === 'dock');
     const atNanjingDock = nanjingCampaignMode && dock &&
       Math.hypot(allies[current].position.x - dock.x, allies[current].position.z - dock.z) <= dock.radius + 3;
@@ -7862,6 +7903,7 @@ if (queryDiagnostics) {
 
 // A read-only snapshot makes local smoke tests observable without exposing gameplay mutations.
 Object.defineProperty(window, '__battle', { get: () => ({
+  recoveredErrors: fatalReporter.recoveries,
   startupResources: { ...startupResources, textures: textureBudget.snapshot },
   corpses: { rules: CORPSE_RULES, count: corpses.size, members: [...corpses.values()].map(actor => ({
     id: actor.id, team: actor.team, time: actor.casualty.time, age: time - actor.casualty.time,
@@ -7880,7 +7922,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   japaneseSupport: { rules: GRENADE_DISCHARGER,
     activeShells: shells.filter(shell => shell.kind === 'grenade-discharger').map(shell => ({
       id: shell.id, source: shell.source, elapsed: shell.elapsed, duration: shell.duration,
-      start: shell.start, target: shell.target, position: { ...shell.position } })),
+      start: shell.start, target: shell.target, aim: shell.aim, position: { ...shell.position } })),
     modelCount: dischargerViews.size,
     operators: enemies.filter(actor => actor.discharger).map(actor => ({
       ...actor.discharger, id: actor.id, weaponId: actor.discharger.id,

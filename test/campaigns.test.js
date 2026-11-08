@@ -12,6 +12,8 @@ test('the launcher exposes independent Taierzhuang, Sihang and Nanjing campaigns
   assert.equal(DEFAULT_CAMPAIGN.id, 'taierzhuang-fort');
   assert.equal(campaignById('taierzhuang-streets').hidden, true);
   assert.equal(SELECTABLE_CAMPAIGNS.some(campaign => campaign.id === 'taierzhuang-streets'), false);
+  assert.equal(SELECTABLE_CAMPAIGNS.some(campaign => campaign.id === 'shanghai'), false,
+    'the homepage uses Four Banks Warehouse instead of the duplicate locked Shanghai entry');
   const layouts = CAMPAIGNS.filter(campaign => !campaign.locked).map(campaign => campaignLayout(campaign.id));
   assert.equal(layouts[0].town, undefined);
   const fortress = campaignLayout('taierzhuang-fort');

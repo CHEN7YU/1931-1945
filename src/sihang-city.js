@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SIHANG_RESERVED_LANES, sihangRiverBounds } from './sihang-layout.js';
+import { SIHANG_RESERVED_LANES, SIHANG_WAREHOUSE, SIHANG_ENEMY_APPROACHES, sihangRiverBounds } from './sihang-layout.js';
 
 const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
 
@@ -26,6 +26,10 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
   const titles = ['春华旅馆', '江南饭店', '河畔茶室', '新声戏院', '永安客栈', '锦华舞厅', '民生商号'];
   function house(id, x, z, w, d, south, serial) {
     const lot = { minX: x - w / 2 - 1, maxX: x + w / 2 + 1, minZ: z - d / 2 - 1, maxZ: z + d / 2 + 1 };
+    if (overlaps(lot, SIHANG_WAREHOUSE.bounds)) return null;
+    if (SIHANG_ENEMY_APPROACHES.some(origin => overlaps(lot, {
+      minX: origin.x - 11, maxX: origin.x + 11, minZ: origin.z - 5, maxZ: origin.z + 5,
+    }))) return null;
     if (SIHANG_RESERVED_LANES.some(lane => overlaps(lot, lane))) return null;
     if (town.buildings.some(building => building.bounds && overlaps(lot, building.bounds))) return null;
     const banks = [sihangRiverBounds(lot.minX), sihangRiverBounds(lot.maxX)];
@@ -99,8 +103,14 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     return building;
   }
   let index = 0;
-  house('warehouse-east-annex', 42, -51, 15, 18, false, 0);
-  for (const z of [-99, -77, -59]) for (const x of [-98, -84, -54, -40, -24, 20, 36, 54, 84, 98])
+  house('warehouse-east-annex', 43, -55, 12, 14, false, 0);
+  for (const [i, [x, z, w, d]] of [
+    [-47, -39, 12, 10], [-47, -25, 12, 10], [-47, -11, 12, 10],
+    [-59, -37, 7, 10], [-59, -23, 7, 10], [-59, -9, 7, 10],
+    [48, -16.5, 12, 6], [48, -7.5, 12, 5], [59, -16.5, 6, 5],
+    [-48, -54, 9, 6], [-35, -54, 9, 6], [-22, -54, 9, 6], [20, -54, 9, 6],
+  ].entries()) house(`warehouse-neighbor-${i}`, x, z, w, d, false, index++);
+  for (const z of [-99, -80, -64]) for (const x of [-98, -84, -54, -40, -24, 20, 36, 54, 84, 98])
     house(`north-block-${index}`, x + index % 3 - 1, z + index % 2 * 2,
       9.5 + index % 3, 8 + index % 3, false, index++);
   // Side streets continue beside (never across) the reserved armour flanks.
@@ -119,6 +129,17 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
       sihangRiverBounds(x + 7).southZ) + 13, 12, 10, true, i + 19);
   for (const [i, x] of [-96, -78, -60, -42, -24, -6, 12, 30, 48, 66, 84, 102].entries())
     house(`concession-interior-${i}`, x + i % 2, 80, 10, 10, true, i + 28);
+
+  for (const [index, [x, z]] of [[-62, -49], [-42, -45], [-57, -3], [43, -15], [59, -45]].entries()) {
+    const bounds = { minX: x - 1.5, maxX: x + 1.5, minZ: z - .25, maxZ: z + .25 };
+    if (town.buildings.some(building => overlaps(bounds, building.bounds)) ||
+      SIHANG_RESERVED_LANES.some(lane => overlaps(bounds, lane))) continue;
+    box(x, .625, z, 3, 1.25, .5, materials.brick, { block: true });
+    box(x, 1.27, z, 3.2, .09, .58, materials.concrete);
+    town.covers.push({ id: `warehouse-street-cover-${index}`, x, z: z + .8,
+      height: 1.25, width: 3, coverZ: z });
+    town.fortifications.push({ id: `warehouse-street-wall-${index}`, x, z, use: 'street-cover' });
+  }
 
   // Original typographic atlas, shared by every sign. No dynamic lights or external assets.
   let signTexture;
