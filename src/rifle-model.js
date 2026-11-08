@@ -8,6 +8,7 @@ import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
 import { RIFLE_STOCK_SECTIONS, rifleStockSection, BOLT_HANDLE } from './rifle-contacts.js';
 import { machineGunReloadPose, ZB26_HAND } from './machine-gun-reload.js';
+import { submachineGunModel } from './submachine-gun-model.js';
 
 let template;
 let distantTemplate;
@@ -23,7 +24,7 @@ function texture(canvas, color = false) {
   return map;
 }
 
-export async function configureRifleMaterials(maxAnisotropy = 8) {
+export async function configureRifleMaterials(maxAnisotropy = 8, textureBudget = null) {
   let seed = 1936;
   const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   const wood = document.createElement('canvas'), steel = document.createElement('canvas'), weave = document.createElement('canvas');
@@ -66,7 +67,9 @@ export async function configureRifleMaterials(maxAnisotropy = 8) {
   materials.cloth = new THREE.MeshStandardMaterial({ map: texture(weave, true), color: 0x7d8a7e, roughness: .98 });
   materials.cloth.map.repeat.set(6, 8);
   materials.leather = new THREE.MeshStandardMaterial({ color: 0x443124, roughness: .8 });
-  await applyRifleTextures(materials, RIFLE_PBR_ASSETS, maxAnisotropy);
+  await applyRifleTextures(materials, RIFLE_PBR_ASSETS, maxAnisotropy, textureBudget);
+  if (textureBudget) for (const material of Object.values(materials))
+    for (const value of Object.values(material)) if (value?.isTexture) textureBudget.resize(value);
   configureLightMachineGunMaterials(materials);
 }
 
@@ -430,8 +433,8 @@ export function rifleModel(weaponState = null) {
   if (infantryWeaponProfile(weaponState).automatic) {
     model.getObjectByName('rifleBody').visible = false;
     model.getObjectByName('bolt').visible = false;
-    model.add(lightMachineGunModel(weaponState.model));
-    machineGunHands(model);
+    model.add(infantryWeaponProfile(weaponState).smg ? submachineGunModel('near', materials) : lightMachineGunModel(weaponState.model));
+    if (!infantryWeaponProfile(weaponState).smg) machineGunHands(model);
     model.userData.rifle.muzzle.position.z = infantryWeaponProfile(weaponState).muzzleZ;
     model.userData.rifle.muzzle.position.x = infantryWeaponProfile(weaponState).muzzleX;
     model.userData.rifle.frontSight.position.z = infantryWeaponProfile(weaponState).muzzleZ + .045;
@@ -493,7 +496,9 @@ export function syncWorldWeapon(model, state) {
     const previousScope = model.getObjectByName('sniper-scope');
     if (previousScope) model.remove(previousScope);
     if (profile.automatic) {
-      const gun = lightMachineGunModel(key, model.userData.detail ?? 'near'); gun.name = 'light-machine-gun'; model.add(gun);
+      const gun = profile.smg ? submachineGunModel(model.userData.detail ?? 'near', materials)
+        : lightMachineGunModel(key, model.userData.detail ?? 'near');
+      gun.name = 'light-machine-gun'; model.add(gun);
     }
     if (profile.scoped) model.add(scopeModel(model.userData.detail ?? 'near'));
     model.userData.weaponModel = key;
@@ -502,6 +507,7 @@ export function syncWorldWeapon(model, state) {
   if (bolt) { bolt.rotation.z = pose.boltLift; bolt.position.z = pose.boltTravel; }
   const feed = model.getObjectByName('feed');
   if (feed) applyMachineGunFeed(model, machineGunReloadPose(state));
+  model.userData.smgReload = profile.smg ? machineGunReloadPose(state) : null;
   const muzzle = model.getObjectByName('owned-muzzle');
   if (muzzle) muzzle.position.set(profile.muzzleX ?? 0, 0, profile.muzzleZ);
 }

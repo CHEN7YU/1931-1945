@@ -8,7 +8,7 @@ import { rifleWorldModel, syncWorldWeapon } from './rifle-model.js';
 import { soldierRifleMuzzle } from './entities.js';
 import { createNraForceRenderer, createNraForceRendererAsync } from './nra-force-renderer.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeFootCycle, applyNativeRestStance, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
@@ -17,10 +17,11 @@ import { shoulderPocket } from './rifle-contacts.js';
 import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 import { createSihangShieldPose, createSihangSatchel, sihangShieldInstalling } from './sihang-shield-pose.js';
 import { createOfficerAppearance } from './officer-appearance.js';
-import { nativeSupportWeaponPresentation } from './native-weapon-presentation.js';
+import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './native-weapon-presentation.js';
+import { engineerAssemblyTools } from './engineer.js';
 import { createSupportWeaponPose } from './support-weapon-pose.js';
 
-export async function loadIjaCharacter(walkHeightAt = walkHeight) {
+export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudget = null } = {}) {
   const base = '/assets/game/ija-1938/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Japanese character manifest: HTTP ${response.status}`);
@@ -30,6 +31,11 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
     throw new Error('Japanese adaptation provenance is incomplete');
   }
   const asset = await new GLTFLoader().loadAsync(`${base}character.glb`);
+  if (textureBudget) asset.scene.traverse(node => {
+    for (const material of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) {
+      for (const value of Object.values(material)) if (value?.isTexture) textureBudget.resize(value);
+    }
+  });
   const normalized = asset.scene, skins = [];
   normalized.rotation.y = Math.PI;
   normalized.traverse(node => { if (node.isSkinnedMesh) { skins.push(node); node.castShadow = node.receiveShadow = true; node.frustumCulled = false; } });
@@ -71,6 +77,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
     const animated = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
       .map(name => ({ bone: bones.get(name), rotation: bones.get(name).quaternion.clone(), position: bones.get(name).position.clone() }));
     const gun = rifleWorldModel(level, null, { bayonet: true }), pose = createNraRiflePose(root, bones, gun);
+    const engineerTools = engineerAssemblyTools(); engineerTools.visible = false; root.add(engineerTools);
     const satchel = createSihangSatchel(); root.add(satchel);
     const shieldPose = createSihangShieldPose(root, bones, satchel);
     const supportPose = createSupportWeaponPose(root, bones);
@@ -129,10 +136,15 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight) {
         for (const joint of animated) { joint.rotation.copy(joint.bone.quaternion); joint.position.copy(joint.bone.position); }
         root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
         root.updateMatrixWorld(true);
+        if (actor.health > 0) applyNativeRestStance(root, bones, motion, restFeet, groundAt);
         legPose = applyNativeFootCycle(root, bones, motion, restFeet, groundAt);
         applyNativeUpperBody(root, bones, motion);
         syncWorldWeapon(gun, actor.rifle);
-        pose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
+        const engineering = nativeEngineerPresentation(actor);
+        pose.update(engineering ? { ...motion, rifleOperation: null } :
+          rifleOperation === undefined ? motion : { ...motion, rifleOperation });
+        engineerTools.visible = engineering;
+        engineerTools.position.copy(gun.position); engineerTools.quaternion.copy(gun.quaternion);
         shieldPose.update(actor, now);
         supportPose.update(actor, now);
         gun.visible = !sihangShieldInstalling(actor) && !nativeSupportWeaponPresentation(actor);

@@ -11,9 +11,14 @@ export function infantryLoadout(team, index, type = 'infantry', formation = null
   if (formation?.sihangDemolition) return { role: 'sapper', model: 'rifle', unarmed: true };
   if (team === 'enemy' && type === 'infantry') {
     if (index === 0 || index === 1) return { role: 'grenade-discharger', model: 'rifle' };
+    if (index === 3) return { role: 'engineer', model: 'rifle' };
     if (index === 8 || index === 10) return { role: 'machine-gunner', model: 'type11' };
     return { role: index === 9 ? 'sniper' : 'rifleman', model: index === 9 ? 'sniper' : 'rifle' };
   }
+  if (team === 'friendly' && type === 'infantry' && index === 1)
+    return { role: 'engineer', model: 'rifle' };
+  if (team === 'friendly' && type === 'infantry' && index === 4)
+    return { role: 'assault', model: 'sigm1920' };
   if (type === 'infantry' && index % BATTLE_RULES.sectionMembers === 10) {
     return { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' };
   }

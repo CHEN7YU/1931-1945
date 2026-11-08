@@ -8,6 +8,8 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
   const motion = data.escapeMotion ??= { speed: 0, crouch: 0, protective: 0 };
   motion.speed = approach(motion.speed, dt > 0 ? moved / dt : 0, 9, dt);
   motion.crouch = approach(motion.crouch, mode === 'cower' ? 1 : 0, 7, dt);
+  if (motion.crouch > .999) motion.crouch = 1;
+  else if (motion.crouch < .001) motion.crouch = 0;
   motion.protective = approach(motion.protective, mode === 'cower' ? 1 : mode === 'flee' ? .35 : 0, 7, dt);
   data.walkPhase += moved * (mode === 'street' ? 5 : data.ageGroup === 'child' ? 6.3 : data.ageGroup === 'elderly' ? 5.6 : 5);
   if (moved > .0001 && Math.hypot(dx, dz) > .0001) {
@@ -43,7 +45,7 @@ export function restoreCivilianMotionPose(person) {
   const motion = person.userData.escapeMotion;
   if (!motion || person.userData.dead) return;
   const stride = motion.stride;
-  if (person.userData.refugeeRestPoint) for (const side of ['left', 'right'])
+  if (person.userData.refugeeRestPoint || person.userData.seatedContacts) for (const side of ['left', 'right'])
     for (const part of ['Leg', 'Knee', 'Foot']) {
       person.civilianSkin.joints[`${side}${part}`].rotation.y = 0;
       person.civilianSkin.joints[`${side}${part}`].rotation.z = 0;
@@ -58,8 +60,8 @@ export function restoreCivilianMotionPose(person) {
     arm.rotation.x = Math.sin(phase) * (.25 + running * .12) * active * ageScale;
     arm.rotation.y = Math.sin(phase - .3) * .025 * active;
     arm.rotation.z = (index ? -1 : 1) * (.025 + .02 * running) * active;
-    person.civilianSkin.joints[`${side}Elbow`].rotation.x = .18 + active *
-      (.08 + running * .45 + (.1 + running * .12) * (.5 + .5 * Math.sin(phase - .6)));
+    person.civilianSkin.joints[`${side}Elbow`].rotation.set(.18 + active *
+      (.08 + running * .45 + (.1 + running * .12) * (.5 + .5 * Math.sin(phase - .6))), 0, 0);
   }
   person.civilianTorso.rotation.x = motion.lean;
   person.civilianTorso.rotation.z = motion.sway;
@@ -89,4 +91,16 @@ export function applyCivilianProtectivePose(person) {
   }
   joints.torso.rotation.x = mix(joints.torso.rotation.x, -.48, crouch);
   joints.head.rotation.x = mix(joints.head.rotation.x, .3, motion.protective);
+  if (!childHeld && !luggage && motion.crouch > 0) {
+    joints.root.position.y += (-.79 - joints.root.position.y) * motion.crouch;
+    for (const side of ['left', 'right']) {
+      joints[`${side}Leg`].rotation.x = mix(joints[`${side}Leg`].rotation.x, 2.15, motion.crouch);
+      joints[`${side}Knee`].rotation.x = mix(joints[`${side}Knee`].rotation.x, -2.8, motion.crouch);
+      joints[`${side}Foot`].rotation.x = mix(joints[`${side}Foot`].rotation.x, .65, motion.crouch);
+    }
+    joints.torso.rotation.x = mix(joints.torso.rotation.x, -.8, motion.crouch);
+    joints.head.rotation.x = mix(joints.head.rotation.x, -.85, motion.crouch);
+    applyCivilianSeatedContacts(person, motion.crouch, true);
+  }
 }
+import { applyCivilianSeatedContacts } from './civilian-refugees.js';

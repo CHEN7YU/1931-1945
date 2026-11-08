@@ -99,7 +99,7 @@ test('one shared pose bank selects different A/B atlas tiles per instance withou
       actor.nativeMotion = createNraMotion(profile, actor); return actor;
     });
     force.update(actors, 0, null, 'high');
-    assert.equal(force.counts.poseBanks, 23, 'seven original banks plus sixteen shared allied melee poses, independent of A/B variants');
+    assert.equal(force.counts.poseBanks, 24, 'original banks plus separate compact corpse presentation, independent of A/B variants');
     const bank = force.root.children.find(node => node.isInstancedMesh && node.count > 0);
     assert.equal(bank.count, 2);
     assert.deepEqual([...bank.geometry.attributes.nraUniformVariant.array.slice(0, 2)], [0, 1]);

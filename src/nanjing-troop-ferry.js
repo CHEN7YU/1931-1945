@@ -1,6 +1,83 @@
-import { Vector3 } from 'three';
+import { Vector3, Raycaster } from 'three';
 import { NANJING_BOAT_CAPACITY } from './nanjing-campaign.js';
 import { NANJING_FERRY_FLOOR } from './nanjing-river-details.js';
+
+export const FINAL_BOARDING_FIRE_BUFFER_SECONDS = 16;
+
+export function startFinalBoardingFireBuffer(campaign, actor, now) {
+  if (!Number.isFinite(now) || now < 0) throw new RangeError('Boarding fire buffer requires simulation time');
+  if (campaign.stage !== 'withdrawal-to-boats' || campaign.embarkFireBufferStartedAt != null ||
+    actor?.health <= 0 || !actor?.playerUnit || actor.tactics?.nanjingFerry?.phase !== 'boarding') return false;
+  campaign.embarkFireBufferStartedAt = now;
+  campaign.embarkFireBufferUntil = now + FINAL_BOARDING_FIRE_BUFFER_SECONDS;
+  return true;
+}
+
+export function finalBoardingFireHeld(campaign, now) {
+  if (!Number.isFinite(now) || now < 0) throw new RangeError('Boarding fire buffer requires simulation time');
+  return Boolean(campaign?.stage === 'withdrawal-to-boats' &&
+    campaign.embarkFireBufferStartedAt != null && now < campaign.embarkFireBufferUntil);
+}
+
+export function retainTroopFerryCasualty(ferry, actor) {
+  const support = actor?.tactics?.nanjingFerry;
+  if (actor?.health > 0 || !support || !['boarding', 'aboard'].includes(support.phase) ||
+    support.ferryId !== ferry.userData.ferryId) return false;
+  ferry.updateWorldMatrix(true, false);
+  const local = ferry.worldToLocal(actor.position.clone());
+  const beam = .045 + .89 * Math.pow(Math.max(0, 1 - (local.x / 3.22) ** 2), .65);
+  let anchor = ferry, point = actor.position.clone();
+  const plank = ferry.userData.gangplank;
+  if (support.phase === 'boarding' && plank?.visible) {
+    plank.updateWorldMatrix(true, true);
+    const ray = new Raycaster(point.clone().add(new Vector3(0, .4, 0)), new Vector3(0, -1, 0), 0, .8);
+    const hit = ray.intersectObject(plank, true)[0];
+    if (hit) { anchor = plank; point.y = hit.point.y; }
+  }
+  if (anchor === ferry && (Math.abs(local.x) > 3.2 || Math.abs(local.z) > beam)) return false;
+  const corpses = ferry.userData.troopCorpses ??= [];
+  if (corpses.some(corpse => corpse.actor === actor)) return true;
+  actor.position.copy(point);
+  actor.tactics.corpseFerry = { ferryId: support.ferryId, support: anchor === ferry ? 'deck' : 'gangplank' };
+  corpses.push({ actor, local: anchor.worldToLocal(point.clone()), anchor,
+    heading: actor.heading - ferry.rotation.y, velocity: 0 });
+  return true;
+}
+
+export function syncTroopFerryCorpses(ferry, { dt = 0, groundAt = null } = {}) {
+  if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Ferry casualty support requires finite simulation time');
+  const corpses = ferry.userData.troopCorpses;
+  if (!corpses?.length) return;
+  ferry.updateWorldMatrix(true, false);
+  ferry.userData.troopCorpses = corpses.filter(record => {
+    const { actor, heading } = record;
+    if (actor.corpseRemoved) return false;
+    if (actor.health > 0) throw new Error('Ferry casualty support contains a living soldier');
+    if (record.anchor !== ferry && !record.anchor.visible) {
+      if (typeof groundAt !== 'function') throw new Error('Removed boarding support requires the actual terrain height');
+      record.velocity += 9.81 * dt; actor.position.y -= record.velocity * dt;
+      const local = ferry.worldToLocal(actor.position.clone());
+      const beam = .045 + .89 * Math.pow(Math.max(0, 1 - (local.x / 3.22) ** 2), .65);
+      const deck = ferry.localToWorld(new Vector3(local.x, NANJING_FERRY_FLOOR, local.z));
+      if (Math.abs(local.x) <= 3.2 && Math.abs(local.z) <= beam && actor.position.y <= deck.y) {
+        actor.position.y = deck.y; record.anchor = ferry;
+        record.local = ferry.worldToLocal(actor.position.clone()); record.heading = actor.heading - ferry.rotation.y;
+        actor.tactics.corpseFerry.support = 'deck';
+      } else {
+        const floor = groundAt(actor.position.x, actor.position.z, actor.position.y);
+        if (!Number.isFinite(floor)) throw new Error('Invalid ground under a removed boarding plank');
+        if (actor.position.y <= floor) {
+          actor.position.y = floor; delete actor.tactics.corpseFerry; return false;
+        }
+      }
+    } else {
+      record.anchor.updateWorldMatrix(true, false);
+      actor.position.copy(record.local).applyMatrix4(record.anchor.matrixWorld);
+      actor.heading = ferry.rotation.y + heading;
+    }
+    return true;
+  });
+}
 
 export function troopFerryWaitPoint(actor, ferries) {
   if (!ferries.length) throw new Error('Troop evacuation requires an actual ferry');

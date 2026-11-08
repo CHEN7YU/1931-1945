@@ -9,6 +9,7 @@ import { createFullscreenControls } from './fullscreen.js';
 import { createCampaignPresentation } from './campaign-presentation.js';
 import { createPlayerIdentityControls } from './player-identity.js';
 import { getPlayerPreferences } from './player-preferences.js';
+import { startupResourceProfile } from './startup-resources.js';
 import { getMenuMusic } from './menu-music.js';
 import { getEndingMusic } from './ending-music.js';
 
@@ -28,6 +29,24 @@ const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
 const launcherPreferences = getPlayerPreferences();
+for (const selector of document.querySelectorAll('[data-resource-mode]')) {
+  selector.value = launcherPreferences.snapshot.resourceMode;
+  selector.addEventListener('change', () => {
+    if (loaded || pending) return;
+    launcherPreferences.update({ resourceMode: selector.value });
+    const url = new URL(location.href); url.searchParams.delete('resources'); history.replaceState(null, '', url);
+    lowMemoryRestart.hidden = startupResourceProfile(selector.value, navigator.deviceMemory ?? null).lowMemory;
+    for (const control of document.querySelectorAll('[data-resource-mode]')) control.value = selector.value;
+  });
+}
+const lowMemoryRestart = document.getElementById('low-memory-restart');
+lowMemoryRestart.hidden = startupResourceProfile(params.get('resources') ??
+  launcherPreferences.snapshot.resourceMode, navigator.deviceMemory ?? null).lowMemory;
+lowMemoryRestart.addEventListener('click', () => {
+  launcherPreferences.update({ resourceMode: 'low-memory' });
+  const url = new URL(location.href); url.searchParams.set('resources', 'low-memory');
+  location.assign(url);
+});
 const menuMusic = getMenuMusic();
 const endingMusic = getEndingMusic();
 const activateMusic = event => {

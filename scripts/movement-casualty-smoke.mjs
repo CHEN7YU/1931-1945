@@ -82,7 +82,7 @@ try {
     }
     for (const [team, factory] of Object.entries(factories)) {
       const displayed = [], entries = [];
-      if (!casualtiesOnly) for (const [column, [mode, speed, aim]] of [['sprint', 4.8, false], ['jog', 3.15, false], ['aim', 1.5, true]].entries()) {
+      if (!casualtiesOnly) for (const [column, [mode, speed, aim]] of [['sprint', 4.1, false], ['jog', 2.7, false], ['aim', 1.5, true]].entries()) {
         const view = factory.createView(), actor = actorFor(team, factory, `${team}-${mode}`);
         actor.locomotion = { speed, mode }; actor.aimWalking = aim; actor.rifleReady = aim;
         for (let frame = 0; frame < 150; frame++) { actor.position.z -= speed / 60; advanceNraMotion(actor, 1 / 60); }

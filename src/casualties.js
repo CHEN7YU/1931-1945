@@ -144,7 +144,7 @@ export function sampleCasualtyMotion(casualty, now) {
   const motion = casualty.motion;
   if (!motion) return motion;
   const response = casualtyResponse(casualty, now);
-  if (casualty.variant !== 3 || motion.prone > .5) return { ...motion,
+  if (casualty.variant !== 3 || !casualty.wallLimited || motion.prone > .5) return { ...motion,
     weight: motion.weight * (1 - response.relax), speed: motion.speed * (1 - response.relax),
     bodyLean: motion.bodyLean * (1 - response.relax),
     headAim: motion.headAim ? { ...motion.headAim, weight: motion.headAim.weight * (1 - response.relax) } : null };
@@ -169,7 +169,8 @@ export function casualtyResponse(casualty, now) {
 
 export function casualtyRotation(casualty, progress) {
   const axes = [[0, 0, 1], [0, 0, -1], [-1, 0, 0], [1, 0, 0]];
-  return new Quaternion().setFromAxisAngle(new Vector3(...axes[casualty.variant]), Math.PI / 2 * progress);
+  const axis = casualty.wallLimited && casualty.variant === 3 ? axes[0] : axes[casualty.variant];
+  return new Quaternion().setFromAxisAngle(new Vector3(...axis), Math.PI / 2 * progress);
 }
 
 export function createCasualtyPose(root, bones, gun, groundAt) {
@@ -199,7 +200,7 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
     root.position.z += (c.offset?.z ?? 0) * Math.sqrt(progress);
     root.position.y -= response.drop * (1.3 + .3*dynamics.pelvis) + response.settle;
     for (const [index, side] of ['Left', 'Right'].entries()) {
-      if (c.variant === 3 && !(c.motion?.prone > .5)) continue;
+      if (c.variant === 3 && c.wallLimited && !(c.motion?.prone > .5)) continue;
       const sign = index ? 1 : -1;
       const joint=index?dynamics.rightKnee:dynamics.leftKnee;
       for (const [part, bend] of [['UpLeg', sign * (prone > .5 ? .15 : .22) * c.fold - response.buckle * .8*joint],

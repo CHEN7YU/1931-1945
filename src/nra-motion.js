@@ -138,8 +138,9 @@ export function advanceNraMotion(actor, dt) {
   const turn = motion.turn, heading = actor.heading ?? 0;
   const angularStep = headingError(turn.heading, heading);
   turn.heading = heading;
-  const stepping = actor.health > 0 && actor.tactics && actor.locomotion.speed < .2 &&
-    (actor.stance ?? 'standing') === 'standing' && Math.abs(angularStep) / dt > .12;
+  const stepping = actor.health > 0 && actor.tactics && !actor.emplacementId &&
+    !actor.discharger?.presentationActive && actor.locomotion.speed < .2 &&
+    (actor.stance ?? 'standing') !== 'prone' && Math.abs(angularStep) / dt > .12;
   const direction = Math.sign(angularStep);
   const reversingStep = stepping && turn.direction !== direction && turn.weight > .05;
   if (stepping && !reversingStep) {

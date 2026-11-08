@@ -1,5 +1,7 @@
 export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 3.8, length: 1.11, sightHeight: .05 });
 export const INFANTRY_WEAPONS = Object.freeze({
+  sigm1920: Object.freeze({ magazine: 50, range: 100, cycleSeconds: .1, reloadSeconds: 3.2, length: .81,
+    sightHeight: .05, muzzleZ: -.59, muzzleX: 0, name: 'SIG M1920 花机关', automatic: true, smg: true }),
   rifle: Object.freeze({ ...RIFLE, name: '中正式步枪', automatic: false, muzzleZ: -.891 }),
   sniper: Object.freeze({ ...RIFLE, name: '狙击步枪', automatic: false, scoped: true,
     aimFov: 18, aimSensitivity: .22, muzzleZ: -.891 }),
@@ -56,7 +58,7 @@ export function advanceRifle(state, dt) {
     const end = Math.min(duration, state.elapsed + dt);
     const clips = Math.max(1, Math.ceil((profile.magazine - state.ammo) / 5));
     const cues = profile.automatic
-      ? reloading ? state.model === 'zb26' ? [[duration * .82, 'load'], [duration * .93, 'close']]
+      ? reloading ? state.model === 'zb26' || profile.smg ? [[duration * .82, 'load'], [duration * .93, 'close']]
         : [...Array.from({ length: clips }, (_, index) => [duration * (.2 + .62 * (index + .8) / clips), 'load']),
           [duration * .93, 'close']] : []
       : reloading ? [[duration * .12 / 2.7, 'unlock'], [duration * .4 / 2.7, 'extract'],

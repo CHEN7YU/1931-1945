@@ -44,6 +44,17 @@ test('normal and aimed multipliers are independent, including scope and lower/up
   assert.equal(lookSensitivity(settings, { aiming: false, scopeSensitivity: .22 }), .0022 * .22 * .25);
 });
 
+test('startup resource choices persist and older saved controls migrate without resetting graphics', () => {
+  const old = defaultPreferences(); delete old.resourceMode; old.quality.preset = 'low';
+  const f = fixture(JSON.stringify({ version: 1, settings: old })), preferences = f.create();
+  assert.equal(preferences.snapshot.resourceMode, 'auto');
+  assert.equal(preferences.snapshot.quality.preset, 'low');
+  assert.equal(preferences.status.problem, false);
+  preferences.update({ resourceMode: 'low-memory' });
+  assert.equal(f.create().snapshot.resourceMode, 'low-memory');
+  assert.throws(() => preferences.update({ resourceMode: 'ultra' }), RangeError);
+});
+
 test('all supported controls and effects round-trip without serializing match state', () => {
   const f = fixture(), first = f.create();
   const expected = defaultPreferences();

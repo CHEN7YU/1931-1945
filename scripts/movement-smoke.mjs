@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createLocomotion, advanceLocomotion } from '../src/locomotion.js';
+import { FOOT_SPEEDS, createLocomotion, advanceLocomotion } from '../src/locomotion.js';
 
 const artifacts = process.env.ARTIFACT_DIR;
 if (artifacts) await mkdir(artifacts, { recursive: true });
@@ -12,21 +12,31 @@ const context = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   ...(artifacts ? { recordVideo: { dir: artifacts, size: { width: 1440, height: 900 } } } : {}),
 });
+context.setDefaultTimeout(180000);
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 let controlsContext;
 async function sample(ms) {
-  return page.evaluate(duration => new Promise(resolve => {
-    const samples = [], start = performance.now();
+  return page.evaluate(duration => new Promise((resolve, reject) => {
+    const samples = [], start = performance.now(), simulationStart = window.__battle.time;
     function frame() {
       const data = window.__battle;
+      if (data.state !== 'playing') return reject(new Error(`Movement sample interrupted by ${data.state}`));
+      if (performance.now() - start > 60000)
+        return reject(new Error(`Movement sample could not advance ${duration} simulation milliseconds`));
       samples.push({ time: data.time, current: data.current, ...data.locomotion });
-      if (performance.now() - start >= duration) resolve(samples);
+      if ((data.time - simulationStart) * 1000 >= duration) resolve(samples);
       else requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
   }), ms);
+}
+async function waitForMenu(page) {
+  await page.waitForFunction(() => window.__battle?.state === 'menu' ||
+    document.getElementById('menu')?.hidden === false ||
+    document.getElementById('fatal')?.hidden === false, null, { timeout: 180000 });
+  if (await page.locator('#fatal').isVisible()) throw new Error(await page.locator('#fatal-message').textContent());
 }
 function lane(distance, mode, fps) {
   const motion = createLocomotion(), position = { x: 0, z: 0 };
@@ -40,7 +50,7 @@ function lane(distance, mode, fps) {
 }
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
-  await page.waitForFunction(() => window.__battle?.state === 'menu');
+  await waitForMenu(page);
   await deployFromMenu(page);
   await page.waitForTimeout(1000);
   await page.keyboard.down('w');
@@ -66,23 +76,27 @@ try {
     await page.close();
     await rename(await video.path(), join(artifacts, 'movement-after.webm'));
   }
-  assert.ok(jogging.some(frame => frame.speed > 3 && frame.speed <= 3.151));
-  assert.ok(sprinting.some(frame => frame.speed > 4.6 && frame.speed <= 4.801));
+  assert.ok(jogging.some(frame => frame.speed > FOOT_SPEEDS.infantry.jog - .05 &&
+    frame.speed <= FOOT_SPEEDS.infantry.jog + .001));
+  assert.ok(sprinting.some(frame => frame.speed > FOOT_SPEEDS.infantry.sprint - .1 &&
+    frame.speed <= FOOT_SPEEDS.infantry.sprint + .001));
   assert.ok(Math.max(...sprinting.map(frame => frame.cameraHeight)) - Math.min(...sprinting.map(frame => frame.cameraHeight)) > .05, 'sprint has visible but bounded vertical weight shift');
   assert.ok(sprinting.at(-1).stamina < .85);
   assert.equal(stopping.at(-1).speed, 0);
   assert.ok(Math.abs(stopping.at(-1).cameraHeight - stopping.at(-1).eyeHeight) < .001,
     'stopping settles to the current soldier eye height, not a fixed generic body height');
+  if (!page.isClosed()) await page.close();
 
   // Remaining checks use normal keys/mouse in a separate page, without mutation hooks.
   controlsContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  controlsContext.setDefaultTimeout(180000);
   const controls = await controlsContext.newPage();
   controls.on('pageerror', error => errors.push(error.message));
   await controls.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
-  await controls.waitForFunction(() => window.__battle?.state === 'menu');
+  await waitForMenu(controls);
   await deployFromMenu(controls);
   await controls.keyboard.down('w'); await controls.keyboard.down('Shift');
-  await controls.waitForFunction(() => window.__battle.locomotion.speed > 4.6);
+  await controls.waitForFunction(() => window.__battle.locomotion.speed > 4);
   const attempt = await controls.evaluate(() => new Promise(resolve => {
     const before = window.__battle, canvas = document.querySelector('#world');
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
@@ -114,12 +128,12 @@ try {
   await controls.locator('#motion-strength').selectOption('0');
   await controls.locator('#resume').click();
   await controls.keyboard.down('w');
-  await controls.waitForTimeout(700);
+  await controls.waitForFunction(() => window.__battle.locomotion.speed >= 2.65);
   data = await controls.evaluate(() => window.__battle);
   assert.equal(data.locomotion.motionStrength, 0);
   assert.equal(data.locomotion.cameraHeight, data.locomotion.eyeHeight);
   assert.equal(Math.abs(data.locomotion.cameraRoll), 0);
-  assert.ok(data.locomotion.speed > 3);
+  assert.ok(data.locomotion.speed >= FOOT_SPEEDS.infantry.jog - .05);
   await controls.keyboard.up('w');
   await controls.keyboard.press('Escape');
   await controls.locator('#motion-strength').selectOption('1');

@@ -5,15 +5,14 @@ export const SIHANG_WAREHOUSE = Object.freeze({
   floorHeight: 8.4, floors: 3, roofY: 25.2,
   bounds: Object.freeze({ minX: -36, maxX: 28, minZ: -42, maxZ: -8 }),
 });
-export const SIHANG_RIVER = Object.freeze({ northZ: 8, southZ: 32, waterY: -1 });
-// Quadratic bends meet the original bridge landings with a zero tangent.
-// Outside the map the banks remain bounded, rather than curving through spawn lots.
+export const SIHANG_RIVER = Object.freeze({ northZ: 8, southZ: 40, waterY: -1 });
+// A broad river bay lies below the warehouse; its eastern bend rises towards Tibet Road.
 export function sihangRiverBounds(x) {
   if (!Number.isFinite(x)) throw new RangeError('Sihang river requires a finite x');
   const bounded = Math.max(-108, Math.min(108, x));
-  const offset = bounded < 44 ? -12 * ((44 - bounded) / 152) ** 2
-    : bounded > 52 ? -9 * ((bounded - 52) / 56) ** 2 : 0;
-  return { northZ: 8 + offset, southZ: 32 + offset };
+  const offset = bounded < -36 ? -36 * ((-36 - bounded) / 72) ** 2
+    : bounded > 28 ? -96 * ((bounded - 28) / 80) ** 2 : 0;
+  return { northZ: 8 + offset, southZ: 40 + offset };
 }
 
 export function sihangNorthBank(position, margin = 0) {
@@ -42,7 +41,7 @@ export function sihangRiverRayRange(origin, direction, range, margin = 0) {
     sihangRiverBounds(origin.x + direction.x * t).southZ + margin;
   if (distance(0) >= 0) return 0;
   const cuts = [0, range];
-  if (direction.x !== 0) for (const x of [-108, 44, 52, 108]) {
+  if (direction.x !== 0) for (const x of [-108, -36, 28, 108]) {
     const t = (x - origin.x) / direction.x;
     if (t > 0 && t < range) cuts.push(t);
   }
@@ -77,14 +76,35 @@ export const SIHANG_RESERVED_LANES = Object.freeze([
   { id: 'west-flank', minX: -74, maxX: -38, minZ: -29, maxZ: -21 },
   { id: 'east-flank', minX: 30, maxX: 74, minZ: -29, maxZ: -21 },
   { id: 'sapper-assembly', minX: -9, maxX: 9, minZ: -108, maxZ: -42.5 },
-  { id: 'retreat', minX: 31, maxX: 55, minZ: -45, maxZ: 55 },
+  { id: 'retreat-exit', minX: 31, maxX: 39, minZ: -45, maxZ: -5 },
+  { id: 'retreat-approach', minX: 33, maxX: 81, minZ: -39, maxZ: -30 },
+  { id: 'retreat-bridge', minX: 72, maxX: 98, minZ: -32, maxZ: 10 },
 ].map(Object.freeze));
-export const SIHANG_BRIDGE = Object.freeze({ name: '西藏路桥', x: 48, width: 8, northZ: 8, southZ: 32 });
+export const SIHANG_BRIDGE = Object.freeze({ name: '西藏路桥', x: 83, z: -22, width: 8,
+  northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
+export function sihangBridgeCoordinates(position) {
+  const dx = SIHANG_BRIDGE.southX - SIHANG_BRIDGE.northX, dz = SIHANG_BRIDGE.southZ - SIHANG_BRIDGE.northZ;
+  const x = position.x - SIHANG_BRIDGE.northX, z = position.z - SIHANG_BRIDGE.northZ;
+  return { along: (x * dx + z * dz) / SIHANG_BRIDGE.length,
+    across: (x * dz - z * dx) / SIHANG_BRIDGE.length };
+}
+export function sihangBridgePoint(fraction, lateral = 0) {
+  if (![fraction, lateral].every(Number.isFinite)) throw new RangeError('Invalid bridge coordinate');
+  const dx = SIHANG_BRIDGE.southX - SIHANG_BRIDGE.northX, dz = SIHANG_BRIDGE.southZ - SIHANG_BRIDGE.northZ;
+  return { x: SIHANG_BRIDGE.northX + fraction * dx + lateral * dz / SIHANG_BRIDGE.length,
+    z: SIHANG_BRIDGE.northZ + fraction * dz - lateral * dx / SIHANG_BRIDGE.length };
+}
+export function sihangBridgeContains(position, margin = 0) {
+  if (![position?.x, position?.z, margin].every(Number.isFinite)) return false;
+  const local = sihangBridgeCoordinates(position);
+  return local.along >= -1e-7 && local.along <= SIHANG_BRIDGE.length + 1e-7 &&
+    Math.abs(local.across) <= SIHANG_BRIDGE.width / 2 - margin + 1e-7;
+}
 export const SIHANG_CAPTURE_AREA = Object.freeze({
   minX: -34, maxX: 26, minZ: -40, maxZ: -10, maxY: 2.4,
 });
 export const SIHANG_DEMOLITION_POINT = Object.freeze({ x: 0, y: 0, z: -43.5 });
-export const SIHANG_EVACUATION = Object.freeze({ x: 48, z: 48, radius: 12, southZ: 36 });
+export const SIHANG_EVACUATION = Object.freeze({ x: 92, z: 4, radius: 12, southZ: -14 });
 export const SIHANG_NORTH_WINDOWS = Object.freeze([-30, -22, -14, -6, 2, 10, 18, 25]);
 export const SIHANG_EAST_DEFENSE_WINDOWS = Object.freeze([-39, -36, -21, -18, -15, -12]);
 export const SIHANG_FIRING_POSTS = Object.freeze([

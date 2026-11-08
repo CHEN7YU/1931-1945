@@ -74,7 +74,9 @@ export function turningStepTarget(phase, direction) {
 
 export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
   const turning = (motion.turn?.weight ?? 0) * (1 - motion.weight);
-  const weight = Math.max(motion.weight, turning) * motion.upright;
+  const turnSupport = Math.min(1, motion.upright + (motion.wallLeft ?? 0) + (motion.wallRight ?? 0) +
+    .65 * ((motion.kneeling ?? 0) + (motion.crouched ?? 0)));
+  const weight = Math.max(motion.weight * motion.upright, turning * turnSupport);
   if (!Number.isFinite(weight) || weight < 0 || weight > 1 || typeof groundAt !== 'function') throw new Error('Invalid owned low-step gait');
   if (weight < .001) return { kind: 'native-foot-cycle', weight };
   const hips = bones.get('Hips'), hipPosition = hips.getWorldPosition(new Vector3());
@@ -94,6 +96,12 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     const run = runningStepTarget((motion.runPhase + offset) % 1, motion.runStride,
       motion.heelHeight ?? .20 + .06 * motion.legLift, motion.runContact);
     const local = restFeet[side].clone();
+    const lowTurn = turning * Math.min(1, (motion.kneeling ?? 0) + (motion.crouched ?? 0));
+    if (lowTurn > 0) {
+      const stanceFoot = root.worldToLocal(source.clone());
+      local.x += (stanceFoot.x - local.x) * lowTurn;
+      local.z += (stanceFoot.z - local.z) * lowTurn;
+    }
     const turn = turningStepTarget(((motion.turn?.phase ?? 0) + offset) % 1, motion.turn?.direction ?? 1);
     const travelZ = walk.z + (run.z - walk.z) * motion.jog;
     local.z += travelZ * (1 - turning);
@@ -113,6 +121,7 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
       outward.normalize().multiplyScalar(Math.sqrt(Math.max(0, minimum * minimum - (target.y - origin.y) ** 2)));
       target.x = origin.x + outward.x; target.z = origin.z + outward.z;
     }
+
     const solved = solveArm(upper, knee, foot, target, new Vector3(0, 0, -1).applyQuaternion(facing));
     if (!solved.reachable || solved.error > .01) throw new Error(`Native low-step foot is unreachable: ${side}, ` +
       `target=${target.toArray()}, origin=${origin.toArray()}, reach=${reach}, error=${solved.error}`);
@@ -130,4 +139,36 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
       phase: turning > .5 ? turn.lift > 0 ? 'turn-swing' : 'turn-support' : motion.jog > .5 ? run.stage : 'walk', error: solved.error };
   }
   return result;
+}
+
+export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
+  if (motion.upright < .99 || motion.weight > .001 || (motion.turn?.weight ?? 0) > .001) return;
+  const facing = root.getWorldQuaternion(new Quaternion()), forward = new Vector3(0, 0, -1).applyQuaternion(facing);
+  const centerZ = (restFeet.Left.z + restFeet.Right.z) / 2;
+  for (const side of ['Left', 'Right']) {
+    const upper = bones.get(`${side}UpLeg`), knee = bones.get(`${side}Leg`), foot = bones.get(`${side}Foot`);
+    const sign = side === 'Left' ? -1 : 1;
+    const target = root.localToWorld(new Vector3(sign * .125, 0, centerZ + sign * .025));
+    target.y = groundAt(target.x, target.z) + restFeet[side].y;
+    const origin = upper.getWorldPosition(new Vector3()), bend = knee.getWorldPosition(new Vector3()),
+      source = foot.getWorldPosition(new Vector3());
+    const reach = origin.distanceTo(bend) + bend.distanceTo(source) - 1e-5;
+    const horizontal = Math.hypot(target.x - origin.x, target.z - origin.z);
+    target.y = Math.max(target.y, origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal)));
+    const previousRotation = foot.getWorldQuaternion(new Quaternion());
+    const solved = solveArm(upper, knee, foot, target, new Vector3(sign * .08, 0, -1).applyQuaternion(facing));
+    if (!solved.reachable || solved.error > .01) throw new Error(`Native resting foot is unreachable: ${side}, ${solved.error}`);
+    foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert().multiply(previousRotation));
+    foot.updateMatrixWorld(true);
+    const toe = bones.get(`${side}ToeBase`);
+    if (toe) {
+      const direction = toe.getWorldPosition(new Vector3()).sub(foot.getWorldPosition(new Vector3())); direction.y = 0;
+      if (direction.lengthSq() > 1e-8) {
+        const rotation = new Quaternion().setFromUnitVectors(direction.normalize(), forward);
+        foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert()
+          .multiply(rotation).multiply(foot.getWorldQuaternion(new Quaternion())));
+        foot.updateMatrixWorld(true);
+      }
+    }
+  }
 }

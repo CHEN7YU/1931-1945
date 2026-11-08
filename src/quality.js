@@ -12,7 +12,8 @@ export function qualityProfile(preset, deviceRatio, maxTextureSize) {
 }
 
 export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio,
-  initialPreset = 'high', initialEffects = {} }) {
+  initialPreset = 'high', initialEffects = {}, lowMemory = false }) {
+  if (typeof lowMemory !== 'boolean') throw new TypeError('Invalid startup graphics resource mode');
   qualityProfile(initialPreset, deviceRatio(), renderer.capabilities.maxTextureSize);
   for (const [effect, enabled] of Object.entries(initialEffects)) {
     if (!QUALITY_EFFECTS.includes(effect) || typeof enabled !== 'boolean') throw new RangeError('Unknown initial graphics effect or invalid enabled flag');
@@ -21,12 +22,14 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, initialEffects[effect] ?? true])) };
   const fog = scene.fog;
   const effective = () => {
-    const preset = state.automaticLevel ? 'low' : state.preset, effects = { ...state.effects };
+    const preset = lowMemory || state.automaticLevel ? 'low' : state.preset, effects = { ...state.effects };
+    if (lowMemory) for (const effect of ['shadows', 'smoke', 'grain', 'muzzleLight']) effects[effect] = false;
     if (state.automaticLevel >= 2) {
       for (const effect of ['shadows', 'grain', 'muzzleLight']) effects[effect] = false;
     }
     if (state.automaticLevel >= 3) effects.smoke = false;
     const profile = qualityProfile(preset, deviceRatio(), renderer.capabilities.maxTextureSize);
+    if (lowMemory) profile.pixelRatio = Math.min(profile.pixelRatio, .6);
     if (state.automaticLevel >= 2) profile.pixelRatio = Math.min(profile.pixelRatio, state.automaticLevel === 3 ? .6 : .8);
     return { preset, effects, profile };
   };
@@ -77,7 +80,7 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     },
     get snapshot() {
       const { preset, effects } = effective();
-      return { preset, effects, automaticLevel: state.automaticLevel,
+      return { preset, effects, automaticLevel: state.automaticLevel, lowMemory,
         requested: { preset: state.preset, effects: { ...state.effects } }, pixelRatio: renderer.getPixelRatio(),
         canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height,
         requestedShadowSize: QUALITY_PRESETS[preset].shadowSize, shadowSize: sun.shadow.mapSize.x,

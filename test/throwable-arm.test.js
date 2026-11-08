@@ -119,20 +119,23 @@ test('dadao keeps cropped native sleeve edges out of sight', () => {
       if (!mesh.isSkinnedMesh || !mesh.visible || !['衣服', '臂章'].includes(mesh.name)) return;
       mesh.material = mesh.material.clone(); mesh.material.side = T.DoubleSide; sleeves.push(mesh);
       const original = originals.get(mesh.name), geometry = mesh.geometry;
-      const key = index => new T.Vector3().fromBufferAttribute(geometry.attributes.position, index)
+      const key = (geometry, index) => new T.Vector3().fromBufferAttribute(geometry.attributes.position, index)
         .toArray().map(value => value.toFixed(4)).join(',');
-      const retained = new Map([...geometry.index.array].map(index => [key(index), index]));
-      const triangles = new Set();
-      for (let at = 0; at < geometry.index.count; at += 3) {
-        triangles.add([0, 1, 2].map(corner => geometry.index.getX(at + corner)).join(','));
-      }
-      const boundary = new Set();
-      for (let at = 0; at < (original.index?.count ?? original.attributes.position.count); at += 3) {
-        const ids = [0, 1, 2].map(corner => original.index ? original.index.getX(at + corner) : at + corner);
-        if (triangles.has(ids.join(','))) continue;
-        for (const index of ids) if (retained.has(key(index))) boundary.add(retained.get(key(index)));
-      }
-      for (const index of boundary) cuts.push({ mesh, index });
+      const edges = geometry => {
+        const counts = new Map();
+        for (let at = 0; at < (geometry.index?.count ?? geometry.attributes.position.count); at += 3) {
+          const ids = [0, 1, 2].map(corner => geometry.index ? geometry.index.getX(at + corner) : at + corner);
+          for (let corner = 0; corner < 3; corner++) {
+            const ends = [ids[corner], ids[(corner + 1) % 3]], name = ends.map(index => key(geometry, index)).sort().join('|');
+            if (!counts.has(name)) counts.set(name, { count: 0, ends });
+            counts.get(name).count++;
+          }
+        }
+        return counts;
+      };
+      const originalEdges = edges(original);
+      for (const [name, edge] of edges(geometry)) if (edge.count === 1 && originalEdges.get(name)?.count !== 1)
+        for (const index of edge.ends) cuts.push({ mesh, index });
     });
     assert.ok(cuts.length > 0, 'inspect actual cropped edges, not the original open wrist cuff');
     let closest = { margin: Infinity };
@@ -245,7 +248,9 @@ test('native throwable arms isolate authorized sleeve/skin, preserve source reso
     assert.ok(visible.every(mesh => mesh.isSkinnedMesh && ['衣服', '臂章', '手部'].includes(mesh.name)));
     for (const mesh of visible) {
       const native = rig.meshes.find(original => original.name === mesh.name);
-      assert.equal(mesh.material, Array.isArray(native.material) ? native.material[0] : native.material);
+      const originalMaterial = Array.isArray(native.material) ? native.material[0] : native.material;
+      assert.equal(mesh.material.map, originalMaterial.map, 'owner-specific glove/sleeve shaders reuse the authorized texture');
+      assert.ok(mesh.material.color.equals(originalMaterial.color), 'base pigmentation is unchanged');
       assert.notEqual(mesh.geometry, native.geometry);
       assert.deepEqual(mesh.geometry.attributes.uv.array, native.geometry.attributes.uv.array);
     }

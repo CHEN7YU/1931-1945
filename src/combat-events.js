@@ -29,7 +29,7 @@ const copySource = value => {
     weaponId: value.weaponId, vehicleId: value.vehicleId ?? null, seatId: value.seatId ?? null });
 };
 const copyTarget = value => {
-  if (!value || !['soldier', 'vehicle'].includes(value.kind) ||
+  if (!value || !['soldier', 'vehicle', 'emplacement'].includes(value.kind) ||
     !['id', 'unitId'].every(field => typeof value[field] === 'string' && value[field]) ||
     !['friendly', 'enemy'].includes(value.team)) throw new Error('Combat feedback requires a target identity');
   return Object.freeze({ kind: value.kind, id: value.id, unitId: value.unitId, team: value.team });

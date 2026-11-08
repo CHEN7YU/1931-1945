@@ -155,7 +155,12 @@ export function createEmplacementModel(point) {
       bag.userData.emplacementCover = true;
     }
   }
-  root.userData.supportWeapon = { kind: point.profile, grips, loading,
+  let headRear = null;
+  if (cannon) {
+    headRear = new THREE.Object3D(); headRear.name = 'bofors75-safe-head-rear-plane';
+    headRear.position.set(0, 0, .80); barrel.add(headRear);
+  }
+  root.userData.supportWeapon = { kind: point.profile, grips, loading, headRear,
     operator: { x: 0, y: 0, z: cannon ? 1.02 : profile.antiAircraft ? .68 : .76 },
     operatorFollowsTraverse: true,
     stance: profile.antiAircraft ? 'standing' : 'crouched',

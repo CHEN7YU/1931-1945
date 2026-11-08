@@ -25,7 +25,8 @@ export const NANJING_EMPLACEMENTS = Object.freeze([
 export function createEmplacement(spec) {
   const profile = EMPLACEMENT_PROFILES[spec.profile];
   if (!profile || ![spec.x, spec.z, spec.heading].every(Number.isFinite)) throw new RangeError('Invalid fixed weapon position');
-  return { ...spec, position: 'gunner',
+  const health = spec.profile === 'bofors75' ? 240 : 160;
+  return { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
     yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
     weapon: { type: profile.type, model: profile.model, ammo: profile.magazine, reserve: profile.reserve,
       nextShot: 0, reloadUntil: 0, settings: profile } };
@@ -137,6 +138,7 @@ export function reloadEmplacement(point, now) {
 }
 
 export function advanceEmplacement(point, dt, now) {
+  if (point.health <= 0) return;
   point.heat = Math.max(0, point.heat - dt * .12);
   if (point.heat < .35) point.overheated = false;
   const weapon = point.weapon;
@@ -148,7 +150,7 @@ export function advanceEmplacement(point, dt, now) {
 
 export function fireEmplacement(point, now) {
   const weapon = point.weapon;
-  if (!point.operatorId || point.position === 'march' || point.overheated || weapon.reloadUntil || now < weapon.nextShot) return false;
+  if (point.health <= 0 || !point.operatorId || point.position === 'march' || point.overheated || weapon.reloadUntil || now < weapon.nextShot) return false;
   if (weapon.ammo <= 0) { reloadEmplacement(point, now); return false; }
   weapon.ammo--; weapon.nextShot = now + weapon.settings.interval; point.shots++;
   if (point.weapon.type !== 'field-gun') {
@@ -156,4 +158,25 @@ export function fireEmplacement(point, now) {
     point.overheated = point.heat >= 1;
   } else reloadEmplacement(point, now);
   return true;
+}
+
+export function damageEmplacement(point, amount, source, now) {
+  if (!source || typeof source !== 'object' || !Number.isFinite(point.health) || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(now) ||
+    !['friendly', 'enemy', undefined].includes(source?.team)) throw new RangeError('Invalid emplacement damage');
+  if (point.health <= 0 || source.team === point.team) return 0;
+  const applied = Math.min(point.health, amount);
+  point.health -= applied;
+  point.lastDamage = { time: now, amount: applied, source };
+  return applied;
+}
+
+export function fireSupportPriority(target) {
+  return target.artilleryThreat === true ? 0 : 1;
+}
+
+export function artilleryPositionTargets(points, heightAt) {
+  return [...points].filter(point => point.profile === 'bofors75' && point.health > 0)
+    .map(point => ({ id: `emplacement:${point.id}`, emplacementPositionId: point.id, artilleryThreat: true,
+      health: point.health, team: point.team, targetKind: 'emplacement', aimHeight: .95,
+      position: { x: point.x, y: point.altitude ?? heightAt(point.x, point.z), z: point.z } }));
 }

@@ -1,6 +1,7 @@
 import { CHI_HA, chiHaMuzzle } from './chi-ha.js';
 import { headingError } from './ai-turning.js';
 import { shotState } from './core.js';
+import { fireSupportPriority } from './emplacements.js';
 
 const turn = (from, to, step) => from + Math.max(-step, Math.min(step, headingError(from, to)));
 const aimPoint = actor => ({ x: actor.position.x, y: actor.position.y + (actor.aimHeight ?? 1), z: actor.position.z });
@@ -23,12 +24,13 @@ export function advanceChiHaAI(vehicle, dt, now, context) {
     ai.scanAt = now + .6;
     const muzzle = chiHaMuzzle(vehicle);
     target = context.targets.filter(eligible).sort((a, b) =>
+      fireSupportPriority(a) - fireSupportPriority(b) ||
       Math.hypot(a.position.x - position.x, a.position.z - position.z) -
       Math.hypot(b.position.x - position.x, b.position.z - position.z))
-      .find(actor => context.visible(muzzle, aimPoint(actor))) ?? null;
+      .find(actor => context.visible(muzzle, aimPoint(actor), actor)) ?? null;
     ai.targetId = target?.id ?? null;
   }
-  const visible = Boolean(target && context.visible(chiHaMuzzle(vehicle), aimPoint(target)));
+  const visible = Boolean(target && context.visible(chiHaMuzzle(vehicle), aimPoint(target), target));
   const objective = context.objective, goal = context.destination ?? objective;
   if (!goal) { ai.mode = 'hold'; return null; }
   if (ai.objectiveId !== (goal.id ?? null) || !ai.goal || ai.goal.x !== goal.x || ai.goal.z !== goal.z) {
@@ -92,7 +94,7 @@ export function advanceChiHaAI(vehicle, dt, now, context) {
   }
   ai.distanceToObjective = Math.hypot(objective.x - position.x, objective.z - position.z);
   if (!firing || vehicle.speed > .1 || Math.abs(headingError(vehicle.turretYaw, yaw)) > .025 ||
-    Math.abs(vehicle.turretPitch - pitch) > .025 || !context.visible(chiHaMuzzle(vehicle), point)) return null;
+    Math.abs(vehicle.turretPitch - pitch) > .025 || !context.visible(chiHaMuzzle(vehicle), point, target)) return null;
   // The shortened barrel sits over the glacis; only fire inside its real elevation limits.
   if (!safe || !shotState(vehicle.weapon, now, true)) return null;
   ai.shots++;

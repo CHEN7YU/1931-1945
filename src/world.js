@@ -26,8 +26,8 @@ const actorMaterials = {
   leather: new THREE.MeshStandardMaterial({ color: 0x44372b, roughness: .88 }),
 };
 
-export async function setModelSurfaces(surface, maxAnisotropy) {
-  await configureRifleMaterials(maxAnisotropy);
+export async function setModelSurfaces(surface, maxAnisotropy, textureBudget = null) {
+  await configureRifleMaterials(maxAnisotropy, textureBudget);
   const timber = surface('timber');
   Object.assign(actorMaterials.wood, {
     map: timber.map, normalMap: timber.normalMap,

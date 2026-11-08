@@ -43,6 +43,17 @@ export function createSolidIndex(solids, size = 8) {
   }
   return {
     acceleration: Object.freeze(acceleration),
+    addDynamic(object) {
+      if (!object?.isMesh || dynamic.includes(object)) throw new Error('Dynamic collision registration requires a new mesh');
+      object.updateWorldMatrix(true, false);
+      accelerateCollisionMesh(object);
+      dynamic.push(object);
+    },
+    removeDynamic(object) {
+      const index = dynamic.indexOf(object);
+      if (index < 0) throw new Error('Dynamic collision mesh is not registered');
+      dynamic.splice(index, 1);
+    },
     sweptCandidates(from, to, radius) {
       if (![from?.x, from?.y, from?.z, to?.x, to?.y, to?.z, radius].every(Number.isFinite) || radius < 0)
         throw new RangeError('Swept solid query requires a finite segment and non-negative radius');

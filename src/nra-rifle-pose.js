@@ -123,6 +123,8 @@ export function createNraRiflePose(root, bones, gun) {
       gun.position.fromArray(carry.weaponPosition); gun.quaternion.copy(localRotation);
       const lowGrip = carry.bayonet || carry.weaponBlocked ? .5 : carry.lowReady ?? 0;
       grip.position.fromArray(RIFLE_CONTACTS.supportPalm).lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportPalm), lowGrip);
+      if (gun.userData.smgReload?.handWeight > 0)
+        grip.position.lerp(new THREE.Vector3(...gun.userData.smgReload.palm), gun.userData.smgReload.handWeight);
       grip.position.z += (.16 * (carry.prone ?? 0) + .06 * ((carry.wallLeft ?? 0) + (carry.wallRight ?? 0))) * (1 - (carry.lowReady ?? 0));
       grip.position.z += .05 * (carry.wallRight ?? 0) * (carry.lowReady ?? 0);
       root.updateMatrixWorld(true);

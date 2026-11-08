@@ -140,6 +140,8 @@ export function createNanjingCampaign() {
     embarkOrderIssued: false,
     playerEscaped: false,
     playerBoardingBoatId: null,
+    embarkFireBufferStartedAt: null,
+    embarkFireBufferUntil: 0,
     boardedAISquads: [],
     outcome: null,
     civiliansArrived: 0,

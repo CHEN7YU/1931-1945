@@ -42,8 +42,9 @@ try {
         point.view.userData.update();updateSupportGripMarkers();updateCamera(0);updateHUD();
         return {actor:actor.id,index:actor.index,officer:isNativeOfficer(actor),point:point.id};
       },
-      aim(yaw,pitch){
+      aim(yaw,pitch,zoom=false){
         const actor=controlledSoldier(entities),point=emplacements.get(actor.emplacementId);
+        held.aiming=zoom;
         emplacementLook(point,point.heading+yaw,pitch);
         const pose=emplacementPose(point,point.altitude??world.groundHeight(point.x,point.z));
         actor.position.set(pose.operator.x,pose.operator.y,pose.operator.z);
@@ -68,6 +69,7 @@ try {
             gloveShaders.push(node.material.customProgramCacheKey());
         });
         return {state,actor:actor.id,index:actor.index,stance:actor.stance,firingPose:actor.firingPose,first:supportViewHands.snapshot,
+          camera:{position:camera.position.toArray(),fov:camera.fov},
           third:view?.supportGrip,gloves,gloveShaders,observer:__gripObserver};
       }
     };` });
@@ -99,11 +101,21 @@ try {
       assert.deepEqual(state.gloveShaders, ['native-bone-weight-officer-gloves-v1', 'native-bone-weight-officer-gloves-v1']);
       cases.push({ profile, yaw, pitch, owner, ...state });
     }
+    await page.evaluate(() => gripReview.aim(0, .1, false));
+    const normal = await page.evaluate(() => gripReview.snapshot().camera);
     await page.screenshot({ path: join(directory, `${profile}-officer-first-person.png`) });
+    await page.evaluate(() => gripReview.aim(0, .1, true));
+    const zoom = await page.evaluate(() => gripReview.snapshot().camera);
+    assert.deepEqual(zoom.position, normal.position, 'right-button zoom must not move the eye to escape weapon obstruction');
+    assert.equal(normal.fov, 65); assert.equal(zoom.fov, 42);
+    await page.screenshot({ path: join(directory, `${profile}-officer-first-person-zoom.png`) });
+    cases.push({ profile, zoomOnly: true, normal, zoom });
     await page.evaluate(() => gripReview.observe());
     await page.waitForFunction(() => Boolean(gripReview.snapshot().third), null, { timeout: 10000 });
     const third = await page.evaluate(() => gripReview.snapshot());
     assert.equal(third.third.contactLimited, false, JSON.stringify(third.third));
+    if (profile === 'bofors75') assert.ok(third.third.headRearDistance >= 0,
+      'The actual native gunner head must stay behind the moving breech-rear plane');
     for (const hand of Object.values(third.third.hands)) {
       assert.ok(hand.wristError < .04); assert.ok(hand.palmError < .008);
     }

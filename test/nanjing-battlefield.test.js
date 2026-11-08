@@ -85,12 +85,18 @@ test('every residential door can be focused, opened, entered and closed using th
   const camera = new THREE.PerspectiveCamera();
   const ray = new THREE.Raycaster();
   for (const [index, home] of world.landmarks.residentialBuildings.entries()) {
+    world.doorSystem.reset();
     const door = world.doorSystem.doors[index];
     assert.equal(door.id, `${home.id}-door`);
-    assert.equal(door.state, 'closed');
+    assert.equal(door.state, door.initialAngle ? 'open' : 'closed');
     const length = Math.hypot(home.exit.x - door.x, home.exit.z - door.z);
     const nx = (home.exit.x - door.x) / length, nz = (home.exit.z - door.z) / length;
     const position = { x: door.x + nx * 1.2, y: 0, z: door.z + nz * 1.2 };
+    if (door.state === 'open') {
+      assert.equal(world.doorSystem.interact(door, position), true);
+      for (let frame = 0; frame < 60; frame++) world.doorSystem.update(1 / 60, []);
+    }
+    assert.equal(door.state, 'closed', 'close initially open residential entrances before exercising their collision');
     camera.position.set(position.x, 1.65, position.z);
     camera.lookAt(door.x, 1.2, door.z);
     camera.updateMatrixWorld(true);
@@ -118,7 +124,8 @@ test('every residential door can be focused, opened, entered and closed using th
     assert.ok(ray.intersectObjects(world.solids, false).length, 'closed door blocks shots');
   }
   world.doorSystem.reset();
-  assert.ok(world.doorSystem.doors.every(door => door.state === 'closed'));
+  assert.ok(world.doorSystem.doors.every(door => door.state === (door.initialAngle ? 'open' : 'closed')),
+    'reset restores each authored initial doorway state');
 });
 
 test('removing the northern gate also removes its courtyard, flanks and wall supports', () => {

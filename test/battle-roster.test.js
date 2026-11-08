@@ -71,16 +71,20 @@ test('all 198 staged infantry have clear, separated, registered spawn positions'
   }
   assert.equal(occupied.length, 198);
 });
-test('friendly sections equip a mortarman, not an engineer, alongside the existing sniper and gunner', () => {
+test('both infantry squads replace one ordinary rifleman with an engineer while keeping their existing specialists', () => {
   for (const team of ['friendly', 'enemy']) {
     const loadouts = Array.from({ length: TYPES.infantry.members }, (_, index) => infantryLoadout(team, index));
     assert.deepEqual(loadouts[0], { role: team === 'friendly' ? 'mortarman' : 'grenade-discharger', model: 'rifle' });
+    const engineerIndex = team === 'friendly' ? 1 : 3;
+    assert.deepEqual(loadouts[engineerIndex], { role: 'engineer', model: 'rifle' });
     assert.ok(loadouts.slice(team === 'friendly' ? 1 : 2, team === 'friendly' ? 9 : 8)
-      .every(item => item.role === 'rifleman' && item.model === 'rifle'));
+      .every(item => ['rifleman', 'engineer'].includes(item.role) && item.model === 'rifle' ||
+        team === 'friendly' && item.role === 'assault' && item.model === 'sigm1920'));
     assert.deepEqual(loadouts[9], { role: 'sniper', model: 'sniper' });
-    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, team === 'friendly' ? 8 : 6);
+    assert.equal(loadouts.filter(item => item.role === 'rifleman').length, team === 'friendly' ? 6 : 5);
+    assert.equal(loadouts.filter(item => item.role === 'assault').length, team === 'friendly' ? 1 : 0);
     assert.deepEqual(loadouts[10], { role: 'machine-gunner', model: team === 'friendly' ? 'zb26' : 'type11' });
-    assert.equal(loadouts.filter(item => item.role === 'engineer').length, 0);
+    assert.equal(loadouts.filter(item => item.role === 'engineer').length, 1);
     for (let index = 0; index < 10; index++) assert.deepEqual(sectionOffset(index),
       { x: (index % 5 - 2) * 1.15, z: Math.floor(index / 5) * 1.4 - .7 });
     assert.deepEqual(sectionOffset(10), { x: 0, z: 2.1 });

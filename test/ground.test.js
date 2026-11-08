@@ -70,11 +70,11 @@ test('the dry bed permits normal jogging and sprinting', () => {
   for (let i = 0; i < 120; i++) advanceLocomotion(motion, position,
     { type: 'infantry', forward: 1, yaw: Math.PI / 2, stance: 'standing',
       sprint: false }, [], 1 / 60);
-  assert.ok(Math.abs(motion.speed - 3.15) < .001);
+  assert.ok(Math.abs(motion.speed - 2.7) < .001);
   assert.equal(motion.sprinting, false);
   for (let i = 0; i < 60; i++) advanceLocomotion(motion, position,
     { type: 'infantry', forward: 1, yaw: Math.PI / 2, stance: 'standing', sprint: true }, [], 1 / 60);
-  assert.ok(Math.abs(motion.speed - 4.8) < .001);
+  assert.ok(Math.abs(motion.speed - 4.1) < .001);
   assert.equal(motion.sprinting, true);
 });
 test('both bridge approaches are continuous ramps', () => {

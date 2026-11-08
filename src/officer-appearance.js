@@ -22,8 +22,8 @@ export function isNativeOfficer(actor) {
 
 const variants = new WeakMap(), regions = new WeakMap(), palettes = new Map(), accessories = new Map();
 export const OFFICER_COLORS = Object.freeze({
-  friendly: Object.freeze(['#4b4b35', '#78492f', '#171919', '#bba56b', '#786746', '#edeae0', '#123d79', '#625e46']),
-  enemy: Object.freeze(['#88704d', '#443022', '#513422', '#c5a253', '#8c2926', '#edeae0', '#c5a253', '#a18a64']),
+  friendly: Object.freeze(['#52533d', '#62462f', '#20211e', '#a99565', '#786746', '#e1ded2', '#123d79', '#625e46']),
+  enemy: Object.freeze(['#7d6d50', '#493b2b', '#3e3226', '#b8a06a', '#8c2926', '#e1ded2', '#b8a06a', '#948265']),
 });
 const colors = OFFICER_COLORS;
 
@@ -301,8 +301,8 @@ export function createOfficerAppearance(root, bones, meshes, team) {
       box([.043, .025, .006], [side * .033, neck.y - .012, neck.z - .078], 'Spine2', 4);
       for (let rank = 0; rank < 3; rank++)
         box([.025, .0025, .007], [side * .033, neck.y - .019 + rank * .007, neck.z - .083], 'Spine2', 3, null, 'collar-rank-strip');
-      box([.071, .083, .012], [side * .076, y - .048, z], 'Spine2', 0);
-      box([.076, .018, .016], [side * .076, y - .012, z - .007], 'Spine2', 0);
+      box([.071, .083, .006], [side * .076, y - .048, z], 'Spine2', 0);
+      box([.076, .018, .008], [side * .076, y - .012, z - .004], 'Spine2', 0);
       box([.007, .007, .007], [side * .076, y - .012, z - .018], 'Spine2', 3);
       const prefix = side < 0 ? 'Left' : 'Right', shoulder = landmark(`${prefix}Shoulder`), arm = landmark(`${prefix}Arm`);
       const direction = arm.clone().sub(shoulder), strap = new THREE.BoxGeometry(Math.max(.07, direction.length()), .006, .026);
@@ -317,16 +317,16 @@ export function createOfficerAppearance(root, bones, meshes, team) {
         box([.039, .0015, .001], [-.073, y + .025 + stitch * .007, z - .011], 'Spine2', 7);
     }
     for (let i = 0; i < 5; i++) box([.009, .009, .007], [0, y + .026 - i * .048, z - .009], 'Spine2', 3);
-    const sash = new THREE.BoxGeometry(.034, .32, .012);
+    const sash = new THREE.BoxGeometry(.026, .32, .006);
     add(sash, [.01, y - .035, z - .026], 'Spine2', 1, new THREE.Euler(0, 0, -.58), 'diagonal-leather-strap');
     buckle([.035, y - .072, z - .035], [.030, .025], 'Spine2', 'strap-buckle');
-    const belt = new THREE.CylinderGeometry(.148, .148, team === 'friendly' ? .050 : .041, 20, 1, true);
+    const belt = new THREE.CylinderGeometry(.146, .146, .039, 20, 1, true);
     belt.scale(1.12, 1, .70); add(belt, [hips.x, hips.y + .125, hips.z], 'Hips', 1, null, 'waist-belt');
-    buckle([0, hips.y + .125, hips.z - .112], [.042, team === 'friendly' ? .053 : .043], 'Hips', 'waist-buckle');
+    buckle([0, hips.y + .125, hips.z - .112], [.037, .041], 'Hips', 'waist-buckle');
     box([.025, .047, .010], [.053, hips.y + .125, hips.z - .105], 'Hips', 1, null, 'belt-keeper');
     for (const side of ['Left', 'Right']) {
       const knee = landmark(`${side}Leg`), foot = landmark(`${side}Foot`);
-      const boot = new THREE.CylinderGeometry(.056, .045, Math.max(.15, knee.y - foot.y - .035), 10, 1, true);
+      const boot = new THREE.CylinderGeometry(.049, .043, Math.max(.15, knee.y - foot.y - .055), 10, 1, true);
       add(boot, [foot.x, (knee.y + foot.y) / 2 - .025, foot.z], `${side}Leg`, 2);
     }
     if (team === 'enemy') {

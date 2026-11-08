@@ -1,6 +1,6 @@
 import { CHI_HA } from './chi-ha.js';
 import { SIHANG_CAPTURE_AREA, SIHANG_WAREHOUSE, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS,
-  sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
+  SIHANG_BRIDGE, SIHANG_EVACUATION, sihangBridgePoint, sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
 
 export function sihangBattleRoster(playerType = 'infantry') {
   if (playerType !== 'infantry') throw new RangeError('四行仓库仅可选择步兵');
@@ -67,7 +67,10 @@ export function sihangEnemyRayRange(origin, direction, range) {
 export function sihangRetreatGoal(actor) {
   const position = actor.position;
   const lane = (actor.index % 5 - 2) * 1.15;
-  if (position.y >= 3 || position.z < 3) return { x: 48 + lane, y: 0, z: 4, transit: true };
-  if (position.z < 35) return { x: 48 + lane, y: 0, z: 36.5, transit: true };
-  return { x: 48 + lane, y: 0, z: 46 + Math.floor(actor.index / 5) * 1.5, transit: true };
+  if (position.y >= 3 || position.x < SIHANG_BRIDGE.northX - 4 || position.z < SIHANG_BRIDGE.northZ - 3)
+    return { x: SIHANG_BRIDGE.northX + lane, y: 0, z: SIHANG_BRIDGE.northZ - 1.3, transit: true };
+  if (!sihangSouthBank(position, 4))
+    return { ...sihangBridgePoint(1 + 4 / SIHANG_BRIDGE.length, lane), y: 0, transit: true };
+  return { x: SIHANG_EVACUATION.x + lane, y: 0,
+    z: SIHANG_EVACUATION.z + Math.floor(actor.index / 5) * 1.5, transit: true };
 }

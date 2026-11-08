@@ -33,6 +33,8 @@ export function constructionCandidate(position, yaw, groundHeight) {
 export function advanceConstruction(state, input, dt, validate) {
   requireBuilder(input.builderId);
   const position = point(input.position), candidate = point(input.candidate);
+  const duration = input.buildSeconds ?? SPAWN_RULES.buildSeconds;
+  if (!Number.isFinite(duration) || duration <= 0) throw new RangeError('Construction duration must be positive and finite');
   if (!Number.isFinite(dt) || dt < 0 || typeof input.holding !== 'boolean' ||
     typeof input.allowed !== 'boolean' || typeof validate !== 'function') throw new RangeError('Invalid construction step');
   if (!input.allowed || (state.blueprint && state.builderId !== input.builderId)) {
@@ -54,8 +56,8 @@ export function advanceConstruction(state, input, dt, validate) {
   if (input.holding && !reason) {
     if (!state.site) { state.site = point(candidate); state.anchor = point(position); }
     state.mode = 'building';
-    state.progress = Math.min(SPAWN_RULES.buildSeconds, state.progress + dt);
-    if (state.progress >= SPAWN_RULES.buildSeconds) {
+    state.progress = Math.min(duration, state.progress + dt);
+    if (state.progress >= duration) {
       const completed = Object.freeze({ builderId: state.builderId, position: Object.freeze(point(state.site)) });
       resetConstructionState(state);
       return { completed, notice: null };

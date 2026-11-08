@@ -68,6 +68,10 @@ test('all seated poses keep feet grounded on the unchanged thirteen-bone rig and
     updateCivilianAppearance([person], camera, 'high');
     person.updateMatrixWorld(true);
     assert.equal(person.civilianSkin.skeleton.bones.length, 13);
+    for (const hand of Object.values(person.userData.seatedContacts.hands)) {
+      assert.equal(hand.reachable, true);
+      assert.ok(hand.error < .004, `real seated hand contact: ${hand.error}`);
+    }
     for (const side of ['left', 'right']) {
       const foot = person.civilianSkin.joints[`${side}Foot`].getWorldPosition(new THREE.Vector3());
       assert.ok(foot.y > .05 && foot.y < .10, `pose ${pose}: ${foot.y}`);

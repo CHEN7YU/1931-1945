@@ -9,7 +9,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { createNraAppearanceApplicator, nraAppearanceResourceBudget } from './nra-appearance.js';
 import { createNativePosturePoses } from './nra-posture-pose.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
-import { createNativeGaitProfile, applyNativeFootCycle, applyNativeUpperBody } from './nra-gait.js';
+import { createNativeGaitProfile, applyNativeFootCycle, applyNativeRestStance, applyNativeUpperBody } from './nra-gait.js';
 import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
@@ -19,7 +19,8 @@ import { createNraDadaoPose } from './nra-dadao-pose.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createUniformReferencePose, createRemadeUniformGeometry, createRemadeUniformMaterials } from './nra-uniform.js';
 import { createOfficerAppearance } from './officer-appearance.js';
-import { nativeSupportWeaponPresentation } from './native-weapon-presentation.js';
+import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './native-weapon-presentation.js';
+import { engineerAssemblyTools } from './engineer.js';
 import { createSupportWeaponPose } from './support-weapon-pose.js';
 
 export function configureNraTexture(texture, id) {
@@ -41,7 +42,7 @@ export function attachNraHelmet(head, helmet, texture, settings) {
   return helmet;
 }
 
-export async function loadNraCharacter(walkHeightAt = walkHeight) {
+export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudget = null } = {}) {
   const base = '/assets/game/nra-88/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Character manifest: HTTP ${response.status}`);
@@ -54,7 +55,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     new FBXLoader(manager).loadAsync(`${base}character.fbx`),
     fetch(`${base}animations.json`),
     Promise.all(Object.entries(source.textures).map(async ([id, file]) => {
-      const texture = await new THREE.TextureLoader().loadAsync(`${base}${file}`);
+      const loader = new THREE.TextureLoader();
+      const texture = await (textureBudget ? textureBudget.load(loader, `${base}${file}`) : loader.loadAsync(`${base}${file}`));
       return [id, configureNraTexture(texture, id)];
     })),
     new FBXLoader(manager).loadAsync(`${base}${source.helmet.file}`),
@@ -147,10 +149,13 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
     }
   }
   const gun = rifleWorldModel();
+  const engineerTools = engineerAssemblyTools(); engineerTools.visible = false; root.add(engineerTools);
   const riflePose = createNraRiflePose(root, canonical, gun);
   const supportPose = createSupportWeaponPose(root, canonical);
   let dadaoPose = null;
-  const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
+  const groundAt = (x, z, referenceY = root.position.y) =>
+    observedActor?.health <= 0 && observedActor.tactics?.corpseFerry
+      ? observedActor.position.y : walkHeightAt(x, z, referenceY);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),
@@ -209,11 +214,16 @@ export async function loadNraCharacter(walkHeightAt = walkHeight) {
       root.position.copy(actor.position); root.rotation.set(0, actor.heading, 0);
       root.updateMatrixWorld(true);
       const ferrySupport = actor.tactics?.nanjingFerry;
+      if (actor.health > 0) applyNativeRestStance(root, canonical, motion, restFeet, groundAt);
       legPose = applyNativeFootCycle(root, canonical, motion, restFeet,
         ferrySupport && ['boarding', 'aboard'].includes(ferrySupport.phase) ? () => actor.position.y : groundAt);
       applyNativeUpperBody(root, canonical, motion);
       syncWorldWeapon(gun, actor.rifle);
-      riflePose.update(rifleOperation === undefined ? motion : { ...motion, rifleOperation });
+      const engineering = nativeEngineerPresentation(actor);
+      riflePose.update(engineering ? { ...motion, rifleOperation: null } :
+        rifleOperation === undefined ? motion : { ...motion, rifleOperation });
+      engineerTools.visible = engineering;
+      engineerTools.position.copy(gun.position); engineerTools.quaternion.copy(gun.quaternion);
       if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip());
       dadaoPose?.update(motion.dadao);
       supportPose.update(actor, now);

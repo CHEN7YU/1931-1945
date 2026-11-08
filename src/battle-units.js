@@ -17,7 +17,7 @@ export function friendlyAIFormationName(campaignId, playerUnitName, index) {
 }
 
 export function soldierRoleLabel(actor) {
-  return { mortarman: '迫击炮手', 'grenade-discharger': '掷弹筒手', sniper: '狙击手', 'machine-gunner': '机枪手',
+  return { engineer: '工兵', assault: '冲锋枪手', mortarman: '迫击炮手', 'grenade-discharger': '掷弹筒手', sniper: '狙击手', 'machine-gunner': '机枪手',
     rifleman: '步枪手', tanker: '车组', pilot: '飞行员' }[actor.role] ?? actor.role;
 }
 

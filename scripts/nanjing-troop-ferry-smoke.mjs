@@ -102,7 +102,9 @@ try {
       }
     };` });
   });
-  await page.goto(`${process.env.GAME_URL ?? 'http://127.0.0.1:5203'}/?campaign=nanjing`);
+  const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5203/');
+  url.searchParams.set('campaign', 'nanjing');
+  await page.goto(url.href);
   await page.waitForFunction(() => window.troopFerryReview &&
     document.getElementById('overlay').dataset.deploymentStep === 'identity', null, { timeout: 180000 });
   await page.locator('#confirm-identity').click();

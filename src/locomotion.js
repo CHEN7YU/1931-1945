@@ -2,7 +2,7 @@ import { moveGround } from './core.js';
 
 // Prototype tuning in metres and seconds, not measured Enlisted parameters.
 export const FOOT_SPEEDS = Object.freeze({
-  infantry: Object.freeze({ walk: 1.75, jog: 3.15, sprint: 4.8, crouch: 1.35, prone: .55, aim: 1.5, load: 1 }),
+  infantry: Object.freeze({ walk: 1.75, jog: 2.7, sprint: 4.1, crouch: 1.35, prone: .55, aim: 1.5, load: 1 }),
   mortar: Object.freeze({ walk: 1.4, jog: 2.45, sprint: 3.7, crouch: 1.05, prone: .42, aim: 1.2, load: 1.3 }),
 });
 const approach = (value, target, rate, dt) => target + (value - target) * Math.exp(-rate * dt);
@@ -102,7 +102,7 @@ export function advanceLocomotion(motion, position, input, obstacles, dt, move =
     advanceStamina(motion, h, Boolean(effort), profile.load, mode === 'idle' ? .2 : mode === 'walk' || mode === 'crouch' ? .14 : .065);
     motion.sprintBlend = approach(motion.sprintBlend, effort ? 1 : 0, effort ? 7 : 12, h);
     if (grounded) {
-      const strideLength = mode === 'prone' ? .85 : mode === 'crouch' ? 1.3 : effort ? 2.7 : mode === 'walk' || mode === 'aim' ? 1.55 : 2.1;
+      const strideLength = mode === 'prone' ? .85 : mode === 'crouch' ? 1.3 : effort ? 2.5 : mode === 'walk' || mode === 'aim' ? 1.55 : 1.95;
       motion.stride += travelled / strideLength;
       motion.groundDistance += travelled;
     }

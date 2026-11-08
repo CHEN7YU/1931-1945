@@ -9,6 +9,7 @@ import {
   SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS, SIHANG_STAIR_ROUTES,
   sihangRiverBounds, sihangSouthBank, SIHANG_RESERVED_LANES, SIHANG_LEVELS,
   SIHANG_STAIRWELLS, sihangStairHeight,
+  sihangBridgePoint, sihangBridgeContains, sihangBridgeCoordinates,
 } from '../src/sihang-layout.js';
 
 let scene, world;
@@ -62,11 +63,12 @@ describe('independent Sihang Warehouse battlefield', () => {
   it('exports the coordinate contract and a complete standalone world', () => {
     assert.equal(W.width, 64); assert.equal(W.depth, 34);
     assert.equal(W.floorHeight, 8.4); assert.equal(W.floors, 3); assert.equal(W.roofY, 25.2);
-    assert.deepEqual(SIHANG_RIVER, { northZ: 8, southZ: 32, waterY: -1 });
-    assert.deepEqual(SIHANG_BRIDGE, { name: '西藏路桥', x: 48, width: 8, northZ: 8, southZ: 32 });
+    assert.deepEqual(SIHANG_RIVER, { northZ: 8, southZ: 40, waterY: -1 });
+    assert.deepEqual(SIHANG_BRIDGE, { name: '西藏路桥', x: 83, z: -22, width: 8,
+      northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
     assert.equal(SIHANG_CAPTURE_AREA.maxY, 2.4);
     assert.deepEqual(SIHANG_DEMOLITION_POINT, { x: 0, y: 0, z: -43.5 });
-    assert.equal(SIHANG_EVACUATION.southZ, 36);
+    assert.equal(SIHANG_EVACUATION.southZ, -14);
     for (const key of ['solids', 'obstacles', 'smoke', 'flags', 'armorObstacles', 'civilians', 'civilianVisuals'])
       assert.ok(Array.isArray(world[key]), key);
     for (const key of ['groundSurface', 'groundHeight', 'walkHeight', 'moveInfantry', 'elevatedPath',
@@ -141,7 +143,7 @@ describe('independent Sihang Warehouse battlefield', () => {
   });
 
   it('replans mid-flight and on turn landings without vertical jumps, shortcuts or skipped storeys', () => {
-    const goal = { x: 48, y: 0, z: 48 };
+    const goal = { x: SIHANG_EVACUATION.x, y: 0, z: SIHANG_EVACUATION.z };
     for (const route of SIHANG_STAIR_ROUTES) {
       for (const flight of route.flights) {
         const z = (flight.start.z + flight.end.z) / 2;
@@ -154,7 +156,7 @@ describe('independent Sihang Warehouse battlefield', () => {
   });
 
   it('rejoins capsule-safe flight lanes and artificial landing collars in three shafts', () => {
-    const goal = { x: 48, y: 0, z: 48 };
+    const goal = { x: SIHANG_EVACUATION.x, y: 0, z: SIHANG_EVACUATION.z };
     for (const route of SIHANG_STAIR_ROUTES) {
       for (const flight of route.flights) for (const offset of [-.65, .65]) {
         const z = -29.4, y = sihangStairHeight(flight, z);
@@ -267,13 +269,15 @@ describe('independent Sihang Warehouse battlefield', () => {
   it('routes second-floor squads onto a smooth arched bridge and the south-bank evacuation area', () => {
     for (const origin of SIHANG_SQUAD_ORIGINS)
       follow(origin, { x: SIHANG_EVACUATION.x, y: 0, z: SIHANG_EVACUATION.z });
-    const feet = new THREE.Vector3(48, 0, 6);
+    const begin = sihangBridgePoint(-2 / SIHANG_BRIDGE.length), end = sihangBridgePoint(1 + 2 / SIHANG_BRIDGE.length);
+    const feet = new THREE.Vector3(begin.x, 0, begin.z);
+    const steps = Math.ceil((SIHANG_BRIDGE.length + 4) / .1), dx = (end.x - begin.x) / steps, dz = (end.z - begin.z) / steps;
     let highest = 0;
     scene.updateMatrixWorld(true);
-    for (let i = 0; i < 280; i++) {
-      world.moveInfantry(feet, 0, .1, .42);
+    for (let i = 0; i < steps; i++) {
+      world.moveInfantry(feet, dx, dz, .42);
       highest = Math.max(highest, feet.y);
-      if (feet.z > 8 && feet.z < 32) {
+      if (sihangBridgeContains(feet)) {
         const ray = new THREE.Raycaster(new THREE.Vector3(feet.x, feet.y + .05, feet.z), new THREE.Vector3(0, -1, 0), 0, .12);
         const hit = ray.intersectObjects(world.solids, false)[0];
         assert.ok(hit, 'Arched bridge visually supports the feet');
@@ -282,12 +286,13 @@ describe('independent Sihang Warehouse battlefield', () => {
     }
     close(highest, 1.15, 'Bridge has an actual arch');
     close(feet.y, 0, 'Returns smoothly to south street');
-    close(feet.z, 34, 'Crosses to the south');
-    follow({ x: 48, y: 0, z: 40 }, { x: 48, y: 0, z: 0 });
+    close(feet.x, end.x, 'Crosses the diagonal bridge to its south landing');
+    close(feet.z, end.z, 'Crosses to the south');
+    follow({ x: end.x, y: 0, z: end.z }, { x: begin.x, y: 0, z: begin.z });
   });
 
   it('rejects river shortcuts across the full width and routes ground traffic over the only bridge', () => {
-    for (const x of [-107, -80, 0, 40, 56, 90, 107]) {
+    for (const x of [-107, -80, 0, 40, 56, 96, 107]) {
       const bounds = sihangRiverBounds(x);
       assert.equal(world.isDeepWater(x, (bounds.northZ + bounds.southZ) / 2), true);
       const feet = new THREE.Vector3(x, 0, bounds.northZ - 3);
@@ -297,13 +302,16 @@ describe('independent Sihang Warehouse battlefield', () => {
       world.moveInfantry(south, 0, -35, .42);
       assert.ok(south.z > bounds.southZ, 'Cannot wade from the curved south bank either');
     }
-    assert.equal(world.isDeepWater(48, 20), false);
+    const center = sihangBridgePoint(.5);
+    assert.equal(world.isDeepWater(center.x, center.z), false);
     assert.equal(world.impactHeight(0, 20), -1);
     const path = follow({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 42 });
-    assert.ok(path.route.some(p => p.x >= 44 && p.x <= 52), 'Navigation uses the east bridge');
-    const edge = new THREE.Vector3(48, 1.15, 20);
-    world.moveInfantry(edge, -15, 0, .42);
-    assert.ok(edge.x >= 44.4, 'Real bridge railing blocks a sideways river exit');
+    assert.ok(path.route.some(p => sihangBridgeContains(p)), 'Navigation uses the actual diagonal bridge');
+    const edge = new THREE.Vector3(center.x, 1.15, center.z);
+    const sideways = sihangBridgePoint(.5, -15);
+    world.moveInfantry(edge, sideways.x - center.x, sideways.z - center.z, .42);
+    assert.ok(Math.abs(sihangBridgeCoordinates(edge).across) <= SIHANG_BRIDGE.width / 2 - .35,
+      'Real diagonal bridge railing blocks a sideways river exit');
   });
 
   it('keeps 36 varied, animated skinned civilians on actual south-bank routes', () => {
@@ -322,7 +330,9 @@ describe('independent Sihang Warehouse battlefield', () => {
       world.updateCivilians(.25, tick * .25);
       for (const person of world.civilians) {
         assert.ok(sihangSouthBank(person.position, 3), 'Civilian never crosses the curved river');
-        assert.equal(circleBlocked(person.position.x, person.position.z, .26, world.obstacles), false);
+        assert.equal(circleBlocked(person.position.x, person.position.z, .26, world.obstacles), false,
+          `Civilian ${person.userData.civilianId} at ${person.position.toArray()} intersects ` +
+          JSON.stringify(world.obstacles.filter(obstacle => circleBlocked(person.position.x, person.position.z, .26, [obstacle]))));
         if (person.position.z > 58) enteredShops.add(person.userData.civilianId);
       }
     }
@@ -363,7 +373,8 @@ describe('independent Sihang Warehouse battlefield', () => {
     scene.traverse(object => { if (object.isMesh) after.push(object); });
     assert.equal(after.length, meshes.length);
     assert.deepEqual(new Set(after.map(mesh => mesh.geometry)), geometries);
-    follow({ x: 18, y: W.floorHeight, z: -31 }, { x: 48, y: 0, z: 48 });
+    follow({ x: 18, y: W.floorHeight, z: -31 },
+      { x: SIHANG_EVACUATION.x, y: 0, z: SIHANG_EVACUATION.z });
   });
 
   it('rebuilds movement colliders after ruin and reset independently of door navigation subscribers', () => {

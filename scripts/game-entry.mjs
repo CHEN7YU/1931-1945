@@ -34,6 +34,7 @@ export async function deployFromMenu(page) {
     await page.locator('#deploy').click();
     return;
   }
+  if (await page.locator('#confirm-campaign').isVisible()) await page.locator('#confirm-campaign').click();
   await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep ||
     !document.getElementById('menu').hidden || !document.getElementById('fatal').hidden,
   null, { timeout: 180000 });

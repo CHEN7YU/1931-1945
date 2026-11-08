@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Group, Vector3 } from 'three';
+import { Group, Vector3, Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
 import { beginTroopFerryBoarding, advanceTroopFerryBoarding, syncTroopFerryPassengers,
-  troopFerryReady, playerFerryReady, completeTroopFerryCrossing } from '../src/nanjing-troop-ferry.js';
+  troopFerryReady, playerFerryReady, completeTroopFerryCrossing, startFinalBoardingFireBuffer,
+  finalBoardingFireHeld, FINAL_BOARDING_FIRE_BUFFER_SECONDS, retainTroopFerryCasualty,
+  syncTroopFerryCorpses } from '../src/nanjing-troop-ferry.js';
 
 function fixture(count = 1) {
   const ferry = new Group(); ferry.position.set(-76, .05, -80);
@@ -19,6 +21,78 @@ function fixture(count = 1) {
   };
   return { ferry, actors, route, board };
 }
+
+test('final boarding gives one bounded simulation-time fire buffer only after actual player boarding begins', () => {
+  const campaign = { stage: 'withdrawal-to-boats', embarkFireBufferStartedAt: null, embarkFireBufferUntil: 0 };
+  const actor = { health: 100, playerUnit: true, tactics: {} };
+  assert.equal(startFinalBoardingFireBuffer(campaign, actor, 10), false);
+  actor.tactics.nanjingFerry = { phase: 'boarding', ferryId: 0 };
+  assert.equal(startFinalBoardingFireBuffer(campaign, actor, 10), true);
+  assert.equal(finalBoardingFireHeld(campaign, 10), true);
+  assert.equal(finalBoardingFireHeld(campaign, 10 + FINAL_BOARDING_FIRE_BUFFER_SECONDS - .001), true);
+  assert.equal(finalBoardingFireHeld(campaign, 10 + FINAL_BOARDING_FIRE_BUFFER_SECONDS), false);
+  const until = campaign.embarkFireBufferUntil;
+  actor.tactics.nanjingFerry.phase = 'aboard';
+  assert.equal(startFinalBoardingFireBuffer(campaign, actor, 11), false);
+  actor.tactics.nanjingFerry.phase = 'boarding';
+  assert.equal(startFinalBoardingFireBuffer(campaign, actor, 30), false);
+  assert.equal(campaign.embarkFireBufferUntil, until, 'Y, another boarding or a death/redeployment cannot extend the same buffer');
+  campaign.stage = 'dock-defense';
+  assert.equal(finalBoardingFireHeld(campaign, 11), false);
+  assert.equal(finalBoardingFireHeld(null, 11), false);
+  assert.throws(() => finalBoardingFireHeld(campaign, NaN), /simulation time/);
+});
+
+test('a boarded casualty keeps its actual deck support and moves with the original boat without being evacuated', () => {
+  const { ferry, actors, board } = fixture();
+  assert.equal(board(0), true);
+  const actor = actors[0], original = actor.position.clone();
+  actor.health = 0; actor.heading = .7;
+  assert.equal(retainTroopFerryCasualty(ferry, actor), true);
+  assert.equal(retainTroopFerryCasualty(ferry, actor), true);
+  assert.equal(ferry.userData.troopCorpses.length, 1);
+  syncTroopFerryPassengers(ferry);
+  assert.equal(ferry.userData.troopPassengers.length, 0);
+  assert.deepEqual(completeTroopFerryCrossing(ferry), []);
+  const local = ferry.worldToLocal(original.clone());
+  ferry.position.x -= 10; ferry.position.y += .1; ferry.rotation.y = .4;
+  syncTroopFerryCorpses(ferry);
+  assert.ok(ferry.worldToLocal(actor.position.clone()).distanceTo(local) < 1e-9);
+  assert.ok(Math.abs(actor.heading - 1.1) < 1e-9);
+  assert.equal(actor.health, 0); assert.ok(actor.tactics.corpseFerry);
+  actor.corpseRemoved = true; syncTroopFerryCorpses(ferry);
+  assert.equal(ferry.userData.troopCorpses.length, 0);
+});
+
+test('a dead soldier still on the shore-side boarding route is not incorrectly attached to the ferry', () => {
+  const { ferry, actors, route } = fixture();
+  assert.equal(beginTroopFerryBoarding(ferry, actors, 0, route), true);
+  const actor = actors[0]; actor.health = 0;
+  assert.equal(retainTroopFerryCasualty(ferry, actor), false);
+  assert.equal(actor.tactics.corpseFerry, undefined);
+});
+
+test('a casualty on the actual boarding plank stays on that fixed support, not the moving boat or the water', () => {
+  const { ferry, actors, route } = fixture();
+  const plank = new Mesh(new BoxGeometry(2.4, .12, .8), new MeshBasicMaterial());
+  plank.position.set(-73.2, .42, -80); ferry.userData.gangplank = plank;
+  beginTroopFerryBoarding(ferry, actors, 0, route);
+  const actor = actors[0]; actor.health = 0; actor.heading = 0;
+  actor.position.set(-73.2, .45, -80);
+  assert.equal(retainTroopFerryCasualty(ferry, actor), true);
+  assert.equal(actor.tactics.corpseFerry.support, 'gangplank');
+  assert.ok(Math.abs(actor.position.y - .48) < 1e-6);
+  const original = actor.position.clone();
+  ferry.position.x -= 10; syncTroopFerryCorpses(ferry);
+  assert.ok(actor.position.distanceTo(original) < 1e-6);
+  plank.visible = false;
+  syncTroopFerryCorpses(ferry, { dt: .1, groundAt: () => -1 });
+  assert.ok(actor.position.y < original.y && actor.position.y > -1, 'loss of real support falls, not teleports');
+  for (let i = 0; i < 10; i++) syncTroopFerryCorpses(ferry, { dt: .1, groundAt: () => -1 });
+  assert.equal(actor.position.y, -1);
+  assert.equal(actor.tactics.corpseFerry, undefined);
+  assert.deepEqual(completeTroopFerryCrossing(ferry), []);
+});
 test('being inside the dock does not evacuate a soldier: actual walking, boarding and a crossing are required', () => {
   const { ferry, actors, route } = fixture(), actor = actors[0];
   assert.equal(beginTroopFerryBoarding(ferry, actors, 0, route), true);

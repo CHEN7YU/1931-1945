@@ -1,11 +1,12 @@
 export const KILL_COLUMNS = Object.freeze([
-  ['rifle', '步枪'], ['sniper', '狙击枪'], ['machine-gun', '机枪'], ['grenade', '手雷'],
+  ['rifle', '步枪'], ['sniper', '狙击枪'], ['machine-gun', '机枪'], ['submachine-gun', '冲锋枪'], ['grenade', '手雷'],
   ['explosive-pack', '炸药包'], ['melee', '近战'], ['tank', '坦克（含碾压）'], ['tank-machine-gun', '坦克机枪'],
   ['mortar', '迫击炮'], ['grenade-discharger', '八九式掷弹筒'], ['field-gun', '山炮'], ['plane', '航空'],
 ].map(Object.freeze));
 
 export function attackCategory(weapon) {
-  if (weapon.type === 'infantry') return weapon.model === 'sniper' ? 'sniper' : ['zb26', 'type11'].includes(weapon.model) ? 'machine-gun' : 'rifle';
+  if (weapon.type === 'infantry') return weapon.model === 'sigm1920' ? 'submachine-gun'
+    : weapon.model === 'sniper' ? 'sniper' : ['zb26', 'type11'].includes(weapon.model) ? 'machine-gun' : 'rifle';
   if (weapon.type === 'tank' && weapon.mount) return 'tank-machine-gun';
   if (KILL_COLUMNS.some(([id]) => id === weapon.type)) return weapon.type;
   throw new RangeError(`Unclassified attack weapon: ${weapon.type}`);

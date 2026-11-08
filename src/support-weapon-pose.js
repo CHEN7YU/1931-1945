@@ -46,7 +46,7 @@ export function supportWeaponTargets(model, actorRoot, phase = 'operate') {
   model.updateWorldMatrix(true, true); actorRoot.updateWorldMatrix(true, false);
   const local = node => actorRoot.worldToLocal(position(node)).toArray();
   const inverse = rotation(actorRoot).invert();
-  return Object.fromEntries(['left', 'right'].map(side => {
+  const targets = Object.fromEntries(['left', 'right'].map(side => {
     const anchor = phase === 'loading' && support.loading?.[side] || support.grips[side];
     const transform = rotation(anchor.grip);
     const direction = values => new THREE.Vector3(...values).applyQuaternion(transform).applyQuaternion(inverse).toArray();
@@ -54,6 +54,11 @@ export function supportWeaponTargets(model, actorRoot, phase = 'operate') {
       radius: anchor.radius, forward: direction(anchor.forward), normal: direction(anchor.normal),
       axis: direction(anchor.axis) }];
   }));
+  if (support.headRear && phase !== 'march') targets.headRear = {
+    point: local(support.headRear),
+    normal: new THREE.Vector3(0, 0, 1).applyQuaternion(rotation(support.headRear)).applyQuaternion(inverse).toArray(),
+  };
+  return targets;
 }
 
 // The isolated first-person sleeves use the same native posture origins, not camera-relative invented arm lengths.
@@ -163,24 +168,33 @@ export function createSupportWeaponPose(root, bones, {
         [side, root.localToWorld(new THREE.Vector3(...targets[side].wrist))]));
       const spine = bones.get('Spine'), baseSpine = rotation(spine);
       const center = goals.left.clone().add(goals.right).multiplyScalar(.5);
+      const headPlane = targets.headRear;
+      if (headPlane && !['point', 'normal'].every(key => Array.isArray(headPlane[key]) &&
+        headPlane[key].length === 3 && headPlane[key].every(Number.isFinite)))
+        throw new Error('Cannon head clearance requires a finite breech-rear plane');
+      const headRearDistance = () => headPlane
+        ? root.worldToLocal(position(head)).sub(new THREE.Vector3(...headPlane.point))
+          .dot(new THREE.Vector3(...headPlane.normal).normalize()) : null;
+      const headClear = () => !headPlane || headRearDistance() >= 0;
       const reachScore = () => Math.max(...['Left', 'Right'].map(side => {
         const arm = bones.get(`${side}Arm`), lower = bones.get(`${side}ForeArm`), hand = bones.get(`${side}Hand`);
         return position(arm).distanceTo(goals[side.toLowerCase()]) /
           (position(arm).distanceTo(position(lower)) + position(lower).distanceTo(position(hand)));
       }));
       const horizontal = center.clone().sub(position(spine)); horizontal.y = 0;
-      let lean = 0, bestScore = reachScore();
+      let lean = 0, bestScore = headClear() ? reachScore() : Infinity;
       if (horizontal.lengthSq() > 1e-8 && bestScore > .88) {
         const axis = new THREE.Vector3(0, 1, 0).cross(horizontal.normalize()).normalize();
-        for (let step = 1; step <= 12; step++) {
+        for (let step = headPlane ? -12 : 1; step <= 12; step++) {
           const angle = SUPPORT_CONTACT.maximumLean * step / 12;
           setRotation(spine, new THREE.Quaternion().setFromAxisAngle(axis, angle).multiply(baseSpine));
           const score = reachScore();
-          if (score < bestScore) { bestScore = score; lean = angle; }
+          if (headClear() && score < bestScore) { bestScore = score; lean = angle; }
           if (marker.kind === 'type89' && marker.phase === 'operate' && score <= .9) break;
         }
         setRotation(spine, new THREE.Quaternion().setFromAxisAngle(axis, lean).multiply(baseSpine));
       }
+      if (!headClear()) throw new Error('Cannon operator head could not remain behind the breech');
       const hands = {};
       for (const side of ['Left', 'Right']) {
         const key = side.toLowerCase(), target = targets[key], shoulder = bones.get(`${side}Shoulder`);
@@ -237,7 +251,8 @@ export function createSupportWeaponPose(root, bones, {
       for (const [bone, state] of modified) state.applied = bone.quaternion.clone();
       const limited = Object.values(hands).some(hand => !hand.reachable ||
         hand.wristError > SUPPORT_CONTACT.wristTolerance || hand.palmError > SUPPORT_CONTACT.palmTolerance);
-      snapshot = { owner, kind: marker.kind, phase: marker.phase, bankIndex: index, lean, hands, gaze, contactLimited: limited };
+      snapshot = { owner, kind: marker.kind, phase: marker.phase, bankIndex: index, lean, hands, gaze,
+        headRearDistance: headRearDistance(), contactLimited: limited };
       return snapshot;
     },
     get snapshot() { return snapshot; },

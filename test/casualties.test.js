@@ -86,7 +86,21 @@ test('a constrained casualty uses a folded death pose instead of returning to a 
   assert.equal(first.upright, 1);
   assert.equal(last.upright, 0); assert.equal(last.kneeling, 1);
   assert.equal(last.bodyLean, 0);
+  assert.deepEqual(casualtyRotation(state, 1).toArray(),
+    casualtyRotation({ variant: 0 }, 1).toArray(), 'a folded kneeling body settles sideways instead of lifting its shins into the air');
   assert.equal(JSON.stringify(state), snapshot, 'sampling never mutates the immutable death snapshot');
+});
+
+test('an ordinary backward collapse does not artificially turn a standing casualty into a kneeling crossed-leg pose', () => {
+  const actor = corpse(5);
+  const motion = { upright: 1, bodyLean: .2, hipDrop: .1, weight: 0, speed: 0, prone: 0,
+    postures: { kneeling: 0, crouched: 0, prone: 0, wallLeft: 0, wallRight: 0 }, headAim: null };
+  const casualty = createCasualtyState(actor, 0, motion, { variant: 3, retainGun: false });
+  const last = sampleCasualtyMotion(casualty, 5);
+  assert.equal(last.upright, 1);
+  assert.equal(last.postures.kneeling, 0);
+  assert.equal(last.headAim, null);
+  assert.equal(casualty.retainGun, false);
 });
 
 test('real hit direction selects a collapse side while running and prone casualties retain their existing momentum and posture',()=>{

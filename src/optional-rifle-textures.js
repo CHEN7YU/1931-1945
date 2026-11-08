@@ -22,12 +22,13 @@ export function planRifleTextures(config) {
   return plan;
 }
 
-export async function applyRifleTextures(materials, config, maxAnisotropy = 8) {
+export async function applyRifleTextures(materials, config, maxAnisotropy = 8, textureBudget = null) {
   const plan = planRifleTextures(config);
   if (!plan.length) return;
   const loader = new THREE.TextureLoader();
   const requests = [...new Map(plan.map(item => [`${item.url}|${item.colorSpace}`, item])).entries()];
-  const results = await Promise.allSettled(requests.map(([, item]) => loader.loadAsync(item.url)));
+  const results = await Promise.allSettled(requests.map(([, item]) =>
+    textureBudget ? textureBudget.load(loader, item.url) : loader.loadAsync(item.url)));
   const failed = results.findIndex(result => result.status === 'rejected');
   if (failed >= 0) {
     for (const result of results) if (result.status === 'fulfilled') result.value.dispose();

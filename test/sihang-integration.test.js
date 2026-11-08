@@ -8,6 +8,7 @@ import { campaignById, SELECTABLE_CAMPAIGNS } from '../src/campaigns.js';
 import { campaignLayout } from '../src/campaign-layout.js';
 import { makeWorld } from '../src/battlefield.js';
 import { formationPositions } from '../src/battle-roster.js';
+import { SIHANG_BRIDGE, sihangBridgePoint, sihangRiverBounds } from '../src/sihang-layout.js';
 import { spawnBlockReason } from '../src/spawns.js';
 import { objectiveContainsPosition, circleBlocked } from '../src/core.js';
 import { createEmplacement, emplacementPose } from '../src/emplacements.js';
@@ -78,15 +79,16 @@ test('new campaign has an original inline schematic, remains separate from locke
   assert.ok(PERFORMANCE_MAPS.includes('sihang'));
 });
 
-test('neutral-bank target filter excludes soldiers and vehicles at or south of z32', () => {
-  for (const z of [-90, 8, 31.99]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 0, z } }), true);
-  for (const z of [32, 36, 100]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 50, z } }), false);
+test('neutral-bank target filtering and retreat goals follow the shared curved bank and diagonal bridge', () => {
+  const south = sihangRiverBounds(48).southZ;
+  for (const z of [-90, 8, south - .01]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 0, z } }), true);
+  for (const z of [south, south + 4, 100]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 50, z } }), false);
   assert.equal(sihangEnemyTargetAllowed(null), false);
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), 24);
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 32 }, { x: 0, z: -1 }, 220), 0);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), south - 8);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: south }, { x: 0, z: -1 }, 220), 0);
   assert.equal(sihangEnemyRayRange({ x: 48, z: 4 }, { x: 0, z: -1 }, 220), 220);
-  assert.equal(sihangRetreatGoal({ index: 0, position: { x: 0, y: W.floorHeight, z: -25 } }).z, 4);
-  assert.equal(sihangRetreatGoal({ index: 0, position: { x: 48, y: 0, z: 15 } }).z, 36.5);
+  assert.equal(sihangRetreatGoal({ index: 0, position: { x: 0, y: W.floorHeight, z: -25 } }).z, SIHANG_BRIDGE.northZ - 1.3);
+  assert.ok(sihangRetreatGoal({ index: 0, position: { ...sihangBridgePoint(.5), y: 0 } }).z > SIHANG_BRIDGE.southZ);
 });
 
 test('real warehouse geometry supports all four complete opening formations, enemy staging, capture height and rooftop gunner', () => {

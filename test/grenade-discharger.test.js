@@ -88,8 +88,8 @@ test('no neutral civilians, dead/vehicle targets, assembly fire or gate-to-dock 
   assert.equal(dischargerTargetAllowed(actor, soldier('civilian', 0, 0, { team: 'civilian' })), false);
   for (const target of [soldier('dead', 0, 0, { health: 0 }), soldier('tank', 0, 0, { vehicleId: 'tank' }),
     soldier('close', 0, -40), soldier('far', 0, 200)]) assert.equal(dischargerTargetAllowed(actor, target), false);
-  assert.equal(dischargerTargetAllowed(actor, soldier('bank', 0, 32), { sihang: true }), false);
-  assert.equal(dischargerTargetAllowed(actor, soldier('margin', 0, 25), { sihang: true }), false);
+  assert.equal(dischargerTargetAllowed(actor, soldier('bank', 0, 40), { sihang: true }), false);
+  assert.equal(dischargerTargetAllowed(actor, soldier('margin', 0, 33), { sihang: true }), false);
   assert.equal(dischargerTargetAllowed(actor, soldier('north', 0, 10), { sihang: true }), true);
   assert.equal(dischargerTargetAllowed(actor, soldier('safe', 0, 0), { eastAssembly: true }), false);
   assert.equal(dischargerTargetAllowed(actor, soldier('dock', 0, -30), { nanjingStage: 'withdrawal' }), false);

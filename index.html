@@ -33,6 +33,7 @@
       </section>
       <div class="loading-progress-row"><progress id="loading-progress" max="100" value="0" aria-label="游戏初始化进度" aria-valuetext="0%">0%</progress><span id="loading-percentage">0%</span></div>
       <p id="loading-message" role="status">正在构建战场…</p>
+      <button id="low-memory-restart" type="button" class="screen-button">加载很慢？使用低内存模式重新加载</button>
       <button type="button" class="screen-button" data-menu-music-toggle aria-pressed="true">背景音乐：开启</button>
     </div>
     <main id="menu" hidden>
@@ -69,6 +70,8 @@
       </section>
       <aside class="operation-panel">
         <div class="panel-heading"><span>作战部署</span><span class="index">01</span></div>
+        <label for="startup-resource-mode">启动资源 <select id="startup-resource-mode" data-resource-mode><option value="auto">自动（内存提示不超过4GB时减负）</option><option value="standard">标准资源</option><option value="low-memory">低内存（4GB优先）</option></select></label>
+        <small data-resource-status>低内存模式减少纹理及人物几何驻留；不减少兵力、弹药或模拟时间。</small>
         <label class="campaign-label" for="campaign-choice">战役阶段 <select id="campaign-choice"></select></label>
         <p id="campaign-description" class="map-description"></p>
         <section id="campaign-history-panel" class="campaign-intel" aria-labelledby="campaign-history-title">
@@ -186,7 +189,7 @@
             <span>装填 <b id="tank-reload-time"></b></span>
           </div>
           <div class="hud-label" id="weapon-name">栓动步枪</div><div class="ammo"><span id="ammo">5</span><small id="ammo-max">/ 5</small></div>
-          <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="迫击炮 · 按2选择，站定后左键架设"><b>2</b>炮</span><span data-equipment-slot="3" title="大刀 · 左键挥砍"><b>3</b>刀</span><span data-equipment-slot="5" title="5 手榴弹"><b>5</b><span class="equipment-label">雷</span><span class="equipment-count">1</span></span><span data-equipment-slot="6" title="6 定时炸药包"><b>6</b><span class="equipment-label">包</span><span class="equipment-count">1</span></span></div>
+          <div id="equipment-slots" aria-label="装备栏"><span data-equipment-slot="1" class="selected" title="主武器"><b>1</b>主</span><span data-equipment-slot="2" title="兵种专用工具 · 按2选择"><b>2</b><span class="equipment-label">炮</span></span><span data-equipment-slot="3" title="大刀 · 左键挥砍"><b>3</b>刀</span><span data-equipment-slot="5" title="5 手榴弹"><b>5</b><span class="equipment-label">雷</span><span class="equipment-count">1</span></span><span data-equipment-slot="6" title="6 定时炸药包"><b>6</b><span class="equipment-label">包</span><span class="equipment-count">1</span></span></div>
           <div id="grenade-status" hidden></div><div id="tank-machine-gun" hidden></div><div class="health-track"><div id="health-fill"></div></div><span id="health-text">生命 100</span></div>
         <div id="tank-orientation" hidden aria-label="坦克车体与炮塔朝向，图上方为当前视线">
           <svg viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="40" fill="none" stroke="#85927d"/>
@@ -259,6 +262,8 @@
           </fieldset>
           <fieldset id="quality-settings" hidden>
             <legend>图形设置 · 手动</legend>
+            <label for="pause-resource-mode">下次启动资源 <select id="pause-resource-mode" data-resource-mode><option value="auto">自动</option><option value="standard">标准资源</option><option value="low-memory">低内存（4GB优先）</option></select></label>
+            <small data-resource-status>重新加载页面后生效；不会在当前战局重建资源或重置小队。</small>
             <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
             <div class="quality-options">
               <label><input id="quality-shadows" type="checkbox" data-quality-effect="shadows" checked /> 动态阴影</label>

@@ -163,8 +163,9 @@ export function createWeaponHands(createHand) {
         model.scale.toArray().some(value => value <= 0)) throw new Error('Weapon hands require a finite, non-singular weapon transform');
       model.updateMatrix(); model.updateMatrixWorld(true);
       const inverse = model.matrix.clone().invert();
-      const rightKind = profile.automatic ? 'pistol' : 'trigger';
-      const rightAnchor = profile.automatic ? [.012, -.115, -.065] : [.015, -.055, -.105];
+      const pistolGrip = profile.automatic && !profile.smg;
+      const rightKind = pistolGrip ? 'pistol' : 'trigger';
+      const rightAnchor = pistolGrip ? [.012, -.115, -.065] : [.015, -.055, -.105];
       const boltWeight = profile.automatic ? 0 : pose.hand * (1 - pose.loading);
       const loadWeight = profile.automatic ? 0 : pose.loading;
       const boltRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), pose.boltLift);
@@ -172,17 +173,17 @@ export function createWeaponHands(createHand) {
       const boltCenter = vector(BOLT_HANDLE.center).applyQuaternion(boltRotation);
       boltCenter.z += pose.boltTravel;
       const right = [
-        goal('right', rightKind, rightAnchor, profile.automatic ? sideFrame : triggerFrame, 1 - boltWeight - loadWeight),
+        goal('right', rightKind, rightAnchor, pistolGrip ? sideFrame : triggerFrame, 1 - boltWeight - loadWeight),
         goal('right', 'bolt', boltCenter.toArray(), wristTurn.multiply(boltFrame), boltWeight),
         goal('right', 'charger', [0, .13 + model.userData.rifle.clip.position.y, -.18], sideFrame, loadWeight),
       ];
-      const supportHeight = profile.automatic ? -.072 : -.035;
+      const supportHeight = pistolGrip ? -.072 : -.035;
       const support = goal('left', 'support', [0, supportHeight, -.34], supportFrame);
       let left = [support];
       if (profile.automatic && state.action === 'reload') {
         const reload = machineGunReloadPose(state), t = state.elapsed / profile.reloadSeconds;
         const reach = smooth(t, 0, .12) * (1 - smooth(t, .91, 1));
-        const pressing = smooth(t, .7, .78) * (1 - smooth(t, .86, .94));
+        const pressing = profile.smg ? 0 : smooth(t, .7, .78) * (1 - smooth(t, .86, .94));
         const carry = state.model === 'zb26' ? [.065, .127, -.247].map((value, i) => value + reload.feed[i])
           : [reload.palm[0] + .035, reload.palm[1] - .025, reload.palm[2]];
         const top = state.model === 'zb26' ? [.065, .182 - reload.press, -.247] : [-.123, .045, -.216];

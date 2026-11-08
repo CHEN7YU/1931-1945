@@ -88,6 +88,17 @@ test('dead, prone and travelling soldiers do not start an upright stationary tur
   }
 });
 
+test('crouched stationary turning steps activate, but fixed gun and discharger operators stay planted', () => {
+  for (const patch of [{ stance: 'crouched' }, { stance: 'crouched', emplacementId: 'field-gun' },
+    { stance: 'crouched', discharger: { presentationActive: true } }]) {
+    const person = actor();
+    Object.assign(person, { health: 100, tactics: {} }, patch);
+    person.heading += .12;
+    advanceNraMotion(person, .05);
+    assert.equal(person.nativeMotion.turn.weight > 0, !patch.emplacementId && !patch.discharger);
+  }
+});
+
 test('reversing a turn releases its original foot cycle before changing direction, without fake movement', () => {
   for (const fps of [30, 60, 144]) {
     const person = actor();

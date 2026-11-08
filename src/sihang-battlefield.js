@@ -12,11 +12,12 @@ import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER as R, SIHANG_BRIDGE as B,
   SIHANG_CAPTURE_AREA, SIHANG_STAIRWELLS, SIHANG_STAIR_ROUTES,
   SIHANG_LEVELS, SIHANG_NORTH_WINDOWS, SIHANG_EAST_DEFENSE_WINDOWS, SIHANG_FIRING_POSTS,
-  sihangStairHeight, sihangRiverBounds, sihangSouthBank,
+  sihangStairHeight, sihangRiverBounds, sihangSouthBank, sihangBridgeCoordinates, sihangBridgePoint, sihangBridgeContains,
 } from './sihang-layout.js';
 
 const within = (x, z, rect) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
-const bridgeHeight = z => 1.15 * Math.sin(Math.PI * THREE.MathUtils.clamp((z - R.northZ) / 24, 0, 1));
+const bridgeHeight = (z, x = B.northX + (z - B.northZ) * (B.southX - B.northX) / (B.southZ - B.northZ)) =>
+  1.15 * Math.sin(Math.PI * THREE.MathUtils.clamp(sihangBridgeCoordinates({ x, z }).along / B.length, 0, 1));
 const levels = SIHANG_LEVELS;
 
 function createDamagedPlaster() {
@@ -159,21 +160,33 @@ export function makeSihangBattlefield(scene, surface) {
   for (let i = 0; i <= 108; i++) {
     const x = -108 + i * 2, bounds = sihangRiverBounds(x);
     riverVertices.push(x, R.waterY, bounds.northZ, x, R.waterY, bounds.southZ);
-    bankVertices[0].push(x, 0, -108, x, 0, bounds.northZ);
-    bankVertices[1].push(x, 0, bounds.southZ, x, 0, 108);
+    bankVertices[0].push(x, -.05, -108, x, -.05, bounds.northZ);
+    bankVertices[1].push(x, -.05, bounds.southZ, x, -.05, 108);
     if (i) {
       const j = i * 2;
       riverIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
       bankIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
     }
-    if (i === 108 || x >= 44 && x < 52) continue;
+    if (i === 108) continue;
     const end = sihangRiverBounds(x + 2);
     // Outer envelopes conservatively close all water cells; no chord supports a shortcut.
     const north = Math.min(bounds.northZ, end.northZ), south = Math.max(bounds.southZ, end.southZ);
-    const collider = { minX: x, maxX: x + 2, minZ: north, maxZ: south, minY: -10, height: 40, water: true };
-    riverBlocks.push(collider);
+    const cut = at => {
+      const dx = (B.southX - B.northX) / B.length, dz = (B.southZ - B.northZ) / B.length;
+      const center = B.northZ + (at - B.northX) * dz / dx;
+      return { min: Math.max(center - B.width / (2 * dx), B.northZ - (at - B.northX) * dx / dz - .75 / dz),
+        max: Math.min(center + B.width / (2 * dx), B.northZ + (B.length + .75) / dz - (at - B.northX) * dx / dz) };
+    };
+    const left = cut(x), right = cut(x + 2), low = Math.max(north, left.min, right.min),
+      high = Math.min(south, left.max, right.max);
+    const bands = low < high ? [[north, low], [high, south]] : [[north, south]];
+    for (const [minZ, maxZ] of bands) if (maxZ - minZ > 1e-6)
+      riverBlocks.push({ minX: x, maxX: x + 2, minZ, maxZ, minY: -10, height: 40, water: true });
     for (const bank of ['northZ', 'southZ']) {
       const middle = sihangRiverBounds(x + 1)[bank], slope = (end[bank] - bounds[bank]) / 2;
+      const bridgeLocal = sihangBridgeCoordinates({ x: x + 1, z: middle });
+      if (bridgeLocal.along >= -1 && bridgeLocal.along <= B.length + 1 &&
+        Math.abs(bridgeLocal.across) < B.width / 2 + 1) continue;
       const rail = box(x + 1, 1.05, middle, Math.hypot(2, 2 * slope), .1, .12, materials.iron);
       rail.rotation.y = -Math.atan(slope);
       box(x + 1, -.8, middle, 2.01, 1.6, .5, materials.concrete);
@@ -196,11 +209,11 @@ export function makeSihangBattlefield(scene, surface) {
   solids.push(strip(bankVertices[0], bankIndices, materials.earth, 'sihang-north-dry-bank'));
   solids.push(strip(bankVertices[1], bankIndices, materials.street, 'sihang-south-dry-bank'));
   for (const z of [-55, 43, 82]) {
-    box(0, -.025, z, 216, .05, 8, materials.street);
+    box(0, -.02, z, 216, .05, 8, materials.street);
     town.streets.push({ x: 0, z, width: 216, depth: 8 });
   }
   for (const x of [-60, 48, 85]) {
-    box(x, -.02, -50, 10, .04, 116, materials.street);
+    box(x, -.008, -50, 10, .04, 116, materials.street);
     town.streets.push({ x, z: -50, width: 10, depth: 116 });
   }
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
@@ -208,20 +221,25 @@ export function makeSihangBattlefield(scene, surface) {
   obstacles.push(...riverBlocks);
   // A continuous arched walking surface, not a flat collider floating above a decorative arch.
   const bridgeVertices = [], bridgeIndices = [];
+  const bridgeAngle = Math.atan2(B.southX - B.northX, B.southZ - B.northZ);
   for (let step = 0; step <= 48; step++) {
-    const z = 8 + step / 2, y = bridgeHeight(z);
-    bridgeVertices.push(44, y, z, 52, y, z);
+    const center = sihangBridgePoint(step / 48), y = bridgeHeight(center.z, center.x);
+    for (const side of [-1, 1]) {
+      const point = sihangBridgePoint(step / 48, side * B.width / 2);
+      bridgeVertices.push(point.x, y, point.z);
+    }
     if (step) {
       const i = step * 2;
       bridgeIndices.push(i - 2, i, i - 1, i - 1, i, i + 1);
     }
     if (step < 48) {
-      const middleZ = z + .25, middleY = bridgeHeight(middleZ);
-      for (const x of [44, 52]) {
-        box(x, middleY - .33, middleZ, .35, .65, .51, materials.concrete);
-        box(x, middleY + 1, middleZ, .14, .14, .51, materials.iron);
-        if (step % 4 === 0) box(x, middleY + .5, middleZ, .12, 1.1, .12, materials.iron);
-        obstacles.push({ minX: x - .12, maxX: x + .12, minZ: z, maxZ: z + .5,
+      const middle = sihangBridgePoint((step + .5) / 48), middleY = bridgeHeight(middle.z, middle.x);
+      for (const side of [-1, 1]) {
+        const { x, z } = sihangBridgePoint((step + .5) / 48, side * B.width / 2);
+        box(x, middleY - .33, z, .35, .65, B.length / 48 + .01, materials.concrete).rotation.y = bridgeAngle;
+        box(x, middleY + 1, z, .14, .14, B.length / 48 + .01, materials.iron).rotation.y = bridgeAngle;
+        if (step % 4 === 0) box(x, middleY + .5, z, .12, 1.1, .12, materials.iron);
+        obstacles.push({ minX: x - .14, maxX: x + .14, minZ: z - .25, maxZ: z + .25,
           minY: middleY + .15, height: middleY + 1.1 });
       }
     }
@@ -232,9 +250,11 @@ export function makeSihangBattlefield(scene, surface) {
   const bridgeDeck = new THREE.Mesh(bridgeGeometry, materials.concrete);
   bridgeDeck.name = 'sihang-arched-bridge-deck'; bridgeDeck.receiveShadow = true;
   scene.add(bridgeDeck); solids.push(bridgeDeck);
-  for (const x of [44, 52]) {
-    const arch = new THREE.CatmullRomCurve3(Array.from({ length: 17 }, (_, i) =>
-      new THREE.Vector3(x, bridgeHeight(8 + i * 1.5) - .55, 8 + i * 1.5)));
+  for (const side of [-1, 1]) {
+    const arch = new THREE.CatmullRomCurve3(Array.from({ length: 17 }, (_, i) => {
+      const point = sihangBridgePoint(i / 16, side * B.width / 2);
+      return new THREE.Vector3(point.x, bridgeHeight(point.z, point.x) - .55, point.z);
+    }));
     const mesh = new THREE.Mesh(new THREE.TubeGeometry(arch, 32, .32, 6, false), materials.concrete);
     scene.add(mesh); solids.push(mesh);
   }
@@ -416,9 +436,11 @@ export function makeSihangBattlefield(scene, surface) {
 
   const city = createSihangCity({ scene, box, town, materials });
 
-  const markerMaterial = new THREE.MeshStandardMaterial({ color: 0x557ca5, roughness: .8 });
-  const marker = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, .08, 16), markerMaterial);
-  marker.position.set(-4, .05, -25); intact.add(marker); flags.push(marker);
+  const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x557ca5, transparent: true, opacity: .7, depthWrite: false });
+  const marker = new THREE.Mesh(new THREE.RingGeometry(4.8, 5, 64), markerMaterial);
+  marker.rotation.x = -Math.PI / 2;
+  marker.name = 'sihang-capture-ring'; marker.position.set(-4, .035, -25);
+  intact.add(marker); flags.push(marker);
   const flagAnimation = createSihangFlag(materials.iron), roofFlag = flagAnimation.group;
   roofFlag.position.set(-4, W.roofY, -12); intact.add(roofFlag);
   warehouse.roofFlag = roofFlag;
@@ -472,8 +494,8 @@ export function makeSihangBattlefield(scene, surface) {
     let route;
     if (i < 24) {
       const x = -98 + i * 8.3;
-      route = [{ x, z: sihangRiverBounds(x).southZ + 3.5 },
-        { x: x + (i % 2 ? 1.5 : 0), z: sihangRiverBounds(x + (i % 2 ? 1.5 : 0)).southZ + 3.5 }];
+      route = [{ x, z: sihangRiverBounds(x).southZ + 3.2 },
+        { x: x + (i % 2 ? 1.5 : 0), z: sihangRiverBounds(x + (i % 2 ? 1.5 : 0)).southZ + 3.2 }];
     } else {
       const home = town.buildings.filter(building => building.id.startsWith('concession-shop'))[(i - 24) % 7];
       route = [{ x: home.x, z: 48 + (i % 2) * 2 }, { x: home.x, z: home.z - 1 }];
@@ -488,12 +510,13 @@ export function makeSihangBattlefield(scene, surface) {
   function isDeepWater(x, z) {
     if (![x, z].every(Number.isFinite)) return false;
     const bounds = sihangRiverBounds(x);
-    return z > bounds.northZ && z < bounds.southZ && (x < 44 || x > 52);
+    return z > bounds.northZ && z < bounds.southZ && !sihangBridgeContains({ x, z });
   }
   function groundHeight(x, z) {
     if (![x, z].every(Number.isFinite)) throw new RangeError('Sihang ground requires finite coordinates');
     const bounds = sihangRiverBounds(x);
-    if (z >= bounds.northZ && z <= bounds.southZ) return x >= 44 && x <= 52 ? bridgeHeight(z) : R.waterY;
+    if (sihangBridgeContains({ x, z })) return bridgeHeight(z, x);
+    if (z >= bounds.northZ && z <= bounds.southZ) return R.waterY;
     return 0;
   }
   const stairFlights = SIHANG_STAIR_ROUTES.flatMap(route => route.flights);
@@ -716,7 +739,7 @@ export function makeSihangBattlefield(scene, surface) {
   }
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
-    groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || x >= 44 && x <= 52 ? 'stone' : 'earth',
+    groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || sihangBridgeContains({ x, z }) ? 'stone' : 'earth',
     armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem,
     sceneArt: { staticRendering, warehouseBreaches: breaches.filter(h => h.blown).length,
       shopAwnings: city.budget.awnings, city: city.budget, flag: { vertices: 425, triangles: 768 } }, staticRendering,

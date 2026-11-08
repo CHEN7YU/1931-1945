@@ -66,8 +66,8 @@ test('acceleration and braking are bounded, reverse movement does not instantly 
 test('20m and 50m lanes have calibrated travel times at 30, 60 and 144fps', () => {
   for (const [changes, range20, range50] of [
     [{ walking: true }, [11.5, 11.7], [28.6, 28.8]],
-    [{}, [6.5, 6.65], [16.0, 16.2]],
-    [{ sprint: true }, [4.4, 4.6], [12, 14]],
+    [{}, [7.5, 7.7], [18.6, 18.8]],
+    [{ sprint: true }, [5.1, 5.3], [14, 16.5]],
   ]) {
     for (const [distance, bounds] of [[20, range20], [50, range50]]) {
       const runs = [30, 60, 144].map(fps => traverse(distance, changes, fps));
@@ -93,7 +93,7 @@ test('diagonal motion never gains speed and stance/load profiles remain distinct
 });
 
 test('steady cadence distinguishes walking, jogging and sprinting without rapid tiny footsteps', () => {
-  for (const [changes, min, max] of [[{ walking: true }, 2, 2.5], [{}, 2.7, 3.3], [{ sprint: true }, 3.3, 3.9]]) {
+  for (const [changes, min, max] of [[{ walking: true }, 2, 2.5], [{}, 2.5, 3], [{ sprint: true }, 3, 3.7]]) {
     const { motion, position } = run(1, changes);
     const before = motion.steps;
     for (let i = 0; i < 180; i++) advanceLocomotion(motion, position, input(changes), [], 1 / 60);
@@ -120,7 +120,7 @@ test('wall sliding keeps valid motion and a narrow doorway remains traversable',
   assert.ok(position.x <= .60001 && position.z < -5);
   assert.ok(motion.steps > 0);
   const doorway = [{ minX: -10, maxX: -.7, minZ: -3, maxZ: -2 }, { minX: .7, maxX: 10, minZ: -3, maxZ: -2 }];
-  assert.ok(run(2, {}, 60, doorway).position.z < -5);
+  assert.ok(run(2.5, {}, 60, doorway).position.z < -5);
 });
 
 test('stamina exhaustion prevents endless sprint, hysteresis and rest restore it', () => {
@@ -153,7 +153,7 @@ test('sprint-to-aim and weapon-ready recovery cannot be bypassed by aiming or fi
 
 test('airborne displacement has no ground footsteps and landing feedback settles', () => {
   const { motion, position } = run(2, { grounded: false });
-  assert.ok(motion.distance > 5);
+  assert.ok(motion.distance > 4);
   assert.equal(motion.groundDistance, 0);
   assert.equal(motion.steps, 0);
   landLocomotion(motion, 5);

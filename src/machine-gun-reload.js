@@ -16,7 +16,17 @@ export function machineGunReloadPose(state) {
     handWeight: 0, handRotation: 0, press: 0, lidAngle: 0, clip: [0, 0, 0], clipVisible: false,
     loadedClips: Math.ceil(state.ammo / 5) };
   if (state.action !== 'reload') return result;
-  if (state.model === 'zb26') {
+  if (profile.smg) {
+    const grip = [-.20, -.043, -.15], away = [-.14, -.08, .05], ready = [0, -.095, -.34];
+    const feed = t < .15 ? [0, 0, 0] : t < .35 ? mix([0, 0, 0], away, (t - .15) / .2)
+      : t < .45 ? away : t < .8 ? mix(away, [0, 0, 0], (t - .45) / .35) : [0, 0, 0];
+    result.stage = t < .15 ? 'grip' : t < .35 ? 'remove' : t < .45 ? 'retrieve' : t < .8 ? 'insert' : 'return';
+    result.feed = feed; result.feedVisible = t < .35 || t >= .45;
+    result.palm = t < .15 ? mix(ready, grip, t / .15) : t < .8 ? grip.map((value, i) => value + feed[i])
+      : mix(grip, ready, (t - .8) / .2);
+    result.handWeight = smooth(t / .15) * (1 - smooth((t - .8) / .2));
+    return result;
+  } else if (state.model === 'zb26') {
     const grip = ZB26_HAND.grip, top = ZB26_HAND.press;
     let feed = [0, 0, 0];
     if (t < .12) {

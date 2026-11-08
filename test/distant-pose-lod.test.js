@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createDistantPoseGeometry, useDistantPose } from '../src/distant-pose-lod.js';
+import { createDistantPoseGeometry, createLowMemoryPoseGeometry, prepareDistantGeometry, useDistantPose } from '../src/distant-pose-lod.js';
 
 test('coarse poses reduce real triangles while retaining original attribute tuples and independent buffers', async () => {
   const source = new THREE.SphereGeometry(1, 64, 32);
@@ -46,6 +46,34 @@ test('distance hysteresis and effective FOV restore original detail immediately 
   camera.fov = 72; camera.zoom = 4;
   assert.equal(useDistantPose(camera, 60, true, 'high'), false);
   assert.equal(useDistantPose(camera, 200, false, 'high'), true);
+});
+
+test('resident low-memory geometry preserves every morph through the exact same source-vertex remap', async () => {
+  await prepareDistantGeometry();
+  const source = new THREE.SphereGeometry(1, 64, 32); source.clearGroups();
+  source.morphAttributes.position = [source.attributes.position.clone(), source.attributes.position.clone()];
+  source.morphAttributes.normal = [source.attributes.normal.clone(), source.attributes.normal.clone()];
+  for (let i = 0; i < source.attributes.position.count; i++) {
+    source.morphAttributes.position[0].setY(i, source.attributes.position.getY(i) + .1);
+    source.morphAttributes.position[1].setZ(i, source.attributes.position.getZ(i) - .2);
+  }
+  const snapshot = JSON.stringify(source.toJSON()), geometry = createLowMemoryPoseGeometry(source);
+  const sourceTuples = new Set(Array.from({ length: source.attributes.position.count }, (_, vertex) => {
+    return [source.attributes.position, ...source.morphAttributes.position, ...source.morphAttributes.normal]
+      .flatMap(attribute => [...attribute.array.subarray(vertex * 3, vertex * 3 + 3)]).join(',');
+  }));
+  assert.ok(geometry.index.count < source.index.count * .6);
+  assert.equal(geometry.morphAttributes.position.length, 2);
+  for (let vertex = 0; vertex < geometry.attributes.position.count; vertex++) {
+    const tuple = [geometry.attributes.position, ...geometry.morphAttributes.position, ...geometry.morphAttributes.normal]
+      .flatMap(attribute => [...attribute.array.subarray(vertex * 3, vertex * 3 + 3)]).join(',');
+    assert.ok(sourceTuples.has(tuple), 'base and every animation sample retain the same original vertex');
+  }
+  const bytes = value => [...Object.values(value.attributes), ...Object.values(value.morphAttributes).flat()]
+    .reduce((sum, attribute) => sum + attribute.array.byteLength, value.index.array.byteLength);
+  assert.ok(bytes(geometry) < bytes(source) * .6);
+  assert.equal(JSON.stringify(source.toJSON()), snapshot);
+  geometry.dispose(); source.dispose();
 });
 
 test('invalid or unmerged geometry is rejected explicitly instead of producing an empty successful LOD', async () => {

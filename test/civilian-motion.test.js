@@ -19,7 +19,7 @@ function simulate(actor, mode, seconds = 1) {
   updateCivilianAppearance([actor], camera);
 }
 
-test('cowering bends the knees, lowers the pelvis and brings both free arms above the head without resizing the model', () => {
+test('cowering seats the body, hugs both knees and lowers the head without resizing the model', () => {
   for (const age of ['adult', 'elderly', 'child']) {
     const actor = person('none', age), geometry = actor.civilianSkin.mesh.geometry;
     const size = actor.scale.clone();
@@ -27,16 +27,16 @@ test('cowering bends the knees, lowers the pelvis and brings both free arms abov
     const { joints } = actor.civilianSkin;
     assert.ok(joints.root.position.y < -.28);
     assert.ok(joints.leftKnee.rotation.x < -1.7);
-    assert.ok(joints.leftArm.rotation.x > 1.9 && joints.rightArm.rotation.x > 1.9);
-    assert.ok(joints.leftElbow.rotation.x > 1.7);
+    assert.equal(actor.userData.seatedContacts.hugging, true);
+    assert.ok(joints.head.rotation.x < -.7);
     assert.equal(actor.civilianSkin.mesh.geometry, geometry);
     assert.deepEqual(actor.scale, size);
     actor.updateMatrixWorld(true);
-    const head = joints.head.localToWorld(new THREE.Vector3(0, .075, 0));
     for (const [side, sign] of [['left', -1], ['right', 1]]) {
       const palm = joints[`${side}Elbow`].localToWorld(new THREE.Vector3(sign * .002, -.285, -.005));
-      const distance = palm.distanceTo(head) / (actor.scale.y * actor.civilianSkin.profile.height);
-      assert.ok(distance > .09 && distance < .16, `palms must cover the head, not hover like raised hands: ${distance}`);
+      assert.ok(palm.y < joints.head.getWorldPosition(new THREE.Vector3()).y);
+      assert.ok(actor.userData.seatedContacts.hands[side].reachable);
+      assert.ok(actor.userData.seatedContacts.hands[side].error < .008);
     }
     const foot = joints.leftFoot.getWorldPosition(new THREE.Vector3());
     assert.ok(foot.y > .025 && foot.y < .12, `feet remain at the original support height: ${foot.y}`);
@@ -56,14 +56,16 @@ test('pose projection is repeatable while paused, preserves far LOD and smoothly
   const actor = person();
   simulate(actor, 'cower');
   const joints = actor.civilianSkin.joints;
-  const snapshot = () => Object.values(joints).map(bone => [...bone.position.toArray(), ...bone.rotation.toArray()]);
+  const snapshot = () => Object.values(joints).map(bone => [...bone.position.toArray(), ...bone.quaternion.toArray()]);
   const before = snapshot();
   for (let frame = 0; frame < 30; frame++) updateCivilianAppearance([actor], camera);
   assert.deepEqual(snapshot(), before, 'rendering must not accumulate joint rotations without simulation');
   camera.position.z = 100;
   updateCivilianAppearance([actor], camera);
   assert.equal(actor.civilianSkin.level, 'far');
-  assert.deepEqual(snapshot(), before);
+  assert.ok(Math.abs(joints.root.position.y - before[0][1]) < .035, 'LOD support corrections remain bounded');
+  const far = snapshot(); updateCivilianAppearance([actor], camera);
+  assert.deepEqual(snapshot(), far, 'the same far pose does not drift while paused');
   simulate(actor, 'route', 2);
   assert.ok(joints.root.position.y > -.001);
   assert.ok(Math.abs(joints.leftArm.rotation.x) < .001);

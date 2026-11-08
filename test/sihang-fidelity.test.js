@@ -3,31 +3,35 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createSihangFlag } from '../src/sihang-flag.js';
 import { sihangRiverBounds, sihangRiverRayRange, sihangNorthBank, sihangSouthBank,
-  SIHANG_WAREHOUSE, SIHANG_BRIDGE } from '../src/sihang-layout.js';
+  SIHANG_WAREHOUSE, SIHANG_BRIDGE, sihangBridgePoint } from '../src/sihang-layout.js';
 import { sihangEnemyTargetAllowed, sihangEnemyRayRange, SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
 import { sihangSafePosition, sihangEnemyMayAttack } from '../src/sihang-campaign.js';
 import { EMPLACEMENT_PROFILES } from '../src/emplacements.js';
 import { SIHANG_PREVIEW } from '../src/sihang-preview.js';
 
-test('curved banks are bounded, continuous, tangent to the fixed bridge, and shared by combat and safe areas', () => {
-  assert.deepEqual(sihangRiverBounds(48), { northZ: 8, southZ: 32 });
-  for (const x of [44, 46, 48, 50, 52]) assert.equal(sihangRiverBounds(x).northZ, 8);
+test('the reference bay rises on both sides, has an eastern diagonal bridge, and shares banks with combat and safe areas', () => {
+  assert.deepEqual(sihangRiverBounds(48), { northZ: 2, southZ: 34 });
+  for (const x of [-36, -20, 0, 20, 28]) assert.equal(sihangRiverBounds(x).northZ, 8);
   for (const x of [-10000, -108, -80, 0, 52, 108, 10000]) {
     const banks = sihangRiverBounds(x);
-    assert.equal(banks.southZ - banks.northZ, 24);
-    assert.ok(banks.northZ >= -4 && banks.northZ <= 8);
+    assert.equal(banks.southZ - banks.northZ, 32);
+    assert.ok(banks.northZ >= -88 && banks.northZ <= 8);
   }
-  for (const x of [44, 52]) assert.ok(Math.abs(sihangRiverBounds(x + .001).northZ - sihangRiverBounds(x - .001).northZ) < 1e-7);
-  const safeWest = { x: -100, y: 0, z: 26 }, waterWest = { x: -100, y: -1, z: 20 };
+  for (const x of [-36, 28]) assert.ok(Math.abs(sihangRiverBounds(x + .001).northZ - sihangRiverBounds(x - .001).northZ) < 1e-7);
+  assert.ok(SIHANG_BRIDGE.southX > SIHANG_BRIDGE.northX);
+  assert.ok(sihangNorthBank(sihangBridgePoint(0)));
+  assert.ok(sihangSouthBank(sihangBridgePoint(1)));
+  const west = sihangRiverBounds(-100);
+  const safeWest = { x: -100, y: 0, z: west.southZ + 4 }, waterWest = { x: -100, y: -1, z: (west.northZ + west.southZ) / 2 };
   assert.equal(sihangSafePosition(safeWest), true);
   assert.equal(sihangSafePosition(waterWest), false);
   assert.equal(sihangEnemyMayAttack(safeWest), false);
   assert.equal(sihangEnemyTargetAllowed({ position: safeWest }), false);
   assert.equal(sihangSouthBank(safeWest, 4), true);
-  assert.equal(sihangNorthBank({ x: -100, z: -6 }), true);
-  assert.equal(sihangSouthBank({ x: 48, z: 31.99 }), false);
-  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 35.99 }), false);
-  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 36 }), true);
+  assert.equal(sihangNorthBank({ x: -100, z: west.northZ - 1 }), true);
+  assert.equal(sihangSouthBank({ x: 48, z: 33.99 }), false);
+  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 37.99 }), false);
+  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 38 }), true);
   for (const invalid of [null, {}, { x: NaN, z: 40, y: 0 }, { x: 0, z: Infinity, y: 0 }]) {
     assert.equal(sihangSafePosition(invalid), false);
     assert.equal(sihangEnemyMayAttack(invalid), false);
@@ -38,13 +42,13 @@ test('curved banks are bounded, continuous, tangent to the fixed bridge, and sha
 });
 
 test('analytic bank clipping catches oblique and lateral shots without range-dependent sampling', () => {
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), 24);
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 32 }, { x: 0, z: -1 }, 220), 0);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), 26);
+  assert.equal(sihangEnemyRayRange({ x: 48, z: 34 }, { x: 0, z: -1 }, 220), 0);
   const origin = { x: 48, z: 25 }, direction = { x: -1, z: 0 };
   const range = sihangRiverRayRange(origin, direction, 300);
   assert.ok(range > 4 && range < 156, 'A lateral ray hits the curved west concession bank');
   assert.ok(Math.abs(origin.z - sihangRiverBounds(origin.x - range).southZ) < 1e-7);
-  assert.equal(sihangRiverRayRange({ x: 48, z: 20 }, { x: 0, z: 1 }, 40, 3), 9);
+  assert.equal(sihangRiverRayRange({ x: 48, z: 20 }, { x: 0, z: 1 }, 40, 3), 11);
   // A fixed independent dense oracle checks many headings, including rays leaving and re-entering bank segments.
   for (let i = 0; i < 80; i++) {
     const origin = { x: -105 + i * 2.6, z: 3 + i % 5 * 3 };

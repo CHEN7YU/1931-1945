@@ -1,6 +1,8 @@
 import { SCORE_ICON_PATHS } from './score-icons.js';
 
 export const SOLDIER_ROLE_PATHS = Object.freeze({
+  assault: 'M3 14h7l4-6h14v3H16l-4 7H7v-4 M17 10v7h5v-7',
+  engineer: 'M9 2h14v5H9z M14 7h4v15h-4z M5 18h5 M22 18h5',
   rifleman: 'M14 4l2-3 2 3v17h-4z M14 17h4',
   sniper: 'M16 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16 M16 1v6 M16 17v6 M5 12h6 M21 12h6',
   mortarman: SCORE_ICON_PATHS.mortar,

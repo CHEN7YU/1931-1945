@@ -1,14 +1,129 @@
 import { circleBlocked, segmentClear } from './core.js';
+import { Vector3, Object3D } from 'three';
+import { solveArm } from './nra-rifle-pose.js';
 
 const varied = (id, salt = 0) => {
   const value = Math.sin((id + 1) * 127.1 + salt * 311.7) * 43758.5453;
   return value - Math.floor(value);
 };
-const CROSS_ROTATIONS = [
-  [[.94555668, -.38247283, -.72371359], [.02904117, .09193189, 2.53000051], [.67488478, .90142573, -1.98515034]],
-  [[.94555668, .38247283, .72371359], [.02904117, -.09193189, -2.53000051], [.67488478, -.90142573, 1.98515034]],
-];
-const PARTS = ['Leg', 'Knee', 'Foot'];
+const seatedContacts = new WeakMap();
+
+export function applyCivilianSeatedContacts(person, weight, hugging = false) {
+  if (!Number.isFinite(weight) || weight < 0 || weight > 1) throw new RangeError('Seated contacts need a bounded blend');
+  if (!weight) return;
+  const skin = person.civilianSkin, joints = skin.joints;
+  let state = seatedContacts.get(person);
+  if (!state) {
+    const palms = {};
+    for (const [side, sign] of [['left', -1], ['right', 1]]) {
+      const palm = new Object3D();
+      palm.position.set(sign * .002, -.285, -.005); joints[`${side}Elbow`].add(palm);
+      palms[side] = palm;
+    }
+    state = { palms, ground: new Map(), poses: new Map() }; seatedContacts.set(person, state);
+  }
+  const key = `${skin.level}:${hugging}:${person.userData.restPose ?? 0}`;
+  const cached = weight === 1 ? state.poses.get(key) : null;
+  if (cached) {
+    for (const [name, rotation] of cached.rotations) joints[name].quaternion.copy(rotation);
+    joints.root.position.y = cached.rootY;
+    person.userData.seatedContacts = cached.contacts;
+    return;
+  }
+  const visual = skin.mesh.parent, originalWidth = visual.scale.x;
+  // Solve the native two-bone chains in an isotropic frame; restore authored body width before projection.
+  const errors = {};
+  const facing = person.getWorldQuaternion(joints.root.quaternion.clone());
+  const kneeContact = (side, sign) => joints[`${side}Knee`].getWorldPosition(new Vector3())
+    .add(new Vector3(sign * .012, hugging ? .03 : .06, hugging ? -.075 : -.025)
+      .multiply(visual.scale).applyQuaternion(facing));
+  visual.scale.x = visual.scale.y;
+  person.updateMatrixWorld(true);
+  try {
+  for (const side of ['left', 'right']) {
+    const leg = joints[`${side}Leg`], knee = joints[`${side}Knee`], foot = joints[`${side}Foot`];
+    const target = foot.getWorldPosition(new Vector3());
+    const hip = leg.getWorldPosition(new Vector3()), offset = target.clone().sub(hip);
+    offset.y = 0; offset.clampLength(0, .65 * skin.profile.height);
+    target.x = hip.x + offset.x; target.z = hip.z + offset.z;
+    target.y = person.getWorldPosition(new Vector3()).y + .07 * skin.profile.height;
+    const beforeLeg = leg.quaternion.clone(), beforeKnee = knee.quaternion.clone();
+    const pole = new Vector3(0, 1, -.1).applyQuaternion(facing);
+    for (let iteration = 0; iteration < 4; iteration++) {
+      if (solveArm(leg, knee, foot, target, pole).error < .002) break;
+    }
+    leg.quaternion.copy(beforeLeg.slerp(leg.quaternion, weight));
+    knee.quaternion.copy(beforeKnee.slerp(knee.quaternion, weight));
+    person.updateMatrixWorld(true);
+    const rotation = foot.parent.getWorldQuaternion(foot.quaternion.clone()).invert().multiply(facing);
+    foot.quaternion.slerp(rotation, weight);
+  }
+  } finally { visual.scale.x = originalWidth; person.updateMatrixWorld(true); }
+  // Only settled poses cache their actual skinned support; transitions are sampled without an unbounded cache.
+  let correction = weight === 1 ? state.ground.get(key) : null;
+  if (correction == null) {
+    person.updateMatrixWorld(true); skin.skeleton.update();
+    const positions = skin.mesh.geometry.attributes.position;
+    const point = new Vector3(); let minimum = Infinity;
+    for (let index = 0; index < positions.count; index++) {
+      const y = positions.getY(index), x = positions.getX(index);
+      if (!(y < .15 || y > .75 && y < .94 && Math.abs(x) < .19)) continue;
+      skin.mesh.getVertexPosition(index, point); skin.mesh.localToWorld(point);
+      minimum = Math.min(minimum, point.y);
+    }
+    if (!Number.isFinite(minimum)) throw new Error('Civilian seated support geometry is missing');
+    correction = .012 - (minimum - person.getWorldPosition(new Vector3()).y);
+    correction /= skin.profile.height;
+    if (weight === 1) state.ground.set(key, correction);
+  }
+  joints.root.position.y += correction * weight;
+  person.updateMatrixWorld(true);
+  visual.scale.x = visual.scale.y; person.updateMatrixWorld(true);
+  try {
+  for (const side of ['left', 'right']) {
+    const leg = joints[`${side}Leg`], knee = joints[`${side}Knee`], foot = joints[`${side}Foot`];
+    const target = foot.getWorldPosition(new Vector3());
+    target.y = person.getWorldPosition(new Vector3()).y + .07 * skin.profile.height;
+    const beforeLeg = leg.quaternion.clone(), beforeKnee = knee.quaternion.clone();
+    solveArm(leg, knee, foot, target, new Vector3(0, 1, -.1).applyQuaternion(facing));
+    leg.quaternion.copy(beforeLeg.slerp(leg.quaternion, weight));
+    knee.quaternion.copy(beforeKnee.slerp(knee.quaternion, weight));
+    person.updateMatrixWorld(true);
+    foot.quaternion.slerp(foot.parent.getWorldQuaternion(foot.quaternion.clone()).invert().multiply(facing), weight);
+  }
+  person.updateMatrixWorld(true);
+  for (const [side, sign] of [['left', -1], ['right', 1]]) {
+    if (skin.profile.carrying === 'child' || skin.profile.carrying === 'luggage' && side === 'left') continue;
+    const target = kneeContact(side, sign);
+    const upper = joints[`${side}Arm`], elbow = joints[`${side}Elbow`], palm = state.palms[side];
+    const beforeUpper = upper.quaternion.clone(), beforeElbow = elbow.quaternion.clone();
+    const solved = solveArm(upper, elbow, palm, target, new Vector3(sign * .25, -.8, -.1).applyQuaternion(facing));
+    upper.quaternion.copy(beforeUpper.slerp(upper.quaternion, weight));
+    elbow.quaternion.copy(beforeElbow.slerp(elbow.quaternion, weight));
+    errors[side] = { reachable: solved.reachable };
+  }
+  } finally { visual.scale.x = originalWidth; person.updateMatrixWorld(true); }
+  for (const side of Object.keys(errors)) {
+    const sign = side === 'left' ? -1 : 1;
+    const target = kneeContact(side, sign);
+    errors[side].error = state.palms[side].getWorldPosition(new Vector3()).distanceTo(target);
+  }
+  let bodyHeight = null;
+  if (weight === 1) {
+    skin.skeleton.update();
+    const point = new Vector3(); let maximum = -Infinity;
+    for (let vertex = 0; vertex < skin.mesh.geometry.attributes.position.count; vertex++) {
+      skin.mesh.getVertexPosition(vertex, point); skin.mesh.localToWorld(point);
+      maximum = Math.max(maximum, point.y);
+    }
+    bodyHeight = maximum - person.getWorldPosition(new Vector3()).y;
+    if (!Number.isFinite(bodyHeight) || bodyHeight <= 0) throw new Error('Invalid seated civilian body bounds');
+  }
+  person.userData.seatedContacts = { hugging, weight, hands: errors, supportCorrection: correction, bodyHeight };
+  if (weight === 1) state.poses.set(key, { rootY: joints.root.position.y,
+    rotations: Object.entries(joints).map(([name, bone]) => [name, bone.quaternion.clone()]),
+    contacts: person.userData.seatedContacts });
+}
 
 function connection(point, route, clear) {
   let best = null;
@@ -122,35 +237,32 @@ export function applyCivilianRestPose(person) {
   const joints = person.civilianSkin.joints;
   const pose = data.carrying !== 'none' && data.restPose === 1 ? 0 : data.restPose ?? 0;
   const blend = (node, axis, value) => { node.rotation[axis] += (value - node.rotation[axis]) * weight; };
-  const cross = pose === 2, knees = pose === 3;
-  joints.root.position.y += ((cross ? -.65 : knees ? -.707 : -.72) - joints.root.position.y) * weight;
+  const knees = pose === 3 || pose === 2;
+  joints.root.position.y += (-.79 - joints.root.position.y) * weight;
   for (const [index, side] of ['left', 'right'].entries()) {
-    if (cross) {
-      for (let part = 0; part < 3; part++) {
-        const joint = joints[`${side}${PARTS[part]}`], angles = CROSS_ROTATIONS[index][part];
-        blend(joint, 'x', angles[0]); blend(joint, 'y', angles[1]); blend(joint, 'z', angles[2]);
-      }
-    } else {
-      blend(joints[`${side}Leg`], 'x', knees ? 2.15 : 1.45);
-      blend(joints[`${side}Knee`], 'x', knees ? -2.8 : .05);
-      blend(joints[`${side}Foot`], 'x', knees ? .65 : -1.5);
-    }
+    blend(joints[`${side}Leg`], 'x', knees ? 2.15 : 1.45);
+    blend(joints[`${side}Knee`], 'x', knees ? -2.8 : .05);
+    blend(joints[`${side}Foot`], 'x', knees ? .65 : -1.5);
     if (data.carrying === 'child') continue;
     if (data.carrying === 'luggage' && index === 0) {
       blend(joints.leftArm, 'x', -.04); blend(joints.leftElbow, 'x', 1.3);
       continue;
     }
-    blend(joints[`${side}Arm`], 'x', pose === 1 ? -.9 : knees ? .2 : cross ? .25 : .65);
-    blend(joints[`${side}Elbow`], 'x', pose === 1 ? .05 : knees ? 1.9 : cross ? .8 : .7);
+    blend(joints[`${side}Arm`], 'x', pose === 1 ? -.9 : knees ? .2 : .65);
+    blend(joints[`${side}Elbow`], 'x', pose === 1 ? .05 : knees ? 1.9 : .7);
     blend(joints[`${side}Arm`], 'z', index ? -.08 : .08);
   }
-  blend(joints.torso, 'x', pose === 1 ? .28 : knees ? -.35 : -.22);
-  blend(joints.head, 'x', .12);
+  blend(joints.torso, 'x', knees ? -.8 : -.45);
+  blend(joints.head, 'x', knees ? -.85 : -.12);
+  applyCivilianSeatedContacts(person, weight, knees);
 }
 
 export function civilianBodyHeight(person) {
   const data = person.userData, weight = data.restPoseWeight ?? 0, pose = data.restPose ?? 0;
-  const drop = pose === 2 ? .65 : pose === 3 ? .707 : .72;
+  if (!data.boarding && (weight === 1 || data.escapeMotion?.crouch === 1) &&
+    data.seatedContacts?.weight === 1 && Number.isFinite(data.seatedContacts.bodyHeight))
+    return data.seatedContacts.bodyHeight;
+  const drop = .79;
   return (person.civilianSkin?.profile.height ?? 1) *
     (1.72 - (data.escapeMotion?.crouch ?? 0) * .65 * (1 - weight) - drop * weight);
 }

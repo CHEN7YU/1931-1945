@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { finishStartupWork } from './startup-work.js';
 import { officerRegionShader } from './officer-appearance.js';
 
-export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam = null) {
+export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam = null, { tile = 512 } = {}) {
+  if (![256, 512].includes(tile)) throw new RangeError('Invalid native atlas tile budget');
   const materials = new Map(), keys = new Map();
   const uniformKeys = new Map();
   const register = material => {
@@ -22,7 +23,7 @@ export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam =
   });
   if (materials.size === 1) return { material: [...materials.values()][0], mapGeometry() {}, *mapGeometryWork() {} };
   const hasUniformVariants = [...uniformKeys].some(([material, key]) => keys.get(material) !== key);
-  const canvas = document.createElement('canvas'), tile = 512, padding = 8;
+  const canvas = document.createElement('canvas'), padding = 8;
   const columns = Math.ceil(Math.sqrt(materials.size)), size = columns * tile;
   canvas.width = canvas.height = size;
   const context = canvas.getContext('2d');
@@ -113,7 +114,7 @@ export function* mergeNraPoseWork(parts, atlas, { weld = true } = {}) {
     expanded.setAttribute('nraSkinRegion', new THREE.Float32BufferAttribute(
       new Float32Array(expanded.attributes.position.count).fill(skin ? 1 : 0), 1));
     expanded.clearGroups();
-    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv', 'nativeOfficerRegion'].includes(name)) expanded.deleteAttribute(name);
+    for (const name of Object.keys(expanded.attributes)) if (!['position', 'normal', 'uv', 'nraSkinRegion', 'nraUniformUv', 'nativeOfficerRegion', 'nraPoseVertex'].includes(name)) expanded.deleteAttribute(name);
     geometries.push(expanded);
     yield;
   }

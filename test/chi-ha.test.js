@@ -36,6 +36,23 @@ function context(crew, extra = {}) {
     move: (p, dx, dz) => { p.x += dx; p.z += dz; }, ...extra };
 }
 
+test('a visible artillery position outranks closer infantry, but occlusion and destruction restore normal targets', () => {
+  const { vehicle, crew } = fixture();
+  const near = { ...target, id: 'near-rifleman', position: { x: 0, y: 0, z: -20 } };
+  const cannon = { id: 'emplacement:cannon', emplacementPositionId: 'cannon', team: 'friendly',
+    targetKind: 'emplacement', artilleryThreat: true, aimHeight: .95, health: 240,
+    position: { x: 0, y: 0, z: -70 } };
+  advanceChiHaAI(vehicle, .05, 1, context(crew, { targets: [near, cannon] }));
+  assert.equal(vehicle.ai.targetId, cannon.id);
+  vehicle.ai.scanAt = 0;
+  advanceChiHaAI(vehicle, .05, 2, context(crew, { targets: [near, cannon],
+    visible: (_from, _to, actor) => actor?.id !== cannon.id }));
+  assert.equal(vehicle.ai.targetId, near.id);
+  vehicle.ai.scanAt = 0; cannon.health = 0;
+  advanceChiHaAI(vehicle, .05, 3, context(crew, { targets: [near, cannon] }));
+  assert.equal(vehicle.ai.targetId, near.id);
+});
+
 test('one tank, one aircraft and eight infantry squads occupy exactly ten Japanese formation slots', () => {
   const roster = battleRoster();
   validateRoster(roster);

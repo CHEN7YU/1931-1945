@@ -27,6 +27,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
   function house(id, x, z, w, d, south, serial) {
     const lot = { minX: x - w / 2 - 1, maxX: x + w / 2 + 1, minZ: z - d / 2 - 1, maxZ: z + d / 2 + 1 };
     if (SIHANG_RESERVED_LANES.some(lane => overlaps(lot, lane))) return null;
+    if (town.buildings.some(building => building.bounds && overlaps(lot, building.bounds))) return null;
     const banks = [sihangRiverBounds(lot.minX), sihangRiverBounds(lot.maxX)];
     if (!south && lot.maxZ > Math.min(...banks.map(b => b.northZ)) - 1 ||
       south && lot.minZ < Math.max(...banks.map(b => b.southZ)) + 3) return null;
@@ -74,9 +75,9 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
       // Missing roof sections expose rafters, but most facade masonry still survives.
       box(x - w * .22, height, z, w * .5, .25, d, materials.dark, { block: true });
       box(x + w * .35, height - .6, z + d * .23, w * .25, .25, d * .45, materials.dark, { block: true });
-      for (let beam = 0; beam < 4; beam++)
-        box(x + (beam - 1.5) * w / 5, height - .5, z, .16, .18, d, materials.wood);
-      for (let chunk = 0; chunk < 7; chunk++) {
+      for (let beam = 0; beam < 3; beam++)
+        box(x + (beam - 1) * w / 4, height - .5, z, .16, .18, d, materials.wood);
+      for (let chunk = 0; chunk < 6; chunk++) {
         const piece = box(x + (chunk - 3) * w / 8, .18 + chunk % 2 * .12, front + .75,
           .6 + chunk % 2 * .3, .35, .55, materials.brick);
         piece.rotation.y = chunk * 1.7;
@@ -98,17 +99,26 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     return building;
   }
   let index = 0;
+  house('warehouse-east-annex', 42, -51, 15, 18, false, 0);
   for (const z of [-99, -77, -59]) for (const x of [-98, -84, -54, -40, -24, 20, 36, 54, 84, 98])
-    house(`north-block-${index}`, x, z, 11, 10, false, index++);
+    house(`north-block-${index}`, x + index % 3 - 1, z + index % 2 * 2,
+      9.5 + index % 3, 8 + index % 3, false, index++);
   // Side streets continue beside (never across) the reserved armour flanks.
   for (const z of [-42, -8]) for (const x of [-98, -84, 84, 98])
     house(`north-block-${index}`, x, z, 11, 10, false, index++);
+  for (const [i, x] of [-98, -82, -55, -42, 43, 57].entries())
+    house(`north-infill-${i}`, x, -48, 10 + i % 2, 8, false, index++);
+  for (const [i, x] of [-56, -42, -26, -10, 7, 23, 43, 59].entries())
+    house(`north-quay-${i}`, x, sihangRiverBounds(x).northZ - 5.5, 8, 4, false, index++);
   const shops = [-90, -66, -42, -18, 12, 76, 98];
   for (const [i, x] of shops.entries()) house(`concession-shop-${i}`, x, 64, 15, 13, true, i);
   for (const [i, x] of [-96, -78, -60, -42, -24, -6, 12, 30, 48, 72, 90, 102].entries())
     house(`concession-home-${i}`, x, 96, 12, 12, true, i + 7);
-  for (const [i, x] of [-98, -78, -54, -30, 0, 80, 100].entries())
-    house(`concession-riverside-${i}`, x, 42, 12, 10, true, i + 19);
+  for (const [i, x] of [-98, -78, -54, -30, 0, 24, 48, 64, 100].entries())
+    house(`concession-riverside-${i}`, x, Math.max(sihangRiverBounds(x - 7).southZ,
+      sihangRiverBounds(x + 7).southZ) + 13, 12, 10, true, i + 19);
+  for (const [i, x] of [-96, -78, -60, -42, -24, -6, 12, 30, 48, 66, 84, 102].entries())
+    house(`concession-interior-${i}`, x + i % 2, 80, 10, 10, true, i + 28);
 
   // Original typographic atlas, shared by every sign. No dynamic lights or external assets.
   let signTexture;
