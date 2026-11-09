@@ -9,6 +9,8 @@ import { hasBayonet, bayonetCarry } from './bayonet.js';
 import { headingError } from './ai-turning.js';
 import { INFANTRY_AIM_PITCH } from './infantry-aim.js';
 import { advancePostureBlend } from './posture-transition.js';
+import { dadaoBodyMotion } from './dadao.js';
+import { updateFootContacts } from './foot-contact.js';
 
 export function nativePoseIntent(actor) {
   if (actor.weaponBlocked) return 'travel';
@@ -40,7 +42,8 @@ const smoothSpeed = (speed, start, end) => {
 
 export function nativeTravelLean(motion) {
   const jog = smoothSpeed(motion.speed, 1.5, 3.3), fast = smoothSpeed(motion.speed, 3.2, 4.8);
-  return (.045 + (.54 + motion.runLean * .2 - .045) * jog + .12 * fast) * (1 - .82 * motion.gaitAim);
+  const acceleration = Math.max(0, Math.min(1, (motion.acceleration ?? 0) / 4));
+  return (.045 + .17 * jog + .045 * fast + .055 * acceleration) * (1 - .82 * motion.gaitAim);
 }
 
 export function nativeGaitParameters(motion) {
@@ -72,8 +75,9 @@ export function nativeGaitDrop(actor) {
   const flight = Math.max(0, (half - contact) / (1 - contact));
   const flightTime = gait.runStride * (.5 - gait.runContact) / Math.max(2.1, motion.speed);
   const rise = Math.min(.04, 9.81 * flightTime * flightTime / 8) * Math.sin(Math.PI * flight) ** 2;
-  const walkDrop = (.09 - .02 * gait.aimed) + .005 * (1 - .7 * gait.aimed) * Math.sin(phase * Math.PI * 4);
-  const drop = walkDrop * (1 - gait.jog) + (.17 + .055 * smoothSpeed(motion.speed, 3.2, 4.8) - rise) * gait.jog;
+  const compression = .012 * Math.sin(phase * Math.PI * 2) ** 2;
+  const walkDrop = (.045 - .01 * gait.aimed) + compression * (1 - .7 * gait.aimed);
+  const drop = walkDrop * (1 - gait.jog) + (.075 + compression - rise) * gait.jog;
   const turnDrop = .045 * (motion.turn?.weight ?? 0) * (1 - motion.weight);
   return (drop * motion.weight + turnDrop) * upright;
 }
@@ -118,7 +122,7 @@ export function createNraMotion(profile, actor) {
     fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
     legLift: .55 + .3 * Math.sin(seed * 17.3) ** 2,
     posture: Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, 0])),
-    idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, weight: 0, distance: seed / 2.5,
+    idleTime: seed * .7, strideScale: 1 + .07 * Math.sin(seed * 3.1), speed: 0, acceleration: 0, weight: 0, distance: seed / 2.5,
     gaitCharge: 0, gaitAim: 0, gaitCycles: seed / 2.5 / profile.strideMeters, phaseDistance: seed / 2.5,
     position: { x: actor.position.x, z: actor.position.z },
     turn: { heading: actor.heading ?? 0, angle: 0, direction: 1, weight: 0 } };
@@ -159,6 +163,8 @@ export function advanceNraMotion(actor, dt) {
   if (!['standing', 'crouched', 'prone'].includes(stance)) throw new Error('Unknown owned soldier stance');
   const pose = ownedFiringPose(actor);
   advancePostureBlend(motion, pose, dt);
+  const acceleration = Math.max(-8, Math.min(8, (measuredSpeed - motion.speed) / .1));
+  motion.acceleration += (acceleration - motion.acceleration) * (1 - Math.exp(-dt / .16));
   motion.speed += (measuredSpeed - motion.speed) * (1 - Math.exp(-dt / .1));
   motion.aim += ((actor.aimWalking ? 1 : 0) - motion.aim) * (1 - Math.exp(-dt / .15));
   const pace = actor.locomotion.mode;
@@ -183,6 +189,8 @@ export function advanceNraMotion(actor, dt) {
   motion.weight += (target - motion.weight) * (1 - Math.exp(-dt / .12));
   if (motion.weight < .001) motion.weight = 0;
   if (motion.weight > .999) motion.weight = 1;
+  if (motion.profile.footCycleGait)
+    updateFootContacts(actor, nativeGaitParameters(motion), motion.gaitCycles, traveled);
   if (motion.profile.headAim) {
     const target = nativePoseIntent(actor) === 'aim' && motion.lowReady < .2 ? 1 : 0;
     motion.cheekWeight += (target - motion.cheekWeight) * (1 - Math.exp(-dt / .12));
@@ -210,6 +218,9 @@ export function nativeEyeLocal(actor) {
     motion.strideScale, motion.gaitCharge, motion.gaitAim, motion.weight, motion.aim, motion.bodyLean,
     motion.lowReady, motion.legLift, actor.locomotion.mode, intent, swordCarry,
     actor.health, actor.weaponBlocked, actor.emplacementId, actor.discharger?.presentationActive,
+    actor.dadao?.pose?.phase, actor.dadao?.pose?.progress,
+    actor.rifle?.action, actor.rifle?.elapsed, actor.rifle?.ammo, actor.rifle?.model,
+    actor.vehicleId, actor.engineer?.construction?.mode, actor.sihangShield?.active, actor.supportWeaponPose?.active,
     actor.formation?.sihangDemolition,
     motion.headGoal, motion.cheekWeight,
     ...Object.keys(FIRING_POSES).map(name => motion.posture[name])];
@@ -252,13 +263,16 @@ export function sampleNraPhase(actor) {
     ...motion.posture, upright, weight: motion.weight, dadao };
 }
 
-function sampleNativeUpperBody(actor, phase) {
+function sampleNativeUpperBody(actor, phase, operation = rifleHandAction(actor.rifle)) {
   const motion = actor.nativeMotion, { profile } = motion, { runTime, jog, upright } = phase;
   const intent = nativePoseIntent(actor);
   const travelWeight = profile.footCycleGait && actor.health > 0 && ['travel', 'aim'].includes(intent) &&
     !actor.weaponBlocked && !actor.emplacementId && !actor.discharger?.presentationActive &&
     !actor.formation?.sihangDemolition ? motion.weight * upright * (intent === 'aim' ? .22 : 1 - .65 * motion.gaitAim) : 0;
   const cycle = runTime / profile.run.duration * Math.PI * 2;
+  if (phase.dadao && actor.health > 0) {
+    return { travelWeight: 0, upperBody: dadaoBodyMotion(phase.dadao) };
+  }
   const upperBody = travelWeight ? {
     yaw: Math.sin(cycle) * (.11 + .06 * jog) * travelWeight,
     pitch: Math.cos(cycle * 2) * (.008 + .008 * jog) * travelWeight,
@@ -266,14 +280,26 @@ function sampleNativeUpperBody(actor, phase) {
     lift: Math.cos(cycle * 2) * (.012 + .014 * jog) * travelWeight,
     lateral: Math.sin(cycle) * (.012 + .013 * jog) * travelWeight,
   } : { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 };
+  if (actor.health > 0 && operation && ['travel', 'aim', 'reload'].includes(intent) &&
+    !actor.weaponBlocked && !actor.emplacementId && !actor.vehicleId &&
+    actor.engineer?.construction?.mode !== 'building' && !actor.sihangShield?.active && !actor.supportWeaponPose?.active &&
+    !actor.discharger?.presentationActive && !actor.formation?.sihangDemolition) {
+    const weight = upright * (1 - travelWeight), hand = operation.hand ?? 0, loading = hand * (operation.loading ?? 0);
+    upperBody.yaw += (.025 * hand - .02 * loading) * weight;
+    upperBody.pitch += .008 * loading * weight;
+    upperBody.roll += .015 * hand * weight;
+    upperBody.lift -= .004 * loading * weight;
+    upperBody.lateral += .004 * hand * weight;
+  }
   return { travelWeight, upperBody };
 }
 
-export function sampleNraMotion(actor, includeHead = true) {
+export function sampleNraMotion(actor, includeHead = true, rifleOperationOverride = undefined) {
   const phase = sampleNraPhase(actor), motion = actor.nativeMotion, { profile } = motion;
   const { idleTime, runTime, walkTime, jog, gait, upright } = phase;
   const intent = nativePoseIntent(actor);
-  const { travelWeight, upperBody } = sampleNativeUpperBody(actor, phase);
+  const operation = rifleOperationOverride === undefined ? rifleHandAction(actor.rifle) : rifleOperationOverride;
+  const { travelWeight, upperBody } = sampleNativeUpperBody(actor, phase, operation);
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
   const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
@@ -299,7 +325,8 @@ export function sampleNraMotion(actor, includeHead = true) {
     blendedPosition.sub(pivot).applyQuaternion(lean).add(pivot);
     quaternion.premultiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), motion.speed > .2 && motion.aim < .5 ? -bodyLean * .35 : 0));
   }
-  if (travelWeight) {
+  const upperMoving = upperBody.yaw || upperBody.pitch || upperBody.roll || upperBody.lift || upperBody.lateral;
+  if (upperMoving) {
     const upperRotation = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), upperBody.roll)
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -bodyLean + upperBody.pitch))
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), upperBody.yaw))
@@ -340,7 +367,7 @@ export function sampleNraMotion(actor, includeHead = true) {
       contact.lerp(raised, 1 - lowReady);
     } else contact.add(new Vector3(...RIFLE_CONTACTS.shoulder).lerp(new Vector3(...RIFLE_CONTACTS.armpit), lowReady));
     contact.y -= hipDrop;
-    if ((torsoYaw || bodyLean || travelWeight) && profile.leanPivot) {
+    if ((torsoYaw || bodyLean || upperMoving) && profile.leanPivot) {
       const pivot = new Vector3(...(profile.riflePivots?.standing ?? profile.leanPivot)).multiplyScalar(upright);
       for (const [stance, weight] of Object.entries(motion.posture)) {
         pivot.addScaledVector(new Vector3(...(profile.riflePivots?.[stance] ?? profile.leanPivot)), weight);
@@ -373,7 +400,7 @@ export function sampleNraMotion(actor, includeHead = true) {
   const grenade = actor.health > 0 ? grenadePose(actor.grenades?.action,
     1.67 * upright + Object.entries(motion.posture).reduce((sum, [pose, weight]) => sum + FIRING_POSES[pose].eye * weight, 0)) : null;
   const result = { intent, upperBody, grenade, dadao, bayonet,
-    rifleOperation: actor.health > 0 && !grenade && !dadao && !bayonet ? rifleHandAction(actor.rifle) : null,
+    rifleOperation: actor.health > 0 && !grenade && !dadao && !bayonet ? operation : null,
     weaponBlocked: Boolean(actor.weaponBlocked),
     idleTime, runTime, walkTime, jog, runPhase: runTime / profile.run.duration,
     walkPhase: profile.walk ? walkTime / profile.walk.duration : runTime / profile.run.duration,
@@ -386,6 +413,7 @@ export function sampleNraMotion(actor, includeHead = true) {
     turn: { weight: motion.turn.weight, phase: cycleFraction(motion.turn.angle / (Math.PI / 3)), direction: motion.turn.direction },
     bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
+    footContacts: motion.footContacts ?? null,
     aimPitch: aimPitch * firingIntent * (1 - lowReady), weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };
   if (includeHead && profile.headAim) result.headAim = projectHeadAim(profile.headAim, result, motion);
   return result;

@@ -23,10 +23,10 @@ export function rifleHandWeights(pose) {
     hand * loading * (1 - push), hand * loading * push];
 }
 
-export function rifleActionPalm(pose) {
+export function rifleActionPalm(pose, clipY = -.055 * pose.cartridgePush) {
   const [x, y, z] = BOLT_HANDLE.center, angle = pose.boltLift;
   const bolt = [x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle), z + pose.boltTravel];
-  const load = [0, .13 - pose.cartridgePush * .045, -.18];
+  const load = [0, .13 + clipY, -.18];
   return RIFLE_CONTACTS.triggerPalm.map((value, index) =>
     value * (1 - pose.hand) + pose.hand * ((1 - pose.loading) * bolt[index] + pose.loading * load[index]));
 }

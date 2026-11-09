@@ -100,6 +100,10 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       neck: inspected.canonical.get('Neck').getWorldPosition(new THREE.Vector3()).toArray(),
       chest: inspected.canonical.get('Spine2').getWorldPosition(new THREE.Vector3()).toArray() });
   const motionProfile = { ...createNativeGaitProfile(clips.motion.idle, inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), pocket),
+    restFeet: Object.fromEntries(['Left', 'Right'].map(side => {
+      const position = inspected.canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3());
+      return [side.toLowerCase(), { x: position.x, z: position.z }];
+    })),
     rifleShoulderContacts: { standing: pocket, ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pocket])) },
     rifleContacts: { standing: inspected.canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
@@ -204,7 +208,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       officer.restore();
       if (!collision) appearance.apply(actor.avatarAppearance ?? null);
       if (!collision) officer.apply(actor);
-      motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
+      motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime;
       const upright = motion.upright;
       actions.idle.setEffectiveWeight(upright);

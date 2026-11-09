@@ -50,6 +50,10 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
       neck: canonical.get('Neck').getWorldPosition(new THREE.Vector3()).toArray(),
       chest: canonical.get('Spine2').getWorldPosition(new THREE.Vector3()).toArray() });
   const motionProfile = { ...createNativeGaitProfile(source.motion.idle, canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(), pocket),
+    restFeet: Object.fromEntries(['Left', 'Right'].map(side => {
+      const position = canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3());
+      return [side.toLowerCase(), { x: position.x, z: position.z }];
+    })),
     rifleShoulderContacts: { standing: pocket, ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pocket])) },
     rifleContacts: { standing: canonical.get('RightArm').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
@@ -128,7 +132,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         flag.visible = hasIjaRifleFlag(actor);
         updateIjaRifleFlagTime(now);
         root.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
-        motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor);
+        motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation);
         active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
         actions.idle.time = motion.idleTime; actions.idle.setEffectiveWeight(motion.upright);
         for (const stance of Object.keys(FIRING_POSES)) { actions[stance].time = 0; actions[stance].setEffectiveWeight(motion[stance]); }

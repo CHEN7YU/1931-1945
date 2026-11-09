@@ -59,6 +59,18 @@ export function dadaoStroke(pose) {
   };
 }
 
+export function dadaoBodyMotion(pose) {
+  const { raise, cut } = dadaoStroke(pose);
+  const windup = raise * (1 - cut);
+  return {
+    yaw: -.10 * windup + .12 * cut,
+    pitch: .009 * windup - .012 * cut,
+    roll: -.025 * windup + .035 * cut,
+    lift: -.006 * windup - .004 * cut,
+    lateral: .008 * windup - .012 * cut,
+  };
+}
+
 export function dadaoSweepDirection(progress, forward) {
   const length = Math.hypot(forward.x, forward.y, forward.z), horizontal = Math.hypot(forward.x, forward.z);
   if (horizontal < .1) return null;

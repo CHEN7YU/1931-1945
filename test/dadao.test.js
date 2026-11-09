@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DADAO, DADAO_GRIP, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase,
-  dadaoStroke, dadaoSweepDirection, selectDadaoTarget } from '../src/dadao.js';
+  dadaoStroke, dadaoBodyMotion, dadaoSweepDirection, selectDadaoTarget } from '../src/dadao.js';
 import { DADAO_DIMENSIONS, dadaoModel, dadaoViewModel, updateDadaoView } from '../src/dadao-model.js';
 import { damageForTarget } from '../src/combat-targets.js';
 import { createBattleStats, attackCategory } from '../src/battle-stats.js';
@@ -31,6 +31,15 @@ function swinging() {
   return state;
 }
 const middle = .4 + DADAO.windup + DADAO.active / 2;
+test('body anticipation and follow-through share the blade phases and settle continuously', () => {
+  const pose = (phase, progress) => dadaoBodyMotion({ phase, progress });
+  assert.deepEqual(pose('ready', 0), pose('windup', 0));
+  assert.deepEqual(pose('windup', 1), pose('cut', 0));
+  assert.deepEqual(pose('cut', 1), pose('recover', 0));
+  assert.deepEqual(pose('recover', 1), pose('ready', 0));
+  assert.ok(pose('windup', 1).yaw < 0);
+  assert.ok(pose('cut', 1).yaw > 0);
+});
 const select = (state, targets, now = middle, clear = () => true) =>
   selectDadaoTarget(state, now, actor, origin, forward, targets, aimPoint, clear);
 

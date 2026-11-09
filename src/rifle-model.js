@@ -474,6 +474,11 @@ export function rifleWorldModel(detail = 'near', weaponState = null, { bayonet =
   const source = detail === 'far' ? distantTemplate : template;
   const model = new THREE.Group();
   model.add(source.getObjectByName('rifleBody').clone(true), source.getObjectByName('bolt').clone(true));
+  if (detail === 'near') {
+    const clip = source.getObjectByName('clip').clone(true);
+    clip.visible = false;
+    model.add(clip);
+  }
   model.userData.referenceLength = RIFLE.length;
   model.userData.personalWeapon = true;
   model.userData.detail = detail;
@@ -505,11 +510,32 @@ export function syncWorldWeapon(model, state) {
   }
   const pose = riflePose(state), bolt = model.getObjectByName('bolt');
   if (bolt) { bolt.rotation.z = pose.boltLift; bolt.position.z = pose.boltTravel; }
+  const rifleClip = model.getObjectByName('clip');
+  if (rifleClip) {
+    if (profile.automatic) rifleClip.visible = false;
+    else updateRifleClip(rifleClip, state, pose);
+  }
   const feed = model.getObjectByName('feed');
   if (feed) applyMachineGunFeed(model, machineGunReloadPose(state));
   model.userData.smgReload = profile.smg ? machineGunReloadPose(state) : null;
   const muzzle = model.getObjectByName('owned-muzzle');
   if (muzzle) muzzle.position.set(profile.muzzleX ?? 0, 0, profile.muzzleZ);
+}
+
+function updateRifleClip(clip, state, pose) {
+  clip.visible = pose.clipVisible;
+  clip.position.y = -.055 * pose.cartridgePush;
+  const missing = RIFLE.magazine - state.ammo;
+  const loose = Boolean(infantryWeaponProfile(state).scoped) || state.ammo > 0;
+  clip.getObjectByName('charger').visible = !loose;
+  const reloadPhaseTime = state.elapsed * 2.7 / rifleReloadSeconds(state);
+  const looseFeed = Math.max(0, (reloadPhaseTime - .7) / 1.2) * missing;
+  if (loose) clip.position.y = -.055 * (looseFeed % 1);
+  for (let i = 0; i < RIFLE.magazine; i++) {
+    const cartridge = clip.getObjectByName(`cartridge${i}`);
+    cartridge.visible = !loose || (i === Math.min(missing - 1, Math.floor(looseFeed)));
+    cartridge.position.x = !loose ? -.022 + i * .011 : 0;
+  }
 }
 
 function applyMachineGunFeed(model, reload) {
@@ -554,19 +580,7 @@ export function updateRifleModel(model, state) {
   }
   parts.bolt.rotation.z = pose.boltLift;
   parts.bolt.position.z = pose.boltTravel;
-  parts.clip.visible = pose.clipVisible;
-  parts.clip.position.y = -.055 * pose.cartridgePush;
-  const missing = RIFLE.magazine - state.ammo;
-  const loose = Boolean(infantryWeaponProfile(state).scoped) || state.ammo > 0;
-  parts.clip.getObjectByName('charger').visible = !loose;
-  const reloadPhaseTime = state.elapsed * 2.7 / rifleReloadSeconds(state);
-  const looseFeed = Math.max(0, (reloadPhaseTime - .7) / 1.2) * missing;
-  if (loose) parts.clip.position.y = -.055 * (looseFeed % 1);
-  for (let i = 0; i < RIFLE.magazine; i++) {
-    const cartridge = parts.clip.getObjectByName(`cartridge${i}`);
-    cartridge.visible = !loose || (i === Math.min(missing - 1, Math.floor(looseFeed)));
-    cartridge.position.x = !loose ? -.022 + i * .011 : 0;
-  }
+  updateRifleClip(parts.clip, state, pose);
   parts.flash.visible = state.action === 'cycle' && state.elapsed < .045;
   const ejection = (state.elapsed - .3) / .35;
   parts.casing.visible = state.action === 'cycle' && ejection >= 0 && ejection < 1;

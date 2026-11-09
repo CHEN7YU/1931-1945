@@ -12,6 +12,7 @@ import { shoulderPocket } from '../src/rifle-contacts.js';
 import { soldierEyePosition, soldierPostureHeight } from '../src/entities.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 import { createNraGrenadeHand } from '../src/nra-hand.js';
+import { createRifleState } from '../src/rifle-action.js';
 
 function fixture() {
   const manager = new T.LoadingManager();
@@ -99,6 +100,28 @@ test('travel and partial posture blends keep the same eye projection, with no ai
     const partial = f.project(stance, true, 1.4, .04, .5);
     assert.ok(partial.actual.projectionError < 1e-6);
   }
+});
+
+test('rifle and dadao action changes invalidate the owned eye cache and agree with the real rig', () => {
+  const f = fixture();
+  f.actor.health = 100;
+  f.actor.rifle = createRifleState();
+  f.actor.rifle.ammo = 0;
+  f.actor.rifle.action = 'reload';
+  for (const elapsed of [.1, .7, 1.6, 3.2]) {
+    f.actor.rifle.elapsed = elapsed;
+    const { pose, actual } = f.project('standing', false);
+    assert.ok(actual.projectionError < 1e-6);
+    assert.deepEqual(nativeEyeLocal(f.actor), pose.headAim.eye);
+  }
+  f.actor.rifle.action = 'idle';
+  f.actor.dadao = { equipped: true, pose: { phase: 'windup', progress: 0 } };
+  const before = nativeEyeLocal(f.actor);
+  f.actor.dadao.pose.progress = 1;
+  const { pose, actual } = f.project('standing', false);
+  assert.notDeepEqual(nativeEyeLocal(f.actor), before);
+  assert.deepEqual(nativeEyeLocal(f.actor), pose.headAim.eye);
+  assert.ok(actual.projectionError < 1e-6);
 });
 
 test('single-knee firing folds the rear calf under the body instead of stretching it far behind the hip', () => {

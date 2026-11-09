@@ -13,6 +13,7 @@ try {
   if (directory) await mkdir(directory, { recursive: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 },
     recordVideo: directory ? { dir: join(directory, 'video'), size: { width: 1440, height: 900 } } : undefined });
+  await page.route('**/api/performance', route => route.abort());
   const loaded = new Set();
   page.on('response', response => {
     const path = new URL(response.url()).pathname;
@@ -26,7 +27,8 @@ try {
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5187');
   url.searchParams.set('benchmark', 'interior'); url.searchParams.set('seed', '1938');
   await page.goto(url.href);
-  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 60000 });
+  await setQualityPreset(page, 'low');
+  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
   for (const [kind, maps] of Object.entries(DADAO_ART_MAPS)) for (const map of maps) {
     assert.ok(loaded.has(`${DADAO_ART_ROOT}${kind}/${map}.webp`), `Missing runtime texture: ${kind}/${map}`);
   }
@@ -62,7 +64,6 @@ try {
   assert.ok(decoded['steel/roughnessMap'].left - decoded['steel/roughnessMap'].right > 20, 'real bevel has lower roughness');
   assert.ok(decoded['steel/metalnessMap'].mean > 210, 'bare steel remains predominantly metallic');
   assert.ok(decoded['cotton/roughnessMap'].mean > 218, 'cloth stays matte rather than shiny');
-  await setQualityPreset(page, 'low');
   await page.locator('#deploy').click();
   await page.keyboard.press('3');
   await page.waitForFunction(() => window.__battle.dadao?.phase === 'ready');

@@ -137,7 +137,8 @@ export function createNraRiflePose(root, bones, gun) {
       rightPalmGoal.copy(position(triggerPalm));
       const operation = carry.rifleOperation;
       if (operation?.hand > 0) {
-        rightPalmGoal.copy(gun.localToWorld(new THREE.Vector3(...rifleActionPalm(operation))));
+        const clipY = gun.getObjectByName('clip')?.position.y;
+        rightPalmGoal.copy(gun.localToWorld(new THREE.Vector3(...rifleActionPalm(operation, clipY))));
         rightTarget.add(rightPalmGoal.clone().sub(position(triggerPalm)));
       }
       right = placeHand('Right', rightPalmGoal, rightTarget, new THREE.Vector3(.7, -.7, .1).applyQuaternion(bodyFacing),

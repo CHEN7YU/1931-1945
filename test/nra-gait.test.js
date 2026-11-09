@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Group, Bone, Vector3 } from 'three';
 import { lowStepTarget, runningStepTarget, turningStepTarget, applyNativeFootCycle, applyNativeRestStance,
   createNativeGaitProjection, NativeGaitReachError, applyNativeBodyLean } from '../src/nra-gait.js';
+import { updateFootContacts } from '../src/foot-contact.js';
 
 function legs() {
   const root = new Group(), bones = new Map(), hips = new Bone();
@@ -19,6 +20,30 @@ function legs() {
   const restFeet = Object.fromEntries(['Left', 'Right'].map(side => [side, bones.get(`${side}Foot`).getWorldPosition(new Vector3())]));
   return { root, bones, restFeet };
 }
+
+test('real leg IK uses the simulation-owned planted contact when moving and turning', () => {
+  const { root, bones, restFeet } = legs();
+  const base = [...bones.values()].map(bone => ({ bone, position: bone.position.clone(), rotation: bone.quaternion.clone() }));
+  const gait = { jog: 0, walkStride: 1.25, runStride: 1.6, walkContact: .52,
+    runContact: .4, walkClearance: .04, heelHeight: .2 };
+  const actor = { health: 100, stance: 'standing', heading: 0, position: root.position,
+    nativeMotion: { weight: 1, profile: { restFeet: Object.fromEntries(['Left', 'Right'].map(side =>
+      [side.toLowerCase(), { x: restFeet[side].x, z: restFeet[side].z }])) } } };
+  let anchor;
+  for (let i = 0; i < 5; i++) {
+    for (const entry of base) { entry.bone.position.copy(entry.position); entry.bone.quaternion.copy(entry.rotation); }
+    actor.position.z = -.02 * i; actor.heading = .04 * i; root.rotation.y = actor.heading;
+    root.updateMatrixWorld(true);
+    const phase = .1 + .02 * i;
+    updateFootContacts(actor, gait, phase, .02);
+    anchor ??= { ...actor.nativeMotion.footContacts.left };
+    const result = applyNativeFootCycle(root, bones, { weight: 1, upright: 1, hipDrop: .04,
+      legLift: .55, walkPhase: phase, runPhase: phase, ...gait, footContacts: actor.nativeMotion.footContacts }, restFeet, () => 0);
+    const foot = bones.get('LeftFoot').getWorldPosition(new Vector3());
+    assert.ok(Math.hypot(foot.x - anchor.x, foot.z - anchor.z) < .001);
+    assert.ok(result.left.error < 1e-5);
+  }
+});
 
 test('resting legs on raised local support resolve the inner reach without stretching or throwing during anatomy sampling', () => {
   for (const floor of [.73, .75, .77, 1.2]) for (const yaw of [0, 1.3, Math.PI]) {

@@ -7,6 +7,8 @@ import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
+import { createRifleState } from '../src/rifle-action.js';
+import { RIFLE_HAND_SAMPLES, rifleHandWeights } from '../src/rifle-hand-action.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
 test('native walking and running coordinate shoulder and carried-weapon motion, but leave firing and support stable', () => {
@@ -38,6 +40,27 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
       const stable = sampleNraMotion({ ...person, ...patch });
       assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 });
     }
+  }
+});
+
+test('rifle action body blend matches its distant samples and excludes support equipment', () => {
+  const person = { health: 100, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+    locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState() };
+  person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+  const sample = { hand: .7, loading: .6, boltLift: .4, boltTravel: .05, cartridgePush: .3 };
+  const direct = sampleNraMotion(person, false, sample).upperBody;
+  const weights = rifleHandWeights(sample);
+  for (const axis of Object.keys(direct)) {
+    const blended = RIFLE_HAND_SAMPLES.reduce((sum, pose, index) =>
+      sum + weights[index] * sampleNraMotion(person, false, pose).upperBody[axis], 0);
+    assert.ok(Math.abs(direct[axis] - blended) < 1e-12, `${axis}: ${direct[axis]} vs ${blended}`);
+  }
+  assert.notEqual(direct.yaw, 0);
+  for (const patch of [{ emplacementId: 'gun' }, { vehicleId: 'tank' },
+    { engineer: { construction: { mode: 'building' } } }, { sihangShield: { active: true } },
+    { supportWeaponPose: { active: true } }, { discharger: { presentationActive: true } }]) {
+    assert.deepEqual(sampleNraMotion({ ...person, ...patch }, false, sample).upperBody,
+      { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 });
   }
 });
 
@@ -330,8 +353,8 @@ test('one soldier switches between charge, quick short steps and aimed slow move
   assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
   assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.25);
   assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
-  assert.ok(samples.jog.bodyLean >= .54 && samples.jog.bodyLean <= .60);
-  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .10);
+  assert.ok(samples.jog.bodyLean >= .20 && samples.jog.bodyLean <= .22);
+  assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .04);
   assert.ok(samples.sprint.runContact < samples.jog.runContact - .1);
   assert.ok(samples.aim.walkClearance < samples.jog.walkClearance * .5);
   assert.ok(samples.aim.lowReady < .001 && samples.aim.bodyLean < samples.jog.bodyLean * .5);
@@ -356,8 +379,8 @@ test('fast actual movement cannot retain an upright walk even when its mode labe
   }
   const fast = sampleNraMotion(person);
   assert.equal(fast.travelStyle, 'charge');
-  assert.ok(fast.bodyLean >= .70 && fast.bodyLean <= .72);
-  assert.ok(fast.hipDrop > .19);
+  assert.ok(fast.bodyLean >= .25 && fast.bodyLean <= .27);
+  assert.ok(fast.hipDrop >= .03 && fast.hipDrop <= .09);
   person.locomotion = { mode: 'walk', speed: 0 };
   for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
   assert.ok(sampleNraMotion(person).bodyLean < .001);
@@ -380,7 +403,7 @@ test('real metres set running cadence at every timestep, even when requested loc
       'one complete left/right cycle covers exactly its visual stride');
     const stepsPerSecond = cycles * 2 / 3;
     assert.ok(speed === 3.15 ? stepsPerSecond > 3.7 && stepsPerSecond < 4.2 : stepsPerSecond > 4.2 && stepsPerSecond < 4.8);
-    assert.ok(pose.bodyLean >= (speed === 3.15 ? .54 : .70));
+    assert.ok(pose.bodyLean >= (speed === 3.15 ? .20 : .25) && pose.bodyLean < .28);
     const stopped = person.nativeMotion.gaitCycles;
     person.locomotion.speed = 4.8;
     for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);

@@ -129,6 +129,8 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
     local.z += travelZ * (1 - turning);
     local.applyAxisAngle(new Vector3(0, 1, 0), turn.yaw * turning);
     root.localToWorld(local);
+    const contact = turning < .001 ? motion.footContacts?.[side.toLowerCase()] : null;
+    if (contact) { local.x = contact.x; local.z = contact.z; }
     const floor = groundAt(local.x, local.z), lift = (walk.lift + (run.lift - walk.lift) * motion.jog) * (1 - turning) + turn.lift * turning;
     target.set(local.x, floor + restFeet[side].y + lift, local.z);
     const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);

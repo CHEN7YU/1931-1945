@@ -30,6 +30,8 @@ test('the right palm actually leaves the trigger grip, follows the bolt and move
   assert.ok(Math.abs(after[2] - before[2] - .09) < 1e-8);
   assert.ok(rifleActionPalm(RIFLE_HAND_SAMPLES[4])[1] > .1);
   assert.ok(rifleActionPalm(RIFLE_HAND_SAMPLES[5])[1] < rifleActionPalm(RIFLE_HAND_SAMPLES[4])[1]);
+  assert.equal(rifleActionPalm(RIFLE_HAND_SAMPLES[5], -.027)[1], .13 - .027,
+    'third-person palm follows the same moving clip as the first-person hand');
   assert.equal(rifleHandAction(createRifleState()), null);
   assert.equal(rifleHandAction({ ...createRifleState('zb26'), action: 'reload' }), null);
 });
