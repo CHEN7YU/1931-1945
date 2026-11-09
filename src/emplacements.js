@@ -1,4 +1,5 @@
 import { NANJING_GATE_HEIGHT } from './nanjing-layout.js';
+import { NANJING_CASEMATE } from './nanjing-casemate.js';
 import { FOOT_SPEEDS } from './locomotion.js';
 
 const maxim24 = { type: 'infantry', model: 'zb26', magazine: 200, reserve: 1000, reload: 5,
@@ -16,6 +17,7 @@ export const EMPLACEMENT_PROFILES = Object.freeze({
 export const NANJING_EMPLACEMENTS = Object.freeze([
   { id: 'bridge-mg', profile: 'maxim24', x: -29, z: 26, heading: Math.PI },
   { id: 'bridge-gun', profile: 'bofors75', x: -31, z: 23, heading: -2.84 },
+  { id: 'gate-wall-mg', profile: 'maxim24', playerOnly: true, ...NANJING_CASEMATE.weapon },
   { id: 'dock-mg', profile: 'maxim24', x: -53.5, z: -92, heading: -Math.PI / 2 },
   { id: 'dock-gun', profile: 'bofors75', x: -63, z: -94, heading: -Math.PI / 2 },
   { id: 'gate-aa', profile: 'maxim24aa', x: 13.5, z: 20, altitude: NANJING_GATE_HEIGHT, heading: Math.PI },
@@ -112,7 +114,9 @@ export function emplacementObstacles(point) {
   const bounds = [{ minX: cannon ? -.65 : -.23, maxX: cannon ? .65 : .23,
     minZ: cannon ? -.65 : -.16, maxZ: cannon ? .25 : .16,
     height: EMPLACEMENT_PROFILES[point.profile].antiAircraft ? 1.8 : 1.4 }];
-  if (point.profile === 'maxim24') bounds.push(
+  if (point.profile === 'maxim24' && point.enclosed) bounds.push(
+    { minX: -.6, maxX: .6, minZ: -.6, maxZ: .3, height: .7 });
+  if (point.profile === 'maxim24' && !point.enclosed) bounds.push(
     { minX: -1.32, maxX: 1.32, minZ: -.98, maxZ: -.32, height: .85 },
     { minX: -1.88, maxX: -1.18, minZ: -.3, maxZ: 1.05, height: .85 },
     { minX: 1.18, maxX: 1.88, minZ: -.3, maxZ: 1.05, height: .85 });

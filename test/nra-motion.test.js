@@ -22,7 +22,11 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
     }
     const yaws = samples.map(s => s.upperBody.yaw), rolls = samples.map(s => s.upperBody.roll);
     assert.ok(Math.max(...yaws) - Math.min(...yaws) >= .089);
-    assert.ok(Math.max(...rolls) - Math.min(...rolls) >= .027);
+    assert.ok(Math.max(...rolls) - Math.min(...rolls) >= .099);
+    for (const name of ['lift', 'lateral']) {
+      const values = samples.map(s => s.upperBody[name]);
+      assert.ok(Math.max(...values) - Math.min(...values) > .022, 'walking includes visible upper-body translation');
+    }
     assert.notDeepEqual(samples[4].weaponQuaternion, samples[12].weaponQuaternion);
     const before = JSON.stringify(person.nativeMotion);
     assert.deepEqual(sampleNraMotion(person), sampleNraMotion(person), 'sampling/pause cannot advance the gait');
@@ -32,7 +36,7 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
     for (const patch of [{ emplacementId: 'gun' },
       { discharger: { presentationActive: true } }, { health: 0 }]) {
       const stable = sampleNraMotion({ ...person, ...patch });
-      assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0 });
+      assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 });
     }
   }
 });

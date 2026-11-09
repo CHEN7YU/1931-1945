@@ -143,12 +143,12 @@ export function createEmplacementModel(point) {
         'ammunition-box', 'spade-grips', 'trigger', 'trunnion-cradle', 'elevation-wheel',
         'tripod-braces', 'foot-plates', 'ring-sight'];
     }
-    if (!profile.antiAircraft) for (const x of [-.9, -.45, 0, .45, .9]) for (let row = 0; row < 2; row++) {
+    if (!profile.antiAircraft && !point.enclosed) for (const x of [-.9, -.45, 0, .45, .9]) for (let row = 0; row < 2; row++) {
       const bag = new THREE.Mesh(sandbagGeometry(), sand);
       bag.position.set(x, .18 + row * .32, -.65); bag.scale.set(.4, .3, .3); root.add(bag);
       bag.userData.emplacementCover = true;
     }
-    if (!profile.antiAircraft) for (const side of [-1, 1]) for (const z of [0, .65]) for (let row = 0; row < 2; row++) {
+    if (!profile.antiAircraft && !point.enclosed) for (const side of [-1, 1]) for (const z of [0, .65]) for (let row = 0; row < 2; row++) {
       const bag = new THREE.Mesh(sandbagGeometry(), sand);
       bag.position.set(side * 1.55, .18 + row * .32, z);
       bag.scale.set(.35, .3, .4); root.add(bag);

@@ -22,6 +22,8 @@ import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStar
   nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from './nanjing-city-layout.js';
 import { WOODLAND_SPECIES, woodlandTreeGeometry } from './woodland.js';
+import { NANJING_CASEMATE, subtractCasemateBox, casemateGateSlices, casemateFloorAt,
+  inNanjingCasemate, nearNanjingCasemate, casemateRoute } from './nanjing-casemate.js';
 import { NANJING_COURTYARDS, NANJING_COURTYARD_HALF_WIDTH,
   NANJING_DETAIL_SCALE as DETAIL_SCALE, NANJING_FLANKING_BUFFERS, NANJING_GATE_HEIGHT,
   NANJING_GATE_LENGTH, NANJING_GATE_NORTH_EDGE, NANJING_GATE_SOUTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_GATE_WIDTH,
@@ -47,6 +49,8 @@ export function makeNanjingBattlefield(scene, surface) {
   const residentialBuildings = [];
   const northernBackdrop = [];
   const residentialMeshes = [];
+  let groundNavigation = null;
+  let casemateObstaclesAt = null;
   let templeLandmark = null;
   const cityLayout = createNanjingCityLayout();
   const wallBreaches = [{ id: 'east-shell-breach', minX: 88, maxX: 94, minZ: 16, maxZ: 20.4 }];
@@ -454,9 +458,11 @@ export function makeNanjingBattlefield(scene, surface) {
     const depth = NANJING_GATE_TUNNEL.depth;
     for (const side of [-1, 1]) {
       const segmentWidth = width / 2 - opening / 2;
-      obstacles.push({ minX: side < 0 ? -width / 2 : opening / 2,
+      const wing = { minX: side < 0 ? -width / 2 : opening / 2,
         maxX: side < 0 ? -opening / 2 : width / 2,
-        minZ: z - depth / 2, maxZ: z + depth / 2, minY: 0, height: wallHeight });
+        minZ: z - depth / 2, maxZ: z + depth / 2, minY: 0, maxY: wallHeight };
+      obstacles.push(...subtractCasemateBox(wing).map(({ maxY, ...bounds }) =>
+        ({ ...bounds, height: maxY, walkable: maxY === NANJING_CASEMATE.floorY })));
       town.pieces.push({ x: side * (opening / 2 + segmentWidth / 2), y: wallHeight / 2, z,
         w: segmentWidth, h: wallHeight, d: depth, material: 'stone', wall: true });
       const niche = addBox(side * (opening / 2 + 1.15 * DETAIL_SCALE), 2.1 * DETAIL_SCALE, z,
@@ -481,20 +487,29 @@ export function makeNanjingBattlefield(scene, surface) {
     masonry.lineTo(width / 2, wallHeight);
     masonry.lineTo(-width / 2, wallHeight);
     masonry.closePath();
-    const geometry = new THREE.ExtrudeGeometry(masonry, { depth, bevelEnabled: false, curveSegments: 24 });
-    const uv = geometry.attributes.uv, positions = geometry.attributes.position, normals = geometry.attributes.normal;
     const material = main ? brick : stone, meters = material.userData.metersPerTile ?? 2.4;
-    for (let vertex = 0; vertex < uv.count; vertex++) {
-      uv.setXY(vertex, (Math.abs(normals.getX(vertex)) > .5 ? positions.getZ(vertex) : positions.getX(vertex)) / meters,
-        positions.getY(vertex) / meters);
+    for (const slice of casemateGateSlices(z - depth / 2, z + depth / 2)) {
+      const shape = masonry.clone();
+      for (const opening of slice.holes) {
+        const hole = new THREE.Path();
+        hole.moveTo(opening.minX, opening.minY); hole.lineTo(opening.maxX, opening.minY);
+        hole.lineTo(opening.maxX, opening.maxY); hole.lineTo(opening.minX, opening.maxY); hole.closePath();
+        shape.holes.push(hole);
+      }
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: slice.maxZ - slice.minZ,
+        bevelEnabled: false, curveSegments: 24 });
+      const uv = geometry.attributes.uv, positions = geometry.attributes.position, normals = geometry.attributes.normal;
+      for (let vertex = 0; vertex < uv.count; vertex++)
+        uv.setXY(vertex, (Math.abs(normals.getX(vertex)) > .5 ? positions.getZ(vertex) + slice.minZ - (z - depth / 2) : positions.getX(vertex)) / meters,
+          positions.getY(vertex) / meters);
+      const aboveArch = new THREE.Mesh(geometry, material);
+      aboveArch.position.set(0, 0, slice.minZ);
+      aboveArch.castShadow = aboveArch.receiveShadow = true;
+      scene.add(aboveArch); solids.push(aboveArch);
+      aboveArch.userData.nanjingFeature = 'gate-above-arch-masonry';
     }
-    const aboveArch = new THREE.Mesh(geometry, material);
-    aboveArch.position.set(0, 0, z - depth / 2);
-    aboveArch.castShadow = aboveArch.receiveShadow = true;
-    scene.add(aboveArch); solids.push(aboveArch);
     obstacles.push({ minX: -opening / 2, maxX: opening / 2, minZ: z - depth / 2,
       maxZ: z + depth / 2, minY: archCrown, height: wallHeight });
-    aboveArch.userData.nanjingFeature = 'gate-above-arch-masonry';
     if (main) {
       const plaque = makePlaque('中華門', 0, archCrown + .95, z + depth / 2 + .10, 3.2, 1, true);
       plaque.userData.nanjingFeature = 'gate-name-plaque';
@@ -672,9 +687,14 @@ export function makeNanjingBattlefield(scene, surface) {
       const addMasonry = (z, depth, bottom, top) => {
         const height = top - bottom;
         if (depth <= .01 || height <= .01) return;
-        const block = addBox(buffer.centerX, (bottom + top) / 2, z,
-          buffer.width, height, depth, brick, true, true);
-        block.userData.nanjingFeature = 'flanking-masonry-core';
+        for (const piece of subtractCasemateBox({ minX: buffer.minX, maxX: buffer.maxX,
+          minZ: z - depth / 2, maxZ: z + depth / 2, minY: bottom, maxY: top })) {
+          const block = addBox((piece.minX + piece.maxX) / 2, (piece.minY + piece.maxY) / 2,
+            (piece.minZ + piece.maxZ) / 2, piece.maxX - piece.minX, piece.maxY - piece.minY,
+            piece.maxZ - piece.minZ, brick, true, true);
+          block.userData.nanjingFeature = 'flanking-masonry-core';
+          if (piece.maxY === NANJING_CASEMATE.floorY) obstacles.at(-1).walkable = true;
+        }
         if (top === flankTop) {
           flankWalkSupports.push({ minX: buffer.minX, maxX: buffer.maxX,
             minZ: z - depth / 2, maxZ: z + depth / 2, height: top });
@@ -746,6 +766,49 @@ export function makeNanjingBattlefield(scene, surface) {
       tread.userData.nanjingFeature = `${ramp.id}-wall-stair-tread`;
     }
   }
+  const casemate = NANJING_CASEMATE;
+  const roomPlaster = surface('plaster', 0xc8c0ad, 1.4);
+  const roomBox = (bounds, material, feature, collision = false, walkable = false) => {
+    const mesh = addBox((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2,
+      (bounds.minZ + bounds.maxZ) / 2, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY,
+      bounds.maxZ - bounds.minZ, material, collision);
+    mesh.userData.nanjingFeature = feature;
+    if (collision && walkable) obstacles.at(-1).walkable = true;
+    return mesh;
+  };
+  const stepWidth = (casemate.stairs.maxX - casemate.stairs.minX) / casemate.stairs.steps;
+  for (let step = 0; step < casemate.stairs.steps; step++) {
+    const height = casemate.floorY * (step + 1) / casemate.stairs.steps;
+    const bounds = { minX: casemate.stairs.maxX - (step + 1) * stepWidth,
+      maxX: casemate.stairs.maxX - step * stepWidth, minZ: casemate.stairs.minZ, maxZ: casemate.stairs.maxZ };
+    roomBox({ ...bounds, minY: 0, maxY: height }, stone, 'casemate-stair-tread', true, true);
+    roomBox({ ...bounds, minY: height + 2.45, maxY: casemate.ceilingY },
+      brick, 'casemate-stair-ceiling', true);
+  }
+  for (const bounds of [casemate.corridor, casemate.room]) {
+    for (const piece of subtractCasemateBox({ ...bounds, minY: casemate.floorY - .2, maxY: casemate.floorY },
+      [{ ...casemate.stairs, minY: 0, maxY: casemate.ceilingY }]))
+      roomBox(piece, stone, 'casemate-floor', true, true);
+    roomBox({ ...bounds, minY: casemate.ceilingY, maxY: casemate.ceilingY + .18 },
+      roomPlaster, 'casemate-ceiling', true);
+  }
+  const room = casemate.room, slit = casemate.slit;
+  for (const bounds of [
+    { minX: room.minX, maxX: room.minX + .04, minZ: room.minZ, maxZ: room.maxZ },
+    { minX: room.maxX - .04, maxX: room.maxX, minZ: room.minZ, maxZ: room.maxZ },
+    { minX: room.minX, maxX: casemate.corridor.minX, minZ: room.minZ, maxZ: room.minZ + .04 },
+    { minX: casemate.corridor.maxX, maxX: room.maxX, minZ: room.minZ, maxZ: room.minZ + .04 },
+  ]) roomBox({ ...bounds, minY: casemate.floorY, maxY: casemate.ceilingY }, roomPlaster, 'casemate-plaster');
+  for (const bounds of [
+    { minX: room.minX, maxX: slit.minX, minY: casemate.floorY, maxY: casemate.ceilingY },
+    { minX: slit.maxX, maxX: room.maxX, minY: casemate.floorY, maxY: casemate.ceilingY },
+    { minX: slit.minX, maxX: slit.maxX, minY: casemate.floorY, maxY: slit.minY },
+    { minX: slit.minX, maxX: slit.maxX, minY: slit.maxY, maxY: casemate.ceilingY },
+  ]) roomBox({ ...bounds, minZ: room.maxZ - .04, maxZ: room.maxZ - .005 }, roomPlaster, 'casemate-plaster');
+  const casemateSign = makePlaque('機槍掩體', -9.2, 2.1, casemate.entrance.z, 1.4, .3);
+  casemateSign.rotation.y = Math.PI / 2;
+  casemateSign.userData.nanjingFeature = 'casemate-sign';
+  sceneArt.casemate = { stairs: casemate.stairs.steps, protectedRoom: true, firingSlit: true };
   const cave = NANJING_SOLDIER_CAVE;
   const caveFloor = addBox(cave.x, cave.floorHeight / 2, cave.z, cave.width, cave.floorHeight, cave.depth, stone);
   caveFloor.userData.nanjingFeature = 'soldier-cave-floor';
@@ -1479,6 +1542,8 @@ export function makeNanjingBattlefield(scene, surface) {
   ];
   function walkHeight(x, z, referenceY = groundHeight(x, z), step = .24) {
     let height = groundHeight(x, z);
+    const roomHeight = casemateFloorAt(x, z);
+    if (roomHeight !== null && roomHeight <= referenceY + step) height = Math.max(height, roomHeight);
     for (const support of walkSupports) {
       if (x < support.minX || x > support.maxX || z < support.minZ || z > support.maxZ ||
         support.height > referenceY + step || support.height <= height) continue;
@@ -1512,7 +1577,7 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     return position;
   }
-  function elevatedPath(start, goal) {
+  function wallElevatedPath(start, goal) {
     if (start.y < 7 || goal.y < 7 || goal.y === undefined) return null;
     const clear = (from, to) => {
       const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / .2));
@@ -1553,6 +1618,48 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     return [];
   }
+  function casemateConnection(start, goal) {
+    const position = new THREE.Vector3(start.x, start.y ?? 0, start.z), path = [];
+    const count = Math.max(1, Math.ceil(Math.hypot(goal.x - start.x, goal.z - start.z) / .1));
+    for (let step = 1; step <= count; step++) {
+      const x = start.x + (goal.x - start.x) * step / count, z = start.z + (goal.z - start.z) * step / count;
+      moveNanjingInfantry(position, x - position.x, z - position.z, .42,
+        casemateObstaclesAt(position.x, position.z));
+      if (Math.hypot(position.x - x, position.z - z) > .025) return [];
+      path.push({ x: position.x, y: position.y, z: position.z });
+    }
+    return Math.abs(position.y - (goal.y ?? 0)) < .025 ? path : [];
+  }
+  function routeToCasemateEntrance(point) {
+    if (!groundNavigation) throw new Error('Casemate routing requires the battle ground navigator');
+    const path = [], position = { ...point };
+    if ((point.y ?? 0) > .5) {
+      const side = point.x < 0 ? -1 : 1;
+      const ramp = NANJING_WALL_RAMPS.find(candidate => candidate.side === side);
+      const walk = NANJING_WALL_WALKS.find(candidate => Math.sign(candidate.minX) === side);
+      const high = { x: (walk.minX + walk.maxX) / 2,
+        y: ramp.height, z: ramp.centerZ };
+      const onRamp = point.x >= ramp.minX && point.x <= ramp.maxX &&
+        point.z >= ramp.minZ && point.z <= ramp.maxZ;
+      if (!onRamp) {
+        const top = wallElevatedPath(point, high);
+        if (!top?.length) return [];
+        path.push(...top); Object.assign(position, high);
+      }
+      for (let step = 1; step <= 80; step++) {
+        const x = position.x + (ramp.side < 0 ? ramp.maxX + .3 - position.x : ramp.minX - .3 - position.x) * step / 80;
+        path.push({ x, y: walkHeight(x, ramp.centerZ, position.y), z: ramp.centerZ });
+      }
+      Object.assign(position, path.at(-1));
+    }
+    const ground = groundNavigation(position, casemate.entrance);
+    if (!ground.length) return [];
+    return [...path, ...ground.map(node => ({ ...node, y: 0 }))];
+  }
+  function elevatedPath(start, goal) {
+    const roomRoute = casemateRoute(start, goal, casemateConnection, routeToCasemateEntrance);
+    return roomRoute ?? wallElevatedPath(start, goal);
+  }
   const groundSurface = (x, z) => x >= -73 && x <= -59 && z >= -90 && z <= -70 ? 'wood'
     : Math.abs(z - 52) < 13 || Math.abs(x + 84) < 12
       ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
@@ -1560,7 +1667,8 @@ export function makeNanjingBattlefield(scene, surface) {
     'west-wall-stair-tread', 'east-wall-stair-tread', 'river-stone-bank', 'city-wall-merlon',
     'wall-merlon', 'city-lane', 'arched-gateway', 'soldier-cave-frame', 'flanking-masonry-core',
     'curtain-merlon', 'gate-tower-crenel', 'flanking-ramp-cheek', 'wall-walk',
-    'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall']);
+    'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall',
+    'casemate-stair-tread', 'casemate-stair-ceiling', 'casemate-floor', 'casemate-ceiling', 'casemate-plaster']);
   const masonryMeshes = solids.filter(mesh => mesh.isMesh && masonryFeatures.has(mesh.userData.nanjingFeature) &&
     !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent);
   const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
@@ -1569,6 +1677,18 @@ export function makeNanjingBattlefield(scene, surface) {
   return {
     solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,
     moveInfantry: moveNanjingInfantry, elevatedPath, staticRendering,
+    casemateContains: inNanjingCasemate,
+    casemateNearby: nearNanjingCasemate,
+    setGroundNavigation(navigator, query = null) {
+      if (typeof navigator !== 'function' || query !== null && typeof query !== 'function')
+        throw new TypeError('Ground navigation and collision queries must be functions');
+      groundNavigation = navigator;
+      if (query) casemateObstaclesAt = query;
+      else {
+        const lookup = obstacleLookup(obstacles, 2.5, 4);
+        casemateObstaclesAt = (x, z) => lookup.at(x, z);
+      }
+    },
     bridgeSurfaces: { deck: 0, northRamp: 0, southRamp: 0 },
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,
@@ -1608,6 +1728,7 @@ export function makeNanjingBattlefield(scene, surface) {
       wallStair: WALL_STAIR,
       soldierCave: cave,
       soldierCaves: NANJING_SOLDIER_CAVES,
+      casemate,
     },
     resetCampaign() {
       civilianQueue.length = 0;

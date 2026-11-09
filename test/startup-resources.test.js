@@ -9,7 +9,7 @@ test('startup chooses low-resident resources only on an explicit request or a bo
   assert.equal(startupResourceProfile('auto').lowMemory, false);
   assert.equal(startupResourceProfile('standard', 2).lowMemory, false);
   assert.equal(startupResourceProfile('low-memory').lowMemory, true);
-  assert.equal(startupResourceProfile('low-memory').motionPhases, 3);
+  assert.equal(startupResourceProfile('low-memory').motionPhases, 4);
   assert.deepEqual(RESOURCE_MODES, ['auto', 'standard', 'low-memory']);
   assert.throws(() => startupResourceProfile('fast'), RangeError);
   assert.throws(() => startupResourceProfile('auto', NaN), RangeError);

@@ -760,6 +760,7 @@ for (const outcome of ['victory', 'defeat', 'draw'])
   });
 $('battle-ending-continue').addEventListener('click', () => battleEnding.finish());
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
+if (nanjingCampaignMode) world.setGroundNavigation(navigate, movementObstacles);
 const armorNavigate = createTankNavigation(world.armorObstacles ?? world.obstacles);
 const dockNavigationObstacles = nanjingCampaignMode ? [...world.doorSystem.navigationObstacles, NANJING_DOCK_BUFFER] : null;
 const dockNavigate = dockNavigationObstacles ? createNavigator(dockNavigationObstacles) : null;
@@ -1288,12 +1289,13 @@ function movementObstacles(x, z, ignoreVehicleId = null) {
 function infantryNavigationBlocked(point, position, radius = .43) {
   if (nanjingDockMovementLimited(position) && nanjingDockInside(point, radius)) return true;
   const obstacles = movementObstacles(point.x, point.z);
-  if (!sihangCampaignMode) return circleBlocked(point.x, point.z, radius, obstacles, position.y);
+  if (!sihangCampaignMode && !(nanjingCampaignMode && world.casemateNearby(point)))
+    return circleBlocked(point.x, point.z, radius, obstacles, position.y);
   const floor = world.walkHeight(point.x, point.z, position.y);
   const horizontal = Math.hypot(point.x - position.x, point.z - position.z);
   if (world.isDeepWater(point.x, point.z) || Math.abs(floor - position.y) > .32 + horizontal * .26) return true;
   return circleBlocked(point.x, point.z, radius,
-    obstacles.filter(obstacle => !obstacle.walkable || obstacle.height > floor + .25), floor);
+    obstacles.filter(obstacle => !obstacle.walkable || obstacle.height > floor + (sihangCampaignMode ? .25 : .5)), floor);
 }
 
 function deploymentObstacles() {
@@ -2682,7 +2684,7 @@ function operateAIEmplacement(actor, dt) {
     if (actor.emplacementId || actor.tactics.stationId) releaseEmplacement(actor, false);
     return false;
   }
-  const usable = point => point.health > 0 && !point.weapon.settings.antiAircraft &&
+  const usable = point => (!point.playerOnly || actor.playerUnit) && point.health > 0 && !point.weapon.settings.antiAircraft &&
     (!nanjingCampaignMode || !nanjingDockBufferActive(stage) || actor.playerUnit ||
       !nanjingDockInside(emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z)).operator, .6)) &&
     point.team === actor.team && (point.engineerBuilt
@@ -4849,6 +4851,13 @@ function playerOrderDestination(actor, player, yaw = controlPose.yaw) {
       z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }
     : holdDestination(actor);
   const anchor = actor.order === 'follow' ? player.position : actor.orderPoint;
+  if (nanjingCampaignMode && world.casemateContains(anchor)) {
+    const y = world.walkHeight(desired.x, desired.z, anchor.y);
+    if (!world.casemateContains({ ...desired, y }) || Math.abs(y - anchor.y) > .3 ||
+      circleBlocked(desired.x, desired.z, .42, movementObstacles(desired.x, desired.z), y))
+      return { x: anchor.x, y: anchor.y, z: anchor.z };
+    return { ...desired, y };
+  }
   if (sihangCampaignMode) {
     const y = world.walkHeight(desired.x, desired.z, anchor.y ?? 0);
     if (desired.x < battleArea.minX || desired.x > battleArea.maxX || desired.z < battleArea.minZ || desired.z > battleArea.maxZ ||

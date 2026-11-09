@@ -12,7 +12,8 @@ import { circleBlocked } from '../src/core.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
 test('bridge and dock each start with a usable shared-profile heavy machine gun and 75mm mountain gun', () => {
-  assert.equal(NANJING_EMPLACEMENTS.length, 6);
+  assert.equal(NANJING_EMPLACEMENTS.length, 7);
+  assert.equal(NANJING_EMPLACEMENTS.find(point => point.id === 'gate-wall-mg').enclosed, true);
   for (const place of ['bridge', 'dock']) {
     assert.deepEqual(NANJING_EMPLACEMENTS.filter(point => point.id.startsWith(place) && !point.id.endsWith('-aa')).map(point => point.profile),
       ['maxim24', 'bofors75']);
@@ -109,8 +110,10 @@ test('gunner sights remain open through the cannon shield and machine-gun nests 
     if (point.profile === 'maxim24') {
       const obstacles = emplacementObstacles(point), operator = pose.operator;
       assert.equal(circleBlocked(operator.x, operator.z, .43, obstacles), false);
-      assert.ok(model.children.filter(mesh => mesh.userData.emplacementCover)
-        .reduce((count, mesh) => count + mesh.userData.partCount, 0) >= 18);
+      const coverParts = model.children.filter(mesh => mesh.userData.emplacementCover)
+        .reduce((count, mesh) => count + mesh.userData.partCount, 0);
+      if (point.enclosed) assert.equal(coverParts, 0, 'the wall room uses its own protection, not a sandbag nest');
+      else assert.ok(coverParts >= 18);
     }
   }
 });

@@ -6,7 +6,7 @@ export function startupResourceProfile(mode, deviceMemory = null) {
     throw new RangeError('Invalid reported device memory');
   const lowMemory = mode === 'low-memory' || mode === 'auto' && deviceMemory !== null && deviceMemory <= 4;
   return Object.freeze({ mode, lowMemory, textureLimit: lowMemory ? 512 : Infinity,
-    atlasTile: lowMemory ? 256 : 512, motionPhases: lowMemory ? 3 : 6,
+    atlasTile: lowMemory ? 256 : 512, motionPhases: lowMemory ? 4 : 6,
     supportPitches: lowMemory ? 3 : 5, detailedActors: lowMemory ? 2 : 6 });
 }
 

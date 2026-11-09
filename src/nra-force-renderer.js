@@ -188,6 +188,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   const atlas = createNraAtlas(bankTemplate.root, bankTemplate.uniformMaterials, template.officerAppearance ? team : null,
     { tile: lowMemory ? 256 : 512 });
   const phases = lowMemory ? 3 : 6;
+  const travelPhases = lowMemory ? 4 : 6;
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
   const movingBanks = 1 + movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
@@ -279,9 +280,9 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     const postureMorph = !dead && !rifleAction && !support && posture === 'prone';
     const turnMorph = turning;
     const poses = [], casualtyWeapons = [], attachmentFrames = new Map();
-    for (let frame = 0; frame < (travelMorph ? phases : support ? supportSamples.length : shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : turnMorph ? turnStances.length * turnPhases : postureMorph ? 3 : 1); frame++) {
+    for (let frame = 0; frame < (travelMorph ? travelPhases : support ? supportSamples.length : shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : turnMorph ? turnStances.length * turnPhases : postureMorph ? 3 : 1); frame++) {
       if (travelMorph) {
-        sampleActor.nativeMotion.gaitCycles = frame / phases;
+        sampleActor.nativeMotion.gaitCycles = frame / travelPhases;
         sampleActor.nativeMotion.phaseDistance = sampleActor.nativeMotion.distance;
         syncNativeAimGoal(sampleActor);
       }
@@ -425,7 +426,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       footprint.push(...corpseFootprint(geometry)); geometry.dispose();
     }
     banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, deathStance, postureMorph, rifleAction, shieldWalk, bounds,
-      travelControl: travelMorph ? { morphTargetInfluences: Array(phases - 1).fill(0) } : null,
+      travelControl: travelMorph ? { morphTargetInfluences: Array(travelPhases - 1).fill(0) } : null,
       turnControl: turnMorph ? { morphTargetInfluences: Array(turnStances.length * turnPhases - 1).fill(0) } : null,
       supportSamples, supportPitches: supportModel?.pitches,
       supportControl: support ? { morphTargetInfluences: Array(supportSamples.length - 1).fill(0) } : null,
@@ -452,9 +453,9 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   const gunScaleA = new THREE.Vector3(), gunScaleB = new THREE.Vector3();
   const gunRotationA = new THREE.Quaternion(), gunRotationB = new THREE.Quaternion();
   const travelWeights = phase => {
-    const position = ((phase % 1) + 1) % 1 * phases, lower = Math.floor(position), blend = position - lower;
-    const weights = Array(phases).fill(0);
-    weights[lower] = 1 - blend; weights[(lower + 1) % phases] += blend;
+    const position = ((phase % 1) + 1) % 1 * travelPhases, lower = Math.floor(position), blend = position - lower;
+    const weights = Array(travelPhases).fill(0);
+    weights[lower] = 1 - blend; weights[(lower + 1) % travelPhases] += blend;
     return weights;
   };
   const turnWeights = (posture, turn) => {

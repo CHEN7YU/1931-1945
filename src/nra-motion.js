@@ -209,6 +209,8 @@ export function nativeEyeLocal(actor) {
     actor.position.x, actor.position.z, motion.gaitCycles, motion.phaseDistance, motion.speed,
     motion.strideScale, motion.gaitCharge, motion.gaitAim, motion.weight, motion.aim, motion.bodyLean,
     motion.lowReady, motion.legLift, actor.locomotion.mode, intent, swordCarry,
+    actor.health, actor.weaponBlocked, actor.emplacementId, actor.discharger?.presentationActive,
+    actor.formation?.sihangDemolition,
     motion.headGoal, motion.cheekWeight,
     ...Object.keys(FIRING_POSES).map(name => motion.posture[name])];
   let retained = eyeSamples.get(motion);
@@ -223,7 +225,8 @@ export function nativeEyeLocal(actor) {
         (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
       eye = projectUnaimedEye(profile.headAim, { upright, postures: motion.posture,
         idleTime: motion.idleTime % profile.idle.duration, hipDrop: nativeGaitDrop(actor),
-        bodyLean: motion.bodyLean * upright, torsoYaw });
+        bodyLean: motion.bodyLean * upright, torsoYaw,
+        upperBody: sampleNativeUpperBody(actor, sampleNraPhase(actor)).upperBody });
     } else eye = sampleNraMotion(actor).headAim.eye;
     retained = { inputs, eye };
     eyeSamples.set(motion, retained);
@@ -249,19 +252,28 @@ export function sampleNraPhase(actor) {
     ...motion.posture, upright, weight: motion.weight, dadao };
 }
 
-export function sampleNraMotion(actor, includeHead = true) {
-  const phase = sampleNraPhase(actor), motion = actor.nativeMotion, { profile } = motion;
-  const { idleTime, runTime, walkTime, jog, gait, upright } = phase;
+function sampleNativeUpperBody(actor, phase) {
+  const motion = actor.nativeMotion, { profile } = motion, { runTime, jog, upright } = phase;
   const intent = nativePoseIntent(actor);
   const travelWeight = profile.footCycleGait && actor.health > 0 && ['travel', 'aim'].includes(intent) &&
     !actor.weaponBlocked && !actor.emplacementId && !actor.discharger?.presentationActive &&
     !actor.formation?.sihangDemolition ? motion.weight * upright * (intent === 'aim' ? .22 : 1 - .65 * motion.gaitAim) : 0;
   const cycle = runTime / profile.run.duration * Math.PI * 2;
   const upperBody = travelWeight ? {
-    yaw: Math.sin(cycle) * (.075 + .04 * jog) * travelWeight,
+    yaw: Math.sin(cycle) * (.11 + .06 * jog) * travelWeight,
     pitch: Math.cos(cycle * 2) * (.008 + .008 * jog) * travelWeight,
-    roll: Math.sin(cycle) * (.022 + .012 * jog) * travelWeight,
-  } : { yaw: 0, pitch: 0, roll: 0 };
+    roll: Math.sin(cycle) * (.05 + .04 * jog) * travelWeight,
+    lift: Math.cos(cycle * 2) * (.012 + .014 * jog) * travelWeight,
+    lateral: Math.sin(cycle) * (.012 + .013 * jog) * travelWeight,
+  } : { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 };
+  return { travelWeight, upperBody };
+}
+
+export function sampleNraMotion(actor, includeHead = true) {
+  const phase = sampleNraPhase(actor), motion = actor.nativeMotion, { profile } = motion;
+  const { idleTime, runTime, walkTime, jog, gait, upright } = phase;
+  const intent = nativePoseIntent(actor);
+  const { travelWeight, upperBody } = sampleNativeUpperBody(actor, phase);
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;
   const position = idle.position.lerp(walk.position.lerp(run.position, jog), motion.weight);
@@ -338,8 +350,12 @@ export function sampleNraMotion(actor, includeHead = true) {
         .applyAxisAngle(new Vector3(1, 0, 0), -bodyLean + upperBody.pitch)
         .applyAxisAngle(new Vector3(0, 0, 1), upperBody.roll).add(pivot);
     }
+    contact.x += upperBody.lateral; contact.y += upperBody.lift;
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
+  }
+  if (!stockContact) {
+    blendedPosition.x += upperBody.lateral; blendedPosition.y += upperBody.lift;
   }
   const bayonetExtension = bayonet && actor.bayonet.mode !== 'charge' ? actor.bayonet.extension : 0;
   if (bayonet) {
