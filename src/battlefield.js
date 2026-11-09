@@ -18,6 +18,7 @@ import { SHOP_ART_STYLES, shopAwningGeometry, shopAwningFrame, shopNoticeGeometr
 import { makeNanjingBattlefield } from './nanjing-battlefield.js';
 import { makeSihangBattlefield } from './sihang-battlefield.js';
 import { createRoofGeometry } from './roof-geometry.js';
+import { createBuildingFire } from './building-fire.js';
 export { createRoofGeometry } from './roof-geometry.js';
 
 export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82], [8, -52, 9, 61],
@@ -760,7 +761,8 @@ export function makeWorld(scene, surface, options = {}) {
   }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron, doorTimber);
   sceneArt.doorLeaves = doorSystem.doors.length;
-  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,
+  const buildingFire = createBuildingFire(scene, [...town.buildings, ...outskirts.buildings]);
+  return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight, buildingFire,
     moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem, sceneArt,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };
 }

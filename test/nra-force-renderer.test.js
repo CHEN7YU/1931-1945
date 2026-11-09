@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { bakeNraGeometry, createNraForceRenderer, createNraForceRendererAsync, settledNraGeometry } from '../src/nra-force-renderer.js';
+import { bakeNraGeometry, createNraForceRenderer, createNraForceRendererAsync, settledNraGeometry, nativeActionWeights } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { createCasualtyState } from '../src/casualties.js';
@@ -11,6 +11,30 @@ import { createBayonetState } from '../src/bayonet.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 import { createDadaoState } from '../src/dadao.js';
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
+
+test('distant action sampling has convex continuous weights including the planted-step boundaries', () => {
+  for (const times of [null, [0, .15, .3, .65, 1], [0, .15, .3, 1]]) {
+    const frames = times?.length ?? 5;
+    for (let frame = 0; frame <= 1000; frame++) {
+      const progress = frame / 1000, weights = nativeActionWeights(progress, frames, times);
+      assert.ok(weights.every(weight => weight >= 0 && weight <= 1));
+      assert.ok(Math.abs(weights.reduce((sum, weight) => sum + weight, 0) - 1) < 1e-12);
+      const projected = weights.reduce((sum, weight, index) => sum + weight * (times?.[index] ?? index / (frames - 1)), 0);
+      assert.ok(Math.abs(projected - progress) < 1e-12);
+    }
+    for (const value of times ?? [0, .25, .5, .75, 1]) {
+      const exact = nativeActionWeights(value, frames, times);
+      assert.equal(exact.filter(weight => weight === 1).length, 1);
+      if (value > 0) {
+        const before = nativeActionWeights(value - 1e-8, frames, times);
+        assert.ok(before.every((weight, index) => Math.abs(weight - exact[index]) < 1e-6));
+      }
+    }
+  }
+  for (const value of [-1, 1.1, NaN]) assert.throws(() => nativeActionWeights(value, 5), RangeError);
+  assert.throws(() => nativeActionWeights(.5, 1), RangeError);
+  assert.throws(() => nativeActionWeights(.5, 3, [0, 0, 1]), RangeError);
+});
 
 test('settled LOD preserves the selected pose without cloning or retaining discarded morph frames', () => {
   const source = new THREE.BoxGeometry(1, 2, 1);

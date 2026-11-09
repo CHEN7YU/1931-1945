@@ -74,8 +74,8 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   renderer.update([replacement], 19, null, 'high');
   const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const coarseBanks = renderer.root.children.filter(mesh => mesh.name === 'distant-coarse-body');
-  assert.equal(renderer.snapshot.poseBanks, 13, 'six discrete running banks are replaced by one continuous travel bank');
-  assert.equal(banks.length, 13);
+  assert.equal(renderer.snapshot.poseBanks, 11, 'continuous travel and thrust replace discrete action banks');
+  assert.equal(banks.length, 11);
   assert.equal(coarseBanks.length, banks.length - 1,
     'active hand-operation poses do not duplicate coarse geometry');
   assert.equal(banks.slice(2, 8).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 2].count, 0), 1,
@@ -88,8 +88,9 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   assert.ok(weaponBounds.min.z < -1.34, 'the instanced enemy rifle includes the fixed blade');
   replacement.bayonet = { mode: 'thrust', extension: 1 };
   renderer.update([replacement], 19.2, null, 'high');
-  assert.equal(banks[10].count + coarseBanks[10].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
+  assert.equal(banks[8].count, 1, 'distant thrust uses its continuous body/weapon morph');
+  assert.ok(banks[8].morphTexture, 'the thrust has per-instance continuous progress');
   replacement.weaponBlocked = true;
   renderer.update([replacement], 19.3, null, 'high');
-  assert.equal(banks[11].count + coarseBanks[11].count, 1, 'blocked distant soldiers use a matching two-handed safe carry bank');
+  assert.equal(banks[9].count + coarseBanks[9].count, 1, 'blocked distant soldiers use a matching two-handed safe carry bank');
 });

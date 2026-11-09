@@ -22,14 +22,14 @@ export function damagedSurfaceGeometry(x, z, width, depth) {
   return new THREE.ShapeGeometry(shape, 24).rotateX(-Math.PI / 2);
 }
 
-export function craterGeometry(crater, base) {
-  const positions = [], uv = [], colors = [], sectors = 48, rings = 14;
+export function craterGeometry(crater, base, craters = SHELL_CRATERS, sectors = 48, rings = 14) {
+  const positions = [], uv = [], colors = [];
   const bed = new THREE.Color(0x65594b), edge = new THREE.Color(0xc3b29a);
   const add = (ring, sector) => {
     const r = ring / rings, angle = sector / sectors * Math.PI * 2;
     const x = crater.x + Math.cos(angle) * r * crater.radius * CRATER_EDGE;
     const z = crater.z + Math.sin(angle) * r * crater.radius * CRATER_EDGE;
-    positions.push(x, base + craterHeight(x, z), z); uv.push(x / 4, z / 4);
+    positions.push(x, base + craterHeight(x, z, craters), z); uv.push(x / 4, z / 4);
     const color = bed.clone().lerp(edge, r * r); colors.push(color.r, color.g, color.b);
   };
   for (let ring = 0; ring < rings; ring++) for (let sector = 0; sector < sectors; sector++) {

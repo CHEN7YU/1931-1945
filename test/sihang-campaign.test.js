@@ -38,7 +38,7 @@ test('a dead AI no longer blocks retreat, while the controlled survivor rather t
   assert.equal(state.outcome, 'evacuated');
 });
 
-test('ten-second installation, fuse and continuous defuse are independent; holding F pauses but never rewinds the fuse', () => {
+test('installation, 25-second fuse and four-second defuse are independent; a short interruption preserves shared progress', () => {
   const state = createSihangCampaign();
   assert.equal(advanceSihangDemolition(state, 5, { operatorId: 'engineer' }), 'installing');
   advanceSihangDemolition(state, 0, { operatorId: 'engineer' });
@@ -47,27 +47,37 @@ test('ten-second installation, fuse and continuous defuse are independent; holdi
   assert.equal(state.demolition.installProgress, 0);
   assert.equal(advanceSihangDemolition(state, 10, { operatorId: 'replacement' }), 'armed');
   advanceSihangDemolition(state, 4, {});
-  assert.equal(state.demolition.fuseRemaining, 6);
-  advanceSihangDemolition(state, 8, { defusing: true, defuserId: 'p' });
-  assert.equal(state.demolition.fuseRemaining, 6);
+  assert.equal(state.demolition.fuseRemaining, 21);
+  advanceSihangDemolition(state, 2, { defusing: true, defuserId: 'p' });
+  assert.equal(state.demolition.fuseRemaining, 21);
   advanceSihangDemolition(state, 1, {});
-  assert.equal(state.demolition.defuseProgress, 0); assert.equal(state.demolition.fuseRemaining, 5);
-  assert.equal(advanceSihangDemolition(state, 10, { defusing: true, defuserId: 'p' }), 'disarmed');
+  assert.equal(state.demolition.defuseProgress, 2); assert.equal(state.demolition.fuseRemaining, 20);
+  assert.equal(advanceSihangDemolition(state, 2, { defusing: true, defuserId: 'squadmate' }), 'disarmed');
   assert.equal(state.demolition.disarmed, 1); assert.equal(state.outcome, null);
+  assert.equal(state.demolition.cooldownUntil, 35);
+  assert.equal(advanceSihangDemolition(state, 10, { operatorId: 'engineer' }), null);
+  state.elapsed = 35;
+  assert.equal(advanceSihangDemolition(state, 10, { operatorId: 'engineer' }), 'armed');
+  advanceSihangDemolition(state, 2, { defusing: true, defuserId: 'p' });
+  advanceSihangDemolition(state, 3, {});
+  assert.equal(state.demolition.defuseProgress, 0, 'leaving it unattended beyond the grace period still loses progress');
 });
 
 test('an installed charge survives its installer and is no longer a defense objective after the withdrawal order', () => {
   const state = createSihangCampaign();
   advanceSihangDemolition(state, 10, { operatorId: 'engineer' });
-  assert.equal(advanceSihangDemolition(state, 10, {}), 'detonated');
-  assert.equal(state.outcome, 'demolished');
+  assert.equal(advanceSihangDemolition(state, 25, {}), 'detonated');
+  assert.equal(state.outcome, null); assert.equal(state.northWallBreached, true);
+  assert.equal(advanceSihangDemolition(state, 30, { operatorId: 'engineer' }), null, 'the open breach cannot be repeatedly demolished');
+  advanceSihangCampaign(state, 1, { friendly: [soldier('p', true)] });
+  assert.equal(state.stage, 'sihang-defense'); assert.equal(state.outcome, null);
   const withdrawing = createSihangCampaign(), player = soldier('p', true);
   advanceSihangDemolition(withdrawing, 10, { operatorId: 'engineer' });
   advanceSihangCampaign(withdrawing, 240, { friendly: [player] });
   advanceSihangDemolition(withdrawing, 30, {});
   assert.equal(withdrawing.outcome, null);
   assert.equal(sihangEnemyMayAttack({ x: 48, z: 34 }), false);
-  assert.equal(sihangEnemyMayAttack({ x: 48, z: 33 }), true);
+  assert.equal(sihangEnemyMayAttack({ x: 0, z: 31 }), true);
   assert.equal(sihangSafePosition({ x: 48, z: 40, y: 0 }), true, 'a survivor in a south-bank house is already in the concession');
 });
 

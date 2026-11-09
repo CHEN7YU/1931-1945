@@ -1,7 +1,7 @@
 export const SHELL_CRATERS = Object.freeze([
   { id: 'south-street', x: -1, z: 46.5, radius: 1.65, depth: .5, rim: .15 },
   { id: 'south-objective', x: 1.3, z: 8, radius: 1.55, depth: .44, rim: .13 },
-  { id: 'north-street', x: 8.6, z: -35, radius: 1.5, depth: .48, rim: .15 },
+  { id: 'north-street', x: 8.6, z: -35, radius: .75, depth: .2, rim: .06 },
   { id: 'north-approach', x: 7, z: -63, radius: 1.7, depth: .55, rim: .16 },
   { id: 'western-yard', x: -27, z: 43, radius: 2.3, depth: .7, rim: .2 },
 ]);
@@ -13,9 +13,9 @@ export const STATIC_WRECKS = Object.freeze([
   { id: 'yard-truck', type: 'truck', x: -25, z: 5, heading: .7 },
 ]);
 
-export function craterHeight(x, z) {
+export function craterHeight(x, z, craters = SHELL_CRATERS) {
   let height = 0;
-  for (const crater of SHELL_CRATERS) {
+  for (const crater of craters) {
     const dx = x - crater.x, dz = z - crater.z, edge = crater.radius * CRATER_EDGE;
     if (Math.abs(dx) >= edge || Math.abs(dz) >= edge) continue;
     const r = Math.hypot(dx, dz) / crater.radius;

@@ -76,6 +76,11 @@ export function createNativePosturePoses(normalized, bones) {
       shoulder,
       pocket,
       pivot: position(bones.get('Spine')).toArray(),
+      hips: hips.position.toArray(),
+      feet: Object.fromEntries(['Left', 'Right'].map(side => [side, {
+        position: position(bones.get(`${side}Foot`)).toArray(),
+        rotation: rotation(bones.get(`${side}Foot`)).toArray(),
+      }])),
     };
   }
   restore();

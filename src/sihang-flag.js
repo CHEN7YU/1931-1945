@@ -3,8 +3,8 @@ import * as THREE from 'three';
 export function createSihangFlag(material) {
   const group = new THREE.Group();
   group.name = 'sihang-roof-roc-flag';
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .065, 5.5, 8), material);
-  pole.position.y = 2.75; group.add(pole);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.055, .065, 7, 8), material);
+  pole.position.y = 3.5; group.add(pole);
   const width = 384, height = 256, pixels = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     // DataTexture's first row is the bottom of the cloth.
@@ -33,7 +33,7 @@ export function createSihangFlag(material) {
   geometry.translate(1.5, 0, 0);
   const rest = Float32Array.from(geometry.attributes.position.array);
   const cloth = new THREE.Mesh(geometry, clothMaterial);
-  cloth.name = 'sihang-roc-cloth'; cloth.position.y = 4.35;
+  cloth.name = 'sihang-roc-cloth'; cloth.position.y = 5.85;
   cloth.userData.flag = { nation: 'ROC', aspect: 1.5, rays: 12, pinnedHoist: true };
   // Fixed conservative bounds cover every fold; flag is deliberately absent from solids.
   geometry.boundingBox = new THREE.Box3(new THREE.Vector3(0, -1.25, -.75), new THREE.Vector3(3, 1.25, .75));

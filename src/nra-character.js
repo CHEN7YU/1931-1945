@@ -22,6 +22,7 @@ import { createOfficerAppearance } from './officer-appearance.js';
 import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './native-weapon-presentation.js';
 import { engineerAssemblyTools } from './engineer.js';
 import { createSupportWeaponPose } from './support-weapon-pose.js';
+import { recoverCharacterPose } from './character-pose-recovery.js';
 
 export function configureNraTexture(texture, id) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -161,7 +162,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
     observedActor?.health <= 0 && observedActor.tactics?.corpseFerry
       ? observedActor.position.y : walkHeightAt(x, z, referenceY);
   const applyCasualty = createCasualtyPose(root, canonical, gun, groundAt);
-  const projectGait = createNativeGaitProjection(root, canonical, restFeet, groundAt, onPoseRecovery);
+  const projectGait = createNativeGaitProjection(root, canonical, restFeet, groundAt, onPoseRecovery, postures);
   const mixer = new THREE.AnimationMixer(meshes[0]);
   const actions = { idle: mixer.clipAction(idle),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, mixer.clipAction(value.clip)])) };
@@ -200,7 +201,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
     get motionProfile() { return motionProfile; },
     get issue() { return observedActor?.health <= 0 ? null : supportPose.snapshot
       ? supportPose.issue : motion?.dadao ? dadaoPose?.issue : riflePose.issue; },
-    update(actor, now, controlledId, rifleOperation = undefined) {
+    update: recoverCharacterPose(root, onPoseRecovery)(function(actor, now, controlledId, rifleOperation = undefined) {
       supportPose.reset();
       observedActor = actor ?? null;
       root.visible = Boolean(actor && !actor.vehicleId && actor.id !== controlledId);
@@ -233,7 +234,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       supportPose.update(actor, now);
       gun.visible = !motion.dadao && !nativeSupportWeaponPresentation(actor);
       casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
-    },
+    }),
     sampleAnatomy,
     get anatomy() { return readAnatomicalBones(canonical); },
     get snapshot() {

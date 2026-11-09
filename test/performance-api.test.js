@@ -80,6 +80,24 @@ test('loading breadcrumbs persist independently and never inflate battle FPS, CP
     assert.equal((await worker.fetch(f.post(body), f.env)).status, 400);
   } finally { f.sqlite.close(); }
 });
+test('automatic error-only batches persist privately without fabricating performance or loading sessions', async () => {
+  const f = fixture();
+  try {
+    for (const state of ['playing', 'loading']) {
+      const body = f.batch(), window = body.windows[0], error = new Error('pose geometry');
+      error.code = 'pose-geometry'; error.name = 'PoseGeometryError';
+      Object.assign(window, { frames: 0, frameMs: FRAME_BUCKETS_MS.map(() => 0), longFrames: 0,
+        maxFrameMs: 0, durationMs: 0, scopes: {},
+        runtimeErrors: [sanitizedRuntimeError(error, { recovered: true, stage: 'character-pose' })] });
+      window.context.state = state;
+      assert.equal((await worker.fetch(f.post(body), f.env)).status, 201);
+    }
+    const stored = await (await worker.fetch(f.get('/api/performance'), f.env)).json();
+    assert.equal(stored.items.length, 2);
+    const summary = await (await worker.fetch(f.get('/api/performance/summary'), f.env)).json();
+    assert.deepEqual(summary.groups, []); assert.deepEqual(summary.loading, []);
+  } finally { f.sqlite.close(); }
+});
 test('automatic load counters deduplicate sessions across quality changes and reject invalid statistics', async () => {
   const f = fixture();
   try {

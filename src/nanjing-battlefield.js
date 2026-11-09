@@ -13,6 +13,8 @@ import { AIR_SUPPORT, createAirSupport } from './air-support.js';
 import { AIRCRAFT_GUN } from './aircraft-ai.js';
 import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
+import { createBuildingFire } from './building-fire.js';
+import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
 import { createNanjingFerryFactory, createShoreReeds, NANJING_FERRY_FLOOR, updateNanjingFerryRower } from './nanjing-river-details.js';
@@ -55,9 +57,11 @@ export function makeNanjingBattlefield(scene, surface) {
   const cityLayout = createNanjingCityLayout();
   const wallBreaches = [{ id: 'east-shell-breach', minX: 88, maxX: 94, minZ: 16, maxZ: 20.4 }];
   const impactGeometry = [];
+  const terrainSurfaces = [], shellCraters = [];
+  let craterSupport = () => 0;
   const town = { streetWidth: 9, buildings: [], pieces: [], covers: [], passages: [], obstacles: [] };
   const groundHeight = (x, z) => {
-    if (x < -73 || x > -57.5 || z < -91.5 || z > -68.5) return 0;
+    if (x < -73 || x > -57.5 || z < -91.5 || z > -68.5) return craterSupport(x, z);
     return .36 * Math.min(1, Math.max(0, (-57.5 - x) / 1.5),
       Math.max(0, (z + 91.5) / 1.5), Math.max(0, (-68.5 - z) / 1.5));
   };
@@ -159,6 +163,7 @@ export function makeNanjingBattlefield(scene, surface) {
             (positions.getY(index) - mesh.position.z) / meters);
         }
         scene.add(mesh);
+        terrainSurfaces.push(mesh);
       }
       return;
     }
@@ -174,6 +179,7 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     mesh.receiveShadow = true;
     scene.add(mesh);
+    if (material !== water && y <= .02) terrainSurfaces.push(mesh);
     return mesh;
   }
 
@@ -1199,14 +1205,14 @@ export function makeNanjingBattlefield(scene, surface) {
     obstacles.push({ minX: bounds.min.x, maxX: bounds.max.x, minZ: bounds.min.z, maxZ: bounds.max.z,
       minY: floor, height: bounds.max.y });
   }
-  function addForwardDefense(centerX, z, label, count = 10, armBags = 4, yaw = 0, defenses = forwardDefenses) {
+  function addForwardDefense(centerX, z, label, count = 10, armBags = 4, yaw = 0, defenses = forwardDefenses,
+    feature = defenses === forwardDefenses ? 'forward-sandbag' : 'dock-sandbag') {
     const spacing = .88;
     const c = Math.cos(yaw), s = Math.sin(yaw);
     const point = (x, along) => ({ x: centerX + x * c + along * s, z: z - x * s + along * c });
     const place = (x, along, row, id) => {
       const position = point(x, along);
-      placeForwardSandbag(position.x, position.z, row, id, yaw,
-        defenses === forwardDefenses ? 'forward-sandbag' : 'dock-sandbag');
+      placeForwardSandbag(position.x, position.z, row, id, yaw, feature);
     };
     for (let row = 0; row < 3; row++) {
       for (let column = 0; column < count; column++) {
@@ -1232,6 +1238,13 @@ export function makeNanjingBattlefield(scene, surface) {
   addForwardDefense(-35, 37, 'bridge-west', 8, 3);
   addForwardDefense(-13, 37, 'bridge-east', 8, 3);
   const bridgeDeckDefenses = [];
+  const gateInteriorDefenses = [];
+  const interiorCourt = NANJING_COURTYARDS[0];
+  for (const offset of [2.15, -1.3]) for (const side of [-1, 1]) {
+    addForwardDefense(side * 5.4, interiorCourt.centerZ + offset,
+      `interior-${interiorCourt.id}-${offset > 0 ? 'south' : 'north'}-${side < 0 ? 'west' : 'east'}`,
+      4, 0, 0, gateInteriorDefenses, 'gate-interior-sandbag');
+  }
   const dockDefenses = [];
   addForwardDefense(-66.5, -92, 'dock-north', 5, 2, Math.PI, dockDefenses);
   addForwardDefense(-65, -68, 'dock-south', 5, 2, 0, dockDefenses);
@@ -1679,6 +1692,19 @@ export function makeNanjingBattlefield(scene, surface) {
     'curtain-merlon', 'gate-tower-crenel', 'flanking-ramp-cheek', 'wall-walk',
     'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall',
     'casemate-stair-tread', 'casemate-stair-ceiling', 'casemate-floor', 'casemate-ceiling', 'casemate-plaster']);
+  shellCraters.push(...selectBattlefieldCraters({
+    bounds: { minX: -67, maxX: 98, minZ: -100, maxZ: 96 }, obstacles,
+    reserved: [...residentialBuildings.map(home => {
+      const radius = Math.max(home.width, home.depth) / 2;
+      return { minX: home.x - radius, maxX: home.x + radius, minZ: home.z - radius, maxZ: home.z + radius };
+    }), { minX: -29, maxX: 29, minZ: -8, maxZ: 36 },
+      { minX: -78, maxX: -55, minZ: -96, maxZ: -65 },
+      { minX: -8, maxX: 8, minZ: -108, maxZ: 108 }],
+    spawns: [...NANJING_SPAWNS, ...NANJING_OBJECTIVES],
+    dry: (x, z) => !(Math.abs(z - 52) < 16 || x < -70) && groundHeight(x, z) === 0,
+  }));
+  craterSupport = addBattlefieldCraters(scene, terrainSurfaces, solids, shellCraters, ground);
+  const buildingFire = createBuildingFire(scene, residentialBuildings);
   const masonryMeshes = solids.filter(mesh => mesh.isMesh && masonryFeatures.has(mesh.userData.nanjingFeature) &&
     !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent);
   const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
@@ -1703,7 +1729,7 @@ export function makeNanjingBattlefield(scene, surface) {
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
-    staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
+    buildingFire, staticDamage: { craters: shellCraters, ruinedShops: [], wrecks: [] },
     ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianFlight,
     civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
     isDeepWater: (x, z) => x < -72 && x > -72 - NANJING_FERRY_ROUTE.riverWidth &&
@@ -1725,6 +1751,7 @@ export function makeNanjingBattlefield(scene, surface) {
       cityWallSections: flankWalkSupports,
       wallBreaches,
       forwardDefenses,
+      gateInteriorDefenses,
       dockDefenses,
       rivers: RIVERS,
       trees,

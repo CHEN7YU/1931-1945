@@ -77,7 +77,8 @@ try {
       },
       explode() {
         setGameState('menu');beginMatch();this.arrange();this.arm();
-        __reviewDemolition(sihangCampaign,10,{});
+        sihangCampaign.demolition.fuseRemaining=.01;
+        setGameState('playing');advanceBattleStep(.02,time);showOverlay('pause');
         updateSihangMission(.05);
         return this.snapshot();
       }
@@ -157,15 +158,11 @@ try {
   const endingAfter = await page.locator('#ending-music').evaluate(audio => audio.currentTime);
   assert.ok(endingAfter >= endingBefore.time, 'history-to-results must not restart the ending song');
   const destroyed = await page.evaluate(() => sihangReview.explode());
-  assert.equal(destroyed.campaign.outcome, 'demolished');
-  assert.equal(destroyed.ending.phase, 'fade');
-  await page.locator('#resume').click();
-  await page.waitForTimeout(250);
+  assert.equal(destroyed.campaign.outcome, null);
+  assert.equal(destroyed.campaign.northWallBreached, true);
+  assert.equal(destroyed.ending.phase, 'idle');
+  await page.evaluate(() => sihangReview.view('shields'));
   await page.screenshot({ path: join(root, 'demolition-scene.png') });
-  await page.waitForFunction(() => __battle.battleEnding.canContinue, null, { timeout: 45000 });
-  await page.locator('#battle-ending-continue').click();
-  await page.waitForFunction(() => __battle.state === 'defeat');
-  assert.doesNotMatch(await page.locator('#overlay-title').textContent(), /失败/);
   assert.deepEqual(errors, []);
   await writeFile(join(root, 'acceptance.json'), JSON.stringify({ fixture: 'controlled campaign boundaries; real held F and AI movement',
     initial, armed, held, disarmed, retreat, victory, destroyed, errors }, null, 2));

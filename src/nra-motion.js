@@ -5,7 +5,7 @@ import { infantryWeaponProfile } from './rifle-action.js';
 import { rifleHandAction } from './rifle-hand-action.js';
 import { projectHeadAim, projectUnaimedEye, solveHeadAimGoal } from './head-aim.js';
 import { grenadePose } from './grenades.js';
-import { hasBayonet, bayonetCarry } from './bayonet.js';
+import { hasBayonet, bayonetCarry, bayonetBodyMotion } from './bayonet.js';
 import { headingError } from './ai-turning.js';
 import { INFANTRY_AIM_PITCH } from './infantry-aim.js';
 import { advancePostureBlend } from './posture-transition.js';
@@ -79,7 +79,9 @@ export function nativeGaitDrop(actor) {
   const walkDrop = (.045 - .01 * gait.aimed) + compression * (1 - .7 * gait.aimed);
   const drop = walkDrop * (1 - gait.jog) + (.075 + compression - rise) * gait.jog;
   const turnDrop = .045 * (motion.turn?.weight ?? 0) * (1 - motion.weight);
-  return (drop * motion.weight + turnDrop) * upright;
+  const thrustDrop = nativePoseIntent(actor) === 'bayonet'
+    ? bayonetBodyMotion(actor.bayonet.mode === 'charge' ? 0 : actor.bayonet.extension).drop : 0;
+  return (drop * motion.weight + turnDrop + thrustDrop) * upright;
 }
 
 export function createNraMotion(profile, actor) {
@@ -219,6 +221,7 @@ export function nativeEyeLocal(actor) {
     motion.lowReady, motion.legLift, actor.locomotion.mode, intent, swordCarry,
     actor.health, actor.weaponBlocked, actor.emplacementId, actor.discharger?.presentationActive,
     actor.dadao?.pose?.phase, actor.dadao?.pose?.progress,
+    actor.bayonet?.mode, actor.bayonet?.extension,
     actor.rifle?.action, actor.rifle?.elapsed, actor.rifle?.ammo, actor.rifle?.model,
     actor.vehicleId, actor.engineer?.construction?.mode, actor.sihangShield?.active, actor.supportWeaponPose?.active,
     actor.formation?.sihangDemolition,
@@ -272,6 +275,10 @@ function sampleNativeUpperBody(actor, phase, operation = rifleHandAction(actor.r
   const cycle = runTime / profile.run.duration * Math.PI * 2;
   if (phase.dadao && actor.health > 0) {
     return { travelWeight: 0, upperBody: dadaoBodyMotion(phase.dadao) };
+  }
+  if (intent === 'bayonet' && upright > .999) {
+    const { drop, ...upperBody } = bayonetBodyMotion(actor.bayonet.mode === 'charge' ? 0 : actor.bayonet.extension);
+    return { travelWeight: 0, upperBody };
   }
   const upperBody = travelWeight ? {
     yaw: Math.sin(cycle) * (.11 + .06 * jog) * travelWeight,

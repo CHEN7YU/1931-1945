@@ -16,7 +16,12 @@ export function startFinalBoardingFireBuffer(campaign, actor, now) {
 export function finalBoardingFireHeld(campaign, now) {
   if (!Number.isFinite(now) || now < 0) throw new RangeError('Boarding fire buffer requires simulation time');
   return Boolean(campaign?.stage === 'withdrawal-to-boats' &&
-    campaign.embarkFireBufferStartedAt != null && now < campaign.embarkFireBufferUntil);
+    (campaign.playerBoardingBoatId != null ||
+      campaign.embarkFireBufferStartedAt != null && now < campaign.embarkFireBufferUntil));
+}
+
+export function finalBoardingDamageHeld(campaign, now, source, target) {
+  return source?.team === 'enemy' && target?.team === 'friendly' && finalBoardingFireHeld(campaign, now);
 }
 
 export function retainTroopFerryCasualty(ferry, actor) {

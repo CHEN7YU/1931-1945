@@ -14,15 +14,31 @@ function swing(bone, child, destination) {
   setRotation(bone, delta.multiply(rotation(bone)));
 }
 
+export class PoseGeometryError extends Error {
+  constructor(message) {
+    super(message); this.name = 'PoseGeometryError'; this.code = 'pose-geometry';
+  }
+}
+
 export function solveArm(upper, lower, hand, target, pole) {
   const origin = position(upper), elbow = position(lower), wrist = position(hand);
   const a = origin.distanceTo(elbow), b = elbow.distanceTo(wrist);
   const direction = target.clone().sub(origin), distance = direction.length();
-  if (![a, b, distance].every(Number.isFinite) || Math.min(a, b, distance) < 1e-7) throw new Error('Invalid rifle arm geometry');
+  if (![a, b, distance, pole.x, pole.y, pole.z].every(Number.isFinite) || Math.min(a, b, distance) < 1e-7)
+    throw new PoseGeometryError('Invalid rifle arm geometry');
   direction.normalize();
   const reach = Math.min(a + b - 1e-6, Math.max(Math.abs(a - b) + 1e-6, distance));
   const bend = pole.clone().addScaledVector(direction, -pole.dot(direction));
-  if (bend.lengthSq() < 1e-8) throw new Error('Rifle elbow hint is parallel to the arm target');
+  if (bend.lengthSq() < 1e-8) {
+    // A parallel pole leaves the bend plane underdetermined, not the limb invalid.
+    bend.copy(elbow).sub(origin).addScaledVector(direction, -elbow.clone().sub(origin).dot(direction));
+    if (bend.lengthSq() < 1e-8) {
+      const axis = Math.abs(direction.x) <= Math.abs(direction.y) && Math.abs(direction.x) <= Math.abs(direction.z)
+        ? new THREE.Vector3(1, 0, 0) : Math.abs(direction.y) <= Math.abs(direction.z)
+          ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+      bend.copy(axis).addScaledVector(direction, -axis.dot(direction));
+    }
+  }
   bend.normalize();
   const along = (a * a - b * b + reach * reach) / (2 * reach);
   const height = Math.sqrt(Math.max(0, a * a - along * along));

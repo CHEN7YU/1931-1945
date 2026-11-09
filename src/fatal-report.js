@@ -38,7 +38,7 @@ export function createFatalReporter({ document, window, build, getContext, onFat
     element('fatal-title').textContent = report.title;
     element('fatal-message').textContent = `${report.message}。${report.advice}`;
     element('fatal-details').value = report.text;
-    element('fatal-copy-status').textContent = '诊断仅保留在本页，不会自动上传。复制后可发给开发者。';
+    element('fatal-copy-status').textContent = '匿名错误摘要会尝试后台登记；完整诊断保留在本页，可复制后发给开发者。';
     element('loading').hidden = true;
     element('fatal').hidden = false;
     onFatal();
@@ -58,7 +58,7 @@ export function createFatalReporter({ document, window, build, getContext, onFat
     try {
       if (!window.navigator.clipboard?.writeText) throw new Error('浏览器不支持剪贴板写入');
       await window.navigator.clipboard.writeText(report.text);
-      element('fatal-copy-status').textContent = '诊断信息已复制；尚未发送给任何人。';
+      element('fatal-copy-status').textContent = '完整诊断已复制，未自动发送；匿名错误摘要会单独尝试后台登记。';
     } catch (error) {
       const details = element('fatal-details');
       details.focus(); details.select();
@@ -69,7 +69,7 @@ export function createFatalReporter({ document, window, build, getContext, onFat
     show, ready() { ready = true; }, get failed() { return Boolean(report); },
     recordRecovery(error, context) {
       if (!(error instanceof Error)) throw new TypeError('Recovered failure requires an Error');
-      const key = `${error.name}:${context.stage}:${context.details?.side ?? ''}`;
+      const key = `${error.name}:${error.message}:${context.stage}:${context.team ?? ''}:${context.details?.side ?? ''}`;
       const now = Date.now(), existing = recovered.find(entry => entry.key === key);
       if (existing) {
         existing.count++; existing.occurredAt = new Date(now).toISOString(); existing.context = context;

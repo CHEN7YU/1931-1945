@@ -85,7 +85,8 @@ test('all seated poses keep feet grounded on the unchanged thirteen-bone rig and
     updateCivilianAppearance([person], camera, 'low');
     assert.equal(person.civilianSkin.joints.leftLeg.rotation.z, 0);
     assert.equal(person.civilianSkin.joints.leftKnee.rotation.z, 0);
-    assert.ok(Math.abs(person.civilianSkin.joints.root.position.y) < 1e-8);
+    assert.ok(Math.abs(person.civilianSkin.joints.root.position.y - person.userData.escapeMotion.rootY) < 1e-8);
+    assert.ok(person.civilianSkin.joints.root.position.y > -.2, 'standing restores walking support, not the seated hip drop');
   }
 });
 

@@ -165,8 +165,28 @@ export function applyNativeFootCycle(root, bones, motion, restFeet, groundAt) {
   return result;
 }
 
+function limitFootReach(origin, bend, source, target, sign, facing) {
+  const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);
+  const reach = upperLength + lowerLength - 1e-5, minimum = Math.abs(upperLength - lowerLength) + 1e-5;
+  const horizontal = Math.hypot(target.x - origin.x, target.z - origin.z);
+  target.y = Math.max(target.y, origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal)));
+  if (origin.distanceTo(target) < minimum) {
+    const outward = new Vector3(target.x - origin.x, 0, target.z - origin.z);
+    if (outward.lengthSq() < 1e-10) outward.set(sign, 0, .2).applyQuaternion(facing);
+    outward.normalize().multiplyScalar(Math.sqrt(Math.max(0, minimum * minimum - (target.y - origin.y) ** 2)));
+    target.x = origin.x + outward.x; target.z = origin.z + outward.z;
+  }
+  const displacement = target.clone().sub(origin);
+  if (displacement.length() > reach) target.copy(origin).add(displacement.clampLength(minimum, reach));
+}
+
 export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
   if (motion.upright < .99 || motion.weight > .001 || (motion.turn?.weight ?? 0) > .001) return;
+  if (motion.hipDrop) {
+    const hips = bones.get('Hips'), position = hips.getWorldPosition(new Vector3());
+    position.y -= motion.hipDrop;
+    hips.position.copy(hips.parent.worldToLocal(position)); root.updateMatrixWorld(true);
+  }
   const facing = root.getWorldQuaternion(new Quaternion()), forward = new Vector3(0, 0, -1).applyQuaternion(facing);
   const centerZ = (restFeet.Left.z + restFeet.Right.z) / 2;
   const result = { kind: 'native-resting-stance', limited: false, feet: {} };
@@ -178,18 +198,7 @@ export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
     const requested = target.clone();
     const origin = upper.getWorldPosition(new Vector3()), bend = knee.getWorldPosition(new Vector3()),
       source = foot.getWorldPosition(new Vector3());
-    const upperLength = origin.distanceTo(bend), lowerLength = bend.distanceTo(source);
-    const reach = upperLength + lowerLength - 1e-5, minimum = Math.abs(upperLength - lowerLength) + 1e-5;
-    const horizontal = Math.hypot(target.x - origin.x, target.z - origin.z);
-    target.y = Math.max(target.y, origin.y - Math.sqrt(Math.max(0, reach * reach - horizontal * horizontal)));
-    if (origin.distanceTo(target) < minimum) {
-      const outward = new Vector3(target.x - origin.x, 0, target.z - origin.z);
-      if (outward.lengthSq() < 1e-10) outward.set(sign, 0, .2).applyQuaternion(facing);
-      outward.normalize().multiplyScalar(Math.sqrt(Math.max(0, minimum * minimum - (target.y - origin.y) ** 2)));
-      target.x = origin.x + outward.x; target.z = origin.z + outward.z;
-    }
-    const displacement = target.clone().sub(origin);
-    if (displacement.length() > reach) target.copy(origin).add(displacement.clampLength(minimum, reach));
+    limitFootReach(origin, bend, source, target, sign, facing);
     const previousRotation = foot.getWorldQuaternion(new Quaternion());
     const solved = solveArm(upper, knee, foot, target, new Vector3(sign * .08, 0, -1).applyQuaternion(facing));
     if (!solved.reachable || solved.error > .01) throw new NativeGaitReachError(`Native resting foot is unreachable: ${side}`, {
@@ -213,7 +222,81 @@ export function applyNativeRestStance(root, bones, motion, restFeet, groundAt) {
   return result;
 }
 
-export function createNativeGaitProjection(root, bones, restFeet, groundAt, onRecovery = null) {
+function postureFootBounds(root, bones) {
+  const bounds = Object.fromEntries(['Left', 'Right'].map(side => [side, []]));
+  root.traverseVisible(mesh => {
+    if (!mesh.isSkinnedMesh) return;
+    const { position, skinIndex, skinWeight } = mesh.geometry.attributes;
+    for (let vertex = 0; vertex < position.count; vertex++) for (const side of ['Left', 'Right']) {
+      let weight = 0;
+      for (let slot = 0; slot < 4; slot++) {
+        if ([`${side}Foot`, `${side}ToeBase`].includes(mesh.skeleton.bones[skinIndex.getComponent(vertex, slot)].name))
+          weight += skinWeight.getComponent(vertex, slot);
+      }
+      if (weight <= .5) continue;
+      const point = new Vector3().fromBufferAttribute(position, vertex);
+      mesh.applyBoneTransform(vertex, point).applyMatrix4(mesh.matrixWorld);
+      bounds[side].push(bones.get(`${side}Foot`).worldToLocal(point));
+    }
+  });
+  return bounds;
+}
+
+export function applyNativePostureSupport(root, bones, motion, restFeet, groundAt, postures, feet) {
+  const kneeWeight = (motion.crouched ?? 0) + (motion.kneeling ?? 0);
+  if (!postures || kneeWeight < .001 || (motion.prone ?? 0) > .001 ||
+    (motion.wallLeft ?? 0) + (motion.wallRight ?? 0) > .001 ||
+    motion.speed > .25 || (motion.turn?.weight ?? 0) > .001) return null;
+  const facing = root.getWorldQuaternion(new Quaternion()), centerZ = (restFeet.Left.z + restFeet.Right.z) / 2;
+  const result = { kind: 'native-posture-support', feet: {} };
+  for (const side of ['Left', 'Right']) {
+    const sign = side === 'Left' ? -1 : 1, foot = bones.get(`${side}Foot`);
+    // Plant the forward foot before folding the rear leg; reverse that order when rising.
+    const step = Math.min(1, Math.max(0, side === 'Left' ? kneeWeight / .3 : (kneeWeight - .3) / .7));
+    const supportWeight = step * step * (3 - 2 * step);
+    const target = new Vector3(sign * .125, restFeet[side].y, centerZ + sign * .025).multiplyScalar(1 - supportWeight);
+    const rotation = feet[side].rotation.clone();
+    let total = 1 - supportWeight;
+    for (const name of ['crouched', 'kneeling']) {
+      const weight = (motion[name] ?? 0) / kneeWeight * supportWeight;
+      if (!weight) continue;
+      const support = postures[name].feet[side];
+      target.addScaledVector(new Vector3().fromArray(support.position), weight);
+      rotation.slerp(new Quaternion().fromArray(support.rotation), weight / (total + weight));
+      total += weight;
+    }
+    if (side === 'Left') target.y += .045 * Math.sin(Math.PI * step) ** 2;
+    const worldRotation = facing.clone().multiply(rotation);
+    const localY = target.y;
+    root.localToWorld(target);
+    const floor = groundAt(target.x, target.z);
+    const offset = new Vector3(), scale = foot.getWorldScale(new Vector3());
+    let sole = Infinity;
+    for (const point of feet[side].bounds) sole = Math.min(sole,
+      offset.copy(point).multiply(scale).applyQuaternion(worldRotation).y);
+    target.y = floor + Math.max(localY, -sole + .001);
+    const requested = target.clone();
+    limitFootReach(bones.get(`${side}UpLeg`).getWorldPosition(new Vector3()),
+      bones.get(`${side}Leg`).getWorldPosition(new Vector3()), foot.getWorldPosition(new Vector3()), target, sign, facing);
+    const solved = solveArm(bones.get(`${side}UpLeg`), bones.get(`${side}Leg`), foot, target,
+      new Vector3(0, 0, -1).applyQuaternion(facing));
+    if (!solved.reachable || solved.error > .01) throw new NativeGaitReachError(`Native posture foot is unreachable: ${side}`, {
+      side, target: target.toArray(), error: solved.error });
+    foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert().multiply(worldRotation));
+    foot.updateMatrixWorld(true);
+    result.feet[side.toLowerCase()] = { requested: requested.toArray(), target: target.toArray(),
+      adjustment: requested.distanceTo(target), floor, error: solved.error };
+  }
+  return result;
+}
+
+export function createNativeGaitProjection(root, bones, restFeet, groundAt, onRecovery = null, postures = null) {
+  const hipsRest = bones.get('Hips').position.clone();
+  const bounds = postures ? postureFootBounds(root, bones) : null;
+  const feet = postures ? Object.fromEntries(['Left', 'Right'].map(side => [side, {
+    rotation: root.getWorldQuaternion(new Quaternion()).invert().multiply(bones.get(`${side}Foot`).getWorldQuaternion(new Quaternion())),
+    bounds: bounds[side],
+  }])) : null;
   const restored = ['Hips', ...['Left', 'Right'].flatMap(side => ['UpLeg', 'Leg', 'Foot'].map(part => side + part))]
     .map(name => {
       const bone = bones.get(name);
@@ -225,8 +308,20 @@ export function createNativeGaitProjection(root, bones, restFeet, groundAt, onRe
       entry.position.copy(entry.bone.position); entry.rotation.copy(entry.bone.quaternion);
     }
     try {
+      if (postures && actor.health > 0 && (motion.crouched ?? 0) + (motion.kneeling ?? 0) > .001 &&
+        (motion.prone ?? 0) + (motion.wallLeft ?? 0) + (motion.wallRight ?? 0) < .001) {
+        // Paused mixer bindings can retain an idle position during a repeated half-rise hold.
+        const hips = bones.get('Hips'), knee = (motion.crouched ?? 0) + (motion.kneeling ?? 0);
+        hips.position.copy(hipsRest).multiplyScalar(1 - knee);
+        for (const name of ['crouched', 'kneeling']) if (motion[name])
+          hips.position.addScaledVector(new Vector3().fromArray(postures[name].hips), motion[name]);
+        root.updateMatrixWorld(true);
+      }
       const restStance = actor.health > 0 ? applyNativeRestStance(root, bones, motion, restFeet, supportAt) : null;
-      return { restStance: restStance ?? null, legPose: applyNativeFootCycle(root, bones, motion, restFeet, supportAt) };
+      const legPose = applyNativeFootCycle(root, bones, motion, restFeet, supportAt);
+      const postureSupport = actor.health > 0
+        ? applyNativePostureSupport(root, bones, motion, restFeet, supportAt, postures, feet) : null;
+      return { restStance: postureSupport ?? restStance ?? null, legPose };
     } catch (error) {
       if (!(error instanceof NativeGaitReachError) || !onRecovery || actor.id === 'pose-bake') throw error;
       for (const entry of restored) {

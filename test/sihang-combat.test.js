@@ -83,3 +83,27 @@ test('dynamic shields block real rays, disappear on reset, and require a real ne
   assert.equal(f.combat.snapshot.shields, 0);
   assert.equal(ray.intersectObjects(f.world.solids, false).length, 0);
 });
+
+test('the breach releases sapper shields and routes ordinary enemy infantry through five real entry lanes', () => {
+  const f = fixture();
+  f.combat.update(.05, 0, f);
+  f.campaign.northWallBreached = true;
+  f.combat.update(.05, 1, f);
+  assert.equal(f.combat.snapshot.shields, 0); assert.equal(f.combat.snapshot.phase, 'breached');
+  assert.ok(f.actors.every(actor => !actor.sihangShield));
+  const lanes = [];
+  for (let index = 0; index < 5; index++) {
+    const actor = { index, team: 'enemy', health: 100, position: new THREE.Vector3(12, 0, -65) };
+    const approach = f.combat.goalFor(actor, f.campaign);
+    assert.ok(approach.z < -42); lanes.push(approach.x);
+    actor.position.set(approach.x, 0, approach.z);
+    assert.ok(f.combat.goalFor(actor, f.campaign).z > -42);
+    for (const z of [-44.2, -43, -42.6, -42.4, -41]) {
+      actor.position.z = z;
+      assert.ok(f.combat.goalFor(actor, f.campaign).z > -42, 'an aligned soldier must not turn back just before crossing the breach');
+    }
+    actor.team = 'friendly';
+    assert.equal(f.combat.goalFor(actor, f.campaign), null);
+  }
+  assert.equal(new Set(lanes).size, 5);
+});

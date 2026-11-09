@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BAYONET, hasBayonet, createBayonetState, bayonetDistance, advanceBayonet, bayonetPoseReady, bayonetCarry } from '../src/bayonet.js';
+import { BAYONET, hasBayonet, createBayonetState, bayonetDistance, advanceBayonet, bayonetPoseReady, bayonetCarry, bayonetBodyMotion } from '../src/bayonet.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { rifleWorldModel, syncWorldWeapon } from '../src/rifle-model.js';
 import { damageForTarget } from '../src/combat-targets.js';
@@ -16,6 +16,24 @@ function pair(distance = 6) {
 }
 const step = (actor, target, now, facts = {}) => advanceBayonet(actor, target,
   { now, visible: true, facing: true, settled: true, ...facts });
+
+test('thrust body motion follows the same extension in both directions and returns exactly to guard', () => {
+  const guard = { yaw: -0, pitch: -0, roll: -0, lift: -0, lateral: -0, drop: 0 };
+  assert.deepEqual(bayonetBodyMotion(0), guard);
+  const { actor, target } = pair(1);
+  step(actor, target, 0);
+  for (const fraction of [.1, .25, .5, .75, .9]) {
+    step(actor, target, BAYONET.windup * fraction);
+    const body = bayonetBodyMotion(actor.bayonet.extension);
+    const recovery = bayonetBodyMotion(1 - (1 - fraction));
+    for (const key of Object.keys(body)) assert.ok(Math.abs(body[key] - recovery[key]) < 1e-12);
+    assert.ok(body.yaw < 0 && body.pitch >= -.018 && body.drop <= .012);
+  }
+  step(actor, target, BAYONET.windup + BAYONET.returnTime);
+  assert.deepEqual(bayonetBodyMotion(actor.bayonet.extension), guard);
+  assert.equal(actor.rifle.shots, 0);
+  for (const extension of [-1, 2, NaN]) assert.throws(() => bayonetBodyMotion(extension), RangeError);
+});
 
 test('bayonet thrust starts at the abdomen and moves forward and upward rather than from the shoulder', () => {
   let previous = bayonetCarry(0);

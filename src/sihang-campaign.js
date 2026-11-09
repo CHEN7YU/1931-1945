@@ -2,16 +2,17 @@ import { sihangSouthBank } from './sihang-layout.js';
 
 export const SIHANG_RULES = Object.freeze({
   defenseSeconds: 240, retreatSeconds: 300, troopLimit: 400, squadMembers: 11,
-  demolitionMembers: 20, installSeconds: 10, fuseSeconds: 10, defuseSeconds: 10,
+  demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
+  defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
 });
 
 export function createSihangCampaign() {
   return {
     stage: 'sihang-defense', stageElapsed: 0, stageRemaining: SIHANG_RULES.defenseSeconds,
     elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, outcome: null,
-    aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [],
+    aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [], northWallBreached: false,
     demolition: { state: 'idle', operatorId: null, installProgress: 0,
-      fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null,
+      fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null, defuseInterruptedFor: 0,
       cooldownUntil: 0, installations: 0, disarmed: 0 },
   };
 }
@@ -42,24 +43,27 @@ export function advanceSihangDemolition(campaign, dt, { operatorId = null, defus
     defuserId !== null && typeof defuserId !== 'string') throw new RangeError('Invalid demolition observation');
   const charge = campaign.demolition;
   if (campaign.outcome || campaign.stage !== 'sihang-defense' || !dt) return null;
+  if (charge.state === 'detonated' || campaign.northWallBreached) return null;
   if (charge.state === 'armed') {
     if (defusing && defuserId) {
-      if (charge.defuserId !== defuserId) charge.defuseProgress = 0;
+      charge.defuseInterruptedFor = 0;
       charge.defuserId = defuserId;
       charge.defuseProgress = Math.min(SIHANG_RULES.defuseSeconds, charge.defuseProgress + dt);
       if (charge.defuseProgress + 1e-8 >= SIHANG_RULES.defuseSeconds) {
         charge.disarmed++;
         Object.assign(charge, { state: 'idle', operatorId: null, installProgress: 0,
-          defuserId: null, defuseProgress: 0, fuseRemaining: SIHANG_RULES.fuseSeconds,
-          cooldownUntil: campaign.elapsed + 10 });
+          defuserId: null, defuseProgress: 0, defuseInterruptedFor: 0, fuseRemaining: SIHANG_RULES.fuseSeconds,
+          cooldownUntil: campaign.elapsed + SIHANG_RULES.demolitionCooldownSeconds });
         return 'disarmed';
       }
       return null;
     }
-    charge.defuserId = null; charge.defuseProgress = 0;
+    charge.defuserId = null;
+    charge.defuseInterruptedFor += dt;
+    if (charge.defuseInterruptedFor + 1e-8 >= SIHANG_RULES.defuseGraceSeconds) charge.defuseProgress = 0;
     charge.fuseRemaining = Math.max(0, charge.fuseRemaining - dt);
     if (charge.fuseRemaining <= 1e-8) {
-      charge.state = 'detonated'; campaign.outcome = 'demolished';
+      charge.state = 'detonated'; campaign.northWallBreached = true;
       return 'detonated';
     }
     return null;
@@ -77,7 +81,7 @@ export function advanceSihangDemolition(campaign, dt, { operatorId = null, defus
   charge.installProgress = Math.min(SIHANG_RULES.installSeconds, charge.installProgress + dt);
   if (charge.installProgress + 1e-8 >= SIHANG_RULES.installSeconds) {
     charge.state = 'armed'; charge.fuseRemaining = SIHANG_RULES.fuseSeconds;
-    charge.installations++; charge.defuserId = null; charge.defuseProgress = 0;
+    charge.installations++; charge.defuserId = null; charge.defuseProgress = 0; charge.defuseInterruptedFor = 0;
     return 'armed';
   }
   return event;

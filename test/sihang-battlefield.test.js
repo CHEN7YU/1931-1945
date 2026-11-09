@@ -8,7 +8,7 @@ import {
   SIHANG_DEMOLITION_POINT, SIHANG_EVACUATION, SIHANG_DEFENSE_POSTS,
   SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS, SIHANG_STAIR_ROUTES,
   sihangRiverBounds, sihangSouthBank, SIHANG_RESERVED_LANES, SIHANG_LEVELS,
-  SIHANG_STAIRWELLS, sihangStairHeight,
+  SIHANG_STAIRWELLS, sihangStairHeight, SIHANG_NORTH_APERTURES,
   sihangBridgePoint, sihangBridgeContains, sihangBridgeCoordinates,
 } from '../src/sihang-layout.js';
 
@@ -69,6 +69,35 @@ describe('independent Sihang Warehouse battlefield', () => {
   });
   beforeEach(() => world.resetCampaign());
 
+  it('detonation opens a real jagged north-wall breach, preserves the warehouse, and resets its collision and navigation', () => {
+    const solids = world.solids.length, obstacles = world.obstacles.length;
+    for (let cycle = 0; cycle < 2; cycle++) {
+      assert.equal(world.northWallBreached, false);
+      assert.ok(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length);
+      assert.equal(world.breachNorthWall(), true); assert.equal(world.breachNorthWall(), false);
+      assert.equal(world.warehouseRuined, false);
+      assert.equal(world.landmarks.warehouse.intact.visible, true);
+      assert.equal(scene.getObjectByName('sihang-north-wall-intact').visible, false);
+      assert.equal(scene.getObjectByName('sihang-north-wall-breached').visible, true);
+      for (const x of [-1.8, -.9, 0, .9, 1.8]) {
+        assert.equal(horizontalHits(x, 1.75, -46, [0, 0, 1], 9).length, 0);
+        const feet = new THREE.Vector3(x, 0, -46);
+        for (let step = 0; step < 80; step++) world.moveInfantry(feet, 0, .1, .42);
+        assert.ok(feet.z > -39 && feet.y === 0, 'five lanes pass real full-height movement collision');
+        const route = world.elevatedPath({ x, y: 0, z: -50 }, { x, y: 0, z: -37 });
+        assert.ok(route.length);
+        assert.ok(route.some(point => point.z > -42), 'navigation reaches inside the new breach');
+      }
+      assert.ok(horizontalHits(8, 1.75, -46, [0, 0, 1], 9).length, 'adjacent masonry stays solid');
+      assert.equal(world.walkHeight(0, -40, W.floorHeight), W.floorHeight);
+      assert.equal(new Set(world.solids).size, world.solids.length);
+      world.resetCampaign();
+      assert.equal(world.solids.length, solids); assert.equal(world.obstacles.length, obstacles);
+      assert.ok(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length);
+      assert.equal(circleBlocked(0, -42, .42, world.doorSystem.navigationObstacles), true);
+    }
+  });
+
   it('exports the coordinate contract and a complete standalone world', () => {
     assert.equal(W.width, 64); assert.equal(W.depth, 34);
     assert.equal(W.floorHeight, 8.4); assert.equal(W.floors, 3); assert.equal(W.roofY, 25.2);
@@ -86,7 +115,16 @@ describe('independent Sihang Warehouse battlefield', () => {
     for (const key of ['pieces', 'buildings', 'covers', 'streets', 'fortifications', 'passages'])
       assert.ok(Array.isArray(world.town[key]), `town.${key}`);
     assert.deepEqual(world.outskirts, { buildings: [], hills: [] });
-    assert.deepEqual(world.staticDamage, { craters: [], ruinedShops: [], wrecks: [] });
+    assert.equal(world.staticDamage.craters.length, 6);
+    assert.deepEqual(world.staticDamage.ruinedShops, []);
+    assert.deepEqual(world.staticDamage.wrecks, []);
+    scene.updateMatrixWorld(true);
+    for (const crater of world.staticDamage.craters) {
+      const ray = new THREE.Raycaster(new THREE.Vector3(crater.x, 3, crater.z), new THREE.Vector3(0, -1, 0));
+      close(ray.intersectObjects(world.solids)[0].point.y, -crater.depth, 'real bowl, no flat road cap', .002);
+      close(world.groundHeight(crater.x, crater.z), -crater.depth, 'physical shell-hole support', .002);
+    }
+    assert.ok(world.buildingFire.sources.length > 0);
     for (const method of ['reset', 'update', 'focus', 'openAhead', 'interact'])
       assert.equal(typeof world.doorSystem[method], 'function', `doorSystem.${method}`);
     assert.ok(world.doorSystem.navigationObstacles.length);
@@ -218,7 +256,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     for (const y of SIHANG_LEVELS.slice(0, 3).map(y => y + 1.65))
       assert.ok(horizontalHits(-35, y, -46, [0, 0, 1], 6).length, 'Strong uninterrupted masonry corners');
     const holes = world.landmarks.warehouse.breaches;
-    assert.equal(holes.filter(h => h.blown).length, 7, 'Only selected panels have shell breaches');
+    assert.equal(holes.filter(h => h.blown).length, 14, 'Reference north apertures and selected other panels have shell breaches');
     const gate = world.doorSystem.doors.find(door => door.groupId === 'sihang-warehouse-north-gate');
     assert.equal(gate.state, 'closed');
     world.doorSystem.interact(gate, { x: -20, z: -45 });
@@ -237,7 +275,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.equal(SIHANG_DEFENSE_POSTS.length, 22);
     for (const p of SIHANG_DEFENSE_POSTS) {
       assert.equal(circleBlocked(p.x, p.z, .42, world.obstacles, p.y), false);
-      close(world.walkHeight(p.x, p.z, p.y), W.floorHeight, 'Defense floor');
+      close(world.walkHeight(p.x, p.z, p.y), p.y, 'Defense floor');
       assert.equal(horizontalHits(p.x, p.y + 1.5, p.z,
         p.facade === 'north' ? [0, 0, -1] : [1, 0, 0], 2).length, 0, 'Defense post fires through an actual opening');
     }
@@ -249,14 +287,13 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.ok(pier.z < -42.7, 'Movement respects surviving wall piers');
   });
 
-  it('provides 22 distinct low-sill firing positions with clear downward eye and muzzle rays', () => {
+  it('provides 22 distinct firing positions through real breaches and east windows across both upper floors', () => {
     assert.equal(new Set(SIHANG_DEFENSE_POSTS.map(p => `${p.x},${p.z}`)).size, 22);
-    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'north').length, 16);
-    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'east').length, 6);
+    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'north').length, 8);
+    assert.equal(SIHANG_DEFENSE_POSTS.filter(p => p.facade === 'east').length, 14);
     for (const p of SIHANG_DEFENSE_POSTS) {
       const aperture = world.landmarks.warehouse.breaches.find(h => h.id === p.apertureId);
       assert.ok(aperture, `Registered aperture for ${p.id}`);
-      assert.equal(p.sillY, W.floorHeight + .8);
       assert.equal(aperture.bottom, p.sillY);
       for (const height of [1.35, 1.6]) {
         const origin = new THREE.Vector3(p.x, p.y + height, p.z);
@@ -268,6 +305,27 @@ describe('independent Sihang Warehouse battlefield', () => {
       assert.equal(circleBlocked(p.x, p.z, .42, world.obstacles, p.y), false);
       follow({ x: 0, y: W.floorHeight, z: -38 }, p);
     }
+  });
+
+  it('matches the reference aperture groups with real bidirectional bullet paths and places the charge below the largest hole', () => {
+    const areas = SIHANG_NORTH_APERTURES.map(hole => Math.abs(hole.outline.reduce((area, a, index) => {
+      const b = hole.outline[(index + 1) % hole.outline.length];
+      return area + a[0] * b[1] - b[0] * a[1];
+    }, 0)) / 2);
+    assert.equal(Math.max(...areas), areas[0], 'The shared demolition coordinate references the largest actual cutout');
+    assert.equal(SIHANG_DEMOLITION_POINT.x, SIHANG_NORTH_APERTURES[0].u);
+    assert.ok(SIHANG_DEMOLITION_POINT.z < W.minZ);
+    for (const hole of SIHANG_NORTH_APERTURES) {
+      for (const direction of [-1, 1]) {
+        assert.equal(horizontalHits(hole.u, (hole.bottom + hole.top) / 2, W.minZ - direction * .7,
+          [0, 0, direction], 1.4).length, 0, `${hole.id} is open in both firing directions`);
+      }
+    }
+    for (const x of [-30, -22, -6, 10, 18, 25])
+      assert.ok(horizontalHits(x, 9.8, -43, [0, 0, 1], 2).length, 'Former repeated window row is solid reference masonry');
+    assert.ok(horizontalHits(0, 21.48, -43, [0, 0, 1], 2).length, 'Concrete bridge between the two principal holes remains solid');
+    assert.ok(horizontalHits(2.2, 17.4, -43, [0, 0, 1], 2).length, 'Jagged solid corners are not replaced with a rectangular cutout');
+    assert.equal(horizontalHits(1.7, 18.1, -43, [0, 0, 1], 2).length, 0, 'The adjacent real polygon opening remains clear');
   });
 
   it('adds real partition walls and usable room doors on every warehouse storey', () => {

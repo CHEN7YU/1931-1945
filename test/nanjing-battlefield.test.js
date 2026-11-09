@@ -23,6 +23,43 @@ function housePoint(home, x, z) {
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
 
+test('Nanjing has small and large physical shell holes and active fire sources on damaged houses', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  assert.equal(world.staticDamage.craters.length, 6);
+  assert.equal(new Set(world.staticDamage.craters.map(crater => crater.radius)).size, 3);
+  for (const crater of world.staticDamage.craters) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(crater.x, 3, crater.z), new THREE.Vector3(0, -1, 0));
+    const ground = scene.children.filter(mesh => mesh.isMesh && !mesh.isInstancedMesh && !mesh.isSkinnedMesh);
+    assert.ok(Math.abs(ray.intersectObjects(ground)[0].point.y + crater.depth) < .002);
+    assert.ok(Math.abs(world.groundHeight(crater.x, crater.z) + crater.depth) < .002);
+    for (const spawn of NANJING_SPAWNS)
+      assert.ok(Math.hypot(crater.x - spawn.x, crater.z - spawn.z) > crater.radius * 1.35 + 9);
+  }
+  assert.ok(world.buildingFire.sources.length > 0);
+});
+
+test('interior courtyard sandbags shield crouched defenders from grenade-height rays without blocking the gate lane', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const defenses = world.landmarks.gateInteriorDefenses;
+  const bags = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'gate-interior-sandbag-collision');
+  assert.equal(defenses.length, 4); assert.equal(bags.length, 48);
+  const occluded = createOcclusionQuery();
+  for (const defense of defenses) {
+    const court = NANJING_COURTYARDS.find(court => defense.id.includes(court.id));
+    assert.ok(defense.z < court.maxZ && defense.z - defense.depth > court.minZ);
+    const start = new THREE.Vector3(defense.x, .5, defense.z + 1.5);
+    const end = new THREE.Vector3(defense.x, .65, defense.z - 1.05);
+    const direction = end.clone().sub(start), ray = new THREE.Raycaster(start, direction.normalize(), 0, start.distanceTo(end));
+    assert.ok(occluded(ray, bags), 'actual blast occlusion query must find the sandbags');
+    assert.ok(circleBlocked(defense.x, defense.z, .42, world.obstacles), 'the visual cover is not walk-through');
+    assert.equal(circleBlocked(end.x, end.z, .42, world.obstacles), false, 'a crouched defender fits behind it');
+    assert.ok(world.town.covers.some(cover => cover.id.startsWith(`forward-defense-${defense.id}-`)));
+  }
+  for (let z = NANJING_GATE_NORTH_EDGE - 1; z <= NANJING_GATE_SOUTH_EDGE + 1; z += .25)
+    assert.equal(circleBlocked(0, z, .6, world.obstacles, 0, 1.75), false, `the main evacuation lane stays clear at ${z}`);
+});
+
 test('the Yangtze continues beyond the northern boundary and the city reuses Taierzhuang tree geometry', () => {
   const scene = new THREE.Scene();
   const world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());

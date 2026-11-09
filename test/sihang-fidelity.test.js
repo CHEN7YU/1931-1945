@@ -72,6 +72,10 @@ test('analytic bank clipping catches oblique and lateral shots without range-dep
 
 test('ROC cloth has the red field, blue upper-hoist canton, twelve white rays, pinned hoist and changing two-axis folds', () => {
   const flag = createSihangFlag(new THREE.MeshStandardMaterial());
+  const pole = flag.group.children.find(child => child.geometry?.type === 'CylinderGeometry');
+  assert.equal(pole.geometry.parameters.height, 7);
+  assert.equal(pole.position.y, 3.5);
+  assert.equal(flag.cloth.position.y, 5.85);
   const { geometry, material } = flag.cloth, texture = material.map;
   const pixel = (x, y) => Array.from(texture.image.data.slice((y * 384 + x) * 4, (y * 384 + x) * 4 + 3));
   assert.deepEqual(pixel(300, 200), [194, 25, 38]);

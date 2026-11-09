@@ -4,6 +4,7 @@ import { advanceSihangDemolition, SIHANG_RULES } from './sihang-campaign.js';
 import { nativeGaitDrop } from './nra-motion.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { addSupportGrip, supportWeaponTargets } from './support-weapon-pose.js';
+import { sihangBreachGoal } from './sihang-tactics.js';
 
 export function sihangShieldLayout(slot, count, mode = 'front') {
   if (!Number.isInteger(slot) || slot < 0 || slot >= count || count > 20)
@@ -62,16 +63,26 @@ export function createSihangCombat(scene, world) {
   };
   return {
     defuseAvailable,
-    goalFor(actor) { return actor.formation?.sihangDemolition ? goals.get(actor.id) ?? null : null; },
+    goalFor(actor, campaign) { return sihangBreachGoal(actor, campaign) ??
+      (actor.formation?.sihangDemolition ? goals.get(actor.id) ?? null : null); },
     prompt(campaign, player) {
       if (!defuseAvailable(campaign, player)) return null;
       const state = campaign.demolition;
       return state.defuseProgress > 0
-        ? `正在拆除 ${state.defuseProgress.toFixed(1)}/10秒 · 持续按住F · 引爆计时暂停`
-        : `按住F 10秒拆除 · 距引爆 ${Math.ceil(state.fuseRemaining)}秒`;
+        ? `拆除 ${state.defuseProgress.toFixed(1)}/${SIHANG_RULES.defuseSeconds}秒 · 按住F时暂停引信 · 中断保留${SIHANG_RULES.defuseGraceSeconds}秒`
+        : `按住F ${SIHANG_RULES.defuseSeconds}秒拆除 · 距引爆 ${Math.ceil(state.fuseRemaining)}秒`;
     },
     update(dt, now, { campaign, actors, player, keys }) {
       if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(now)) throw new RangeError('Invalid Sihang combat step');
+      if (campaign.northWallBreached) {
+        if (defuser) defuser.tactics.sihangDefusing = false;
+        defuser = null;
+        for (const actor of bindings) delete actor.sihangShield;
+        bindings.clear(); goals.clear(); living = []; phase = 'breached';
+        for (const slot of shieldSlots) slot.mesh.visible = false;
+        charge.visible = light.visible = false;
+        return null;
+      }
       const squad = actors.filter(actor => actor.health > 0 && actor.formation?.sihangDemolition)
         .sort((a, b) => a.index - b.index);
       if (squad.length && !squad.some(actor => bindings.has(actor))) {

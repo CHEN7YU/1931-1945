@@ -1,5 +1,6 @@
 import { FRAME_BUCKETS_MS, PERFORMANCE_SCHEMA_VERSION, PERFORMANCE_SCOPES, PERFORMANCE_SCOPE_SAMPLE_EVERY,
   PERFORMANCE_MAPS, PERFORMANCE_LOADING_STAGES, sanitizedRuntimeError } from './performance-schema.js';
+import { createRuntimeErrorReporter } from './runtime-error-reporter.js';
 
 const STORAGE_KEY = 'shanhe.performance-diagnostics.v1';
 const activeStates = new Set(['playing', 'transferring', 'dead']);
@@ -22,7 +23,7 @@ export function performanceEnvironment(navigator, width, height, dpr) {
 export function createPerformanceDiagnostics({ build, environment, now = () => performance.now(),
   send = (payload, signal) => fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload), keepalive: true, signal }),
-  uuid = () => crypto.randomUUID(), changed = () => {}, warn = console.warn } = {}) {
+  uuid = () => crypto.randomUUID(), changed = () => {}, warn = console.warn, automaticRuntimeErrors = false } = {}) {
   let enabled = false, context = null, sessionStarted = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
   let frameScopes = emptyScopes(), frameStarted = 0, intervalMs = 0, queue = [], pending = null, controller = null;
   let recording = false;
@@ -32,6 +33,9 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
   const scopeSerial = {};
   let lastSend = now(), saved = 0, dropped = 0, failures = 0, status = '未开启性能诊断', generation = 0;
   const readContext = () => context?.();
+  let loadingContext = null;
+  const runtimeReporter = automaticRuntimeErrors ? createRuntimeErrorReporter({
+    build, environment, send, uuid, now, getContext: () => readContext() ?? loadingContext, warn }) : null;
   const notify = message => { status = message; changed(); };
   const window = () => current ??= {
     sequence: sequence++, durationMs: 0, reason: 'interval', frames: 0,
@@ -104,9 +108,12 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       if (typeof reader !== 'function' || onSessionStart !== null && typeof onSessionStart !== 'function')
         throw new TypeError('Diagnostics context and session callback must be functions');
       context = reader; sessionStarted = onSessionStart;
+      void runtimeReporter?.flush();
       if (enabled) sessionStarted?.();
     },
     recordLoading({ map, quality, stage }) {
+      loadingContext = { map, quality, state: 'loading', time: 0 };
+      void runtimeReporter?.flush();
       if (!enabled) return;
       if (!PERFORMANCE_MAPS.includes(map) || !['high', 'low'].includes(quality) ||
         !PERFORMANCE_LOADING_STAGES.includes(stage)) throw new RangeError('Invalid loading diagnostic context');
@@ -172,13 +179,14 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       if (!enabled) return;
       collect(reason); lastSend = now(); void upload();
     },
-    suspend(reason) { this.flush(reason); recording = false; },
+    suspend(reason) { this.flush(reason); void runtimeReporter?.flush(true); recording = false; },
     error(kind) {
       if (enabled && ['error', 'unhandledrejection', 'webglcontextlost', 'pose-recovered'].includes(kind)) {
         const errors = window().errors; errors[kind] = Math.min(10000, (errors[kind] ?? 0) + 1);
       }
     },
     runtimeError(error, details) {
+      if (!enabled && runtimeReporter) { runtimeReporter.record(sanitizedRuntimeError(error, details)); return; }
       if (!enabled) return;
       const entry = sanitizedRuntimeError(error, details), item = window();
       const entries = item.runtimeErrors ??= [];
@@ -206,7 +214,7 @@ export function getPerformanceDiagnostics() {
     for (const input of document.querySelectorAll('[data-performance-diagnostics]')) input.checked = shared.enabled;
     for (const label of document.querySelectorAll('[data-performance-status]')) label.textContent = shared.snapshot.status;
   };
-  shared = createPerformanceDiagnostics({ build: { commit: __BUILD_STAMP__.commit ?? '0000000',
+  shared = createPerformanceDiagnostics({ automaticRuntimeErrors: true, build: { commit: __BUILD_STAMP__.commit ?? '0000000',
     dirty: __BUILD_STAMP__.dirty, builtAt: __BUILD_STAMP__.builtAt },
     environment: performanceEnvironment(navigator, innerWidth, innerHeight, devicePixelRatio), changed: refresh });
   let selected = false;

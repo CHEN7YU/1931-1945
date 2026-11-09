@@ -5,16 +5,16 @@
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
   "provenance": "Original fictional Sihang game orders and civilian encouragement. Stock neural voices; not historical recordings, cloned soldiers or CC0.",
-  "generatedAt": "2026-11-05T18:07:17.349Z",
+  "generatedAt": "2026-11-09T18:21:57.512Z",
   "requestedBudgetUSD": 50,
   "requestSSMLCharacterLimit": 200000,
   "budgetPerPhaseUSD": {
     "sihang": 50
   },
   "budgetBasis": "200,000 SSML characters per phase, including retries. Standard S1 Neural retail meter in Sweden Central: USD 15 per million characters (2026-11-02). Counting full XML overestimates billable text; this is a synthesis guard, not an Azure subscription spending cap or invoice.",
-  "attemptedSSMLCharacters": 2869,
+  "attemptedSSMLCharacters": 3195,
   "attemptedCharactersByPhase": {
-    "sihang": 2869
+    "sihang": 3195
   },
   "files": [
     {
@@ -40,7 +40,7 @@
       "id": "sihang-armed",
       "file": "armed.mp3",
       "cue": "armed",
-      "text": "北墙炸药已装好！十秒后引爆，立刻靠近拆除！",
+      "text": "北墙炸药已装好！二十五秒后引爆，立刻靠近拆除！",
       "phase": "sihang",
       "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
@@ -50,10 +50,10 @@
       "rate": "-3%",
       "pitch": "-3%",
       "volume": "loud",
-      "audioRevision": "sihang-1937-v1",
-      "bytes": 33120,
-      "sha256": "729e940a836e2e939cf4860f8b6833c7ad629c1bbdf65490ee6247b7e5f6b1e7",
-      "synthesisHash": "b62eeee25f6804b0379bd236d9870814a292a19c9ecb75ff4299216d6b5051f0"
+      "audioRevision": "sihang-demolition-v2",
+      "bytes": 34560,
+      "sha256": "27b093a94838d702066e930738afc044f87f68f44e490e273baf8c5b0ec30912",
+      "synthesisHash": "8b74d31e7f7bfc77e1266d456acf557ab6ba75aa514d69f1f47f00d77c0cce2b"
     },
     {
       "id": "sihang-disarmed",

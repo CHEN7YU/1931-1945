@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Group, Vector3, Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
 import { beginTroopFerryBoarding, advanceTroopFerryBoarding, syncTroopFerryPassengers,
   troopFerryReady, playerFerryReady, completeTroopFerryCrossing, startFinalBoardingFireBuffer,
-  finalBoardingFireHeld, FINAL_BOARDING_FIRE_BUFFER_SECONDS, retainTroopFerryCasualty,
+  finalBoardingFireHeld, finalBoardingDamageHeld, FINAL_BOARDING_FIRE_BUFFER_SECONDS, retainTroopFerryCasualty,
   syncTroopFerryCorpses } from '../src/nanjing-troop-ferry.js';
 
 function fixture(count = 1) {
@@ -41,6 +41,26 @@ test('final boarding gives one bounded simulation-time fire buffer only after ac
   assert.equal(finalBoardingFireHeld(campaign, 11), false);
   assert.equal(finalBoardingFireHeld(null, 11), false);
   assert.throws(() => finalBoardingFireHeld(campaign, NaN), /simulation time/);
+});
+
+test('confirmed player boarding holds enemy fire through the entire crossing and rejects in-flight hostile damage', () => {
+  const campaign = { stage: 'withdrawal-to-boats', playerBoardingBoatId: null,
+    embarkFireBufferStartedAt: null, embarkFireBufferUntil: 0 };
+  const enemy = { team: 'enemy' }, friendly = { team: 'friendly' };
+  assert.equal(finalBoardingFireHeld(campaign, 100), false, 'merely waiting at the dock is not protected');
+  campaign.playerBoardingBoatId = 0;
+  for (const time of [100, 116, 200, 400]) {
+    assert.equal(finalBoardingFireHeld(campaign, time), true, 'ferry zero is valid and crossing has no timeout');
+    assert.equal(finalBoardingDamageHeld(campaign, time, enemy, friendly), true);
+    assert.equal(finalBoardingDamageHeld(campaign, time, friendly, enemy), false);
+    assert.equal(finalBoardingDamageHeld(campaign, time, 'fall', friendly), false);
+  }
+  campaign.stage = 'dock-defense';
+  assert.equal(finalBoardingFireHeld(campaign, 100), false);
+  assert.equal(finalBoardingDamageHeld(campaign, 100, enemy, friendly), false);
+  campaign.stage = 'withdrawal-to-boats'; campaign.playerBoardingBoatId = null;
+  assert.equal(finalBoardingFireHeld(campaign, 100), false, 'redeployment clears protection with the selected boat');
+  assert.equal(finalBoardingDamageHeld(null, 100, enemy, friendly), false, 'other maps retain their damage rules');
 });
 
 test('a boarded casualty keeps its actual deck support and moves with the original boat without being evacuated', () => {

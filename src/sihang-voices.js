@@ -2,7 +2,7 @@ import { battleVoiceMix } from './battle-voices.js';
 
 export const SIHANG_VOICE_LINES = Object.freeze({
   installing: '北墙发现日军爆破队！阻止他们安装炸药！',
-  armed: '北墙炸药已装好！十秒后引爆，立刻靠近拆除！',
+  armed: '北墙炸药已装好！二十五秒后引爆，立刻靠近拆除！',
   disarmed: '炸药已经拆除！继续守住仓库！',
   withdrawal: '撤退命令！掩护友军过桥，撤入苏州河南岸！',
   'retreat-open': '友军已经撤离！带上你的弟兄，过桥！',
@@ -18,7 +18,8 @@ export function sihangVoiceClips() {
     voice: cue === 'cheer2' ? 'zh-CN-XiaoxiaoNeural' : 'zh-CN-YunjianNeural',
     locale: 'zh-CN', gender: cue === 'cheer2' ? 'Female' : 'Male',
     style: cue === 'cheer2' ? 'cheerful' : 'serious',
-    styledegree: '1.4', rate: '-3%', pitch: '-3%', volume: 'loud', audioRevision: 'sihang-1937-v1',
+    styledegree: '1.4', rate: '-3%', pitch: '-3%', volume: 'loud',
+    audioRevision: cue === 'armed' ? 'sihang-demolition-v2' : 'sihang-1937-v1',
   }));
 }
 

@@ -117,7 +117,7 @@ test('ordinary street residents use the same articulated elbows before evacuatio
     updateCivilianAppearance([actor], camera);
     assert.equal(actor.civilianSkin.joints.leftElbow.rotation.x, before, 'the render pass must not overwrite the street gait');
     elbows.push(before);
-    assert.ok(Math.abs(actor.civilianLegs[0].rotation.x) <= .320001, 'retain the original calm street stride');
+    assert.ok(Math.abs(actor.civilianLegs[0].rotation.x) < 1, 'calm walking uses a bounded articulated stride');
   }
   assert.equal(actor.userData.escapeMode, 'street');
   assert.equal(actor.userData.active, false, 'animating the arms must not trigger evacuation');
@@ -130,4 +130,44 @@ test('ordinary street residents use the same articulated elbows before evacuatio
   assert.equal(actor.position.distanceTo(before), 0);
   assert.equal(actor.userData.walkPhase, phase, 'waiting for a door must not march in place');
   assert.ok(Math.abs(actor.civilianArms[0].rotation.x) < .001);
+});
+
+test('walking plants each foot and bends the recovering knee; running has a higher foot arc across ages and LODs', () => {
+  for (const age of ['adult', 'elderly', 'child']) {
+    const peaks = [];
+    for (const [speed, mode] of [[1.1, 'street'], [3.2, 'flee']]) {
+      const actor = person('none', age), joints = actor.civilianSkin.joints;
+      let peakLift = 0, stanceSlip = 0, previous = null, minSole = Infinity, peakKnee = 0;
+      const geometry = actor.civilianSkin.mesh.geometry, footVertices = [];
+      for (let index = 0; index < geometry.attributes.position.count; index++)
+        if (geometry.attributes.skinIndex.getX(index) === 9) footVertices.push(index);
+      for (let frame = 0; frame < 180; frame++) {
+        const moved = speed / 60;
+        actor.position.z -= moved;
+        advanceCivilianMotion(actor, { dt: 1 / 60, now: frame / 60, moved, dz: -moved, mode });
+        updateCivilianAppearance([actor], camera); actor.updateMatrixWorld(true);
+        const motion = actor.userData.escapeMotion, foot = joints.leftFoot.getWorldPosition(new THREE.Vector3());
+        peakLift = Math.max(peakLift, motion.feet[0].lift);
+        peakKnee = Math.max(peakKnee, -joints.leftKnee.rotation.x);
+        if (frame > 90 && motion.feet[0].stance && previous?.stance)
+          stanceSlip = Math.max(stanceSlip, Math.abs(foot.z - previous.z));
+        previous = { stance: motion.feet[0].stance, z: foot.z };
+        if (actor.civilianSkin.level === 'near') for (const index of footVertices) {
+          const point = actor.civilianSkin.mesh.getVertexPosition(index, new THREE.Vector3());
+          minSole = Math.min(minSole, actor.civilianSkin.mesh.localToWorld(point).y);
+        }
+      }
+      assert.ok(peakKnee > .4, 'the recovering leg must fold instead of remaining a rigid pendulum');
+      assert.ok(stanceSlip < .001, `${age}/${mode} steady supporting foot slips ${stanceSlip}m per frame`);
+      assert.ok(minSole > -.008, `${age}/${mode} shoe penetrates ground: ${minSole}`);
+      const before = Object.values(joints).map(bone => [...bone.position.toArray(), ...bone.quaternion.toArray()]);
+      updateCivilianAppearance([actor], camera);
+      assert.deepEqual(Object.values(joints).map(bone => [...bone.position.toArray(), ...bone.quaternion.toArray()]), before);
+      camera.position.z = 100; updateCivilianAppearance([actor], camera);
+      assert.equal(actor.civilianSkin.level, 'far');
+      camera.position.z = 0;
+      peaks.push(peakLift);
+    }
+    assert.ok(peaks[1] > peaks[0] + .1);
+  }
 });

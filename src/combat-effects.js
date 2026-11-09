@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
 import { createTankFireEffects } from './tank-fire.js';
+import { createAircraftSmokeEffects } from './aircraft-smoke.js';
 import { createPresentationView } from './presentation-view.js';
 import { valueNoise2D as cloudNoise } from './value-noise.js';
 
@@ -72,6 +73,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
   const fireTexture = new THREE.DataTexture(firePixels, blastSize, blastSize);
   fireTexture.magFilter = THREE.LinearFilter; fireTexture.needsUpdate = true;
   const tankFire = createTankFireEffects(scene, camera, blastTexture);
+  const aircraftSmoke = createAircraftSmokeEffects(scene, blastTexture);
   const clouds = Array.from({ length: PARTICLE_LIMITS.clouds }, () => {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0 }));
     sprite.visible = false; scene.add(sprite); return sprite;
@@ -153,6 +155,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
   const configure = value => {
     settings = value;
     tankFire.configure(value);
+    aircraftSmoke.configure(value);
     const low = settings.preset === 'low';
     trimCombatParticles(state, { fragments: settings.effects.hitParticles ? low ? 32 : PARTICLE_LIMITS.fragments : 0,
       clouds: low ? 6 : PARTICLE_LIMITS.clouds, lights: low || !settings.effects.muzzle || !settings.effects.muzzleLight ? 0 : PARTICLE_LIMITS.lights },
@@ -171,6 +174,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
   const update = (dt, time, vehicles = []) => {
     advanceCombatParticles(state, dt, groundHeight, time);
     tankFire.update(vehicles, time);
+    aircraftSmoke.update(vehicles, time);
     display();
   };
   return {
@@ -198,7 +202,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     },
     update,
     render(time, vehicles = []) { update(time - state.time, time, vehicles); },
-    clear() { clearCombatParticles(state); tankFire.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
+    clear() { clearCombatParticles(state); tankFire.clear(); aircraftSmoke.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length + waves.filter(mesh => mesh.visible).length,
@@ -211,6 +215,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
           surface: lastExplosion.surface ? { kind: lastExplosion.surface.kind, normal: { ...lastExplosion.surface.normal } } : null } : null,
         shockwaves: waves.filter(mesh => mesh.visible).length,
         tankFire: tankFire.snapshot,
+        aircraftSmoke: aircraftSmoke.snapshot,
         visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
         shaderLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
         limits: { ...PARTICLE_LIMITS }, emitted: state.emitted, presentationPasses,

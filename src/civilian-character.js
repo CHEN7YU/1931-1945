@@ -478,8 +478,10 @@ export function updateCivilianAppearance(civilians, camera, preset = 'high') {
     restoreCivilianMotionPose(civilian);
     // Existing gameplay drives the upper joints; secondary joints preserve the same pose across LODs.
     for (const [side, index] of [['left', 0], ['right', 1]]) {
-      skin.joints[`${side}Knee`].rotation.x = -Math.max(0, civilian.civilianLegs[index].rotation.x) * .85;
-      skin.joints[`${side}Foot`].rotation.x = -skin.joints[`${side}Knee`].rotation.x * .45;
+      if (!civilian.userData.escapeMotion) {
+        skin.joints[`${side}Knee`].rotation.x = -Math.max(0, civilian.civilianLegs[index].rotation.x) * .85;
+        skin.joints[`${side}Foot`].rotation.x = -skin.joints[`${side}Knee`].rotation.x * .45;
+      }
       if (civilian.userData.carrying === 'child') skin.joints[`${side}Elbow`].rotation.x = 1.05;
       else if (!civilian.userData.escapeMotion && !civilian.userData.boatman) skin.joints[`${side}Elbow`].rotation.x = .18;
     }

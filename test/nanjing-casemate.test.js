@@ -46,7 +46,7 @@ test('actual infantry movement reaches the room from the core and returns withou
   assert.ok(start.distanceTo(new THREE.Vector3(-6.2, 0, 0)) < .026);
 });
 
-test('the fixed virtual muzzle has a clear slit view toward the bridge, while adjacent masonry remains solid', () => {
+test('the fixed virtual muzzle retains the bridge view without cutting a C-shaped notch in the side curtain', () => {
   for (const z of [38, 52, 65]) for (const x of [-28, -24, -20]) {
     const point = gun(), target = new THREE.Vector3(x, 1.5, z);
     aimEmplacement(point, target, 10, C.floorY);
@@ -55,11 +55,20 @@ test('the fixed virtual muzzle has a clear slit view toward the bridge, while ad
     const ray = new THREE.Raycaster(start, direction.normalize(), 0, distance - .1);
     const hits = ray.intersectObjects(world.solids, true);
     const walls = hits.filter(hit => !String(hit.object.userData.nanjingFeature).startsWith('bridge-'));
-    assert.equal(walls.length, 0, `firing room blocks the expanded view at ${x},${z}: ${walls[0]?.object.userData.nanjingFeature}`);
+    if (x === -28 && z === 38)
+      assert.ok(walls.some(hit => hit.object.userData.nanjingFeature === 'barbican-curtain-wall'),
+        'the close extreme-left angle is blocked by the restored side wall, not an open notch');
+    else assert.equal(walls.length, 0, `firing room blocks the bridge at ${x},${z}: ${walls[0]?.object.userData.nanjingFeature}`);
     if (x === -24) assert.equal(hits.length, 0, 'the original bridge-centre sight lines stay clear');
   }
   const ray = new THREE.Raycaster(new THREE.Vector3(-14, 4.45, 19.7), new THREE.Vector3(0, 0, 1), 0, 10);
   assert.ok(ray.intersectObjects(world.solids, true).length > 0, 'only the firing slit is open');
+  for (const y of [1, 3.2, 4, 5, 6, 8]) {
+    const side = new THREE.Raycaster(new THREE.Vector3(-21.5, y, 28), new THREE.Vector3(0, 0, -1), 0, 8);
+    const hit = side.intersectObjects(world.solids, true).find(hit => hit.object.userData.nanjingFeature === 'barbican-curtain-wall');
+    assert.ok(hit, `the side curtain must have a continuous south face at height ${y}`);
+    assert.ok(Math.abs(hit.point.z - 25.6) < .001);
+  }
 });
 
 test('all permitted gun headings retain a clear operator position and a crouched exit', () => {

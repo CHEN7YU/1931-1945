@@ -11,11 +11,11 @@ export const PERFORMANCE_LOADING_STAGES = Object.freeze([
   'scene-materials', 'friendly-model', 'friendly-poses', 'enemy-model', 'enemy-poses',
   'friendly-rendering', 'enemy-rendering', 'ready',
 ]);
-export const RUNTIME_ERROR_CODES = Object.freeze(['native-gait-reach', 'equipment-view-metadata', 'unclassified-runtime']);
+export const RUNTIME_ERROR_CODES = Object.freeze(['native-gait-reach', 'pose-geometry', 'equipment-view-metadata', 'unclassified-runtime']);
 
 export function sanitizedRuntimeError(error, { recovered, stage, position = null, side = null, team = null } = {}) {
   if (!(error instanceof Error) || typeof recovered !== 'boolean') throw new TypeError('Runtime logging requires an Error and recovery status');
-  const code = error.code === 'equipment-view-metadata' ? 'equipment-view-metadata'
+  const code = error.code === 'pose-geometry' ? 'pose-geometry' : error.code === 'equipment-view-metadata' ? 'equipment-view-metadata'
     : error.name === 'NativeGaitReachError' ? 'native-gait-reach'
     : error instanceof TypeError && /reading '(bolt|rifle)'/.test(error.message) ? 'equipment-view-metadata' : 'unclassified-runtime';
   const frames = [...(error.stack ?? '').matchAll(/([A-Za-z0-9_.-]+\.js:\d+(?::\d+)?)/g)]
@@ -23,8 +23,8 @@ export function sanitizedRuntimeError(error, { recovered, stage, position = null
   const coordinate = Array.isArray(position) && position.length === 3 &&
     position.every(value => Number.isFinite(value) && Math.abs(value) <= 10000)
     ? position.map(value => Math.round(value * 10) / 10) : null;
-  return { code, name: ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError'].includes(error.name) ? error.name : 'Error',
-    recovered, stage: ['native-gait', 'battle', 'initialization'].includes(stage) ? stage : 'battle',
+  return { code, name: ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError', 'PoseGeometryError'].includes(error.name) ? error.name : 'Error',
+    recovered, stage: ['native-gait', 'character-pose', 'battle', 'initialization'].includes(stage) ? stage : 'battle',
     side: ['Left', 'Right'].includes(side) ? side : null,
     team: ['friendly', 'enemy'].includes(team) ? team : null,
     position: coordinate, frames, count: 1 };
@@ -33,8 +33,8 @@ export function sanitizedRuntimeError(error, { recovered, stage, position = null
 function runtimeErrors(value) {
   return Array.isArray(value) && value.length <= 8 && value.every(entry =>
     keys(entry, ['code', 'name', 'recovered', 'stage', 'side', 'team', 'position', 'frames', 'count']) &&
-    RUNTIME_ERROR_CODES.includes(entry.code) && ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError'].includes(entry.name) &&
-    typeof entry.recovered === 'boolean' && ['native-gait', 'battle', 'initialization'].includes(entry.stage) &&
+    RUNTIME_ERROR_CODES.includes(entry.code) && ['Error', 'TypeError', 'RangeError', 'NativeGaitReachError', 'PoseGeometryError'].includes(entry.name) &&
+    typeof entry.recovered === 'boolean' && ['native-gait', 'character-pose', 'battle', 'initialization'].includes(entry.stage) &&
     [null, 'Left', 'Right'].includes(entry.side) && [null, 'friendly', 'enemy'].includes(entry.team) &&
     (entry.position === null || Array.isArray(entry.position) && entry.position.length === 3 &&
       entry.position.every(number => Number.isFinite(number) && Math.abs(number) <= 10000)) &&

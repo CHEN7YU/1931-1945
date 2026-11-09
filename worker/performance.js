@@ -49,7 +49,7 @@ function summaries(rows) {
     const batch = JSON.parse(row.payload);
     for (const window of batch.windows) {
       const { context } = window, env = batch.environment;
-      if (context.state === 'loading') continue;
+      if (context.state === 'loading' || window.frames === 0 && window.runtimeErrors?.length) continue;
       const key = [batch.build.commit, batch.build.dirty, batch.build.builtAt, context.map, context.quality, env.browser, env.major,
         env.platform, env.width, env.height, env.dpr].join(':');
       if (!groups.has(key)) groups.set(key, {
@@ -82,7 +82,7 @@ function loadingSummaries(rows) {
   for (const row of rows) {
     const batch = JSON.parse(row.payload);
     for (const window of batch.windows) {
-      if (window.context.state !== 'loading') continue;
+      if (window.context.state !== 'loading' || window.frames === 0 && window.runtimeErrors?.length) continue;
       const key = `${batch.sessionId}:${window.context.map}`;
       const previous = sessions.get(key);
       if (previous && previous.sequence >= window.sequence) continue;

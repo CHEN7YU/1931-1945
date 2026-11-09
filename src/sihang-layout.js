@@ -112,21 +112,51 @@ export function sihangBridgeContains(position, margin = 0) {
 export const SIHANG_CAPTURE_AREA = Object.freeze({
   minX: -34, maxX: 26, minZ: -40, maxZ: -10, maxY: 2.4,
 });
-export const SIHANG_DEMOLITION_POINT = Object.freeze({ x: 0, y: 0, z: -43.5 });
+// Coordinates follow the supplied north-wall photograph; screen-right is world -X.
+export const SIHANG_NORTH_APERTURES = Object.freeze([
+  { id: 'north-main-lower', u: 0, bottom: 17.15, top: 21.3, width: 4.8,
+    outline: [[-1.1,17.15],[1.3,17.15],[1.8,17.6],[2.25,18.05],[2.05,18.6],[2.4,19.1],
+      [1.7,19.65],[1.5,20.2],[1.8,20.75],[.8,21.3],[-1.4,21.15],[-1.55,20.3],[-2.15,19.8],
+      [-1.85,19.25],[-2.4,18.65],[-1.9,18.1],[-1.7,17.65]] },
+  { id: 'north-main-upper', u: .2, bottom: 21.65, top: 25.05, width: 4.9,
+    outline: [[-1.5,21.65],[.9,21.65],[1.15,22.2],[2.2,22.6],[1.7,23.1],[2.65,23.6],
+      [2.4,24.4],[2.2,25.05],[-1.8,24.95],[-2.25,24.6],[-2.1,23.9],[-1.9,23.2],[-1.95,22.4]] },
+  { id: 'north-center-lower', u: -13.1, bottom: 17.2, top: 20.7, width: 3.8,
+    outline: [[-14.2,17.2],[-12.2,17.25],[-11.75,18.05],[-11.2,18.6],[-11.6,19.25],
+      [-11.4,20.05],[-12.0,20.7],[-14.5,20.6],[-15,20.0],[-14.6,19.25],[-14.95,18.7],[-14.5,18.1]] },
+  { id: 'north-center-upper', u: -12.9, bottom: 21.15, top: 23.45, width: 4.5,
+    outline: [[-14.5,21.15],[-11.1,21.25],[-10.6,21.7],[-11.6,22.0],[-12.0,22.65],
+      [-12.9,23.45],[-13.55,22.95],[-13.6,22.2],[-14.8,21.9],[-15.1,21.5]] },
+  { id: 'north-center-small', u: -10.0, bottom: 21.4, top: 22.65, width: 1.4,
+    outline: [[-10.55,21.4],[-9.35,21.45],[-9.55,22.0],[-9.85,22.65],[-10.4,22.3],[-10.65,21.8]] },
+  { id: 'north-right-middle', u: -25.3, bottom: 9.05, top: 13.45, width: 3.2,
+    outline: [[-26.35,9.05],[-24.4,9.1],[-24.0,10.05],[-23.7,10.7],[-24.05,11.3],
+      [-23.8,12.25],[-24.1,13.45],[-26.5,13.35],[-26.9,12.85],[-26.4,12.1],[-26.65,11.35],[-26.2,10.7]] },
+  { id: 'north-right-lower', u: -25.8, bottom: 6.7, top: 8.0, width: 2.45,
+    outline: [[-26.5,6.7],[-25.35,6.85],[-24.6,7.35],[-24.8,8.0],[-26.6,7.95],[-27.05,7.5]] },
+  { id: 'north-right-small', u: -20.3, bottom: 12.35, top: 13.65, width: 2.2,
+    outline: [[-21.1,12.35],[-19.45,12.4],[-19.2,12.85],[-19.8,13.65],[-20.65,13.35],[-21.4,13.0]] },
+].map(hole => Object.freeze({ ...hole, kind: 'breach', irregular: true,
+  outline: Object.freeze(hole.outline.map(point => Object.freeze(point))) })));
+export const SIHANG_DEMOLITION_POINT = Object.freeze({ x: SIHANG_NORTH_APERTURES[0].u, y: 0, z: -43.5 });
 export const SIHANG_EVACUATION = Object.freeze({ x: 92, z: 4, radius: 12, southZ: -14 });
-export const SIHANG_NORTH_WINDOWS = Object.freeze([-30, -22, -14, -6, 2, 10, 18, 25]);
 export const SIHANG_EAST_DEFENSE_WINDOWS = Object.freeze([-39, -36, -21, -18, -15, -12]);
 export const SIHANG_FIRING_POSTS = Object.freeze([
-  ...SIHANG_NORTH_WINDOWS.flatMap((x, window) => [-.8, .8].map((offset, side) => ({
-    id: `north-firing-${window}-${side}`, x: x + offset, y: 8.4, z: -41,
-    heading: 0, facade: 'north', apertureId: `north-defense-${x}`,
-    sillY: SIHANG_WAREHOUSE.floorHeight + .8, setback: 1, aimProbe: Object.freeze({ x: x + offset, y: 1.2, z: -78 }),
-  }))),
+  ...[[0, [-1.35, -.45, .45, 1.35]], [2, [-.65, .65]], [5, [-.6, .6]]].flatMap(([index, offsets]) => {
+    const hole = SIHANG_NORTH_APERTURES[index], floor = Math.floor(hole.bottom / 8.4) * 8.4;
+    return offsets.map((offset, side) => ({ id: `north-firing-${hole.id}-${side}`, x: hole.u + offset,
+      y: floor, z: -41, heading: 0, facade: 'north', apertureId: hole.id, sillY: hole.bottom,
+      setback: 1, aimProbe: Object.freeze({ x: hole.u + offset, y: 1.2, z: -78 }) }));
+  }),
   ...SIHANG_EAST_DEFENSE_WINDOWS.map((z, window) => ({
     id: `east-firing-${window}`, x: 27, y: 8.4, z,
     heading: -Math.PI / 2, facade: 'east', apertureId: `east-1-${z}`,
     sillY: SIHANG_WAREHOUSE.floorHeight + .8, setback: 1, aimProbe: Object.freeze({ x: 62, y: 1.2, z: z - 10 }),
   })),
+  ...[[-38, [-.85, 0, .85]], [-22, [-.85, 0, .85]], [-14, [-.6, .6]]].flatMap(([z, offsets]) =>
+    offsets.map((offset, side) => ({ id: `east-upper-${z}-${side}`, x: 27, y: 16.8, z: z + offset,
+      heading: -Math.PI / 2, facade: 'east', apertureId: `east-2-${z}`, sillY: 17.3,
+      setback: 1, aimProbe: Object.freeze({ x: 62, y: 1.2, z: z + offset - 7 }) }))),
 ].map(Object.freeze));
 export const SIHANG_DEFENSE_POSTS = SIHANG_FIRING_POSTS;
 export const SIHANG_SQUAD_ORIGINS = Object.freeze([

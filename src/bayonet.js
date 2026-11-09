@@ -26,6 +26,13 @@ export function bayonetCarry(extension) {
   return { position: [.10, 1.16 + .04 * lift, .04 - .14 * lift], pitch: .06 + .12 * lift };
 }
 
+export function bayonetBodyMotion(extension) {
+  bayonetCarry(extension);
+  const weight = extension * extension * (3 - 2 * extension);
+  return { yaw: -.12 * weight, pitch: -.018 * weight, roll: -.025 * weight,
+    lift: -.008 * weight, lateral: -.018 * weight, drop: .012 * weight };
+}
+
 export function cancelBayonet(state) {
   state.mode = 'idle'; state.targetId = state.startedAt = null;
   state.pending = false; state.extension = 0;

@@ -78,6 +78,28 @@ try {
         playerBoarding() {
           return { ferry: nanjingCampaign.playerBoardingBoatId, outcome: nanjingCampaign.outcome };
         },
+        boardingProtection() {
+          setGameState('playing');
+          const actor = controlledSoldier(entities), health = actor.health;
+          time += 40;
+          const source = { team: 'enemy', soldierId: enemies[0].id, weaponClass: 'rifle' };
+          for (const kind of ['rifle', 'bayonet', 'grenade', 'cannon', 'mortar'])
+            hurt(actor, 100, source, kind);
+          const shots = combatEvents.snapshot.history.filter(event => event.type === 'shot').length;
+          const enemy = enemies.find(actor => !actor.vehicleId);
+          enemy.health = 100;
+          Object.assign(enemy.tactics, { lastSeen: { x: actor.position.x, y: actor.position.y, z: actor.position.z },
+            threatId: actor.id, threatSense: 'vision', threatKind: 'person' });
+          tryAIThrowable(enemy, actor, .1);
+          fightFromCover(enemy, actor, .1, null, true);
+          const civilian = world.civilians.find(person => !person.userData.dead);
+          const civilianHealth = civilian.userData.health;
+          pursueNanjingCivilian(enemy, civilian, .1);
+          applyCivilianDamage(civilian, 100, source);
+          return { health, after: actor.health, held: finalBoardingFireHeld(nanjingCampaign, time),
+            civilianProtected: civilian.userData.health === civilianHealth,
+            newShots: combatEvents.snapshot.history.filter(event => event.type === 'shot').length - shots };
+        },
         finish() {
           for (let i = 0; i < 200 && !nanjingCampaign.outcome; i++) {
             time += .1; updateNanjingCivilians(.1); updateNanjingMission(.1);
@@ -108,10 +130,14 @@ try {
   await page.keyboard.press('f');
   const boarding = await page.evaluate(() => nanjingCountersReview.playerBoarding());
   assert.notEqual(boarding.ferry, null, JSON.stringify(boarding));
+  const protection = await page.evaluate(() => nanjingCountersReview.boardingProtection());
+  assert.equal(protection.held, true); assert.equal(protection.after, protection.health);
+  assert.equal(protection.newShots, 0);
+  assert.equal(protection.civilianProtected, true);
   const finish = await page.evaluate(() => nanjingCountersReview.finish());
   assert.deepEqual(finish, { outcome: 'evacuated', escaped: true });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, entry, waiting, crossed, boarding, finish }));
+  console.log(JSON.stringify({ passed: true, entry, waiting, crossed, boarding, protection, finish }));
 } finally {
   await browser.close();
 }

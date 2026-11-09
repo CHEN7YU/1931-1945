@@ -20,6 +20,7 @@ import { createOfficerAppearance } from './officer-appearance.js';
 import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './native-weapon-presentation.js';
 import { engineerAssemblyTools } from './engineer.js';
 import { createSupportWeaponPose } from './support-weapon-pose.js';
+import { recoverCharacterPose } from './character-pose-recovery.js';
 
 export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudget = null, onPoseRecovery = null } = {}) {
   const base = '/assets/game/ija-1938/';
@@ -87,7 +88,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
     const supportPose = createSupportWeaponPose(root, bones);
     const groundAt = (x, z, referenceY = root.position.y) => walkHeightAt(x, z, referenceY);
     const applyCasualty = createCasualtyPose(root, bones, gun, groundAt);
-    const projectGait = createNativeGaitProjection(root, bones, restFeet, groundAt, onPoseRecovery);
+    const projectGait = createNativeGaitProjection(root, bones, restFeet, groundAt, onPoseRecovery, postures);
     const flag = createIjaRifleFlag(); gun.add(flag);
     const headProbe = createHeadAimProbe(root, bones, meshes);
     const mixer = new THREE.AnimationMixer(meshes[0]);
@@ -124,7 +125,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
           ? shieldPose.snapshot.contactLimited ? '钢板或炸药双手握点超出可达范围' : null
           : supportPose.snapshot ? supportPose.issue : pose.issue;
       },
-      update(person, now, controlledId, rifleOperation = undefined) {
+      update: recoverCharacterPose(root, onPoseRecovery)(function(person, now, controlledId, rifleOperation = undefined) {
         supportPose.reset();
         if (person.team !== 'enemy') throw new Error('Japanese appearance cannot replace a friendly identity');
         actor = person;
@@ -155,7 +156,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         flag.visible = hasIjaRifleFlag(actor) && gun.visible;
         casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
         if (actor.formation?.sihangDemolition) { gun.visible = false; flag.visible = false; }
-      },
+      }),
       sampleAnatomy,
       get anatomy() { return readAnatomicalBones(bones); },
       get snapshot() {
