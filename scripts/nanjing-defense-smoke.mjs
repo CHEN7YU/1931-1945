@@ -49,14 +49,16 @@ try {
   await page.waitForFunction(() => {
     const data = defenseReview.snapshot();
     return data.time > 130 || data.actors.filter(actor => actor.duty?.role === 'wall' &&
-      actor.y > 8.4 && Math.hypot(actor.x - actor.goal.x, actor.z - actor.goal.z) < 1.2).length === 8;
+      actor.y > 8.4 && Math.hypot(actor.x - actor.goal.x, actor.z - actor.goal.z) < 1.2).length === 6;
   }, null, { timeout: 240000 });
   const data = await page.evaluate(() => defenseReview.snapshot());
   assert.equal(data.actors.filter(actor => actor.duty?.role === 'wall' && actor.y > 8.4 &&
-    Math.hypot(actor.x - actor.goal.x, actor.z - actor.goal.z) < 1.2).length, 8,
-  'eight AI soldiers must reach separated wall posts: ' + JSON.stringify(data));
-  assert.equal(data.actors.filter(actor => actor.duty?.role !== 'wall' && actor.y < .3).length, 14,
+    Math.hypot(actor.x - actor.goal.x, actor.z - actor.goal.z) < 1.2).length, 6,
+  'six AI soldiers must reach separated wall posts: ' + JSON.stringify(data));
+  assert.equal(data.actors.filter(actor => actor.duty?.role !== 'wall' && actor.y < .3).length, 16,
     'courtyard and reserve defenders must remain on the ground');
+  assert.equal(data.actors.filter(actor => actor.duty?.role === 'courtyard' && actor.duty.slot < 3 &&
+    Math.hypot(actor.x + 6.2, actor.z) < 2.6).length, 6, 'six core guards must actually reach the capture area');
   const started = await page.evaluate(() => defenseReview.target());
   await page.waitForFunction(started => {
     const data = defenseReview.snapshot();

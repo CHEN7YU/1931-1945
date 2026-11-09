@@ -13,11 +13,11 @@ function defenders() {
 const counts = actors => Object.fromEntries(['wall', 'courtyard', 'reserve'].map(role =>
   [role, actors.filter(actor => actor.health > 0 && actor.tactics.nanjingDefense?.role === role).length]));
 
-test('two autonomous squads split eight wall, ten courtyard and four reserve posts without taking player control', () => {
+test('two autonomous squads split six wall, twelve courtyard and four reserve posts without taking player control', () => {
   const actors = defenders();
   const player = { ...actors[0], tactics: {}, playerUnit: true };
   assignNanjingDefense([...actors, player], 0);
-  assert.deepEqual(counts(actors), { wall: 8, courtyard: 10, reserve: 4 });
+  assert.deepEqual(counts(actors), { wall: 6, courtyard: 12, reserve: 4 });
   assert.equal(player.tactics.nanjingDefense, undefined);
   assert.ok(actors.filter(actor => [9, 10].includes(actor.index)).every(actor => actor.tactics.nanjingDefense.role === 'wall'));
   const duties = actors.map(actor => ({ ...actor.tactics.nanjingDefense }));
@@ -31,8 +31,10 @@ test('two autonomous squads split eight wall, ten courtyard and four reserve pos
         `each soldier owns a separated post: ${JSON.stringify({ a: goals[index], b: other, situation })}`);
     }
     assert.ok(goals.filter(point => point.y > 7).length >= 6, 'an emergency cannot empty the walls');
-    assert.ok(goals.filter(point => point.y === 0 && Math.hypot(point.x + 6.2, point.z) < 2.6).length >= 2,
-      'the ground objective always has a dedicated guard from each squad');
+    assert.equal(goals.filter(point => point.y === 0 && Math.hypot(point.x + 6.2, point.z) < 2.6).length, 6,
+      'six fixed core guards remain inside the objective with room for their movement tolerance');
+    assert.ok(goals.filter(point => point.y === 0 && Math.hypot(point.x + 6.2, point.z) < 2.6)
+      .every(point => Math.hypot(point.x + 6.2, point.z) + .65 < 2.6));
   }
 });
 
@@ -44,7 +46,7 @@ test('losses reduce overwatch before draining the courtyard and replacements fil
   assert.deepEqual(counts(actors), { wall: 2, courtyard: 8, reserve: 0 });
   for (const actor of actors) actor.health = 100;
   assignNanjingDefense(actors, 50);
-  assert.deepEqual(counts(actors), { wall: 8, courtyard: 10, reserve: 4 });
+  assert.deepEqual(counts(actors), { wall: 6, courtyard: 12, reserve: 4 });
 });
 
 test('wall entry uses the assigned side ramp instead of aiming straight through a wall', () => {
