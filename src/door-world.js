@@ -119,9 +119,11 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
     },
     set onRequested(callback) { onRequested = callback; },
     update(dt, occupants) {
+      if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Doors require a non-negative finite timestep');
       const regions = [];
       let moved = false;
       for (const [index, door] of doors.entries()) {
+        if (door.state === 'closed') door.manualCloseHold = Math.max(0, (door.manualCloseHold ?? 0) - dt);
         const revision = door.revision;
         if (advanceDoor(door, dt, occupants)) { draw(index); moved = true; }
         if (door.revision !== revision) regions.push(syncNavigation(index, false));
@@ -132,6 +134,7 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
     },
     reset() {
       resetDoors(doors);
+      for (const door of doors) door.manualCloseHold = 0;
       blockedDoors = [];
       const regions = doors.map((door, index) => { draw(index); return syncNavigation(index, false); });
       leaf.computeBoundingSphere(); updateStats.sphereUpdates++;
@@ -139,6 +142,9 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
     },
     focus(camera) {
       const direction = camera.getWorldDirection(new THREE.Vector3());
+      cast.set(camera.position, direction); cast.far = 2.5;
+      const visibleHit = cast.intersectObjects(solids, false)[0];
+      if (visibleHit?.object === leaf) return doors[visibleHit.instanceId];
       let selected = null, nearest = 2.5;
       for (const door of doors) {
         if (Math.hypot(camera.position.x - door.x, camera.position.z - door.z) > 3.5) continue;
@@ -155,7 +161,12 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
       }
       return selected;
     },
-    interact(door, actor) { return activate(door, actor); },
+    interact(door, actor) {
+      const closing = Math.abs(door.targetAngle) > .01, changed = activate(door, actor);
+      if (changed) for (const peer of doors) if (peer === door || door.groupId && peer.groupId === door.groupId)
+        peer.manualCloseHold = closing ? 2 : 0;
+      return changed;
+    },
     swingEscape(position, radius = .42) {
       for (const door of blockedDoors) {
         if (Math.hypot(position.x - door.x, position.z - door.z) > door.width + 1) continue;
@@ -182,6 +193,7 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
         for (let distance = 0; distance <= Math.min(2.3, length); distance += .2) {
           const point = { x: position.x + dx / Math.max(length, .001) * distance, z: position.z + dz / Math.max(length, .001) * distance };
           if (circleBlocked(point.x, point.z, .43, [doorCollider(door)])) {
+            if (door.manualCloseHold > 0) return door;
             activate(door, position, true);
             return door;
           }

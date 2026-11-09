@@ -9,6 +9,32 @@ import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
+test('native walking and running coordinate shoulder and carried-weapon motion, but leave firing and support stable', () => {
+  for (const speed of [1.75, 2.7, 4.1]) {
+    const person = { health: 100, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+      locomotion: { speed, mode: speed > 3 ? 'sprint' : speed > 2 ? 'jog' : 'walk' } };
+    person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+    Object.assign(person.nativeMotion, { speed, weight: 1, gaitAim: 0, gaitCharge: speed > 3 ? 1 : 0 });
+    const samples = [];
+    for (let i = 0; i < 16; i++) {
+      person.nativeMotion.gaitCycles = i / 16;
+      samples.push(sampleNraMotion(person));
+    }
+    const yaws = samples.map(s => s.upperBody.yaw), rolls = samples.map(s => s.upperBody.roll);
+    assert.ok(Math.max(...yaws) - Math.min(...yaws) >= .089);
+    assert.ok(Math.max(...rolls) - Math.min(...rolls) >= .027);
+    assert.notDeepEqual(samples[4].weaponQuaternion, samples[12].weaponQuaternion);
+    const before = JSON.stringify(person.nativeMotion);
+    assert.deepEqual(sampleNraMotion(person), sampleNraMotion(person), 'sampling/pause cannot advance the gait');
+    assert.equal(JSON.stringify(person.nativeMotion), before);
+    for (const patch of [{ rifleReady: true }, { emplacementId: 'gun' },
+      { discharger: { presentationActive: true } }, { health: 0 }]) {
+      const stable = sampleNraMotion({ ...person, ...patch });
+      assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0 });
+    }
+  }
+});
+
 function actor() {
   const person = { team: 'friendly', heading: .7, position: { x: 2, y: .4, z: -5 }, walkPhase: 0, locomotion: { speed: 0 } };
   person.nativeMotion = createNraMotion(data.motion, person);

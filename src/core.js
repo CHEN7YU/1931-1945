@@ -107,6 +107,19 @@ export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1
       const lx = c * dx - s * dz, lz = s * dx + c * dz;
       const nx = Math.max(-b.hx, Math.min(b.hx, lx)), nz = Math.max(-b.hz, Math.min(b.hz, lz));
       blocked = (lx - nx) ** 2 + (lz - nz) ** 2 < radius ** 2;
+    } else if (b.polygon) {
+      if (x < b.minX - radius || x > b.maxX + radius || z < b.minZ - radius || z > b.maxZ + radius) continue;
+      let positive = false, negative = false;
+      blocked = false;
+      for (let j = 0; j < b.polygon.length; j++) {
+        const a = b.polygon[j], next = b.polygon[(j + 1) % b.polygon.length];
+        const dx = next.x - a.x, dz = next.z - a.z, length = dx * dx + dz * dz;
+        const cross = dx * (z - a.z) - dz * (x - a.x);
+        positive ||= cross > 1e-9; negative ||= cross < -1e-9;
+        const t = length ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / length)) : 0;
+        if ((x - a.x - t * dx) ** 2 + (z - a.z - t * dz) ** 2 < radius ** 2) blocked = true;
+      }
+      blocked ||= !(positive && negative);
     } else {
       const nx = Math.max(b.minX, Math.min(b.maxX, x));
       const nz = Math.max(b.minZ, Math.min(b.maxZ, z));

@@ -49,7 +49,7 @@ test('automatic levels reduce actual pixels and optional effects while preservin
     getPixelRatio: () => ratio, setPixelRatio(value) { ratio = value; },
     domElement: { width: 1280, height: 720 }, info: { memory: { textures: 0 } } };
   const settings = createQualitySettings({ renderer, scene, sun: new THREE.DirectionalLight(),
-    smoke: Array.from({ length: 30 }, () => ({ visible: true })), grain: {}, deviceRatio: () => 1.5 });
+    smoke: Array.from({ length: 30 }, () => ({ visible: true })), grain: {}, deviceRatio: () => 1.5, initialPreset: 'high' });
   const manual = settings.snapshot.requested;
   settings.setAutomaticLevel(1);
   assert.equal(settings.snapshot.pixelRatio, 1);
@@ -70,4 +70,19 @@ test('automatic levels reduce actual pixels and optional effects while preservin
   assert.equal(settings.snapshot.preset, 'high');
   assert.deepEqual(settings.snapshot.requested, manual);
   assert.throws(() => settings.setAutomaticLevel(4), RangeError);
+});
+
+test('restored automatic quality is applied before allocating any high-resolution frame or shadow target', () => {
+  let ratio = 1.5;
+  const ratios = [], sun = new THREE.DirectionalLight();
+  const renderer = { capabilities: { maxTextureSize: 8192 }, shadowMap: { enabled: true },
+    getPixelRatio: () => ratio, setPixelRatio(value) { ratio = value; ratios.push(value); },
+    domElement: {}, info: { memory: { textures: 0 } } };
+  const options = { renderer, scene: new THREE.Scene(), sun, smoke: [], grain: {}, deviceRatio: () => 1.5 };
+  const settings = createQualitySettings({ ...options, initialPreset: 'high', initialAutomaticLevel: 3 });
+  assert.deepEqual(ratios, [.6]);
+  assert.equal(settings.snapshot.shadowsEnabled, false);
+  assert.equal(settings.snapshot.preset, 'low');
+  assert.equal(settings.snapshot.requested.preset, 'high');
+  assert.throws(() => createQualitySettings({ ...options, initialAutomaticLevel: 4 }), RangeError);
 });

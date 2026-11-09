@@ -85,6 +85,26 @@ test('AI requests do not repeatedly toggle an opening door and pause freezes it'
   assert.equal(door.angle, angle);
   assert.throws(() => advanceDoor(door, NaN), RangeError);
 });
+test('AI waits for a player-requested close rather than immediately undoing the F interaction', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshBasicMaterial();
+  const world = createDoorWorld(scene, { buildings: [], passages: [
+    { id: 'manual-door', x: 0, z: 0, width: 1.4, height: 2.4, axis: 'x', openAngle: Math.PI / 2 },
+  ] }, [], [], material, material);
+  const door = world.doors[0];
+  world.interact(door, { x: 0, z: -1 });
+  world.update(.6, []);
+  world.openAhead({ x: 0, z: -1 }, { x: 0, z: 1 });
+  assert.equal(door.targetAngle, 0);
+  world.update(.4, []);
+  assert.equal(door.state, 'closed');
+  world.openAhead({ x: 0, z: -1 }, { x: 0, z: 1 });
+  assert.equal(door.state, 'closed');
+  world.update(0, []);
+  assert.equal(door.manualCloseHold, 2, 'pause cannot consume the close grace period');
+  world.update(2.1, []);
+  world.openAhead({ x: 0, z: -1 }, { x: 0, z: 1 });
+  assert.equal(door.state, 'opening', 'AI eventually resumes instead of freezing behind a player-closed door');
+});
 test('new battle resets each door to its authored starting state', () => {
   const doors = makeDoors(makeTownLayout()), door = doors.find(item => item.id === 'west-0-east-door');
   requestDoor(door, { x: 0, z: 64 }); advanceDoor(door, 1);

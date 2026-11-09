@@ -107,3 +107,23 @@ test('relevance is only a bounded work priority, not an offscreen combat switch'
   assert.equal(aiDecisionPriority({ x: 0, y: 0, z: 70 }, observer, true), .5);
   assert.equal(aiDecisionPriority({ x: 0, y: 0, z: 120 }, observer, true), 0);
 });
+
+test('real path work shares a frame-time budget across catch-up steps without freezing movement or starving queues', () => {
+  const scheduler = createAIDecisionScheduler({ pathBudgetMs: 3 });
+  scheduler.beginFrame(); step(scheduler, 0);
+  assert.equal(scheduler.take('path', actors[0]), true);
+  scheduler.recordPathWork(4);
+  assert.equal(scheduler.take('path', actors[1]), false);
+  step(scheduler, .05);
+  assert.equal(scheduler.take('path', actors[2]), false, 'catch-up steps must not reset the frame budget');
+  assert.equal(scheduler.take('sensor', actors[3]), true, 'a path budget is not a switch disabling other AI');
+  assert.equal(scheduler.snapshot.pathWorkMs, 4);
+  assert.equal(scheduler.snapshot.pathBudgetDeferrals, 2);
+  scheduler.beginFrame(); step(scheduler, .1);
+  assert.equal(scheduler.take('path', actors[1]), true, 'the deferred request is retained');
+  scheduler.recordPathWork(100);
+  scheduler.beginFrame(); step(scheduler, .2);
+  assert.equal(scheduler.take('path', actors[2]), true, 'even an expensive previous frame cannot prevent future progress');
+  assert.throws(() => scheduler.recordPathWork(NaN), RangeError);
+  assert.throws(() => createAIDecisionScheduler({ pathBudgetMs: 0 }), RangeError);
+});

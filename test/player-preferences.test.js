@@ -22,6 +22,20 @@ test('fresh preferences retain original look speed, aim reduction, scope reducti
   assert.equal(settings.status.problem, false);
   assert.equal(f.writes.length, 0, 'loading a page does not overwrite persisted values');
   assert.deepEqual(f.warnings, []);
+  assert.equal(settings.snapshot.quality.preset, 'low', 'a new browser does not need to suffer a high-quality startup first');
+});
+test('automatic reductions round-trip without overwriting manual preferences; old high defaults start conservatively', () => {
+  const old = defaultPreferences(); delete old.startupQualityLevel; old.quality.preset = 'high';
+  const f = fixture(JSON.stringify({ version: 1, settings: old })), settings = f.create();
+  assert.equal(settings.snapshot.quality.preset, 'high');
+  assert.equal(settings.snapshot.startupQualityLevel, 1);
+  assert.equal(f.writes.length, 0);
+  settings.update({ startupQualityLevel: 3 });
+  assert.equal(f.create().snapshot.startupQualityLevel, 3);
+  assert.equal(f.create().snapshot.quality.preset, 'high');
+  settings.update({ startupQualityLevel: 0 });
+  assert.equal(f.create().snapshot.startupQualityLevel, 0);
+  assert.throws(() => settings.update({ startupQualityLevel: 4 }), RangeError);
 });
 test('tank crushing defaults on, persists an explicit opt-out, and migrates older v1 settings without overwriting them', () => {
   const defaults = defaultPreferences();

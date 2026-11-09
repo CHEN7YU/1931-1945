@@ -84,7 +84,22 @@ test('manual preferences temporarily override automatic shedding without being c
   assert.equal(f.controller.snapshot.level, 3);
   assert.equal(f.controller.statistics.activations, 2);
   f.controller.leaveBattle();
-  assert.equal(f.controller.snapshot.level, 0);
+  assert.equal(f.controller.snapshot.level, 3, 'returning to the menu must not re-enable a known overloaded profile');
   assert.equal(f.controller.statistics.activations, 2);
   assert.throws(() => f.controller.observe(-1, { active: true, now: 0 }), RangeError);
+});
+
+test('a saved reduction is active from construction, survives menus, and remains manually overridable', () => {
+  const changes = [], controller = createAdaptiveQuality({ initialLevel: 3, onChange: change => changes.push(change) });
+  assert.equal(controller.snapshot.level, 3);
+  assert.equal(controller.snapshot.reason, 'restored');
+  assert.equal(controller.statistics.activations, 0);
+  controller.leaveBattle();
+  assert.equal(controller.snapshot.level, 3);
+  assert.deepEqual(changes, []);
+  controller.manualChange(0);
+  assert.equal(controller.snapshot.level, 0);
+  assert.equal(changes.at(-1).reason, 'manual');
+  for (const initialLevel of [-1, 4, NaN, 1.5])
+    assert.throws(() => createAdaptiveQuality({ initialLevel }), RangeError);
 });

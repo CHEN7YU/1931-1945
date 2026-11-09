@@ -98,8 +98,12 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
         box(wx, y - .3, front - 1.05, w / 7 + .4, .08, .08, materials.iron);
       }
     }
-    town.passages.push({ id: `${id}-front-door`, x, z: front, width: 2.8, height: 2.8,
-      axis: 'x', openAngle: Math.PI / 2 });
+    for (const hingeDirection of [1, -1]) town.passages.push({
+      id: `${id}-front-door-${hingeDirection === 1 ? 'left' : 'right'}`,
+      groupId: `${id}-front-door`, x: x - hingeDirection * .7, z: front, width: 1.4,
+      height: 2.8, leafHeight: 2.65, thickness: .11, hingeDirection,
+      axis: 'x', openAngle: -hingeDirection * Math.PI / 2,
+    });
     return building;
   }
   let index = 0;

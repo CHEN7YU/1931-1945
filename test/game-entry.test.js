@@ -5,6 +5,7 @@ import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.j
 
 test('quality setup before game loading preserves saved settings and reloads the launcher without a menu selector', async () => {
   const settings = defaultPreferences(); settings.mouseSensitivity = 2; settings.audio.master.volume = .4;
+  settings.startupQualityLevel = 3;
   const saved = JSON.stringify({ version: 1, settings });
   let step = 0, persisted, reloaded = false;
   const page = {
@@ -21,7 +22,7 @@ test('quality setup before game loading preserves saved settings and reloads the
   await setQualityPreset(page, 'low');
   assert.equal(persisted.key, PREFERENCES_KEY);
   assert.deepEqual(JSON.parse(persisted.value), { version: 1, settings: {
-    ...settings, quality: { ...settings.quality, preset: 'low' },
+    ...settings, startupQualityLevel: 0, quality: { ...settings.quality, preset: 'low' },
   } });
   assert.equal(reloaded, true);
 });

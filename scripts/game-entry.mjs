@@ -11,7 +11,7 @@ export async function setQualityPreset(page, preset) {
     storage: () => ({ getItem: () => saved, setItem: (_key, value) => { saved = value; } }),
     warn: message => { throw new Error(message); },
   });
-  preferences.update({ quality: { ...preferences.snapshot.quality, preset } });
+  preferences.update({ quality: { ...preferences.snapshot.quality, preset }, startupQualityLevel: 0 });
   await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: PREFERENCES_KEY, value: saved });
   await page.reload({ waitUntil: 'domcontentloaded' });
 }

@@ -12,13 +12,15 @@ export function qualityProfile(preset, deviceRatio, maxTextureSize) {
 }
 
 export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio,
-  initialPreset = 'high', initialEffects = {}, lowMemory = false }) {
+  initialPreset = 'low', initialEffects = {}, initialAutomaticLevel = 0, lowMemory = false }) {
   if (typeof lowMemory !== 'boolean') throw new TypeError('Invalid startup graphics resource mode');
+  if (!Number.isInteger(initialAutomaticLevel) || initialAutomaticLevel < 0 || initialAutomaticLevel > 3)
+    throw new RangeError('Invalid startup automatic graphics level');
   qualityProfile(initialPreset, deviceRatio(), renderer.capabilities.maxTextureSize);
   for (const [effect, enabled] of Object.entries(initialEffects)) {
     if (!QUALITY_EFFECTS.includes(effect) || typeof enabled !== 'boolean') throw new RangeError('Unknown initial graphics effect or invalid enabled flag');
   }
-  const state = { preset: initialPreset, automaticLevel: 0,
+  const state = { preset: initialPreset, automaticLevel: initialAutomaticLevel,
     effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, initialEffects[effect] ?? true])) };
   const fog = scene.fog;
   const effective = () => {

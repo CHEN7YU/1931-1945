@@ -8,8 +8,9 @@ let sharedPreferences = null;
 export function getPlayerPreferences() { return sharedPreferences ??= createPlayerPreferences(); }
 const motionValues = [0, .35, 1];
 export function defaultPreferences() {
-  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, tankCrushing: true, resourceMode: 'auto', audio: defaultAudioSettings(),
-    quality: { preset: 'high', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) } };
+  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, tankCrushing: true, resourceMode: 'auto',
+    startupQualityLevel: 0, audio: defaultAudioSettings(),
+    quality: { preset: 'low', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) } };
 }
 
 export function validatePreferences(value) {
@@ -22,12 +23,15 @@ export function validatePreferences(value) {
   if (!motionValues.includes(value.motionStrength)) throw new RangeError('Invalid camera motion strength');
   if (typeof value.tankCrushing !== 'boolean') throw new TypeError('Invalid tank crushing setting');
   if (!RESOURCE_MODES.includes(value.resourceMode)) throw new RangeError('Invalid startup resource mode');
+  if (!Number.isInteger(value.startupQualityLevel) || value.startupQualityLevel < 0 || value.startupQualityLevel > 3)
+    throw new RangeError('Invalid saved automatic graphics level');
   if (!['high', 'low'].includes(value.quality?.preset)) throw new RangeError('Invalid saved graphics preset');
   for (const effect of QUALITY_EFFECTS) {
     if (typeof value.quality.effects?.[effect] !== 'boolean') throw new TypeError(`Invalid saved graphics effect: ${effect}`);
   }
   return { mouseSensitivity: value.mouseSensitivity, aimSensitivity: value.aimSensitivity,
     motionStrength: value.motionStrength, tankCrushing: value.tankCrushing, resourceMode: value.resourceMode,
+    startupQualityLevel: value.startupQualityLevel,
     audio: validateAudioSettings(value.audio), quality: { preset: value.quality.preset,
       effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, value.quality.effects[effect]])) } };
 }
@@ -55,6 +59,8 @@ export function createPlayerPreferences({ storage = () => window.localStorage, w
       // Earlier v1 settings predate audio controls; preserve their sensitivity and graphics.
       state = validatePreferences({ ...record.settings,
         resourceMode: record.settings?.resourceMode === undefined ? 'auto' : record.settings.resourceMode,
+        startupQualityLevel: record.settings?.startupQualityLevel === undefined
+          ? record.settings?.quality?.preset === 'high' ? 1 : 0 : record.settings.startupQualityLevel,
         tankCrushing: record.settings?.tankCrushing === undefined ? true : record.settings.tankCrushing,
         audio: record.settings?.audio === undefined ? defaultAudioSettings() : record.settings.audio });
       status = '已恢复此浏览器保存的设置。';

@@ -196,7 +196,7 @@ const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
 const performanceDiagnostics = getPerformanceDiagnostics();
 const reportLoading = stage => performanceDiagnostics.recordLoading({
   map: campaignById(new URLSearchParams(location.search).get('campaign') ?? 'taierzhuang-streets').id,
-  quality: preferenceValues.quality.preset, stage,
+  quality: preferenceValues.startupQualityLevel || startupResources.lowMemory ? 'low' : preferenceValues.quality.preset, stage,
 });
 const chooseTankEvasion = (...args) => performanceDiagnostics.measure('tankEvasion', () => planTankEvasion(...args));
 const telemetry = createFrameTelemetry(Boolean(benchmark));
@@ -352,7 +352,7 @@ const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 65
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 const aiDecisionView = createPresentationView(camera);
-const aiDecisions = createAIDecisionScheduler();
+const aiDecisions = createAIDecisionScheduler({ pathBudgetMs: 3 });
 const adaptiveAI = createAdaptiveAI();
 let renderer;
 try {
@@ -692,9 +692,12 @@ function updateSupportGripMarkers() {
 }
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain'),
   initialPreset: preferenceValues.quality.preset, initialEffects: preferenceValues.quality.effects,
+  initialAutomaticLevel: preferenceValues.startupQualityLevel,
   lowMemory: startupResources.lowMemory });
-const automaticQuality = createAdaptiveQuality({ onChange({ level }) {
+const automaticQuality = createAdaptiveQuality({ initialLevel: preferenceValues.startupQualityLevel, onChange({ level, reason }) {
   performanceDiagnostics.checkpoint();
+  if (['pressure', 'backlog', 'recovery', 'manual'].includes(reason) &&
+    preferences.snapshot.startupQualityLevel !== level) preferences.update({ startupQualityLevel: level });
   graphics.setAutomaticLevel(level);
   syncQualityControls();
 } });
@@ -4079,14 +4082,21 @@ function squadCommand(follow) {
   const hit = ray.intersectObjects(world.solids, false)[0];
   ray.far = Infinity;
   const target = hit ? hit.point : camera.position.clone().addScaledVector(direction, 45);
-  const objective = objectives.find(point => Math.hypot(target.x - point.x, target.z - point.z) < point.radius);
+  const objective = objectives.find(point => objectiveContainsPosition(point, target));
   const attack = Boolean(objective);
+  const orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
+    { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100),
+      ...(nanjingCampaignMode || sihangCampaignMode ? { y: world.walkHeight(target.x, target.z, target.y) } : {}) },
+    world.town.buildings);
+  if (!follow && sihangCampaignMode && (world.isDeepWater(orderPoint.x, orderPoint.z) ||
+    circleBlocked(orderPoint.x, orderPoint.z, .42, movementObstacles(orderPoint.x, orderPoint.z), orderPoint.y))) {
+    toast('标记位置无法通行 · 请指向道路或楼层地面');
+    return;
+  }
   for (const actor of allies) {
     actor.order = follow ? 'follow' : attack ? 'advance' : 'hold';
     actor.personalHold = false;
-    actor.orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
-      { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100),
-        ...(nanjingCampaignMode ? { y: world.walkHeight(target.x, target.z, target.y) } : {}) }, world.town.buildings);
+    actor.orderPoint = { ...orderPoint };
     actor.orderObjectiveId = attack && !follow ? objective.id : null;
     actor.path = actor.pathGoal = null; pathRequests.delete(actor.tactics.id);
     actor.tactics.traffic = actor.tactics.followGuard = null;
@@ -4714,10 +4724,28 @@ function formationObjective(actor, fallback) {
   return objectives.find(point => point.id === (actor.playerUnit ? actor.orderObjectiveId : actor.formation.objectiveId)) ?? fallback;
 }
 
+function playerOrderDestination(actor, player, yaw = controlPose.yaw) {
+  const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
+  const desired = actor.order === 'follow'
+    ? { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
+      z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }
+    : holdDestination(actor);
+  const anchor = actor.order === 'follow' ? player.position : actor.orderPoint;
+  if (sihangCampaignMode) {
+    const y = world.walkHeight(desired.x, desired.z, anchor.y ?? 0);
+    if (world.isDeepWater(desired.x, desired.z) || Math.abs(y - (anchor.y ?? 0)) > .3 ||
+      circleBlocked(desired.x, desired.z, .42, movementObstacles(desired.x, desired.z), y))
+      return { x: anchor.x, y: anchor.y ?? 0, z: anchor.z };
+    return { ...desired, y };
+  }
+  return floorDestination(anchor, desired, world.town.buildings);
+}
+
 function formationDestination(actor, active) {
   if (sihangCampaignMode) {
     if (actor.friendly) {
-      if (sihangCampaign.stage === 'sihang-retreat') return sihangRetreatGoal(actor);
+      if (sihangCampaign.stage === 'sihang-retreat') return actor.playerUnit
+        ? playerOrderDestination(actor, controlledSoldier(entities)) : sihangRetreatGoal(actor);
       if (!actor.playerUnit) {
         if (actor.formation.index === 1) {
           actor.tactics.sihangDuty = 'ground-intercept';
@@ -5194,11 +5222,13 @@ function updateAI(dt) {
     if (request.actor.traversal.kind !== 'grounded' || request.actor.grenades.action ||
       !aiDecisions.take('path', request.actor)) continue;
     pathRequests.delete(id);
-    const pathStarted = benchmark ? performance.now() : 0;
+    const pathStarted = performance.now();
     request.actor.path = world.elevatedPath?.(request.actor.position, request.target, request.actor.tactics.preferredStair) ??
       multistoryPath(request.actor.position, request.target, world.town.buildings, navigate);
     request.actor.tactics.pathReason = request.actor.path.length ? 'ready' : navigate.stats.reason;
-    if (benchmark) telemetry.add('pathMs', performance.now() - pathStarted);
+    const pathWorkMs = performance.now() - pathStarted;
+    aiDecisions.recordPathWork(pathWorkMs);
+    if (benchmark) telemetry.add('pathMs', pathWorkMs);
     request.actor.pathGoal = request.target;
     request.actor.nextPath = time + (request.actor.path.length ? 1.8 : 3);
     request.actor.stuckTime = 0;
@@ -5558,10 +5588,9 @@ function updateAI(dt) {
         cancelAIMelee(actor);
         if (tactics.cover) coverClaims.delete(tactics.cover.id);
         tactics.cover = tactics.armorEscort = null;
-        const goal = demolitionGoal ?? (withdrawing && actor.playerUnit && !sihangCampaign.playerRetreatOpen
-          ? { x: 39 + actor.index % 5 * 2, y: 0, z: 2 - Math.floor(actor.index / 5) * 2, transit: true }
-          : formationDestination(actor, objective));
-        tactics.mode = demolitionGoal ? 'sihang-demolition' : withdrawing ? 'sihang-retreat' : defending ? 'sihang-defense' : 'sihang-intercept';
+        const goal = demolitionGoal ?? formationDestination(actor, objective);
+        tactics.mode = demolitionGoal ? 'sihang-demolition' : withdrawing
+          ? actor.playerUnit ? actor.order : 'sihang-retreat' : defending ? 'sihang-defense' : 'sihang-intercept';
         if (pursuingRetreat && !demolitionGoal)
           tactics.mode = tactics.sihangPursuit === 'enter-warehouse' ? 'sihang-enter-warehouse' : 'sihang-intercept';
         const arrival = demolitionGoal || tactics.sihangDuty === 'wall-fire' ? .22 : .8;
@@ -5583,7 +5612,7 @@ function updateAI(dt) {
           }
           advanceAITurn(actor, demolitionGoal
             ? Math.atan2(position.x - SIHANG_WAREHOUSE.x, position.z - SIHANG_WAREHOUSE.minZ)
-            : defending ? goal.heading ?? 0 : actor.friendly ? Math.PI : 0, dt);
+            : defending ? goal.heading ?? 0 : actor.playerUnit ? player.heading : actor.friendly ? Math.PI : 0, dt);
           if (defending && tactics.sihangDuty === 'wall-fire') actor.rifleReady = true;
         }
         settleActorSupport(actor);
@@ -5705,10 +5734,7 @@ function updateAI(dt) {
           actor.rifleReady = Boolean(tactics.lastSeen && tactics.forgetAt > time) &&
             turn.facing && postureReady(actor) && actor.locomotion.aimRecovery === 0;
         } else {
-          const offset = sectionOffset(actor.index % BATTLE_RULES.sectionMembers);
-          const goal = floorDestination(player.position,
-            { x: player.position.x + Math.cos(yaw) * offset.x * 1.5 + Math.sin(yaw) * (offset.z * 1.5 + 5),
-              z: player.position.z - Math.sin(yaw) * offset.x * 1.5 + Math.cos(yaw) * (offset.z * 1.5 + 5) }, world.town.buildings);
+          const goal = playerOrderDestination(actor, player, yaw);
           if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65) walkActor(actor, goal, 3.5, dt);
         }
       }
@@ -7203,7 +7229,7 @@ function renderSimulationStatus() {
   if (!element.hidden) {
     const text = [backlog ? `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶` : '',
       reduced ? '自动减负 · 远处AI思考降频' : '',
-      graphicsLevel ? `自动画面减负 · ${graphicsLevel}档` : ''].filter(Boolean).join(' · ');
+      graphicsLevel ? `${automaticQuality.snapshot.reason === 'restored' ? '沿用上次画面减负' : '自动画面减负'} · ${graphicsLevel}档` : ''].filter(Boolean).join(' · ');
     if (element.textContent !== text) element.textContent = text;
     element.title = `模拟追赶上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃时间；自动减负不暂停移动、交火、伤害或占点`;
   }

@@ -169,7 +169,7 @@ export function makeSihangBattlefield(scene, surface) {
     }
     if (i === 108) continue;
     const end = sihangRiverBounds(x + 2);
-    // Outer envelopes conservatively close all water cells; no chord supports a shortcut.
+    // Broad-phase envelopes must not turn the dry side of a diagonal bank into invisible water.
     const north = Math.min(bounds.northZ, end.northZ), south = Math.max(bounds.southZ, end.southZ);
     const cut = at => {
       const dx = (B.southX - B.northX) / B.length, dz = (B.southZ - B.northZ) / B.length;
@@ -180,8 +180,22 @@ export function makeSihangBattlefield(scene, surface) {
     const left = cut(x), right = cut(x + 2), low = Math.max(north, left.min, right.min),
       high = Math.min(south, left.max, right.max);
     const bands = low < high ? [[north, low], [high, south]] : [[north, south]];
-    for (const [minZ, maxZ] of bands) if (maxZ - minZ > 1e-6)
-      riverBlocks.push({ minX: x, maxX: x + 2, minZ, maxZ, minY: -10, height: 40, water: true });
+    for (const [minZ, maxZ] of bands) if (maxZ - minZ > 1e-6) {
+      let polygon = [{ x, z: bounds.northZ }, { x: x + 2, z: end.northZ },
+        { x: x + 2, z: end.southZ }, { x, z: bounds.southZ }];
+      for (const [edge, sign] of [[minZ, 1], [maxZ, -1]]) {
+        const clipped = [];
+        for (let j = 0; j < polygon.length; j++) {
+          const a = polygon[j], b = polygon[(j + 1) % polygon.length];
+          const insideA = sign * (a.z - edge) >= 0, insideB = sign * (b.z - edge) >= 0;
+          if (insideA) clipped.push(a);
+          if (insideA !== insideB) clipped.push({ x: a.x + (b.x - a.x) * (edge - a.z) / (b.z - a.z), z: edge });
+        }
+        polygon = clipped;
+      }
+      if (polygon.length >= 3)
+        riverBlocks.push({ minX: x, maxX: x + 2, minZ, maxZ, minY: -10, height: 40, water: true, polygon });
+    }
     for (const bank of ['northZ', 'southZ']) {
       const middle = sihangRiverBounds(x + 1)[bank], slope = (end[bank] - bounds[bank]) / 2;
       const bridgeLocal = sihangBridgeCoordinates({ x: x + 1, z: middle });
@@ -191,8 +205,12 @@ export function makeSihangBattlefield(scene, surface) {
       rail.rotation.y = -Math.atan(slope);
       box(x + 1, -.8, middle, 2.01, 1.6, .5, materials.concrete);
       box(x, .52, bounds[bank], .1, 1.04, .1, materials.iron);
-      obstacles.push({ minX: x, maxX: x + 2, minZ: Math.min(bounds[bank], end[bank]) - .3,
-        maxZ: Math.max(bounds[bank], end[bank]) + .3, minY: -.2, height: 1.1, bankRail: true });
+      const angle = -Math.atan(slope), hx = Math.hypot(2, 2 * slope) / 2, hz = .25;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      const ex = Math.abs(cos) * hx + Math.abs(sin) * hz, ez = Math.abs(sin) * hx + Math.abs(cos) * hz;
+      obstacles.push({ minX: x + 1 - ex, maxX: x + 1 + ex, minZ: middle - ez,
+        maxZ: middle + ez, cx: x + 1, cz: middle, hx, hz, angle, cos, sin,
+        oriented: true, minY: -.2, height: 1.1, bankRail: true });
     }
   }
   function strip(vertices, indices, material, name) {
@@ -208,14 +226,27 @@ export function makeSihangBattlefield(scene, surface) {
   }
   solids.push(strip(bankVertices[0], bankIndices, materials.earth, 'sihang-north-dry-bank'));
   solids.push(strip(bankVertices[1], bankIndices, materials.street, 'sihang-south-dry-bank'));
-  for (const z of [-55, 43, 82]) {
-    box(0, -.02, z, 216, .05, 8, materials.street);
-    town.streets.push({ x: 0, z, width: 216, depth: 8 });
-  }
-  for (const x of [-60, 48, 85]) {
-    box(x, -.008, -50, 10, .04, 116, materials.street);
-    town.streets.push({ x, z: -50, width: 10, depth: 116 });
-  }
+  const streetVertices = [], streetIndices = [];
+  const pave = (minX, maxX, minZ, maxZ, y) => {
+    for (let x = minX; x < maxX; x += 2) {
+      const endX = Math.min(maxX, x + 2), left = sihangRiverBounds(x), right = sihangRiverBounds(endX);
+      for (const bank of ['north', 'south']) {
+        const bottomLeft = bank === 'north' ? minZ : Math.max(minZ, left.southZ);
+        const bottomRight = bank === 'north' ? minZ : Math.max(minZ, right.southZ);
+        const topLeft = bank === 'north' ? Math.min(maxZ, left.northZ) : maxZ;
+        const topRight = bank === 'north' ? Math.min(maxZ, right.northZ) : maxZ;
+        if (topLeft <= bottomLeft || topRight <= bottomRight) continue;
+        const i = streetVertices.length / 3;
+        streetVertices.push(x, y, bottomLeft, x, y, topLeft, endX, y, bottomRight, endX, y, topRight);
+        streetIndices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2);
+      }
+    }
+    town.streets.push({ x: (minX + maxX) / 2, z: (minZ + maxZ) / 2,
+      width: maxX - minX, depth: maxZ - minZ, clippedToBanks: true });
+  };
+  for (const z of [-55, 43, 82]) pave(-108, 108, z - 4, z + 4, .005);
+  for (const x of [-60, 48, 85]) pave(x - 5, x + 5, -108, 8, .012);
+  solids.push(strip(streetVertices, streetIndices, materials.street, 'sihang-bank-clipped-streets'));
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
   const water = strip(riverVertices, riverIndices, waterMaterial, 'suzhou-river');
   obstacles.push(...riverBlocks);
@@ -488,7 +519,7 @@ export function makeSihangBattlefield(scene, surface) {
     puff.scale.setScalar(3.5 + i * .35); rubble.add(puff);
   }
   rubble.visible = false;
-  const staticRendering = { sources: 0, batches: 0, triangles: 0 };
+  const staticRendering = { sources: 1, batches: 1, triangles: streetIndices.length / 3 };
   scene.updateMatrixWorld(true);
   for (const [parent, objects] of pending) {
     staticRendering.sources += objects.length;
@@ -589,16 +620,22 @@ export function makeSihangBattlefield(scene, surface) {
     return position;
   }
   const navigators = new Map();
+  let connectorLookup = null;
+  const navigationStats = { builds: 0, refreshes: 0, connectorCandidates: 0 };
   function physicalConnector(start, goal, sameLevel = false) {
     const feet = new THREE.Vector3(start.x, start.y ?? groundHeight(start.x, start.z), start.z);
     const count = Math.max(1, Math.ceil(Math.hypot(goal.x - start.x, goal.z - start.z) / .12));
     const path = [];
-    const closedDoors = new Set(doorSystem.doors.filter(door => door.state === 'closed').map(door => door.id));
-    const planningObstacles = obstacles.filter(obstacle => !obstacle.door || !closedDoors.has(obstacle.id));
+    if (!connectorLookup) {
+      const closedDoors = new Set(doorSystem.doors.filter(door => door.state === 'closed').map(door => door.id));
+      connectorLookup = obstacleLookup(obstacles.filter(obstacle => !obstacle.door || !closedDoors.has(obstacle.id)), .55);
+    }
     for (let i = 1; i <= count; i++) {
       const x = start.x + (goal.x - start.x) * i / count;
       const z = start.z + (goal.z - start.z) * i / count;
-      moveInfantry(feet, x - feet.x, z - feet.z, .42, planningObstacles);
+      const candidates = connectorLookup.at(x, z);
+      navigationStats.connectorCandidates += candidates.length;
+      moveInfantry(feet, x - feet.x, z - feet.z, .42, candidates);
       if (Math.hypot(feet.x - x, feet.z - z) > .001 ||
         sameLevel && Math.abs(feet.y - start.y) > .025) return [];
       path.push({ x: feet.x, y: feet.y, z: feet.z });
@@ -632,8 +669,10 @@ export function makeSihangBattlefield(scene, surface) {
       if (!ruined) for (const stair of SIHANG_STAIRWELLS) projected.push({ ...stair, height: 40 });
       // Leave room for the axis-separated 12cm movement substeps around surviving masonry corners.
       navigator = createNavigator(projected, 1, .55);
-      navigators.set(level, navigator);
+      navigationStats.builds++;
+      navigators.set(level, { navigator, projected, y });
     }
+    else navigator = navigator.navigator;
     const path = navigator(start, goal);
     if (!path.length && navigator.stats.reason === 'blocked-start' && !ruined) {
       // Only bridge the artificial clearance collar of a stair cutout, never a real wall or an unsupported cell.
@@ -654,7 +693,20 @@ export function makeSihangBattlefield(scene, surface) {
     }
     return finishAtGoal(path.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) })));
   }
-  doorSystem.addNavigationListener(() => { navigators.clear(); movementLookup.rebuild(); });
+  doorSystem.addNavigationListener((_bounds, regions) => {
+    connectorLookup = null;
+    movementLookup.rebuild();
+    const doorTop = Math.max(...doorSystem.doors.map(door => door.height));
+    for (const { navigator, projected, y } of navigators.values()) {
+      if (y + .025 >= doorTop) continue;
+      for (let i = projected.length - 1; i >= 0; i--) if (projected[i].door) projected.splice(i, 1);
+      projected.push(...doorSystem.navigationObstacles.filter(o => o.door &&
+        (o.minY ?? -Infinity) < y + 1.75 && o.height > y + .025)
+        .map(o => ({ ...o, minY: -10, height: 40 })));
+      navigator.refreshMany(regions);
+      navigationStats.refreshes++;
+    }
+  });
   function stairAt(point) {
     if (ruined || ![point?.x, point?.y, point?.z].every(Number.isFinite)) return null;
     return SIHANG_STAIR_ROUTES.find(route =>
@@ -770,7 +822,7 @@ export function makeSihangBattlefield(scene, surface) {
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
     groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || sihangBridgeContains({ x, z }) ? 'stone' : 'earth',
-    armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem,
+    armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, navigationStats,
     sceneArt: { staticRendering, warehouseBreaches: breaches.filter(h => h.blown).length,
       shopAwnings: city.budget.awnings, city: city.budget, flag: { vertices: 425, triangles: 768 } }, staticRendering,
     staticDamage: { craters: [], ruinedShops: [], wrecks: [] },
@@ -791,7 +843,7 @@ export function makeSihangBattlefield(scene, surface) {
       ruined = true; intact.visible = false; rubble.visible = true;
       for (const mesh of standingSolids) { const i = solids.indexOf(mesh); if (i >= 0) solids.splice(i, 1); }
       for (const obstacle of standingObstacles) { const i = obstacles.indexOf(obstacle); if (i >= 0) obstacles.splice(i, 1); }
-      navigators.clear(); movementLookup.rebuild();
+      navigators.clear(); connectorLookup = null; movementLookup.rebuild();
     },
     resetCampaign() {
       if (ruined) {
@@ -800,7 +852,7 @@ export function makeSihangBattlefield(scene, surface) {
       ruined = false; intact.visible = true; rubble.visible = false;
       marker.material.color.setHex(0x557ca5); smoke.length = 0; flagAnimation.update(0);
       smoke.push(...city.smoke);
-      doorSystem.reset(); navigators.clear(); movementLookup.rebuild();
+      doorSystem.reset(); navigators.clear(); connectorLookup = null; movementLookup.rebuild();
       for (const person of civilians) {
         const data = person.userData;
         person.position.set(data.startX, 0, data.startZ); person.rotation.set(0, 0, 0); person.visible = true;

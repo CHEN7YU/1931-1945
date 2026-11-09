@@ -1,7 +1,9 @@
-export function createAdaptiveQuality({ onChange = () => {} } = {}) {
-  let level = 0, peak = 0, activations = 0, reductions = 0, recoveries = 0, activeSeconds = 0;
+export function createAdaptiveQuality({ onChange = () => {}, initialLevel = 0 } = {}) {
+  if (!Number.isInteger(initialLevel) || initialLevel < 0 || initialLevel > 3)
+    throw new RangeError('Invalid initial automatic graphics level');
+  let level = initialLevel, peak = initialLevel, activations = 0, reductions = 0, recoveries = 0, activeSeconds = 0;
   let lastAt = null, warmUntil = 0, holdUntil = 0, slowMs = 0, goodMs = 0, severeFrames = 0, average = 16.7;
-  let reason = 'none';
+  let reason = initialLevel ? 'restored' : 'none';
   const change = (next, why) => {
     if (next === level) return;
     const previous = level;
@@ -48,7 +50,7 @@ export function createAdaptiveQuality({ onChange = () => {} } = {}) {
       if (!Number.isFinite(now)) throw new RangeError('Invalid manual quality timestamp');
       change(0, 'manual'); holdUntil = now + 15000; lastAt = null;
     },
-    leaveBattle() { change(0, 'menu'); lastAt = null; slowMs = goodMs = severeFrames = 0; },
+    leaveBattle() { lastAt = null; slowMs = goodMs = severeFrames = 0; },
     resetStatistics() { peak = level; activations = reductions = recoveries = activeSeconds = 0; },
     get statistics() { return { level, peak, activations, reductions, recoveries, activeSeconds }; },
     get snapshot() { return { level, peak, activations, reductions, recoveries, activeSeconds,

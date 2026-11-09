@@ -18,7 +18,11 @@ export function applyNativeBodyLean(root, bones, motion) {
   if (!Number.isFinite(motion.bodyLean) || motion.bodyLean < 0 || motion.bodyLean > .75) throw new Error('Invalid owned torso lean');
   const yaw = motion.torsoYaw ?? 0;
   if (!Number.isFinite(yaw) || Math.abs(yaw) > .6) throw new Error('Invalid owned firing torso turn');
-  if (!motion.bodyLean && !yaw) return;
+  const upper = motion.upperBody ?? { yaw: 0, pitch: 0, roll: 0 };
+  if (![upper.yaw, upper.pitch, upper.roll].every(Number.isFinite) ||
+    Math.abs(upper.yaw) > .1 || Math.abs(upper.pitch) > .02 || Math.abs(upper.roll) > .03)
+    throw new Error('Invalid owned upper-body gait');
+  if (!motion.bodyLean && !yaw && !upper.yaw && !upper.pitch && !upper.roll) return;
   const facing = root.getWorldQuaternion(new Quaternion());
   const rotate = (bone, angle, axis = new Vector3(1, 0, 0)) => {
     const delta = facing.clone().multiply(new Quaternion().setFromAxisAngle(axis, angle)).multiply(facing.clone().invert());
@@ -26,12 +30,16 @@ export function applyNativeBodyLean(root, bones, motion) {
     bone.quaternion.copy(bone.parent.getWorldQuaternion(new Quaternion()).invert().multiply(world));
     bone.updateMatrixWorld(true);
   };
-  if (yaw) {
-    rotate(bones.get('Spine'), yaw, new Vector3(0, 1, 0));
-    rotate(bones.get('Head'), -yaw, new Vector3(0, 1, 0));
+  if (yaw || upper.yaw) {
+    rotate(bones.get('Spine'), yaw + upper.yaw, new Vector3(0, 1, 0));
+    rotate(bones.get('Head'), -yaw - upper.yaw, new Vector3(0, 1, 0));
   }
-  rotate(bones.get('Spine'), -motion.bodyLean);
-  rotate(bones.get('Head'), motion.bodyLean * .8);
+  rotate(bones.get('Spine'), -motion.bodyLean + upper.pitch);
+  rotate(bones.get('Head'), motion.bodyLean * .8 - upper.pitch * .8);
+  if (upper.roll) {
+    rotate(bones.get('Spine'), upper.roll, new Vector3(0, 0, 1));
+    rotate(bones.get('Head'), -upper.roll * .8, new Vector3(0, 0, 1));
+  }
 }
 
 export function createNativeGaitProfile(idle, shoulder = null, pocket = null) {
