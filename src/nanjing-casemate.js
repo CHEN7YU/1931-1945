@@ -5,8 +5,9 @@ export const NANJING_CASEMATE = Object.freeze({
   stairs: Object.freeze({ minX: -16.6, maxX: -9.3, minZ: .7, maxZ: 2.2, steps: 18 }),
   corridor: Object.freeze({ minX: -17.6, maxX: -15.4, minZ: .7, maxZ: 15.6 }),
   room: Object.freeze({ minX: -18.8, maxX: -13.2, minZ: 15.25, maxZ: 20.4 }),
-  slit: Object.freeze({ minX: -17.825, maxX: -16.575, minZ: 20.35, maxZ: 21.25, minY: 3.95, maxY: 4.95 }),
-  weapon: Object.freeze({ x: -16.4, z: 19.25, altitude: floorY, heading: Math.atan2(7.6, -18.75), enclosed: true }),
+  slit: Object.freeze({ minX: -18.175, maxX: -16.525, minZ: 20.35, maxZ: 21.25, minY: 3.95, maxY: 4.95 }),
+  splay: Object.freeze({ minX: -23.75, maxX: -19.25, minZ: 23, maxZ: 25.65, minY: 3.2, maxY: 5.05 }),
+  weapon: Object.freeze({ x: -16.7, z: 19.85, altitude: floorY, heading: Math.atan2(7.3, -18.15), enclosed: true }),
 });
 const C = NANJING_CASEMATE;
 export const NANJING_CASEMATE_VOIDS = Object.freeze([
@@ -14,6 +15,7 @@ export const NANJING_CASEMATE_VOIDS = Object.freeze([
   { ...C.corridor, minY: floorY - .2, maxY: ceilingY + .18 },
   { ...C.room, minY: floorY - .2, maxY: ceilingY + .18 },
   C.slit,
+  C.splay,
 ].map(Object.freeze));
 
 const overlaps = (a, b) => ['X', 'Y', 'Z'].every(axis =>

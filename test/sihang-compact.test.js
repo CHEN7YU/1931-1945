@@ -55,3 +55,17 @@ test('physical movement and route goals cannot enter cropped terrain, and evacua
   assert.ok(advanceBoundary(createBoundaryState(), { x: 0, z: 73 }, 9, SIHANG_BATTLE_AREA) > 0);
   assert.equal(advanceBoundary(createBoundaryState(), { x: 0, z: 73 }, 9, BATTLE_AREA), 0);
 });
+
+test('north houses have real collapsed walls toward the warehouse while the south remains intact', () => {
+  const north = world.town.buildings.filter(building => building.damaged);
+  const south = world.town.buildings.filter(building => building.damaged === false);
+  assert.equal(north.length, 42); assert.equal(south.length, 13);
+  for (const home of north) {
+    assert.equal(home.damageStyle, 'collapsed-wall-charred-rafters');
+    const ray = new THREE.Raycaster(new THREE.Vector3(home.x + home.width * .28, 2.1,
+      home.z + home.depth / 2 + .8), new THREE.Vector3(0, 0, -1), 0, 1.5);
+    assert.equal(ray.intersectObjects(world.solids, true).length, 0, `back facade still intact: ${home.id}`);
+  }
+  assert.ok(south.every(home => !home.damageStyle && !home.collapsedHeight));
+  assert.equal(world.sceneArt.city.sootDrawCalls, 1);
+});

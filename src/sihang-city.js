@@ -7,7 +7,7 @@ const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ
 export function createSihangCity({ scene, box: makeBox, town, materials }) {
   const budget = { northBuildings: 0, southBuildings: 0, usableGroundFloors: 0,
     awnings: 0, trees: 0, damagedTrunks: 0, reedClumps: 0, smokePlumes: 0,
-    smokeSprites: 0, addedMaterials: 8, vegetationDrawCalls: 3, signDrawCalls: 1,
+    smokeSprites: 0, addedMaterials: 9, vegetationDrawCalls: 3, signDrawCalls: 1, sootDrawCalls: 1,
     staticSources: 0, staticTriangles: 0, staticBatches: 0 };
   const materialRegions = new Set();
   function box(x, y, z, w, h, d, material, options = {}) {
@@ -45,20 +45,36 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     budget[south ? 'southBuildings' : 'northBuildings']++;
     const front = z - d / 2, back = z + d / 2;
     box(x, -.04, z, w, .08, d, materials.concrete);
-    for (const side of [-1, 1]) box(x + side * w / 2, height / 2, z, .45, height, d, materials.brick, { block: true });
-    box(x, height / 2, back, w, height, .45, materials.brick, { block: true });
-    for (const side of [-1, 1]) box(x + side * (w / 4 + .7), 1.4, front, w / 2 - 1.4, 2.8, .45,
-      south ? materials.plaster : materials.brick, { block: true });
-    if (!south && serial % 3 === 0) {
-      const bottom = 3.6, top = Math.min(height - .3, 5.4), gapWidth = 2.1;
-      building.damageOpening = { x, y: (bottom + top) / 2, z: front, width: gapWidth, bottom, top };
-      for (const side of [-1, 1]) box(x + side * (w + gapWidth) / 4, (height + 2.8) / 2, front,
-        (w - gapWidth) / 2, height - 2.8, .45, materials.brick, { block: true });
-      box(x, (2.8 + bottom) / 2, front, gapWidth, bottom - 2.8, .45, materials.dark, { block: true });
-      box(x, (height + top) / 2, front, gapWidth, height - top, .45, materials.brick, { block: true });
+    const collapsedHeight = 1.05 + serial % 3 * .2;
+    for (const side of [-1, 1]) {
+      const wallHeight = !south && side > 0 ? collapsedHeight : height;
+      box(x + side * w / 2, wallHeight / 2, z, .45, wallHeight, d, materials.brick, { block: true });
+    }
+    if (south) box(x, height / 2, back, w, height, .45, materials.brick, { block: true });
+    else for (let strip = 0; strip < 4; strip++) {
+      const remaining = strip < 2 ? height * (.7 + (serial + strip) % 4 * .07)
+        : collapsedHeight + (serial + strip) % 2 * .12;
+      box(x - w / 2 + (strip + .5) * w / 4, remaining / 2, back, w / 4, remaining, .45,
+        strip === 1 ? materials.dark : materials.brick, { block: true });
+    }
+    for (const side of [-1, 1]) if (south || side < 0)
+      box(x + side * (w / 4 + .7), 1.4, front, w / 2 - 1.4, 2.8, .45,
+        south ? materials.plaster : materials.brick, { block: true });
+    if (!south) {
+      // The doorway stays usable while the neighbouring facade has collapsed.
+      box(x + 1.55, 1.4, front, .3, 2.8, .45, materials.brick, { block: true });
+      box(x + (w / 2 + 1.7) / 2, collapsedHeight / 2, front, w / 2 - 1.7,
+        collapsedHeight, .45, materials.brick, { block: true });
+      box(x - (w / 2 + 1.4) / 2, (height + 2.8) / 2, front, w / 2 - 1.4,
+        height - 2.8, .45, materials.brick, { block: true });
+      box(x, 3.05, front, 2.8, .5, .45, materials.dark, { block: true });
+      if (serial % 3 === 0) {
+        const bottom = 3.6, top = Math.min(height - .3, 5.4), gapWidth = 2.1;
+        building.damageOpening = { x, y: (bottom + top) / 2, z: front, width: gapWidth, bottom, top };
+      }
     } else box(x, (height + 2.8) / 2, front, w, height - 2.8, .45,
-      south ? materials.plaster : materials.dark, { block: true });
-    box(x, 2.9, front - .05, w + .2, .22, .65, materials.concrete);
+      materials.plaster, { block: true });
+    box(x, 2.9, front - .05, south ? w + .2 : 3.3, .22, .65, materials.concrete);
     if (south) {
       box(x, height + .15, z, w + .6, .3, d + .6, materials.dark, { block: true });
       box(x, height - .5, front - .2, w + .4, .3, .6, materials.concrete);
@@ -76,19 +92,29 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
       sign.rotateY(0); signs.push(sign);
     } else {
       damaged.push(building);
-      // Missing roof sections expose rafters, but most facade masonry still survives.
-      box(x - w * .22, height, z, w * .5, .25, d, materials.dark, { block: true });
-      box(x + w * .35, height - .6, z + d * .23, w * .25, .25, d * .45, materials.dark, { block: true });
-      for (let beam = 0; beam < 3; beam++)
-        box(x + (beam - 1) * w / 4, height - .5, z, .16, .18, d, materials.wood);
-      for (let chunk = 0; chunk < 6; chunk++) {
-        const piece = box(x + (chunk - 3) * w / 8, .18 + chunk % 2 * .12, front + .75,
-          .6 + chunk % 2 * .3, .35, .55, materials.brick);
+      building.collapsedHeight = collapsedHeight;
+      building.damageStyle = 'collapsed-wall-charred-rafters';
+      for (let strip = 0; strip < 3; strip++) {
+        const width = w * (.35 + (strip + serial) % 3 * .035);
+        box(x - w / 2 + width / 2, height - strip % 2 * .12, z - d / 2 + (strip + .5) * d / 3,
+          width, .22, d / 3, materials.dark, { block: true });
+      }
+      for (let beam = 0; beam < 4; beam++) {
+        const length = w * (.56 + beam % 2 * .08);
+        const rafter = box(x - w / 2 + length / 2, height - .3 - beam % 3 * .16,
+          z - d * .35 + beam * d * .23, length, .14, .16, materials.wood);
+        rafter.rotation.z = -.04 - beam % 3 * .07;
+      }
+      for (let chunk = 0; chunk < 8; chunk++) {
+        const piece = box(x + 1.9 + chunk % 2 * Math.max(.25, (w / 2 - 2.5) * .5),
+          .18 + chunk % 2 * .12, front + .85 + Math.floor(chunk / 2) * d * .15,
+          .45 + chunk % 2 * .2, .35, .45, chunk % 3 ? materials.brick : materials.dark);
         piece.rotation.y = chunk * 1.7;
       }
     }
     for (let y = 4.6; y < height - .8; y += 2.6) for (let column = 0; column < 3; column++) {
       const wx = x + (column - 1) * w / 4;
+      if (!south && column >= 1) continue;
       if (building.damageOpening && column === 1 && y < building.damageOpening.top) continue;
       if (!south && (column + serial) % 3 === 0) continue;
       box(wx, y, front - .24, w / 7, 1.4, .08, south ? warm : materials.wood);
@@ -173,6 +199,17 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     return Math.max(0, 1 - Math.hypot(x, y)) ** 1.4 * 255;
   })), 32, 32);
   smokeTexture.needsUpdate = true;
+  const sootMaterial = new THREE.MeshBasicMaterial({ map: smokeTexture, color: 0x15120f,
+    transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide });
+  const sootParts = damaged.map(home => {
+    const geometry = new THREE.PlaneGeometry(home.width * .42, home.height * .6);
+    geometry.translate(home.x - home.width * .27, home.height * .34, home.z + home.depth / 2 + .24);
+    return geometry;
+  });
+  const soot = new THREE.Mesh(mergeGeometries(sootParts), sootMaterial);
+  soot.name = 'sihang-north-burned-facades'; scene.add(soot);
+  for (const geometry of sootParts) geometry.dispose();
+  budget.sootTriangles = damaged.length * 2;
   const smokeMaterial = new THREE.SpriteMaterial({ map: smokeTexture, color: 0x30302d, transparent: true, opacity: .65, depthWrite: false });
   for (const home of damaged.filter((_, i) => i % 6 === 0).slice(0, 6)) {
     budget.smokePlumes++;
@@ -224,7 +261,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
   budget.vegetationTriangles = trunks.count * 24 + crowns.count * 80 + reeds.count * 6;
   budget.signTriangles = signs.length * 2;
   budget.staticBatches = materialRegions.size;
-  budget.totalTriangles = budget.staticTriangles + budget.vegetationTriangles + budget.signTriangles;
+  budget.totalTriangles = budget.staticTriangles + budget.vegetationTriangles + budget.signTriangles + budget.sootTriangles;
   let night = false;
   const setNightLighting = enabled => {
     if (typeof enabled !== 'boolean') throw new TypeError('Concession lighting requires an explicit night state');

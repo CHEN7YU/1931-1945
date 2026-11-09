@@ -151,6 +151,7 @@ export function createNanjingCampaign() {
     civiliansArrived: 0,
     civiliansEvacuated: 0,
     civilianCasualties: 0,
+    civiliansUnrescued: 0,
     civilianEnRouteCasualties: 0,
     civiliansWaiting: 0,
     civiliansAboard: 0,
@@ -307,7 +308,8 @@ export function nanjingAISquadsBoarded(campaign) {
 
 export function nanjingCivilianEvacuationStatus(campaign, civilians) {
   const enRoute = civilians.reduce((count, civilian) =>
-    count + Number(!civilian.userData.dead && !civilian.userData.arrived && !civilian.userData.evacuated), 0);
+    count + Number(!civilian.userData.dead && !civilian.userData.arrived && !civilian.userData.evacuated &&
+      !civilian.userData.unrescued), 0);
   return { enRoute, waiting: campaign.civiliansWaiting, aboard: campaign.civiliansAboard,
     evacuated: campaign.civiliansEvacuated,
     ready: enRoute === 0 && campaign.civiliansWaiting === 0 && campaign.civiliansAboard === 0 };

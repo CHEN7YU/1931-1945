@@ -113,15 +113,20 @@ export function emplacementObstacles(point) {
   const cannon = point.profile === 'bofors75';
   const bounds = [{ minX: cannon ? -.65 : -.23, maxX: cannon ? .65 : .23,
     minZ: cannon ? -.65 : -.16, maxZ: cannon ? .25 : .16,
+    minY: point.enclosed ? .8 : 0,
     height: EMPLACEMENT_PROFILES[point.profile].antiAircraft ? 1.8 : 1.4 }];
   if (point.profile === 'maxim24' && point.enclosed) bounds.push(
-    { minX: -.6, maxX: .6, minZ: -.6, maxZ: .3, height: .7 });
+    { minX: -.12, maxX: .12, minZ: -.12, maxZ: .12, circular: true, radius: .12, height: .85 });
   if (point.profile === 'maxim24' && !point.enclosed) bounds.push(
     { minX: -1.32, maxX: 1.32, minZ: -.98, maxZ: -.32, height: .85 },
     { minX: -1.88, maxX: -1.18, minZ: -.3, maxZ: 1.05, height: .85 },
     { minX: 1.18, maxX: 1.88, minZ: -.3, maxZ: 1.05, height: .85 });
   const c = Math.cos(point.heading), s = Math.sin(point.heading);
   return bounds.map((box, index) => {
+    if (box.circular) return { id: `${point.id}:obstacle-${index}`, circular: true, cx: point.x, cz: point.z,
+      radius: box.radius, minX: point.x - box.radius, maxX: point.x + box.radius,
+      minZ: point.z - box.radius, maxZ: point.z + box.radius,
+      minY: point.altitude ?? 0, height: (point.altitude ?? 0) + box.height };
     const corners = [[box.minX, box.minZ], [box.minX, box.maxZ], [box.maxX, box.minZ], [box.maxX, box.maxZ]]
       .map(([x, z]) => ({ x: point.x + x * c + z * s, z: point.z - x * s + z * c }));
     const centerX = (box.minX + box.maxX) / 2, centerZ = (box.minZ + box.maxZ) / 2;
@@ -130,7 +135,8 @@ export function emplacementObstacles(point) {
       hx: (box.maxX - box.minX) / 2, hz: (box.maxZ - box.minZ) / 2,
       minX: Math.min(...corners.map(p => p.x)),
       maxX: Math.max(...corners.map(p => p.x)), minZ: Math.min(...corners.map(p => p.z)),
-      maxZ: Math.max(...corners.map(p => p.z)), minY: point.altitude ?? 0, height: (point.altitude ?? 0) + box.height };
+      maxZ: Math.max(...corners.map(p => p.z)), minY: (point.altitude ?? 0) + (box.minY ?? 0),
+      height: (point.altitude ?? 0) + box.height };
   });
 }
 

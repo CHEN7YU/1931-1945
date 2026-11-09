@@ -172,6 +172,7 @@ import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
+import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
@@ -2097,6 +2098,7 @@ function deploy(squadId, spawnId = null, prepare = false) {
 }
 
 function showOverlay(kind = 'pause') {
+  $('end-civilian-wait').hidden = true;
   if (kind === 'dead' && sihangCampaignMode && (sihangCampaign.outcome || sihangCampaign.stage === 'sihang-retreat')) {
     if (!sihangCampaign.outcome) sihangCampaign.outcome = 'squad-lost';
     if (battleEnding.fading || battleEnding.complete) return;
@@ -2172,6 +2174,11 @@ function showOverlay(kind = 'pause') {
   else if (encirclementMode && !ended && !dead) $('overlay-description').textContent =
     '第一阶段夺取三点形成合围；第二阶段先在C点周围布防20秒，日军分组集结后向东门突围并还击。歼灭至少2/3、逃脱不超过1/3为胜利目标；全部地面敌军被歼或逃脱后才结算。';
   $('resume').hidden = ended || dead;
+  const stranded = nanjingCampaignMode && kind === 'pause' && nanjingCampaign.stage === 'withdrawal-to-boats'
+    ? stalledCivilianCandidates(world.civilians, time).length : 0;
+  $('end-civilian-wait').hidden = stranded === 0;
+  $('end-civilian-wait').dataset.confirm = '';
+  $('end-civilian-wait').textContent = `结束等待 · 将卡住的 ${stranded} 人记为未救出`;
   if (kind === 'victory') $('overlay-description').textContent = '';
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
@@ -2185,7 +2192,7 @@ function showOverlay(kind = 'pause') {
   $('deployment-error').textContent = '';
   if (dead) refreshDeployment();
   $('battle-summary').textContent = nanjingCampaignMode
-    ? `个人击倒 ${kills}　友军击倒 ${teamKills}　百姓到达渡口 ${nanjingCampaign.civiliansArrived}　已撤离 ${nanjingCampaign.civiliansEvacuated}　伤亡 ${nanjingCampaign.civilianCasualties}`
+    ? `个人击倒 ${kills}　友军击倒 ${teamKills}　百姓到达渡口 ${nanjingCampaign.civiliansArrived}　已撤离 ${nanjingCampaign.civiliansEvacuated}　被日军击毙 ${nanjingCampaign.civilianCasualties}　未救出 ${nanjingCampaign.civiliansUnrescued}`
     : `个人击倒 ${kills}　友军击倒 ${teamKills}　我方控制 ${objectives.filter(p => p.owner === 'friendly').length}/3 · 日军 ${objectives.filter(p => p.owner === 'enemy').length}/3`;
   if (encirclementMode && encirclement.breakout) $('battle-summary').textContent =
     `个人击倒 ${kills}　友军击倒 ${teamKills}　合围残敌 ${encirclement.breakout.strength}　已歼 ${encirclement.breakout.killed}　逃脱 ${encirclement.breakout.escapedIds.length}/${encirclement.breakout.escapeLimit}`;
@@ -2629,7 +2636,7 @@ function occupyEmplacement(point, actor) {
   const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
   if (circleBlocked(pose.operator.x, pose.operator.z, .43,
     movementObstacles(pose.operator.x, pose.operator.z), pose.operator.y)) {
-    toast('炮位后方被挡住，无法进入'); return true;
+    toast(point.profile === 'bofors75' ? '炮位后方被挡住，无法进入' : '机枪操作位置被挡住，无法进入'); return true;
   }
   for (const id of new Set([point.operatorId, point.crewId])) {
     const previous = entities.soldiers.get(id);
@@ -3964,6 +3971,17 @@ function updatePlayer(dt) {
     if (fireRequested) fireFixedWeapon(point, actor);
     return;
   }
+  if (!actor.vehicleId && ['infantry', 'mortar'].includes(unit.type) && actor.traversal.kind === 'grounded' &&
+    keys.has('ShiftLeft') && !held.aiming && controlPose.stance !== 'standing') {
+    if (!circleBlocked(actor.position.x, actor.position.z, .4,
+      movementObstacles(actor.position.x, actor.position.z), actor.position.y, 1.75)) {
+      controlPose.stance = 'standing'; releaseWeaponMount(actor.weaponMount);
+      actor.tactics.sprintRiseBlocked = false;
+    } else if (!actor.tactics.sprintRiseBlocked) {
+      actor.tactics.sprintRiseBlocked = true;
+      toast('上方空间不足，暂时无法站起冲刺。');
+    }
+  } else actor.tactics.sprintRiseBlocked = false;
   const { yaw, stance } = controlPose;
   const position = actor.position;
   const emplaced = toolEquipped && actor.mortar && actor.mortar.phase !== 'carrying';
@@ -3980,7 +3998,8 @@ function updatePlayer(dt) {
     const steps = advanceLocomotion(motion, position, {
       type: unit.type, forward, sideways, yaw, stance, aiming: held.aiming,
       bodyHeight: Math.min(1.75, soldierPostureHeight(actor, 'body')),
-      sprint: keys.has('ShiftLeft') && !actor.grenades.action, walking: keys.has('KeyC'),
+      sprint: keys.has('ShiftLeft') && !actor.grenades.action && postureReady(actor),
+      walking: keys.has('KeyC') && !keys.has('ShiftLeft'),
       grounded: traversal.kind === 'grounded',
       busy: Boolean(actor.grenades.action) || unit.reloadUntil > time ||
         (!dadaoEquipped && unit.type === 'infantry' && actor.rifle.action !== 'idle') ||
@@ -6335,7 +6354,14 @@ function applyCivilianDamage(civilian, damage, source) {
     ferry.userData.passengers.splice(ferry.userData.passengers.indexOf(civilian),1);
     restoreFerryPassenger(civilian);
     scene.attach(civilian);
-  }else registerCivilianCasualties(nanjingCampaign, 1, data.arrived);
+  } else {
+    const countedArrival = data.arrived && !data.unrescued;
+    if (data.unrescued) {
+      if (!(nanjingCampaign.civiliansUnrescued > 0)) throw new Error('Unrescued civilian count is inconsistent');
+      data.unrescued = false; nanjingCampaign.civiliansUnrescued--;
+    }
+    registerCivilianCasualties(nanjingCampaign, 1, countedArrival);
+  }
   const queued = world.civilianQueue.indexOf(civilian);
   if (queued >= 0) world.civilianQueue.splice(queued, 1);
   for (const ferry of world.ferries) if (ferry.userData.boarding?.civilian === civilian) ferry.userData.boarding = null;
@@ -6367,6 +6393,49 @@ function updateNanjingCivilians(dt) {
       continue;
     }
     if (data.boarding || civilian.parent !== scene) continue;
+    if (nanjingCampaign.stage === 'withdrawal-to-boats' && !data.arrived && !data.evacuated && !data.unrescued &&
+      civilianRecoveryDue(data, civilian.position, time) && civilianCrowdPlanner.take()) {
+      const recovery = data.finalRecovery;
+      recovery.retryAt = time + 2; recovery.attempts++;
+      let path = rejoinCivilianRoute(civilian.position, data.waitingSlot,
+        world.civilianNavigate, world.civilianNavigationObstacles, civilianNavigationLookup);
+      if (!path?.length && data.streetLife) {
+        const exit = rejoinCivilianRoute(civilian.position, data.streetLife.exit,
+          data.streetLife.navigate, data.streetLife.navigationObstacles, data.streetLife.navigationLookup);
+        const onward = exit?.length ? world.civilianNavigate(data.streetLife.exit, data.waitingSlot) : [];
+        if (onward.length) { path = [...exit, ...onward]; data.streetEvacuating = true; }
+      }
+      if (!path?.length && recovery.attempts >= 3 && circleBlocked(civilian.position.x, civilian.position.z, .36,
+        civilianNavigationLookup.at(civilian.position.x, civilian.position.z))) {
+        const points = [data.homeRoute?.[0]];
+        for (const radius of [.5, 1, 2, 4]) for (let side = 0; side < 8; side++) {
+          const angle = side * Math.PI / 4;
+          points.push({ x: civilian.position.x + Math.cos(angle) * radius,
+            z: civilian.position.z + Math.sin(angle) * radius });
+        }
+        const clear = points.filter(p => p && Math.hypot(p.x - civilian.position.x, p.z - civilian.position.z) <= 4 &&
+          !world.isDeepWater(p.x, p.z) && !circleBlocked(p.x, p.z, .45, movementObstacles(p.x, p.z)) &&
+          !circleBlocked(p.x, p.z, .45, civilianNavigationLookup.at(p.x, p.z)) &&
+          peers.every(other => other === civilian || Math.hypot(other.position.x - p.x, other.position.z - p.z) >= .74))
+          .sort((a, b) => Math.hypot(a.x - civilian.position.x, a.z - civilian.position.z) -
+            Math.hypot(b.x - civilian.position.x, b.z - civilian.position.z));
+        for (const point of clear.slice(0, 2)) {
+          const onward = world.civilianNavigate(point, data.waitingSlot);
+          if (!onward.length) continue;
+          civilian.position.set(point.x, world.groundHeight(point.x, point.z), point.z);
+          recovery.relocations = (recovery.relocations ?? 0) + 1;
+          path = onward;
+          console.warn('Recovered obstructed civilian near its previous position', data.civilianId);
+          break;
+        }
+      }
+      if (path?.length) {
+        installCivilianRecovery(data, path, time);
+        civilian.visible = true;
+        if (!peers.includes(civilian)) peers.push(civilian);
+        if (recovery.attempts === 1) console.warn('Replanned stalled final civilian evacuation', data.civilianId);
+      } else if (recovery.attempts === 1) console.warn('Final civilian recovery is waiting for a clear route', data.civilianId);
+    }
     if (!data.active && civilian.visible && (!data.withdrawalWave || data.fleeReleased) &&
       frightenCivilian(data, civilian.position, combatSounds, time))
       data.releaseAt = Math.min(data.releaseAt, time);
@@ -6398,6 +6467,7 @@ function updateNanjingCivilians(dt) {
     if (routeTarget) response = updateCivilianThreatResponse(data, civilian.position, routeTarget, enemies,
       data.streetEvacuating ? data.streetLife.navigationObstacles : world.civilianNavigationObstacles,
       time, visibleThreat, concealed, data.streetEvacuating ? data.streetLife.navigationLookup : civilianNavigationLookup,threatBudget);
+    if (data.finalRecovery?.active) response = null;
     if (!data.arrived && routeTarget && !response?.threats.length &&
       time >= (data.routeRejoinAt ?? 0) &&
       !segmentClear(civilian.position, routeTarget, .36,
@@ -6473,12 +6543,13 @@ function updateNanjingCivilians(dt) {
           continue;
         }
         data.arrived = true;
+        if (data.unrescued) continue;
         registerCivilianArrival(nanjingCampaign);
         queue.push(civilian);
         continue;
       }
     }
-    if (data.arrived && civilian.parent === scene && response?.mode !== 'flee') {
+    if (data.arrived && !data.unrescued && civilian.parent === scene && response?.mode !== 'flee') {
       const anchor = data.route.at(-1), target = civilianWaitingDrift(data.civilianId, time, anchor);
       const beforeX = civilian.position.x, beforeZ = civilian.position.z;
       const moved = moveCivilianInCrowd(civilian, target, Math.min(.5 * dt,
@@ -6491,7 +6562,8 @@ function updateNanjingCivilians(dt) {
     }
   }
 
-  const allArrivalsResolved = world.civilians.every(civilian => civilian.userData.arrived || civilian.userData.dead);
+  const allArrivalsResolved = world.civilians.every(civilian => civilian.userData.arrived ||
+    civilian.userData.dead || civilian.userData.unrescued);
   if (nanjingCampaign.dockActivated) nanjingCampaign.boardingClock = (nanjingCampaign.boardingClock ?? 0) + dt;
   const troopsMayBoard = nanjingCampaign.stage === 'withdrawal-to-boats' &&
     nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
@@ -7166,13 +7238,17 @@ function updateHUD() {
     $('objective-title').textContent = title;
     document.querySelector('.objective-banner').hidden = false;
     $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense' ? gateLabel
-      : nanjingCampaign.stage === 'dock-defense' ? `掩护百姓登船 · 已撤离 ${nanjingCampaign.civiliansEvacuated} 人`
+      : nanjingCampaign.stage === 'dock-defense' ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
-            ? `百姓撤离 · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard}`
+            ? `百姓撤离 · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
             : nanjingPlayerFerry() ? '正在登船 · 你先上船，队友随后 · 满船或本队登齐后离岸'
               : nanjingAISquadsBoarded(nanjingCampaign) ? '友军已登船 · 随后登船撤离南京'
                 : `掩护友军登船 ${aiBoarded}/${nanjingCampaign.requiredAISquads} · 随后撤离南京` : help;
+    if (nanjingCampaign.stage === 'withdrawal-to-boats' && civilianEvacuation.ready)
+      $('objective-help').textContent += ` · 被日军击毙 ${nanjingCampaign.civilianCasualties}`;
+    if (nanjingCampaign.stage === 'withdrawal-to-boats' && nanjingCampaign.civiliansUnrescued > 0)
+      $('objective-help').textContent += ` · 未救出 ${nanjingCampaign.civiliansUnrescued}`;
     $('capture-fill').style.width = `${nanjingCampaign.stage === 'gate-defense'
       ? nanjingCampaign.gateCaptureSeconds / NANJING_GATE_CAPTURE_SECONDS * 100
       : Math.min(100, aiBoarded / Math.max(1, nanjingCampaign.requiredAISquads) * 100)}%`;
@@ -7618,6 +7694,21 @@ $('resume').addEventListener('click', () => {
   bindControlInput();
   $('overlay').hidden = true;
   lockMouse();
+});
+$('end-civilian-wait').addEventListener('click', () => {
+  if (state !== 'pause' || !nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal-to-boats') return;
+  const button = $('end-civilian-wait'), count = stalledCivilianCandidates(world.civilians, time).length;
+  if (!count) { button.hidden = true; return; }
+  if (button.dataset.confirm !== String(count)) {
+    button.dataset.confirm = String(count);
+    button.textContent = `再次点击确认：${count} 人未救出，不计为死亡或成功撤离`;
+    return;
+  }
+  const recorded = endCivilianRecoveryWait(nanjingCampaign, world.civilians, time);
+  button.hidden = true; button.dataset.confirm = '';
+  showOverlay('pause');
+  toast(`已记录 ${recorded} 人未救出，其余撤退仍须实际登船过江。`, 6);
+  updateHUD();
 });
 $('back-menu').addEventListener('click', () => {
   setGameState('menu');

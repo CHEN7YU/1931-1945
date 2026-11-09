@@ -42,8 +42,18 @@ try {
         },
         status() {
           const actor=controlledSoldier(entities),point=emplacements.get('gate-wall-mg');
-          return {mounted:actor.emplacementId,operator:point.operatorId,shots:point.shots,
+          return {mounted:actor.emplacementId,operator:point.operatorId,shots:point.shots,stance:controlPose.stance,
             position:actor.position.toArray(),room:world.casemateContains(actor.position)};
+        },
+        rotate(offset) {
+          const actor=controlledSoldier(entities),point=emplacements.get('gate-wall-mg');
+          if(actor.emplacementId)releaseEmplacement(actor);
+          point.yaw=point.heading+offset;point.view.userData.update();
+          const pose=emplacementPose(point,point.altitude);
+          actor.position.set(pose.operator.x,pose.operator.y,pose.operator.z);
+          controlPose.yaw=point.yaw;controlPose.pitch=-.6;controlPose.stance='standing';
+          actor.nativeMotion.position={x:actor.position.x,z:actor.position.z};
+          setGameState('playing');bindControlInput();updateCamera(0);
         },
         leave() {
           setGameState('pause');
@@ -73,6 +83,28 @@ try {
   await page.screenshot({ path: join(directory, 'wall-room-machine-gun.png') });
   await page.keyboard.press('f');
   await page.waitForFunction(() => !casemateReview.status().mounted);
+  for (const offset of [-.8, .8]) {
+    await page.evaluate(offset => casemateReview.rotate(offset), offset);
+    await page.keyboard.press('f');
+    await page.waitForFunction(() => casemateReview.status().mounted === 'gate-wall-mg');
+    await page.keyboard.press('f');
+    await page.waitForFunction(() => !casemateReview.status().mounted);
+  }
+  await page.evaluate(() => casemateReview.rotate(0));
+  await page.keyboard.press('ControlLeft');
+  await page.waitForFunction(() => casemateReview.status().stance === 'crouched');
+  const before = await page.evaluate(() => casemateReview.status().position);
+  await page.keyboard.down('s'); await page.waitForTimeout(600); await page.keyboard.up('s');
+  const backed = await page.evaluate(() => casemateReview.status().position);
+  assert.ok(Math.hypot(backed[0]-before[0],backed[2]-before[2])>.15,'crouched player can leave the gun area');
+  for (const lower of ['ControlLeft','KeyZ']) {
+    await page.evaluate(() => casemateReview.rotate(0));
+    await page.keyboard.press(lower);
+    await page.waitForFunction(() => casemateReview.status().stance !== 'standing');
+    await page.keyboard.down('ShiftLeft');
+    await page.waitForFunction(() => casemateReview.status().stance === 'standing');
+    await page.keyboard.up('ShiftLeft');
+  }
   const left = await page.evaluate(() => casemateReview.leave());
   assert.ok(Math.hypot(left[0] + 6.2, left[1], left[2]) < .04);
   assert.deepEqual(errors, []);

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { NANJING_CASEMATE as C, subtractCasemateBox } from '../src/nanjing-casemate.js';
 import { createNavigator } from '../src/core.js';
-import { NANJING_EMPLACEMENTS, createEmplacement, aimEmplacement, emplacementPose } from '../src/emplacements.js';
+import { NANJING_EMPLACEMENTS, createEmplacement, aimEmplacement, emplacementPose, emplacementObstacles } from '../src/emplacements.js';
 import { NANJING_GATE_HEIGHT, NANJING_GATE_POSITIONS, NANJING_FLANKING_BUFFERS } from '../src/nanjing-layout.js';
 import { moveSupported, TRAVERSAL } from '../src/infantry-traversal.js';
 let world;
@@ -47,17 +47,35 @@ test('actual infantry movement reaches the room from the core and returns withou
 });
 
 test('the fixed virtual muzzle has a clear slit view toward the bridge, while adjacent masonry remains solid', () => {
-  for (const z of [38, 52, 65]) {
-    const point = gun(), target = new THREE.Vector3(-24, 1.5, z);
+  for (const z of [38, 52, 65]) for (const x of [-28, -24, -20]) {
+    const point = gun(), target = new THREE.Vector3(x, 1.5, z);
     aimEmplacement(point, target, 10, C.floorY);
     const p = emplacementPose(point, C.floorY).muzzle, start = new THREE.Vector3(p.x, p.y, p.z);
     const direction = target.clone().sub(start), distance = direction.length();
     const ray = new THREE.Raycaster(start, direction.normalize(), 0, distance - .1);
     const hits = ray.intersectObjects(world.solids, true);
-    assert.equal(hits.length, 0, `bridge sight line blocked at z=${z}: ${hits[0]?.object.userData.nanjingFeature}`);
+    const walls = hits.filter(hit => !String(hit.object.userData.nanjingFeature).startsWith('bridge-'));
+    assert.equal(walls.length, 0, `firing room blocks the expanded view at ${x},${z}: ${walls[0]?.object.userData.nanjingFeature}`);
+    if (x === -24) assert.equal(hits.length, 0, 'the original bridge-centre sight lines stay clear');
   }
   const ray = new THREE.Raycaster(new THREE.Vector3(-14, 4.45, 19.7), new THREE.Vector3(0, 0, 1), 0, 10);
   assert.ok(ray.intersectObjects(world.solids, true).length > 0, 'only the firing slit is open');
+});
+
+test('all permitted gun headings retain a clear operator position and a crouched exit', () => {
+  const point = gun(), own = emplacementObstacles(point);
+  for (let index = 0; index <= 20; index++) {
+    point.yaw = point.heading - point.weapon.settings.traverse + index * point.weapon.settings.traverse / 10;
+    const operator = emplacementPose(point, C.floorY).operator;
+    for (const height of [.65, 1.2, 1.75]) {
+      const position = new THREE.Vector3(operator.x, operator.y, operator.z);
+      moveSupported(position, Math.sin(point.yaw) * .3, Math.cos(point.yaw) * .3, .43,
+        world.obstacles, world.walkHeight, world.moveInfantry, height, 2);
+      assert.ok(Math.hypot(position.x - operator.x, position.z - operator.z) > .25, 'rotated operator can back away');
+    }
+  }
+  assert.equal(world.solids.some(mesh => mesh.userData.nanjingFeature === 'casemate-sign'), false);
+  assert.equal(own.some(obstacle => obstacle.circular), true, 'the tripod uses its actual narrow central support');
 });
 
 test('room routing also descends the existing wall ramps from the gate crown', () => {

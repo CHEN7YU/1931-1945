@@ -618,9 +618,14 @@ export function makeNanjingBattlefield(scene, surface) {
   for (const side of [-1, 1]) {
     const x = side * (GATE_WIDTH / 2 - NANJING_RAMPART_THICKNESS / 2);
     const curtainHeight = WALL_WALK.height - .4;
-    const curtain = addBox(x, curtainHeight / 2, (NANJING_GATE_NORTH_EDGE + NANJING_GATE_SOUTH_EDGE) / 2, NANJING_RAMPART_THICKNESS,
-      curtainHeight, GATE_LENGTH, stone, true, true);
-    curtain.userData.nanjingFeature = 'barbican-curtain-wall';
+    for (const piece of subtractCasemateBox({ minX: x - NANJING_RAMPART_THICKNESS / 2,
+      maxX: x + NANJING_RAMPART_THICKNESS / 2, minY: 0, maxY: curtainHeight,
+      minZ: NANJING_GATE_NORTH_EDGE, maxZ: NANJING_GATE_SOUTH_EDGE })) {
+      const curtain = addBox((piece.minX + piece.maxX) / 2, (piece.minY + piece.maxY) / 2,
+        (piece.minZ + piece.maxZ) / 2, piece.maxX - piece.minX, piece.maxY - piece.minY,
+        piece.maxZ - piece.minZ, stone, true, true);
+      curtain.userData.nanjingFeature = 'barbican-curtain-wall';
+    }
     let startZ = NANJING_GATE_NORTH_EDGE;
     for (const gate of [...gateways, { z: NANJING_GATE_SOUTH_EDGE, depth: 0 }]) {
       const endZ = gate.z - gate.depth / 2;
@@ -805,9 +810,6 @@ export function makeNanjingBattlefield(scene, surface) {
     { minX: slit.minX, maxX: slit.maxX, minY: casemate.floorY, maxY: slit.minY },
     { minX: slit.minX, maxX: slit.maxX, minY: slit.maxY, maxY: casemate.ceilingY },
   ]) roomBox({ ...bounds, minZ: room.maxZ - .04, maxZ: room.maxZ - .005 }, roomPlaster, 'casemate-plaster');
-  const casemateSign = makePlaque('機槍掩體', -9.2, 2.1, casemate.entrance.z, 1.4, .3);
-  casemateSign.rotation.y = Math.PI / 2;
-  casemateSign.userData.nanjingFeature = 'casemate-sign';
   sceneArt.casemate = { stairs: casemate.stairs.steps, protectedRoom: true, firingSlit: true };
   const cave = NANJING_SOLDIER_CAVE;
   const caveFloor = addBox(cave.x, cave.floorHeight / 2, cave.z, cave.width, cave.floorHeight, cave.depth, stone);
@@ -1750,6 +1752,8 @@ export function makeNanjingBattlefield(scene, surface) {
           threatResponse: null, escapeMotion: null, escapeMode: null,
           threatThinkCount:0,
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
+          finalRecovery: null,
+          unrescued: false,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
           streetEvacuating: false, route: data.refugeeRestRoute ?? data.homeRoute,
