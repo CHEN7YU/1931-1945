@@ -290,6 +290,14 @@ test('a hidden previously equipped blade cannot replace the firearm transform in
     force.update([actor], 3, null, 'low', { detailLimit: 0 });
     assert.equal(force.snapshot.far, 1);
     assert.equal(force.snapshot.coarse, Number(distance === 60));
+    if (distance === 4) {
+      const body = force.root.children.find(mesh => mesh.isInstancedMesh && mesh.count &&
+        mesh.geometry.attributes.nraSkinTint && mesh.geometry.morphAttributes.position?.length);
+      assert.ok(body.geometry.index, 'casualty frames must reuse their original vertex identities');
+      assert.equal(body.geometry.index.count, 36, 'indexing keeps every original body triangle');
+      assert.equal(body.geometry.attributes.position.count, 24);
+      assert.ok(body.geometry.morphAttributes.position.every(frame => frame.count === 24));
+    }
     const weapons = force.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
     assert.ok(weapons.length > 0);
     for (const mesh of weapons) {

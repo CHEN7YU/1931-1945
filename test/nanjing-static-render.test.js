@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
-test('Nanjing batches residential rendering but retains collision geometry and all moving actors', () => {
+test('Nanjing batches residential and castle rendering but retains collision geometry and all moving actors', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   const originals = world.solids.filter(object => object.userData.staticResidential);
   const batches = scene.children.filter(object => object.userData.staticSceneBatch);
   assert.ok(originals.length > 2000, 'verify the real residential meshes rather than a proxy scene');
   assert.ok(batches.length < originals.length / 10, 'material/cell batching must materially reduce submissions');
-  assert.equal(world.staticRendering.sources, originals.length);
+  assert.ok(world.staticRendering.masonrySources > 600, 'the actual castle and bank decorations are batched too');
+  assert.equal(world.staticRendering.sources, originals.length + world.staticRendering.masonrySources);
   assert.equal(world.staticRendering.batches, batches.length);
   assert.ok(originals.every(object => object.parent === null));
   assert.ok(world.flags.every(flag => flag.parent === scene));

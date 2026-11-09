@@ -26,6 +26,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
   let enabled = false, context = null, sessionStarted = null, sequence = 0, sessionId = uuid(), started = now(), current = null;
   let frameScopes = emptyScopes(), frameStarted = 0, intervalMs = 0, queue = [], pending = null, controller = null;
   let recording = false;
+  let previousFrame = null;
   let runtimeLimitWarned = false;
   let loadingStarted = null, loadingTimer = null;
   const scopeSerial = {};
@@ -91,6 +92,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       generation++; enabled = value; controller?.abort(); pending = controller = null;
       clearTimeout(loadingTimer); loadingTimer = null; loadingStarted = null;
       recording = false;
+      previousFrame = null;
       queue = []; current = null; frameScopes = emptyScopes(); started = lastSend = now();
       if (value) {
         sessionId = uuid(); sequence = saved = dropped = failures = 0;
@@ -128,6 +130,7 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
       if (!enabled) return;
       const previous = recording;
       recording = visible && activeStates.has(state);
+      if (!previous || !recording) previousFrame = null;
       frameScopes = emptyScopes(); frameStarted = now();
       intervalMs = previous && recording ? Math.max(0, Math.min(60000, elapsed)) : null;
       if (!previous && recording) started = now();
@@ -155,10 +158,12 @@ export function createPerformanceDiagnostics({ build, environment, now = () => p
         item.maxFrameMs = Math.max(item.maxFrameMs, intervalMs);
         if (intervalMs > 100) {
           item.longFrames++;
-          item.slowFrames.push({ frameMs: intervalMs, callbackMs: Math.min(60000, now() - frameStarted), scopes: frameScopes });
+          // The rAF interval includes the preceding callback, not this callback's work.
+          if (previousFrame) item.slowFrames.push({ frameMs: intervalMs, ...previousFrame });
           item.slowFrames.sort((a, b) => b.frameMs - a.frameMs); item.slowFrames.length = Math.min(3, item.slowFrames.length);
         }
       }
+      previousFrame = { callbackMs: Math.min(60000, now() - frameStarted), scopes: frameScopes };
       if (now() - started >= 5000) collect('interval');
       if (now() - lastSend >= 30000) { lastSend = now(); void upload(); }
     },

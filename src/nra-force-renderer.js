@@ -373,7 +373,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       geometry.morphAttributes.normal = poses.slice(1).map(pose => pose.geometry.attributes.normal);
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     }
-    if (travelMorph && !lowMemory) geometry = indexedAnimatedSource(geometry);
+    if ((travelMorph || dead) && !lowMemory) geometry = indexedAnimatedSource(geometry);
     const residentGeometry = lowMemory ? createLowMemoryPoseGeometry(geometry) : geometry;
     residentResources.sourceBodyBytes += geometryBytes(geometry);
     residentResources.residentBodyBytes += geometryBytes(residentGeometry);
@@ -431,7 +431,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       supportControl: support ? { morphTargetInfluences: Array(supportSamples.length - 1).fill(0) } : null,
       gunFrames: poses.map(pose => pose.gunMatrix),
       footprint: footprint ? Object.freeze(footprint) : null });
-    for (const pose of poses.slice(lowMemory || travelMorph ? 0 : 1)) pose.geometry.dispose();
+    for (const pose of poses.slice(lowMemory || travelMorph || dead ? 0 : 1)) pose.geometry.dispose();
     yield { completed: bank + 1, total: supportStart + supportBanks };
   }
   bankTemplate.bind(null);

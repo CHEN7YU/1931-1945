@@ -29,6 +29,21 @@ function fixture(send) {
     } };
 }
 
+test('long intervals retain the preceding expensive callback instead of blaming the following fast frame', async () => {
+  const f = fixture();
+  f.diagnostics.setEnabled(true);
+  f.frame(16, 250);
+  f.frame(250, 2);
+  f.diagnostics.flush();
+  await settle();
+  const batch = f.sent[0];
+  assert.equal(validatePerformanceBatch(batch), null);
+  const slow = batch.windows[0].slowFrames[0];
+  assert.equal(slow.frameMs, 250);
+  assert.equal(slow.callbackMs, 250);
+  assert.equal(slow.scopes.render.maxMs, 250);
+});
+
 test('recoverable errors reach the opt-in private diagnostic batch as bounded anonymous signatures, not raw stacks or messages', async () => {
   const f = fixture(), error = new Error('private-player-name and secret credential must not be sent');
   error.name = 'NativeGaitReachError';

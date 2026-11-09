@@ -1556,7 +1556,15 @@ export function makeNanjingBattlefield(scene, surface) {
   const groundSurface = (x, z) => x >= -73 && x <= -59 && z >= -90 && z <= -70 ? 'wood'
     : Math.abs(z - 52) < 13 || Math.abs(x + 84) < 12
       ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
-  const staticRendering = batchStaticScene(scene, residentialMeshes);
+  const masonryFeatures = new Set(['battlement-coping', 'northern-city-wall-merlon',
+    'west-wall-stair-tread', 'east-wall-stair-tread', 'river-stone-bank', 'city-wall-merlon',
+    'wall-merlon', 'city-lane', 'arched-gateway', 'soldier-cave-frame', 'flanking-masonry-core',
+    'curtain-merlon', 'gate-tower-crenel', 'flanking-ramp-cheek', 'wall-walk',
+    'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall']);
+  const masonryMeshes = solids.filter(mesh => mesh.isMesh && masonryFeatures.has(mesh.userData.nanjingFeature) &&
+    !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent);
+  const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
+  staticRendering.masonrySources = masonryMeshes.length;
   sceneArt.staticRendering = staticRendering;
   return {
     solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,

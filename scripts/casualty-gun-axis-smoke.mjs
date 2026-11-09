@@ -12,7 +12,7 @@ try {
   await page.route('**/__casualty-gun-axis', route => route.fulfill({ contentType: 'text/html',
     body: '<html><head><link rel="icon" href="data:,"></head><body></body></html>' }));
   await page.goto(new URL('/__casualty-gun-axis', process.env.GAME_URL ?? 'http://127.0.0.1:5347/').href);
-  const { samples, images } = await page.evaluate(async () => {
+  const { samples, images } = await page.evaluate(async lowMemory => {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { loadIjaCharacter, createIjaForceRendererAsync } = await import('/src/ija-character.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
@@ -38,7 +38,7 @@ try {
     for (const team of ['friendly', 'enemy']) {
     const factory = await (team === 'friendly' ? loadNraCharacter : loadIjaCharacter)(() => 0);
     const force = await (team === 'friendly' ? createNraForceRendererAsync : createIjaForceRendererAsync)(
-      scene, camera, factory, 1, { lowMemory: true });
+      scene, camera, factory, 1, { lowMemory });
     const view = factory.createView();
     await force.prepare({ async compileAsync() {} });
     for (const weapon of ['rifle', 'type11']) for (const stance of ['standing', 'kneeling', 'prone'])
@@ -86,7 +86,7 @@ try {
     }
     renderer.dispose();
     return { samples, images };
-  });
+  }, process.env.LOW_MEMORY !== 'false');
   await writeFile(join(directory, 'dead-gun-directions.json'), JSON.stringify({ samples, errors }, null, 2));
   for (const image of images)
     await writeFile(join(directory, image.name), Buffer.from(image.data.split(',')[1], 'base64'));
