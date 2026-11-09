@@ -335,7 +335,9 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       const baked = [];
       let gunMatrix = null;
       bankTemplate.root.traverse(mesh => {
-        if (mesh.userData.personalWeapon && !mesh.userData.engineeringTool) gunMatrix = mesh.matrixWorld.clone();
+        // Support poses can hide every weapon; otherwise prefer the visible weapon over a stale hidden blade.
+        if (mesh.userData.personalWeapon && !mesh.userData.engineeringTool && (!gunMatrix || mesh.visible))
+          gunMatrix = mesh.matrixWorld.clone();
       });
       const meshes = [];
       bankTemplate.root.traverseVisible(mesh => {

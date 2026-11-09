@@ -257,6 +257,51 @@ test('shared casualty banks grow explicitly when the minimum retention time temp
   geometry.dispose(); material.dispose();
 });
 
+test('a hidden previously equipped blade cannot replace the firearm transform in casualty banks', async () => {
+  await loadDadaoSurfaces(1, { async loadAsync() { return new THREE.Texture({ width: 1, height: 1 }); } });
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, -4); camera.lookAt(0, .4, 0); camera.updateMatrixWorld(true);
+  const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const profile = createNativeGaitProfile(track), geometry = new THREE.BoxGeometry(.4, 1.7, .3);
+  const material = new THREE.MeshStandardMaterial();
+  function view() {
+    const root = new THREE.Group(), gun = new THREE.Group();
+    root.add(new THREE.Mesh(geometry, material), gun); gun.userData.personalWeapon = true;
+    let blade = null;
+    return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null, bind() {},
+      update(actor) {
+        if (actor.dadao && !blade) {
+          blade = new THREE.Group(); blade.userData.personalWeapon = true;
+          blade.position.y = 1.3; root.add(blade);
+        }
+        if (blade) blade.visible = Boolean(actor.dadao);
+        gun.visible = !actor.dadao; gun.position.y = actor.health <= 0 ? .08 : 1.2;
+        root.position.copy(actor.position); root.updateMatrixWorld(true); root.visible = true;
+      } };
+  }
+  const force = createNraForceRenderer(scene, camera, view(), 1);
+  const actor = { id: 'fallen-rifleman', team: 'friendly', unitId: 'regression', health: 0,
+    position: new THREE.Vector3(), heading: 0, walkPhase: 0, locomotion: { speed: 0 }, rifle: createRifleState() };
+  actor.nativeMotion = createNraMotion(profile, actor);
+  actor.casualty = createCasualtyState(actor, 0, null, { variant: 2, retainGun: false });
+  await force.prepare({ async compileAsync() {} });
+  for (const distance of [4, 60]) {
+    camera.position.z = -distance; camera.updateMatrixWorld(true);
+    force.update([actor], 3, null, 'low', { detailLimit: 0 });
+    assert.equal(force.snapshot.far, 1);
+    assert.equal(force.snapshot.coarse, Number(distance === 60));
+    const weapons = force.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
+    assert.ok(weapons.length > 0);
+    for (const mesh of weapons) {
+      const matrix = new THREE.Matrix4(); mesh.getMatrixAt(0, matrix);
+      assert.ok(Math.abs(matrix.elements[13] - .08) < 1e-6,
+        `released rifle used the hidden blade height: ${matrix.elements[13]}`);
+    }
+  }
+  for (const mesh of force.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }
+  geometry.dispose(); material.dispose();
+});
+
 test('all friendly identities retain uniforms while detail pooling survives casualties and replacement deployments', async () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
   camera.position.set(0, 1.67, 0);
