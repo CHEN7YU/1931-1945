@@ -1175,12 +1175,12 @@ export function makeNanjingBattlefield(scene, surface) {
     }
   }
   const forwardDefenses = [];
-  function placeForwardSandbag(x, z, row, id, yaw = 0, feature = 'forward-sandbag') {
+  function placeForwardSandbag(x, z, row, id, yaw = 0, feature = 'forward-sandbag', floor = 0) {
     let seed = 2166136261;
     for (const char of id) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619);
     const variation = shift => ((seed >>> shift) & 31) / 31 - .5;
     const visual = new THREE.Mesh(detailedSandbagGeometry, burlap);
-    visual.position.set(x + variation(0) * .07, .21 + row * .36 + variation(5) * .035,
+    visual.position.set(x + variation(0) * .07, floor + .21 + row * .36 + variation(5) * .035,
       z + variation(10) * .07);
     visual.scale.set(.59 * (1 + variation(15) * .045), .23 * (1 + variation(20) * .1),
       .44 * (1 + variation(25) * .06));
@@ -1197,7 +1197,7 @@ export function makeNanjingBattlefield(scene, surface) {
     collision.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(collision);
     obstacles.push({ minX: bounds.min.x, maxX: bounds.max.x, minZ: bounds.min.z, maxZ: bounds.max.z,
-      minY: 0, height: bounds.max.y });
+      minY: floor, height: bounds.max.y });
   }
   function addForwardDefense(centerX, z, label, count = 10, armBags = 4, yaw = 0, defenses = forwardDefenses) {
     const spacing = .88;
@@ -1237,6 +1237,14 @@ export function makeNanjingBattlefield(scene, surface) {
   addForwardDefense(-65, -68, 'dock-south', 5, 2, 0, dockDefenses);
   addForwardDefense(-54, -85, 'dock-east-north', 4, 2, Math.PI / 2, dockDefenses);
   addForwardDefense(-54, -74, 'dock-east-south', 4, 2, Math.PI / 2, dockDefenses);
+  for (const [label, z] of [['north', -89.4], ['south', -70.6]]) {
+    for (let row = 0; row < 3; row++) for (let column = 0; column < 4; column++) {
+      placeForwardSandbag(-64.5 + (column - 1.5) * .88 + (row % 2 ? .18 : 0), z, row,
+        `dock-platform-${label}-${row}-${column}`, 0, 'dock-platform-sandbag', .36);
+    }
+    town.covers.push({ id: `dock-platform-${label}`, x: -64.5, z: z + (label === 'north' ? 1 : -1), kind: 'low' });
+    dockDefenses.push({ id: `dock-platform-${label}`, x: -64.5, z, width: 3.82, depth: .88, height: 1.16 });
+  }
   const dock = addBox(NANJING_DOCK.x, .18, NANJING_DOCK.z, 14, .36, 20, timber);
   dock.receiveShadow = true;
   const rampGeometry = new THREE.BufferGeometry();
@@ -1753,7 +1761,7 @@ export function makeNanjingBattlefield(scene, surface) {
           threatThinkCount:0,
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           finalRecovery: null,
-          unrescued: false,
+          unrescued: false, enteredCity: false,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
           streetEvacuating: false, route: data.refugeeRestRoute ?? data.homeRoute,

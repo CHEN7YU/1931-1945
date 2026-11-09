@@ -114,7 +114,7 @@ import { createMissionBriefing } from './mission-briefing.js';
 import { civilianStepAvoidsThreats, updateCivilianThreatResponse } from './civilian-threat.js';
 import { advanceCivilianMotion } from './civilian-motion.js';
 import { traceCivilianBullet } from './civilian-hits.js';
-import { NANJING_EMPLACEMENTS, EMPLACEMENT_PROFILES, createEmplacement, emplacementLook, emplacementPose,
+import { NANJING_EMPLACEMENTS, EMPLACEMENT_PROFILES, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, aimEmplacement, emplacementCanAimAt,
   emplacementObstacles, moveArtillery, setArtilleryPosition, damageEmplacement, fireSupportPriority,
   artilleryPositionTargets } from './emplacements.js';
@@ -160,11 +160,11 @@ import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
 import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks } from './aircraft-wreck.js';
 import { updateMortarModel } from './mortar-model.js';
 import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from './player-aircraft.js';
-import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
+import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
   nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
   recordNanjingAISquadBoarding, nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
-  registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus } from './nanjing-campaign.js';
+  registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, recordNanjingCivilianCityEntry } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint, nanjingCoreGuard } from './nanjing-defense.js';
 import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjingDockPathClear,
   nanjingDockOutsideGoal, nanjingDockAssaultGoal, assignNanjingDockDefense } from './nanjing-dock-defense.js';
@@ -172,7 +172,7 @@ import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
-import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait } from './civilian-recovery.js';
+import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
@@ -2633,11 +2633,15 @@ function syncArtilleryCollision(point) {
 function occupyEmplacement(point, actor) {
   if (point.health <= 0) return false;
   if(point.weapon.settings.antiAircraft&&actor!==controlledSoldier(entities))return false;
-  const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
-  if (circleBlocked(pose.operator.x, pose.operator.z, .43,
-    movementObstacles(pose.operator.x, pose.operator.z), pose.operator.y)) {
+  const entry = emplacementEntry(point, point.altitude ?? world.groundHeight(point.x, point.z),
+    operator => circleBlocked(operator.x, operator.z, .43,
+      movementObstacles(operator.x, operator.z), operator.y));
+  if (!entry) {
     toast(point.profile === 'bofors75' ? '炮位后方被挡住，无法进入' : '机枪操作位置被挡住，无法进入'); return true;
   }
+  point.yaw = entry.yaw;
+  if (point.view) point.view.userData.update();
+  const { pose } = entry;
   for (const id of new Set([point.operatorId, point.crewId])) {
     const previous = entities.soldiers.get(id);
     if (previous && previous !== actor) {
@@ -6380,6 +6384,8 @@ function updateNanjingCivilians(dt) {
   }
   const threatBudget={remaining:6};
   const queue = world.civilianQueue;
+  const leftBehind = expireCivilianShoreWait(nanjingCampaign, world.civilians, world.ferries, queue);
+  if (leftBehind) toast(`撤退等待结束：${leftBehind} 名百姓未救出；已登船百姓继续过江。`, 8);
   const peers = world.civilians.filter(other => other.visible && other.parent === scene && !other.userData.dead);
   const visibleThreat = (from, enemy, vehicleId=null) => hasLine(
     new THREE.Vector3(from.x, from.y + 1.1, from.z), new THREE.Vector3(enemy.x, enemy.y + 1.2, enemy.z), 30,vehicleId);
@@ -6529,6 +6535,7 @@ function updateNanjingCivilians(dt) {
             data.streetEvacuating ? data.streetLife.navigationObstacles : world.civilianNavigationObstacles,
             threats.length ? (from, to) => civilianStepAvoidsThreats(from, to, threats) : null, civilianCrowdPlanner);
           civilian.position.y = world.groundHeight(civilian.position.x, civilian.position.z);
+          recordNanjingCivilianCityEntry(nanjingCampaign, civilian);
           advanceCivilianMotion(civilian, { dt, now: time, moved,
             dx: civilian.position.x - beforeX, dz: civilian.position.z - beforeZ,
             mode: threats.length ? moved > .001 ? 'flee' : 'cower' : 'route' });
@@ -6608,8 +6615,10 @@ function updateNanjingCivilians(dt) {
         const shore = { x: -72.2, z: ferry.position.z };
         const path = rejoinCivilianRoute(civilian.position, shore, world.civilianNavigate,
           world.civilianNavigationObstacles, civilianNavigationLookup);
-        if (path === null) throw new Error(`No boarding route for civilian ${civilian.userData.civilianId}: ` +
-          `${world.civilianNavigate.stats.reason} from ${JSON.stringify(civilian.position)} to ${JSON.stringify(shore)}`);
+        if (path === null) {
+          console.warn(`No boarding route for civilian ${civilian.userData.civilianId}: ${world.civilianNavigate.stats.reason}`);
+          continue;
+        }
         queue.splice(queue.indexOf(civilian), 1);
         civilian.userData.boarding = true;
         civilian.userData.escapeMotion = null;
@@ -7237,16 +7246,16 @@ function updateHUD() {
       `<span class="objective-chip neutral" aria-label="上新河渡口">渡</span>`;
     $('objective-title').textContent = title;
     document.querySelector('.objective-banner').hidden = false;
-    $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense' ? gateLabel
+    $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense' ? `${gateLabel} · 百姓已安全进城 ${nanjingCampaign.civiliansEnteredCity} · 遭日军残害致死 ${nanjingCampaign.civilianCasualties}`
       : nanjingCampaign.stage === 'dock-defense' ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
-            ? `百姓撤离 · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
+            ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}${!nanjingCampaign.finalShoreWaitExpired ? ` · 等待 ${Math.max(0, Math.ceil(NANJING_CIVILIAN_FINAL_WAIT - nanjingCampaign.finalWithdrawalElapsed))}秒` : ''}`
             : nanjingPlayerFerry() ? '正在登船 · 你先上船，队友随后 · 满船或本队登齐后离岸'
               : nanjingAISquadsBoarded(nanjingCampaign) ? '友军已登船 · 随后登船撤离南京'
                 : `掩护友军登船 ${aiBoarded}/${nanjingCampaign.requiredAISquads} · 随后撤离南京` : help;
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && civilianEvacuation.ready)
-      $('objective-help').textContent += ` · 被日军击毙 ${nanjingCampaign.civilianCasualties}`;
+      $('objective-help').textContent += ` · 百姓已过江 ${civilianEvacuation.evacuated} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`;
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && nanjingCampaign.civiliansUnrescued > 0)
       $('objective-help').textContent += ` · 未救出 ${nanjingCampaign.civiliansUnrescued}`;
     $('capture-fill').style.width = `${nanjingCampaign.stage === 'gate-defense'

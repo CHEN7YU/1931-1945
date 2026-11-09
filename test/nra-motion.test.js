@@ -7,7 +7,7 @@ import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
-import { createRifleState } from '../src/rifle-action.js';
+import { createRifleState, shootRifle } from '../src/rifle-action.js';
 import { RIFLE_HAND_SAMPLES, rifleHandWeights } from '../src/rifle-hand-action.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
@@ -47,7 +47,7 @@ test('rifle action body blend matches its distant samples and excludes support e
   const person = { health: 100, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
     locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState() };
   person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
-  const sample = { hand: .7, loading: .6, boltLift: .4, boltTravel: .05, cartridgePush: .3 };
+  const sample = { hand: .7, loading: .6, boltLift: .4, boltTravel: .05, cartridgePush: .3, bodyRecoil: .35 };
   const direct = sampleNraMotion(person, false, sample).upperBody;
   const weights = rifleHandWeights(sample);
   for (const axis of Object.keys(direct)) {
@@ -62,6 +62,22 @@ test('rifle action body blend matches its distant samples and excludes support e
     assert.deepEqual(sampleNraMotion({ ...person, ...patch }, false, sample).upperBody,
       { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 });
   }
+});
+
+test('shot-body recoil follows the owned shot without shifting its initial muzzle or changing ammunition', () => {
+  const person = { health: 100, rifleReady: true, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+    locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState() };
+  person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+  const muzzle = nativeMuzzleLocal(person);
+  assert.ok(shootRifle(person.rifle));
+  assert.deepEqual(nativeMuzzleLocal(person), muzzle);
+  assert.equal(sampleNraMotion(person).upperBody.pitch, 0);
+  person.rifle.elapsed = .025;
+  assert.ok(sampleNraMotion(person).upperBody.pitch > 0);
+  person.rifle.elapsed = .13;
+  assert.equal(sampleNraMotion(person).upperBody.pitch, 0);
+  assert.ok(sampleNraMotion(person).rifleOperation.hand > 0);
+  assert.equal(person.rifle.ammo, 4);
 });
 
 function actor() {

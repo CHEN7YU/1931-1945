@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait } from '../src/civilian-recovery.js';
-import { createNanjingCampaign, nanjingCivilianEvacuationStatus } from '../src/nanjing-campaign.js';
+import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from '../src/civilian-recovery.js';
+import { createNanjingCampaign, nanjingCivilianEvacuationStatus, advanceNanjingCampaign, NANJING_CIVILIAN_FINAL_WAIT } from '../src/nanjing-campaign.js';
 
 const dataFor = () => ({ waitingSlot: { x: 10, z: 0 }, route: [{ x: 5, z: 0 }, { x: 10, z: 0 }],
   waypoint: 0, arrived: false, dead: false, evacuated: false, active: true });
@@ -86,4 +86,32 @@ test('waiting and boarded civilians are never abandoned and still prevent squad 
   assert.equal(nanjingCivilianEvacuationStatus(campaign, people).ready, false);
   campaign.stage = 'dock-defense';
   assert.throws(() => endCivilianRecoveryWait(campaign, people, 20), /final withdrawal/);
+});
+
+test('final deadline marks only people on shore unrescued while boats must really cross', () => {
+  const campaign = createNanjingCampaign(); campaign.stage = 'withdrawal-to-boats';
+  campaign.civiliansWaiting = 2; campaign.civiliansAboard = 1; campaign.civiliansEvacuated = 4;
+  const person = extra => ({ userData: { ...dataFor(), ...extra } });
+  const road = person({}), waiting = person({ arrived: true }), boarding = person({ arrived: true, boarding: true });
+  const aboard = person({ arrived: true, boarding: true }), dead = person({ dead: true });
+  const queue = [waiting], ferry = { userData: { passengers: [aboard], boarding: { civilian: boarding } } };
+  const people = [road, waiting, boarding, aboard, dead];
+  advanceNanjingCampaign(campaign, NANJING_CIVILIAN_FINAL_WAIT - .01);
+  assert.equal(expireCivilianShoreWait(campaign, people, [ferry], queue), 0);
+  advanceNanjingCampaign(campaign, 0);
+  assert.equal(campaign.finalWithdrawalElapsed, NANJING_CIVILIAN_FINAL_WAIT - .01);
+  advanceNanjingCampaign(campaign, .01);
+  assert.equal(expireCivilianShoreWait(campaign, people, [ferry], queue), 3);
+  assert.equal(campaign.civiliansUnrescued, 3);
+  assert.equal(campaign.civiliansEvacuated, 4);
+  assert.equal(campaign.civiliansAboard, 1);
+  assert.equal(campaign.civiliansWaiting, 0);
+  assert.equal(aboard.userData.unrescued, undefined);
+  assert.equal(boarding.userData.boarding, false);
+  assert.equal(ferry.userData.boarding, null);
+  assert.deepEqual(queue, []);
+  assert.equal(nanjingCivilianEvacuationStatus(campaign, people).ready, false);
+  assert.equal(expireCivilianShoreWait(campaign, people, [ferry], queue), 0);
+  campaign.civiliansAboard = 0; aboard.userData.evacuated = true;
+  assert.equal(nanjingCivilianEvacuationStatus(campaign, people).ready, true);
 });

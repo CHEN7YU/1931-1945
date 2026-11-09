@@ -731,7 +731,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
               actor.casualty.variant * 2 + Number(actor.casualty.retainGun)
             : shield >= 0 ? shieldStart + shield + (sihangShieldInstalling(actor) ? 2 : 0)
             : support >= 0 ? supportStart + support
-            : operation?.hand > .001 ? actionStart + Math.max(0, actionStances.indexOf(actionStance))
+            : operation && (operation.hand > .001 || operation.bodyRecoil > .001) ? actionStart + Math.max(0, actionStances.indexOf(actionStance))
             : actor.weaponBlocked && closeBanks ? closeStart + (posture ? 1 + postures.indexOf(posture) : 0)
             : turning ? turnStart + Number(actor.nativeMotion.turn.direction > 0)
             : melee ? meleeStart + (charging && pose.weight > .45 ? Math.round(phase * phases) % phases

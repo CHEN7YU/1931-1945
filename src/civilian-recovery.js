@@ -1,3 +1,5 @@
+import { NANJING_CIVILIAN_FINAL_WAIT } from './nanjing-campaign.js';
+
 export function civilianRecoveryDue(data, position, now) {
   if (!Number.isFinite(now) || now < 0) throw new RangeError('Civilian recovery requires simulation time');
   const goal = data.waitingSlot, target = data.route[data.waypoint];
@@ -48,4 +50,30 @@ export function endCivilianRecoveryWait(campaign, civilians, now) {
   for (const person of people) person.userData.unrescued = true;
   campaign.civiliansUnrescued = (campaign.civiliansUnrescued ?? 0) + people.length;
   return people.length;
+}
+
+export function expireCivilianShoreWait(campaign, civilians, ferries, queue) {
+  if (campaign.stage !== 'withdrawal-to-boats' || campaign.outcome || campaign.finalShoreWaitExpired ||
+    (campaign.finalWithdrawalElapsed ?? 0) < NANJING_CIVILIAN_FINAL_WAIT) return 0;
+  const aboard = new Set(ferries.flatMap(ferry => ferry.userData.passengers));
+  const remaining = civilians.filter(person => {
+    const data = person.userData;
+    return !data.dead && !data.evacuated && !data.unrescued && !aboard.has(person);
+  });
+  const waiting = remaining.filter(person => person.userData.arrived).length;
+  if (waiting !== campaign.civiliansWaiting)
+    throw new Error('Final civilian waiting count does not match people remaining on shore');
+  for (const person of remaining) {
+    person.userData.unrescued = true;
+    person.userData.boarding = false;
+  }
+  for (const ferry of ferries) {
+    if (ferry.userData.boarding && remaining.includes(ferry.userData.boarding.civilian))
+      ferry.userData.boarding = null;
+  }
+  queue.length = 0;
+  campaign.civiliansWaiting = 0;
+  campaign.civiliansUnrescued += remaining.length;
+  campaign.finalShoreWaitExpired = true;
+  return remaining.length;
 }

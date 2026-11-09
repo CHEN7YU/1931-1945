@@ -1,5 +1,5 @@
 import { NANJING_COURTYARDS, NANJING_SOLDIER_CAVE,
-  NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK, NANJING_WALL_WALKS } from './nanjing-layout.js';
+  NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK, NANJING_WALL_WALKS } from './nanjing-layout.js';
 
 export const NANJING_STAGE_SECONDS = 3 * 60;
 
@@ -134,6 +134,7 @@ export function createNanjingCampaign() {
     stage: 'gate-defense',
     stageElapsed: 0,
     stageRemaining: NANJING_STAGE_SECONDS,
+    finalWithdrawalElapsed: 0,
     reinforcementStopped: false,
     dockActivated: false,
     dockOverrun: false,
@@ -151,6 +152,7 @@ export function createNanjingCampaign() {
     civiliansArrived: 0,
     civiliansEvacuated: 0,
     civilianCasualties: 0,
+    civiliansEnteredCity: 0,
     civiliansUnrescued: 0,
     civilianEnRouteCasualties: 0,
     civiliansWaiting: 0,
@@ -185,6 +187,18 @@ export function nanjingMissionVoice(campaign) {
   return cue;
 }
 
+export const NANJING_CIVILIAN_FINAL_WAIT = 120;
+
+export function recordNanjingCivilianCityEntry(campaign, civilian) {
+  const data = civilian.userData;
+  if (!data.openingWave || data.dead || data.enteredCity ||
+      civilian.position.z > NANJING_GATE_NORTH_EDGE ||
+      Math.abs(civilian.position.x) > NANJING_GATE_TUNNEL.width / 2) return false;
+  data.enteredCity = true;
+  campaign.civiliansEnteredCity++;
+  return true;
+}
+
 export function advanceNanjingCampaign(campaign, dt) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Nanjing campaign time must be finite and non-negative');
   if (campaign.outcome) return campaign.outcome;
@@ -201,7 +215,10 @@ export function advanceNanjingCampaign(campaign, dt) {
     if (campaign.stageRemaining === 0 && !campaign.embarkOrderIssued) {
       campaign.embarkOrderIssued = true;
       campaign.stage = 'withdrawal-to-boats';
+      campaign.finalWithdrawalElapsed = 0;
     }
+  } else if (campaign.stage === 'withdrawal-to-boats') {
+    campaign.finalWithdrawalElapsed = (campaign.finalWithdrawalElapsed ?? 0) + dt;
   }
   if (campaign.dockOverrun && !campaign.playerEscaped) {
     campaign.outcome = 'fallen';

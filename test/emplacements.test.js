@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPose,
+import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, emplacementObstacles, aimEmplacement,
   moveArtillery, setArtilleryPosition, ARTILLERY_MARCH } from '../src/emplacements.js';
 import { FOOT_SPEEDS } from '../src/locomotion.js';
@@ -62,6 +62,27 @@ test('both anti-aircraft mounts share the Maxim weapon specification, traverse a
     assert.ok(point.pitch > .7 && point.pitch < 1.45);
     assert.equal(point.weapon.settings.magazine, 200);
   }
+});
+
+test('Nanjing anti-aircraft guns can be re-entered after every orientation without bypassing real obstacles', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  for (const spec of NANJING_EMPLACEMENTS.filter(point => point.profile === 'maxim24aa')) {
+    const point = createEmplacement(spec), floor = point.altitude ?? 0;
+    for (let step = 0; step < 144; step++) {
+      point.yaw = point.heading + step * Math.PI / 72;
+      const currentYaw = point.yaw;
+      const blocked = operator => circleBlocked(operator.x, operator.z, .43, world.obstacles, operator.y);
+      const original = emplacementPose(point, floor);
+      const entry = emplacementEntry(point, floor, blocked);
+      assert.ok(entry, `${point.id} yaw ${currentYaw}`);
+      assert.equal(blocked(entry.pose.operator), false);
+      assert.equal(point.yaw, currentYaw, 'finding an entry does not mutate the gun');
+      if (!blocked(original.operator)) assert.equal(entry.yaw, currentYaw, 'clear aim remains unchanged');
+    }
+    assert.equal(emplacementEntry(point, floor, () => true), null, 'real obstructions remain authoritative');
+  }
+  const ordinary = createEmplacement(NANJING_EMPLACEMENTS[0]);
+  assert.equal(emplacementEntry(ordinary, 0, () => true), null);
 });
 
 test('fixed guns have finite ammunition, simulated reloads and cooling; pausing cannot finish a reload', () => {

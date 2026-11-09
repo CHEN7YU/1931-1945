@@ -109,6 +109,20 @@ export function emplacementPose(point, floor = 0) {
   };
 }
 
+export function emplacementEntry(point, floor, blocked) {
+  const pose = emplacementPose(point, floor);
+  if (!blocked(pose.operator)) return { yaw: point.yaw, pose };
+  if (!point.weapon.settings.antiAircraft) return null;
+  for (let step = 1; step <= 12; step++) {
+    for (const sign of [-1, 1]) {
+      const yaw = point.yaw + sign * step * Math.PI / 12;
+      const candidate = emplacementPose({ ...point, yaw }, floor);
+      if (!blocked(candidate.operator)) return { yaw, pose: candidate };
+    }
+  }
+  return null;
+}
+
 export function emplacementObstacles(point) {
   const cannon = point.profile === 'bofors75';
   const bounds = [{ minX: cannon ? -.65 : -.23, maxX: cannon ? .65 : .23,

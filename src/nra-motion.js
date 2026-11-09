@@ -285,10 +285,11 @@ function sampleNativeUpperBody(actor, phase, operation = rifleHandAction(actor.r
     actor.engineer?.construction?.mode !== 'building' && !actor.sihangShield?.active && !actor.supportWeaponPose?.active &&
     !actor.discharger?.presentationActive && !actor.formation?.sihangDemolition) {
     const weight = upright * (1 - travelWeight), hand = operation.hand ?? 0, loading = hand * (operation.loading ?? 0);
+    const recoil = (1 - hand) * (operation.bodyRecoil ?? 0);
     upperBody.yaw += (.025 * hand - .02 * loading) * weight;
-    upperBody.pitch += .008 * loading * weight;
+    upperBody.pitch += (.008 * loading + .009 * recoil) * weight;
     upperBody.roll += .015 * hand * weight;
-    upperBody.lift -= .004 * loading * weight;
+    upperBody.lift -= (.004 * loading + .004 * recoil) * weight;
     upperBody.lateral += .004 * hand * weight;
   }
   return { travelWeight, upperBody };

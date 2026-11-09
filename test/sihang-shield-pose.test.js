@@ -273,9 +273,10 @@ test('same native view restores ordinary clavicle, fingers and right rifle posin
     person.rifleReady = true;
     person.nativeMotion.lowReady = 0;
     syncNativeAimGoal(person);
-    const operation = RIFLE_HAND_SAMPLES.at(-1);
-    view.update(person, 5, null, operation);
-    compareClean(5, operation);
+    for (const operation of RIFLE_HAND_SAMPLES.slice(-2)) {
+      view.update(person, 5, null, operation);
+      compareClean(5, operation);
+    }
     person.rifleReady = false;
     person.nativeMotion.lowReady = 1; syncNativeAimGoal(person);
     person.sihangShield = { ...SIHANG_SHIELD_POSES[0], installing: true };

@@ -879,10 +879,18 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
   }
   assert.ok(world.ferries.every(ferry => ferry.position.x === NANJING_DOCK.ferryX &&
     Math.abs(ferry.position.z - NANJING_DOCK.z) <= 6));
-  assert.equal(world.landmarks.dockDefenses.length, 4);
+  assert.equal(world.landmarks.dockDefenses.length, 6);
   const dockBags = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-sandbag-collision');
   for (const bag of dockBags) bag.updateWorldMatrix(true, false);
   assert.ok(dockBags.length >= 90, 'three approach directions need layered physical cover');
+  const platformBags = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-platform-sandbag-collision');
+  assert.equal(platformBags.length, 24);
+  for (const bag of platformBags) bag.updateWorldMatrix(true, false);
+  for (const z of [-89.4, -70.6]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(-64.5, .91, z + (z < -80 ? 2 : -2)),
+      new THREE.Vector3(0, 0, z < -80 ? -1 : 1), 0, 4);
+    assert.ok(ray.intersectObjects(platformBags, false).length, 'platform sandbags physically shield the player');
+  }
   assert.ok(world.town.covers.filter(cover => cover.id.startsWith('forward-defense-dock')).length >= 4);
   const ray = new THREE.Raycaster();
   for (const id of ['dock-north', 'dock-south', 'dock-east-north', 'dock-east-south']) {

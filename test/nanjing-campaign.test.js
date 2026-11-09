@@ -6,9 +6,25 @@ import {
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
   isNanjingSpawnAvailable, nanjingMissionVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
-  nanjingCivilianEvacuationStatus,
+  nanjingCivilianEvacuationStatus, recordNanjingCivilianCityEntry,
 } from '../src/nanjing-campaign.js';
-import { NANJING_COURTYARDS, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
+import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
+
+test('only living opening refugees who pass the inner gate count as safely entering the city once', () => {
+  const campaign = createNanjingCampaign();
+  const refugee = { userData: { openingWave: true }, position: { x: 0, z: NANJING_GATE_NORTH_EDGE + .1 } };
+  assert.equal(recordNanjingCivilianCityEntry(campaign, refugee), false);
+  refugee.position.z = NANJING_GATE_NORTH_EDGE;
+  refugee.position.x = NANJING_GATE_TUNNEL.width;
+  assert.equal(recordNanjingCivilianCityEntry(campaign, refugee), false);
+  refugee.position.x = 0;
+  assert.equal(recordNanjingCivilianCityEntry(campaign, refugee), true);
+  assert.equal(recordNanjingCivilianCityEntry(campaign, refugee), false);
+  assert.equal(campaign.civiliansEnteredCity, 1);
+  assert.equal(recordNanjingCivilianCityEntry(campaign, { userData: { openingWave: false }, position: refugee.position }), false);
+  assert.equal(recordNanjingCivilianCityEntry(campaign, { userData: { openingWave: true, dead: true }, position: refugee.position }), false);
+  assert.equal(campaign.civiliansEnteredCity, 1);
+});
 
 test('final evacuation status distinguishes civilians still on the road, waiting, aboard and actually across', () => {
   const campaign = createNanjingCampaign();

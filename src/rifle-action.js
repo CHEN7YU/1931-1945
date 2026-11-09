@@ -102,5 +102,6 @@ export function riflePose(state) {
     clipVisible: reload && t > .6 && t < 1.95,
     lower: reload ? smooth(t, 0, .25) * (1 - smooth(t, 2.4, 2.7)) : 0,
     recoil: cycling ? (1 - smooth(t, 0, .12)) : 0,
+    bodyRecoil: cycling ? smooth(t, 0, .025) * (1 - smooth(t, .025, .12)) : 0,
   };
 }
