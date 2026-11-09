@@ -15,7 +15,7 @@ import { createStaticSceneBatchRescue } from './static-scene-batches.js';
 import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS,
   sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal, sihangPursuitGoal } from './sihang-roster.js';
 import { SIHANG_DEFENSE_POSTS, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
-  SIHANG_EVACUATION, SIHANG_STAIRWELLS, SIHANG_LEVELS, sihangBridgePoint, sihangRiverBounds,
+  SIHANG_EVACUATION, SIHANG_STAIRWELLS, SIHANG_LEVELS, SIHANG_MAP_BOUNDS, SIHANG_BATTLE_AREA, sihangBridgePoint, sihangRiverBounds,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
 import { ENCIRCLEMENT_RULES, encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
   createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport, scheduleEncirclementRespawn,
@@ -195,6 +195,7 @@ for (const element of document.querySelectorAll('[data-build-version]')) {
 
 const nanjingCampaignMode = new URLSearchParams(location.search).get('campaign') === 'nanjing';
 const sihangCampaignMode = new URLSearchParams(location.search).get('campaign') === 'sihang';
+const battleArea = sihangCampaignMode ? SIHANG_BATTLE_AREA : BATTLE_AREA;
 const benchmark = benchmarkConfig(location.search, import.meta.env.DEV);
 const performanceDiagnostics = getPerformanceDiagnostics();
 const reportLoading = stage => performanceDiagnostics.recordLoading({
@@ -509,8 +510,8 @@ function engineerPlacementReason(actor, position) {
   if (sihangCampaignMode && SIHANG_RESERVED_LANES.some(lane =>
     bounds.minX < lane.maxX && bounds.maxX > lane.minX && bounds.minZ < lane.maxZ && bounds.maxZ > lane.minZ))
     return '撤退、装甲或爆破通路不能设置阵地';
-  if (bounds.minX < BATTLE_AREA.minX + .5 || bounds.maxX > BATTLE_AREA.maxX - .5 ||
-    bounds.minZ < BATTLE_AREA.minZ + .5 || bounds.maxZ > BATTLE_AREA.maxZ - .5) return '建造位置超出战区';
+  if (bounds.minX < battleArea.minX + .5 || bounds.maxX > battleArea.maxX - .5 ||
+    bounds.minZ < battleArea.minZ + .5 || bounds.maxZ > battleArea.maxZ - .5) return '建造位置超出战区';
   const candidates = new Set();
   for (const x of [bounds.minX, bounds.cx, bounds.maxX]) for (const z of [bounds.minZ, bounds.cz, bounds.maxZ])
     for (const obstacle of movementObstacles(x, z)) candidates.add(obstacle);
@@ -2277,7 +2278,7 @@ function refreshDeployment() {
   $('deployment-selection').textContent = pendingSquad ? `${SQUADS[pendingSquad].name} · 点击地图选择出生位置` : '先选择小队卡片，再点击地图上的己方出生标记。';
   const candidates = pendingSquad ? deploymentSpawnChoices(pendingType) : [];
   const hostiles = hostilePositions('friendly');
-  const markerPositions = deploymentMarkerPositions(candidates, deploymentMapView(nanjingCampaignMode ? nanjingCampaign.stage : null));
+  const markerPositions = deploymentMarkerPositions(candidates, deploymentMapView(sihangCampaignMode ? 'sihang' : nanjingCampaignMode ? nanjingCampaign.stage : null));
   const signature = candidates.map(point => point.id).join(',');
   if ($('spawn-choices').dataset.signature !== signature) {
     $('spawn-choices').replaceChildren(...candidates.map(point => deploymentMarker(point, pendingType)));
@@ -3736,10 +3737,10 @@ function updateBattleBoundary(dt) {
       else hurt(subject, damage, source, 'boundary');
     }
   };
-  for (const actor of allies) if (actor.health > 0 && !actor.vehicleId && !hasFerrySupport(actor)) apply(actor, BATTLE_AREA, false);
+  for (const actor of allies) if (actor.health > 0 && !actor.vehicleId && !hasFerrySupport(actor)) apply(actor, battleArea, false);
   for (const transport of entities.vehicles.values()) {
     if (transport.health > 0 && entities.units.get(transport.unitId)?.player) {
-      apply(transport, transport.type === 'plane' ? AIR_BATTLE_AREA : BATTLE_AREA, true);
+      apply(transport, transport.type === 'plane' ? AIR_BATTLE_AREA : battleArea, true);
     }
   }
 }
@@ -3887,8 +3888,8 @@ function updatePlayer(dt) {
           const obstacles = world.obstacles.filter(obstacle => !obstacle.id?.startsWith(`${point.id}:obstacle-`));
           for (const [x, z] of [[-.95,0],[.95,0],[-.65,1.3],[.65,1.3],[0,-1.7],[0,1.7]]) {
             const px = candidate.x + x*c + z*s, pz = candidate.z - x*s + z*c;
-            if (px < BATTLE_AREA.minX+.5 || px > BATTLE_AREA.maxX-.5 ||
-              pz < BATTLE_AREA.minZ+.5 || pz > BATTLE_AREA.maxZ-.5 ||
+            if (px < battleArea.minX+.5 || px > battleArea.maxX-.5 ||
+              pz < battleArea.minZ+.5 || pz > battleArea.maxZ-.5 ||
               circleBlocked(px,pz,.25,obstacles,actor.position.y) ||
               Math.abs(world.walkHeight(px,pz,actor.position.y)-actor.position.y) > .24 ||
               allForces.some(other=>other!==actor&&other.health>0&&!other.vehicleId&&
@@ -4141,7 +4142,8 @@ function squadCommand(follow) {
   const objective = objectives.find(point => objectiveContainsPosition(point, target));
   const attack = Boolean(objective);
   const orderPoint = floorDestination({ x: target.x, y: target.y, z: target.z },
-    { x: THREE.MathUtils.clamp(target.x, -100, 100), z: THREE.MathUtils.clamp(target.z, -100, 100),
+    { x: THREE.MathUtils.clamp(target.x, -100, 100),
+      z: THREE.MathUtils.clamp(target.z, sihangCampaignMode ? battleArea.minZ : -100, sihangCampaignMode ? battleArea.maxZ : 100),
       ...(nanjingCampaignMode || sihangCampaignMode ? { y: world.walkHeight(target.x, target.z, target.y) } : {}) },
     world.town.buildings);
   if (!follow && sihangCampaignMode && (world.isDeepWater(orderPoint.x, orderPoint.z) ||
@@ -4190,6 +4192,8 @@ function personalDestination(actor, target) {
       ...(target.y === undefined ? {} : { y: target.y }) });
   }
   const point = candidates.find(point => {
+    if (sihangCampaignMode && (point.x < battleArea.minX + .5 || point.x > battleArea.maxX - .5 ||
+      point.z < battleArea.minZ + .5 || point.z > battleArea.maxZ - .5)) return false;
     const missionRadius = nanjingCampaignMode && actor.playerUnit && mission?.id === 'gate' && actor.index % 11 >= 3
       ? mission.radius + 3 : mission ? mission.radius - 1 : 0;
     if (mission && Math.hypot(point.x - mission.x, point.z - mission.z) > missionRadius) return false;
@@ -4805,7 +4809,8 @@ function playerOrderDestination(actor, player, yaw = controlPose.yaw) {
   const anchor = actor.order === 'follow' ? player.position : actor.orderPoint;
   if (sihangCampaignMode) {
     const y = world.walkHeight(desired.x, desired.z, anchor.y ?? 0);
-    if (world.isDeepWater(desired.x, desired.z) || Math.abs(y - (anchor.y ?? 0)) > .3 ||
+    if (desired.x < battleArea.minX || desired.x > battleArea.maxX || desired.z < battleArea.minZ || desired.z > battleArea.maxZ ||
+      world.isDeepWater(desired.x, desired.z) || Math.abs(y - (anchor.y ?? 0)) > .3 ||
       circleBlocked(desired.x, desired.z, .42, movementObstacles(desired.x, desired.z), y))
       return { x: anchor.x, y: anchor.y ?? 0, z: anchor.z };
     return { ...desired, y };
@@ -4861,8 +4866,8 @@ function sihangSupportGoal(actor) {
   if (cached?.point && Math.hypot(context.center.x - cached.x, context.center.z - cached.z) < 2 &&
     sihangOutsideCover(cached.point, context)) return cached.point;
   const point = sihangCoverCandidates(actor, context).find(point =>
-    point.x > BATTLE_AREA.minX + 2 && point.x < BATTLE_AREA.maxX - 2 &&
-    point.z > BATTLE_AREA.minZ + 2 && point.z < BATTLE_AREA.maxZ - 2 &&
+    point.x > battleArea.minX + 2 && point.x < battleArea.maxX - 2 &&
+    point.z > battleArea.minZ + 2 && point.z < battleArea.maxZ - 2 &&
     sihangNorthBank(point, 1) && !circleBlocked(point.x, point.z, .5,
       movementObstacles(point.x, point.z), 0) && Math.abs(world.walkHeight(point.x, point.z, 0)) < .1);
   if (!point) {
@@ -6613,7 +6618,7 @@ function drawRadar(ctx = radarContext, deployment = false) {
   const yaw = controlPose.yaw;
   const size = 176;
   const deploymentMap = ctx.canvas === $('deployment-map');
-  const view = deploymentMapView(deploymentMap && nanjingCampaignMode ? nanjingCampaign.stage : null);
+  const view = deploymentMapView(sihangCampaignMode ? 'sihang' : deploymentMap && nanjingCampaignMode ? nanjingCampaign.stage : null);
   const map = (x, z) => deploymentMapPoint(view, x, z, size);
   if (deploymentMap) {
     ctx.canvas.dataset.mapSpan = String(view.span);
@@ -6644,18 +6649,20 @@ function drawRadar(ctx = radarContext, deployment = false) {
       ctx.fillStyle = color; ctx.fillRect(x, z, width / view.span * size, depth / view.span * size);
     };
     ctx.beginPath();
-    for (let x = -110; x <= 110; x += 4) {
+    for (let x = SIHANG_MAP_BOUNDS.minX; x <= SIHANG_MAP_BOUNDS.maxX; x += 4) {
       const [px, pz] = map(x, sihangRiverBounds(x).southZ);
-      if (x === -110) ctx.moveTo(px, pz); else ctx.lineTo(px, pz);
+      if (x === SIHANG_MAP_BOUNDS.minX) ctx.moveTo(px, pz); else ctx.lineTo(px, pz);
     }
-    ctx.lineTo(...map(110, 110)); ctx.lineTo(...map(-110, 110));
+    ctx.lineTo(...map(SIHANG_MAP_BOUNDS.maxX, SIHANG_MAP_BOUNDS.maxZ));
+    ctx.lineTo(...map(SIHANG_MAP_BOUNDS.minX, SIHANG_MAP_BOUNDS.maxZ));
     ctx.closePath(); ctx.fillStyle = '#496f5344'; ctx.fill();
     ctx.beginPath();
-    for (let x = -110; x <= 110; x += 4) {
+    for (let x = SIHANG_MAP_BOUNDS.minX; x <= SIHANG_MAP_BOUNDS.maxX; x += 4) {
       const [px, pz] = map(x, sihangRiverBounds(x).northZ);
-      if (x === -110) ctx.moveTo(px, pz); else ctx.lineTo(px, pz);
+      if (x === SIHANG_MAP_BOUNDS.minX) ctx.moveTo(px, pz); else ctx.lineTo(px, pz);
     }
-    for (let x = 110; x >= -110; x -= 4) ctx.lineTo(...map(x, sihangRiverBounds(x).southZ));
+    for (let x = SIHANG_MAP_BOUNDS.maxX; x >= SIHANG_MAP_BOUNDS.minX; x -= 4)
+      ctx.lineTo(...map(x, sihangRiverBounds(x).southZ));
     ctx.closePath(); ctx.fillStyle = '#3f788b'; ctx.fill();
     ctx.beginPath();
     for (const [index, [fraction, side]] of [[0, -1], [1, -1], [1, 1], [0, 1]].entries()) {
@@ -6676,9 +6683,9 @@ function drawRadar(ctx = radarContext, deployment = false) {
     const [x, z] = map(b.minX, b.minZ);
     ctx.fillRect(x, z, (b.maxX - b.minX) / view.span * size, (b.maxZ - b.minZ) / view.span * size);
   }
-  const [areaX, areaZ] = map(BATTLE_AREA.minX, BATTLE_AREA.minZ);
-  const areaW = (BATTLE_AREA.maxX - BATTLE_AREA.minX) / view.span * size;
-  const areaD = (BATTLE_AREA.maxZ - BATTLE_AREA.minZ) / view.span * size;
+  const [areaX, areaZ] = map(battleArea.minX, battleArea.minZ);
+  const areaW = (battleArea.maxX - battleArea.minX) / view.span * size;
+  const areaD = (battleArea.maxZ - battleArea.minZ) / view.span * size;
   ctx.fillStyle = '#b9574538';
   ctx.fillRect(0, 0, size, areaZ);
   ctx.fillRect(0, areaZ + areaD, size, size - areaZ - areaD);
@@ -7493,7 +7500,7 @@ $('deployment-map').addEventListener('click', event => {
   const bounds = event.currentTarget.getBoundingClientRect();
   const x = (event.clientX - bounds.left) / bounds.width * 176;
   const z = (event.clientY - bounds.top) / bounds.height * 176;
-  const view = deploymentMapView(nanjingCampaignMode ? nanjingCampaign.stage : null);
+  const view = deploymentMapView(sihangCampaignMode ? 'sihang' : nanjingCampaignMode ? nanjingCampaign.stage : null);
   const points = deploymentSpawnChoices(SQUADS[pendingSquad].type).map(point => {
     const [px, pz] = deploymentMapPoint(view, point.x, point.z);
     return { id: point.id, distance: Math.hypot(px - x, pz - z) };
@@ -8128,7 +8135,7 @@ Object.defineProperty(window, '__battle', { get: () => ({
   renderIsolation: { ...renderIsolation, requested: benchmark?.renderIsolation ?? 'normal',
     activateAtSeconds: benchmark?.renderIsolationAt ?? 0,
     visibleNativeRoots: [nraCharacter, ijaCharacter].filter(character => character?.root.visible).length },
-  boundary: { area: { ...BATTLE_AREA }, airArea: { ...AIR_BATTLE_AREA }, rules: { ...BOUNDARY_RULES },
+  boundary: { area: { ...battleArea }, airArea: { ...AIR_BATTLE_AREA }, rules: { ...BOUNDARY_RULES },
     ...controlledBoundary(), members: allies.map(actor => ({ id: actor.id, ...boundaryStates.get(actor.id) })) },
   outskirts: { buildings: world.outskirts.buildings.length, nearBuildings: world.outskirts.buildings.filter(house => house.near).length,
     ruinedBuildings: world.outskirts.buildings.filter(house => house.ruined).length, hills: world.outskirts.hills.map(hill => ({ ...hill })) },

@@ -114,6 +114,8 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     [48, -16.5, 12, 6], [48, -7.5, 12, 5], [59, -16.5, 6, 5],
     [-48, -54, 9, 6], [-35, -54, 9, 6], [-22, -54, 9, 6], [20, -54, 9, 6],
   ].entries()) house(`warehouse-neighbor-${i}`, x, z, w, d, false, index++);
+  for (const z of [-54, -64, -82]) for (const x of [-7.5, 7.5])
+    house(`warehouse-front-${x < 0 ? 'west' : 'east'}-${-z}`, x, z, 6, 6, false, index++);
   for (const z of [-99, -80, -64]) for (const x of [-98, -84, -54, -40, -24, 20, 36, 54, 84, 98])
     house(`north-block-${index}`, x + index % 3 - 1, z + index % 2 * 2,
       9.5 + index % 3, 8 + index % 3, false, index++);
@@ -126,13 +128,9 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
     house(`north-quay-${i}`, x, sihangRiverBounds(x).northZ - 5.5, 8, 4, false, index++);
   const shops = [-90, -66, -42, -18, 12, 76, 98];
   for (const [i, x] of shops.entries()) house(`concession-shop-${i}`, x, 64, 15, 13, true, i);
-  for (const [i, x] of [-96, -78, -60, -42, -24, -6, 12, 30, 48, 72, 90, 102].entries())
-    house(`concession-home-${i}`, x, 96, 12, 12, true, i + 7);
   for (const [i, x] of [-98, -78, -54, -30, 0, 24, 48, 64, 100].entries())
     house(`concession-riverside-${i}`, x, Math.max(sihangRiverBounds(x - 7).southZ,
       sihangRiverBounds(x + 7).southZ) + 13, 12, 10, true, i + 19);
-  for (const [i, x] of [-96, -78, -60, -42, -24, -6, 12, 30, 48, 66, 84, 102].entries())
-    house(`concession-interior-${i}`, x + i % 2, 80, 10, 10, true, i + 28);
 
   for (const [index, [x, z]] of [[-62, -49], [-42, -45], [-57, -3], [43, -15], [59, -45]].entries()) {
     const bounds = { minX: x - 1.5, maxX: x + 1.5, minZ: z - .25, maxZ: z + .25 };
@@ -191,7 +189,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
   const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x526748, roughness: 1 });
   const treePositions = [];
   for (const x of [-99, -75, -51, -27, 3, 78, 101]) {
-    treePositions.push({ x, z: 52 }, { x: x + 2, z: 84 });
+    treePositions.push({ x, z: 52 });
   }
   const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.13, .25, 3.8, 6), materials.wood, treePositions.length + 5);
   const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), foliageMaterial, treePositions.length * 2);

@@ -12,6 +12,7 @@ import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER as R, SIHANG_BRIDGE as B,
   SIHANG_CAPTURE_AREA, SIHANG_STAIRWELLS, SIHANG_STAIR_ROUTES,
   SIHANG_LEVELS, SIHANG_NORTH_WINDOWS, SIHANG_EAST_DEFENSE_WINDOWS, SIHANG_FIRING_POSTS,
+  SIHANG_MAP_BOUNDS as M,
   sihangStairHeight, sihangRiverBounds, sihangSouthBank, sihangBridgeCoordinates, sihangBridgePoint, sihangBridgeContains,
 } from './sihang-layout.js';
 
@@ -160,8 +161,8 @@ export function makeSihangBattlefield(scene, surface) {
   for (let i = 0; i <= 108; i++) {
     const x = -108 + i * 2, bounds = sihangRiverBounds(x);
     riverVertices.push(x, R.waterY, bounds.northZ, x, R.waterY, bounds.southZ);
-    bankVertices[0].push(x, -.05, -108, x, -.05, bounds.northZ);
-    bankVertices[1].push(x, -.05, bounds.southZ, x, -.05, 108);
+    bankVertices[0].push(x, -.05, M.minZ, x, -.05, bounds.northZ);
+    bankVertices[1].push(x, -.05, bounds.southZ, x, -.05, M.maxZ);
     if (i) {
       const j = i * 2;
       riverIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
@@ -244,7 +245,7 @@ export function makeSihangBattlefield(scene, surface) {
     town.streets.push({ x: (minX + maxX) / 2, z: (minZ + maxZ) / 2,
       width: maxX - minX, depth: maxZ - minZ, clippedToBanks: true });
   };
-  for (const z of [-55, 43, 82]) pave(-108, 108, z - 4, z + 4, .005);
+  for (const z of [-55, 43]) pave(M.minX, M.maxX, z - 4, z + 4, .005);
   for (const x of [-60, 48, 85]) pave(x - 5, x + 5, -108, 8, .012);
   solids.push(strip(streetVertices, streetIndices, materials.street, 'sihang-bank-clipped-streets'));
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
@@ -597,6 +598,7 @@ export function makeSihangBattlefield(scene, surface) {
   }
   function movementHeightAt(x, z, referenceY, radius, movementObstacles, bodyHeight) {
     if (![x, z, referenceY, radius].every(Number.isFinite) || radius < 0 || isDeepWater(x, z)) return null;
+    if (x < M.minX + radius || x > M.maxX - radius || z < M.minZ + radius || z > M.maxZ - radius) return null;
     const y = walkHeight(x, z, referenceY);
     const candidates = movementObstacles === obstacles && radius <= 3.5 ? movementLookup.at(x, z) : movementObstacles;
     if (y - referenceY > .26 || referenceY - y > .32 ||
@@ -659,6 +661,7 @@ export function makeSihangBattlefield(scene, surface) {
         .filter(o => (!ruined || !standingObstacles.includes(o)) &&
           (o.minY ?? -Infinity) < y + 1.75 && (o.height ?? Infinity) > y + .025)
         .map(o => ({ ...o, minY: -10, height: 40 }));
+      projected.push({ minX: M.minX, maxX: M.maxX, minZ: M.maxZ, maxZ: 108, minY: -10, height: 40 });
       if (level && !ruined) {
         projected.push(
           { minX: -108, maxX: W.minX, minZ: -108, maxZ: 108 },
@@ -822,6 +825,7 @@ export function makeSihangBattlefield(scene, surface) {
   }
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
+    mapBounds: M,
     connectInfantryPath: physicalConnector,
     groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || sihangBridgeContains({ x, z }) ? 'stone' : 'earth',
     armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, navigationStats,

@@ -17,3 +17,10 @@ test('deployment zoom follows the active defense while keeping its selectable sp
   assert.equal(deploymentMapView('withdrawal').span, 220);
   assert.equal(deploymentMapView(null).span, 220, 'Taierzhuang retains its whole battlefield');
 });
+
+test('compact Sihang maps center the retained terrain without changing other campaigns', () => {
+  const view = deploymentMapView('sihang');
+  assert.deepEqual(view, { x: 0, z: -17, span: 220 });
+  assert.deepEqual(deploymentMapPoint(view, 0, -17), [88, 88]);
+  assert.equal(deploymentMapView(null).z, 0);
+});

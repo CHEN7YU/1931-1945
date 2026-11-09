@@ -6,6 +6,8 @@ export const SIHANG_WAREHOUSE = Object.freeze({
   bounds: Object.freeze({ minX: -36, maxX: 28, minZ: -42, maxZ: -8 }),
 });
 export const SIHANG_RIVER = Object.freeze({ northZ: 0, southZ: 32, waterY: -1 });
+export const SIHANG_MAP_BOUNDS = Object.freeze({ minX: -108, maxX: 108, minZ: -108, maxZ: 74 });
+export const SIHANG_BATTLE_AREA = Object.freeze({ minX: -100, maxX: 100, minZ: -96, maxZ: 72 });
 // The supplied overhead plan places the broad bay west of the warehouse, with a clear southern quay.
 export function sihangRiverBounds(x) {
   if (!Number.isFinite(x)) throw new RangeError('Sihang river requires a finite x');
@@ -82,7 +84,7 @@ export const SIHANG_RESERVED_LANES = Object.freeze([
   { id: 'east-armor', minX: 66, maxX: 74, minZ: -108, maxZ: -20 },
   { id: 'west-flank', minX: -74, maxX: -38, minZ: -29, maxZ: -21 },
   { id: 'east-flank', minX: 30, maxX: 74, minZ: -29, maxZ: -21 },
-  { id: 'sapper-assembly', minX: -9, maxX: 9, minZ: -108, maxZ: -42.5 },
+  { id: 'sapper-assembly', minX: -3.5, maxX: 3.5, minZ: -108, maxZ: -42.5 },
   { id: 'retreat-exit', minX: 31, maxX: 39, minZ: -45, maxZ: -5 },
   { id: 'retreat-approach', minX: 33, maxX: 81, minZ: -39, maxZ: -30 },
   { id: 'retreat-bridge', minX: 72, maxX: 98, minZ: -32, maxZ: 10 },

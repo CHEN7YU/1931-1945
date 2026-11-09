@@ -438,7 +438,7 @@ describe('independent Sihang Warehouse battlefield', () => {
   it('provides coherent intact and damaged street blocks, bounded smoke, and reserved combat lanes', () => {
     const buildings = world.town.buildings.slice(1);
     assert.ok(buildings.filter(b => b.damaged).length >= 30);
-    assert.ok(buildings.filter(b => !b.damaged).length >= 20);
+    assert.ok(buildings.filter(b => !b.damaged).length >= 7, 'the active riverside shops remain after removing two rear rows');
     assert.ok(buildings.every(b => b.floors === 1 && b.playableFloors.length === 1), 'No invented playable upper floors');
     for (const building of buildings.filter(b => b.damageOpening)) {
       const h = building.damageOpening;
@@ -459,7 +459,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.equal(world.sceneArt.city.vegetationDrawCalls, 3);
     assert.ok(world.sceneArt.city.vegetationTriangles < 4000);
     assert.equal(world.sceneArt.city.signDrawCalls, 1);
-    assert.ok(world.sceneArt.city.trees >= 14);
+    assert.equal(world.sceneArt.city.trees, 7, 'rear-row trees are removed with the cropped blocks');
     assert.ok(world.town.fortifications.length >= 8);
     assert.equal(world.town.fortifications.filter(point => point.id.startsWith('warehouse-ground-sandbags')).length, 6);
   });

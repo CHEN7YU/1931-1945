@@ -15,7 +15,7 @@ try {
   const data = await page.evaluate(async () => {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { makeSihangBattlefield } = await import('/src/sihang-battlefield.js');
-    const { SIHANG_BRIDGE, SIHANG_EVACUATION } = await import('/src/sihang-layout.js');
+    const { SIHANG_BRIDGE, SIHANG_EVACUATION, SIHANG_MAP_BOUNDS } = await import('/src/sihang-layout.js');
     const scene = new T.Scene(); scene.background = new T.Color(0xb6beb9);
     const world = makeSihangBattlefield(scene, (kind, color) => new T.MeshStandardMaterial({ color, roughness: .9 }));
     scene.add(new T.HemisphereLight(0xe6e8d5, 0x545342, 2));
@@ -23,7 +23,7 @@ try {
     const renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(1280, 900); document.body.append(renderer.domElement);
     const camera = new T.PerspectiveCamera(45, 1280 / 900, .1, 650);
-    camera.position.set(-12, 210, 170); camera.lookAt(0, 0, -8);
+    camera.position.set(-12, 190, 145); camera.lookAt(0, 0, (SIHANG_MAP_BOUNDS.minZ + SIHANG_MAP_BOUNDS.maxZ) / 2);
     renderer.render(scene, camera);
     const overview = renderer.domElement.toDataURL();
     camera.position.set(-12, 1.6, -23); camera.lookAt(-4, .03, -25);
@@ -34,11 +34,11 @@ try {
     renderer.dispose();
     return { overview, capture, ring: { name: ring.name, type: ring.geometry.type, emptyCenter: emptyCenter.length === 0 },
       bridge: SIHANG_BRIDGE, evacuation: SIHANG_EVACUATION, geometry: world.staticRendering,
-      city: world.sceneArt.city };
+      city: world.sceneArt.city, mapBounds: world.mapBounds };
   });
   assert.equal(data.ring.type, 'RingGeometry'); assert.equal(data.ring.emptyCenter, true);
   assert.ok(data.bridge.southX > data.bridge.northX && data.bridge.southZ > data.bridge.northZ);
-  assert.ok(data.city.usableGroundFloors >= 60);
+  assert.ok(data.city.usableGroundFloors >= 50);
   assert.ok(data.geometry.triangles < 29000); assert.deepEqual(errors, []);
   await writeFile(join(directory, 'sihang-overhead-current.png'), Buffer.from(data.overview.split(',')[1], 'base64'));
   await writeFile(join(directory, 'sihang-ground-capture-ring.png'), Buffer.from(data.capture.split(',')[1], 'base64'));
