@@ -60,11 +60,12 @@ window.__sihangQualityState=()=>({graphics:graphics.snapshot,preferences:prefere
   await page.waitForFunction(() => window.__battle?.state === 'playing');
   observations.startupQuality = await page.evaluate(() => window.__sihangQualityState());
   assert.equal(observations.startupQuality.graphics.requested.preset, 'low', 'fresh browser starts with the conservative preset');
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Profiler.enable'); await cdp.send('Profiler.start');
-  await page.waitForTimeout(10000);
-  const { profile } = await cdp.send('Profiler.stop');
-  await writeFile(join(directory, 'repaired-cpu-profile.json'), JSON.stringify(profile));
+  const door = await page.evaluate(() => window.__sihangDoorSetup());
+  assert.equal(door.focused, door.group);
+  await page.keyboard.press('f');
+  await page.waitForFunction(() => window.__sihangDoorState().every(d => d.state === 'closed'), null, { timeout: 10000 });
+  observations.cityDoors = await page.evaluate(() => window.__sihangDoorState());
+  await page.screenshot({ path: join(directory, 'city-paired-doors-closed.png') });
   observations.battle = await page.evaluate(() => ({
     state: window.__battle.state, time: window.__battle.time,
     allies: window.__battle.friendly?.length, enemies: window.__battle.enemies?.length,
@@ -96,12 +97,6 @@ window.__sihangQualityState=()=>({graphics:graphics.snapshot,preferences:prefere
     }).length >= 3, `squad actually follows the relocated player in ${stage}: ${JSON.stringify(followed)}`);
     observations[stage] = { ordered, moved, following: followed, progressed: progressed.length };
   }
-  const door = await page.evaluate(() => window.__sihangDoorSetup());
-  assert.equal(door.focused, door.group);
-  await page.keyboard.press('f');
-  await page.waitForFunction(() => window.__sihangDoorState().every(d => d.state === 'closed'), null, { timeout: 10000 });
-  observations.cityDoors = await page.evaluate(() => window.__sihangDoorState());
-  await page.screenshot({ path: join(directory, 'city-paired-doors-closed.png') });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, stageOrders: 2, actualXAndF: true, errors }));
 } catch (error) {

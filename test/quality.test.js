@@ -44,21 +44,30 @@ test('saved graphics settings apply on construction without first allocating the
 
 test('automatic levels reduce actual pixels and optional effects while preserving manual preferences and combat feedback', () => {
   let ratio = 1.5;
+  const sun = new THREE.DirectionalLight();
   const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xffffff, 1, 100);
   const renderer = { capabilities: { maxTextureSize: 8192 }, shadowMap: { enabled: true },
     getPixelRatio: () => ratio, setPixelRatio(value) { ratio = value; },
     domElement: { width: 1280, height: 720 }, info: { memory: { textures: 0 } } };
-  const settings = createQualitySettings({ renderer, scene, sun: new THREE.DirectionalLight(),
+  const settings = createQualitySettings({ renderer, scene, sun,
     smoke: Array.from({ length: 30 }, () => ({ visible: true })), grain: {}, deviceRatio: () => 1.5, initialPreset: 'high' });
   const manual = settings.snapshot.requested;
   settings.setAutomaticLevel(1);
-  assert.equal(settings.snapshot.pixelRatio, 1);
-  assert.equal(settings.snapshot.shadowSize, 1024);
+  assert.equal(settings.snapshot.pixelRatio, 1.5);
+  assert.equal(settings.snapshot.shadowSize, 2048);
+  assert.equal(settings.snapshot.preset, 'high');
   settings.setAutomaticLevel(2);
-  assert.equal(settings.snapshot.pixelRatio, .8);
-  assert.equal(settings.snapshot.shadowsEnabled, false);
+  assert.equal(settings.snapshot.pixelRatio, 1.5);
+  assert.equal(settings.snapshot.shadowsEnabled, true);
   settings.setAutomaticLevel(3);
-  assert.equal(settings.snapshot.pixelRatio, .6);
+  assert.equal(settings.snapshot.pixelRatio, .8);
+  assert.equal(settings.snapshot.shadowsEnabled, true);
+  assert.equal(settings.snapshot.shadowUpdateInterval, 4);
+  assert.equal(sun.shadow.autoUpdate, false);
+  sun.shadow.needsUpdate = false;
+  for (let frame = 0; frame < 3; frame++) settings.beginFrame();
+  assert.equal(sun.shadow.needsUpdate, false);
+  settings.beginFrame(); assert.equal(sun.shadow.needsUpdate, true);
   assert.equal(settings.snapshot.visibleSmoke, 0);
   assert.equal(settings.snapshot.effects.muzzle, true);
   assert.equal(settings.snapshot.effects.hitParticles, true);
@@ -80,9 +89,9 @@ test('restored automatic quality is applied before allocating any high-resolutio
     domElement: {}, info: { memory: { textures: 0 } } };
   const options = { renderer, scene: new THREE.Scene(), sun, smoke: [], grain: {}, deviceRatio: () => 1.5 };
   const settings = createQualitySettings({ ...options, initialPreset: 'high', initialAutomaticLevel: 3 });
-  assert.deepEqual(ratios, [.6]);
-  assert.equal(settings.snapshot.shadowsEnabled, false);
-  assert.equal(settings.snapshot.preset, 'low');
+  assert.deepEqual(ratios, [.8]);
+  assert.equal(settings.snapshot.shadowsEnabled, true);
+  assert.equal(settings.snapshot.preset, 'high');
   assert.equal(settings.snapshot.requested.preset, 'high');
   assert.throws(() => createQualitySettings({ ...options, initialAutomaticLevel: 4 }), RangeError);
 });

@@ -53,6 +53,12 @@ test('sustained overload reduces work, isolated stalls do not, and smooth recove
   assert.equal(control.snapshot.level, 0);
 });
 
+test('alternating slow and fast frames still shed distant AI when sustained average throughput is poor', () => {
+  const control = createAdaptiveAI();
+  for (let frame = 0; frame < 300; frame++) control.observeFrame(frame % 2 ? 50 : 16, true);
+  assert.equal(control.snapshot.level, 2, 'one short frame must not reset every pressure window');
+});
+
 test('visible, nearby, and player-targeting soldiers immediately retain normal decision frequency', () => {
   const control = pressured(), observer = { x: 0, y: 0, z: 0 };
   for (const kind of ['sensor', 'path', 'cover', 'posture']) {

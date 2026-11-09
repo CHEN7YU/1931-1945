@@ -5,14 +5,20 @@ export const SIHANG_WAREHOUSE = Object.freeze({
   floorHeight: 8.4, floors: 3, roofY: 25.2,
   bounds: Object.freeze({ minX: -36, maxX: 28, minZ: -42, maxZ: -8 }),
 });
-export const SIHANG_RIVER = Object.freeze({ northZ: 8, southZ: 40, waterY: -1 });
-// A broad river bay lies below the warehouse; its eastern bend rises towards Tibet Road.
+export const SIHANG_RIVER = Object.freeze({ northZ: 0, southZ: 32, waterY: -1 });
+// The supplied overhead plan places the broad bay west of the warehouse, with a clear southern quay.
 export function sihangRiverBounds(x) {
   if (!Number.isFinite(x)) throw new RangeError('Sihang river requires a finite x');
   const bounded = Math.max(-108, Math.min(108, x));
-  const offset = bounded < -36 ? -36 * ((-36 - bounded) / 72) ** 2
-    : bounded > 28 ? -96 * ((bounded - 28) / 80) ** 2 : 0;
-  return { northZ: 8 + offset, southZ: 40 + offset };
+  const eastEntry = (bounded - 28) / 18, eastExit = (bounded - 46) / 18;
+  const northZ = bounded < -72 ? 20 - 56 * ((bounded + 72) / 36) ** 2
+    : bounded < -54 ? 20 - 10 * ((bounded + 72) / 18) ** 2
+    : bounded < -36 ? 10 * ((bounded + 36) / 18) ** 2
+    : bounded <= 28 ? 0
+    : bounded < 46 ? -.86 * eastEntry ** 2
+    : bounded < 64 ? -.86 - 1.72 * eastExit - 8.86 * eastExit ** 2
+    : 8 - 96 * ((bounded - 28) / 80) ** 2;
+  return { northZ, southZ: northZ + 32 };
 }
 
 export function sihangNorthBank(position, margin = 0) {
@@ -32,7 +38,7 @@ export function sihangBlastClearOfSouthBank(position, radius) {
   return position.z + radius < boundary;
 }
 
-// Earliest crossing of a protected south bank. At most five quadratic intervals,
+// Earliest crossing of a protected south bank. A bounded set of quadratic intervals,
 // regardless of range or soldier count; even rays that enter then leave are clipped.
 export function sihangRiverRayRange(origin, direction, range, margin = 0) {
   if (![origin?.x, origin?.z, direction?.x, direction?.z, range, margin].every(Number.isFinite) || range < 0)
@@ -41,7 +47,7 @@ export function sihangRiverRayRange(origin, direction, range, margin = 0) {
     sihangRiverBounds(origin.x + direction.x * t).southZ + margin;
   if (distance(0) >= 0) return 0;
   const cuts = [0, range];
-  if (direction.x !== 0) for (const x of [-108, -36, 28, 108]) {
+  if (direction.x !== 0) for (const x of [-108, -72, -54, -36, 28, 46, 64, 108]) {
     const t = (x - origin.x) / direction.x;
     if (t > 0 && t < range) cuts.push(t);
   }
@@ -71,6 +77,7 @@ export function sihangRiverRayRange(origin, direction, range, margin = 0) {
 }
 
 export const SIHANG_RESERVED_LANES = Object.freeze([
+  { id: 'warehouse-south-quay', minX: -36, maxX: 28, minZ: -8, maxZ: 0 },
   { id: 'west-armor', minX: -74, maxX: -66, minZ: -108, maxZ: -20 },
   { id: 'east-armor', minX: 66, maxX: 74, minZ: -108, maxZ: -20 },
   { id: 'west-flank', minX: -74, maxX: -38, minZ: -29, maxZ: -21 },

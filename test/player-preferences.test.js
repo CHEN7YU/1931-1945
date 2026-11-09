@@ -28,7 +28,7 @@ test('automatic reductions round-trip without overwriting manual preferences; ol
   const old = defaultPreferences(); delete old.startupQualityLevel; old.quality.preset = 'high';
   const f = fixture(JSON.stringify({ version: 1, settings: old })), settings = f.create();
   assert.equal(settings.snapshot.quality.preset, 'high');
-  assert.equal(settings.snapshot.startupQualityLevel, 1);
+  assert.equal(settings.snapshot.startupQualityLevel, 0);
   assert.equal(f.writes.length, 0);
   settings.update({ startupQualityLevel: 3 });
   assert.equal(f.create().snapshot.startupQualityLevel, 3);

@@ -20,7 +20,7 @@ export function applyNativeBodyLean(root, bones, motion) {
   if (!Number.isFinite(yaw) || Math.abs(yaw) > .6) throw new Error('Invalid owned firing torso turn');
   const upper = motion.upperBody ?? { yaw: 0, pitch: 0, roll: 0 };
   if (![upper.yaw, upper.pitch, upper.roll].every(Number.isFinite) ||
-    Math.abs(upper.yaw) > .1 || Math.abs(upper.pitch) > .02 || Math.abs(upper.roll) > .03)
+    Math.abs(upper.yaw) > .15 || Math.abs(upper.pitch) > .02 || Math.abs(upper.roll) > .05)
     throw new Error('Invalid owned upper-body gait');
   if (!motion.bodyLean && !yaw && !upper.yaw && !upper.pitch && !upper.roll) return;
   const facing = root.getWorldQuaternion(new Quaternion());

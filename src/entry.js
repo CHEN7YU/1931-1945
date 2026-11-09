@@ -29,19 +29,9 @@ const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
 const launcherPreferences = getPlayerPreferences();
-for (const selector of document.querySelectorAll('[data-resource-mode]')) {
-  selector.value = launcherPreferences.snapshot.resourceMode;
-  selector.addEventListener('change', () => {
-    if (loaded || pending) return;
-    launcherPreferences.update({ resourceMode: selector.value });
-    const url = new URL(location.href); url.searchParams.delete('resources'); history.replaceState(null, '', url);
-    lowMemoryRestart.hidden = startupResourceProfile(selector.value, navigator.deviceMemory ?? null).lowMemory;
-    for (const control of document.querySelectorAll('[data-resource-mode]')) control.value = selector.value;
-  });
-}
 const lowMemoryRestart = document.getElementById('low-memory-restart');
 lowMemoryRestart.hidden = startupResourceProfile(params.get('resources') ??
-  launcherPreferences.snapshot.resourceMode, navigator.deviceMemory ?? null).lowMemory;
+  'auto', navigator.deviceMemory ?? null).lowMemory;
 lowMemoryRestart.addEventListener('click', () => {
   launcherPreferences.update({ resourceMode: 'low-memory' });
   const url = new URL(location.href); url.searchParams.set('resources', 'low-memory');
@@ -59,8 +49,10 @@ document.addEventListener('keydown', activateMusic, { capture: true });
 for (const button of document.querySelectorAll('[data-menu-music-toggle]'))
   button.addEventListener('click', () => { menuMusic.toggle(); endingMusic.setMuted(menuMusic.snapshot.muted); });
 menuMusic.setState('menu');
-if (launcherPreferences.status.problem)
+if (launcherPreferences.status.problem) {
   document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;
+  document.querySelector('#menu [data-preferences-status]').hidden = false;
+}
 const $ = id => document.getElementById(id);
 function openInitialDeployment() {
   menuMusic.setState('deployment');
@@ -133,7 +125,8 @@ function selectCampaign(id) {
   if (campaign.locked || campaign.hidden) throw new RangeError('This campaign is not available in the launcher');
   selector.value = id;
   campaignStep();
-  document.getElementById('campaign-description').textContent = campaign.description;
+  document.getElementById('campaign-description').textContent = campaign.id === 'sihang' ? '' : campaign.description;
+  document.getElementById('campaign-description').hidden = campaign.id === 'sihang';
   $('campaign-history').textContent = campaign.history;
   $('campaign-goals').replaceChildren(...campaign.goals.map(goal => {
     const item = document.createElement('li'); item.textContent = goal; return item;

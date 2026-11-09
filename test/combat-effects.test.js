@@ -104,3 +104,13 @@ test('offscreen light volumes still illuminate the image and quality toggles rem
   effects.render(0);
   assert.equal(effects.snapshot.fragments + effects.snapshot.clouds + effects.snapshot.lights, 0);
 });
+
+test('automatic optional-light reduction zeros illumination without changing the shader light count', () => {
+  const { effects, camera } = fixture();
+  effects.muzzle(new THREE.Vector3(0, camera.position.y, 1), new THREE.Vector3(0, 0, -1), 0);
+  effects.render(0);
+  assert.equal(effects.snapshot.shaderLights, 2);
+  effects.configure({ ...settings, effects: { ...settings.effects, muzzleLight: false } });
+  assert.equal(effects.snapshot.visibleLights, 0);
+  assert.equal(effects.snapshot.shaderLights, 2, 'automatic shedding must not recompile every lit material');
+});

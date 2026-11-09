@@ -41,8 +41,9 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   assert.ok(renderer.snapshot.members.every(member => member.uniform === 'ija1938' && member.helmet));
   assert.ok(renderer.counts.near > 0 && renderer.counts.near <= 6 && renderer.counts.far > 0);
   assert.equal(farViews, 1, 'pose banks share one far-detail template');
-  for (const bank of renderer.root.children.filter(node => node.isInstancedMesh).slice(0, renderer.snapshot.poseBanks)) {
-    assert.equal(bank.geometry.attributes.position.count, 12, 'far body banks must not bake the near mesh, hidden LOD or personal gun');
+  for (const [index, bank] of renderer.root.children.filter(node => node.isInstancedMesh).slice(0, renderer.snapshot.poseBanks).entries()) {
+    assert.equal(bank.geometry.attributes.position.count, index === 1 ? 4 : 12,
+      'the continuous travel bank welds source identities; no bank bakes the near mesh, hidden LOD or personal gun');
   }
   assert.ok(renderer.snapshot.members.some(member => member.weaponModel === 'type11' && member.tier === 'instanced'));
   assert.ok(renderer.snapshot.members.some(member => member.weaponModel === 'sniper' && member.tier === 'instanced'));
@@ -73,11 +74,11 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   renderer.update([replacement], 19, null, 'high');
   const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const coarseBanks = renderer.root.children.filter(mesh => mesh.name === 'distant-coarse-body');
-  assert.equal(renderer.snapshot.poseBanks, 18, 'original poses plus separate compact corpse presentation');
-  assert.equal(banks.length, 18);
-  assert.equal(coarseBanks.length, banks.filter(bank => bank.geometry.morphAttributes.position?.length !== 5).length,
+  assert.equal(renderer.snapshot.poseBanks, 13, 'six discrete running banks are replaced by one continuous travel bank');
+  assert.equal(banks.length, 13);
+  assert.equal(coarseBanks.length, banks.length - 1,
     'active hand-operation poses do not duplicate coarse geometry');
-  assert.equal(banks.slice(7, 13).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 7].count, 0), 1,
+  assert.equal(banks.slice(2, 8).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 2].count, 0), 1,
     'the far charging actor uses exactly one melee body pose across both geometry tiers');
   const weaponParts = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);
   const weaponBounds = new THREE.Box3();
@@ -87,8 +88,8 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   assert.ok(weaponBounds.min.z < -1.34, 'the instanced enemy rifle includes the fixed blade');
   replacement.bayonet = { mode: 'thrust', extension: 1 };
   renderer.update([replacement], 19.2, null, 'high');
-  assert.equal(banks[15].count + coarseBanks[15].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
+  assert.equal(banks[10].count + coarseBanks[10].count, 1, 'fully extended distant thrust uses its matching body/weapon pose');
   replacement.weaponBlocked = true;
   renderer.update([replacement], 19.3, null, 'high');
-  assert.equal(banks[16].count + coarseBanks[16].count, 1, 'blocked distant soldiers use a matching two-handed safe carry bank');
+  assert.equal(banks[11].count + coarseBanks[11].count, 1, 'blocked distant soldiers use a matching two-handed safe carry bank');
 });

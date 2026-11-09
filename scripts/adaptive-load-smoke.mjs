@@ -32,9 +32,10 @@ try {
         pressure() {
           const now=performance.now();
           automaticQuality.observe(0,{active:false,now});
-          automaticQuality.observe(16,{active:true,now});
-          automaticQuality.observe(600,{active:true,backlogSeconds:1,now:now+600});
-          automaticQuality.observe(0,{active:false,now:now+600});
+          for(let elapsed=0;elapsed<=18000;elapsed+=100)
+            automaticQuality.observe(100,{active:true,now:now+elapsed,
+              work:{aiMs:1,renderMs:40,gpuMs:45},aiLevel:0});
+          automaticQuality.observe(0,{active:false,now:now+18000});
         },
         counters() { return { ...automaticQuality.statistics }; },
         flush() { performanceDiagnostics.flush(); },
@@ -50,9 +51,9 @@ try {
     await page.waitForFunction(() => window.__battle?.state === 'playing' &&
       window.__battle.historicalForce.assigned > 0, null, { timeout: 180000 });
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-    await page.waitForFunction(() => window.__battle.automaticQuality.level > 0, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.__battle.adaptiveAI.level > 0, null, { timeout: 30000 });
     const automatic = await page.evaluate(() => ({
-      automatic: __battle.automaticQuality, graphics: __battle.graphics,
+      automatic: __battle.automaticQuality, graphics: __battle.graphics, ai: __battle.adaptiveAI,
       friendly: __battle.historicalForce.assigned, enemy: __battle.enemyHistoricalForce.assigned,
       backlog: __battle.simulationClock ?? null,
     }));
@@ -61,11 +62,11 @@ try {
     const invariant = await page.evaluate(() => adaptiveReview.invariant());
     await page.evaluate(() => adaptiveReview.pressure());
     await page.waitForFunction(() => __battle.graphics.automaticLevel === 3 &&
-      __battle.historicalForce.detailBudget === 1 && __battle.enemyHistoricalForce.detailBudget === 1);
+      __battle.historicalForce.detailBudget === 2 && __battle.enemyHistoricalForce.detailBudget === 2);
     const emergency = await page.evaluate(() => ({ graphics: __battle.graphics, automatic: __battle.automaticQuality }));
-    assert.equal(emergency.graphics.pixelRatio, .6);
-    assert.equal(emergency.graphics.canvasWidth, 768);
-    assert.equal(emergency.graphics.shadowsEnabled, false);
+    assert.equal(emergency.graphics.pixelRatio, .8);
+    assert.equal(emergency.graphics.canvasWidth, 1024);
+    assert.equal(emergency.graphics.shadowUpdateInterval, 4);
     assert.equal(emergency.graphics.effects.muzzle, true);
     assert.equal(emergency.graphics.effects.hitParticles, true);
     assert.equal(emergency.graphics.effects.damageVignette, true);
@@ -73,7 +74,7 @@ try {
     const counts = await page.evaluate(() => adaptiveReview.counters());
     await page.waitForTimeout(1000);
     assert.deepEqual(await page.evaluate(() => adaptiveReview.counters()), counts, 'paused time must not inflate reductions or active seconds');
-    assert.equal(await page.locator('#overlay [data-quality-toggle]').inputValue(), 'high');
+    assert.equal(await page.locator('#overlay [data-quality-toggle]').inputValue(), 'low');
     await page.locator('#pause-settings > summary').click();
     await page.locator('#overlay [data-quality-toggle]').selectOption('low');
     let manual = await page.evaluate(() => ({ graphics: __battle.graphics, saved: adaptiveReview.preferences() }));

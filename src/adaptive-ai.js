@@ -1,6 +1,8 @@
+import { renderBound } from './frame-work.js';
+
 export const ADAPTIVE_AI_RULES = Object.freeze({
   nearDistance: 40, warmupSeconds: 1.5, recoverSeconds: 4,
-  reduceFrameMs: 26, severeFrameMs: 40, recoverFrameMs: 21,
+  reduceFrameMs: 26, severeFrameMs: 32, recoverFrameMs: 21,
 });
 const INTERVALS = Object.freeze([
   Object.freeze({ sensor: 0, path: 0, cover: 0, posture: 0 }),
@@ -20,7 +22,7 @@ export function createAdaptiveAI() {
   let level = 0, active = false, warmup = 0, slow = 0, smooth = 0, average = 1000 / 60, transitions = 0;
   let reductions = 0, recoveries = 0;
   return {
-    observeFrame(frameMs, playing) {
+    observeFrame(frameMs, playing, work = {}) {
       if (!Number.isFinite(frameMs) || frameMs < 0 || typeof playing !== 'boolean') {
         throw new RangeError('Adaptive AI requires finite frame timing and explicit activity');
       }
@@ -32,10 +34,11 @@ export function createAdaptiveAI() {
       if (warmup > 0) { warmup = Math.max(0, warmup - elapsed); return; }
       average += (Math.min(frameMs, 250) - average) * (1 - Math.exp(-elapsed / .35));
       const threshold = level === 0 ? ADAPTIVE_AI_RULES.reduceFrameMs : ADAPTIVE_AI_RULES.severeFrameMs;
-      const overloaded = frameMs >= threshold && average >= threshold;
+      const overloaded = average >= threshold &&
+        !(renderBound(work) && (work.aiMs ?? 0) < 4);
       slow = overloaded ? slow + elapsed : 0;
       smooth = average <= ADAPTIVE_AI_RULES.recoverFrameMs ? smooth + elapsed : 0;
-      if (level < 2 && slow >= (level === 0 ? .5 : .8)) {
+      if (level < 2 && slow >= (level === 0 ? 1.2 : 1.6)) {
         level++; transitions++; reductions++; slow = smooth = 0;
       } else if (level > 0 && smooth >= ADAPTIVE_AI_RULES.recoverSeconds) {
         level--; transitions++; recoveries++; slow = smooth = 0;
@@ -48,7 +51,7 @@ export function createAdaptiveAI() {
         throw new RangeError('Adaptive AI requires a known decision and finite view relevance');
       }
       const distance = Math.hypot(position.x - observer.x, position.y - observer.y, position.z - observer.z);
-      if (idle && emergencyLevel >= 2 && !threatensPlayer && distance > ADAPTIVE_AI_RULES.nearDistance)
+      if (idle && (level >= 1 || emergencyLevel >= 2) && !threatensPlayer && distance > ADAPTIVE_AI_RULES.nearDistance)
         return Math.max(INTERVALS[level][kind], INTERVALS[1][kind]);
       if (level === 0 || inView || threatensPlayer || distance <= ADAPTIVE_AI_RULES.nearDistance) return 0;
       return INTERVALS[level][kind];

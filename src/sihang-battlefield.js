@@ -557,7 +557,8 @@ export function makeSihangBattlefield(scene, surface) {
         { x: x + (i % 2 ? 1.5 : 0), z: sihangRiverBounds(x + (i % 2 ? 1.5 : 0)).southZ + 3.2 }];
     } else {
       const home = town.buildings.filter(building => building.id.startsWith('concession-shop'))[(i - 24) % 7];
-      route = [{ x: home.x, z: 48 + (i % 2) * 2 }, { x: home.x, z: home.z - 1 }];
+      route = [{ x: home.x, z: Math.max(48 + (i % 2) * 2, sihangRiverBounds(home.x).southZ + 3.2) },
+        { x: home.x, z: home.z - 1 }];
     }
     Object.assign(person.userData, { civilianId: i, ageGroup: age, presentation: i % 2 ? 'man' : 'woman',
       carrying: 'none', walkPhase: i * .71, dead: false, health: 100, populationKind: 'resident',
@@ -821,6 +822,7 @@ export function makeSihangBattlefield(scene, surface) {
   }
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
+    connectInfantryPath: physicalConnector,
     groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || sihangBridgeContains({ x, z }) ? 'stone' : 'earth',
     armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, navigationStats,
     sceneArt: { staticRendering, warehouseBreaches: breaches.filter(h => h.blown).length,

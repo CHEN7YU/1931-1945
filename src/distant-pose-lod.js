@@ -11,9 +11,9 @@ export async function prepareDistantGeometry() {
   simplifierReady = true;
 }
 
-export async function createDistantPoseGeometry(source) {
+export async function createDistantPoseGeometry(source, { animated = false } = {}) {
   await prepareDistantGeometry();
-  return simplifyGeometry(source, .08, .005, 'distantPoseLod');
+  return simplifyGeometry(source, .08, .005, 'distantPoseLod', animated);
 }
 
 export function createLowMemoryPoseGeometry(source) {
@@ -23,7 +23,7 @@ export function createLowMemoryPoseGeometry(source) {
   finally { if (indexed !== source) indexed.dispose(); }
 }
 
-function indexedAnimatedSource(source) {
+export function indexedAnimatedSource(source) {
   const working = new BufferGeometry(), morphNames = [];
   for (const [name, attribute] of Object.entries(source.attributes))
     if (!attribute.isInstancedBufferAttribute && (name !== 'normal' || !source.attributes.nraPoseVertex))

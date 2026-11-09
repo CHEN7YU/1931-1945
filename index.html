@@ -70,9 +70,7 @@
       </section>
       <aside class="operation-panel">
         <div class="panel-heading"><span>作战部署</span><span class="index">01</span></div>
-        <label for="startup-resource-mode">启动资源 <select id="startup-resource-mode" data-resource-mode><option value="auto">自动（内存提示不超过4GB时减负）</option><option value="standard">标准资源</option><option value="low-memory">低内存（4GB优先）</option></select></label>
-        <small data-resource-status>低内存模式减少纹理及人物几何驻留；不减少兵力、弹药或模拟时间。</small>
-        <label class="campaign-label" for="campaign-choice">战役阶段 <select id="campaign-choice"></select></label>
+        <label class="campaign-label" for="campaign-choice"><select id="campaign-choice" aria-label="选择战役"></select></label>
         <p id="campaign-description" class="map-description"></p>
         <section id="campaign-history-panel" class="campaign-intel" aria-labelledby="campaign-history-title">
           <h2 id="campaign-history-title">战役背景</h2>
@@ -117,7 +115,7 @@
         </fieldset>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
         </details>
-        <p class="preferences-status" data-preferences-status role="status"></p>
+        <p class="preferences-status" data-preferences-status role="status" hidden></p>
       </aside>
       <footer class="menu-footer"><span>WASD 移动 <b>·</b> 右键瞄准 <b>·</b> Y 换人 <b>·</b> X 命令</span><a href="/assets/audio/vehicle-engines/ATTRIBUTION.txt" target="_blank" rel="noopener">载具音效来源与署名</a><span>谨记历史，珍视和平</span></footer>
     </main>
@@ -262,8 +260,6 @@
           </fieldset>
           <fieldset id="quality-settings" hidden>
             <legend>图形设置 · 手动</legend>
-            <label for="pause-resource-mode">下次启动资源 <select id="pause-resource-mode" data-resource-mode><option value="auto">自动</option><option value="standard">标准资源</option><option value="low-memory">低内存（4GB优先）</option></select></label>
-            <small data-resource-status>重新加载页面后生效；不会在当前战局重建资源或重置小队。</small>
             <label class="quality-preset" for="qualityToggle">画质档位 <select id="qualityToggle" data-quality-toggle><option value="high">高画质</option><option value="low">低画质</option></select></label>
             <div class="quality-options">
               <label><input id="quality-shadows" type="checkbox" data-quality-effect="shadows" checked /> 动态阴影</label>

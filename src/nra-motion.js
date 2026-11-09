@@ -253,14 +253,14 @@ export function sampleNraMotion(actor, includeHead = true) {
   const phase = sampleNraPhase(actor), motion = actor.nativeMotion, { profile } = motion;
   const { idleTime, runTime, walkTime, jog, gait, upright } = phase;
   const intent = nativePoseIntent(actor);
-  const travelWeight = profile.footCycleGait && actor.health > 0 && intent === 'travel' &&
+  const travelWeight = profile.footCycleGait && actor.health > 0 && ['travel', 'aim'].includes(intent) &&
     !actor.weaponBlocked && !actor.emplacementId && !actor.discharger?.presentationActive &&
-    !actor.formation?.sihangDemolition ? motion.weight * upright * (1 - .85 * motion.gaitAim) : 0;
+    !actor.formation?.sihangDemolition ? motion.weight * upright * (intent === 'aim' ? .22 : 1 - .65 * motion.gaitAim) : 0;
   const cycle = runTime / profile.run.duration * Math.PI * 2;
   const upperBody = travelWeight ? {
-    yaw: Math.sin(cycle) * (.045 + .04 * jog) * travelWeight,
+    yaw: Math.sin(cycle) * (.075 + .04 * jog) * travelWeight,
     pitch: Math.cos(cycle * 2) * (.008 + .008 * jog) * travelWeight,
-    roll: Math.sin(cycle) * (.014 + .012 * jog) * travelWeight,
+    roll: Math.sin(cycle) * (.022 + .012 * jog) * travelWeight,
   } : { yaw: 0, pitch: 0, roll: 0 };
   const idle = sample(profile.idle, idleTime), run = sample(profile.run, runTime);
   const walk = profile.walk ? sample(profile.walk, walkTime) : run;

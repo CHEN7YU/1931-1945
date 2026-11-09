@@ -69,7 +69,7 @@ test('opening unrelated city doors refreshes cached floor grids instead of rebui
   assert.ok(world.elevatedPath(start, goal).length);
   const builds = world.navigationStats.builds;
   for (let i = 0; i < 4; i++) {
-    const door = world.doorSystem.doors.find(d => d.id.startsWith('north-quay'));
+    const door = world.doorSystem.doors.find(d => d.id.startsWith('north-block'));
     world.doorSystem.interact(door, { x: door.x, z: door.z - 2 }); world.doorSystem.update(1, []);
     assert.ok(world.elevatedPath(start, goal).length);
     assert.equal(world.navigationStats.builds, builds);

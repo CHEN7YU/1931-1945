@@ -10,12 +10,12 @@ import { EMPLACEMENT_PROFILES } from '../src/emplacements.js';
 import { SIHANG_PREVIEW } from '../src/sihang-preview.js';
 
 test('the reference bay rises on both sides, has an eastern diagonal bridge, and shares banks with combat and safe areas', () => {
-  assert.deepEqual(sihangRiverBounds(48), { northZ: 2, southZ: 34 });
-  for (const x of [-36, -20, 0, 20, 28]) assert.equal(sihangRiverBounds(x).northZ, 8);
+  assert.ok(Math.abs(sihangRiverBounds(48).northZ + 94 / 81) < 1e-8);
+  for (const x of [-36, -20, 0, 20, 28]) assert.equal(sihangRiverBounds(x).northZ, 0);
   for (const x of [-10000, -108, -80, 0, 52, 108, 10000]) {
     const banks = sihangRiverBounds(x);
     assert.equal(banks.southZ - banks.northZ, 32);
-    assert.ok(banks.northZ >= -88 && banks.northZ <= 8);
+    assert.ok(banks.northZ >= -88 && banks.northZ <= 20);
   }
   for (const x of [-36, 28]) assert.ok(Math.abs(sihangRiverBounds(x + .001).northZ - sihangRiverBounds(x - .001).northZ) < 1e-7);
   assert.ok(SIHANG_BRIDGE.southX > SIHANG_BRIDGE.northX);
@@ -29,9 +29,10 @@ test('the reference bay rises on both sides, has an eastern diagonal bridge, and
   assert.equal(sihangEnemyTargetAllowed({ position: safeWest }), false);
   assert.equal(sihangSouthBank(safeWest, 4), true);
   assert.equal(sihangNorthBank({ x: -100, z: west.northZ - 1 }), true);
-  assert.equal(sihangSouthBank({ x: 48, z: 33.99 }), false);
-  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 37.99 }), false);
-  assert.equal(sihangSafePosition({ x: 48, y: 0, z: 38 }), true);
+  const south = sihangRiverBounds(48).southZ;
+  assert.equal(sihangSouthBank({ x: 48, z: south - .01 }), false);
+  assert.equal(sihangSafePosition({ x: 48, y: 0, z: south + 3.99 }), false);
+  assert.equal(sihangSafePosition({ x: 48, y: 0, z: south + 4 }), true);
   for (const invalid of [null, {}, { x: NaN, z: 40, y: 0 }, { x: 0, z: Infinity, y: 0 }]) {
     assert.equal(sihangSafePosition(invalid), false);
     assert.equal(sihangEnemyMayAttack(invalid), false);
@@ -42,13 +43,15 @@ test('the reference bay rises on both sides, has an eastern diagonal bridge, and
 });
 
 test('analytic bank clipping catches oblique and lateral shots without range-dependent sampling', () => {
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), 26);
+  assert.ok(Math.abs(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220) -
+    (sihangRiverBounds(48).southZ - 8)) < 1e-8);
   assert.equal(sihangEnemyRayRange({ x: 48, z: 34 }, { x: 0, z: -1 }, 220), 0);
   const origin = { x: 48, z: 25 }, direction = { x: -1, z: 0 };
   const range = sihangRiverRayRange(origin, direction, 300);
   assert.ok(range > 4 && range < 156, 'A lateral ray hits the curved west concession bank');
   assert.ok(Math.abs(origin.z - sihangRiverBounds(origin.x - range).southZ) < 1e-7);
-  assert.equal(sihangRiverRayRange({ x: 48, z: 20 }, { x: 0, z: 1 }, 40, 3), 11);
+  assert.ok(Math.abs(sihangRiverRayRange({ x: 48, z: 20 }, { x: 0, z: 1 }, 40, 3) -
+    (sihangRiverBounds(48).southZ - 23)) < 1e-8);
   // A fixed independent dense oracle checks many headings, including rays leaving and re-entering bank segments.
   for (let i = 0; i < 80; i++) {
     const origin = { x: -105 + i * 2.6, z: 3 + i % 5 * 3 };

@@ -27,7 +27,9 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
     const before = JSON.stringify(person.nativeMotion);
     assert.deepEqual(sampleNraMotion(person), sampleNraMotion(person), 'sampling/pause cannot advance the gait');
     assert.equal(JSON.stringify(person.nativeMotion), before);
-    for (const patch of [{ rifleReady: true }, { emplacementId: 'gun' },
+    const aiming = sampleNraMotion({ ...person, rifleReady: true });
+    assert.ok(Math.abs(aiming.upperBody.yaw) < .03);
+    for (const patch of [{ emplacementId: 'gun' },
       { discharger: { presentationActive: true } }, { health: 0 }]) {
       const stable = sampleNraMotion({ ...person, ...patch });
       assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0 });

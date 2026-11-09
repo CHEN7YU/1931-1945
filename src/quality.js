@@ -24,15 +24,19 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, initialEffects[effect] ?? true])) };
   const fog = scene.fog;
   const effective = () => {
-    const preset = lowMemory || state.automaticLevel ? 'low' : state.preset, effects = { ...state.effects };
+    const preset = lowMemory ? 'low' : state.preset, effects = { ...state.effects };
     if (lowMemory) for (const effect of ['shadows', 'smoke', 'grain', 'muzzleLight']) effects[effect] = false;
-    if (state.automaticLevel >= 2) {
-      for (const effect of ['shadows', 'grain', 'muzzleLight']) effects[effect] = false;
+    if (state.automaticLevel >= 1) {
+      for (const effect of ['grain', 'muzzleLight']) effects[effect] = false;
     }
-    if (state.automaticLevel >= 3) effects.smoke = false;
+    if (state.automaticLevel >= 2) effects.smoke = false;
     const profile = qualityProfile(preset, deviceRatio(), renderer.capabilities.maxTextureSize);
+    if (state.automaticLevel > 0) {
+      profile.shadowSize = Math.min(profile.shadowSize, state.automaticLevel === 1 ? 2048 : 1024);
+      profile.smokeBudget = Math.min(profile.smokeBudget, 10);
+    }
     if (lowMemory) profile.pixelRatio = Math.min(profile.pixelRatio, .6);
-    if (state.automaticLevel >= 2) profile.pixelRatio = Math.min(profile.pixelRatio, state.automaticLevel === 3 ? .6 : .8);
+    if (state.automaticLevel >= 3) profile.pixelRatio = Math.min(profile.pixelRatio, .8);
     return { preset, effects, profile };
   };
   const invalidateMaterials = () => scene.traverse(object => {
@@ -51,6 +55,7 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     if (!effects.shadows || sun.shadow.mapSize.x !== profile.shadowSize) releaseShadowMap();
     sun.shadow.mapSize.set(profile.shadowSize, profile.shadowSize);
     sun.shadow.needsUpdate = true;
+    sun.shadow.autoUpdate = state.automaticLevel < 3;
     renderer.shadowMap.enabled = effects.shadows;
     scene.fog = effects.fog ? fog : null;
     const budget = effects.smoke ? Math.min(smoke.length, profile.smokeBudget) : 0;
@@ -60,7 +65,12 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     if (shadersChanged) invalidateMaterials();
   };
   apply();
+  let shadowFrame = 0;
   return {
+    beginFrame() {
+      shadowFrame++;
+      if (state.automaticLevel >= 3 && shadowFrame % 4 === 0) sun.shadow.needsUpdate = true;
+    },
     setAutomaticLevel(level) {
       if (!Number.isInteger(level) || level < 0 || level > 3) throw new RangeError('Invalid automatic quality level');
       if (level === state.automaticLevel) return;
@@ -87,6 +97,7 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
         canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height,
         requestedShadowSize: QUALITY_PRESETS[preset].shadowSize, shadowSize: sun.shadow.mapSize.x,
         shadowMapWidth: sun.shadow.map?.width || 0, shadowsEnabled: renderer.shadowMap.enabled,
+        shadowUpdateInterval: state.automaticLevel >= 3 ? 4 : 1,
         fogEnabled: Boolean(scene.fog), visibleSmoke: smoke.filter(puff => puff.visible).length,
         grainEnabled: !grain.hidden, postProcessing: false, textureCount: renderer.info.memory.textures };
     },

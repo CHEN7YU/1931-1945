@@ -143,8 +143,8 @@ export function createCombatEffects(scene, camera, groundHeight) {
     lights.forEach((light, index) => {
       const pulse = state.lights[index];
       // Keep a fixed shader light count during high-quality combat; inactive lights emit zero.
-      light.visible = Boolean(settings && settings.preset !== 'low' && settings.effects.muzzle && settings.effects.muzzleLight);
-      light.intensity = pulse && view.intersects(pulse, pulse.distance ?? 3)
+      light.visible = Boolean(settings && settings.preset !== 'low' && settings.effects.muzzle);
+      light.intensity = settings?.effects.muzzleLight && pulse && view.intersects(pulse, pulse.distance ?? 3)
         ? (pulse.intensity ?? 9) * (1 - pulse.age / pulse.life) : 0;
       light.distance = pulse?.distance ?? 3;
       if (pulse) light.position.set(pulse.x, pulse.y, pulse.z);

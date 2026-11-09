@@ -9,7 +9,7 @@ import { rifleWorldModel } from './rifle-model.js';
 import { CORPSE_RULES, CASUALTY_POSE_FRAMES, createCasualtyState, corpseFootprint, casualtyProgress } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
 import { createDistantPoseGeometry, createDistantWeaponGeometry, createLowMemoryPoseGeometry,
-  prepareDistantGeometry, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
+  prepareDistantGeometry, indexedAnimatedSource, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
 import { createDadaoState } from './dadao.js';
 import { dadaoModel } from './dadao-model.js';
 import { RIFLE_HAND_SAMPLES, rifleHandAction, rifleHandWeights } from './rifle-hand-action.js';
@@ -189,7 +189,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     { tile: lowMemory ? 256 : 512 });
   const phases = lowMemory ? 3 : 6;
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
-  const movingBanks = 1 + phases * movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
+  const movingBanks = 1 + movingModes.length, postures = Object.keys(FIRING_POSES).filter(stance => profile[stance]);
   const baseBanks = movingBanks + postures.length, readyBanks = profile.lowReadyCarry ? 1 + postures.length : 0;
   const meleeStart = baseBanks + readyBanks, meleeBanks = team === 'enemy' ? phases + 3 : phases + 10;
   const turnStart = meleeStart + meleeBanks, turnBanks = profile.footCycleGait ? 2 : 0;
@@ -240,7 +240,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       : dead && deathStance !== 'standing' ? deathStance : closing ? postures[bank - closeStart - 1] ?? null
       : dead || melee || turning ? null : firingBank ? postures[bank - baseBanks - 1] ?? null : bank >= movingBanks ? postures[bank - movingBanks] : null;
     const mode = turning ? 'idle' : melee ? bank < meleeStart + phases ? 'charge' : 'idle'
-      : bank === 0 || posture || firingBank || closing || dead || rifleAction || shield || support ? 'idle' : movingModes[Math.floor((bank - 1) / phases)];
+      : bank === 0 || posture || firingBank || closing || dead || rifleAction || shield || support ? 'idle' : movingModes[bank - 1];
+    const travelMorph = bank > 0 && bank < movingBanks;
     sampleActor.sihangShield = shield ? SIHANG_SHIELD_BANKS[bank - shieldStart] : null;
     sampleActor.supportWeaponPose = null;
     sampleActor.weaponBlocked = closing;
@@ -258,7 +259,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     sampleActor.nativeMotion.cheekWeight = profile.headAim && ready ? 1 : 0;
     sampleActor.nativeMotion.posture = Object.fromEntries(Object.keys(FIRING_POSES).map(pose => [pose, pose === posture ? 1 : 0]));
     sampleActor.nativeMotion.weight = mode === 'idle' ? 0 : 1;
-    sampleActor.nativeMotion.speed = mode === 'charge' ? 4.8 : ['short', 'run'].includes(mode) ? 3.15 : mode === 'walk' ? 1.75 : mode === 'aim' ? 1.1 : 0;
+    sampleActor.nativeMotion.speed = mode === 'charge' ? 4.1 : ['short', 'run'].includes(mode) ? 2.7 : mode === 'walk' ? 1.75 : mode === 'aim' ? 1.1 : 0;
     sampleActor.nativeMotion.gaitCharge = mode === 'charge' ? 1 : 0;
     sampleActor.nativeMotion.gaitAim = mode === 'aim' ? 1 : 0;
     sampleActor.nativeMotion.aim = mode === 'aim' ? 1 : 0;
@@ -268,6 +269,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     const gait = profile.footCycleGait ? nativeGaitParameters(sampleActor.nativeMotion) : null;
     sampleActor.nativeMotion.distance = mode === 'idle' ? 0 : ((melee ? bank - meleeStart : bank - 1) % phases) / phases *
       (gait ? gait.walkStride + (gait.runStride - gait.walkStride) * gait.jog : mode === 'walk' ? profile.walkStrideMeters : profile.strideMeters);
+    sampleActor.nativeMotion.gaitCycles = 0; sampleActor.nativeMotion.phaseDistance = 0;
     syncNativeAimGoal(sampleActor);
     sampleActor.health = dead ? 0 : 100;
     sampleActor.casualty = dead ? createCasualtyState(sampleActor, 0, sampleNraMotion(sampleActor),
@@ -277,7 +279,12 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     const postureMorph = !dead && !rifleAction && !support && posture === 'prone';
     const turnMorph = turning;
     const poses = [], casualtyWeapons = [], attachmentFrames = new Map();
-    for (let frame = 0; frame < (support ? supportSamples.length : shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : turnMorph ? turnStances.length * turnPhases : postureMorph ? 3 : 1); frame++) {
+    for (let frame = 0; frame < (travelMorph ? phases : support ? supportSamples.length : shieldWalk ? 3 : rifleAction ? RIFLE_HAND_SAMPLES.length : dead ? CASUALTY_POSE_FRAMES : turnMorph ? turnStances.length * turnPhases : postureMorph ? 3 : 1); frame++) {
+      if (travelMorph) {
+        sampleActor.nativeMotion.gaitCycles = frame / phases;
+        sampleActor.nativeMotion.phaseDistance = sampleActor.nativeMotion.distance;
+        syncNativeAimGoal(sampleActor);
+      }
       if (turnMorph) {
         const stance = turnStances[frame % turnStances.length];
         sampleActor.stance = stance === 'standing' ? 'standing' : 'crouched';
@@ -340,11 +347,11 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         meshes.push(mesh);
       });
       for (const mesh of meshes) {
-        baked.push({ geometry: yield* bakeNraGeometryWork(mesh, lowMemory), material: mesh.material,
+        baked.push({ geometry: yield* bakeNraGeometryWork(mesh, lowMemory || travelMorph), material: mesh.material,
           skin: isNraSkin(mesh.name) || mesh.userData.skinRegion === true });
       }
       if (!gunMatrix) throw new Error('Distant uniform pose lacks its owned weapon transform');
-      const geometry = yield* mergeNraPoseWork(baked, atlas, { weld: !dead && !postureMorph && !turnMorph && !rifleAction && !shieldWalk && !support });
+      const geometry = yield* mergeNraPoseWork(baked, atlas, { weld: !travelMorph && !dead && !postureMorph && !turnMorph && !rifleAction && !shieldWalk && !support });
       for (const part of baked) part.geometry.dispose();
       poses.push({ geometry, gunMatrix });
       yield;
@@ -355,14 +362,16 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       syncNativeAimGoal(sampleActor);
       bankTemplate.update(sampleActor, 0, null);
     }
-    const geometry = poses[0].geometry, gunMatrix = (postureMorph ? poses[0] : poses.at(-1)).gunMatrix;
-    if (dead || postureMorph || turnMorph || rifleAction || shieldWalk || support) {
+    let geometry = poses[0].geometry;
+    const gunMatrix = (postureMorph ? poses[0] : poses.at(-1)).gunMatrix;
+    if (travelMorph || dead || postureMorph || turnMorph || rifleAction || shieldWalk || support) {
       for (const pose of poses) if (pose.geometry.attributes.position.count !== geometry.attributes.position.count)
         throw new Error('Casualty morph poses must preserve their source vertex topology');
       geometry.morphAttributes.position = poses.slice(1).map(pose => pose.geometry.attributes.position);
       geometry.morphAttributes.normal = poses.slice(1).map(pose => pose.geometry.attributes.normal);
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     }
+    if (travelMorph && !lowMemory) geometry = indexedAnimatedSource(geometry);
     const residentGeometry = lowMemory ? createLowMemoryPoseGeometry(geometry) : geometry;
     residentResources.sourceBodyBytes += geometryBytes(geometry);
     residentResources.residentBodyBytes += geometryBytes(residentGeometry);
@@ -370,7 +379,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     residentResources.residentTriangles += (residentGeometry.index?.count ?? residentGeometry.attributes.position.count) / 3;
     residentResources.morphFrames += residentGeometry.morphAttributes.position?.length ?? 0;
     const instance = new THREE.InstancedMesh(residentGeometry, atlas.material, capacity);
-    if (dead || postureMorph || turnMorph || rifleAction || shieldWalk || support)
+    if (travelMorph || dead || postureMorph || turnMorph || rifleAction || shieldWalk || support)
       instance.setMorphAt(0, { morphTargetInfluences: Array(poses.length - 1).fill(0) });
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
       .setUsage(THREE.DynamicDrawUsage));
@@ -414,12 +423,13 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       footprint.push(...corpseFootprint(geometry)); geometry.dispose();
     }
     banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, deathStance, postureMorph, rifleAction, shieldWalk, bounds,
+      travelControl: travelMorph ? { morphTargetInfluences: Array(phases - 1).fill(0) } : null,
       turnControl: turnMorph ? { morphTargetInfluences: Array(turnStances.length * turnPhases - 1).fill(0) } : null,
       supportSamples, supportPitches: supportModel?.pitches,
       supportControl: support ? { morphTargetInfluences: Array(supportSamples.length - 1).fill(0) } : null,
       gunFrames: poses.map(pose => pose.gunMatrix),
       footprint: footprint ? Object.freeze(footprint) : null });
-    for (const pose of poses.slice(lowMemory ? 0 : 1)) pose.geometry.dispose();
+    for (const pose of poses.slice(lowMemory || travelMorph ? 0 : 1)) pose.geometry.dispose();
     yield { completed: bank + 1, total: supportStart + supportBanks };
   }
   bankTemplate.bind(null);
@@ -439,6 +449,12 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   const gunBlend = new THREE.Matrix4(), gunPositionA = new THREE.Vector3(), gunPositionB = new THREE.Vector3();
   const gunScaleA = new THREE.Vector3(), gunScaleB = new THREE.Vector3();
   const gunRotationA = new THREE.Quaternion(), gunRotationB = new THREE.Quaternion();
+  const travelWeights = phase => {
+    const position = ((phase % 1) + 1) % 1 * phases, lower = Math.floor(position), blend = position - lower;
+    const weights = Array(phases).fill(0);
+    weights[lower] = 1 - blend; weights[(lower + 1) % phases] += blend;
+    return weights;
+  };
   const turnWeights = (posture, turn) => {
     if (!Number.isFinite(turn.angle)) throw new Error('Turning presentation requires the owned turn angle');
     const fraction = turn.angle / (Math.PI / 3);
@@ -452,6 +468,24 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     return weights;
   };
   const sampledGun = (bank, elapsed, posture, turn) => {
+    if (bank.travelControl) {
+      const phase = profile.walk && posture.jog <= .5 ? posture.walkTime / profile.walk.duration
+        : posture.runTime / profile.run.duration;
+      const weights = travelWeights(phase);
+      let total = 0;
+      for (let frame = 0; frame < weights.length; frame++) {
+        const weight = weights[frame];
+        if (!weight) continue;
+        if (!total) bank.gunFrames[frame].decompose(gunPositionA, gunRotationA, gunScaleA);
+        else {
+          bank.gunFrames[frame].decompose(gunPositionB, gunRotationB, gunScaleB);
+          const blend = weight / (total + weight);
+          gunPositionA.lerp(gunPositionB, blend); gunRotationA.slerp(gunRotationB, blend); gunScaleA.lerp(gunScaleB, blend);
+        }
+        total += weight;
+      }
+      return gunBlend.compose(gunPositionA, gunRotationA, gunScaleA);
+    }
     if (bank.turnControl) {
       const weights = turnWeights(posture, turn);
       bank.gunFrames[0].decompose(gunPositionA, gunRotationA, gunScaleA);
@@ -516,6 +550,49 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   return {
     root, motionProfile: profile, excludedIds,
     get appearanceResources() { return template.appearanceResources; },
+    prepareBattleViews(actors = [], now = 0, controlledId = null) {
+      const seen = new Set(), changed = [];
+      const restoreViews = [];
+      const candidatesForSkinning = [
+        actors.find(actor => actor.id !== controlledId && actor.team === team && actor.nativeMotion &&
+          !actor.vehicleId && !isNativeOfficer(actor)),
+        actors.find(actor => actor.id !== controlledId && actor.team === team && actor.nativeMotion &&
+          !actor.vehicleId && isNativeOfficer(actor)),
+      ].filter(Boolean);
+      for (let i = 0; i < Math.min(slots.length, candidatesForSkinning.length); i++) {
+        const view = slots[i].view, previous = actors.find(actor => actor.id === view.actorId);
+        const culling = [];
+        view.root.traverse(node => { if (node.isMesh) { culling.push([node, node.frustumCulled]); node.frustumCulled = false; } });
+        view.bind(candidatesForSkinning[i].id); view.update(candidatesForSkinning[i], now, controlledId);
+        view.root.visible = true;
+        restoreViews.push(() => {
+          for (const [node, value] of culling) node.frustumCulled = value;
+          view.bind(previous?.id ?? null);
+          if (previous) view.update(previous, now, controlledId);
+        });
+      }
+      const point = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5));
+      const transform = new THREE.Matrix4().makeTranslation(point.x, point.y - 1.5, point.z);
+      const candidates = banks.flatMap(bank => [...bank.parts, ...bank.coarseParts, ...bank.attachments.map(item => item.mesh)]);
+      candidates.push(...[...weaponGroups.values()].flatMap(group => group.parts));
+      for (const mesh of candidates) {
+        const key = `${mesh.material.uuid}:${Object.keys(mesh.geometry.attributes).sort()}:` +
+          `${mesh.geometry.morphAttributes.position?.length ?? 0}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const previous = new THREE.Matrix4(); mesh.getMatrixAt(0, previous);
+        changed.push({ mesh, count: mesh.count, visible: mesh.visible, previous });
+        mesh.setMatrixAt(0, transform); mesh.instanceMatrix.needsUpdate = true;
+        mesh.count = Math.max(1, mesh.count); mesh.visible = true;
+      }
+      return () => {
+        for (const { mesh, count, visible, previous } of changed) {
+          mesh.count = count; mesh.visible = visible; mesh.setMatrixAt(0, previous);
+          mesh.instanceMatrix.needsUpdate = true;
+        }
+        for (const restore of restoreViews) restore();
+      };
+    },
     casualtyBounds(variant, retainGun) {
       const shape = casualtyShapes[variant * 2 + Number(retainGun)];
       if (!shape) throw new RangeError('Casualty bank does not exist');
@@ -536,7 +613,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         await yieldStartupTask();
         const source = bank.parts[0].geometry;
         const settled = bank.deathStance || bank.postureMorph || bank.shieldWalk ? settledNraGeometry(source, Boolean(bank.deathStance)) : source;
-        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(settled), atlas.material, bank.capacity);
+        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(settled, { animated: Boolean(bank.travelControl) }), atlas.material, bank.capacity);
+        if (bank.travelControl) mesh.setMorphAt(0, bank.travelControl);
         if (settled !== source) settled.dispose();
         mesh.name = 'distant-coarse-body';
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
@@ -567,7 +645,10 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         slot.actorId = null; slot.view.bind(null);
       }
     },
-    update(actors, now, controlledId, preset, { detailLimit = null } = {}) {
+    update(actors, now, controlledId, preset, { detailLimit = null, distantPreset = preset, distantScale = 1 } = {}) {
+      if (!['high', 'low'].includes(distantPreset)) throw new RangeError('Invalid distant character quality');
+      if (!Number.isFinite(distantScale) || distantScale < .65 || distantScale > 1)
+        throw new RangeError('Invalid distant character distance scale');
       if (detailLimit !== null && (!Number.isInteger(detailLimit) || detailLimit < 0 || detailLimit > 6))
         throw new RangeError('Invalid native presentation detail limit');
       const nextCoarseIds = new Set();
@@ -616,7 +697,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           const pose = sampleNraPhase(actor);
           const walking = profile.walk && pose.jog <= .5;
           const phase = walking ? pose.walkTime / profile.walk.duration : pose.runTime / profile.run.duration;
-          const offset = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) * phases : walking ? 0 : profile.walk ? phases : 0;
+          const movingIndex = profile.footCycleGait ? movingModes.indexOf(pose.travelStyle) : walking ? 0 : profile.walk ? 1 : 0;
           const posture = actor.nativeMotion.postureTransition && postures.includes('prone')
             ? 'prone' : postures.find(name => pose[name] > .5);
           const raised = profile.lowReadyCarry && actor.nativeMotion.lowReady < .5;
@@ -654,7 +735,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
               : phases + (sword ? swordFrame : Math.round(actor.bayonet.extension * 2)))
             : posture && postures.includes(posture)
             ? raised ? baseBanks + 1 + postures.indexOf(posture) : movingBanks + postures.indexOf(posture)
-            : pose.weight > .45 ? 1 + offset + Math.round(phase * phases) % phases : raised ? baseBanks : 0;
+            : pose.weight > .45 ? 1 + movingIndex : raised ? baseBanks : 0;
           const bank = banks[index];
           if (bank.count >= bank.capacity) {
             if (index < livingBanks || index >= shieldStart) throw new Error('Distant uniform instance capacity exceeded');
@@ -698,7 +779,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           }
           const coarse = lodReady && !turning && !bank.rifleAction && !bank.supportSamples && !(bank.shieldWalk && pose.weight > .001) &&
             !actor.nativeMotion.postureTransition && (!dead || deathElapsed === 1) &&
-            useDistantPose(camera, distance, coarseIds.has(actor.id), preset);
+            useDistantPose(camera, distance / distantScale, coarseIds.has(actor.id), distantPreset);
           const installing = sihangShieldInstalling(actor);
           const weapons = engineering ? weaponGroupFor('engineer', coarse) :
             installing || nativeSupportWeaponPresentation(actor) ? null
@@ -737,6 +818,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             postureMorphControl.morphTargetInfluences[1] = pose.kneeling + pose.crouched;
           }
           if (bank.turnControl) bank.turnControl.morphTargetInfluences = turnWeights(pose, actor.nativeMotion.turn).slice(1);
+          if (bank.travelControl) bank.travelControl.morphTargetInfluences = travelWeights(phase).slice(1);
           if (bank.rifleAction) rifleMorphControl.morphTargetInfluences = rifleHandWeights(operation).slice(1);
           if (bank.shieldWalk) shieldMorphControl.morphTargetInfluences = sihangShieldWalkWeights(
             profile.walk ? pose.walkTime / profile.walk.duration : phase, pose.weight);
@@ -759,6 +841,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             if (bank.shieldWalk && !coarse) mesh.setMorphAt(bodyIndex, shieldMorphControl);
             if (bank.supportControl) mesh.setMorphAt(bodyIndex, bank.supportControl);
             if (bank.turnControl) mesh.setMorphAt(bodyIndex, bank.turnControl);
+            if (bank.travelControl) mesh.setMorphAt(bodyIndex, bank.travelControl);
             mesh.geometry.attributes.nraSkinTint.setXYZ(bodyIndex, tint.r, tint.g, tint.b);
             mesh.geometry.attributes.nraUniformVariant?.setX(bodyIndex, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
             mesh.geometry.attributes.nativeOfficer?.setX(bodyIndex, Number(isNativeOfficer(actor)));
@@ -768,7 +851,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             attachment.mesh.setMatrixAt(attachment.count, matrix);
             if (attachment.poseFollowing && attachment.mesh.morphTexture) {
               attachment.mesh.setMorphAt(attachment.count, dead ? morphControl : bank.postureMorph ? postureMorphControl
-                : bank.rifleAction ? rifleMorphControl : bank.turnControl ?? bank.supportControl ?? shieldMorphControl);
+                : bank.rifleAction ? rifleMorphControl : bank.travelControl ?? bank.turnControl ?? bank.supportControl ?? shieldMorphControl);
             }
             attachment.count++;
           }

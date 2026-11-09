@@ -15,7 +15,7 @@ import { createStaticSceneBatchRescue } from './static-scene-batches.js';
 import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS,
   sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal, sihangPursuitGoal } from './sihang-roster.js';
 import { SIHANG_DEFENSE_POSTS, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
-  SIHANG_EVACUATION, SIHANG_STAIRWELLS, sihangBridgePoint, sihangRiverBounds,
+  SIHANG_EVACUATION, SIHANG_STAIRWELLS, SIHANG_LEVELS, sihangBridgePoint, sihangRiverBounds,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
 import { ENCIRCLEMENT_RULES, encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
   createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport, scheduleEncirclementRespawn,
@@ -88,6 +88,9 @@ import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
 import { createAdaptiveAI, idleAIForReduction } from './adaptive-ai.js';
+import { createFrameWork } from './frame-work.js';
+import { createSquadRoutes } from './squad-routes.js';
+import { warmBattleRendering } from './battle-render-warmup.js';
 import { createAdaptiveQuality } from './adaptive-quality.js';
 import { advanceCivilianFlight } from './civilian-refugees.js';
 import './battle-ending.css';
@@ -301,9 +304,11 @@ const missionBriefing = createMissionBriefing($('mission-briefing'));
 if (sihangCampaignMode) {
   document.title = '上海四行仓库 1937 · 山河 1931-1945';
   $('game-title').textContent = '上海四行仓库 1937';
-  document.querySelector('.map-description').textContent = '坚守仓库4分钟，阻止一楼失守和北墙爆破。撤退后停止补充，掩护AI友军经西藏路桥进入南岸租界。可提前过桥，但其他AI小队幸存者全部撤离后才结算。';
+  document.querySelector('.map-description').textContent = '';
+  document.querySelector('.map-description').hidden = true;
   $('deploy').querySelector('span:first-child').textContent = '进入四行仓库';
-  document.querySelector('.deployment-note').textContent = '我方4班44人 · 累计400人 · 日军10支单位 · 防守与撤离';
+  document.querySelector('.deployment-note').textContent = '';
+  document.querySelector('.deployment-note').hidden = true;
   for (const button of document.querySelectorAll('#squad-choices [data-type]')) button.hidden = button.dataset.type !== 'infantry';
 }
 if (nanjingCampaignMode) {
@@ -338,7 +343,7 @@ const fatalReporter = createFatalReporter({ document, window,
 const preferences = getPlayerPreferences();
 let preferenceValues = preferences.snapshot;
 const startupResources = startupResourceProfile(new URLSearchParams(location.search).get('resources') ??
-  preferenceValues.resourceMode, navigator.deviceMemory ?? null);
+  'auto', navigator.deviceMemory ?? null);
 const textureBudget = createStartupTextureBudget(startupResources);
 const recordRecoveredFailure = (error, context) => {
   fatalReporter.recordRecovery(error, context);
@@ -354,6 +359,7 @@ scene.add(camera);
 const aiDecisionView = createPresentationView(camera);
 const aiDecisions = createAIDecisionScheduler({ pathBudgetMs: 3 });
 const adaptiveAI = createAdaptiveAI();
+const squadRoutes = createSquadRoutes();
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: !startupResources.lowMemory, powerPreference: 'high-performance' });
@@ -368,6 +374,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 window.__attachRenderTimingProbe?.(renderer);
+const frameWork = createFrameWork({ gl: renderer.getContext(), warn(message) {
+  console.warn(message);
+  performanceDiagnostics.runtimeError(new Error(message), { recovered: true, stage: 'battle' });
+} });
 window.__attachRenderPassTimingProbe?.(renderer);
 if (import.meta.env.DEV) window.__attachRenderWorkProbe?.(renderer);
 const hemisphere = new THREE.HemisphereLight(0xc3d3e1, 0x766651, .6);
@@ -481,6 +491,7 @@ function selectedToolModel(actor) {
 }
 
 function refreshEngineerObstacles(bounds) {
+  squadRoutes.clear();
   groundCollision.rebuild(); aircraftCollision.rebuild();
   navigate.refresh(bounds); armorNavigate.refresh(bounds);
   if (nanjingCampaignMode) {
@@ -570,6 +581,7 @@ function clearEngineerWorks() {
     }
   }
   if (engineerWorks.length) {
+    squadRoutes.clear();
     groundCollision.rebuild(); aircraftCollision.rebuild();
     const regions = engineerWorks.flatMap(work => work.obstacles);
     navigate.refreshMany(regions); armorNavigate.refreshMany(regions);
@@ -698,6 +710,7 @@ const automaticQuality = createAdaptiveQuality({ initialLevel: preferenceValues.
   performanceDiagnostics.checkpoint();
   if (['pressure', 'backlog', 'recovery', 'manual'].includes(reason) &&
     preferences.snapshot.startupQualityLevel !== level) preferences.update({ startupQualityLevel: level });
+  if (preferences.status.problem) syncPreferenceControls();
   graphics.setAutomaticLevel(level);
   syncQualityControls();
 } });
@@ -742,6 +755,7 @@ $('battle-ending-continue').addEventListener('click', () => battleEnding.finish(
 const navigate = createNavigator(world.doorSystem.navigationObstacles);
 const armorNavigate = createTankNavigation(world.armorObstacles ?? world.obstacles);
 world.doorSystem.onNavigationChanged = (bounds, regions = [bounds]) => {
+  squadRoutes.clear();
   navigate.refreshMany(regions); armorNavigate.refreshMany(regions); groundCollision.rebuild(); aircraftCollision.rebuild();
   civilianCrowdPlanner.invalidate(); civilianNavigationLookup?.rebuild();
 };
@@ -776,6 +790,7 @@ const combatStats = { aiRifleShots: 0, aiRifleShotsAtArmor: 0, aiRifleShotsAtAir
 let actorSerial = 0;
 let soundSerial = 0;
 let state = 'menu';
+let battlePreparing = false, battleWarmup = null;
 let selectedType = nanjingCampaignMode || sihangCampaignMode ? 'infantry' : document.querySelector('.squad-choice.selected')?.dataset.type ?? 'infantry';
 let objectives = sihangCampaignMode ? sihangObjectives() : nanjingCampaignMode ? createNanjingObjectives() : encirclementMode ? encirclementObjectives() : makeObjectives(battleLayout.objectives);
 let encirclement = createEncirclement();
@@ -1771,6 +1786,8 @@ function clearTransient() {
 }
 
 function beginMatch(initialSpawnId = null) {
+  if (battlePreparing) return;
+  squadRoutes.reset();
   clearEngineerWorks();
   endingVoice?.stop(); endingVoice = null; battleEnding.reset();
   $('battle-ending').hidden = true;
@@ -1867,11 +1884,48 @@ function beginMatch(initialSpawnId = null) {
   }
   $('menu').hidden = true;
   $('hud').hidden = false;
-  deploy(selectedType, initialSpawnId);
-  if (!benchmark && !campaign.hidden && !campaign.locked) missionBriefing.show(campaign, performance.now() / 1000);
+  deploy(selectedType, initialSpawnId, !benchmark);
+  if (!benchmark) void prepareBattleRendering().catch(error => fatalReporter.show(error, { stage: 'battle-rendering' }));
 }
 
-function deploy(squadId, spawnId = null) {
+async function prepareBattleRendering() {
+  battlePreparing = true;
+  $('loading').hidden = false;
+  setLoadingProgress(90, '正在准备战场画面…');
+  const update = () => {
+    vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
+    const displayed = allForces.filter(actor => actor.health > 0), preset = graphics.snapshot.preset;
+    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, preset);
+    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, preset);
+    for (const force of [nraCharacter, ijaCharacter]) if (force) force.root.visible = true;
+  };
+  try {
+    if (sihangCampaignMode) {
+      const position = controlledSoldier(entities).position;
+      for (const y of SIHANG_LEVELS) world.elevatedPath({ x: position.x, y, z: position.z },
+        { x: position.x, y, z: position.z });
+      const path = world.elevatedPath(controlledSoldier(entities).position,
+        { x: SIHANG_BRIDGE.northX, y: 0, z: SIHANG_BRIDGE.northZ });
+      if (!path.length) throw new Error('四行仓库开局撤离路线不可达');
+    }
+    updateCamera(0);
+    battleWarmup = await warmBattleRendering({ renderer, scene, camera, update,
+      prepareViews: () => {
+        const restores = [nraCharacter, ijaCharacter].filter(Boolean)
+          .map(force => force.prepareBattleViews(allForces, time, entities.control.soldierId));
+        return () => { for (const restore of restores) restore(); };
+      },
+      onProgress: progress => setLoadingProgress(90 + Math.floor(progress * 10), '正在准备战场画面…') });
+    frameWork.reset(); adaptiveAI.reset(); automaticQuality.leaveBattle();
+    lastFrame = performance.now();
+    setGameState('playing'); bindControlInput();
+    if (!campaign.hidden && !campaign.locked) missionBriefing.show(campaign, performance.now() / 1000);
+    battleVoiceEvent('deploy');
+    $('loading').hidden = true;
+  } finally { battlePreparing = false; }
+}
+
+function deploy(squadId, spawnId = null, prepare = false) {
   if (sihangCampaignMode && (squadId !== 'infantry' || !sihangDeploymentCount(sihangCampaign))) {
     toast(sihangCampaign.outcome ? '本次战斗已结束' : sihangCampaign.stage === 'sihang-retreat' ? '撤退阶段不再补充兵力' : '400人补充额度已用尽，等待友军继续坚守');
     return;
@@ -1961,7 +2015,7 @@ function deploy(squadId, spawnId = null) {
     }
     vehicleRenderer.update(entities.vehicles.values(), time, occupiedVehicle(entities, controlledSoldier(entities))?.id);
   }
-  weapon = weaponModel(type);
+  weapon = weaponModel(type, controlledSoldier(entities).rifle, occupiedSeat(entities)?.role ?? 'commander');
   weapon.traverse(mesh => {
     if (mesh.isMesh) {
       mesh.castShadow = false;
@@ -1978,19 +2032,20 @@ function deploy(squadId, spawnId = null) {
   $('weapon-name').textContent = TYPES[type].weapon;
   $('ammo-max').textContent = `/ ${TYPES[type].magazine}`;
   $('aim-label').hidden = type !== 'mortar';
-  $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '11人班 · 1号迫击炮手（按2选炮）／10号狙击手／11号机枪手 · Y换人' : 'Y 切换队员 · 整队阵亡后换队';
+  $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '' : 'Y 切换队员 · 整队阵亡后换队';
   if (sihangCampaignMode && memberCount < 11)
     $('squad-hint').textContent = `最后 ${memberCount} 人补充 · 全军累计400人已全部投入 · Y换人`;
+  $('squad-hint').hidden = !$('squad-hint').textContent;
   updateControlHelp();
   allies.forEach(actor => { actor.order = 'follow'; });
   $('overlay').hidden = true;
   pendingSquad = pendingSpawn = null;
-  setGameState('playing');
+  setGameState(prepare ? 'pause' : 'playing');
   refreshWeaponVisibility();
   bindControlInput();
   hudAt = 0;
   initAudio();
-  battleVoiceEvent('deploy');
+  if (!prepare) battleVoiceEvent('deploy');
   if (encirclementMode) for (const cue of encirclementVoiceTracker.update(encirclement, objectives, formations)) {
     battleVoiceEvent(cue, { eventKey: `encirclement:${cue}` });
   }
@@ -2533,6 +2588,7 @@ function syncArtilleryCollision(point) {
   const all=[...previous,...updated];
   const bounds={minX:Math.min(...all.map(box=>box.minX))-2,maxX:Math.max(...all.map(box=>box.maxX))+2,
     minZ:Math.min(...all.map(box=>box.minZ))-2,maxZ:Math.max(...all.map(box=>box.maxZ))+2};
+  squadRoutes.clear();
   groundCollision.rebuild();aircraftCollision.rebuild();navigate.refresh(bounds);armorNavigate.refresh(bounds);
   if (nanjingCampaignMode) {
     world.civilianNavigate.refresh(bounds);civilianNavigationLookup.rebuild();civilianCrowdPlanner.invalidate();
@@ -4153,6 +4209,22 @@ function personalDestination(actor, target) {
   return point;
 }
 
+function connectSquadRoute(start, goal) {
+  if (Math.hypot(goal.x - start.x, goal.z - start.z) > 8) return [];
+  if (world.connectInfantryPath) return world.connectInfantryPath(start, goal);
+  const count = Math.max(1, Math.ceil(Math.hypot(goal.x - start.x, goal.z - start.z) / .12));
+  const path = [];
+  let y = start.y;
+  for (let i = 1; i <= count; i++) {
+    const x = start.x + (goal.x - start.x) * i / count, z = start.z + (goal.z - start.z) * i / count;
+    const height = world.walkHeight(x, z, y);
+    if (Math.abs(height - y) > .26 || circleBlocked(x, z, .5,
+      movementObstacles(x, z).filter(o => !o.walkable || o.height > height + .25), height)) return [];
+    y = height; path.push({ x, y, z });
+  }
+  return Math.abs(y - (goal.y ?? 0)) <= .025 ? path : [];
+}
+
 function walkActor(actor, target, speed, dt, sprint = false) {
   if (sihangCampaignMode && !actor.friendly && !sihangNorthBank(target, .5))
     target = { ...target, z: sihangRiverBounds(target.x).northZ - .5, y: 0 };
@@ -5223,8 +5295,10 @@ function updateAI(dt) {
       !aiDecisions.take('path', request.actor)) continue;
     pathRequests.delete(id);
     const pathStarted = performance.now();
-    request.actor.path = world.elevatedPath?.(request.actor.position, request.target, request.actor.tactics.preferredStair) ??
-      multistoryPath(request.actor.position, request.target, world.town.buildings, navigate);
+    request.actor.path = squadRoutes.find(request.actor, request.target, time,
+      () => world.elevatedPath?.(request.actor.position, request.target, request.actor.tactics.preferredStair) ??
+        multistoryPath(request.actor.position, request.target, world.town.buildings, navigate),
+      connectSquadRoute);
     request.actor.tactics.pathReason = request.actor.path.length ? 'ready' : navigate.stats.reason;
     const pathWorkMs = performance.now() - pathStarted;
     aiDecisions.recordPathWork(pathWorkMs);
@@ -5836,6 +5910,7 @@ function updateSihangMission(dt) {
   }
   if (sihangCampaign.outcome && !battleEnding.fading && !battleEnding.complete) {
     if (sihangCampaign.outcome === 'demolished') {
+      squadRoutes.clear();
       world.ruinWarehouse();
       camera.position.set(48, 1.7, 46); camera.lookAt(-4, 5, -25);
       groundCollision.rebuild(); aircraftCollision.rebuild(); armorNavigate.reset();
@@ -7175,7 +7250,7 @@ function advanceBattleStep(dt, presentationTime) {
   if (activeStates.has(state)) {
     // Vehicles have finished moving. Reuse read-only candidates only during this synchronous infantry pass.
     movementCollision.beginStablePass();
-    try { performanceDiagnostics.measure('ai', () => updateAI(dt)); }
+    try { performanceDiagnostics.measure('ai', () => frameWork.measureAI(() => updateAI(dt))); }
     finally { movementCollision.endStablePass(); }
   }
   // Sample the completed AI movement/turn, not last step's heading and speed.
@@ -7236,6 +7311,7 @@ function renderSimulationStatus() {
 }
 
 function tick(now) {
+  if (battlePreparing) { lastFrame = now; requestAnimationFrame(tick); return; }
   const callbackEnteredAt = benchmark ? performance.now() : 0;
   if (fatal) return;
   battleEnding.update(performance.now(), document.hidden || battleEnding.fading && state === 'pause');
@@ -7260,9 +7336,12 @@ function tick(now) {
   const frameInterval = now - lastFrame;
   const activeFrame = activeStates.has(state);
   performanceDiagnostics.beginFrame(Math.max(0, frameInterval), state, !document.hidden);
-  adaptiveAI.observeFrame(Math.max(0, frameInterval), activeFrame && !document.hidden);
+  frameWork.beginFrame(activeFrame && !document.hidden);
+  const measuredWork = frameWork.snapshot;
+  adaptiveAI.observeFrame(Math.max(0, frameInterval), activeFrame && !document.hidden, measuredWork);
   automaticQuality.observe(Math.max(0, frameInterval), { active: activeFrame && !benchmark?.renderIsolation,
-    visible: !document.hidden, backlogSeconds: simulationClock.snapshot.pendingSeconds, now });
+    visible: !document.hidden, backlogSeconds: simulationClock.snapshot.pendingSeconds,
+    aiLevel: adaptiveAI.snapshot.level, work: measuredWork, now });
   const presentationTime = time + simulationClock.beginFrame(performance.now());
   stepWorkBudget.beginFrame(performance.now(), { frameMs: Math.max(0, frameInterval),
     active: activeFrame && !document.hidden, emergencyLevel: automaticQuality.snapshot.level,
@@ -7324,9 +7403,11 @@ function tick(now) {
   updateSupportGripMarkers();
   performanceDiagnostics.measure('presentation', () => {
     const settings = graphics.snapshot;
-    const detailLimit = settings.automaticLevel === 3 ? 1 : settings.automaticLevel === 2 ? 2 : undefined;
-    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, settings.preset, { detailLimit });
-    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, settings.preset, { detailLimit });
+    const detailLimit = settings.automaticLevel === 3 ? 2 : undefined;
+    const distantPreset = settings.automaticLevel > 0 ? 'low' : settings.preset;
+    const distantScale = settings.automaticLevel >= 2 ? .7 : 1;
+    nraCharacter?.update(displayed.filter(actor => actor.team === 'friendly'), time, entities.control.soldierId, settings.preset, { detailLimit, distantPreset, distantScale });
+    ijaCharacter?.update(displayed.filter(actor => actor.team === 'enemy'), time, entities.control.soldierId, settings.preset, { detailLimit, distantPreset, distantScale });
   });
   const supportActor = controlledSoldier(entities), supportPoint = emplacements.get(supportActor?.emplacementId);
   if (supportViewHands) {
@@ -7348,7 +7429,10 @@ function tick(now) {
     enabled: activeFrame && !document.hidden && automaticQuality.snapshot.level === 3, budgetMs: 1, maxChunks: 128,
   }));
   if (isolationMode === 'no-draw') renderer.info.reset();
-  else performanceDiagnostics.measure('render', () => renderer.render(scene, camera));
+  else performanceDiagnostics.measure('render', () => frameWork.measureRender(() => {
+    graphics.beginFrame();
+    renderer.render(scene, camera);
+  }));
   const renderEnded = benchmark ? performance.now() : 0;
   if (benchmark && activeFrame) {
     renderIsolation.mode = isolationMode;
@@ -7362,6 +7446,7 @@ function tick(now) {
       callbackEnteredAt, callbackQueueDelayMs: callbackEnteredAt - now,
       cpuStartedAt: cpuStarted, renderStartedAt: renderStarted, renderEndedAt: renderEnded,
       aiDecisions: aiDecisions.snapshot,
+      squadRoutes: squadRoutes.snapshot,
       shaderPrograms: renderer.info.programs.length,
       renderIsolation: isolationMode,
       simulationSteps: simulationClock.snapshot.stepsThisFrame, simulationBacklogSeconds: simulationClock.snapshot.pendingSeconds,
@@ -7374,6 +7459,7 @@ function tick(now) {
     frameDetails.callbackMs = frameDetails.callbackEndedAt - callbackEnteredAt;
     telemetry.end(frameDetails);
   }
+  frameWork.finishFrame();
   performanceDiagnostics.finishFrame(state);
   requestAnimationFrame(tick);
 }
@@ -7503,7 +7589,8 @@ function syncPreferenceControls() {
   for (const selector of document.querySelectorAll('[data-motion-strength]')) selector.value = String(motionStrength);
   for (const input of document.querySelectorAll('[data-tank-crushing]')) input.checked = preferenceValues.tankCrushing;
   for (const element of document.querySelectorAll('[data-preferences-status]')) {
-    element.textContent = preferences.status.message;
+    element.textContent = preferences.status.problem ? preferences.status.message : '';
+    element.hidden = !preferences.status.problem;
     element.classList.toggle('preferences-warning', preferences.status.problem);
   }
   for (const input of document.querySelectorAll('[data-audio-volume]')) {
@@ -7552,16 +7639,6 @@ function syncQualityControls() {
   for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.value = settings.requested.preset;
   for (const checkbox of document.querySelectorAll('[data-quality-effect]')) checkbox.checked = settings.requested.effects[checkbox.dataset.qualityEffect];
   $('quality-status').textContent = `${settings.preset === 'high' ? '高' : '低'}画质 · ${settings.pixelRatio.toFixed(2)}× · 阴影${settings.shadowsEnabled ? settings.shadowSize : '关闭'}${settings.lowMemory ? ' · 低内存启动上限（重新加载才能切换资源）' : ''}${settings.automaticLevel ? ` · 自动减负${settings.automaticLevel}档（保留手动偏好）` : ''}`;
-}
-for (const selector of document.querySelectorAll('[data-resource-mode]')) {
-  selector.value = preferenceValues.resourceMode;
-  selector.addEventListener('change', () => {
-    preferences.update({ resourceMode: selector.value });
-    const url = new URL(location.href); url.searchParams.delete('resources'); history.replaceState(null, '', url);
-    for (const control of document.querySelectorAll('[data-resource-mode]')) control.value = selector.value;
-    for (const label of document.querySelectorAll('[data-resource-status]'))
-      label.textContent = '已保存启动资源选项；当前战局不变，重新加载页面后生效。';
-  });
 }
 for (const selector of document.querySelectorAll('[data-quality-toggle]')) selector.addEventListener('change', () => {
   const selectedPreset = selector.value;
@@ -7897,7 +7974,7 @@ document.addEventListener('pointerlockchange', () => {
   hadPointerLock = document.pointerLockElement === canvas;
   if (hadPointerLock) {
     scoreboardRestoring = false;
-    if (!['playing', 'transferring'].includes(state)) { document.exitPointerLock(); return; }
+    if (!['playing', 'transferring'].includes(state) && !battlePreparing) { document.exitPointerLock(); return; }
   }
   if (scoreboardInteractive || scoreboardRestoring) return;
   if (previouslyCaptured && !hadPointerLock && ['playing', 'transferring'].includes(state)) showOverlay();
@@ -8040,8 +8117,11 @@ Object.defineProperty(window, '__battle', { get: () => ({
   simulationClock: simulationClock.snapshot,
   aiDecisions: aiDecisions.snapshot,
   performanceDiagnostics: performanceDiagnostics.snapshot,
+  squadRoutes: squadRoutes.snapshot,
+  battleWarmup, battlePreparing,
   adaptiveAI: adaptiveAI.snapshot,
   automaticQuality: automaticQuality.snapshot,
+  frameWork: frameWork.snapshot,
   battleEnding: battleEnding.snapshot,
   queryDiagnostics: queryDiagnostics?.snapshot ?? null,
   tracers: tracerPool.snapshot,

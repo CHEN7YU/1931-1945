@@ -84,7 +84,7 @@ test('neutral-bank target filtering and retreat goals follow the shared curved b
   for (const z of [-90, 8, south - .01]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 0, z } }), true);
   for (const z of [south, south + 4, 100]) assert.equal(sihangEnemyTargetAllowed({ position: { x: 48, y: 50, z } }), false);
   assert.equal(sihangEnemyTargetAllowed(null), false);
-  assert.equal(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220), south - 8);
+  assert.ok(Math.abs(sihangEnemyRayRange({ x: 48, z: 8 }, { x: 0, z: 1 }, 220) - (south - 8)) < 1e-8);
   assert.equal(sihangEnemyRayRange({ x: 48, z: south }, { x: 0, z: -1 }, 220), 0);
   assert.equal(sihangEnemyRayRange({ x: 48, z: 4 }, { x: 0, z: -1 }, 220), 220);
   assert.equal(sihangRetreatGoal({ index: 0, position: { x: 0, y: W.floorHeight, z: -25 } }).z, SIHANG_BRIDGE.northZ - 1.3);

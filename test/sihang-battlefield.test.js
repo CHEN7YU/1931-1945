@@ -72,7 +72,7 @@ describe('independent Sihang Warehouse battlefield', () => {
   it('exports the coordinate contract and a complete standalone world', () => {
     assert.equal(W.width, 64); assert.equal(W.depth, 34);
     assert.equal(W.floorHeight, 8.4); assert.equal(W.floors, 3); assert.equal(W.roofY, 25.2);
-    assert.deepEqual(SIHANG_RIVER, { northZ: 8, southZ: 40, waterY: -1 });
+    assert.deepEqual(SIHANG_RIVER, { northZ: 0, southZ: 32, waterY: -1 });
     assert.deepEqual(SIHANG_BRIDGE, { name: '西藏路桥', x: 83, z: -22, width: 8,
       northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
     assert.equal(SIHANG_CAPTURE_AREA.maxY, 2.4);
@@ -318,7 +318,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     const center = sihangBridgePoint(.5);
     assert.equal(world.isDeepWater(center.x, center.z), false);
     assert.equal(world.impactHeight(0, 20), -1);
-    const path = follow({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 42 });
+    const path = follow({ x: 0, y: 0, z: -2 }, { x: 0, y: 0, z: 42 });
     assert.ok(path.route.some(p => sihangBridgeContains(p)), 'Navigation uses the actual diagonal bridge');
     const edge = new THREE.Vector3(center.x, 1.15, center.z);
     const sideways = sihangBridgePoint(.5, -15);
