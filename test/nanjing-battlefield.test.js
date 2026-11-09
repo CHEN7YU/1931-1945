@@ -16,6 +16,7 @@ import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
 import { createSolidIndex } from '../src/solid-index.js';
 import { createOcclusionQuery } from '../src/occlusion-query.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from '../src/nanjing-defense.js';
+import { casemateGateSlices } from '../src/nanjing-casemate.js';
 
 function housePoint(home, x, z) {
   const c = [1, 0, -1, 0][home.facing], s = [0, 1, 0, -1][home.facing];
@@ -450,7 +451,16 @@ test('Nanjing battlefield provides its own gate, river crossings, dock, ferries 
   assert.equal(NANJING_WALL_WALK.height, NANJING_GATE_HEIGHT);
   assert.ok(world.landmarks.wallWalk.maxX - world.landmarks.wallWalk.minX >= 4);
   const archFill = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'gate-above-arch-masonry');
-  assert.equal(archFill.length, 3);
+  const expectedSlices = world.landmarks.gatehouse.gates.flatMap(gate =>
+    casemateGateSlices(gate.z - gate.depth / 2, gate.z + gate.depth / 2));
+  assert.equal(archFill.length, expectedSlices.length);
+  for (const slice of expectedSlices) {
+    assert.ok(archFill.some(mesh => {
+      mesh.geometry.computeBoundingBox();
+      return Math.abs(mesh.position.z + mesh.geometry.boundingBox.min.z - slice.minZ) < .001 &&
+        Math.abs(mesh.position.z + mesh.geometry.boundingBox.max.z - slice.maxZ) < .001;
+    }), `gate masonry must cover slice ${slice.minZ}..${slice.maxZ}`);
+  }
   assert.ok(archFill.every(mesh => {
     mesh.geometry.computeBoundingBox();
     return Math.abs(mesh.geometry.boundingBox.max.y - NANJING_GATE_HEIGHT) < .01;

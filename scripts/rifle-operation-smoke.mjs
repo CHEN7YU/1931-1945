@@ -11,8 +11,8 @@ try {
     const T = await import('/node_modules/.vite/deps/three.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
     const { loadIjaCharacter } = await import('/src/ija-character.js');
-    const { createNraMotion } = await import('/src/nra-motion.js');
-    const { createRifleState, rifleReloadSeconds } = await import('/src/rifle-action.js');
+    const { createNraMotion, nativeEyeLocal } = await import('/src/nra-motion.js');
+    const { createRifleState, rifleReloadSeconds, shootRifle } = await import('/src/rifle-action.js');
     const output = [];
     for (const [team, load] of [['friendly', loadNraCharacter], ['enemy', loadIjaCharacter]]) {
       const template = await load(() => 0), view = template.createView();
@@ -34,10 +34,40 @@ try {
         }
         output.push({ team, action, ammo, issues, maxPalmError });
       }
+      const actor = { id: `${team}-recoil`, team, index: 1, unitId: 'recoil-review',
+        formation: { type: 'infantry', memberCount: 11 }, health: 100, stance: 'standing',
+        position: new T.Vector3(), heading: 0, walkPhase: 0, tactics: {}, rifleReady: true,
+        locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState() };
+      actor.nativeMotion = createNraMotion(template.motionProfile, actor);
+      view.bind(actor.id);
+      const capture = elapsed => {
+        actor.rifle.elapsed = elapsed; view.update(actor, elapsed, null);
+        const snapshot = view.snapshot, logical = snapshot.logicalMuzzle, muzzle = snapshot.riflePose.muzzle;
+        const eye = nativeEyeLocal(actor);
+        return { head: snapshot.head, eye, muzzleError:
+          Math.hypot(muzzle[0] - logical.x, muzzle[1] - logical.y, muzzle[2] - logical.z),
+          rightPalmError: snapshot.riflePose.right.palmError, leftPalmError: snapshot.riflePose.left.palmError,
+          issue: view.issue };
+      };
+      if (!shootRifle(actor.rifle)) throw new Error('Rifle shot failed');
+      const atShot = capture(0), peak = capture(.025), recovered = capture(.13);
+      output.push({ team, action: 'recoil', atShot, peak, recovered });
     }
     return output;
   });
   for (const result of results) {
+    if (result.action === 'recoil') {
+      for (const sample of [result.atShot, result.peak, result.recovered]) {
+        assert.equal(sample.issue, null, JSON.stringify(result));
+        assert.ok(sample.muzzleError < .0001 && sample.rightPalmError < .005 && sample.leftPalmError < .005,
+          JSON.stringify(result));
+      }
+      assert.ok(Math.hypot(...result.peak.head.map((v, i) => v - result.atShot.head[i])) > .0001,
+        `${result.team}: actual head must react to recoil`);
+      assert.ok(Math.hypot(...result.peak.eye.map((v, i) => v - result.atShot.eye[i])) > .0001,
+        `${result.team}: simulated eye must react to recoil`);
+      continue;
+    }
     assert.equal(result.issues, 0, JSON.stringify(result));
     assert.ok(result.maxPalmError <= .005, JSON.stringify(result));
   }
