@@ -43,6 +43,8 @@ test('both shops, the bridge and street junctions remain inside the actual shado
 test('daylight toggles change only the requested lighting profile, not shadow position or projection', () => {
   const scene = new THREE.Scene(), sun = sunlight(), hemisphere = new THREE.HemisphereLight();
   const fog = new THREE.FogExp2(), daylight = createDaylight(scene, sun, hemisphere, fog);
+  const sky = new THREE.Texture(); scene.background = sky; scene.backgroundIntensity = .65;
+  scene.backgroundRotation.y = 1.1;
   const projection = sun.shadow.camera.projectionMatrix.clone(), position = sun.position.clone();
   for (const enabled of [true, false, true]) {
     daylight.setEnabled(enabled);
@@ -52,5 +54,8 @@ test('daylight toggles change only the requested lighting profile, not shadow po
     assert.equal(scene.environmentIntensity, profile.environment);
     assert.deepEqual(sun.shadow.camera.projectionMatrix, projection);
     assert.deepEqual(sun.position, position);
+    assert.equal(scene.background, sky);
+    assert.equal(scene.backgroundIntensity, .65);
+    assert.equal(scene.backgroundRotation.y, 1.1);
   }
 });

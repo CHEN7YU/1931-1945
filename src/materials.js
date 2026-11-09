@@ -36,21 +36,20 @@ export async function loadSceneMaterials(renderer, scene, { textureBudget = null
     map: grime, transparent: true, depthWrite: false, alphaTest: .015,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
   };
-  if (lowMemory) {
-    scene.background = new THREE.Color(0xa7b9c8);
-    scene.environment = null;
-  } else {
   const sky = await new HDRLoader().loadAsync('/assets/sky.hdr');
   sky.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = sky;
   scene.backgroundIntensity = .65;
   scene.backgroundRotation.y = 1.1;
-  scene.environmentRotation.y = 1.1;
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const environment = pmrem.fromEquirectangular(sky);
-  scene.environment = environment.texture;
-  scene.environmentIntensity = .8;
-  pmrem.dispose();
+  if (lowMemory) {
+    scene.environment = null;
+  } else {
+    scene.environmentRotation.y = 1.1;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const environment = pmrem.fromEquirectangular(sky);
+    scene.environment = environment.texture;
+    scene.environmentIntensity = .8;
+    pmrem.dispose();
   }
 
   return (name, color = 0xffffff, metersPerTile = SCENE_ART_MATERIALS[name]?.metersPerTile ?? 3) => {
