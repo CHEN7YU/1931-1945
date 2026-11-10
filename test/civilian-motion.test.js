@@ -82,6 +82,19 @@ test('gait uses real displacement and turns toward actual motion at a bounded sp
   assert.equal(actor.userData.walkPhase, phase, 'a stationary sheltered person cannot march in place');
 });
 
+test('street corner heading follows actual travel without an instantaneous half-turn', () => {
+  const actor = person();
+  actor.userData.streetLife = { wakeAt: 0, waypoint: 0, route: [{ x: 0, z: 100 }],
+    door: { x: 100, z: 100, targetAngle: 1.7, angle: 1.7 }, movementObstacles: [], navigationObstacles: [],
+    navigationLookup: { at: () => [] } };
+  updateCivilianStreetLife(actor, .1, .05, [actor], { interact() {} });
+  assert.ok(Math.abs(actor.rotation.y) <= .19 + 1e-8);
+  assert.ok(Math.abs(actor.rotation.y) > 0);
+  for (let frame = 1; frame < 60; frame++)
+    updateCivilianStreetLife(actor, .1 + frame * .05, .05, [actor], { interact() {} });
+  assert.ok(Math.abs(Math.abs(actor.rotation.y) - Math.PI) < .02);
+});
+
 test('free arms swing from their shoulders with relaxed, phase-lagged elbow flexion; running bends more without adding geometry', () => {
   for (const age of ['adult', 'elderly', 'child']) {
     const actor = person('none', age), joints = actor.civilianSkin.joints, bends = [];

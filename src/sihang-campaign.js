@@ -9,7 +9,7 @@ export const SIHANG_RULES = Object.freeze({
 export function createSihangCampaign() {
   return {
     stage: 'sihang-defense', stageElapsed: 0, stageRemaining: SIHANG_RULES.defenseSeconds,
-    elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, outcome: null,
+    elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, retreatDeployed: 0, outcome: null,
     aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [], northWallBreached: false,
     demolition: { state: 'idle', operatorId: null, installProgress: 0,
       fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null, defuseInterruptedFor: 0,
@@ -20,13 +20,16 @@ export function createSihangCampaign() {
 export function sihangDeploymentCount(campaign, requested = SIHANG_RULES.squadMembers) {
   if (!Number.isInteger(requested) || requested < 1 || requested > SIHANG_RULES.squadMembers)
     throw new RangeError('Invalid Sihang replacement squad size');
-  return campaign.outcome || campaign.stage !== 'sihang-defense' ? 0 : Math.min(requested, campaign.reserve);
+  if (campaign.outcome) return 0;
+  if (campaign.stage === 'sihang-retreat') return campaign.playerRetreatOpen ? 0 : requested;
+  return campaign.stage === 'sihang-defense' ? Math.min(requested, campaign.reserve) : 0;
 }
 
 export function registerSihangDeployment(campaign, count) {
   if (!Number.isInteger(count) || count < 1 || count > sihangDeploymentCount(campaign))
     throw new RangeError('Sihang deployment exceeds its remaining troop budget');
-  campaign.reserve -= count; campaign.deployed += count;
+  if (campaign.stage === 'sihang-retreat') campaign.retreatDeployed += count;
+  else { campaign.reserve -= count; campaign.deployed += count; }
 }
 
 export function sihangSafePosition(position) {
@@ -114,7 +117,7 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], player = nu
       const actor = friendly.find(candidate => candidate.id === id);
       return !actor || !alive(actor) || campaign.evacuatedIds.includes(id);
     });
-    if (!playerSquad.some(alive)) campaign.outcome = 'squad-lost';
+    if (campaign.playerRetreatOpen && (!player || !alive(player))) campaign.outcome = 'squad-lost';
     else if (campaign.playerRetreatOpen && player && alive(player) && sihangSafePosition(player.position))
       campaign.outcome = 'evacuated';
     else if (campaign.stageRemaining <= 1e-8) campaign.outcome = 'timeout';

@@ -179,6 +179,12 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
   if (points.some(name => !bones.has(name)) || typeof groundAt !== 'function') throw new Error('Casualty pose requires inspected body joints and ground');
   const fingerNames = [...bones.keys()].filter(name => /Hand(?:Thumb|Index|Middle|Ring|Pinky)[123]$/.test(name));
   const rest = new Map([...bones].map(([name, bone]) => [name, bone.quaternion.clone()]));
+  root.updateMatrixWorld(true);
+  const hinges = new Map(['Left', 'Right'].flatMap(side => ['UpLeg', 'Leg', 'Foot'].map(part => {
+    const name = side + part;
+    return [name, new Vector3(1, 0, 0).transformDirection(root.matrixWorld)
+      .applyQuaternion(bones.get(name).getWorldQuaternion(new Quaternion()).invert())];
+  })));
   const rotate = (name, x, y, z, weight) => {
     const bone = bones.get(name);
     bone.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(x, y, z).normalize(), weight));
@@ -201,16 +207,20 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
     root.position.y -= response.drop * (1.3 + .3*dynamics.pelvis) + response.settle;
     for (const [index, side] of ['Left', 'Right'].entries()) {
       if (c.variant === 3 && c.wallLimited && !(c.motion?.prone > .5)) continue;
-      const sign = index ? 1 : -1;
       const joint=index?dynamics.rightKnee:dynamics.leftKnee;
-      for (const [part, bend] of [['UpLeg', sign * (prone > .5 ? .15 : .22) * c.fold - response.buckle * .8*joint],
-        ['Leg', (prone > .5 ? (index ? .3 : .65) : (index ? .55 : 1.05)) * c.fold +
-          response.buckle * (c.hitZone === 'limb' ? 1.5 : 1.25)*joint],
-        ['Foot', .1 - response.buckle * .55*joint]]) {
+      const hip = (index ? .16 : .32) + c.fold * .2;
+      const knee = (index ? .65 : 1.05) + c.fold * .3;
+      for (const [part, bend] of [['UpLeg', -hip * (prone > .5 ? .35 : 1) - response.buckle * .65*joint],
+        ['Leg', knee * (prone > .5 ? .6 : 1) +
+          response.buckle * (c.hitZone === 'limb' ? 1.1 : .85)*joint],
+        ['Foot', -.12 - response.buckle * .25*joint]]) {
         const name = side + part;
         bones.get(name).quaternion.slerp(rest.get(name).clone()
-          .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), bend)), Math.max(response.relax, response.buckle));
+          .multiply(new Quaternion().setFromAxisAngle(hinges.get(name), bend)), Math.max(response.relax, response.buckle));
       }
+    }
+    for (const name of ['Spine', 'Neck', 'Head']) {
+      if (bones.has(name)) bones.get(name).quaternion.slerp(rest.get(name), response.relax);
     }
     rotate('Spine', 1, 0, 0, response.buckle * .58*dynamics.chest);
     rotate('Spine', 0, 1, 0, dynamics.twist * response.relax);
@@ -229,6 +239,10 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
       const radius = name === 'Hips' ? .14 : name === 'Head' ? .12 : name === 'Spine2' ? .13 : .045;
       correction = Math.max(correction, groundAt(p.x, p.z, actor.position.y) + radius - p.y);
     }
+    for (const side of ['Left', 'Right']) {
+      const p = bones.get(side + 'Arm').getWorldPosition(new Vector3());
+      correction = Math.max(correction, groundAt(p.x, p.z, actor.position.y) + .065 - p.y);
+    }
     root.position.y += correction > 0 ? correction : correction * response.fall;
     root.updateMatrixWorld(true);
     const hips = bones.get('Hips').getWorldPosition(new Vector3()), along = bones.get('Neck').getWorldPosition(new Vector3()).sub(hips);
@@ -242,12 +256,28 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
       const origin = upper.getWorldPosition(new Vector3()), elbow = lower.getWorldPosition(new Vector3()), wrist = hand.getWorldPosition(new Vector3());
       const held = c.retainGun && side === 'Right', sign = index ? 1 : -1;
       const armResponse=Math.min(1,index?dynamics.rightArm:dynamics.leftArm);
-      const target = hips.clone().addScaledVector(along, (index ? .02 : .28) + c.fold * .12)
-        .addScaledVector(across, sign * (c.variant === 3 ? .18 : held ? .18 : .36 + c.fold * (index ? .08 : .2)));
+      const target = hips.clone().addScaledVector(along, (index ? .20 : .42) + c.fold * .08)
+        .addScaledVector(across, sign * (c.wallLimited ? .18 : held ? .20 : index ? .32 : .40));
       target.y = groundAt(target.x, target.z, actor.position.y) + (held ? .12 : .07);
+      const a = origin.distanceTo(elbow), b = elbow.distanceTo(wrist);
       const delta = target.sub(origin).clampLength(Math.abs(origin.distanceTo(elbow) - elbow.distanceTo(wrist)) + .005,
-        origin.distanceTo(elbow) + elbow.distanceTo(wrist) - .005);
-      solveArm(upper, lower, hand, delta.add(origin), across.clone().multiplyScalar(sign).addScaledVector(Y, .4));
+        (a + b) * .88);
+      const distance = delta.length(), direction = delta.clone().normalize();
+      const reach = (a * a - b * b + distance * distance) / (2 * distance);
+      const height = Math.sqrt(Math.max(0, a * a - reach * reach));
+      const center = origin.clone().addScaledVector(direction, reach);
+      const vertical = Y.clone().addScaledVector(direction, -direction.y);
+      const pole = across.clone().multiplyScalar(sign);
+      if (vertical.lengthSq() > 1e-8 && height > 1e-6) {
+        vertical.normalize();
+        const horizontal = direction.clone().cross(vertical);
+        if (horizontal.dot(pole) < 0) horizontal.negate();
+        // The elbow rests beside the chest, not above it as a load-bearing push-up.
+        const floor = groundAt(center.x, center.z, actor.position.y) + .065;
+        const amount = Math.max(-1, Math.min(1, (floor - center.y) / (height * vertical.y)));
+        pole.copy(vertical).multiplyScalar(amount).addScaledVector(horizontal, Math.sqrt(1 - amount * amount));
+      }
+      solveArm(upper, lower, hand, delta.add(origin), pole);
       upper.quaternion.copy(beforeUpper.slerp(upper.quaternion, armResponse));
       lower.quaternion.copy(beforeLower.slerp(lower.quaternion, armResponse));
       root.updateMatrixWorld(true);

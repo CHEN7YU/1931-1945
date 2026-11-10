@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, emplacementObstacles, aimEmplacement,
-  moveArtillery, setArtilleryPosition, ARTILLERY_MARCH } from '../src/emplacements.js';
+  moveArtillery, setArtilleryPosition, ARTILLERY_MARCH, emplacementCooldown } from '../src/emplacements.js';
 import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
 import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
@@ -103,6 +103,28 @@ test('fixed guns have finite ammunition, simulated reloads and cooling; pausing 
   assert.equal(fireEmplacement(point, 11), true);
   point.operatorId = null;
   assert.equal(fireEmplacement(point, 12), false);
+});
+
+test('machine gun cooling and belt reload share an exact simulation-driven progress display', () => {
+  for (const profile of ['maxim24', 'maxim24aa']) {
+    const point = createEmplacement({ id: profile, profile, x: 0, z: 0, heading: 0 });
+    point.heat = 1; point.overheated = true;
+    const start = emplacementCooldown(point, 10);
+    assert.equal(start.mode, 'cooling');
+    assert.ok(Math.abs(start.remaining - .65 / .12) < 1e-10);
+    assert.equal(start.progress, 0);
+    advanceEmplacement(point, 0, 10);
+    assert.deepEqual(emplacementCooldown(point, 10), start, 'pause cannot cool the gun');
+    advanceEmplacement(point, 2, 12);
+    assert.ok(emplacementCooldown(point, 12).progress > .36);
+    advanceEmplacement(point, 4, 16);
+    assert.equal(emplacementCooldown(point, 16), null);
+    point.weapon.ammo = 0; reloadEmplacement(point, 16);
+    assert.equal(emplacementCooldown(point, 18).mode, 'reload');
+    assert.equal(emplacementCooldown(point, 18).remaining, 3);
+    advanceEmplacement(point, 3, 21);
+    assert.equal(emplacementCooldown(point, 21), null);
+  }
 });
 
 test('fixed weapon barrels share the constrained sight direction and use only locally authored geometry', () => {

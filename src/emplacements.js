@@ -161,10 +161,22 @@ export function reloadEmplacement(point, now) {
   return true;
 }
 
+export function emplacementCooldown(point, now) {
+  if (!Number.isFinite(now)) throw new RangeError('Emplacement cooldown requires simulation time');
+  if (!point || point.health <= 0) return null;
+  const reload = Math.max(0, point.weapon.reloadUntil - now);
+  const cooling = point.overheated ? Math.max(0, (point.heat - .35) / .12) : 0;
+  if (!reload && !cooling) return null;
+  const mode = cooling > reload ? 'cooling' : 'reload';
+  const remaining = Math.max(reload, cooling);
+  const duration = mode === 'cooling' ? .65 / .12 : point.weapon.settings.reload;
+  return { mode, remaining, progress: Math.max(0, Math.min(1, 1 - remaining / duration)) };
+}
+
 export function advanceEmplacement(point, dt, now) {
   if (point.health <= 0) return;
   point.heat = Math.max(0, point.heat - dt * .12);
-  if (point.heat < .35) point.overheated = false;
+  if (point.heat <= .35) point.overheated = false;
   const weapon = point.weapon;
   if (weapon.reloadUntil > 0 && now >= weapon.reloadUntil) {
     const rounds = Math.min(weapon.settings.magazine - weapon.ammo, weapon.reserve);

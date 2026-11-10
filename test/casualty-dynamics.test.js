@@ -13,3 +13,15 @@ test('loss of support leads the chest, head and asymmetric arms instead of rotat
   for(let time=0;time<3;time+=.01)assert.ok(dampedJointResponse(time)>=0&&dampedJointResponse(time)<=1.08);
   assert.throws(()=>dampedJointResponse(-1),/finite/);
 });
+
+test('both arms lose support ahead of the chest without a prolonged symmetric brace',()=>{
+  for (const fold of [.35, .5, .74]) {
+    const state = { time: 0, duration: 1.4, variant: 3, fold };
+    const early = casualtyJointDynamics(state, .2), falling = casualtyJointDynamics(state, .45);
+    assert.ok(early.leftArm > early.chest && early.rightArm > early.chest);
+    assert.ok(falling.leftArm > .8 && falling.rightArm > .8);
+    assert.notEqual(early.leftArm, early.rightArm);
+    const start = casualtyJointDynamics(state, 0);
+    assert.equal(start.leftArm, 0); assert.equal(start.rightArm, 0);
+  }
+});

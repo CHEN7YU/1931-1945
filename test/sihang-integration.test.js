@@ -42,7 +42,7 @@ test('the 400-person ceiling includes all 44 opening soldiers and the last genui
   assert.throws(() => registerSihangDeployment(campaign, 1), /budget/);
   const retreat = createSihangCampaign();
   advanceSihangCampaign(retreat, 240);
-  assert.equal(sihangDeploymentCount(retreat), 0);
+  assert.equal(sihangDeploymentCount(retreat), 11);
 });
 
 test('old valid v1 identities acquire only the new default, without overwriting existing names or choices', () => {

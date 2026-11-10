@@ -28,7 +28,8 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
   motion.crouch = approach(motion.crouch, mode === 'cower' ? 1 : 0, 7, dt);
   if (motion.crouch > .999) motion.crouch = 1;
   else if (motion.crouch < .001) motion.crouch = 0;
-  motion.protective = approach(motion.protective, mode === 'cower' ? 1 : mode === 'flee' ? .35 : 0, 7, dt);
+  motion.protective = approach(motion.protective, mode === 'cower' || mode === 'startle' ? 1
+    : mode === 'flee' || now < (data.protectiveUntil ?? 0) ? .35 : 0, 7, dt);
   const cadence = data.ageGroup === 'child' ? 6.3 : data.ageGroup === 'elderly' ? 5.6 : 5;
   data.walkPhase += moved * cadence;
   if (moved > .0001 && Math.hypot(dx, dz) > .0001) {
@@ -48,6 +49,7 @@ export function advanceCivilianMotion(person, { dt, now, moved, dx = 0, dz = 0, 
   motion.rootY = Math.min(-.025 * active, (Math.sqrt(.795 ** 2 - supportReach ** 2) - .795) * active);
   motion.lean = mix(data.ageGroup === 'elderly' ? -.13 : -.035, -.14,
     Math.max(motion.protective, running));
+  if (mode === 'startle') motion.lean = -.32 * motion.protective;
   motion.sway = Math.sin(phase) * .025 * active;
   motion.headX = .06 * motion.protective;
   motion.headY = Math.sin(now * .8 + data.civilianId) * .13 * motion.protective;

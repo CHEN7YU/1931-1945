@@ -17,6 +17,14 @@ export function sihangBattleRoster(playerType = 'infantry') {
   ];
 }
 
+export function replaceSihangDemolition(formation) {
+  if (!formation.sihangDemolition) return false;
+  formation.sihangDemolition = false;
+  formation.demolitionCompleted = true;
+  formation.memberCount = 11;
+  return true;
+}
+
 export function sihangSpawns() {
   return [
     ...SIHANG_SQUAD_ORIGINS.map((point, index) => ({
@@ -25,6 +33,9 @@ export function sihangSpawns() {
       permanent: true, allowNearbyEnemies: true, aiOnly: index !== 0,
       deploymentZone: { minX: point.x - 6, maxX: point.x + 6, minZ: point.z - 4, maxZ: point.z + 4 },
     })),
+    { id: 'sihang-south-cover', name: '仓库南面 · 殿后补充点', team: 'friendly',
+      kind: 'base', x: -4, z: -4, altitude: 0, permanent: true, allowNearbyEnemies: true,
+      deploymentZone: { minX: -16, maxX: 8, minZ: -6.8, maxZ: -1.2 } },
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `sihang-enemy-${index}`, name: `日军北侧步兵集结区 ${index + 1}`,
       team: 'enemy', kind: 'base', aiOnly: true, altitude: 0,

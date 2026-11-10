@@ -47,3 +47,19 @@ test('fear keeps the north-then-west escape route and remains active', () => {
   assert.equal(frightenCivilian(civilian, position, [], 4), false);
   assert.throws(() => frightenCivilian(null, position, sounds, 3.2), /actor/);
 });
+
+test('nearby blasts visibly startle even a previously panicked refugee, without endless retriggering', () => {
+  const data = { civilianId: 3, panicked: true }, position = { x: 0, y: 0, z: 0 };
+  const sound = { id: 8, kind: 'explosion', time: 2, x: 8, y: 0, z: 0 };
+  frightenCivilian(data, position, [sound], 2.1);
+  assert.ok(data.startledUntil > 2.5);
+  assert.equal(data.protectiveUntil, 5.1);
+  const deadline = data.startledUntil;
+  frightenCivilian(data, position, [sound], 2.3);
+  assert.equal(data.startledUntil, deadline);
+  frightenCivilian(data, position, [{ ...sound, id: 9, time: 2.5 }], 2.6);
+  assert.ok(data.startledUntil > deadline);
+  const distant = { civilianId: 0 };
+  frightenCivilian(distant, position, [{ ...sound, x: 20 }], 2.1);
+  assert.equal(distant.startledUntil, undefined);
+});

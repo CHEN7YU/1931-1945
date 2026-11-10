@@ -1,5 +1,7 @@
+import { blastProfile, BLAST_PROFILES } from './blast-profiles.js';
+
 export const PARTICLE_LIMITS = Object.freeze({ fragments: 96, clouds: 18, lights: 2 });
-export const EXPLOSION_STYLES = Object.freeze(['default', 'grenade', 'explosive-pack', 'tank-shell', 'tank-destruction']);
+export const EXPLOSION_STYLES = Object.freeze(['default', ...Object.keys(BLAST_PROFILES), 'tank-shell', 'tank-destruction']);
 const valid = point => point && ['x', 'y', 'z'].every(axis => Number.isFinite(point[axis]));
 
 export function createParticleState() {
@@ -68,11 +70,13 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
     z: (Math.cos(angle) * u.z + Math.sin(angle) * v.z) * distance });
   let seed = ++state.serial * 2654435761;
   const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const profile = blastProfile(style);
   const tank = style === 'tank-destruction', shell = style === 'tank-shell', grenade = style === 'grenade';
   const heavy = style !== 'default' && !grenade;
   const impact = position, createdClouds = [];
   if (shell) position = { x: position.x + n.x * .1, y: position.y + n.y * .1, z: position.z + n.z * .1 };
-  const scale = Math.min(1.7, Math.max(.7, radius / 7)) * (tank ? 2 : shell ? 1.4 : heavy ? 1.65 : grenade ? 1.4 : 1);
+  const scale = profile ? profile.scale * Math.min(1.15, Math.max(.85, radius / profile.radius))
+    : Math.min(1.7, Math.max(.7, radius / 7)) * (tank ? 2 : shell ? 1.4 : 1);
   const fragmentLimit = low ? 32 : PARTICLE_LIMITS.fragments;
   const cloudLimit = low ? 6 : PARTICLE_LIMITS.clouds;
   const takeCloud = () => {
@@ -87,7 +91,7 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
       vx: shell ? radial.x + n.x * impulse : Math.cos(angle) * speed,
       vy: shell ? radial.y + n.y * impulse + 1.5 : impulse, vz: shell ? radial.z + n.z * impulse : Math.sin(angle) * speed,
       age: 0, life: .8 + random() * (heavy ? 1.6 : .9),
-      size: (.012 + random() * .028) * (shell && i % 4 === 0 ? 4 : heavy ? 2.5 : 1),
+      size: (.012 + random() * .028) * (profile ? profile.scale : shell && i % 4 === 0 ? 4 : heavy ? 2.5 : 1),
       kind: tank ? 'generic' : shell ? material : 'soil', spin: random() * 6.28, bornAt: time });
   }
   const count = grenade ? low ? 3 : 8 : low ? heavy ? 3 : 5 : heavy ? 9 : 12;
@@ -104,8 +108,8 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
       size: (dust ? shell ? 1 : grenade ? .8 : .55 : tank ? 1 : shell ? .95 : grenade ? .85 : .65) * scale,
       kind: dust ? 'blast-dust' : tank ? 'blast-soot' : 'blast-smoke', rotation: random() * 6.28, bornAt: time });
   }
-  if (heavy) {
-    for (let i = 0; i < (low ? 1 : shell ? 3 : 6); i++) {
+  if (heavy || profile) {
+    for (let i = 0; i < (low ? 1 : grenade ? 2 : profile && style !== 'explosive-pack' ? 4 : shell ? 3 : 6); i++) {
       const angle = i * 2.399963, spread = (i ? .45 : 0) * scale;
       const radial = outward(angle, spread);
       Object.assign(takeCloud(), { style, x: position.x + (shell ? radial.x : Math.cos(angle) * spread),
@@ -113,19 +117,17 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
         z: position.z + (shell ? radial.z : Math.sin(angle) * spread),
         vx: shell ? n.x * .5 : Math.cos(angle) * .5 * scale, vy: (tank ? .8 : .6) * scale,
         vz: shell ? n.z * .5 : Math.sin(angle) * .5 * scale,
-        age: 0, life: (tank ? 1.6 : shell ? .22 : .7) + random() * (shell ? .13 : .35), size: (tank ? 1.25 : shell ? .9 : 1) * scale,
+        age: 0, life: (tank ? 1.6 : shell ? .22 : grenade ? .3 : .7) + random() * (shell ? .13 : .35), size: (tank ? 1.25 : shell ? .9 : 1) * scale,
         kind: 'blast-fire', rotation: random() * 6.28, bornAt: time });
     }
-    if (grenade) Object.assign(takeCloud(), { style, x: position.x, y: position.y + .05, z: position.z,
-      vx: 0, vy: 0, vz: 0, age: 0, life: .38, size: 2 * scale,
-      baseOpacity: .3, kind: 'blast-wave', rotation: 0, bornAt: time });
     Object.assign(takeCloud(), { style, normal: shell ? { ...n } : null,
       baseOpacity: shell ? .22 : .36, x: position.x, y: position.y, z: position.z,
       vx: 0, vy: 0, vz: 0, age: 0, life: shell ? .38 : .6, size: 2.4 * scale,
       kind: 'blast-wave', rotation: 0, bornAt: time });
   }
   Object.assign(takeCloud(), { style, x: position.x, y: position.y + .12, z: position.z,
-    vx: 0, vy: .2, vz: 0, age: 0, life: grenade ? .2 : heavy ? .14 : .10, size: (shell ? 1.7 : heavy ? 2 : grenade ? 1.5 : .7) * scale,
+    vx: 0, vy: .2, vz: 0, age: 0, life: profile ? .16 + profile.impulse * .1 : heavy ? .14 : .10,
+    size: (shell ? 1.7 : heavy ? 2 : grenade ? 1.5 : .7) * scale,
     kind: 'blast-flash', rotation: random() * 6.28, bornAt: time });
   for (const cloud of createdClouds) {
     const distance = (cloud.x - impact.x) * n.x + (cloud.y - impact.y) * n.y + (cloud.z - impact.z) * n.z;
@@ -139,7 +141,7 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
   if (!low && lights) Object.assign(take(state, 'lights', PARTICLE_LIMITS.lights),
     { x: position.x + (shell ? n.x * .25 : 0), y: position.y + (shell ? n.y * .25 : .2),
       z: position.z + (shell ? n.z * .25 : 0), age: 0, life: heavy ? .18 : .09,
-      intensity: (heavy ? 65 : 22) * scale, distance: (heavy ? 9 : 5) * scale, bornAt: time });
+      intensity: (profile ? 65 : heavy ? 65 : 22) * scale, distance: (profile ? 9 : heavy ? 9 : 5) * scale, bornAt: time });
   state.emitted++;
 }
 

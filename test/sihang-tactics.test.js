@@ -1,12 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sihangCoverContext, sihangCoverCandidates, sihangOutsideCover, sihangGroundGuardGoal } from '../src/sihang-tactics.js';
+import { sihangCoverContext, sihangCoverCandidates, sihangOutsideCover, sihangGroundGuardGoal,
+  sihangBreachGoal, sihangAssaultFiringWindow } from '../src/sihang-tactics.js';
+import { replaceSihangDemolition, sihangBattleRoster } from '../src/sihang-roster.js';
+import { infantryEquipment } from '../src/battle-roster.js';
 import * as THREE from 'three';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
 import { circleBlocked } from '../src/core.js';
 import { SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
 import { createEmplacement, emplacementObstacles } from '../src/emplacements.js';
 import { SIHANG_STAIRWELLS, SIHANG_STAIR_ROUTES } from '../src/sihang-layout.js';
+
+test('the completed demolition formation is replaced once with eleven genuinely armed infantry at its spawn', () => {
+  const formation = sihangBattleRoster().find(item => item.sihangDemolition);
+  assert.equal(infantryEquipment('enemy', 2, 'infantry', formation).unarmed, true);
+  assert.equal(replaceSihangDemolition(formation), true);
+  assert.equal(formation.memberCount, 11);
+  assert.equal(formation.spawnId, 'sihang-enemy-9');
+  for (let index = 0; index < 11; index++)
+    assert.notEqual(infantryEquipment('enemy', index, 'infantry', formation).unarmed, true);
+  assert.equal(replaceSihangDemolition(formation), false);
+});
+
+test('breach assault alternates staggered covering fire and urgent travel before entering the warehouse', () => {
+  const actor = { team: 'enemy', health: 100, index: 0, position: { x: 0, y: 0, z: -70 }, formation: {} };
+  assert.equal(sihangBreachGoal(actor, { northWallBreached: true }).assault, true);
+  assert.equal(sihangAssaultFiringWindow(actor, 0), true);
+  assert.equal(sihangAssaultFiringWindow(actor, 2.4), true);
+  assert.equal(sihangAssaultFiringWindow(actor, 3.5), false);
+  assert.equal(sihangAssaultFiringWindow({ index: 6 }, 0), false);
+  actor.formation.sihangDemolition = true;
+  assert.equal(sihangBreachGoal(actor, { northWallBreached: true }), null);
+});
 
 test('support goals remain twenty metres from every member, not merely from the squad centroid', () => {
   const members = Array.from({ length: 20 }, (_, index) => ({

@@ -1,10 +1,12 @@
 // Prototype balance values, not verified Enlisted or historical weapon specifications.
 import { blastDamage } from './core.js';
+import { BLAST_PROFILES } from './blast-profiles.js';
 export const GRENADE = Object.freeze({ count: 1, fuse: 4, draw: .45, windup: .22, recovery: .4,
   autoThrowRemaining: .65, speed: 15, lift: 2.2, gravity: 9.81, bounce: .32, friction: .65,
-  size: .065, radius: 7, damage: 180, limit: 32, step: 1 / 120 });
+  size: .065, radius: BLAST_PROFILES.grenade.radius, damage: BLAST_PROFILES.grenade.damage, limit: 32, step: 1 / 120 });
 export const EXPLOSIVE_PACK = Object.freeze({ ...GRENADE, fuse: 5, draw: .6, windup: .3, recovery: .5,
-  speed: 11, lift: 2.4, bounce: .18, friction: .5, size: .18, radius: 9, damage: 240,
+  speed: 11, lift: 2.4, bounce: .18, friction: .5, size: .18,
+  radius: BLAST_PROFILES['explosive-pack'].radius, damage: BLAST_PROFILES['explosive-pack'].damage,
   armorRadius: 4, armorDamage: 720 });
 const restingSupports = new WeakMap();
 export function throwableProfile(kind = 'grenade') {

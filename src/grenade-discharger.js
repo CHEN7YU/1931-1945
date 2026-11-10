@@ -1,4 +1,5 @@
 import { createProjectile, advanceProjectile } from './projectiles.js';
+import { BLAST_PROFILES } from './blast-profiles.js';
 import { sihangNorthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
 
 // Gameplay values; the compact model is original geometry, not a measured historical asset.
@@ -6,7 +7,7 @@ export const GRENADE_DISCHARGER = Object.freeze({
   name: '八九式掷弹筒', minRange: 18, maxRange: 210, ammo: 12, reserve: 12,
   setupSeconds: 1.2, reloadSeconds: 6, querySeconds: 1.5, spread: 18,
   closeAimRadius: 3, missMinRadius: 8, baseAccuracy: .25, movingAccuracyScale: .5, suppressedAccuracyScale: .6,
-  damage: 180, radius: 7, activeLimit: 8, trajectorySegments: 24,
+  damage: BLAST_PROFILES['grenade-discharger'].damage, radius: BLAST_PROFILES['grenade-discharger'].radius, activeLimit: 8, trajectorySegments: 24,
 });
 
 export function createGrenadeDischarger() {
@@ -87,7 +88,7 @@ export function createDischargerShell({ id, source, start, target, firedAt, rand
   const distance = Math.hypot(destination.x - start.x, destination.z - start.z);
   const shell = createProjectile({ id, source, start, target: destination, firedAt,
     duration: 1.5 + distance / 55, damage: GRENADE_DISCHARGER.damage, radius: GRENADE_DISCHARGER.radius });
-  shell.kind = 'grenade-discharger'; shell.blastKind = 'grenade';
+  shell.kind = 'grenade-discharger'; shell.blastKind = 'grenade-discharger';
   shell.aim = Object.freeze({ intended: Object.freeze({ ...target }), accuracy, closeAim, error: spread });
   shell.arcHeight = 5 + distance * .16;
   return shell;

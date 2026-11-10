@@ -11,6 +11,39 @@ import { createRifleState, shootRifle } from '../src/rifle-action.js';
 import { RIFLE_HAND_SAMPLES, rifleHandWeights } from '../src/rifle-hand-action.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
+test('travel carries vary by soldier, blend continuously and converge to the same raised firing pose', () => {
+  const samples = [];
+  for (let style = 0; style < 3; style++) {
+    const person = { health: 100, rifleReady: false, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+      locomotion: { speed: 4.1, mode: 'sprint' }, rifle: createRifleState() };
+    person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+    Object.assign(person.nativeMotion, { travelCarryStyle: style, speed: 4.1, weight: 1 });
+    for (let step = 0; step < 60; step++) { person.position.z -= 4.1 / 60; advanceNraMotion(person, 1 / 60); }
+    const travel = sampleNraMotion(person);
+    assert.ok(travel.travelCarryBlend > .95);
+    assert.ok(travel.lowReady > .99);
+    const saved = structuredClone(person.nativeMotion.travelCarryBlend);
+    advanceNraMotion(person, 0);
+    assert.equal(person.nativeMotion.travelCarryBlend, saved);
+    person.rifleReady = true; person.locomotion.speed = 0; person.locomotion.mode = 'idle';
+    const before = new Quaternion().fromArray(travel.weaponQuaternion);
+    advanceNraMotion(person, 1 / 60);
+    const beginning = sampleNraMotion(person);
+    assert.ok(before.angleTo(new Quaternion().fromArray(beginning.weaponQuaternion)) < .2,
+      String(before.angleTo(new Quaternion().fromArray(beginning.weaponQuaternion))));
+    for (let step = 0; step < 120; step++) advanceNraMotion(person, 1 / 60);
+    const raised = sampleNraMotion(person);
+    assert.ok(raised.lowReady < .001); assert.ok(raised.travelCarryBlend < .001);
+    samples.push({ travel, raised });
+  }
+  assert.equal(new Set(samples.map(sample => sample.travel.travelCarry)).size, 3);
+  assert.notDeepEqual(samples[0].travel.weaponQuaternion, samples[1].travel.weaponQuaternion);
+  for (const sample of samples.slice(1)) {
+    assert.ok(new Quaternion().fromArray(sample.raised.weaponQuaternion)
+      .angleTo(new Quaternion().fromArray(samples[0].raised.weaponQuaternion)) < .001);
+  }
+});
+
 test('native walking and running coordinate shoulder and carried-weapon motion, but leave firing and support stable', () => {
   for (const speed of [1.75, 2.7, 4.1]) {
     const person = { health: 100, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
@@ -33,7 +66,7 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
     const before = JSON.stringify(person.nativeMotion);
     assert.deepEqual(sampleNraMotion(person), sampleNraMotion(person), 'sampling/pause cannot advance the gait');
     assert.equal(JSON.stringify(person.nativeMotion), before);
-    const aiming = sampleNraMotion({ ...person, rifleReady: true });
+    const aiming = sampleNraMotion({ ...person, rifleReady: true, nativeMotion: { ...person.nativeMotion, lowReady: 0 } });
     assert.ok(Math.abs(aiming.upperBody.yaw) < .03);
     for (const patch of [{ emplacementId: 'gun' },
       { discharger: { presentationActive: true } }, { health: 0 }]) {

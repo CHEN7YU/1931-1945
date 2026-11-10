@@ -1782,7 +1782,8 @@ export function makeNanjingBattlefield(scene, surface) {
         civilian.civilianHead.rotation.set(0, 0, 0);
         civilian.visible = false;
         Object.assign(data, { waypoint: 0, arrived: false, dead: false, health: 100, active: false, exposure: 0,
-          panicked: false, panicStartedAt: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
+          panicked: false, panicStartedAt: null, startledUntil: 0, protectiveUntil: 0,
+          lastStartleSound: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
           crowdSearch: null, crowdSearchRevision: null,
           threatResponse: null, escapeMotion: null, escapeMode: null,
           threatThinkCount:0,

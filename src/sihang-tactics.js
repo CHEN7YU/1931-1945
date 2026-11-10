@@ -4,12 +4,17 @@ export const SIHANG_COVER_DISTANCE = 20;
 
 export function sihangBreachGoal(actor, campaign) {
   if (!campaign?.northWallBreached || campaign.outcome || actor.team !== 'enemy' ||
-    actor.health <= 0 || actor.vehicleId || actor.position.y > 2.4) return null;
+    actor.health <= 0 || actor.vehicleId || actor.formation?.sihangDemolition || actor.position.y > 2.4) return null;
   const x = ((actor.index ?? 0) % 5 - 2) * .9, z = SIHANG_WAREHOUSE.minZ - 1.6;
   const approaching = actor.position.z < z - .7 ||
     actor.position.z < SIHANG_WAREHOUSE.minZ - .5 && Math.abs(actor.position.x - x) > .7;
   return { x, y: 0, z: approaching ? z : SIHANG_WAREHOUSE.minZ + 6 + (actor.index ?? 0) % 3 * 2,
-    transit: true };
+    transit: true, assault: true };
+}
+
+export function sihangAssaultFiringWindow(actor, now) {
+  if (!Number.isFinite(now) || now < 0) throw new RangeError('Assault requires simulation time');
+  return (now + (actor.index ?? 0) * .53) % 5.2 < 2.6;
 }
 
 export function sihangCoverContext(members) {

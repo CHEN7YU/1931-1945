@@ -14,20 +14,41 @@ test('all four initial squads consume the same 400-person budget and the final r
   assert.throws(() => registerSihangDeployment(state, 1), RangeError);
 });
 
-test('defense lasts four simulated minutes; retreat lasts five, never respawns, and no living AI is silently discarded', () => {
+test('defense lasts four simulated minutes; retreat allows covering replacements until the AI have escaped', () => {
   const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai');
   registerSihangDeployment(state, 11);
   advanceSihangCampaign(state, 239, { friendly: [player, ai] });
   assert.equal(state.stage, 'sihang-defense');
   advanceSihangCampaign(state, 1, { friendly: [player, ai] });
   assert.equal(state.stage, 'sihang-retreat'); assert.equal(state.stageRemaining, 300);
-  assert.equal(sihangDeploymentCount(state), 0);
+  assert.equal(sihangDeploymentCount(state), 11);
+  const reserve = state.reserve;
+  registerSihangDeployment(state, 11);
+  assert.equal(state.reserve, reserve);
+  assert.equal(state.retreatDeployed, 11);
   player.position.z = 45;
   advanceSihangCampaign(state, 1, { friendly: [player, ai], playerSquad: [player], player });
   assert.equal(state.outcome, null); assert.equal(state.playerRetreatOpen, false);
   ai.position.z = 40;
   advanceSihangCampaign(state, 1, { friendly: [player, ai], playerSquad: [player], player });
   assert.equal(state.outcome, 'evacuated'); assert.equal(ai.health, 100);
+});
+
+test('covering squad loss permits a south-side replacement; controlled death after AI escape is terminal', () => {
+  const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai'), survivor = soldier('s', true);
+  advanceSihangCampaign(state, 240, { friendly: [player, ai] });
+  player.health = 0;
+  advanceSihangCampaign(state, .1, { friendly: [player, ai], playerSquad: [player], player });
+  assert.equal(state.outcome, null);
+  assert.equal(sihangDeploymentCount(state), 11);
+  player.health = 100;
+  ai.position.z = 40;
+  advanceSihangCampaign(state, .1, { friendly: [player, ai], playerSquad: [player, survivor], player });
+  assert.equal(state.playerRetreatOpen, true);
+  assert.equal(sihangDeploymentCount(state), 0);
+  player.health = 0;
+  advanceSihangCampaign(state, .1, { friendly: [player, survivor, ai], playerSquad: [player, survivor], player });
+  assert.equal(state.outcome, 'squad-lost', 'another surviving member cannot undo the final death');
 });
 
 test('a dead AI no longer blocks retreat, while the controlled survivor rather than the original soldier can complete it', () => {

@@ -1,7 +1,7 @@
-import { EXPLOSIVE_PACK } from './grenades.js';
+import { BLAST_PROFILES } from './blast-profiles.js';
 
 export const MORTAR = Object.freeze({ minRange: 50, maxRange: 250, ammo: 12, setupSeconds: 1.5, reloadSeconds: 3.2,
-  damage: EXPLOSIVE_PACK.damage, radius: EXPLOSIVE_PACK.radius, blastKind: 'explosive-pack' });
+  damage: BLAST_PROFILES.mortar.damage, radius: BLAST_PROFILES.mortar.radius, blastKind: 'mortar' });
 
 export function createMortar() {
   return { ammo: MORTAR.ammo, phase: 'carrying', setupUntil: 0, nextShot: 0, distance: 100, anchor: null };

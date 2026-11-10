@@ -4,6 +4,7 @@ import { createTankFireEffects } from './tank-fire.js';
 import { createAircraftSmokeEffects } from './aircraft-smoke.js';
 import { createPresentationView } from './presentation-view.js';
 import { valueNoise2D as cloudNoise } from './value-noise.js';
+import { blastProfile } from './blast-profiles.js';
 
 const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0,
   'blast-dust': 0x9b8a6e, 'blast-smoke': 0x666560, 'blast-flash': 0xffc575,
@@ -159,7 +160,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     const low = settings.preset === 'low';
     trimCombatParticles(state, { fragments: settings.effects.hitParticles ? low ? 32 : PARTICLE_LIMITS.fragments : 0,
       clouds: low ? 6 : PARTICLE_LIMITS.clouds, lights: low || !settings.effects.muzzle || !settings.effects.muzzleLight ? 0 : PARTICLE_LIMITS.lights },
-    cloud => cloud.kind === 'muzzle' ? settings.effects.muzzle : cloud.style === 'grenade' || settings.effects.hitParticles);
+    cloud => cloud.kind === 'muzzle' ? settings.effects.muzzle : Boolean(blastProfile(cloud.style)) || settings.effects.hitParticles);
     display();
   };
   const emit = (position, normal, kind, time) => {
@@ -191,7 +192,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
       emit(position, normal, impact.kind, time);
     },
     explosion(position, time, radius = 7, style = 'default', surface = null) {
-      const visible = (style === 'grenade' || settings.effects.hitParticles) &&
+      const visible = (Boolean(blastProfile(style)) || settings.effects.hitParticles) &&
         camera.position.distanceTo(position) <= (style === 'tank-shell' ? 200 : 140);
       lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
         surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };

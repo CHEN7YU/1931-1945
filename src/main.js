@@ -8,12 +8,13 @@ import { campaignById } from './campaigns.js';
 import { createSihangCampaign, advanceSihangCampaign, sihangDeploymentCount, registerSihangDeployment, SIHANG_RULES } from './sihang-campaign.js';
 import { createSihangCombat } from './sihang-combat.js';
 import { sihangCoverContext, sihangCoverCandidates, sihangOutsideCover, sihangCoverMovementAllowed,
-  sihangGroundGuardGoal } from './sihang-tactics.js';
+  sihangGroundGuardGoal, sihangAssaultFiringWindow } from './sihang-tactics.js';
 import { loadSihangVoices } from './sihang-voices.js';
 import { createAdaptiveStepBudget } from './adaptive-step-budget.js';
 import { createStaticSceneBatchRescue } from './static-scene-batches.js';
 import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS,
-  sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal, sihangPursuitGoal } from './sihang-roster.js';
+  sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal, sihangPursuitGoal,
+  replaceSihangDemolition } from './sihang-roster.js';
 import { SIHANG_DEFENSE_POSTS, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
   SIHANG_EVACUATION, SIHANG_DEMOLITION_POINT, SIHANG_STAIRWELLS, SIHANG_LEVELS, SIHANG_MAP_BOUNDS, SIHANG_BATTLE_AREA, sihangBridgePoint, sihangRiverBounds,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
@@ -63,6 +64,7 @@ import { loadVehicleAudio } from './vehicle-audio.js';
 import { getMenuMusic } from './menu-music.js';
 import { getEndingMusic } from './ending-music.js';
 import { createGrenadeBlastAudio, grenadeBlastMix } from './grenade-blast-audio.js';
+import { createBlastFeedback } from './blast-feedback.js';
 import { loadBattleReactions } from './battle-reactions.js';
 import { createNraMotion, advanceNraMotion, sampleNraMotion as sampleNativeMotion, nativeAimReady, syncNativeAimGoal } from './nra-motion.js';
 import { createNraAppearance } from './nra-appearance.js';
@@ -118,7 +120,7 @@ import { traceCivilianBullet } from './civilian-hits.js';
 import { NANJING_EMPLACEMENTS, EMPLACEMENT_PROFILES, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, aimEmplacement, emplacementCanAimAt,
   emplacementObstacles, moveArtillery, setArtilleryPosition, damageEmplacement, fireSupportPriority,
-  artilleryPositionTargets } from './emplacements.js';
+  artilleryPositionTargets, emplacementCooldown } from './emplacements.js';
 import { createEmplacementModel } from './emplacement-model.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription, soldierRoleLabel, friendlyAIFormationName } from './battle-units.js';
@@ -130,6 +132,7 @@ import { advanceChiHaMachineGuns } from './chi-ha-machine-guns.js';
 import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
 import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, moveSupported, landingHeight, landingDamage } from './infantry-traversal.js';
+import { beginFatalFall, fatalFallExpired, fatalFallActionAllowed } from './fatal-fall.js';
 import { deploymentMapPoint, deploymentMapView } from './deployment-map.js';
 import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
 import { createFatalReporter } from './fatal-report.js';
@@ -608,7 +611,8 @@ function operateAIEngineer(actor, dt) {
   const equipment = actor.engineer;
   if (!equipment || actor.playerUnit || actor.vehicleId || actor.emplacementId || !equipment.kits ||
     actor.traversal.kind !== 'grounded' || actor.grenades.action || time < actor.tactics.suppressedUntil ||
-    sihangCampaignMode && (sihangCampaign.stage !== 'sihang-defense' || actor.tactics.sihangDuty === 'wall-fire') ||
+    sihangCampaignMode && (sihangCampaign.stage !== 'sihang-defense' || actor.tactics.sihangDuty === 'wall-fire' ||
+      !actor.friendly && sihangCampaign.northWallBreached) ||
     nanjingCampaignMode && !['gate-defense', 'dock-defense'].includes(nanjingCampaign.stage) ||
     nanjingCampaignMode && nanjingCampaign.stage === 'gate-defense' && nanjingCoreGuard(actor) ||
     encirclementMode && encirclement.phase !== 1) {
@@ -856,6 +860,8 @@ let audioContext;
 let audioMixer = null;
 let noiseBuffer;
 let grenadeBlastAudio = null, grenadeFlashUntil = 0, grenadeFlashStrength = 0;
+const blastFeedback = createBlastFeedback();
+let blastFeedbackTime = 0;
 let rifleAudio = null, rifleAudioFailure = null, audioWarningShown = false, audioUnsupported = false;
 let footstepAudio = null, footstepAudioFailure = null;
 let mechanicalAudio = null, mechanicalAudioFailure = null;
@@ -1007,7 +1013,10 @@ function setGameState(next) {
   battleReactions?.sync(['playing', 'transferring', 'dead'].includes(state));
   battleSignals?.sync(enemySignalsEnabled(active, nanjingCampaignMode ? nanjingCampaign?.stage ?? null : null));
   tacticalAudio?.sync(activeStates.has(state)); vehicleAudio?.sync(activeStates.has(state));
-  if (!activeStates.has(state)) grenadeBlastAudio?.reset();
+  if (!activeStates.has(state) || state === 'transferring') {
+    grenadeBlastAudio?.reset(); blastFeedback.reset(); blastFeedbackTime = time;
+    grenadeFlashUntil = grenadeFlashStrength = 0;
+  }
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
 }
@@ -1098,7 +1107,7 @@ function initAudio() {
     noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-    grenadeBlastAudio = createGrenadeBlastAudio(audioContext, noiseBuffer, audioMixer.output('weapons'));
+    grenadeBlastAudio = createGrenadeBlastAudio(audioContext, noiseBuffer, audioMixer.output('weapons'), audioMixer.output('effects'));
   }
   if (audioContext.state === 'suspended') audioContext.resume().catch(error => {
     console.warn('游戏音效未启用：', error);
@@ -1461,11 +1470,13 @@ function presentCombatEvents(bornAt = time) {
       else renderImpact(position(event.position), bornAt);
     } else if (event.type === 'explosion') {
       combatEffects.explosion(position(event.position), bornAt, event.radius, event.style, event.surface ?? null);
-      if (event.sound && ['grenade', 'explosive-pack'].includes(event.style) && grenadeBlastAudio) {
+      if (event.sound && ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger'].includes(event.style)) {
         const listener = battleAudioListener(), point = position(event.position);
-        grenadeBlastAudio.play(point, listener);
-        const mix = grenadeBlastMix(point, listener);
-        if (mix.flash > 0 && hasLine(point.clone().add(new THREE.Vector3(0, .35, 0)), listener.position, 12)) {
+        grenadeBlastAudio?.play(point, listener, event.style);
+        blastFeedback.trigger(point, listener.position, event.style);
+        const mix = grenadeBlastMix(point, listener, event.style);
+        if (mix.flash > 0 && hasLine(point.clone().add(new THREE.Vector3(0, .35, 0)), listener.position,
+          point.distanceTo(listener.position) + 1)) {
           grenadeFlashStrength = Math.max(grenadeFlashStrength, mix.flash);
           grenadeFlashUntil = performance.now() + 220;
         }
@@ -1651,6 +1662,7 @@ function resetSpawns() {
 
 function spawnFormation(formation, initial = false) {
   if (formation.active === false || formation.respawnEnabled === false) return false;
+  if (sihangCampaignMode && formation.team === 'friendly' && sihangCampaign.stage === 'sihang-retreat') return false;
   const memberCount = sihangCampaignMode && formation.team === 'friendly'
     ? sihangDeploymentCount(sihangCampaign) : formation.memberCount || BATTLE_RULES.infantryMembers;
   if (!memberCount) return false;
@@ -1789,6 +1801,7 @@ function clearActors(list, preserveCorpses = false) {
 function clearTransient() {
   clearEngineerWorks();
   grenadeBlastAudio?.reset(); grenadeFlashUntil = grenadeFlashStrength = 0;
+  blastFeedback.reset(); blastFeedbackTime = 0;
   $('blast-flash').style.opacity = '0';
   missionBriefing.hide();
   grenades.clear();
@@ -1967,7 +1980,7 @@ async function prepareBattleRendering() {
 
 function deploy(squadId, spawnId = null, prepare = false) {
   if (sihangCampaignMode && (squadId !== 'infantry' || !sihangDeploymentCount(sihangCampaign))) {
-    toast(sihangCampaign.outcome ? '本次战斗已结束' : sihangCampaign.stage === 'sihang-retreat' ? '撤退阶段不再补充兵力' : '400人补充额度已用尽，等待友军继续坚守');
+    toast(sihangCampaign.outcome ? '本次战斗已结束' : sihangCampaign.stage === 'sihang-retreat' ? '友军已撤完，本队不再补充兵力' : '400人补充额度已用尽，等待友军继续坚守');
     return;
   }
   const type = SQUADS[squadId]?.type;
@@ -1980,7 +1993,9 @@ function deploy(squadId, spawnId = null, prepare = false) {
   if (benchmark?.diagnostic && type !== (['control', 'ford'].includes(benchmark.scenario) ? 'tank' : 'infantry')) { toast('当前诊断场景的出击类型固定；正常出击使用无benchmark参数的网址'); return; }
   refreshCapturedSpawns(type);
   const openingSpawnId = nanjingCampaignMode && deployments === 0 && !spawnId ? 'nanjing-gate-front-0' : null;
-  const spawn = openingSpawnId ? spawnPoints.find(point => point.id === openingSpawnId) : spawnPoints.find(point => (spawnId ? point.id === spawnId : !point.aiOnly && point.team === 'friendly' &&
+  const allowedSihangSpawn = point => !sihangCampaignMode || (sihangCampaign.stage === 'sihang-retreat'
+    ? point.id === 'sihang-south-cover' : point.id !== 'sihang-south-cover');
+  const spawn = openingSpawnId ? spawnPoints.find(point => point.id === openingSpawnId) : spawnPoints.find(point => allowedSihangSpawn(point) && (spawnId ? point.id === spawnId : !point.aiOnly && point.team === 'friendly' &&
     point.kind !== 'rally' && supportsSquad(point, type)) && (!nanjingCampaignMode ||
     isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated) || deployments === 0 && point.initialOnly));
   const spawnError = !spawn || spawn.team !== 'friendly' || spawn.aiOnly ? '请选择己方可用重生点' : spawnBlockReason(spawn, type, hostilePositions('friendly'), deploymentObstacles());
@@ -2110,7 +2125,8 @@ function deploy(squadId, spawnId = null, prepare = false) {
 
 function showOverlay(kind = 'pause') {
   $('end-civilian-wait').hidden = true;
-  if (kind === 'dead' && sihangCampaignMode && (sihangCampaign.outcome || sihangCampaign.stage === 'sihang-retreat')) {
+  if (kind === 'dead' && sihangCampaignMode && (sihangCampaign.outcome ||
+    sihangCampaign.stage === 'sihang-retreat' && sihangCampaign.playerRetreatOpen)) {
     if (!sihangCampaign.outcome) sihangCampaign.outcome = 'squad-lost';
     if (battleEnding.fading || battleEnding.complete) return;
     kind = sihangCampaign.outcome === 'evacuated' ? 'victory' : 'defeat';
@@ -2211,11 +2227,11 @@ function showOverlay(kind = 'pause') {
     $('overlay-kicker').textContent = ended ? kind === 'victory' ? '掩护撤离 / EVACUATED' : '历史铭记 / IN MEMORIAM'
       : dead ? '后备补充 / REINFORCEMENT' : '四行仓库 / SIHANG';
     $('overlay-title').textContent = ended ? kind === 'victory' ? '守军已过桥，山河终有归期。' : '守军的牺牲，历史永远铭记。'
-      : dead ? sihangCampaign.reserve ? '补充新班，继续坚守。' : '补充额度已尽，友军仍在坚守。' : '坚守仓库，掩护撤离。';
+      : dead ? sihangDeploymentCount(sihangCampaign) ? '补充新班，继续掩护。' : '补充额度已尽，友军仍在坚守。' : '坚守仓库，掩护撤离。';
     $('overlay-description').hidden = false;
     $('overlay-description').textContent = ended
       ? `累计参战 ${sihangCampaign.deployed}/400 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
-      : '第一阶段守住一楼并阻止北墙爆破；4分钟后停止补充，5分钟内掩护AI幸存者过桥，本队随后撤离。';
+      : '第一阶段守住一楼并阻止北墙爆破；4分钟后掩护AI过桥，撤完前可从仓库南面补充，撤完后再死即失败。';
     $('battle-summary').textContent = `个人击倒 ${kills}　友军击倒 ${teamKills}　累计参战 ${sihangCampaign.deployed}/400　后备 ${sihangCampaign.reserve}`;
   }
 }
@@ -2282,7 +2298,7 @@ export function showInitialSquadDeployment() {
 function chooseDeploymentSquad(id) {
   if (sihangCampaignMode && (id !== 'infantry' || !sihangDeploymentCount(sihangCampaign))) return false;
   const type = SQUADS[id]?.type;
-  const reason = sihangCampaignMode && !sihangDeploymentCount(sihangCampaign) ? '后备已耗尽或已进入撤退阶段'
+  const reason = sihangCampaignMode && !sihangDeploymentCount(sihangCampaign) ? '后备已耗尽或友军已撤完'
     : deploymentBlockReason(state, allies, id, unit?.squadId);
   if (reason) { $('deployment-error').textContent = reason; return false; }
   pendingSquad = id;
@@ -2311,7 +2327,8 @@ function refreshDeployment() {
     button.querySelector('small').textContent = reason || `${sihangCampaignMode ? sihangDeploymentCount(sihangCampaign) : TYPES[type].members} 人 · 新小队可出击`;
   }
   $('deployment-objective').textContent = sihangCampaignMode
-    ? `四行仓库 · 二楼集结 · 后备 ${sihangCampaign.reserve}/400 · ${sihangCampaign.stage === 'sihang-defense' ? '坚守阶段' : '撤退不再补充'}`
+    ? `四行仓库 · ${sihangCampaign.stage === 'sihang-defense' ? `二楼集结 · 后备 ${sihangCampaign.reserve}/400`
+      : sihangCampaign.playerRetreatOpen ? '本队最后撤离 · 不再补充' : '南面补充 · 掩护友军撤离'}`
     : state === 'menu' ? '首次出击 · 初始阵地' : nanjingCampaignMode
     ? ({ 'gate-defense': '第一阶段 · 中华门第二道门内阵地防守', withdrawal: '撤往上新河渡口 · 第二阶段即将开始',
       'dock-defense': '第二阶段 · 上新河渡口防守', 'withdrawal-to-boats': '撤退阶段 · AI小队先登船' }[nanjingCampaign.stage] ?? '南京保卫战')
@@ -2361,6 +2378,8 @@ function refreshDeployment() {
 function deploymentSpawnChoices(type) {
   if (sihangCampaignMode && (!sihangDeploymentCount(sihangCampaign) || type !== 'infantry')) return [];
   return type ? spawnPoints.filter(point => !point.aiOnly && point.team === 'friendly' &&
+    (!sihangCampaignMode || (sihangCampaign.stage === 'sihang-retreat'
+      ? point.id === 'sihang-south-cover' : point.id !== 'sihang-south-cover')) &&
     supportsSquad(point, type) && (!nanjingCampaignMode ||
       isNanjingSpawnAvailable(point, nanjingCampaign.dockActivated) ||
       state === 'menu' && deployments === 0 && point.initialOnly)) : [];
@@ -2577,6 +2596,10 @@ function renderConstruction() {
 
 function switchMember(index) {
   if (index === current || !allies[index] || allies[index].health <= 0) return;
+  if (allies[current]?.health > 0 && allies[current].fatalFall) {
+    toast('坠落重伤，无法切换队员；仍可完成最后一次投掷');
+    return;
+  }
   interruptGrenade(allies[current]);
   clearControlInputs();
   stopLocomotion(allies[current].locomotion);
@@ -2927,7 +2950,7 @@ function acceptedWeaponDamage(weaponKind, targetKind, amount, hitZone = null) {
 function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null, hitDirection = null) {
   if (finalBoardingDamageHeld(nanjingCampaign, time, source, actor)) return;
   if (sihangCampaignMode && sihangCampaign.outcome) return;
-  if (sihangCampaignMode && !sihangEnemyTargetAllowed(actor)) return;
+  if (sihangCampaignMode && source?.team === 'enemy' && !sihangEnemyTargetAllowed(actor)) return;
   if (actor.health <= 0 || !['playing', 'transferring', 'dead'].includes(state)) return;
   damage = acceptedWeaponDamage(weaponKind, actor.targetKind, damage, hitZone);
   if (damage === 0) return;
@@ -3066,7 +3089,7 @@ function renderDeathFeedback() {
 
 function explode(position, damage, radius, source, weaponKind = 'explosion', surface = null) {
   combatEvents.publish('explosion', { position, source, sound: true, radius,
-    style: weaponKind === 'grenade' ? 'grenade' : weaponKind === 'explosive-pack' ? 'explosive-pack'
+    style: ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger'].includes(weaponKind) ? weaponKind
       : ['tank', 'field-gun'].includes(source.weaponClass) ? 'tank-shell' : 'default',
     ...(surface ? { surface } : {}) }, time);
   combatSounds.push({ id: ++soundSerial, friendly: source.team === 'friendly',
@@ -3093,7 +3116,9 @@ function explode(position, damage, radius, source, weaponKind = 'explosion', sur
     const target = transport.position.clone().add(new THREE.Vector3(0, 1, 0));
     const distance = target.distanceTo(position), origin = blastOrigin.clone();
     origin.y = Math.max(origin.y, .5);
-    if (distance < radius && hasLine(origin, target, radius + 1, transport.id)) damageVehicle(transport, blastDamage(distance, radius, damage), source, 'explosion');
+    if (distance < radius && hasLine(origin, target, radius + 1, transport.id)) damageVehicle(transport,
+      blastDamage(distance, radius, damage), source,
+      ['mortar', 'grenade-discharger'].includes(weaponKind) ? weaponKind : 'explosion');
   }
   for (const actor of allForces) {
     if (actor.health <= 0) continue;
@@ -3291,9 +3316,11 @@ function prepareGrenade() {
 }
 
 function startThrowableAction(actor, kind) {
+  if (actor.fatalFall?.throwStarted) { toast('重伤后只能完成最后一次投掷'); return; }
   const source = captureAttackSource(entities, actor, kind === 'explosive-pack' ? actor.explosivePack : actor.grenades);
   const reason = grenades.begin(actor.id, actor.grenades, source, time, kind);
   if (reason) { toast(reason); return; }
+  if (actor.fatalFall) actor.fatalFall.throwStarted = true;
   playerInput.clearFire();
   held.primary = held.secondary = held.aiming = false;
   resetConstruction();
@@ -3363,6 +3390,7 @@ function renderGrenades() {
 }
 
 function fire() {
+  if (controlledSoldier(entities)?.fatalFall) return;
   if (state !== 'playing' || allies[current]?.health <= 0) return;
   if (dadaoEquipped || grenadeEquipped || allies[current].grenades.action) return;
   if (allies[current].traversal.kind === 'vaulting') return;
@@ -3859,9 +3887,17 @@ function updateActorTraversal(actor, dt) {
     actor.locomotion.aimRecovery = Math.max(actor.locomotion.aimRecovery, .2);
     if (actor === controlledSoldier(entities)) emitFootstep(actor.position, actor.locomotion.speed, true);
     const fallDamage = landingDamage(impact);
-    const shieldLanding = sihangCampaignMode && time - (actor.tactics.sihangShieldLanding ?? -Infinity) < 1.5;
-    const damage = shieldLanding ? Math.min(fallDamage, Math.max(0, actor.health - 1)) : fallDamage;
-    if (shieldLanding) { actor.stance = 'prone'; actor.firingPose = null; }
+    const fatalLanding = beginFatalFall(actor, fallDamage, time, actor === controlledSoldier(entities));
+    const damage = fatalLanding ? Math.max(0, actor.health - 1) : fallDamage;
+    if (fatalLanding) {
+      releaseEmplacement(actor, false); releaseWeaponMount(actor.weaponMount);
+      clearControlInputs(); resetConstruction();
+      actor.stance = controlPose.stance = 'prone'; actor.firingPose = null;
+      stopLocomotion(actor.locomotion); actor.rifleReady = false;
+      if (actor.grenades.ammo > 0 || actor.grenades.packs > 0)
+        equipGrenade(actor.grenades.ammo > 0 ? 'grenade' : 'explosive-pack');
+      toast('高处坠落，已致命重伤 · 4秒内可按5/6选择，左键准备并松开完成最后一次投掷', 4);
+    }
     if (damage > 0) hurt(actor, damage, { credit: 'environment', cause: 'fall', subjectId: actor.id }, 'fall');
   }
   if (actor.traversal.blocked && actor === controlledSoldier(entities)) {
@@ -3897,6 +3933,14 @@ function settleActorSupport(actor) {
 
 function updatePlayer(dt) {
   const actor = allies[current];
+  if (actor.fatalFall) {
+    actor.stance = controlPose.stance = 'prone'; actor.firingPose = null;
+    actor.rifleReady = false; stopLocomotion(actor.locomotion);
+    actor.heading = controlPose.yaw;
+    if (actor.nativeMotion) advanceNraMotion(actor, dt);
+    updateCamera(dt);
+    return;
+  }
   const fireRequested = playerInput.consumeFire(controlOwner(entities), !fatal && state === 'playing' && actor.health > 0);
   const playerFerry = nanjingPlayerFerry();
   if (playerFerry) {
@@ -4373,6 +4417,7 @@ function walkActor(actor, target, speed, dt, sprint = false) {
     threat: Boolean(actor.tactics.lastSeen), distance: Math.hypot(target.x - pos.x, target.z - pos.z),
     exhausted: actor.locomotion.exhausted, stamina: actor.locomotion.stamina, constrained: space.constrained,
     catchUp: actor.playerUnit && actor.order === 'follow' });
+  if (target.assault && ['walk', 'aim'].includes(pace)) pace = 'jog';
   if (pace === 'aim' && actor.tactics.lastSeen) {
     const observed = actor.tactics.lastSeen, aimingHeading = Math.atan2(pos.x - observed.x, pos.z - observed.z);
     if (Math.cos(aimingHeading - heading) <= .8) pace = space.constrained ? 'walk' : 'jog';
@@ -4513,7 +4558,8 @@ function clearAIRifleLine(actor, from, threat) {
 
 function fightFromCover(actor, target, dt, tankCover = null, stationary = false) {
   const t = actor.tactics, position = actor.position;
-  const fixedWindow = sihangCampaignMode && actor.friendly && t.sihangDuty === 'wall-fire';
+  const fixedWindow = sihangCampaignMode && (actor.friendly && t.sihangDuty === 'wall-fire' ||
+    !actor.friendly && sihangCampaign.northWallBreached);
   if (fixedWindow) {
     actor.stance = 'standing'; actor.firingPose = null;
     t.eligiblePoses = ['standing'];
@@ -5775,17 +5821,24 @@ function updateAI(dt) {
         if (tactics.cover) coverClaims.delete(tactics.cover.id);
         tactics.cover = tactics.armorEscort = null;
         const goal = demolitionGoal ?? formationDestination(actor, objective);
-        tactics.mode = demolitionGoal ? 'sihang-demolition' : withdrawing
+        const assaulting = demolitionGoal?.assault === true;
+        tactics.mode = assaulting ? 'sihang-breach-assault' : demolitionGoal ? 'sihang-demolition' : withdrawing
           ? actor.playerUnit ? actor.order : 'sihang-retreat' : defending ? 'sihang-defense' : 'sihang-intercept';
         if (pursuingRetreat && !demolitionGoal)
           tactics.mode = tactics.sihangPursuit === 'enter-warehouse' ? 'sihang-enter-warehouse' : 'sihang-intercept';
         const arrival = demolitionGoal || tactics.sihangDuty === 'wall-fire' ? .22 : .8;
         const moving = Math.hypot(position.x - goal.x, position.z - goal.z) > arrival ||
           Math.abs(position.y - (goal.y ?? 0)) > .4;
-        if (moving) {
+        if (assaulting && target && actor.hasFirearm !== false &&
+          (!moving || sihangAssaultFiringWindow(actor, time))) {
+          stopLocomotion(actor.locomotion);
+          tactics.mode = 'sihang-breach-cover-fire';
+          updateInfantryAimPitch(actor, targetAimPoint(target), soldierRifleMuzzle(actor), dt);
+          fightFromCover(actor, target, dt, null, true);
+        } else if (moving) {
           actor.stance = 'standing'; actor.firingPose = null;
           resetAIRifleAim(actor.aiRifle, 'moving');
-          walkActor(actor, goal, 3.5, dt, withdrawing || tactics.sihangDuty === 'ground-intercept');
+          walkActor(actor, goal, 3.5, dt, assaulting || withdrawing || tactics.sihangDuty === 'ground-intercept');
         } else if (target && actor.hasFirearm !== false) {
           updateInfantryAimPitch(actor, targetAimPoint(target), soldierRifleMuzzle(actor), dt);
           fightFromCover(actor, target, dt, null, true);
@@ -6032,11 +6085,11 @@ function updateSihangMission(dt) {
       actor.tactics.lastSeen = null; actor.nextPath = 0;
       pathRequests.delete(actor.tactics.id);
     }
-    toast('撤退命令 · 停止补充兵力！经东侧桥梁掩护友军撤往南岸；本队殿后。', 9);
+    toast('撤退命令 · 本队殿后！友军撤完前可从仓库南面补充；撤完后再阵亡即任务失败。', 9);
     sihangVoices?.play(audioContext, 'withdrawal');
   }
   if (!retreatWasOpen && sihangCampaign.playerRetreatOpen && !sihangCampaign.outcome) {
-    toast('AI友军已全部撤离或阵亡 · 带上本队幸存者过桥！', 7);
+    toast('AI友军已全部撤离或阵亡 · 本队停止补充，当前士兵再阵亡即失败；立即过桥！', 9);
     sihangVoices?.play(audioContext, 'retreat-open');
   }
   if (sihangCampaign.outcome && !battleEnding.fading && !battleEnding.complete) {
@@ -6458,6 +6511,10 @@ function updateNanjingCivilians(dt) {
       frightenCivilian(data, civilian.position, combatSounds, time))
       data.releaseAt = Math.min(data.releaseAt, time);
     if (data.streetLife && !data.active && !data.streetEvacuating) {
+      if (time < (data.startledUntil ?? 0)) {
+        advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'startle' });
+        continue;
+      }
       const danger = civilian.visible ? updateCivilianThreatResponse(data, civilian.position, data.streetLife.exit,
         enemies, data.streetLife.navigationObstacles, time, visibleThreat, concealed,
         data.streetLife.navigationLookup,threatBudget) : null;
@@ -6474,6 +6531,12 @@ function updateNanjingCivilians(dt) {
       beginCivilianStreetEvacuation(civilian);
     }
     if (!activateCivilianEvacuation(civilian, time, peers)) continue;
+    frightenCivilian(data, civilian.position, combatSounds, time);
+    if (time < (data.startledUntil ?? 0)) {
+      data.restPoseWeight = Math.max(0, data.restPoseWeight - dt * 3);
+      advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'startle' });
+      continue;
+    }
     if (data.fleeReleased && data.restPoseWeight > 0) {
       data.restPoseWeight = Math.max(0, data.restPoseWeight - dt / .9);
       advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'waiting' });
@@ -6539,7 +6602,7 @@ function updateNanjingCivilians(dt) {
           if (data.streetEvacuating && !openCivilianHomeDoor(civilian, world.doorSystem)) {
             for (const leg of civilian.civilianLegs) leg.rotation.x = 0;
             continue;
-          } else advanceCivilianMotion(civilian, { dt, now: time, moved: 0 });
+          }
           const beforeX = civilian.position.x, beforeZ = civilian.position.z;
           const threats = response?.threats ?? [];
           const moved = moveCivilianInCrowd(civilian, target, travel, peers,
@@ -6551,7 +6614,7 @@ function updateNanjingCivilians(dt) {
           advanceCivilianMotion(civilian, { dt, now: time, moved,
             dx: civilian.position.x - beforeX, dz: civilian.position.z - beforeZ,
             mode: threats.length ? moved > .001 ? 'flee' : 'cower' : 'route' });
-        }
+        } else advanceCivilianMotion(civilian, { dt, now: time, moved: 0, mode: 'route' });
         if (!data.arrived && civilianWaypointReached(civilian.position, waypoints, data.waypoint,
           data.streetEvacuating ? data.streetLife.navigationObstacles : world.obstacles,
           data.streetEvacuating ? data.streetLife.navigationLookup : groundCollision)) data.waypoint++;
@@ -7093,16 +7156,19 @@ function renderMemberRoles(deployedType) {
 function renderWeaponReload() {
   const tankReload = $('tank-reload');
   const actor = controlledSoldier(entities), fixed = emplacements.get(actor?.emplacementId);
-  const weapon = fixed?.profile === 'bofors75' ? fixed.weapon
-    : unit.type === 'tank' ? occupiedVehicle(entities, actor)?.weapon : null;
-  const remaining = weapon ? Math.max(0, weapon.reloadUntil - time) : 0;
+  const weapon = fixed?.weapon ?? (unit.type === 'tank' ? occupiedVehicle(entities, actor)?.weapon : null);
+  const cooldown = fixed ? emplacementCooldown(fixed, time) : null;
+  const remaining = fixed ? cooldown?.remaining ?? 0 : weapon ? Math.max(0, weapon.reloadUntil - time) : 0;
   tankReload.hidden = remaining === 0;
   if (remaining > 0) {
     const duration = weapon.settings?.reload ?? TYPES.tank.reload;
-    const progress = Math.max(0, Math.min(1, 1 - remaining / duration));
-    tankReload.setAttribute('aria-label', fixed ? '山炮自动装填' : '主炮自动装填');
+    const progress = cooldown?.progress ?? Math.max(0, Math.min(1, 1 - remaining / duration));
+    const label = cooldown?.mode === 'cooling' ? '冷却' : '装填';
+    const name = fixed ? fixed.profile === 'bofors75' ? '山炮' : '机枪' : '主炮';
+    tankReload.setAttribute('aria-label', `${name}${label}`);
     tankReload.setAttribute('aria-valuenow', String(Math.round(progress * 100)));
-    tankReload.setAttribute('aria-valuetext', `装填剩余 ${remaining.toFixed(1)} 秒`);
+    tankReload.setAttribute('aria-valuetext', `${label}剩余 ${remaining.toFixed(1)} 秒`);
+    $('tank-reload-label').textContent = label;
     $('tank-reload-progress').style.strokeDashoffset = String(100 * (1 - progress));
     $('tank-reload-time').textContent = `${remaining.toFixed(1)}s`;
   }
@@ -7401,6 +7467,8 @@ function menuCamera(now) {
 
 function advanceBattleStep(dt, presentationTime) {
   time += dt;
+  for (const actor of allForces) if (actor.health > 0 && fatalFallExpired(actor, time))
+    hurt(actor, actor.health, { credit: 'environment', cause: 'fall', subjectId: actor.id }, 'fall');
   for (const point of emplacements.values()) {
     advanceEmplacement(point, dt, time); point.view.userData.update();
   }
@@ -7452,6 +7520,22 @@ function advanceBattleStep(dt, presentationTime) {
         for (const actor of allForces) {
           actor.path = actor.pathGoal = null; actor.nextPath = 0;
         }
+        for (const formation of formations.filter(item => item.sihangDemolition)) {
+          const retired = formation.members.filter(actor => actor.health > 0);
+          for (const actor of retired) {
+            pathRequests.delete(actor.tactics.id);
+            delete actor.sihangShield;
+          }
+          clearActors(retired);
+          enemies = enemies.filter(actor => !retired.includes(actor));
+          formation.members = [];
+          replaceSihangDemolition(formation);
+          formation.respawnAt = time + 1;
+          formation.reinforcementStartedAt = time;
+        }
+        rebuildForces();
+        sihangSupportContext = null;
+        sihangCombat.update(0, time, { campaign: sihangCampaign, actors: allForces, player, keys: defuseKeys });
         combatEffects.explosion(new THREE.Vector3(SIHANG_DEMOLITION_POINT.x, 1.4, SIHANG_DEMOLITION_POINT.z),
           time, 9, 'tank-destruction');
         sound('blast');
@@ -7581,6 +7665,12 @@ function tick(now) {
     if (benchmark) telemetry.add('hudMs', performance.now() - started);
   }
   performanceDiagnostics.measure('audio', presentRifleReports);
+  const blastMotion = blastFeedback.update(Math.max(0, time - blastFeedbackTime), motionStrength);
+  blastFeedbackTime = time;
+  const unshakenPosition = camera.position.clone(), unshakenRotation = camera.quaternion.clone();
+  camera.translateX(blastMotion.x); camera.translateY(blastMotion.y);
+  camera.rotation.x += blastMotion.pitch; camera.rotation.y += blastMotion.yaw; camera.rotation.z += blastMotion.roll;
+  camera.updateMatrixWorld(true);
   world.buildingFire.update(time, { smoke: graphics.snapshot.effects.smoke, low: graphics.snapshot.preset === 'low' });
   for (const puff of world.smoke) {
     if (!puff.visible) continue;
@@ -7646,6 +7736,7 @@ function tick(now) {
     graphics.beginFrame();
     renderer.render(scene, camera);
   }));
+  camera.position.copy(unshakenPosition); camera.quaternion.copy(unshakenRotation); camera.updateMatrixWorld(true);
   const renderEnded = benchmark ? performance.now() : 0;
   if (benchmark && activeFrame) {
     renderIsolation.mode = isolationMode;
@@ -8091,6 +8182,10 @@ function performControlCommand(command) {
 }
 
 function dispatchControlCommand(action, payload) {
+  if (!fatalFallActionAllowed(controlledSoldier(entities) ?? {}, action)) {
+    toast('致命重伤：无法移动、换人或使用主武器，只能尝试最后一次投掷');
+    return { status: 'rejected', reason: 'fatal-fall' };
+  }
   const command = playerInput.capture(action, payload);
   const result = playerInput.execute(command, controlOwner(entities), !fatal && state === 'playing' && controlledSoldier(entities)?.health > 0, performControlCommand);
   if (result.status === 'rejected') toast(result.reason === 'stale-owner' ? '控制对象已改变，旧操作已取消' : '当前操作已取消');

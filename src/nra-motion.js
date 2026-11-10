@@ -119,6 +119,7 @@ export function createNraMotion(profile, actor) {
   const seed = actor.walkPhase;
   const ready = nativePoseIntent(actor) === 'aim';
   const motion = { profile, aim: 0, lowReady: profile.lowReadyCarry && !ready ? 1 : 0,
+    travelCarryStyle: Math.floor(seed * 13.7) % 3, travelCarryBlend: 0,
     cheekWeight: profile.headAim && ready ? 1 : 0, headGoal: null,
     bodyLean: 0, runLean: .23 + .03 * Math.sin(seed * 7.7) ** 2,
     fireLean: Math.sin(seed * 11.7) > .3 ? .035 + .07 * Math.sin(seed * 5.3) ** 2 : 0,
@@ -183,6 +184,12 @@ export function advanceNraMotion(actor, dt) {
     if (motion.lowReady < .001) motion.lowReady = 0;
     if (motion.lowReady > .999) motion.lowReady = 1;
   }
+  const travelCarry = nativePoseIntent(actor) === 'travel' && actor.health > 0 &&
+    !actor.emplacementId && !actor.vehicleId && !actor.discharger?.presentationActive &&
+    !actor.supportWeaponPose?.active && !actor.sihangShield?.active && !actor.formation?.sihangDemolition &&
+    actor.engineer?.construction?.mode !== 'building'
+    ? smoothSpeed(motion.speed, .7, 2.8) : 0;
+  motion.travelCarryBlend += (travelCarry - motion.travelCarryBlend) * (1 - Math.exp(-dt / .22));
   const leanTarget = !motion.profile.leanPivot ? 0 : measuredSpeed > .2
     ? nativeTravelLean(motion)
     : actor.tactics?.lastSeen ? motion.fireLean : 0;
@@ -271,7 +278,8 @@ function sampleNativeUpperBody(actor, phase, operation = rifleHandAction(actor.r
   const intent = nativePoseIntent(actor);
   const travelWeight = profile.footCycleGait && actor.health > 0 && ['travel', 'aim'].includes(intent) &&
     !actor.weaponBlocked && !actor.emplacementId && !actor.discharger?.presentationActive &&
-    !actor.formation?.sihangDemolition ? motion.weight * upright * (intent === 'aim' ? .22 : 1 - .65 * motion.gaitAim) : 0;
+    !actor.formation?.sihangDemolition ? motion.weight * upright *
+      (intent === 'aim' ? .22 + .78 * motion.lowReady : 1 - .65 * motion.gaitAim) : 0;
   const cycle = runTime / profile.run.duration * Math.PI * 2;
   if (phase.dadao && actor.health > 0) {
     return { travelWeight: 0, upperBody: dadaoBodyMotion(phase.dadao) };
@@ -356,13 +364,17 @@ export function sampleNraMotion(actor, includeHead = true, rifleOperationOverrid
   const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
     (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) : 0;
   if (lowReady) {
-    const angle = .45 + .25 * jog + (actor.locomotion.mode === 'sprint' ? .10 : 0);
+    const carry = motion.travelCarryBlend * upright * lowReady;
+    const diagonal = motion.travelCarryStyle === 1 ? carry : 0;
+    const compact = motion.travelCarryStyle === 2 ? carry : 0;
+    const angle = .45 + .25 * jog + .10 * motion.gaitCharge + .12 * diagonal - .12 * compact;
     if (!profile.rifleContacts) {
       blendedPosition.y -= .06 * lowReady;
       blendedPosition.z += .16 * lowReady;
     }
-    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), .25 * lowReady))
-      .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady));
+    quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (.25 + .12 * diagonal - .10 * compact) * lowReady))
+      .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady))
+      .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -.12 * diagonal + .10 * compact));
   }
   let stockContact = null;
   if (profile.rifleContacts) {
@@ -419,7 +431,10 @@ export function sampleNraMotion(actor, includeHead = true, rifleOperationOverrid
     travelStyle: phase.travelStyle,
     gaitCharge: motion.gaitCharge, gaitAim: motion.gaitAim,
     turn: { weight: motion.turn.weight, phase: cycleFraction(motion.turn.angle / (Math.PI / 3)), direction: motion.turn.direction },
-    bodyLean, torsoYaw, hipDrop, lowReady, stockContact, strideScale: motion.strideScale, legLift: motion.legLift,
+    bodyLean, torsoYaw, hipDrop, lowReady, stockContact,
+    travelCarry: ['low-ready', 'diagonal-ready', 'compact-ready'][motion.travelCarryStyle],
+    travelCarryBlend: motion.travelCarryBlend,
+    strideScale: motion.strideScale, legLift: motion.legLift,
     ...motion.posture, postures: { ...motion.posture }, upright, weight: motion.weight, speed: motion.speed,
     footContacts: motion.footContacts ?? null,
     aimPitch: aimPitch * firingIntent * (1 - lowReady), weaponPosition: blendedPosition.toArray(), weaponQuaternion: quaternion.toArray() };

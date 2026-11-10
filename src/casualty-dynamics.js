@@ -16,7 +16,7 @@ export function casualtyJointDynamics(casualty,now) {
   const side=casualty.variant%2?1:-1,variation=casualty.fold??.5;
   const response=(stiffness,damping,delay)=>settled?1:dampedJointResponse(elapsed,{stiffness,damping,delay});
   return { pelvis:response(72,12,.025),chest:response(60,10,.08),head:response(45,8,.15),
-    leftArm:response(48,9,.09+variation*.08),rightArm:response(42,8,.19-variation*.06),
+    leftArm:response(90,14,.035+variation*.04),rightArm:response(76,13,.09-variation*.03),
     leftKnee:response(120,14,.01),rightKnee:response(80,12,.045),
     twist:side*(.14+variation*.16),settled,progress };
 }

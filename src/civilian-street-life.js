@@ -26,9 +26,10 @@ export function updateCivilianStreetLife(person, now, dt, peers, doorSystem) {
   }
   const dx = target.x - person.position.x, dz = target.z - person.position.z;
   const travel = Math.min(Math.hypot(dx, dz), dt * 1.15 * civilianPaceMultiplier(data.civilianId, now));
+  const beforeX = person.position.x, beforeZ = person.position.z;
   const moved = moveCivilianInCrowd(person, target, travel, peers, street.movementObstacles, street.navigationObstacles);
-  person.rotation.y = Math.atan2(-dx, -dz);
-  advanceCivilianMotion(person, { dt, now, moved, mode: 'street' });
+  advanceCivilianMotion(person, { dt, now, moved, dx: person.position.x - beforeX,
+    dz: person.position.z - beforeZ, mode: 'street' });
   if (civilianWaypointReached(person.position, street.route, street.waypoint, street.navigationObstacles,street.navigationLookup))
     street.waypoint++;
   if (street.waypoint === street.route.length) {

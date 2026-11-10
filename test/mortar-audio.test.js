@@ -4,12 +4,14 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { MORTAR } from '../src/mortar.js';
 import { EXPLOSIVE_PACK } from '../src/grenades.js';
+import { BLAST_PROFILES } from '../src/blast-profiles.js';
 import { playMortarLaunch } from '../src/mortar-audio.js';
 
-test('mortar blast uses the explosive-pack damage and radius, with exact CC0 sound provenance', () => {
-  assert.equal(MORTAR.damage, EXPLOSIVE_PACK.damage);
-  assert.equal(MORTAR.radius, EXPLOSIVE_PACK.radius);
-  assert.equal(MORTAR.blastKind, 'explosive-pack');
+test('mortar blast has its own intermediate profile, with exact CC0 sound provenance', () => {
+  assert.equal(MORTAR.damage, BLAST_PROFILES.mortar.damage);
+  assert.equal(MORTAR.radius, BLAST_PROFILES.mortar.radius);
+  assert.ok(MORTAR.damage < EXPLOSIVE_PACK.damage && MORTAR.radius < EXPLOSIVE_PACK.radius);
+  assert.equal(MORTAR.blastKind, 'mortar');
   const root = new URL('../public/assets/audio/mortar/', import.meta.url);
   const manifest = JSON.parse(readFileSync(new URL('source.json', root)));
   assert.equal(manifest.license, 'CC0-1.0');

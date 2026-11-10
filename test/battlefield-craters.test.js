@@ -46,13 +46,13 @@ test('damaged houses get bounded batched fire and smoke; simulation pause, low q
   const fire = createBuildingFire(scene, [{ id: 'burning', x: 0, z: 2, width: 8, damaged: true },
     { id: 'ruined', x: 10, z: 2, w: 6, ruined: true }, { id: 'intact', x: 20, z: 2 }]);
   fire.update(12);
-  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 16, flames: 6, drawCalls: 2 });
+  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 20, flames: 54, drawCalls: 2 });
   const matrices = scene.children.map(mesh => [...mesh.instanceMatrix.array]);
   fire.update(12);
   assert.deepEqual(scene.children.map(mesh => [...mesh.instanceMatrix.array]), matrices);
   fire.update(13, { low: true });
-  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 6, flames: 2, drawCalls: 2 });
+  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 8, flames: 20, drawCalls: 2 });
   fire.update(13, { low: true, smoke: false });
-  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 0, flames: 2, drawCalls: 1 });
+  assert.deepEqual(fire.snapshot, { sources: 2, smoke: 0, flames: 20, drawCalls: 1 });
   assert.ok(scene.children.every(mesh => mesh.isInstancedMesh && !mesh.material.depthWrite));
 });

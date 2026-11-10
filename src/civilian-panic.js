@@ -25,7 +25,18 @@ export function isCivilianNearCombat(position, sounds, now) {
 
 export function frightenCivilian(civilian, position, sounds, now) {
   if (!civilian) throw new TypeError('Civilian panic requires an actor');
-  if (civilian.panicked || !isCivilianNearCombat(position, sounds, now)) return false;
+  const nearby = isCivilianNearCombat(position, sounds, now);
+  if (nearby) {
+    const blast = sounds.findLast(sound => sound.kind === 'explosion' && now >= sound.time &&
+      now - sound.time <= CIVILIAN_PANIC_MEMORY &&
+      Math.hypot(sound.x - position.x, sound.y - position.y, sound.z - position.z) <= 16);
+    if (blast && civilian.lastStartleSound !== blast.id) {
+      civilian.lastStartleSound = blast.id;
+      civilian.startledUntil = now + .45 + civilian.civilianId % 5 * .07;
+      civilian.protectiveUntil = now + 3;
+    }
+  }
+  if (civilian.panicked || !nearby) return false;
   civilian.panicked = true;
   civilian.panicStartedAt = now;
   return true;
