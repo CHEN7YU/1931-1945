@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { poseDadaoViewArm } from './dadao-view-grips.js';
+import { sampleDadaoWorldCut } from './dadao-world-grips.js';
 import { grenadeHand, poseGrenadeHand, grenadeSleeve, alignGrenadeSleeve } from './grenade-model.js';
 import { createStudySurface } from './uniform-surfaces.js';
 import { dadaoSurfaces, DADAO_ART_ROOT, DADAO_CLOTH_TILE_METERS } from './dadao-surface.js';
@@ -28,25 +29,72 @@ function chopRotation(angle) {
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(edge, axis, cutNormal));
 }
 
-const raisedRotation = chopRotation(-1.2), followRotation = chopRotation(1.6);
-const viewFollowRotation = chopRotation(1.25);
+const raisedRotation = chopRotation(-1.2);
+const viewFollowRotation = chopRotation(1.0);
+const worldAxis = angles => new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(...angles, 'YXZ'));
+const worldLoadedAxes = [worldAxis([-.1, -.55, -.8]), worldAxis([.55, 0, -.10])];
+const worldContactAxis = worldAxis([-1.25, -.3, -.55]), worldBrakeAxis = worldAxis([-2.05, -.25, -.3]);
 
-export function dadaoWorldStroke(pose) {
-  const { raise, cut } = dadaoStroke(pose);
-  const draw = pose.phase === 'draw' ? 1 - pose.progress : 0;
-  const overhead = pose.style === 1;
-  const readyWrist = overhead ? new THREE.Vector3(-.10, .20, -.16) : new THREE.Vector3(.07, .13, .025);
-  const readyRotation = overhead ? new THREE.Quaternion().setFromEuler(new THREE.Euler(.85, .2, .1, 'YXZ')) : raisedRotation;
-  const recovery = pose.phase === 'recover' ? pose.progress * pose.progress * (3 - 2 * pose.progress) : 0;
-  const attackWrist = new THREE.Vector3(-.06, .22, -.18).lerp(new THREE.Vector3(-.10, .04, -.26), cut);
-  const attackRotation = raisedRotation.clone().slerp(followRotation, cut);
+export function authoredDadaoWorldCut(overhead, progress) {
+  const start = new THREE.Vector3(...(overhead ? [-.04, .47, -.065] : [.22, .06, -.14]));
+  const end = new THREE.Vector3(-.22, -.16, -.35);
+  const first = start.clone().add(new THREE.Vector3(overhead ? 0 : -.12, overhead ? -.32 : -.14, overhead ? -.65 : -.20));
+  const second = end.clone().add(new THREE.Vector3(overhead ? .14 : .02, overhead ? -.04 : .02, overhead ? -.20 : -.08));
+  const t = progress, u = 1 - t, loadedAxis = worldLoadedAxes[overhead ? 1 : 0];
+  const contactAxis = worldContactAxis, brakeAxis = worldBrakeAxis;
+  const rawAxis = loadedAxis.clone().multiplyScalar(u * u).addScaledVector(contactAxis, 2 * u * t)
+    .addScaledVector(brakeAxis, t * t);
+  const axis = rawAxis.clone().normalize();
+  const axisVelocity = contactAxis.clone().sub(loadedAxis).multiplyScalar(2 * u)
+    .addScaledVector(brakeAxis.clone().sub(contactAxis), 2 * t);
+  axisVelocity.addScaledVector(axis, -axisVelocity.dot(axis)).divideScalar(rawAxis.length());
+  const anchor = start.clone().multiplyScalar(u ** 3).addScaledVector(first, 3 * u * u * t)
+    .addScaledVector(second, 3 * u * t * t).addScaledVector(end, t ** 3);
+  const velocity = first.clone().sub(start).multiplyScalar(3 * u * u)
+    .addScaledVector(second.clone().sub(first), 6 * u * t).addScaledVector(end.clone().sub(second), 3 * t * t)
+    .addScaledVector(axisVelocity, .48);
+  // Roll the actual cutting edge into the tangent, rather than interpolating arbitrary Euler roll.
+  const edge = velocity.addScaledVector(axis, -velocity.dot(axis)).normalize();
+  const normal = new THREE.Vector3().crossVectors(edge, axis);
   return {
-    wristOffset: pose.phase === 'recover' ? attackWrist.lerp(readyWrist, recovery)
-      : readyWrist.clone().lerp(attackWrist, raise).lerp(new THREE.Vector3(-.14, -.14, -.16), draw),
-    rotation: pose.phase === 'recover' ? attackRotation.slerp(readyRotation, recovery)
-      : readyRotation.clone().slerp(attackRotation, raise).slerp(
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30)).multiply(carryGrip), draw),
+    anchor,
+    rotation: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(edge, axis, normal)),
+    rightPole: new THREE.Vector3(.30, -.65, -.55),
+    leftPole: new THREE.Vector3(-.35, -.65, -.8),
   };
+}
+
+export function dadaoWorldStroke(pose, calibration) {
+  const overhead = pose.style === 1, t = THREE.MathUtils.clamp(pose.progress, 0, 1);
+  const key = (position, angles, right, left) => ({ anchor: new THREE.Vector3(...position),
+    rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(...angles, 'YXZ')),
+    rightPole: new THREE.Vector3(...right), leftPole: new THREE.Vector3(...left) });
+  const ready = key([.04, .13, -.23], [-.15, .15, -.25], [.35, -.8, -.5], [-.35, -.8, -.5]);
+  const cutKey = progress => {
+    const sample = calibration?.(progress) ?? sampleDadaoWorldCut({ ...pose, progress });
+    return { ...sample, rightPole: new THREE.Vector3(.30, -.65, -.55), leftPole: new THREE.Vector3(-.35, -.65, -.8) };
+  };
+  if (pose.phase === 'cut') return cutKey(t);
+  const loaded = cutKey(0), brake = cutKey(1);
+  const gathered = key([-.10, -.02, -.30], [-1.2, -.35, -.65], [.25, -.9, -.4], [-.3, -.9, -.4]);
+  const blend = (a, b, weight) => ({
+    anchor: a.anchor.clone().lerp(b.anchor, weight), rotation: a.rotation.clone().slerp(b.rotation, weight),
+    rightPole: a.rightPole.clone().lerp(b.rightPole, weight), leftPole: a.leftPole.clone().lerp(b.leftPole, weight),
+  });
+  const smooth = value => THREE.MathUtils.smoothstep(value, 0, 1);
+  if (pose.phase === 'windup') {
+    const stroke = blend(ready, loaded, smooth(t));
+    // Load around the front/outside of the head, not diagonally through the neck.
+    stroke.anchor.z -= .23 * Math.sin(Math.PI * smooth(t));
+    return stroke;
+  }
+  if (pose.phase === 'recover') {
+    // Gather beside the torso before returning to guard, rather than reversing the striking arc.
+    return t < .35 ? blend(brake, gathered, smooth(t / .35)) : blend(gathered, ready, smooth((t - .35) / .65));
+  }
+  if (pose.phase === 'draw') return blend(key([.16, -.12, -.18], [-.6, -.2, -.5],
+    [.35, -.8, -.5], [-.35, -.8, -.5]), ready, smooth(t));
+  return ready;
 }
 
 export function dadaoBladeGeometry() {
@@ -177,12 +225,26 @@ export function dadaoViewModel(createHand = null) {
 }
 
 export function updateDadaoView(root, pose, motion, camera = null) {
+  if (pose.phase === 'stowed') {
+    if (!root.userData.dadaoStowed) root.userData.dadaoVisibleBeforeStow = root.visible;
+    root.userData.dadaoStowed = true;
+    root.visible = false;
+    return;
+  }
+  if (root.userData.dadaoStowed) {
+    root.visible = root.userData.dadaoVisibleBeforeStow;
+    root.userData.dadaoStowed = false;
+  }
+  if (!['draw', 'ready', 'windup', 'cut', 'recover'].includes(pose.phase))
+    throw new RangeError(`Unknown dadao view phase: ${pose.phase}`);
   const blade = root.userData.dadaoHand, hand = root.userData.dadaoArm;
   const { raise, cut } = dadaoStroke(pose);
   const draw = pose.phase === 'draw' ? 1 - pose.progress : 0;
   const aspect = camera?.aspect ?? 1.6, narrow = THREE.MathUtils.clamp((1.1 - aspect) / .75, 0, 1);
-  // Frame the complete two-arm rig farther from the eye, without changing its bones or grips.
-  root.position.set(0, -.22 * (1 - narrow), -.30 * (1 - narrow));
+  const loadDip = .10 * raise * (1 - cut) * (1 - narrow);
+  // Compose the already-solved rigid arms separately; never change grip or wrist angles for the camera.
+  root.position.set(.11 - .07 * narrow - loadDip,
+    -.20 + .04 * narrow - loadDip, -.20 * (1 - narrow));
   const viewDepth = .15, armDepth = narrow * .12;
   const carry = new THREE.Vector3(.23, -.16, -.50 - viewDepth + narrow * .04);
   const carryRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30 + narrow * .12)).multiply(carryGrip);
@@ -201,56 +263,43 @@ export function updateDadaoView(root, pose, motion, camera = null) {
   const raisedWrist = new THREE.Vector3(.19, .01, -.40 - armDepth);
   const followWrist = new THREE.Vector3(.05, -.13, -.40 - armDepth);
   const wrist = recovering ? new THREE.CubicBezierCurve3(followWrist,
-    new THREE.Vector3(.02, -.20, -.44 - armDepth),
-    new THREE.Vector3(.14, -.24, -.42 - armDepth), readyWrist).getPoint(recovery)
+    new THREE.Vector3(-.02, .04, -.44 - armDepth),
+    new THREE.Vector3(.12, .04, -.42 - armDepth), readyWrist).getPoint(recovery)
     : readyWrist.clone().lerp(raisedWrist, raise).lerp(followWrist, THREE.MathUtils.smoothstep(cut, .15, .85));
   const drawOffset = new THREE.Vector3(0, -draw * .15, draw * .04);
   wrist.add(new THREE.Vector3(motion.weaponX, motion.weaponY, 0)).add(drawOffset);
   const rotation = recovering ? viewFollowRotation.clone().slerp(carryRotation, THREE.MathUtils.smoothstep(pose.progress, .2, 1))
     : carryRotation.clone().slerp(raisedRotation, raise).slerp(viewFollowRotation, cut);
-  let handRotation = rotation.clone().multiply(handToBlade);
-  const shoulder = new THREE.Vector3(.30, -.39 + narrow * .04, -.35 - armDepth)
-    .addScaledVector(new THREE.Vector3(.015, .025, -.015), raise * (1 - cut));
-  const pole = new THREE.Vector3(0, -1, 0).applyQuaternion(handRotation).add(new THREE.Vector3(.10, 0, 0));
+  const anchor = wrist.clone().add(grip.clone().applyQuaternion(rotation.clone().multiply(handToBlade)))
+    .add(new THREE.Vector3(-.04 - .05 * cut, -.05 * cut, -.03));
+  // Author the rigid grip frame first, then solve both arms independently to it.
+  blade.position.copy(anchor).sub(new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(rotation));
+  blade.quaternion.copy(rotation);
   if (hand.poseArm) {
-    const anchor = wrist.clone().add(grip.clone().applyQuaternion(handRotation));
-    handRotation = poseDadaoViewArm(hand, 'right', shoulder, anchor, rotation, pole, pose, narrow);
-    hand.poseGrip(1, 0, 'dadao');
-  } else {
-    hand.position.copy(wrist); hand.quaternion.copy(handRotation);
-    alignGrenadeSleeve(root.userData.dadaoSleeve, shoulder, wrist);
-  }
-  root.updateMatrixWorld(true);
-  const frame = hand.attachmentFrame ?? hand;
-  const relative = root.matrixWorld.clone().invert().multiply(frame.matrixWorld), scale = new THREE.Vector3();
-  relative.decompose(blade.position, blade.quaternion, scale);
-  blade.position.add(grip.applyQuaternion(blade.quaternion));
-  blade.quaternion.multiply(rotation.clone().invert().multiply(handRotation).invert());
-  blade.position.sub(new THREE.Vector3(0, DADAO_DIMENSIONS.gripCenter, 0).applyQuaternion(blade.quaternion));
-  root.updateMatrixWorld(true);
-  const leftHand = root.userData.dadaoLeftArm;
-  if (leftHand) {
-    const anchor = new THREE.Vector3(0, -.12, 0).applyQuaternion(blade.quaternion).add(blade.position);
     const wideCarry = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.08, -.28, -.30)).multiply(carryGrip);
     const wideRotation = recovering ? viewFollowRotation.clone().slerp(wideCarry, THREE.MathUtils.smoothstep(pose.progress, .2, 1))
       : wideCarry.clone().slerp(raisedRotation, raise).slerp(viewFollowRotation, cut);
     const wideReady = new THREE.Vector3(.16, -.12, -.36), wideRaised = new THREE.Vector3(.19, .01, -.40);
     const wideFollow = new THREE.Vector3(.05, -.13, -.40);
-    const wideWrist = recovering ? new THREE.CubicBezierCurve3(wideFollow, new THREE.Vector3(.02, -.20, -.44),
-      new THREE.Vector3(.14, -.24, -.42), wideReady).getPoint(recovery)
+    const wideWrist = recovering ? new THREE.CubicBezierCurve3(wideFollow, new THREE.Vector3(-.02, .04, -.44),
+      new THREE.Vector3(.12, .04, -.42), wideReady).getPoint(recovery)
       : wideReady.clone().lerp(wideRaised, raise).lerp(wideFollow, THREE.MathUtils.smoothstep(cut, .15, .85));
     wideWrist.add(new THREE.Vector3(motion.weaponX, motion.weaponY, 0)).add(drawOffset);
-    const wideAnchor = wideWrist.add(new THREE.Vector3(...hand.userData.throwableGrips.dadao)
-      .applyQuaternion(wideRotation.clone().multiply(handToBlade)))
-      .add(new THREE.Vector3(0, -.09, 0).applyQuaternion(wideRotation));
-    // Reframe the whole support chain, not its joint angles, when the viewport narrows.
+    const wideAnchor = wideWrist.add(grip.clone().applyQuaternion(wideRotation.clone().multiply(handToBlade)))
+      .add(new THREE.Vector3(-.04 - .05 * cut, -.05 * cut, -.03));
     const viewRotation = rotation.clone().multiply(wideRotation.clone().invert());
-    const leftShoulder = new THREE.Vector3(-.32, -.16, -.03)
-      .addScaledVector(new THREE.Vector3(-.03, -.02, -.02), recovering ? Math.sin(Math.PI * recovery) : 0)
-      .sub(wideAnchor).applyQuaternion(viewRotation).add(anchor);
-    poseDadaoViewArm(leftHand, 'left', leftShoulder, anchor, rotation,
-      new THREE.Vector3(-.65, -.65, -.35).applyQuaternion(viewRotation), pose, narrow);
-    leftHand.poseGrip(1, 0, 'dadao');
+    for (const [side, arm] of [['right', hand], ['left', root.userData.dadaoLeftArm]]) {
+      if (!arm) continue;
+      const shoulder = new THREE.Vector3(side === 'right' ? .22 : -.22, -.38 + .16 * raise * (1 - cut), -.28)
+        .sub(wideAnchor).applyQuaternion(viewRotation).add(anchor);
+      const palm = anchor.clone().add(new THREE.Vector3(0, side === 'right' ? 0 : -.09, 0).applyQuaternion(rotation));
+      poseDadaoViewArm(arm, side, shoulder, palm, rotation,
+        new THREE.Vector3(side === 'right' ? .25 : -.25, -1, -.6).applyQuaternion(viewRotation), pose);
+      arm.poseGrip(1, 0, 'dadao');
+    }
+  } else {
+    hand.position.copy(wrist); hand.quaternion.copy(rotation).multiply(handToBlade);
+    alignGrenadeSleeve(root.userData.dadaoSleeve, new THREE.Vector3(.30, -.39, -.35), wrist);
   }
   root.updateMatrixWorld(true);
 }

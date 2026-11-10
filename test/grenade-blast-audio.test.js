@@ -5,7 +5,7 @@ import { createGrenadeBlastAudio, grenadeBlastMix } from '../src/grenade-blast-a
 const listener = { position: { x: 0, y: 1.7, z: 0 }, right: { x: 1, y: 0, z: 0 } };
 test('grenade impact combines an audible crack and low-frequency body, uses spatial routing and caps overlapping voices', () => {
   const nodes = [], sources = [], parameter = () => ({ value: 0, setValueAtTime(value) { this.value = value; },
-    linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
+    linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setValueCurveAtTime() {}, setTargetAtTime() {} });
   const node = () => { const n = { disconnected: 0, gain: parameter(), frequency: parameter(), pan: parameter(),
     connect(next) { this.output = next; return next; }, disconnect() { this.disconnected++; } }; nodes.push(n); return n; };
   const context = { state: 'running', currentTime: 0, createGain: node, createBiquadFilter: node,
@@ -21,6 +21,11 @@ test('grenade impact combines an audible crack and low-frequency body, uses spat
   audio.reset(); assert.equal(audio.snapshot.active, 0);
   assert.ok(nodes.every(n => n.disconnected === 1), 'reset releases all nodes exactly once');
   context.state = 'suspended'; assert.equal(audio.play({ x: 0, y: 0, z: 0 }, listener), false);
+  context.state = 'running'; context.currentTime = 5;
+  assert.equal(audio.play({ x: 0, y: 0, z: 0 }, listener), true, 'recovery does not suppress the explosion');
+  assert.equal(audio.snapshot.active, 1);
+  assert.equal(audio.snapshot.tinnitus.active, 0, 'reset does not bypass ear-ringing recovery');
+  audio.reset();
 });
 test('blast audio and the brief warm exposure fade with distance, never infer a warning for a remote explosion', () => {
   const close = grenadeBlastMix({ x: 2, y: 0, z: 0 }, listener), far = grenadeBlastMix({ x: 40, y: 0, z: 0 }, listener);

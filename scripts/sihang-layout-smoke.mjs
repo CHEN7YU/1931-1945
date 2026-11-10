@@ -38,22 +38,33 @@ try {
     camera.position.set(house.x + 14, house.height + 5, house.z - 18);
     camera.lookAt(house.x, house.height * .6, house.z); renderer.render(scene, camera);
     const roofs = renderer.domElement.toDataURL();
+    camera.position.set(12, 1.65, -38); camera.lookAt(-12, 2.9, -17);
+    renderer.render(scene, camera);
+    const interior = renderer.domElement.toDataURL();
+    camera.position.set(25, 10.5, -47); camera.lookAt(-10, 4, -66);
+    renderer.render(scene, camera);
+    const northStreet = renderer.domElement.toDataURL();
     const probe = new T.Mesh(ring.geometry, ring.material);
     const emptyCenter = new T.Raycaster(new T.Vector3(0, 0, 1), new T.Vector3(0, 0, -1)).intersectObject(probe);
     renderer.dispose();
-    return { overview, capture, street, roofs, ring: { name: ring.name, type: ring.geometry.type, emptyCenter: emptyCenter.length === 0 },
+    return { overview, capture, street, roofs, interior, northStreet,
+      warehouse: { floorHeight: world.landmarks.warehouse.floorHeight, roofY: world.landmarks.warehouse.roofY },
+      architecture: [...new Set(world.town.buildings.slice(1).map(building => building.architecture))],
+      ring: { name: ring.name, type: ring.geometry.type, emptyCenter: emptyCenter.length === 0 },
       bridge: SIHANG_BRIDGE, evacuation: SIHANG_EVACUATION, geometry: world.staticRendering,
       city: world.sceneArt.city, mapBounds: world.mapBounds };
   });
   assert.equal(data.ring.type, 'RingGeometry'); assert.equal(data.ring.emptyCenter, true);
   assert.ok(data.bridge.southX > data.bridge.northX && data.bridge.southZ > data.bridge.northZ);
   assert.ok(data.city.usableGroundFloors >= 50);
+  assert.equal(data.warehouse.floorHeight, 7.2); assert.equal(data.warehouse.roofY, 21.6);
+  assert.equal(data.architecture.length, 5);
   assert.ok(data.geometry.triangles < 40000); assert.deepEqual(errors, []);
   await writeFile(join(directory, 'sihang-overhead-current.png'), Buffer.from(data.overview.split(',')[1], 'base64'));
   await writeFile(join(directory, 'sihang-ground-capture-ring.png'), Buffer.from(data.capture.split(',')[1], 'base64'));
-  for (const name of ['street', 'roofs'])
+  for (const name of ['street', 'roofs', 'interior', 'northStreet'])
     await writeFile(join(directory, `sihang-${name}.png`), Buffer.from(data[name].split(',')[1], 'base64'));
-  delete data.overview; delete data.capture; delete data.street; delete data.roofs;
+  for (const name of ['overview', 'capture', 'street', 'roofs', 'interior', 'northStreet']) delete data[name];
   await writeFile(join(directory, 'layout-observations.json'), JSON.stringify({ ...data, errors,
     note: 'Actual authored map geometry, original reference layout adaptation; not a historical survey or natural battle performance check' }, null, 2));
   console.log(JSON.stringify({ passed: true, buildings: data.city.usableGroundFloors, triangles: data.geometry.triangles }));

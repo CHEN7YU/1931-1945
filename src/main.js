@@ -87,6 +87,7 @@ import { bayonetObstructed } from './bayonet-clearance.js';
 import { dadaoCombatDistance, advanceAIDadao } from './ai-dadao.js';
 import { DADAO, createDadaoState, drawDadao, stowDadao, startDadaoSwing, advanceDadao, dadaoPhase, selectDadaoTarget } from './dadao.js';
 import { dadaoViewModel, updateDadaoView } from './dadao-model.js';
+import { createPresentationRecovery, createBattleFrameLoop } from './presentation-recovery.js';
 import { loadDadaoSurfaces, dadaoSurfaceSnapshot } from './dadao-surface.js';
 import { advanceAITurn, headingError, AI_TURN } from './ai-turning.js';
 import { createAIDecisionScheduler, aiDecisionPriority } from './ai-decisions.js';
@@ -133,7 +134,7 @@ import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
 import { TRAVERSAL, findVault, beginTraversal, advanceTraversal, moveAirborne, moveSupported, landingHeight, landingDamage } from './infantry-traversal.js';
 import { beginFatalFall, fatalFallExpired, fatalFallActionAllowed } from './fatal-fall.js';
-import { beginDying, dyingExpired, dyingActionAllowed, dyingMask } from './dying.js';
+import { beginDying, dyingExpired, dyingActionAllowed, dyingMask, lastStandThrowable } from './dying.js';
 import { meleeEngagementRange, emptyMagazineMeleeCandidate } from './bayonet.js';
 import { beginBlastReaction, advanceBlastReaction, sampleBlastReaction, blastCasualty } from './blast-reaction.js';
 import { deploymentMapPoint, deploymentMapView } from './deployment-map.js';
@@ -347,7 +348,8 @@ const fatalReporter = createFatalReporter({ document, window,
   onFatal: () => { fatal = true; stopAfterFailure(); },
   onRecorded: (error, details) => {
     if (error instanceof Error) {
-      performanceDiagnostics.runtimeError(error, details); performanceDiagnostics.flush('ended');
+      performanceDiagnostics.runtimeError(error, details);
+      if (!details.recovered) performanceDiagnostics.flush('ended');
     }
   },
 });
@@ -359,9 +361,8 @@ const textureBudget = createStartupTextureBudget(startupResources);
 const recordRecoveredFailure = (error, context) => {
   fatalReporter.recordRecovery(error, context);
   if (context.stage === 'native-gait') performanceDiagnostics.error('pose-recovered');
-  performanceDiagnostics.runtimeError(error, { recovered: true, stage: context.stage,
-    position: context.position, side: context.details?.side, team: context.team });
 };
+const dadaoViewRecovery = createPresentationRecovery(recordRecoveredFailure);
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 650);
@@ -2443,7 +2444,7 @@ function equipGrenade(kind = 'grenade') {
   held.primary = held.secondary = held.aiming = false;
   actor.rifleReady = false;
   refreshWeaponVisibility();
-  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
+  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'}${actor.dying || actor.fatalFall ? '' : ' · 左键准备／松开投掷'}`;
 }
 
 function equipPrimary() {
@@ -2488,6 +2489,7 @@ function equipDadao() {
   held.primary = held.secondary = held.aiming = false;
   actor.rifleReady = false;
   refreshControlSurface();
+  dadaoViewRecovery.reset(weapon);
 }
 
 function swingDadao() {
@@ -2598,11 +2600,10 @@ function renderConstruction() {
 function switchMember(index) {
   if (index === current || !allies[index] || allies[index].health <= 0) return;
   if (allies[current]?.dying || allies[current]?.blastReaction) {
-    toast('当前队员正在重伤或倒地，暂时无法切换');
+    if (!allies[current]?.dying) toast('暂时无法换人');
     return;
   }
   if (allies[current]?.health > 0 && allies[current].fatalFall) {
-    toast('坠落重伤，无法切换队员；仍可完成最后一次投掷');
     return;
   }
   interruptGrenade(allies[current]);
@@ -2996,8 +2997,14 @@ function hurt(actor, damage, source, weaponKind = 'rifle', hitZone = null, hitDi
     playerInput.releaseFire(); held.aiming = false;
     stopLocomotion(actor.locomotion);
     releaseEmplacement(actor, false); releaseWeaponMount(actor.weaponMount);
-    if (actor.dadao) stowDadao(actor.dadao);
+    if (selected && dadaoEquipped) equipPrimary();
+    else if (actor.dadao) stowDadao(actor.dadao);
     cancelBayonet(actor.bayonet);
+    if (selected) {
+      const throwable = lastStandThrowable(actor, selectedThrowable);
+      if (throwable) equipGrenade(throwable);
+      if (grenadeEquipped) $('weapon-name').textContent = selectedThrowable === 'grenade' ? '手榴弹' : '炸药包';
+    }
   }
   if (previous > actor.health) battleStats.consume(combatEvents.publish('damage', { source, target: { kind: 'soldier', id: actor.id, unitId: actor.unitId, team: actor.team },
     amount: previous - actor.health, health: actor.health, observerId: selected ? actor.id : null, hitZone }, time));
@@ -3130,7 +3137,7 @@ function renderDeathFeedback() {
     const red = graphics.snapshot.effects.damageVignette ? dying.red : 0;
     element.style.setProperty('--dying-blood', String(red));
     element.style.background = `radial-gradient(ellipse at center,rgba(0,0,0,${dying.dark * .35}),rgba(20,0,0,${Math.min(1, dying.dark + red * .3)}))`;
-    $('death-transfer-label').textContent = '致命重伤 · 无法移动 · 尚可最后开火一次或拉响投掷物';
+    $('death-transfer-label').textContent = '重伤';
     return;
   }
   element.style.opacity = String(mask.opacity);
@@ -3368,8 +3375,8 @@ function prepareGrenade() {
 }
 
 function startThrowableAction(actor, kind) {
-  if (actor.dying?.action) { toast('重伤后的最后一次操作已使用'); return; }
-  if (actor.fatalFall?.throwStarted) { toast('重伤后只能完成最后一次投掷'); return; }
+  if (actor.dying?.action) return;
+  if (actor.fatalFall?.throwStarted) return;
   const source = captureAttackSource(entities, actor, kind === 'explosive-pack' ? actor.explosivePack : actor.grenades);
   const reason = grenades.begin(actor.id, actor.grenades, source, time, kind);
   if (reason) { toast(reason); return; }
@@ -3379,7 +3386,7 @@ function startThrowableAction(actor, kind) {
   held.primary = held.secondary = held.aiming = false;
   resetConstruction();
   toolEquipped = false; grenadeEquipped = true; selectedThrowable = kind;
-  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'} · 左键准备／松开投掷`;
+  $('weapon-name').textContent = `${kind === 'grenade' ? '手榴弹' : '炸药包'}${actor.dying || actor.fatalFall ? '' : ' · 左键准备／松开投掷'}`;
   actor.rifleReady = false;
   const action = actor.grenades.action;
   action.position = grenadeThrowPose(actor.id, action).position;
@@ -3461,7 +3468,7 @@ function fire() {
   if (unit.type === 'infantry') {
     if (time < unit.nextShot) return;
     if (weaponObstruction > 0 || obstructionBlend > .03) { toast('枪口受阻 · 后退或移开枪口'); return; }
-    if (!shootRifle(allies[current].rifle)) { syncRifleUnit(); return; }
+    if (!shootRifle(allies[current].rifle, !allies[current].dying)) { syncRifleUnit(); return; }
     if (allies[current].rifle.queuedReload) emitControlEvent('weapon.reload-requested', {
       weaponId: allies[current].rifle.id, duration: rifleReloadSeconds(allies[current].rifle), queued: true });
     if (infantryWeaponProfile(allies[current].rifle).scoped) held.primary = false;
@@ -3961,9 +3968,9 @@ function updateActorTraversal(actor, dt) {
       clearControlInputs(); resetConstruction();
       actor.stance = controlPose.stance = 'prone'; actor.firingPose = null;
       stopLocomotion(actor.locomotion); actor.rifleReady = false;
-      if (actor.grenades.ammo > 0 || actor.grenades.packs > 0)
-        equipGrenade(actor.grenades.ammo > 0 ? 'grenade' : 'explosive-pack');
-      toast('高处坠落，已致命重伤 · 4秒内可按5/6选择，左键准备并松开完成最后一次投掷', 4);
+      const throwable = lastStandThrowable(actor, selectedThrowable);
+      if (throwable) equipGrenade(throwable);
+      toast('重伤', 1);
     }
     if (damage > 0) hurt(actor, damage, { credit: 'environment', cause: 'fall', subjectId: actor.id }, 'fall');
   }
@@ -4174,6 +4181,11 @@ function updatePlayer(dt) {
 
 function updateCamera(dt) {
   if (!allies[current] || !unit) return;
+  if (dadaoEquipped && !allies[current].dadao?.equipped) {
+    recordRecoveredFailure(new Error('Controlled sword was stowed; synchronized the first-person equipment view'),
+      { stage: 'battle', team: allies[current].team, position: allies[current].position.toArray() });
+    equipPrimary();
+  }
   const point = emplacements.get(allies[current].emplacementId);
   if (point) {
     const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
@@ -4236,9 +4248,11 @@ function updateCamera(dt) {
     const response = 1 - Math.exp(-dt * 15);
     if (dadaoEquipped) {
       weaponObstruction = obstructionBlend = 0;
-      updateDadaoView(weapon, dadaoPhase(allies[current].dadao, time), motion, camera);
-      weapon.userData.dadaoArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
-      weapon.userData.dadaoLeftArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
+      dadaoViewRecovery.run(weapon, () => {
+        updateDadaoView(weapon, dadaoPhase(allies[current].dadao, time), motion, camera);
+        weapon.userData.dadaoArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
+        weapon.userData.dadaoLeftArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
+      }, { team: allies[current].team, position: allies[current].position.toArray() });
     } else if (unit.type === 'infantry' && !toolEquipped) {
       if (!weapon.userData.rifle?.bolt || !weapon.userData.rifle.clip || !weapon.userData.rifle.muzzle) {
         const error = new Error('First-person rifle view lacked required metadata; rebuilt from the controlled soldier');
@@ -5811,14 +5825,6 @@ function updateAI(dt) {
     const coveringSappers = Boolean(sihangSupportContext && !actor.friendly && !actor.formation.sihangDemolition);
     const supportGoal = coveringSappers ? sihangSupportGoal(actor) ??
       { ...actor.spawnPosition, y: 0, transit: true } : null;
-    if (coveringSappers && (!sihangOutsideCover(position, sihangSupportContext) ||
-      Math.hypot(position.x - supportGoal.x, position.z - supportGoal.z) > .6)) {
-      if (actor.discharger) stowGrenadeDischarger(actor.discharger);
-      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'support-reposition');
-      tactics.mode = 'sihang-support-position';
-      walkActor(actor, supportGoal, 3, dt); settleActorSupport(actor);
-      continue;
-    }
     if (operateAIDischarger(actor, dt)) continue;
     const eye = actor.nativeMotion ? soldierEyePosition(actor) : { x: position.x, y: position.y + 1.45, z: position.z };
     const from = new THREE.Vector3(eye.x, eye.y, eye.z);
@@ -5892,6 +5898,17 @@ function updateAI(dt) {
         {position:civilianPursuit.getWorldPosition(new THREE.Vector3())})) &&
       (!regroupGuard || actor.target.position.z > -12 &&
         Math.hypot(actor.target.position.x, actor.target.position.z - 27) < 40) ? actor.target : null;
+    // Visible close threats take precedence over scripted rifle/guard posts.
+    // tryAIMelee retains weapon eligibility, floor, sight, clearance and ceasefire checks.
+    if (!actor.friendly && tryAIMelee(actor, target, dt)) { settleActorSupport(actor); continue; }
+    if (coveringSappers && (!sihangOutsideCover(position, sihangSupportContext) ||
+      Math.hypot(position.x - supportGoal.x, position.z - supportGoal.z) > .6)) {
+      if (actor.discharger) stowGrenadeDischarger(actor.discharger);
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'support-reposition');
+      tactics.mode = 'sihang-support-position';
+      walkActor(actor, supportGoal, 3, dt); settleActorSupport(actor);
+      continue;
+    }
     if (regroupGuard) {
       tactics.mode = 'gate-guard';
       actor.path = actor.pathGoal = null; pathRequests.delete(tactics.id);
@@ -5967,7 +5984,7 @@ function updateAI(dt) {
         continue;
       }
     }
-    if (actor.meleePriority && tryAIMelee(actor, target, dt)) continue;
+    if (actor.friendly && actor.meleePriority && tryAIMelee(actor, target, dt)) continue;
     const defenseGoal = gateDefender && tactics.nanjingDefense ? formationDestination(actor, objective) : null;
     const defenseObjective = defenseGoal ? formationObjective(actor, objectives[0]) : null;
     const changingLevel = defenseGoal && Math.abs(position.y - defenseGoal.y) > .3;
@@ -6001,9 +6018,9 @@ function updateAI(dt) {
       }
       continue;
     }
-    if (nanjingCampaignMode && tryAIMelee(actor, target, dt)) continue;
+    if (actor.friendly && nanjingCampaignMode && tryAIMelee(actor, target, dt)) continue;
     if (tryAIThrowable(actor, target, dt)) continue;
-    if (!nanjingCampaignMode && tryAIMelee(actor, target, dt)) continue;
+    if (actor.friendly && !nanjingCampaignMode && tryAIMelee(actor, target, dt)) continue;
     updateInfantryAimPitch(actor, target ? targetAimPoint(target) : null, soldierRifleMuzzle(actor), dt);
     if (encirclementMode && encirclement.phase === 2 && !actor.friendly &&
       (!target || actor.position.distanceTo(target.position) > 6)) {
@@ -7733,8 +7750,18 @@ function renderSimulationStatus() {
   }
 }
 
-function tick(now) {
-  if (battlePreparing) { lastFrame = now; requestAnimationFrame(tick); return; }
+const tick = createBattleFrameLoop({
+  requestFrame: callback => requestAnimationFrame(callback),
+  active: () => !fatal,
+  step: tickFrame,
+  record: error => recordRecoveredFailure(error, {
+    stage: 'battle', details: { component: 'battle-frame', recovery: 'retry-next-frame' },
+    ...readFailureContext(),
+  }),
+});
+
+function tickFrame(now) {
+  if (battlePreparing) { lastFrame = now; return; }
   const callbackEnteredAt = benchmark ? performance.now() : 0;
   if (fatal) return;
   battleEnding.update(performance.now(), document.hidden || battleEnding.fading && state === 'pause');
@@ -7749,7 +7776,7 @@ function tick(now) {
   }
   if (battleEnding.black || battleEnding.complete && ['victory', 'defeat', 'draw'].includes(state)) {
     renderSimulationStatus();
-    lastFrame = now; requestAnimationFrame(tick); return;
+    lastFrame = now; return;
   }
   tacticalAudio?.beginFrame();
   footstepAudio?.beginBatch(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
@@ -7892,7 +7919,6 @@ function tick(now) {
   }
   frameWork.finishFrame();
   performanceDiagnostics.finishFrame(state);
-  requestAnimationFrame(tick);
 }
 
 document.querySelectorAll('.squad-choice').forEach(button => button.addEventListener('click', () => {
@@ -8312,11 +8338,10 @@ function dispatchControlCommand(action, payload) {
   const actor = controlledSoldier(entities);
   if (!dyingActionAllowed(actor ?? {}, action) ||
     actor?.blastReaction && !actor.dying && action !== 'look') {
-    toast(actor?.dying ? '致命重伤：仅能完成最后一次开火或投掷操作' : '爆炸失衡：正在撑地起身');
+    if (!actor?.dying) toast('爆炸失衡：正在撑地起身');
     return { status: 'rejected', reason: actor?.dying ? 'dying' : 'blast-recovery' };
   }
   if (!fatalFallActionAllowed(controlledSoldier(entities) ?? {}, action)) {
-    toast('致命重伤：无法移动、换人或使用主武器，只能尝试最后一次投掷');
     return { status: 'rejected', reason: 'fatal-fall' };
   }
   const command = playerInput.capture(action, payload);

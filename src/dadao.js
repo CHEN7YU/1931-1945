@@ -60,14 +60,30 @@ export function dadaoStroke(pose) {
 }
 
 export function dadaoBodyMotion(pose) {
-  const { raise, cut } = dadaoStroke(pose);
-  const windup = raise * (1 - cut);
+  const smooth = value => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
+  const overhead = pose.style === 1;
+  const settle = pose.phase === 'recover' ? smooth((pose.progress - .2) / .8) : 0;
+  const turn = pose.phase === 'cut' ? smooth((pose.progress - .12) / .7) : pose.phase === 'recover' ? 1 : 0;
+  const lead = pose.phase === 'cut' ? smooth(pose.progress / .62) : pose.phase === 'recover' ? 1 : 0;
+  const prepare = pose.phase === 'windup' ? smooth(pose.progress)
+    : pose.phase === 'cut' || pose.phase === 'recover' ? 1 : 0;
+  const windup = prepare * (1 - turn) * (1 - settle), follow = turn * (1 - settle);
+  const loadedHips = prepare * (1 - lead) * (1 - settle), drive = lead * (1 - settle);
+  const step = pose.phase === 'windup' ? smooth(pose.progress)
+    : pose.phase === 'cut' ? 1 : pose.phase === 'recover' ? 1 - smooth((pose.progress - .45) / .55) : 0;
+  const arch = value => value <= 0 || value >= 1 ? 0 : Math.sin(Math.PI * smooth(value));
+  const stepLift = pose.phase === 'windup' ? arch(pose.progress)
+    : pose.phase === 'recover' ? arch((pose.progress - .45) / .55) : 0;
   return {
-    yaw: -.10 * windup + .12 * cut,
-    pitch: .009 * windup - .012 * cut,
-    roll: -.025 * windup + .035 * cut,
-    lift: -.006 * windup - .004 * cut,
-    lateral: .008 * windup - .012 * cut,
+    yaw: (overhead ? -.12 : -.30) * windup + .28 * follow,
+    pitch: .015 * windup - .065 * follow,
+    roll: -.025 * windup + .035 * follow,
+    lift: 0, lateral: 0,
+    pelvisYaw: (overhead ? -.06 : -.16) * loadedHips + .18 * drive,
+    shoulderLift: (overhead ? .32 : .05) * windup,
+    legs: { drop: .025 * windup + .065 * follow, forward: -.015 * windup - .045 * follow,
+      lateral: -.025 * follow, step: .10 * step, stepLift: .04 * stepLift,
+      pivot: -.09 * loadedHips + .16 * drive },
   };
 }
 

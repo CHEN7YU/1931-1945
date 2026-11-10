@@ -67,12 +67,20 @@ describe('independent Sihang Warehouse battlefield', () => {
       assert.ok(['brick', 'plaster', 'tiles', 'paving', 'earth', 'timber'].includes(kind), 'Supported shared surface');
       return new THREE.MeshStandardMaterial({ color });
     });
+    const planar = { streets: world.town.streets,
+      houses: world.town.buildings.map(b => ({ id: b.id, x: b.x, z: b.z, width: b.width,
+        depth: b.depth, bounds: b.bounds, exit: b.exit })),
+      passages: world.town.passages.map(p => ({ id: p.id, groupId: p.groupId, x: p.x, z: p.z,
+        width: p.width, axis: p.axis, hingeDirection: p.hingeDirection, openAngle: p.openAngle })) };
+    assert.equal(createHash('sha256').update(JSON.stringify(planar)).digest('hex'),
+      '86adff1f6ab3a392dadb9c447ae13f3fc3505edca55db438e87e4d4f043bbaec',
+      'Original streets, lots, footprints, doorways and passage directions must not move');
     const layout = { obstacles: world.obstacles, passages: world.town.passages, streets: world.town.streets,
       houses: world.town.buildings.map(b => ({ id: b.id, x: b.x, z: b.z, width: b.width, depth: b.depth,
         height: b.height, bounds: b.bounds, exit: b.exit, damageOpening: b.damageOpening })) };
     assert.equal(createHash('sha256').update(JSON.stringify(layout)).digest('hex'),
-      '86e71889bc9bc5a2a17520b15d5e1a73032022aa09ed586be33e274169095e2c',
-      'Appearance changes preserve the original Sihang collision, footprint and passage contract');
+      '740c8319384c9c66f2d43470a6c5188f945d230883f5587540ce5375ac0737dc',
+      'Reduced warehouse storeys and varied residential shells have a deterministic physical geometry contract');
   });
   beforeEach(() => world.resetCampaign());
 
@@ -107,7 +115,8 @@ describe('independent Sihang Warehouse battlefield', () => {
 
   it('exports the coordinate contract and a complete standalone world', () => {
     assert.equal(W.width, 64); assert.equal(W.depth, 34);
-    assert.equal(W.floorHeight, 8.4); assert.equal(W.floors, 3); assert.equal(W.roofY, 25.2);
+    assert.equal(W.floorHeight, 7.2); assert.equal(W.floors, 3); assert.equal(W.roofY, 21.6);
+    assert.deepEqual(SIHANG_LEVELS, [0, 7.2, 14.4, 21.6]);
     assert.deepEqual(SIHANG_RIVER, { northZ: 0, southZ: 32, waterY: -1 });
     assert.deepEqual(SIHANG_BRIDGE, { name: '西藏路桥', x: 83, z: -22, width: 8,
       northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
@@ -330,11 +339,12 @@ describe('independent Sihang Warehouse battlefield', () => {
           [0, 0, direction], 1.4).length, 0, `${hole.id} is open in both firing directions`);
       }
     }
+    const referenceY = y => y * W.floorHeight / 8.4;
     for (const x of [-30, -22, -6, 10, 18, 25])
-      assert.ok(horizontalHits(x, 9.8, -43, [0, 0, 1], 2).length, 'Former repeated window row is solid reference masonry');
-    assert.ok(horizontalHits(0, 21.48, -43, [0, 0, 1], 2).length, 'Concrete bridge between the two principal holes remains solid');
-    assert.ok(horizontalHits(2.2, 17.4, -43, [0, 0, 1], 2).length, 'Jagged solid corners are not replaced with a rectangular cutout');
-    assert.equal(horizontalHits(1.7, 18.1, -43, [0, 0, 1], 2).length, 0, 'The adjacent real polygon opening remains clear');
+      assert.ok(horizontalHits(x, referenceY(9.8), -43, [0, 0, 1], 2).length, 'Former repeated window row is solid reference masonry');
+    assert.ok(horizontalHits(0, referenceY(21.48), -43, [0, 0, 1], 2).length, 'Concrete bridge between the two principal holes remains solid');
+    assert.ok(horizontalHits(2.2, referenceY(17.4), -43, [0, 0, 1], 2).length, 'Jagged solid corners are not replaced with a rectangular cutout');
+    assert.equal(horizontalHits(1.7, referenceY(18.1), -43, [0, 0, 1], 2).length, 0, 'The adjacent real polygon opening remains clear');
   });
 
   it('adds real partition walls and usable room doors on every warehouse storey', () => {

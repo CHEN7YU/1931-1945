@@ -28,6 +28,13 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
   const neonGreen = new THREE.MeshStandardMaterial({ color: 0x393631, emissive: 0x327953, emissiveIntensity: 0 });
   const signs = [], smoke = [], damaged = [];
   const titles = ['春华旅馆', '江南饭店', '河畔茶室', '新声戏院', '永安客栈', '锦华舞厅', '民生商号'];
+  const forms = [
+    { name: 'low-brick-home', height: 3.25, southHeight: 4.3, roof: 'gable', rise: .95, columns: 2, brick: true },
+    { name: 'plastered-shophouse', height: 5.4, southHeight: 6.4, roof: 'cross-gable', rise: 1.15, columns: 2 },
+    { name: 'brick-workshop', height: 4.1, southHeight: 6.9, roof: 'paired-gables', rise: .8, columns: 3, brick: true },
+    { name: 'tall-lane-house', height: 7.1, southHeight: 9, roof: 'gable', rise: 1.3, columns: 3 },
+    { name: 'corniced-shop', height: 6.1, southHeight: 8.1, roof: 'parapet', rise: .55, columns: 4 },
+  ];
   function house(id, x, z, w, d, south, serial) {
     const lot = { minX: x - w / 2 - 1, maxX: x + w / 2 + 1, minZ: z - d / 2 - 1, maxZ: z + d / 2 + 1 };
     if (overlaps(lot, SIHANG_WAREHOUSE.bounds)) return null;
@@ -39,48 +46,67 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     const banks = [sihangRiverBounds(lot.minX), sihangRiverBounds(lot.maxX)];
     if (!south && lot.maxZ > Math.min(...banks.map(b => b.northZ)) - 1 ||
       south && lot.minZ < Math.max(...banks.map(b => b.southZ)) + 3) return null;
-    const height = south ? 6.6 + serial % 3 * 1.6 : 5.8 + serial % 3 * 1.3;
+    const formIndex = Math.abs(Math.round(x * 3 + z * 5) + serial * 7) % forms.length;
+    const form = forms[formIndex];
+    const height = (south ? form.southHeight : form.height) + serial % 3 * .15;
+    const facade = form.brick ? materials.brick : materials.plaster;
+    const doorX = x;
+    const leftWidth = doorX - 1.4 - (x - w / 2), rightWidth = x + w / 2 - doorX - 1.4;
+    const damage = south ? 'intact' : ['wing-collapse', 'roof-loss', 'facade-breach', 'shell-damage'][
+      Math.abs(Math.round(x + z) + serial) % 4];
+    const openFront = damage === 'wing-collapse' || damage === 'facade-breach';
+    const roofLost = damage === 'wing-collapse' || damage === 'roof-loss';
     const building = { id, x, z, width: w, depth: d, height, floors: 1,
-      decorativeStoreys: Math.ceil(height / 3.2), accessible: true, playableFloors: [0], damaged: !south,
-      bounds: lot, exit: { x, z: z - d / 2 - 1 },
+      decorativeStoreys: Math.round(height / 2.7), accessible: true, playableFloors: [0], damaged: !south,
+      bounds: lot, exit: { x: doorX, z: z - d / 2 - 1 },
       use: south ? ['hotel', 'restaurant', 'tea-house', 'theatre', 'inn', 'dance-hall', 'shop'][serial % 7] : 'residence',
-      style: 'nanjing-residential-reused', layout: 'sihang-original' };
+      style: 'nanjing-residential-reused', layout: 'sihang-original',
+      architecture: form.name, roofForm: form.roof, damagePattern: damage, doorX };
     town.buildings.push(building); budget.usableGroundFloors++;
     budget[south ? 'southBuildings' : 'northBuildings']++;
     const front = z - d / 2, back = z + d / 2;
     box(x, -.04, z, w, .08, d, materials.concrete);
     const collapsedHeight = 1.05 + serial % 3 * .2;
     for (const side of [-1, 1]) {
-      const wallHeight = !south && side > 0 ? collapsedHeight : height;
-      box(x + side * w / 2, wallHeight / 2, z, .45, wallHeight, d, materials.brick, { block: true });
+      const wallHeight = damage === 'wing-collapse' && side > 0 ? collapsedHeight : height;
+      box(x + side * w / 2, wallHeight / 2, z, .45, wallHeight, d, facade, { block: true });
     }
-    if (south) box(x, height / 2, back, w, height, .45, materials.brick, { block: true });
-    else for (let strip = 0; strip < 4; strip++) {
+    if (south || damage === 'facade-breach') box(x, height / 2, back, w, height, .45, facade, { block: true });
+    else if (damage === 'shell-damage') {
+      const holeX = x - w * .24, holeWidth = 1.5, bottom = 1.2, top = Math.min(3.2, height - .2);
+      const left = holeX - holeWidth / 2 - (x - w / 2), right = x + w / 2 - holeX - holeWidth / 2;
+      box(x - w / 2 + left / 2, height / 2, back, left, height, .45, facade, { block: true });
+      box(x + w / 2 - right / 2, height / 2, back, right, height, .45, facade, { block: true });
+      box(holeX, bottom / 2, back, holeWidth, bottom, .45, facade, { block: true });
+      box(holeX, (height + top) / 2, back, holeWidth, height - top, .45, facade, { block: true });
+      building.shellOpening = { x: holeX, y: (bottom + top) / 2, z: back, bottom, top, width: holeWidth };
+    } else for (let strip = 0; strip < 4; strip++) {
       const remaining = strip < 2 ? height * (.7 + (serial + strip) % 4 * .07)
         : collapsedHeight + (serial + strip) % 2 * .12;
       box(x - w / 2 + (strip + .5) * w / 4, remaining / 2, back, w / 4, remaining, .45,
-        strip === 1 ? materials.dark : materials.brick, { block: true });
+        strip === 1 ? materials.dark : facade, { block: true });
     }
-    for (const side of [-1, 1]) if (south || side < 0)
-      box(x + side * (w / 4 + .7), 1.4, front, w / 2 - 1.4, 2.8, .45,
-        south ? materials.plaster : materials.brick, { block: true });
-    if (!south) {
+    for (const side of [-1, 1]) if (!openFront || side < 0)
+      box(side < 0 ? x - w / 2 + leftWidth / 2 : x + w / 2 - rightWidth / 2,
+        1.4, front, side < 0 ? leftWidth : rightWidth, 2.8, .45, facade, { block: true });
+    if (openFront) {
       // The doorway stays usable while the neighbouring facade has collapsed.
-      box(x + 1.55, 1.4, front, .3, 2.8, .45, materials.brick, { block: true });
-      box(x + (w / 2 + 1.7) / 2, collapsedHeight / 2, front, w / 2 - 1.7,
-        collapsedHeight, .45, materials.brick, { block: true });
-      box(x - (w / 2 + 1.4) / 2, (height + 2.8) / 2, front, w / 2 - 1.4,
-        height - 2.8, .45, materials.brick, { block: true });
-      box(x, 3.05, front, 2.8, .5, .45, materials.dark, { block: true });
-      if (serial % 3 === 0) {
+      box(doorX + 1.55, 1.4, front, .3, 2.8, .45, facade, { block: true });
+      box((doorX + 1.7 + x + w / 2) / 2, collapsedHeight / 2, front, rightWidth - .3,
+        collapsedHeight, .45, facade, { block: true });
+      box(x - w / 2 + leftWidth / 2, (height + 2.8) / 2, front, leftWidth,
+        height - 2.8, .45, facade, { block: true });
+      box(doorX, 2.95, front, 2.8, .3, .45, materials.dark, { block: true });
+      if (serial % 3 === 0 && height > 4) {
         const bottom = 3.6, top = Math.min(height - .3, 5.4), gapWidth = 2.1;
-        building.damageOpening = { x, y: (bottom + top) / 2, z: front, width: gapWidth, bottom, top };
+        building.damageOpening = { x: doorX, y: (bottom + top) / 2, z: front, width: gapWidth, bottom, top };
       }
     } else box(x, (height + 2.8) / 2, front, w, height - 2.8, .45,
-      materials.plaster, { block: true });
-    box(x, 2.9, front - .05, south ? w + .2 : 3.3, .22, .65, materials.concrete);
+      facade, { block: true });
+    box(south ? x : doorX, 2.9, front - .05, south ? w + .2 : 3.3, .22, .65, materials.concrete);
     if (south) {
-      box(x, height + .15, z, w + .6, .3, d + .6, materials.dark, { block: true });
+      if (form.roof === 'parapet')
+        box(x, height + .15, z, w + .6, .3, d + .6, materials.dark, { block: true });
       box(x, height - .5, front - .2, w + .4, .3, .6, materials.concrete);
       box(x, .07, front - 1.2, w + 1, .14, 2, materials.concrete);
       box(x, 2.85, front - .8, w * .85, .14, 1.6, serial % 2 ? red : green);
@@ -96,14 +122,14 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
       sign.rotateY(0); signs.push(sign);
     } else {
       damaged.push(building);
-      building.collapsedHeight = collapsedHeight;
-      building.damageStyle = 'collapsed-wall-charred-rafters';
-      for (let strip = 0; strip < 3; strip++) {
+      if (damage === 'wing-collapse') building.collapsedHeight = collapsedHeight;
+      building.damageStyle = roofLost ? 'collapsed-wall-charred-rafters' : damage;
+      for (let strip = 0; strip < (roofLost ? 3 : 0); strip++) {
         const width = w * (.35 + (strip + serial) % 3 * .035);
         box(x - w / 2 + width / 2, height - strip % 2 * .12, z - d / 2 + (strip + .5) * d / 3,
           width, .22, d / 3, materials.dark, { block: true });
       }
-      for (let beam = 0; beam < 4; beam++) {
+      for (let beam = 0; beam < (roofLost ? 2 + serial % 2 : 0); beam++) {
         const length = w * (.56 + beam % 2 * .08);
         const rafter = box(x - w / 2 + length / 2, height - .3 - beam % 3 * .16,
           z - d * .35 + beam * d * .23, length, .14, .16, materials.wood);
@@ -116,27 +142,53 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
         piece.rotation.y = chunk * 1.7;
       }
     }
-    const roof = new THREE.Mesh(createResidentialRoofGeometry(w + .6, d + .8, .85,
-      tiles.userData.metersPerTile ?? 1.4, !south, serial), tiles);
-    roof.name = `${id}-nanjing-tile-roof`;
-    roof.position.set(x, height + (south ? .3 : .12), z);
-    roof.castShadow = roof.receiveShadow = true; roof.userData.keepUV = true;
-    scene.add(roof); addMesh(roof);
+    if (form.roof === 'parapet') {
+      const span = south ? w : leftWidth;
+      const center = south ? x : x - w / 2 + span / 2;
+      box(center, height + .38, front, span, .65, .25, facade);
+      box(center, height + .73, front, span + .15, .12, .4, materials.concrete);
+    }
+    const roofs = form.roof === 'parapet' ? 0 : form.roof === 'paired-gables' ? 2 : 1;
+    for (let section = 0; section < roofs; section++) {
+      const cross = form.roof === 'cross-gable';
+      const width = w / roofs, roofX = x + (section - (roofs - 1) / 2) * width;
+      const rise = Math.max(form.rise, (cross ? d : width) * .2);
+      const roof = new THREE.Mesh(createResidentialRoofGeometry(
+        (cross ? d : width) + .6, (cross ? width : d) + .8, rise,
+        tiles.userData.metersPerTile ?? 1.4, roofLost, serial + section),
+      form.roof === 'parapet' ? materials.dark : tiles);
+      roof.name = `${id}-nanjing-tile-roof`;
+      roof.position.set(roofX, height + (south ? .3 : .12), z);
+      roof.rotation.y = cross ? Math.PI / 2 : 0;
+      roof.castShadow = roof.receiveShadow = true; roof.userData.keepUV = true;
+      scene.add(roof); addMesh(roof);
+      // Supported end gables use the same roof profile as the Nanjing residences.
+      if (form.roof !== 'parapet' && !cross) {
+        const span = roofLost ? width * .45 : width, center = roofLost ? roofX - width * .275 : roofX;
+        const shape = new THREE.Shape();
+        shape.moveTo(-span / 2, 0); shape.lineTo(roofLost ? -span / 2 : 0, rise);
+        shape.lineTo(span / 2, 0); shape.closePath();
+        const gable = new THREE.Mesh(new THREE.ShapeGeometry(shape), facade);
+        gable.position.set(center, height + (south ? .3 : .12), front - .03);
+        gable.rotation.y = Math.PI;
+        scene.add(gable); addMesh(gable);
+      }
+    }
     for (const side of [-1, 1]) {
-      box(x + side * 1.46, 1.4, front - .09, .12, 2.8, .16, materials.wood);
+      box(doorX + side * 1.46, 1.4, front - .09, .12, 2.8, .16, materials.wood);
       box(x + side * (w / 2 - .1), .18, z, .3, .36, d, materials.brick);
     }
-    box(x, 2.85, front - .09, 3.04, .16, .16, materials.wood);
-    for (let y = 4.6; y < height - .8; y += 2.6) for (let column = 0; column < 3; column++) {
-      const wx = x + (column - 1) * w / 4;
-      if (!south && column >= 1) continue;
-      if (building.damageOpening && column === 1 && y < building.damageOpening.top) continue;
+    box(doorX, 2.85, front - .09, 3.04, .16, .16, materials.wood);
+    const windowWidth = Math.min(1.3, w / (form.columns * 1.8));
+    for (let y = 4.25; y < height - .65; y += 2.7) for (let column = 0; column < form.columns; column++) {
+      const wx = x + ((column + .5) / form.columns - .5) * w * .78;
+      if (openFront && wx + windowWidth / 2 > doorX - 1.4) continue;
       if (!south && (column + serial) % 3 === 0) continue;
-      box(wx, y, front - .24, w / 7, 1.4, .08, south ? warm : materials.wood);
+      box(wx, y, front - .24, windowWidth, 1.4, .08, south ? warm : materials.wood);
       for (const edge of [-1, 1])
-        box(wx + edge * w / 14, y, front - .31, .08, 1.52, .14, materials.wood);
+        box(wx + edge * windowWidth / 2, y, front - .31, .08, 1.52, .14, materials.wood);
       box(wx, y, front - .34, .055, 1.4, .08, materials.wood);
-      box(wx, y - .75, front - .3, w / 7 + .25, .12, .3, materials.concrete);
+      box(wx, y - .75, front - .3, windowWidth + .25, .12, .3, materials.concrete);
       if (south && serial % 3 === 0) {
         box(wx, y - .8, front - .65, w / 7 + .4, .12, 1, materials.concrete);
         box(wx, y - .3, front - 1.05, w / 7 + .4, .08, .08, materials.iron);
@@ -144,7 +196,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     }
     for (const hingeDirection of [1, -1]) town.passages.push({
       id: `${id}-front-door-${hingeDirection === 1 ? 'left' : 'right'}`,
-      groupId: `${id}-front-door`, x: x - hingeDirection * .7, z: front, width: 1.4,
+      groupId: `${id}-front-door`, x: doorX - hingeDirection * .7, z: front, width: 1.4,
       height: 2.8, leafHeight: 2.65, thickness: .11, hingeDirection,
       axis: 'x', openAngle: -hingeDirection * Math.PI / 2,
     });

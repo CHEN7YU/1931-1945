@@ -26,9 +26,12 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5187');
   url.searchParams.set('benchmark', 'interior'); url.searchParams.set('seed', '1938');
+  url.searchParams.set('resources', 'low-memory');
   await page.goto(url.href);
+  await page.waitForFunction(() => window.__battle?.state === 'menu' ||
+    !document.getElementById('fatal').hidden, null, { timeout: 180000 });
+  assert.equal(await page.locator('#fatal').isVisible(), false, await page.locator('#fatal-message').textContent());
   await setQualityPreset(page, 'low');
-  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
   for (const [kind, maps] of Object.entries(DADAO_ART_MAPS)) for (const map of maps) {
     assert.ok(loaded.has(`${DADAO_ART_ROOT}${kind}/${map}.webp`), `Missing runtime texture: ${kind}/${map}`);
   }

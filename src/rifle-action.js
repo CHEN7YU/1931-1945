@@ -38,22 +38,25 @@ export function reloadRifle(state) {
   return true;
 }
 
-export function cancelEmptyRifleReload(state) {
-  if (state.ammo !== 0) return false;
+export function cancelRifleReload(state) {
   const pending = state.queuedReload || state.action === 'reload';
   state.queuedReload = false;
   if (state.action === 'reload') { state.action = 'idle'; state.elapsed = 0; state.reloadUntil = 0; }
   return pending;
 }
 
-export function shootRifle(state) {
+export function cancelEmptyRifleReload(state) {
+  return state.ammo === 0 ? cancelRifleReload(state) : false;
+}
+
+export function shootRifle(state, allowReload = true) {
   if (state.action !== 'idle') return false;
-  if (state.ammo <= 0) { reloadRifle(state); return false; }
+  if (state.ammo <= 0) { if (allowReload) reloadRifle(state); return false; }
   state.ammo--;
   state.shots++;
   state.action = 'cycle';
   state.elapsed = 0;
-  if (state.ammo === 0 && !infantryWeaponProfile(state).automatic) reloadRifle(state);
+  if (allowReload && state.ammo === 0 && !infantryWeaponProfile(state).automatic) reloadRifle(state);
   return true;
 }
 

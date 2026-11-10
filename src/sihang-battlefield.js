@@ -442,10 +442,10 @@ export function makeSihangBattlefield(scene, surface) {
     chunk.rotation.set(i * .15, i * .73, side * .24);
   }
   const riverWindows = [
-    { id: 'river-shell-middle-west', u: -12, width: 2.6, bottom: 10.2, top: 14.2, kind: 'breach', irregular: true },
-    { id: 'river-shell-upper-west', u: -12, width: 2.1, bottom: 18.4, top: 22.2, kind: 'breach', irregular: true },
-    { id: 'river-shell-middle-east', u: 9, width: 2.1, bottom: 11.5, top: 14.2, kind: 'breach', irregular: true },
-    { id: 'river-shell-upper-east', u: 21, width: 1.8, bottom: 18, top: 22, kind: 'breach', irregular: true },
+    { id: 'river-shell-middle-west', u: -12, width: 2.6, bottom: W.floorHeight + 1.8, top: W.floorHeight + 5.8, kind: 'breach', irregular: true },
+    { id: 'river-shell-upper-west', u: -12, width: 2.1, bottom: W.floorHeight * 2 + 1.6, top: W.floorHeight * 2 + 5.4, kind: 'breach', irregular: true },
+    { id: 'river-shell-middle-east', u: 9, width: 2.1, bottom: W.floorHeight + 3.1, top: W.floorHeight + 5.8, kind: 'breach', irregular: true },
+    { id: 'river-shell-upper-east', u: 21, width: 1.8, bottom: W.floorHeight * 2 + 1.2, top: W.floorHeight * 2 + 5.2, kind: 'breach', irregular: true },
   ];
   facade('x', W.maxZ, W.minX, W.maxX, riverWindows);
   const eastOpenings = [];
@@ -456,8 +456,8 @@ export function makeSihangBattlefield(scene, surface) {
       kind: floor === 0 && (u === -38 || u === -14) ? 'door' : 'window' });
   facade('z', W.maxX, W.minZ, W.maxZ, eastOpenings);
   facade('z', W.minX, W.minZ, W.maxZ, [
-    { id: 'west-shell-middle', u: -29, width: 3.5, bottom: 10.1, top: 14.8, kind: 'breach', irregular: true },
-    { id: 'west-shell-upper', u: -18, width: 2.6, bottom: 18.1, top: 23.8, kind: 'breach', irregular: true },
+    { id: 'west-shell-middle', u: -29, width: 3.5, bottom: W.floorHeight + 1.7, top: W.floorHeight + 6.4, kind: 'breach', irregular: true },
+    { id: 'west-shell-upper', u: -18, width: 2.6, bottom: W.floorHeight * 2 + 1.3, top: W.floorHeight * 2 + 7, kind: 'breach', irregular: true },
   ]);
   const partitions = [];
   for (let floor = 0; floor < 3; floor++) {

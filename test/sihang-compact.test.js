@@ -56,15 +56,25 @@ test('physical movement and route goals cannot enter cropped terrain, and evacua
   assert.equal(advanceBoundary(createBoundaryState(), { x: 0, z: 73 }, 9, BATTLE_AREA), 0);
 });
 
-test('north houses have real collapsed walls toward the warehouse while the south remains intact', () => {
+test('north damage varies between collapsed wings, missing roofs, facade breaches and genuine shell openings', () => {
   const north = world.town.buildings.filter(building => building.damaged);
   const south = world.town.buildings.filter(building => building.damaged === false);
   assert.equal(north.length, 42); assert.equal(south.length, 13);
-  for (const home of north) {
+  assert.equal(new Set(north.map(home => home.architecture)).size, 5);
+  assert.equal(new Set(north.map(home => home.damagePattern)).size, 4);
+  assert.ok(Math.max(...north.map(home => home.height)) - Math.min(...north.map(home => home.height)) > 3.5);
+  assert.equal(new Set(north.map(home => home.roofForm)).size, 4);
+  for (const home of north.filter(home => ['wing-collapse', 'roof-loss'].includes(home.damagePattern))) {
     assert.equal(home.damageStyle, 'collapsed-wall-charred-rafters');
     const ray = new THREE.Raycaster(new THREE.Vector3(home.x + home.width * .28, 2.1,
       home.z + home.depth / 2 + .8), new THREE.Vector3(0, 0, -1), 0, 1.5);
     assert.equal(ray.intersectObjects(world.solids, true).length, 0, `back facade still intact: ${home.id}`);
+  }
+  for (const home of north.filter(home => home.shellOpening)) {
+    const hole = home.shellOpening;
+    const ray = new THREE.Raycaster(new THREE.Vector3(hole.x, hole.y, hole.z + .8),
+      new THREE.Vector3(0, 0, -1), 0, 1.5);
+    assert.equal(ray.intersectObjects(world.solids, true).length, 0, `${home.id}: shell opening is a real hole`);
   }
   assert.ok(south.every(home => !home.damageStyle && !home.collapsedHeight));
   assert.equal(world.sceneArt.city.sootDrawCalls, 1);

@@ -257,7 +257,7 @@ export function nativeEyeLocal(actor) {
     motion.strideScale, motion.gaitCharge, motion.gaitAim, motion.weight, motion.aim, motion.bodyLean,
     motion.lowReady, motion.legLift, actor.locomotion.mode, intent, swordCarry,
     actor.health, actor.weaponBlocked, actor.emplacementId, actor.discharger?.presentationActive,
-    actor.dadao?.pose?.phase, actor.dadao?.pose?.progress,
+    actor.dadao?.pose?.phase, actor.dadao?.pose?.progress, actor.dadao?.style, motion.travelCarryStyle,
     actor.bayonet?.mode, actor.bayonet?.extension,
     actor.rifle?.action, actor.rifle?.elapsed, actor.rifle?.ammo, actor.rifle?.model,
     actor.vehicleId, actor.engineer?.construction?.mode, actor.sihangShield?.active, actor.supportWeaponPose?.active,

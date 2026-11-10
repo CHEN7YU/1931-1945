@@ -11,7 +11,8 @@ export function syncControlledRifleTiming(registry, now, stowed) {
   const actor = controlledSoldier(registry);
   if (!actor || actor.hasFirearm === false || actor.health <= 0 || occupiedVehicle(registry, actor) || actor.groundType !== 'infantry') return false;
   requireWeapon(registry, actor.rifle, actor.id, 'infantry');
-  actor.rifle.reloadUntil = !stowed && actor.rifle.action === 'reload' ? now + rifleReloadSeconds(actor.rifle) - actor.rifle.elapsed : 0;
+  actor.rifle.reloadUntil = !actor.dying && !actor.fatalFall && !stowed && actor.rifle.action === 'reload'
+  ? now + rifleReloadSeconds(actor.rifle) - actor.rifle.elapsed : 0;
   return true;
 }
 
@@ -45,6 +46,7 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false, a
     const active = autonomous || actor === selected && personalActive && actor.groundType === 'infantry';
     if (!active || actor.health <= 0 || actor.vehicleId || actor.emplacementWeaponId || actor.grenades?.action) continue;
     requireWeapon(registry, actor.rifle, actor.id, 'infantry');
+    if (actor.dying || actor.fatalFall) continue;
     if (actor.blastReaction && !actor.dying) continue;
     if (autonomous && (actor.meleePriority || actor.dadao?.equipped || actor.bayonet?.mode && actor.bayonet.mode !== 'idle')) {
       cancelEmptyRifleReload(actor.rifle);

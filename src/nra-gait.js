@@ -19,12 +19,23 @@ export function applyNativeBodyLean(root, bones, motion) {
   const yaw = motion.torsoYaw ?? 0;
   if (!Number.isFinite(yaw) || Math.abs(yaw) > .6) throw new Error('Invalid owned firing torso turn');
   const upper = motion.upperBody ?? { yaw: 0, pitch: 0, roll: 0 };
+  const pelvisYaw = upper.pelvisYaw ?? 0;
+  const sword = Boolean(motion.dadao), legs = upper.legs;
+  const shoulderLift = upper.shoulderLift ?? 0;
+  if (!Number.isFinite(shoulderLift) || shoulderLift < 0 || shoulderLift > .35 || shoulderLift && !sword)
+    throw new Error('Invalid owned sword shoulder elevation');
+  if (!Number.isFinite(pelvisYaw) || Math.abs(pelvisYaw) > (sword ? .2 : .08) || pelvisYaw && !sword)
+    throw new Error('Invalid owned sword weight transfer');
+  if (legs && (!sword || !Object.values(legs).every(Number.isFinite) || legs.drop < 0 || legs.drop > .08 ||
+    Math.abs(legs.forward) > .06 || Math.abs(legs.lateral) > .04 || legs.step < 0 || legs.step > .11 ||
+    legs.stepLift < 0 || legs.stepLift > .05 || Math.abs(legs.pivot) > .18))
+    throw new Error('Invalid owned sword footwork');
   const lift = upper.lift ?? 0, lateral = upper.lateral ?? 0;
   if (![upper.yaw, upper.pitch, upper.roll].every(Number.isFinite) ||
     ![lift, lateral].every(Number.isFinite) || Math.abs(lift) > .03 || Math.abs(lateral) > .03 ||
-    Math.abs(upper.yaw) > .19 || Math.abs(upper.pitch) > .02 || Math.abs(upper.roll) > .1)
+    Math.abs(upper.yaw) > (sword ? .32 : .19) || Math.abs(upper.pitch) > (sword ? .08 : .02) || Math.abs(upper.roll) > .1)
     throw new Error('Invalid owned upper-body gait');
-  if (!motion.bodyLean && !yaw && !upper.yaw && !upper.pitch && !upper.roll && !lift && !lateral) return;
+  if (!motion.bodyLean && !yaw && !upper.yaw && !upper.pitch && !upper.roll && !lift && !lateral && !pelvisYaw && !legs) return;
   const facing = root.getWorldQuaternion(new Quaternion());
   const rotate = (bone, angle, axis = new Vector3(1, 0, 0)) => {
     const delta = facing.clone().multiply(new Quaternion().setFromAxisAngle(axis, angle)).multiply(facing.clone().invert());
@@ -32,21 +43,50 @@ export function applyNativeBodyLean(root, bones, motion) {
     bone.quaternion.copy(bone.parent.getWorldQuaternion(new Quaternion()).invert().multiply(world));
     bone.updateMatrixWorld(true);
   };
+  if (pelvisYaw || legs) {
+    const feet = ['Left', 'Right'].map(side => ({
+      side, position: bones.get(`${side}Foot`).getWorldPosition(new Vector3()),
+      rotation: bones.get(`${side}Foot`).getWorldQuaternion(new Quaternion()),
+      toe: bones.get(`${side}ToeBase`).getWorldPosition(new Vector3()),
+    }));
+    rotate(bones.get('Hips'), pelvisYaw, new Vector3(0, 1, 0));
+    if (legs) {
+      const hips = bones.get('Hips'), position = hips.getWorldPosition(new Vector3());
+      position.add(new Vector3(legs.lateral, -legs.drop, legs.forward).applyQuaternion(facing));
+      hips.position.copy(hips.parent.worldToLocal(position)); hips.updateMatrixWorld(true);
+    }
+    for (const { side, position, rotation, toe } of feet) {
+      const upperLeg = bones.get(`${side}UpLeg`), lower = bones.get(`${side}Leg`), foot = bones.get(`${side}Foot`);
+      const pivot = facing.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0),
+        side === 'Right' ? legs?.pivot ?? 0 : 0)).multiply(facing.clone().invert());
+      position.sub(toe).applyQuaternion(pivot).add(toe);
+      if (legs && side === 'Left') position.add(new Vector3(0, legs.stepLift, -legs.step).applyQuaternion(facing));
+      const result = solveArm(upperLeg, lower, foot, position, new Vector3(side === 'Left' ? -.12 : .12, 0, -1).applyQuaternion(facing));
+      if (!result.reachable || result.error > .003) throw new NativeGaitReachError('Sword supporting leg cannot reach ground', { side, ...result });
+      foot.quaternion.copy(foot.parent.getWorldQuaternion(new Quaternion()).invert().multiply(pivot).multiply(rotation));
+      foot.updateMatrixWorld(true);
+    }
+    rotate(bones.get('Spine'), -pelvisYaw, new Vector3(0, 1, 0));
+  }
   if (yaw || upper.yaw) {
     rotate(bones.get('Spine'), yaw + upper.yaw, new Vector3(0, 1, 0));
     rotate(bones.get('Head'), -yaw - upper.yaw, new Vector3(0, 1, 0));
   }
   rotate(bones.get('Spine'), -motion.bodyLean + upper.pitch);
-  rotate(bones.get('Head'), motion.bodyLean * .8 - upper.pitch * .8);
+  rotate(bones.get('Head'), motion.bodyLean * .8 - upper.pitch * (sword ? 1 : .8));
   if (upper.roll) {
     rotate(bones.get('Spine'), upper.roll, new Vector3(0, 0, 1));
-    rotate(bones.get('Head'), -upper.roll * .8, new Vector3(0, 0, 1));
+    rotate(bones.get('Head'), -upper.roll * (sword ? 1 : .8), new Vector3(0, 0, 1));
   }
   if (lift || lateral) {
     const spine = bones.get('Spine'), position = spine.getWorldPosition(new Vector3());
     position.add(new Vector3(lateral, lift, 0).applyQuaternion(facing));
     spine.position.copy(spine.parent.worldToLocal(position));
     spine.updateMatrixWorld(true);
+  }
+  if (shoulderLift) {
+    rotate(bones.get('RightShoulder'), shoulderLift, new Vector3(0, 0, 1));
+    rotate(bones.get('LeftShoulder'), -shoulderLift, new Vector3(0, 0, 1));
   }
 }
 

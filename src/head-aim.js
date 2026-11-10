@@ -11,6 +11,8 @@ const point = bone => bone.getWorldPosition(new Vector3());
 const headBaseInputs = pose => [pose.upright, pose.idleTime, pose.hipDrop, pose.bodyLean, pose.torsoYaw,
   pose.upperBody?.yaw ?? 0, pose.upperBody?.pitch ?? 0, pose.upperBody?.roll ?? 0,
   pose.upperBody?.lift ?? 0, pose.upperBody?.lateral ?? 0,
+  pose.upperBody?.pelvisYaw ?? 0, pose.upperBody?.legs?.drop ?? 0,
+  pose.upperBody?.legs?.forward ?? 0, pose.upperBody?.legs?.lateral ?? 0,
   ...Object.entries(pose.postures).flat()];
 
 function channel(track, time, rotation) {
@@ -153,11 +155,23 @@ function baseHead(profile, pose, goal = null) {
     }
   }
   const originalHead = result.Head.rotation.clone();
-  const pivot = result.Spine.position.clone(); pivot.y -= pose.hipDrop;
   const upper = pose.upperBody ?? {};
+  const pelvisYaw = upper.pelvisYaw ?? 0;
+  if (pelvisYaw || upper.legs) {
+    const hip = result.Hips.position.clone(), turn = new Quaternion().setFromAxisAngle(Y, pelvisYaw);
+    const shift = new Vector3(upper.legs?.lateral ?? 0, -(upper.legs?.drop ?? 0), upper.legs?.forward ?? 0);
+    let afterHip = false;
+    for (const [name, bone] of Object.entries(result)) {
+      if (name === 'Hips') afterHip = true;
+      if (!afterHip) continue;
+      bone.position.sub(hip).applyQuaternion(turn).add(hip).add(shift);
+      bone.rotation.premultiply(turn);
+    }
+  }
+  const pivot = result.Spine.position.clone(); pivot.y -= pose.hipDrop;
   const delta = new Quaternion().setFromAxisAngle(Z, upper.roll ?? 0)
     .multiply(new Quaternion().setFromAxisAngle(X, -pose.bodyLean + (upper.pitch ?? 0)))
-    .multiply(new Quaternion().setFromAxisAngle(Y, pose.torsoYaw + (upper.yaw ?? 0)));
+    .multiply(new Quaternion().setFromAxisAngle(Y, pose.torsoYaw + (upper.yaw ?? 0) - pelvisYaw));
   const translation = new Vector3(upper.lateral ?? 0, upper.lift ?? 0, 0);
   let afterSpine = false;
   for (const [name, bone] of Object.entries(result)) {
@@ -168,8 +182,8 @@ function baseHead(profile, pose, goal = null) {
     bone.rotation.premultiply(delta);
   }
   result.Head.rotation.copy(originalHead)
-    .premultiply(new Quaternion().setFromAxisAngle(X, -.2 * pose.bodyLean + .2 * (upper.pitch ?? 0)))
-    .premultiply(new Quaternion().setFromAxisAngle(Z, .2 * (upper.roll ?? 0)));
+    .premultiply(new Quaternion().setFromAxisAngle(X, -.2 * pose.bodyLean + (upper.legs ? 0 : .2 * (upper.pitch ?? 0))))
+    .premultiply(new Quaternion().setFromAxisAngle(Z, upper.legs ? 0 : .2 * (upper.roll ?? 0)));
   if (goal) headBases.set(goal, { profile, inputs, result });
   return result;
 }
@@ -269,11 +283,8 @@ export function projectUnaimedEye(profile, pose) {
 }
 
 export function projectHeadAim(profile, pose, motion) {
-  const key = [pose.idleTime, pose.hipDrop, pose.bodyLean, pose.torsoYaw, pose.lowReady, motion.cheekWeight,
-    pose.chestFire, pose.aimPitch,
-    pose.upperBody?.yaw ?? 0, pose.upperBody?.pitch ?? 0, pose.upperBody?.roll ?? 0,
-    pose.upperBody?.lift ?? 0, pose.upperBody?.lateral ?? 0,
-    ...Object.values(pose.postures), ...pose.weaponPosition, ...pose.weaponQuaternion].join(',');
+  const key = [...headBaseInputs(pose), pose.lowReady, motion.cheekWeight,
+    pose.chestFire, pose.aimPitch, ...pose.weaponPosition, ...pose.weaponQuaternion].join(',');
   const retained = cache.get(motion), goal = motion.headGoal, weight = motion.cheekWeight;
   if (retained?.key === key && retained.goal === goal) return retained.result;
   if (!Number.isFinite(weight) || weight < 0 || weight > 1 || weight > 0 && !goal) throw new Error('Aimed head requires its simulation-owned target');

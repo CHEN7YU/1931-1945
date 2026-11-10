@@ -45,10 +45,13 @@ export function createFatalReporter({ document, window, build, getContext, onFat
     onRecorded(error, { recovered: false, stage: ready ? 'battle' : 'initialization', position: getContext()?.position ?? null });
     return report;
   }
-  window.addEventListener('error', event => show(event.error ?? event.message));
-  window.addEventListener('unhandledrejection', event => show(event.reason, {
-    stage: ready ? 'unhandled-promise' : 'initialization-promise',
-  }));
+  const runtimeEvent = (reason, component) => {
+    if (!ready) return show(reason, { stage: component === 'promise' ? 'initialization-promise' : 'initialization' });
+    recordRecovery(reason instanceof Error ? reason : new Error(String(reason ?? 'Unknown runtime event')),
+      { ...getContext(), stage: 'battle', details: { component } });
+  };
+  window.addEventListener('error', event => runtimeEvent(event.error ?? event.message, 'error'));
+  window.addEventListener('unhandledrejection', event => runtimeEvent(event.reason, 'promise'));
   element('world').addEventListener('webglcontextlost', event => {
     event.preventDefault();
     show(new Error('WebGL context lost'), { kind: 'webgl', stage: ready ? 'battle-rendering' : 'renderer-initialization' });
@@ -65,25 +68,28 @@ export function createFatalReporter({ document, window, build, getContext, onFat
       element('fatal-copy-status').textContent = `自动复制失败：${error.message}。已选中诊断信息，请按 Ctrl+C 手动复制。`;
     }
   });
-  return {
-    show, ready() { ready = true; }, get failed() { return Boolean(report); },
-    recordRecovery(error, context) {
+  function recordRecovery(error, context) {
       if (!(error instanceof Error)) throw new TypeError('Recovered failure requires an Error');
       const key = `${error.name}:${error.message}:${context.stage}:${context.team ?? ''}:${context.details?.side ?? ''}`;
       const now = Date.now(), existing = recovered.find(entry => entry.key === key);
       if (existing) {
         existing.count++; existing.occurredAt = new Date(now).toISOString(); existing.context = context;
         if (now - existing.loggedAt >= 30000) {
-          console.warn('Recovered character pose error; battle continues', error, context);
+          console.warn('Runtime error recorded; battle continues', error, context);
           existing.loggedAt = now;
         }
       } else {
         if (recovered.length >= 32) recovered.shift();
         recovered.push({ key, count: 1, loggedAt: now, occurredAt: new Date(now).toISOString(), build,
           context, error: { name: error.name, message: error.message, stack: error.stack } });
-        console.warn('Recovered character pose error; battle continues', error, context);
+        console.warn('Runtime error recorded; battle continues', error, context);
       }
-    },
+      onRecorded(error, { recovered: true, stage: context.stage, position: context.position ?? null,
+        team: context.team ?? null, side: context.details?.side ?? null });
+  }
+  return {
+    show, ready() { ready = true; }, get failed() { return Boolean(report); },
+    recordRecovery,
     get recoveries() { return recovered.map(({ loggedAt, ...entry }) => structuredClone(entry)); },
   };
 }

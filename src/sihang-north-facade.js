@@ -56,7 +56,7 @@ export function createNorthWallMaterial() {
     const bottom = 1.8 + .35 * Math.sin(u * 35);
     const field = u > .15 + .012 * Math.sin(v * 73) && u < .86 + .012 * Math.sin(v * 89) && y > bottom && y < top;
     const pier = Math.abs(((u - .2) % .1 + .1) % .1 - .05) > .044;
-    const beam = Math.abs(y - 4.5) < .22 || Math.abs(y - 8.4) < .2;
+    const beam = Math.abs(y - 4.5) < .22 || Math.abs(y - W.floorHeight) < .2;
     let spall = false;
     for (const [px, py, rx, ry] of patches) {
       if (((u - px) / rx) ** 2 + ((v - py) / ry) ** 2 <

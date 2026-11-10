@@ -146,9 +146,12 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
   avatar.traverse(node => { if (node.isSkinnedMesh) meshes.push(node); });
   const canonical = new Map(meshes[0].skeleton.bones.map(bone => [bone.name, bone]));
   root.updateMatrixWorld(true);
+  const dadaoChestRest = root.getWorldQuaternion(new THREE.Quaternion()).invert()
+    .multiply(canonical.get('Spine').getWorldQuaternion(new THREE.Quaternion()));
   const restFeet = Object.fromEntries(['Left', 'Right'].map(side =>
     [side, root.worldToLocal(canonical.get(`${side}Foot`).getWorldPosition(new THREE.Vector3()))]));
-  const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Neck', 'Head']
+  const animatedLegs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot',
+    'Spine', 'LeftShoulder', 'RightShoulder', 'Neck', 'Head']
     .map(name => ({ bone: canonical.get(name), rotation: canonical.get(name).quaternion.clone(), position: canonical.get(name).position.clone() }));
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache, uniformVariants);
   const clothingMeshes = [];
@@ -235,11 +238,11 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       applyNativeUpperBody(root, canonical, motion);
       syncWorldWeapon(gun, actor.rifle, motion.automaticReload);
       const engineering = nativeEngineerPresentation(actor);
-      riflePose.update(engineering ? { ...motion, rifleOperation: null } :
+      if (!motion.dadao) riflePose.update(engineering ? { ...motion, rifleOperation: null } :
         rifleOperation === undefined ? motion : { ...motion, rifleOperation });
       engineerTools.visible = engineering;
       engineerTools.position.copy(gun.position); engineerTools.quaternion.copy(gun.quaternion);
-      if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip());
+      if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip(), dadaoChestRest);
       dadaoPose?.update(motion.dadao);
       supportPose.update(actor, now);
       gun.visible = !motion.dadao && !nativeSupportWeaponPresentation(actor);

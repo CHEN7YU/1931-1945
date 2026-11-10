@@ -48,6 +48,18 @@ test('only the selected equipped personal rifle advances; cues identify its actu
   assert.equal(actors[1].rifle.elapsed, 0);
   assert.deepEqual(advanceOwnedWeapons(registry, .01, .16, true), [], 'cues are not replayed');
 });
+test('last-stand soldiers never advance or automatically restart rifle reloads', () => {
+  for (const wound of ['dying', 'fatalFall']) {
+    const { registry, actors } = fixture();
+    for (const actor of actors) { actor[wound] = {}; actor.rifle.ammo = 0; actor.rifle.action = 'idle'; }
+    const before = actors.map(actor => structuredClone(actor.rifle));
+    assert.deepEqual(advanceOwnedWeapons(registry, 10, 10, true, true), []);
+    assert.deepEqual(actors.map(actor => actor.rifle), before);
+    actors[0].rifle.action = 'reload';
+    syncControlledRifleTiming(registry, 10, false);
+    assert.equal(actors[0].rifle.reloadUntil, 0);
+  }
+});
 test('switching and stowing pause the original action, then resume without resetting or refilling it', () => {
   const { registry, actors } = fixture();
   reloadRifle(actors[0].rifle);

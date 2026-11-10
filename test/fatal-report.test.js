@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createFatalReporter, makeFatalReport } from '../src/fatal-report.js';
 
 const build = { commit: 'a'.repeat(40), dirty: true, builtAt: '2026-10-30T06:00:00.000Z', development: true };
-function fixture(clipboard = { writeText: async () => {} }) {
+function fixture(clipboard = { writeText: async () => {} }, onRecorded = () => {}) {
   const nodes = new Map();
   for (const id of ['world', 'loading', 'fatal', 'fatal-title', 'fatal-message', 'fatal-details', 'fatal-copy', 'fatal-copy-status']) {
     const node = new EventTarget();
@@ -16,7 +16,7 @@ function fixture(clipboard = { writeText: async () => {} }) {
   let stopped = 0;
   const reporter = createFatalReporter({ document: { getElementById: id => nodes.get(id) }, window, build,
     getContext: () => ({ state: 'playing', time: 23, control: { soldierId: 'friendly-1' } }),
-    onFatal: () => stopped++ });
+    onFatal: () => stopped++, onRecorded });
   const dispatch = (type, fields) => {
     const event = Object.assign(new Event(type, { cancelable: true }), fields);
     window.dispatchEvent(event);
@@ -77,16 +77,32 @@ test('image load events expose the failing asset path instead of [object Event],
   assert.equal(report.text.includes('[object Event]'), false);
 });
 
-test('real error and rejected promise events after ready are runtime failures', () => {
+test('runtime errors and rejected promises after ready are recorded without blocking the battle', t => {
+  t.mock.method(console, 'warn', () => {});
   for (const type of ['error', 'unhandledrejection']) {
     const f = fixture();
     f.reporter.ready();
     const error = new Error(type);
     f.dispatch(type, type === 'error' ? { error } : { reason: error });
-    assert.equal(JSON.parse(f.nodes.get('fatal-details').value).kind, 'runtime');
-    assert.equal(f.nodes.get('fatal-title').textContent, '作战意外中断');
-    assert.equal(f.stopped, 1);
+    assert.equal(f.reporter.failed, false);
+    assert.equal(f.nodes.get('fatal').hidden, true);
+    assert.equal(f.reporter.recoveries[0].error.message, error.message);
+    assert.equal(f.stopped, 0);
   }
+});
+
+test('both local recoveries and global runtime events reach the unified background logging hook', t => {
+  t.mock.method(console, 'warn', () => {});
+  const recorded = [], f = fixture(undefined, (...args) => recorded.push(args)), reporter = f.reporter;
+  reporter.ready();
+  reporter.recordRecovery(new Error('local animation'), { stage: 'battle', team: 'friendly' });
+  f.dispatch('unhandledrejection', { reason: 'asynchronous audio failure' });
+  assert.equal(recorded.length, 2);
+  assert.equal(recorded[0][1].recovered, true);
+  assert.equal(recorded[1][1].recovered, true);
+  assert.equal(recorded[1][1].position, null);
+  assert.equal(f.stopped, 0);
+  assert.equal(f.nodes.get('fatal').hidden, true);
 });
 
 test('WebGL loss is explicit, prevents default, and cannot overwrite a prior crash', () => {

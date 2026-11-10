@@ -9,7 +9,15 @@ export function beginDying(actor, now, source) {
   actor.dying = { startedAt: now, deadline: now + DYING_SECONDS,
     action: actor.grenades?.action ? 'throw' : null,
     source: source && typeof source === 'object' ? { ...source } : source };
+  if (actor.rifle) cancelRifleReload(actor.rifle);
   return true;
+}
+
+export function lastStandThrowable(actor, preferred = 'grenade') {
+  throwableProfile(preferred);
+  if (actor.grenades.action) return null;
+  const alternate = preferred === 'grenade' ? 'explosive-pack' : 'grenade';
+  return [preferred, alternate].find(kind => throwableStock(actor.grenades, kind) > 0) ?? null;
 }
 
 export function dyingExpired(actor, now) {
@@ -25,3 +33,5 @@ export function dyingMask(actor, now) {
   const progress = Math.max(0, Math.min(1, (now - actor.dying.startedAt) / DYING_SECONDS));
   return { progress, dark: .85 * progress * progress, red: .2 + progress * .45 };
 }
+import { cancelRifleReload } from './rifle-action.js';
+import { throwableStock, throwableProfile } from './grenades.js';

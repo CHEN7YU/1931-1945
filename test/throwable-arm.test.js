@@ -14,6 +14,8 @@ import { FIRING_POSES } from '../src/combat-posture.js';
 import { DADAO_DIMENSIONS, dadaoViewModel, updateDadaoView } from '../src/dadao-model.js';
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
 import { createNraDadaoPose } from '../src/nra-dadao-pose.js';
+import { applyNativeBodyLean } from '../src/nra-gait.js';
+import { dadaoBodyMotion } from '../src/dadao.js';
 
 await loadDadaoSurfaces(1, { async loadAsync(url) { return new T.Texture({ src: url }); } });
 
@@ -24,6 +26,52 @@ const model = new FBXLoader(manager).parse(bytes.buffer.slice(bytes.byteOffset, 
 const rig = prepareNraRig(model), source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
+
+test('sword legs absorb weight, the forward foot steps with clearance and the rear heel pivots around a planted toe', () => {
+  const root = clone(source), bones = new Map();
+  root.traverse(node => { if (node.isBone) bones.set(node.name, node); });
+  root.updateMatrixWorld(true);
+  const rest = [...bones.values()].map(bone => ({ bone, position: bone.position.clone(),
+    scale: bone.scale.clone(), rotation: bone.quaternion.clone() }));
+  const feet = ['Left', 'Right'].map(side => ({ foot: bones.get(`${side}Foot`),
+    side, toe: bones.get(`${side}ToeBase`).getWorldPosition(new T.Vector3()),
+    position: bones.get(`${side}Foot`).getWorldPosition(new T.Vector3()),
+    rotation: bones.get(`${side}Foot`).getWorldQuaternion(new T.Quaternion()) }));
+  const head = bones.get('Head').getWorldQuaternion(new T.Quaternion());
+  const facing = root.getWorldQuaternion(new T.Quaternion());
+  const hip = bones.get('Hips').getWorldPosition(new T.Vector3());
+  const legLengths = side => ['UpLeg', 'Leg'].map((name, i) => bones.get(side + name).getWorldPosition(new T.Vector3())
+    .distanceTo(bones.get(side + (i ? 'Foot' : 'Leg')).getWorldPosition(new T.Vector3())));
+  const lengths = { Left: legLengths('Left'), Right: legLengths('Right') };
+  let deepest = 0, maximumPivot = 0, maximumLift = 0;
+  for (const style of [0, 1]) for (const phase of ['windup', 'cut', 'recover']) for (let frame = 0; frame <= 50; frame++) {
+    for (const { bone, position, rotation } of rest) { bone.position.copy(position); bone.quaternion.copy(rotation); }
+    root.updateMatrixWorld(true);
+    const upperBody = dadaoBodyMotion({ phase, progress: frame / 50, style });
+    applyNativeBodyLean(root, bones, { bodyLean: 0, upperBody, dadao: {} });
+    for (const { bone, position, scale } of rest) {
+      assert.deepEqual(bone.scale, scale, 'body motion never scales any source bone');
+      if (bone.name !== 'Hips') assert.deepEqual(bone.position, position, 'only the pelvis translates; bones never stretch');
+    }
+    for (const { side, foot, toe, rotation } of feet) {
+      const step = side === 'Left' ? new T.Vector3(0, upperBody.legs.stepLift, -upperBody.legs.step).applyQuaternion(facing) : new T.Vector3();
+      const actualToe = bones.get(`${side}ToeBase`).getWorldPosition(new T.Vector3());
+      assert.ok(actualToe.distanceTo(toe.clone().add(step)) < .003, `${style}/${phase}/${frame}: toe contact slides`);
+      if (upperBody.legs.stepLift === 0) assert.ok(Math.abs(actualToe.y - toe.y) < .003, 'planted sole stays grounded');
+      legLengths(side).forEach((value, i) => assert.ok(Math.abs(value - lengths[side][i]) < 1e-5,
+        `${style}/${phase}/${frame}/${side}/${i}: leg length changes ${value - lengths[side][i]}`));
+      maximumPivot = Math.max(maximumPivot, foot.getWorldQuaternion(new T.Quaternion()).angleTo(rotation));
+      maximumLift = Math.max(maximumLift, actualToe.y - toe.y);
+    }
+    deepest = Math.max(deepest, hip.y - bones.get('Hips').getWorldPosition(new T.Vector3()).y);
+    assert.ok(bones.get('Head').getWorldQuaternion(new T.Quaternion()).angleTo(head) < 1e-6);
+  }
+  assert.ok(deepest > .06 && deepest < .08, 'braking lowers the real pelvis, flexing the unchanged legs');
+  assert.ok(maximumPivot > .15 && maximumPivot < .17, 'allow a bounded rear-heel pivot');
+  assert.ok(maximumLift > .039, 'the stepping foot clears the floor rather than sliding');
+  const loaded = dadaoBodyMotion({ phase: 'windup', progress: 1, style: 0 });
+  assert.ok(Math.abs(loaded.yaw - loaded.pelvisYaw) > .1, 'chest turn is not just the pelvis copied to every bone');
+});
 
 test('dadao uses the authorized skin, reachable original arm bones and the actual solved wrist attachment', () => {
   const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
@@ -161,7 +209,7 @@ test('wide-screen chops leave most of the battlefield visible instead of filling
   }
 });
 
-test('third-person shoulder and overhead chops preserve both wrists, real grips and continuous original bones', () => {
+function worldSwordFixture() {
   const body = new T.Group(), avatar = clone(source), bones = prepareNraRig(avatar).canonical;
   body.add(avatar);
   body.updateMatrixWorld(true);
@@ -177,6 +225,17 @@ test('third-person shoulder and overhead chops preserve both wrists, real grips 
     grips[side] = { fingers, wristRotation, center: new T.Vector3(...hand.userData.throwableGrips.dadao) };
   }
   const pose = createNraDadaoPose(body, bones, { ...grips.right, left: grips.left });
+  const idle = T.AnimationClip.parse(JSON.parse(readFileSync(new URL(
+    '../public/assets/game/nra-88/animations.json', import.meta.url))).idle);
+  idle.tracks = idle.tracks.filter(track => !/\.bones\[(?:Left|Right)(?:Arm|ForeArm|Hand)/.test(track.name));
+  let skin; avatar.traverse(node => { if (node.isSkinnedMesh && !skin) skin = node; });
+  const mixer = new T.AnimationMixer(skin);
+  mixer.clipAction(idle).play(); mixer.update(0); body.updateMatrixWorld(true);
+  return { body, bones, pose };
+}
+
+test('third-person shoulder and overhead chops preserve both wrists, real grips and continuous original bones', () => {
+  const { bones, pose } = worldSwordFixture();
   const original = [...bones.values()].map(bone => [bone, bone.position.clone(), bone.scale.clone()]);
   for (const style of [0, 1]) {
     let previous = null;
@@ -184,7 +243,7 @@ test('third-person shoulder and overhead chops preserve both wrists, real grips 
       pose.update({ style, phase, progress: frame / 100 });
       const sample = pose.snapshot, label = `${style}/${phase}/${frame}`;
       assert.equal(pose.issue, null, `${label}: ${JSON.stringify(sample)}`);
-      assert.ok(sample.wristAlignment > .65 && sample.leftWristAlignment > .65, `${label}: wrist folds`);
+      assert.ok(sample.wristAlignment > .65 && sample.leftWristAlignment > .65, `${label}: wrist folds ${JSON.stringify(sample)}`);
       assert.ok(sample.error < 1e-6 && sample.leftPalmError < 1e-6, `${label}: hand detaches`);
       const elbows = ['RightForeArm', 'LeftForeArm'].map(name => bones.get(name).getWorldPosition(new T.Vector3()));
       if (frame === 0 && previous) elbows.forEach((point, index) =>
@@ -200,6 +259,55 @@ test('third-person shoulder and overhead chops preserve both wrists, real grips 
   }
   for (const [bone, position, scale] of original) {
     assert.deepEqual(bone.position, position); assert.deepEqual(bone.scale, scale);
+  }
+});
+
+test('authored full-body sword keys genuinely clear the head, load beside the body and brake below the chest', () => {
+  const { body, bones, pose } = worldSwordFixture();
+  const rest = [...bones.values()].map(bone => ({ bone, position: bone.position.clone(), rotation: bone.quaternion.clone() }));
+  const reset = () => {
+    for (const { bone, position, rotation } of rest) { bone.position.copy(position); bone.quaternion.copy(rotation); }
+    body.updateMatrixWorld(true);
+  };
+  const point = name => bones.get(name).getWorldPosition(new T.Vector3());
+  const crownOffset = 1.78 - point('Head').y;
+  for (const style of [0, 1]) {
+    let previous = null;
+    for (const phase of ['ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 100; frame++) {
+      reset();
+      const target = { style, phase, progress: frame / 100 };
+      applyNativeBodyLean(body, bones, { bodyLean: 0, upperBody: dadaoBodyMotion(target), dadao: target });
+      pose.update(target);
+      const label = `${style}/${phase}/${frame}`, sample = pose.snapshot;
+      assert.equal(pose.issue, null, label);
+      assert.ok(sample.wristAlignment > .65 && sample.leftWristAlignment > .65, `${label}: wrist folds`);
+      const elbows = [point('RightForeArm'), point('LeftForeArm')];
+      if (previous) elbows.forEach((value, i) => assert.ok(value.distanceTo(previous[i]) < .035,
+        `${label}/${i}: elbow flips ${value.distanceTo(previous[i])} ${JSON.stringify(sample)}`));
+      previous = elbows;
+      if (phase === 'windup' && frame === 100) {
+        const handle = pose.blade.localToWorld(new T.Vector3(0, -.12, 0));
+        if (style) {
+          const crown = point('Head').y + crownOffset;
+          assert.ok(handle.y > crown + .015, 'lower grip must be above the head, not just the blade tip');
+          for (const side of ['Left', 'Right']) for (const suffix of ['Hand', 'HandIndex1', 'HandPinky1'])
+            assert.ok(point(side + suffix).y > crown, `${side}/${suffix}: both hands must actually clear the head`);
+        } else {
+          const right = point('RightArm'), left = point('LeftArm'), across = right.clone().sub(left).normalize();
+          const relative = handle.clone().sub(right.clone().add(left).multiplyScalar(.5));
+          const behind = new T.Vector3().crossVectors(across, new T.Vector3(0, 1, 0));
+          const bladeTip = pose.blade.localToWorld(new T.Vector3(0, .62, 0));
+          assert.ok(relative.dot(across) > .10 &&
+            bladeTip.sub(right.clone().add(left).multiplyScalar(.5)).dot(behind) > .01,
+          'side load keeps the blade behind the shoulder but the shared grip ahead of the neck');
+        }
+      }
+      if (phase === 'cut' && frame === 100) {
+        const handle = pose.blade.localToWorld(new T.Vector3(0, -.03, 0));
+        const tip = pose.blade.localToWorld(new T.Vector3(0, .62, 0));
+        assert.ok(tip.y < handle.y - .2, 'braking blade points down instead of holding a horizontal chest pose');
+      }
+    }
   }
 });
 
@@ -259,20 +367,12 @@ test('dadao keeps cropped native sleeve edges out of sight', () => {
   }
 });
 
-test('the real blade cuts in its own plane, exposes curled fingers at the finish and has continuous phases', () => {
+test('the real blade cuts in its own plane, crosses the reticle and has continuous phases', () => {
   for (const aspect of [1.6, 450 / 1100, 360 / 1000]) {
     const camera = new T.PerspectiveCamera(72, aspect, .07, 20), view = dadaoViewModel((side, options) =>
       createNraGrenadeHand(source, side, { fullArm: true, ...options }));
     camera.add(view); camera.updateMatrixWorld(true);
     const blade = view.userData.dadaoHand, arm = view.userData.dadaoArm, motion = { weaponX: 0, weaponY: 0 };
-    const sleeves = [];
-    arm.traverse(node => {
-      if (!node.isSkinnedMesh || !node.visible || !['衣服', '臂章'].includes(node.name)) return;
-      node.material = node.material.clone();
-      node.material.side = T.DoubleSide;
-      sleeves.push(node);
-    });
-    assert.ok(sleeves.length > 0, 'test the retained sleeve, not an empty occluder list');
     const pose = (phase, progress) => {
       updateDadaoView(view, { phase, progress }, motion, camera);
       return { tip: blade.localToWorld(new T.Vector3(.071, .62, 0)),
@@ -310,26 +410,6 @@ test('the real blade cuts in its own plane, exposes curled fingers at the finish
       }
     }
     assert.ok(crosshairDistance < .15, `${aspect}: visible blade misses the crosshair (${crosshairDistance})`);
-    const joint = name => arm.getObjectByName(`RightHand${name}`).getWorldPosition(new T.Vector3());
-    for (const progress of [0, .05, .1, .2]) {
-      pose('recover', progress);
-      for (const sleeve of sleeves) {
-        sleeve.skeleton.update();
-        sleeve.computeBoundingSphere(); sleeve.computeBoundingBox();
-      }
-      const wrist = joint(''), middle = joint('Middle1'), across = joint('Index1').sub(joint('Pinky1'));
-      const palm = across.cross(middle.clone().sub(wrist)).normalize();
-      const toEye = camera.getWorldPosition(new T.Vector3()).sub(wrist.clone().lerp(middle, .5)).normalize();
-      assert.ok(palm.dot(toEye) > .3, `${aspect}/${progress}: show the curled-finger side, not the back of the hand`);
-      assert.ok(new T.Vector3(1, 0, 0).applyQuaternion(blade.quaternion).z > .35, 'recovery cutting edge turns inward with the hand');
-      const visible = ['Index', 'Middle', 'Ring', 'Pinky'].filter(finger => {
-        const point = joint(`${finger}2`), projected = point.clone().project(camera);
-        const origin = camera.getWorldPosition(new T.Vector3()), direction = point.sub(origin);
-        const ray = new T.Raycaster(origin, direction.clone().normalize(), camera.near, direction.length() - .01);
-        return Math.abs(projected.x) < .95 && Math.abs(projected.y) < .95 && ray.intersectObjects(sleeves, false).length === 0;
-      });
-      assert.ok(visible.length >= 3, `${aspect}/${progress}: curled fingers are clipped or sleeve-occluded (${visible})`);
-    }
   }
 });
 

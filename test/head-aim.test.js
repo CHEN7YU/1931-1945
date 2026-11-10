@@ -90,6 +90,17 @@ test('real weighted eye geometry, camera/sensing projection and head bones share
   }
 });
 
+test('sword pelvis drive, weight absorption and style changes retain the actual skinned eye projection', () => {
+  const f = fixture();
+  f.actor.health = 100; f.actor.rifle = createRifleState();
+  for (const style of [0, 1]) for (const phase of ['windup', 'cut', 'recover']) for (const progress of [0, .5, 1]) {
+    f.actor.dadao = { equipped: true, style, pose: { phase, progress } };
+    const { pose, actual } = f.project('standing', false, 0, 0);
+    assert.ok(actual.projectionError < 1e-6, `${style}/${phase}/${progress}: ${actual.projectionError}`);
+    assert.deepEqual(nativeEyeLocal(f.actor), pose.headAim.eye);
+  }
+});
+
 test('chest-fire eye sampling never mutates its cached natural head and remains stable across weapon-only changes', () => {
   const f = fixture();
   f.actor.rifle = createRifleState('sigm1920'); f.actor.health = 100;

@@ -31,6 +31,18 @@ function swinging() {
   return state;
 }
 const middle = .4 + DADAO.windup + DADAO.active / 2;
+test('stowing the sword is a normal hidden view phase, including delayed-death transitions', () => {
+  const view = dadaoViewModel(), state = createDadaoState();
+  drawDadao(state, 0);
+  updateDadaoView(view, dadaoPhase(state, 1), { weaponX: 0, weaponY: 0 });
+  const originalVisibility = view.visible;
+  stowDadao(state);
+  assert.doesNotThrow(() => updateDadaoView(view, dadaoPhase(state, 1.1), { weaponX: 0, weaponY: 0 }));
+  assert.equal(view.visible, false);
+  drawDadao(state, 2);
+  updateDadaoView(view, dadaoPhase(state, 2.1), { weaponX: 0, weaponY: 0 });
+  assert.equal(view.visible, originalVisibility);
+});
 test('body anticipation and follow-through share the blade phases and settle continuously', () => {
   const pose = (phase, progress) => dadaoBodyMotion({ phase, progress });
   assert.deepEqual(pose('ready', 0), pose('windup', 0));
@@ -39,6 +51,18 @@ test('body anticipation and follow-through share the blade phases and settle con
   assert.deepEqual(pose('recover', 1), pose('ready', 0));
   assert.ok(pose('windup', 1).yaw < 0);
   assert.ok(pose('cut', 1).yaw > 0);
+});
+test('sword pelvis leads the chest, braking loads the forward leg and gameplay constants remain exact', () => {
+  assert.deepEqual([DADAO.windup, DADAO.active, DADAO.recovery, DADAO.cooldown], [.28, .20, .40, .95]);
+  assert.equal(DADAO.damage, 100);
+  const early = dadaoBodyMotion({ phase: 'cut', progress: .25 });
+  const loaded = dadaoBodyMotion({ phase: 'windup', progress: 1 });
+  const brake = dadaoBodyMotion({ phase: 'cut', progress: 1 });
+  const pelvis = (early.pelvisYaw - loaded.pelvisYaw) / (brake.pelvisYaw - loaded.pelvisYaw);
+  const chest = (early.yaw - loaded.yaw) / (brake.yaw - loaded.yaw);
+  assert.ok(pelvis > chest + .15);
+  assert.ok(brake.legs.drop > loaded.legs.drop * 2 && brake.legs.forward < loaded.legs.forward);
+  assert.ok(brake.legs.step > .09 && brake.legs.stepLift === 0);
 });
 test('first-person cut crosses the view from raised right to low left and has no phase-boundary jump', () => {
   const view = dadaoViewModel();

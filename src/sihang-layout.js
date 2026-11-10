@@ -1,8 +1,9 @@
 // Three playable storeys are an adaptation, not a reconstruction of every historical floor.
+const floorHeight = 7.2;
 export const SIHANG_WAREHOUSE = Object.freeze({
   x: -4, z: -25, width: 64, depth: 34,
   minX: -36, maxX: 28, minZ: -42, maxZ: -8,
-  floorHeight: 8.4, floors: 3, roofY: 25.2,
+  floorHeight, floors: 3, roofY: floorHeight * 3,
   bounds: Object.freeze({ minX: -36, maxX: 28, minZ: -42, maxZ: -8 }),
 });
 export const SIHANG_RIVER = Object.freeze({ northZ: 0, southZ: 32, waterY: -1 });
@@ -137,31 +138,32 @@ export const SIHANG_NORTH_APERTURES = Object.freeze([
   { id: 'north-right-small', u: -20.3, bottom: 12.35, top: 13.65, width: 2.2,
     outline: [[-21.1,12.35],[-19.45,12.4],[-19.2,12.85],[-19.8,13.65],[-20.65,13.35],[-21.4,13.0]] },
 ].map(hole => Object.freeze({ ...hole, kind: 'breach', irregular: true,
-  outline: Object.freeze(hole.outline.map(point => Object.freeze(point))) })));
+  bottom: hole.bottom * floorHeight / 8.4, top: hole.top * floorHeight / 8.4,
+  outline: Object.freeze(hole.outline.map(([x, y]) => Object.freeze([x, y * floorHeight / 8.4]))) })));
 export const SIHANG_DEMOLITION_POINT = Object.freeze({ x: SIHANG_NORTH_APERTURES[0].u, y: 0, z: -43.5 });
 export const SIHANG_EVACUATION = Object.freeze({ x: 92, z: 4, radius: 12, southZ: -14 });
 export const SIHANG_EAST_DEFENSE_WINDOWS = Object.freeze([-39, -36, -21, -18, -15, -12]);
 export const SIHANG_FIRING_POSTS = Object.freeze([
   ...[[0, [-1.35, -.45, .45, 1.35]], [2, [-.65, .65]], [5, [-.6, .6]]].flatMap(([index, offsets]) => {
-    const hole = SIHANG_NORTH_APERTURES[index], floor = Math.floor(hole.bottom / 8.4) * 8.4;
+    const hole = SIHANG_NORTH_APERTURES[index], floor = Math.floor(hole.bottom / floorHeight) * floorHeight;
     return offsets.map((offset, side) => ({ id: `north-firing-${hole.id}-${side}`, x: hole.u + offset,
       y: floor, z: -41, heading: 0, facade: 'north', apertureId: hole.id, sillY: hole.bottom,
       setback: 1, aimProbe: Object.freeze({ x: hole.u + offset, y: 1.2, z: -78 }) }));
   }),
   ...SIHANG_EAST_DEFENSE_WINDOWS.map((z, window) => ({
-    id: `east-firing-${window}`, x: 27, y: 8.4, z,
+    id: `east-firing-${window}`, x: 27, y: floorHeight, z,
     heading: -Math.PI / 2, facade: 'east', apertureId: `east-1-${z}`,
     sillY: SIHANG_WAREHOUSE.floorHeight + .8, setback: 1, aimProbe: Object.freeze({ x: 62, y: 1.2, z: z - 10 }),
   })),
   ...[[-38, [-.85, 0, .85]], [-22, [-.85, 0, .85]], [-14, [-.6, .6]]].flatMap(([z, offsets]) =>
-    offsets.map((offset, side) => ({ id: `east-upper-${z}-${side}`, x: 27, y: 16.8, z: z + offset,
-      heading: -Math.PI / 2, facade: 'east', apertureId: `east-2-${z}`, sillY: 17.3,
+    offsets.map((offset, side) => ({ id: `east-upper-${z}-${side}`, x: 27, y: floorHeight * 2, z: z + offset,
+      heading: -Math.PI / 2, facade: 'east', apertureId: `east-2-${z}`, sillY: floorHeight * 2 + .5,
       setback: 1, aimProbe: Object.freeze({ x: 62, y: 1.2, z: z + offset - 7 }) }))),
 ].map(Object.freeze));
 export const SIHANG_DEFENSE_POSTS = SIHANG_FIRING_POSTS;
 export const SIHANG_SQUAD_ORIGINS = Object.freeze([
-  { x: -18, y: 8.4, z: -31 }, { x: 18, y: 8.4, z: -31 },
-  { x: -18, y: 8.4, z: -18 }, { x: 18, y: 8.4, z: -18 },
+  { x: -18, y: floorHeight, z: -31 }, { x: 18, y: floorHeight, z: -31 },
+  { x: -18, y: floorHeight, z: -18 }, { x: 18, y: floorHeight, z: -18 },
 ].map(Object.freeze));
 export const SIHANG_ENEMY_APPROACHES = Object.freeze([
   { x: -78, y: 0, z: -88 }, { x: 0, y: 0, z: -94 }, { x: 78, y: 0, z: -88 },
@@ -169,7 +171,7 @@ export const SIHANG_ENEMY_APPROACHES = Object.freeze([
 export const SIHANG_TANK_ORIGINS = Object.freeze([
   { x: -70, y: 0, z: -90 }, { x: 70, y: 0, z: -90 },
 ].map(Object.freeze));
-export const SIHANG_LEVELS = Object.freeze([0, 8.4, 16.8, 25.2]);
+export const SIHANG_LEVELS = Object.freeze(Array.from({ length: 4 }, (_, floor) => floor * floorHeight));
 export const SIHANG_STAIRWELLS = Object.freeze([-32, -2, 24].map((x, index) => Object.freeze({
   id: `sihang-stair-${index}`, x, minX: x - 3, maxX: x + 3, minZ: -33, maxZ: -23.8,
   entryZ: -34.2, turnZ: -24.8, width: 6, flightWidth: 2.4, run: 7.2, steps: 24,
