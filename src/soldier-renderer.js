@@ -75,11 +75,9 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
             mesh.instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16).setUsage(THREE.DynamicDrawUsage);
           }
         }
-        if (!sword && group.parts.length !== actor.model.children.length) throw new Error('Soldier LOD hierarchy is inconsistent');
         actor.model.updateMatrix(); root.copy(actor.model.matrix);
-        const sources = sword ? group.sources : actor.model.children;
-        sources.forEach((source, index) => {
-          const part = sword && index < 2 ? actor.model.userData.legs[index] : source;
+        group.sources.forEach((source, index) => {
+          const part = index < 2 ? actor.model.userData.legs[index] : source;
           part.updateMatrix();
           matrix.multiplyMatrices(root, part.matrix);
           group.parts[index].setMatrixAt(group.count, matrix);

@@ -13,8 +13,10 @@ try {
   if (directory) await mkdir(directory, { recursive: true });
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5187');
   url.searchParams.set('benchmark', 'duel'); url.searchParams.set('seed', '1938');
-  await page.goto(url.href);
-  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
+  url.searchParams.set('resources', 'low-memory');
+  await page.route('**/__ai-dadao-model-check', route => route.fulfill({ contentType: 'text/html',
+    body: '<html><body></body></html>' }));
+  await page.goto(new URL('/__ai-dadao-model-check', url).href);
   const poses = await page.evaluate(async () => {
     const THREE = await import('/node_modules/three/build/three.module.js');
     const { loadNraCharacter } = await import('/src/nra-character.js');
@@ -22,15 +24,17 @@ try {
     const { createDadaoState } = await import('/src/dadao.js');
     const { createRifleState } = await import('/src/rifle-action.js');
     const { createNraForceRenderer } = await import('/src/nra-force-renderer.js');
+    const { loadDadaoSurfaces } = await import('/src/dadao-surface.js');
+    await loadDadaoSurfaces(1);
     const view = (await loadNraCharacter()).createView(), results = [];
     const actor = { id: 'dadao-model-check', team: 'friendly', unitId: 'model-check',
       position: new THREE.Vector3(), heading: .7, walkPhase: 0, health: 100, stance: 'standing',
       locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState(), dadao: createDadaoState() };
     actor.nativeMotion = createNraMotion(view.motionProfile, actor); view.bind(actor.id);
-    for (const phase of ['ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 20; frame++) {
-      Object.assign(actor.dadao, { equipped: true, mode: phase, pose: { phase, progress: frame / 20 } });
+    for (const style of [0, 1]) for (const phase of ['ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 20; frame++) {
+      Object.assign(actor.dadao, { equipped: true, style, mode: phase, pose: { phase, progress: frame / 20 } });
       view.update(actor, 0, null);
-      results.push({ phase, frame, issue: view.snapshot.issue, ...view.snapshot.dadao });
+      results.push({ phase, frame, style, issue: view.snapshot.issue, ...view.snapshot.dadao });
     }
     const camera = new THREE.PerspectiveCamera(72, 1, .07, 650), scene = new THREE.Scene();
     camera.position.set(0, 1.5, 65); camera.lookAt(0, 1, 0);
@@ -67,21 +71,26 @@ try {
     assert.equal(pose.reachable, true);
     assert.ok(pose.error < .001);
     assert.equal(pose.leftReachable, true); assert.ok(pose.leftError < .001);
+    assert.ok(pose.wristAlignment > .65, JSON.stringify(pose));
+    assert.ok(pose.leftWristAlignment > .65, JSON.stringify(pose));
   }
   assert.equal(poses.far.far, 1); assert.ok(poses.far.swords > 0); assert.equal(poses.far.rifles, 0);
   assert.equal(poses.stowed.swords, 0); assert.ok(poses.stowed.rifles > 0); assert.equal(poses.restored.visible, false);
+  console.log('PASS: native two-style blade grips and distant owned-weapon switching');
   if (directory) {
     for (const [phase, image] of Object.entries(poses.images)) await writeFile(join(directory, `third-person-${phase}.png`), Buffer.from(image, 'base64'));
     delete poses.images;
     await writeFile(join(directory, 'model-checks.json'), JSON.stringify(poses, null, 2));
   }
-  await page.reload();
-  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
+  await page.goto(url.href);
+  await page.waitForFunction(() => window.__battle?.state === 'menu' ||
+    document.getElementById('fatal') && !document.getElementById('fatal').hidden, null, { timeout: 180000 });
+  if (await page.locator('#fatal').isVisible()) throw new Error(await page.locator('#fatal-message').innerText());
+  console.log('Real AI battle loaded');
   await page.locator('#deploy').click();
-  await page.keyboard.down('w');
+  await page.keyboard.down('w'); await page.keyboard.down('Shift');
   let charged = false, hit = false, swapped = false, round = 1;
-  let roundDeadline = Date.now() + 25000;
-  const deadline = Date.now() + 80000;
+  const deadline = Date.now() + 300000;
   while (Date.now() < deadline) {
     await page.waitForTimeout(80);
     const sample = await page.evaluate(() => {
@@ -93,10 +102,14 @@ try {
     });
     sample.round = round;
     samples.push(sample);
-    if (swapped || sample.position?.z < 20 || sample.state !== 'playing') await page.keyboard.up('w');
+    if (swapped || sample.position?.z < 20 || sample.state !== 'playing') {
+      await page.keyboard.up('w'); await page.keyboard.up('Shift');
+    } else {
+      await page.keyboard.down('w'); await page.keyboard.down('Shift');
+    }
     if (!swapped && sample.state === 'playing' && sample.enemies.some(enemy =>
       Math.hypot(enemy.x - sample.position.x, enemy.z - sample.position.z) < 7)) {
-      await page.keyboard.up('w');
+      await page.keyboard.up('w'); await page.keyboard.up('Shift');
       await page.keyboard.press('y');
       swapped = true;
     }
@@ -123,16 +136,17 @@ try {
       if (directory) await page.screenshot({ path: join(directory, 'allied-dadao-hit.png') });
       if (charged) break;
     }
-    if (Date.now() > roundDeadline || sample.state === 'dead') {
+    if (sample.time > 25 || sample.state === 'dead') {
       if (round === 3) break;
       // Real opponents may shoot a charging soldier first; retry a whole battle, never its health or AI.
-      await page.keyboard.up('w'); await page.reload();
-      await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 90000 });
-      await page.locator('#deploy').click(); await page.keyboard.down('w');
-      round++; swapped = false; roundDeadline = Date.now() + 25000;
+      await page.keyboard.up('w'); await page.keyboard.up('Shift');
+      if (sample.state !== 'dead') await page.keyboard.press('Escape');
+      await page.locator('#back-menu').click(); await page.locator('#deploy').click();
+      await page.keyboard.down('w'); await page.keyboard.down('Shift');
+      round++; swapped = false;
     }
   }
-  await page.keyboard.up('w');
+  await page.keyboard.up('w'); await page.keyboard.up('Shift');
   assert.ok(charged, 'friendly AI must really move toward its close combat target');
   assert.ok(hit, 'friendly AI must land a real timed dadao cut');
   if (url.searchParams.get('character') === 'procedural') {

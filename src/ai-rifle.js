@@ -1,7 +1,29 @@
 import { shootRifle, reloadRifle, infantryWeaponProfile } from './rifle-action.js';
 
 export const AI_RIFLE = Object.freeze({ sightRange: 75, closeRange: 35, distantAimMin: 6, distantAimMax: 10,
-  checkInterval: .1, maxSightGap: .2, stationarySpeed: .1 });
+  checkInterval: .1, maxSightGap: .2, stationarySpeed: .1, movingFireSpeed: 2.8 });
+
+export function automaticFireMovement(actor, now, targetId, distance, { allowed }) {
+  const profile = infantryWeaponProfile(actor.rifle), previous = actor.tactics.automaticFireMotion;
+  if (!Number.isFinite(now) || now < 0 || !Number.isFinite(distance) || distance < 0 || typeof allowed !== 'boolean')
+    throw new RangeError('Automatic firing movement requires explicit time, distance and permission');
+  if (!allowed || actor.health <= 0 || actor.vehicleId || actor.emplacementId || actor.dying || actor.blastReaction ||
+    actor.dadao?.equipped || actor.bayonet && actor.bayonet.mode !== 'idle' ||
+    !profile.automatic || !targetId || actor.rifle.action === 'reload' || actor.rifle.ammo <= 0 ||
+    distance < (profile.smg ? 10 : 16) || distance > AI_RIFLE.closeRange) {
+    actor.tactics.automaticFireMotion = null;
+    return null;
+  }
+  if (previous?.targetId === targetId && now < previous.until) return previous;
+  const sequence = (previous?.sequence ?? -1) + 1;
+  let seed = 2166136261;
+  for (const character of `${actor.id}:${targetId}:${sequence}`)
+    seed = Math.imul(seed ^ character.charCodeAt(0), 16777619) >>> 0;
+  const preference = seed / 4294967296;
+  const mode = preference < (profile.smg ? .3 : .6) ? 'stand' : preference < (profile.smg ? .65 : .9) ? 'step' : 'jog';
+  return actor.tactics.automaticFireMotion = { targetId, sequence, mode, goal: null,
+    until: now + (mode === 'stand' ? 2 : 1.1) + (seed % 1000) / 1000 * (mode === 'stand' ? 1.8 : .7) };
+}
 
 export function createAIRifleControl() {
   return { targetId: null, aimingSince: null, confirmedAt: null, nextCheckAt: 0, blocked: 'no-target',
@@ -42,7 +64,9 @@ export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettl
     : actor.bayonet && actor.bayonet.mode !== 'idle' ? 'bayonet'
     : actor.dadao?.equipped ? 'dadao'
     : !mayFire || targetId === null ? 'no-fire-solution'
-    : actor.locomotion.sprinting || actor.locomotion.speed > AI_RIFLE.stationarySpeed ? 'moving'
+    : actor.locomotion.sprinting || actor.locomotion.speed > AI_RIFLE.stationarySpeed &&
+      !(profile.automatic && actor.automaticFireMoving === true && actor.stance === 'standing' &&
+        actor.locomotion.speed <= AI_RIFLE.movingFireSpeed) ? 'moving'
     : actor.locomotion.aimRecovery > 0 ? 'recovering'
     : !postureSettled ? 'posture'
     : rifle.action !== 'idle' || rifle.ammo <= 0 ? 'weapon'
@@ -85,7 +109,8 @@ export function attemptAIRifleShot(actor, { now, targetId, mayFire, postureSettl
   if (!shootRifle(rifle)) throw new Error('AI rifle changed after firing readiness was validated');
   control.lastShot = Object.freeze({ time: now, targetId, distance, suppressed, aimingSince: control.aimingSince,
     aimedSeconds: aimed, requiredSeconds: aimSeconds, ammo: rifle.ammo, shots: rifle.shots,
-    weaponModel: rifle.model ?? 'rifle', magazine: profile.magazine, continuingBurst });
+    weaponModel: rifle.model ?? 'rifle', magazine: profile.magazine, continuingBurst,
+    speed: actor.locomotion.speed, moving: actor.automaticFireMoving === true });
   if (rifle.ammo === 0) reloadRifle(rifle);
   resetAIRifleAim(control, 'weapon');
   if (distant) control.lastDistantShotAt = now;

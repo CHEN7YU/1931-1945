@@ -8,7 +8,7 @@ import { circleBlocked, createNavigator } from './core.js';
 import { createDoorWorld } from './door-world.js';
 import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_OBJECTIVES, NANJING_SPAWNS } from './nanjing-campaign.js';
 import { sandbagCollisionProxy, sandbagGeometry } from './scene-details.js';
-import { createRoofGeometry } from './roof-geometry.js';
+import { createRoofGeometry, createResidentialRoofGeometry } from './roof-geometry.js';
 import { AIR_SUPPORT, createAirSupport } from './air-support.js';
 import { AIRCRAFT_GUN } from './aircraft-ai.js';
 import { TYPES } from './core.js';
@@ -968,33 +968,8 @@ export function makeNanjingBattlefield(scene, surface) {
     town.passages.push({ id: `nanjing-home-${index}-door`, x, z: frontZ,
       axis: 'x', width: doorWidth, height: doorHeight + .05, openAngle: 0 });
     const roofRise = .85, overhang = .3;
-    let roofGeometry = createRoofGeometry(w + overhang * 2, d + .8, roofRise,
-      roofMaterial.userData.metersPerTile ?? 1.4);
-    if (damaged) {
-      const fragments = [];
-      for (let strip = 0; strip < 12; strip++) {
-        const fragment = createRoofGeometry(w + overhang * 2, (d + .8) / 12, roofRise,
-          roofMaterial.userData.metersPerTile ?? 1.4);
-        fragment.translate(0, 0, -(d + .8) / 2 + (strip + .5) * (d + .8) / 12);
-        const positions = fragment.attributes.position, indices = [];
-        for (let vertex = 0; vertex < positions.count; vertex++) {
-          fragment.attributes.uv.setY(vertex, positions.getZ(vertex) / (roofMaterial.userData.metersPerTile ?? 1.4));
-        }
-        for (let vertex = 0; vertex < positions.count; vertex += 3) {
-          const cx = (positions.getX(vertex) + positions.getX(vertex + 1) + positions.getX(vertex + 2)) / 3;
-          const brokenEdge = -w * (.03 + .045 * (1 + Math.sin(strip * 2.7 + index)));
-          if (cx > brokenEdge) continue;
-          indices.push(vertex, vertex + 1, vertex + 2);
-        }
-        fragment.setIndex(indices);
-        const expanded = fragment.toNonIndexed();
-        fragments.push(expanded);
-        fragment.dispose();
-      }
-      roofGeometry.dispose();
-      roofGeometry = mergeGeometries(fragments);
-      for (const fragment of fragments) fragment.dispose();
-    }
+    const roofGeometry = createResidentialRoofGeometry(w + overhang * 2, d + .8, roofRise,
+      roofMaterial.userData.metersPerTile ?? 1.4, damaged, index);
     const roof = new THREE.Mesh(roofGeometry, roofMaterial);
     roof.position.set(x, h, z);
     roof.castShadow = roof.receiveShadow = true;
@@ -1784,6 +1759,7 @@ export function makeNanjingBattlefield(scene, surface) {
         Object.assign(data, { waypoint: 0, arrived: false, dead: false, health: 100, active: false, exposure: 0,
           panicked: false, panicStartedAt: null, startledUntil: 0, protectiveUntil: 0,
           lastStartleSound: null, crowdTarget: null, crowdPath: null, crowdStalled: 0,
+          crowdDirection: null, crowdYieldTo: null, crowdYieldPoint: null,
           crowdSearch: null, crowdSearchRevision: null,
           threatResponse: null, escapeMotion: null, escapeMode: null,
           threatThinkCount:0,

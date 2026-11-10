@@ -13,6 +13,7 @@ import { createNativePosturePoses } from '../src/nra-posture-pose.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 import { DADAO_DIMENSIONS, dadaoViewModel, updateDadaoView } from '../src/dadao-model.js';
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
+import { createNraDadaoPose } from '../src/nra-dadao-pose.js';
 
 await loadDadaoSurfaces(1, { async loadAsync(url) { return new T.Texture({ src: url }); } });
 
@@ -107,6 +108,101 @@ test('dadao shows the whole carry fist and keeps its right elbow outboard withou
   }
 });
 
+test('dadao keeps both hands on the same handle with natural wrists and continuous original arm bones', () => {
+  for (const aspect of [.35, .36, 450 / 1100, .55, .8, 1.1, 1.6, 2.4]) {
+    const camera = new T.PerspectiveCamera(72, aspect, .07, 20);
+    const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
+    camera.add(view); camera.updateMatrixWorld(true);
+    const hands = [view.userData.dadaoArm, view.userData.dadaoLeftArm], bones = [];
+    for (const hand of hands) hand.traverse(node => {
+      if (node.isBone) bones.push([node, node.position.clone(), node.scale.clone()]);
+    });
+    const previous = [null, null], sword = view.userData.dadaoHand;
+    for (const phase of ['draw', 'ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 100; frame++) {
+      updateDadaoView(view, { phase, progress: frame / 100 }, { weaponX: .003, weaponY: -.002 }, camera);
+      hands.forEach((hand, index) => {
+        const label = `${aspect}/${phase}/${frame}/${index ? 'left' : 'right'}`, state = hand.armSnapshot;
+        assert.ok(state.reachable && state.error < 1e-6, `${label}: arm cannot reach the grip`);
+        const wrist = new T.Vector3(...state.wrist), elbow = new T.Vector3(...state.elbow);
+        const forward = new T.Vector3(0, 1, 0).applyQuaternion(hand.attachmentFrame.getWorldQuaternion(new T.Quaternion()));
+        assert.ok(wrist.clone().sub(elbow).normalize().dot(forward) > .65, `${label}: wrist folds against the forearm`);
+        assert.ok(elbow.z < -.12, `${label}: elbow approaches the near plane`);
+        if (previous[index]) assert.ok(elbow.distanceTo(previous[index]) < .025, `${label}: elbow snaps between IK branches`);
+        previous[index] = elbow;
+        const actual = hand.attachmentFrame.localToWorld(new T.Vector3(...hand.userData.throwableGrips.dadao));
+        const target = sword.localToWorld(new T.Vector3(0, index ? -.12 : DADAO_DIMENSIONS.gripCenter, 0));
+        assert.ok(actual.distanceTo(target) < 1e-6, `${label}: hand detaches from the handle`);
+      });
+    }
+    for (const [bone, position, scale] of bones) {
+      assert.deepEqual(bone.position, position); assert.deepEqual(bone.scale, scale);
+    }
+  }
+});
+
+test('wide-screen chops leave most of the battlefield visible instead of filling the eye with sleeves', () => {
+  const camera = new T.PerspectiveCamera(72, 16 / 9, .07, 20);
+  const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
+  camera.add(view); camera.updateMatrixWorld(true);
+  const meshes = [];
+  view.traverse(mesh => { if (mesh.isMesh && mesh.visible) meshes.push(mesh); });
+  const ray = new T.Raycaster();
+  for (const [phase, progress] of [['cut', .4], ['cut', .6], ['cut', .8], ['cut', 1], ['recover', .2], ['recover', .5]]) {
+    updateDadaoView(view, { phase, progress }, { weaponX: 0, weaponY: 0 }, camera);
+    for (const mesh of meshes) if (mesh.isSkinnedMesh) {
+      mesh.skeleton.update(); mesh.computeBoundingSphere(); mesh.computeBoundingBox();
+    }
+    let covered = 0;
+    for (let row = 0; row < 11; row++) for (let column = 0; column < 19; column++) {
+      ray.setFromCamera(new T.Vector2(-.95 + 1.9 * column / 18, -.95 + 1.9 * row / 10), camera);
+      if (ray.intersectObjects(meshes, false).length) covered++;
+    }
+    assert.ok(covered / 209 < .4, `${phase}/${progress}: weapon and sleeves obscure ${covered}/209 of the view`);
+  }
+});
+
+test('third-person shoulder and overhead chops preserve both wrists, real grips and continuous original bones', () => {
+  const body = new T.Group(), avatar = clone(source), bones = prepareNraRig(avatar).canonical;
+  body.add(avatar);
+  body.updateMatrixWorld(true);
+  const grips = {};
+  for (const [side, prefix] of [['right', 'Right'], ['left', 'Left']]) {
+    const hand = createNraGrenadeHand(source, side); hand.poseGrip(1, 0, 'dadao');
+    const fingers = new Map(); let wristRotation;
+    hand.traverse(node => {
+      if (node.isBone && node.name.startsWith(prefix + 'Hand') && node.name !== prefix + 'Hand')
+        fingers.set(node.name, node.quaternion.clone());
+      if (node.name === prefix + 'Hand') wristRotation = node.getWorldQuaternion(new T.Quaternion());
+    });
+    grips[side] = { fingers, wristRotation, center: new T.Vector3(...hand.userData.throwableGrips.dadao) };
+  }
+  const pose = createNraDadaoPose(body, bones, { ...grips.right, left: grips.left });
+  const original = [...bones.values()].map(bone => [bone, bone.position.clone(), bone.scale.clone()]);
+  for (const style of [0, 1]) {
+    let previous = null;
+    for (const phase of ['ready', 'windup', 'cut', 'recover']) for (let frame = 0; frame <= 100; frame++) {
+      pose.update({ style, phase, progress: frame / 100 });
+      const sample = pose.snapshot, label = `${style}/${phase}/${frame}`;
+      assert.equal(pose.issue, null, `${label}: ${JSON.stringify(sample)}`);
+      assert.ok(sample.wristAlignment > .65 && sample.leftWristAlignment > .65, `${label}: wrist folds`);
+      assert.ok(sample.error < 1e-6 && sample.leftPalmError < 1e-6, `${label}: hand detaches`);
+      const elbows = ['RightForeArm', 'LeftForeArm'].map(name => bones.get(name).getWorldPosition(new T.Vector3()));
+      if (frame === 0 && previous) elbows.forEach((point, index) =>
+        assert.ok(point.distanceTo(previous[index]) < 1e-6, `${label}: phase-boundary jump`));
+      if (frame > 0) {
+        pose.update({ style, phase, progress: frame / 100 - 1e-6 });
+        ['RightForeArm', 'LeftForeArm'].forEach((name, index) =>
+          assert.ok(bones.get(name).getWorldPosition(new T.Vector3()).distanceTo(elbows[index]) < .0001,
+            `${label}: IK branch discontinuity`));
+      }
+      previous = elbows;
+    }
+  }
+  for (const [bone, position, scale] of original) {
+    assert.deepEqual(bone.position, position); assert.deepEqual(bone.scale, scale);
+  }
+});
+
 test('dadao keeps cropped native sleeve edges out of sight', () => {
   const originals = new Map();
   source.traverse(mesh => { if (mesh.isSkinnedMesh) originals.set(mesh.name, mesh.geometry); });
@@ -115,7 +211,7 @@ test('dadao keeps cropped native sleeve edges out of sight', () => {
     const view = dadaoViewModel((side, options) => createNraGrenadeHand(source, side, { fullArm: true, ...options }));
     camera.add(view); camera.updateMatrixWorld(true);
     const cuts = [], sleeves = [];
-    view.userData.dadaoArm.traverse(mesh => {
+    view.traverse(mesh => {
       if (!mesh.isSkinnedMesh || !mesh.visible || !['衣服', '臂章'].includes(mesh.name)) return;
       mesh.material = mesh.material.clone(); mesh.material.side = T.DoubleSide; sleeves.push(mesh);
       const original = originals.get(mesh.name), geometry = mesh.geometry;

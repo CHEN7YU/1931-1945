@@ -26,7 +26,10 @@ try {
   assert.equal(before.actor.role, 'assault');
   assert.equal(before.actor.rifle.model, 'sigm1920'); assert.equal(before.ammo, 50);
   await page.mouse.down({ button: 'right' });
-  await page.waitForFunction(() => window.__battle.fov < 50);
+  await page.waitForFunction(() => window.__battle.fov < 48.01);
+  assert.ok((await page.evaluate(() => window.__battle.rifle.sights))
+    .every(point => Math.abs(point.x) < .002 && Math.abs(point.y) < .002));
+  await page.screenshot({ path: join(directory, 'sigm1920-shoulder-ads.png') });
   await page.mouse.down();
   await page.waitForFunction(() => window.__battle.ammo < 50);
   await page.mouse.up();
@@ -45,8 +48,28 @@ try {
   assert.equal(data.models.filter(actor => actor.role === 'assault').length, 1);
   assert.equal(data.models.filter(actor => actor.role === 'machine-gunner').length, 1);
   assert.equal(data.models.filter(actor => actor.role === 'sniper').length, 1);
+  while ((await page.evaluate(() => window.__battle.current)) !== 10) {
+    const previous = await page.evaluate(() => window.__battle.current);
+    await page.keyboard.press('y');
+    await page.waitForFunction(previous => window.__battle.current !== previous, previous);
+  }
+  await page.mouse.down({ button: 'right' });
+  await page.waitForFunction(() => window.__battle.fov < 48.01);
+  assert.ok((await page.evaluate(() => window.__battle.rifle.sights))
+    .every(point => Math.abs(point.x) < .002 && Math.abs(point.y) < .002));
+  await page.screenshot({ path: join(directory, 'zb26-shoulder-ads.png') });
+  const lmgBefore = await page.evaluate(() => window.__battle.rifle.shots);
+  await page.mouse.down();
+  await page.waitForFunction(shots => window.__battle.rifle.shots >= shots + 6, lmgBefore);
+  await page.mouse.up(); await page.mouse.up({ button: 'right' });
+  await page.waitForFunction(() => window.__battle.fov > 70);
+  const lmg = await page.evaluate(() => ({ rifle: window.__battle.rifle, owner: window.__battle.control.soldierId,
+    actor: window.__battle.allies[window.__battle.current] }));
+  assert.equal(lmg.actor.rifle.model, 'zb26');
+  assert.ok(lmg.rifle.shots >= lmgBefore + 6 && lmg.rifle.ammo <= 14);
   assert.deepEqual(errors, []);
-  await writeFile(join(directory, 'mixed-equipment.json'), JSON.stringify({ before, shot, data, errors,
+  await writeFile(join(directory, 'mixed-equipment.json'), JSON.stringify({ before, shot, data, lmg, errors,
     note: 'Actual Y selection, first-person firing and personal reload in the existing cover fixture' }, null, 2));
-  console.log(JSON.stringify({ passed: true, personalWeapon: data.actor.rifle.model, actualShots: shot.shots }));
+  console.log(JSON.stringify({ passed: true, personalWeapon: data.actor.rifle.model, actualShots: shot.shots,
+    lmgShots: lmg.rifle.shots - lmgBefore, ads: ['sigm1920', 'zb26'] }));
 } finally { await browser.close(); }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Quaternion, Vector3 } from 'three';
-import { createNraMotion, advanceNraMotion, sampleNraMotion, sampleNraPhase, nativeGaitParameters, nativeMuzzleLocal, nativeGaitDrop } from '../src/nra-motion.js';
+import { createNraMotion, advanceNraMotion, sampleNraMotion, sampleNraPhase, nativeGaitParameters, nativeMuzzleLocal, nativeGaitDrop, nativeChestFireTarget, nativeAimReady } from '../src/nra-motion.js';
 import { soldierRifleMuzzle } from '../src/entities.js';
 import { createNativeGaitProfile } from '../src/nra-gait.js';
 import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
@@ -11,6 +11,34 @@ import { createRifleState, shootRifle } from '../src/rifle-action.js';
 import { RIFLE_HAND_SAMPLES, rifleHandWeights } from '../src/rifle-hand-action.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
+test('automatic chest fire is distinct, simulation-blended, and never replaces player shoulder ADS or supported firing', () => {
+  const person = { health: 100, rifleReady: true, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+    stance: 'standing', locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState('sigm1920') };
+  const profile = { ...createNativeGaitProfile(data.motion.idle),
+    rifleContacts: Object.fromEntries(['standing', ...Object.keys(FIRING_POSES)].map(name => [name, [.15, 1.5, 0]])) };
+  person.nativeMotion = createNraMotion(profile, person);
+  const chest = sampleNraMotion(person);
+  assert.equal(chest.chestFire, 1); assert.equal(nativeAimReady(person), true);
+  const frozen = JSON.stringify(person.nativeMotion);
+  advanceNraMotion(person, 0); assert.equal(JSON.stringify(person.nativeMotion), frozen);
+  person.shoulderAiming = true;
+  assert.equal(nativeChestFireTarget(person), 0);
+  advanceNraMotion(person, 1 / 60);
+  assert.ok(person.nativeMotion.chestFire > .8 && person.nativeMotion.chestFire < 1);
+  for (let frame = 0; frame < 90; frame++) advanceNraMotion(person, 1 / 60);
+  const shoulder = sampleNraMotion(person);
+  assert.equal(shoulder.chestFire, 0);
+  assert.ok(shoulder.weaponPosition[1] - chest.weaponPosition[1] > .15);
+  person.rifle = createRifleState('zb26'); person.shoulderAiming = false;
+  person.nativeMotion = createNraMotion(profile, person);
+  const lmg = sampleNraMotion(person);
+  assert.ok(chest.weaponPosition[1] - lmg.weaponPosition[1] > .05);
+  for (const patch of [{ stance: 'prone' }, { weaponMount: { active: true } },
+    { supportWeaponPose: { active: true } }, { emplacementId: 'mg' },
+    { rifle: createRifleState() }, { rifle: createRifleState('sniper') }]) {
+    assert.equal(nativeChestFireTarget({ ...person, ...patch }), 0);
+  }
+});
 test('travel carries vary by soldier, blend continuously and converge to the same raised firing pose', () => {
   const samples = [];
   for (let style = 0; style < 3; style++) {

@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {writeFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {defaultPreferences,PREFERENCES_KEY} from '../src/player-preferences.js';
+import {deployFromMenu} from './game-entry.mjs';
 
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];
@@ -65,6 +66,9 @@ try{
         }else{
           step(1200,'opening-60s');
           nanjingCampaign.stage='withdrawal';updateNanjingMission(0);
+          const resting=world.civilians.find(person=>person.visible&&person.userData.resting);
+          if(!resting)throw new Error('Opening refugees must reach their street rest groups before the player encounters them');
+          controlledSoldier(entities).position.copy(resting.position);
           step(4800,'residential-wave-240s');
         }
         nanjingCampaign.stage='dock-defense';nanjingCampaign.dockActivated=true;
@@ -82,12 +86,18 @@ try{
         step(${process.env.ENEMY_DOCK_PROFILE==='1'?160:600},'dock-boarding');
         setGameState('pause');
         return {samples,planner:civilianCrowdPlanner.stats,operations:civilianProfile,
+          unresolved:world.civilians.filter(person=>!person.userData.arrived&&!person.userData.dead)
+            .map(person=>({id:person.userData.civilianId,position:person.position.toArray(),
+              waypoint:person.userData.waypoint,target:person.userData.route[person.userData.waypoint],
+              active:person.userData.active,released:person.userData.fleeReleased,
+              yieldTo:person.userData.crowdYieldTo,yieldPoint:person.userData.crowdYieldPoint,
+              stalled:person.userData.crowdStalled,path:person.userData.crowdPath})),
           threatDecisions:world.civilians.reduce((sum,person)=>sum+(person.userData.threatThinkCount??0),0)};
       };`});
   });
   await page.goto(process.env.GAME_URL??'http://127.0.0.1:5203/?campaign=nanjing');
   await page.waitForFunction(()=>window.__battle?.state==='menu',null,{timeout:180000});
-  await page.locator('#deploy').click();
+  await deployFromMenu(page);
   await page.waitForFunction(()=>window.__battle?.state==='playing',null,{timeout:180000});
   const result=await page.evaluate(()=>stallReview());
   console.log(JSON.stringify({result,errors}));

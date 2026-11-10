@@ -56,6 +56,24 @@ test('ZB-26 seating includes a distinct hand press after insertion and before re
   assert.equal(pressed.feed[1], -pressed.press);
 });
 
+test('body-supported reload establishes support before full release and keeps retrieval closer without moving the fixed hopper', () => {
+  for (const model of ['zb26', 'type11']) {
+    const state = { ...createRifleState(model), action: 'reload', ammo: 0 };
+    const seconds = infantryWeaponProfile(state).reloadSeconds;
+    state.elapsed = seconds * .08;
+    const early = machineGunReloadPose(state, { supported: 1 });
+    assert.equal(early.supportWeight, 1);
+    assert.ok(early.handWeight < 1);
+    state.elapsed = seconds * .34;
+    const ordinary = machineGunReloadPose(state), supported = machineGunReloadPose(state, { supported: 1 });
+    assert.ok(new Vector3(...supported.palm).length() < new Vector3(...ordinary.palm).length());
+    if (model === 'type11') assert.deepEqual(supported.feed, [0, 0, 0]);
+    state.elapsed = seconds;
+    assert.equal(machineGunReloadPose(state, { supported: 1 }).supportWeight, 0);
+    assert.throws(() => machineGunReloadPose(state, { supported: 2 }), RangeError);
+  }
+});
+
 test('ZB-26 uses opposed finger/thumb contacts and a separate downward seating palm', () => {
   const state = { ...createRifleState('zb26'), action: 'reload', ammo: 0 };
   const gun = rifleModel(state);
@@ -128,4 +146,42 @@ test('mechanical loading cues coincide with the hand press instead of the old fl
     assert.equal(cues.filter(cue => cue === 'load').length, Math.ceil((30 - ammo) / 5));
     assert.equal(hopper.ammo, 30);
   }
+});
+
+test('third-person automatic weapons expose the same owned hand and feeding pose', () => {
+  for (const model of ['zb26', 'type11', 'sigm1920']) {
+    const state = { ...createRifleState(model), ammo: 0 };
+    reloadRifle(state);
+    const gun = rifleWorldModel('near', state);
+    for (let frame = 0; frame <= 240; frame++) {
+      state.elapsed = infantryWeaponProfile(state).reloadSeconds * frame / 240;
+      const pose = machineGunReloadPose(state, { prone: .7 });
+      syncWorldWeapon(gun, state, pose);
+      assert.equal(gun.userData.automaticReload, pose);
+      assert.deepEqual(gun.getObjectByName('feed').position.toArray(), pose.feed);
+      if (frame === 0 || frame === 240) assert.equal(pose.handWeight, 0);
+      else assert.ok(pose.handWeight >= 0 && pose.handWeight <= 1);
+    }
+    state.action = 'idle'; state.elapsed = 0;
+    syncWorldWeapon(gun, state);
+    assert.equal(gun.userData.automaticReload.handWeight, 0);
+    syncWorldWeapon(gun, createRifleState());
+    assert.equal(gun.userData.automaticReload, null);
+  }
+});
+
+test('hopper lid, clip retrieval and prone feeding paths remain continuous', () => {
+  for (const model of ['zb26', 'type11']) for (const prone of [0, .5, 1]) {
+    const state = { ...createRifleState(model), ammo: 0, action: 'reload' };
+    let previous = null;
+    for (let frame = 0; frame <= 2000; frame++) {
+      state.elapsed = infantryWeaponProfile(state).reloadSeconds * frame / 2000;
+      const pose = machineGunReloadPose(state, { prone });
+      if (previous) assert.ok(new Vector3(...pose.palm).distanceTo(new Vector3(...previous.palm)) < .018,
+        `${model}/${prone}/${frame}: no hand teleport between loading stages`);
+      assert.ok([...pose.palm, ...pose.feed, ...pose.clip, pose.handWeight, pose.pressWeight].every(Number.isFinite));
+      previous = pose;
+    }
+  }
+  assert.throws(() => machineGunReloadPose(createRifleState('zb26'), { prone: NaN }), RangeError);
 });

@@ -289,15 +289,67 @@ function* dockDetour(position, target, peers, civilian, obstacles, spacing, plan
   return null;
 }
 
+function civilianYieldTarget(civilian, peers, obstacles, spacing) {
+  const { position, userData: data } = civilian, direction = data.crowdDirection;
+  const relative = other => {
+    const dx = other.position.x - position.x, dz = other.position.z - position.z;
+    return { ahead: dx * direction.x + dz * direction.z, across: dx * direction.z - dz * direction.x };
+  };
+  const moving = other => !other.userData.arrived && !other.userData.dead &&
+    (!Array.isArray(other.userData.route) || other.userData.waypoint < other.userData.route.length);
+  let leader = data.crowdYieldTo == null ? null : peers.find(other => other.userData.civilianId === data.crowdYieldTo);
+  if (leader && (!moving(leader) || relative(leader).ahead < -.85)) {
+    data.crowdYieldTo = null; data.crowdYieldPoint = null; leader = null;
+  }
+  if (!leader) {
+    data.crowdYieldTo = null; data.crowdYieldPoint = null;
+    let nearest = 2.4;
+    const goal = data.route?.at(-1) ?? data.crowdTarget;
+    const gx = goal.x - position.x, gz = goal.z - position.z;
+    for (const other of peers) {
+      if (other === civilian || !moving(other) || !other.userData.crowdDirection ||
+        other.userData.crowdYieldTo === data.civilianId) continue;
+      const { ahead, across } = relative(other), facing = other.userData.crowdDirection;
+      if (ahead <= 0 || ahead >= nearest || Math.abs(across) >= spacing + .15) continue;
+      const opposite = facing.x * direction.x + facing.z * direction.z < -.5;
+      const retreating = other.userData.crowdYieldTo !== null && other.userData.crowdYieldTo !== undefined;
+      if (opposite) {
+        if (other.userData.civilianId >= data.civilianId) continue;
+        const otherGoal = other.userData.route?.at(-1) ?? other.userData.crowdTarget;
+        const ox = otherGoal.x - other.position.x, oz = otherGoal.z - other.position.z;
+        if (gx * ox + gz * oz >= -.3 * Math.hypot(gx, gz) * Math.hypot(ox, oz)) continue;
+      } else if (!retreating) continue;
+      leader = other; nearest = ahead;
+    }
+    if (leader) {
+      data.crowdYieldTo = leader.userData.crowdYieldTo ?? leader.userData.civilianId;
+      leader = peers.find(other => other.userData.civilianId === data.crowdYieldTo);
+    }
+  }
+  if (!leader) return null;
+  const right = { x: -direction.z, z: direction.x };
+  if (data.crowdYieldPoint) return data.crowdYieldPoint;
+  for (const sign of [1, -1]) {
+    const point = { x: position.x + right.x * .9 * sign, z: position.z + right.z * .9 * sign };
+    if (segmentClear(position, point, .36, obstacles)) {
+      data.crowdYieldPoint = point;
+      return point;
+    }
+  }
+  return { x: position.x - direction.x, z: position.z - direction.z };
+}
+
 export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles, canStep = null, planner = null) {
   if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid civilian movement distance');
   const position = civilian.position, radius = .36, data = civilian.userData;
   const crowdedDock = position.x < -45 && position.z < -65;
   const spacing = crowdedDock ? .52 : radius * 2;
   const remaining = Math.hypot(target.x - position.x, target.z - position.z);
+  if (remaining > .01) data.crowdDirection = { x: (target.x - position.x) / remaining, z: (target.z - position.z) / remaining };
   if (!data.crowdTarget || Math.hypot(target.x - data.crowdTarget.x, target.z - data.crowdTarget.z) > .01) {
     data.crowdTarget = { x: target.x, z: target.z };
     data.crowdPath = data.crowdSearch = null; data.crowdBestDistance = remaining; data.crowdStalled = 0;
+    data.crowdYieldTo = null; data.crowdYieldPoint = null;
   }
   if (remaining < data.crowdBestDistance - .05) {
     data.crowdBestDistance = remaining; data.crowdStalled = 0;
@@ -329,18 +381,28 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
   for (let step = 0; step < steps; step++) {
     while (data.crowdPath?.length &&
       Math.hypot(data.crowdPath[0].x - position.x, data.crowdPath[0].z - position.z) < .1) data.crowdPath.shift();
-    const waypoint = data.crowdPath?.[0] ?? target;
+    const yieldTarget = data.crowdDirection ? civilianYieldTarget(civilian, peers, obstacles, spacing) : null;
+    const waypoint = yieldTarget ?? data.crowdPath?.[0] ?? target;
     const dx = waypoint.x - position.x, dz = waypoint.z - position.z, remaining = Math.hypot(dx, dz);
     if (remaining < .01) break;
     const stride = Math.min(remaining, distance / steps);
-    const heading = Math.atan2(dz, dx), preference = civilian.userData.civilianId % 2 ? 1 : -1;
+    const heading = Math.atan2(dz, dx), preference = 1;
     let next = null;
     for (let turn = 0; turn < CROWD_TURNS.length; turn++) {
       const angle = turn === CROWD_TURNS.length - 1 ? Math.PI : CROWD_TURNS[turn] * preference;
       const point = { x: position.x + Math.cos(heading + angle) * stride,
         z: position.z + Math.sin(heading + angle) * stride };
       if ((!canStep || canStep(position, point)) && !circleBlocked(point.x, point.z, radius, obstacles, 0) &&
-        peers.every(other => other === civilian || Math.hypot(point.x - other.position.x, point.z - other.position.z) >= spacing)) {
+        peers.every(other => {
+          if (other === civilian) return true;
+          const previous = Math.hypot(position.x - other.position.x, position.z - other.position.z);
+          const required = Math.min(spacing, previous);
+          const vx = point.x - position.x, vz = point.z - position.z, length = vx * vx + vz * vz;
+          const t = length ? Math.max(0, Math.min(1, ((other.position.x - position.x) * vx +
+            (other.position.z - position.z) * vz) / length)) : 0;
+          return Math.hypot(position.x + vx * t - other.position.x, position.z + vz * t - other.position.z) >= required - 1e-8 &&
+            (previous >= spacing || Math.hypot(point.x - other.position.x, point.z - other.position.z) > previous + 1e-6);
+        })) {
         next = point; break;
       }
     }

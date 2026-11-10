@@ -107,7 +107,7 @@ export function createCasualtyState(actor, now, motion = null, options = {}) {
     const x = impact.x * c - impact.z * s, z = impact.x * s + impact.z * c;
     preferred = Math.abs(x) > Math.abs(z) ? x < 0 ? 0 : 1 : z < 0 ? 2 : 3;
   }
-  if (motion?.speed > 2.5) preferred = 2;
+  if (motion?.speed > 2.5 && !actor.lastHit?.blast) preferred = 2;
   if (motion?.prone > .5) preferred = 2;
   const variant = options.variant ?? preferred;
   const retainGun = options.retainGun ?? (seed >>> 4) % 3 === 0;
@@ -199,6 +199,7 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
     const pivot = root.worldToLocal(bones.get('Hips').getWorldPosition(new Vector3()));
     const prone = c.motion?.prone ?? 0;
     const fall = casualtyRotation(c, response.fall * (1 - .85 * prone));
+    if (c.blastRoll) fall.multiply(new Quaternion().setFromAxisAngle(Y, c.blastRoll));
     const facing = new Quaternion().setFromAxisAngle(Y, actor.heading + (c.yaw ?? 0) * progress);
     root.quaternion.copy(facing).multiply(fall);
     root.position.copy(actor.position).add(pivot.clone().sub(pivot.clone().applyQuaternion(fall)).applyQuaternion(facing));
@@ -208,8 +209,9 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
     for (const [index, side] of ['Left', 'Right'].entries()) {
       if (c.variant === 3 && c.wallLimited && !(c.motion?.prone > .5)) continue;
       const joint=index?dynamics.rightKnee:dynamics.leftKnee;
-      const hip = (index ? .16 : .32) + c.fold * .2;
-      const knee = (index ? .65 : 1.05) + c.fold * .3;
+      const drive = Math.sin(Math.PI * (c.recovery ?? 0));
+      const hip = (index ? .16 : .32) + c.fold * .2 + drive * (index ? .25 : .55);
+      const knee = (index ? .65 : 1.05) + c.fold * .3 + drive * (index ? .35 : .65);
       for (const [part, bend] of [['UpLeg', -hip * (prone > .5 ? .35 : 1) - response.buckle * .65*joint],
         ['Leg', knee * (prone > .5 ? .6 : 1) +
           response.buckle * (c.hitZone === 'limb' ? 1.1 : .85)*joint],
@@ -256,7 +258,8 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
       const origin = upper.getWorldPosition(new Vector3()), elbow = lower.getWorldPosition(new Vector3()), wrist = hand.getWorldPosition(new Vector3());
       const held = c.retainGun && side === 'Right', sign = index ? 1 : -1;
       const armResponse=Math.min(1,index?dynamics.rightArm:dynamics.leftArm);
-      const target = hips.clone().addScaledVector(along, (index ? .20 : .42) + c.fold * .08)
+      const bracing = !held && c.recovery > 0 ? Math.sin(Math.PI * c.recovery) : 0;
+      const target = hips.clone().addScaledVector(along, (index ? .20 : .42) + c.fold * .08 + bracing * .1)
         .addScaledVector(across, sign * (c.wallLimited ? .18 : held ? .20 : index ? .32 : .40));
       target.y = groundAt(target.x, target.z, actor.position.y) + (held ? .12 : .07);
       const a = origin.distanceTo(elbow), b = elbow.distanceTo(wrist);
@@ -272,8 +275,7 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
         vertical.normalize();
         const horizontal = direction.clone().cross(vertical);
         if (horizontal.dot(pole) < 0) horizontal.negate();
-        // The elbow rests beside the chest, not above it as a load-bearing push-up.
-        const floor = groundAt(center.x, center.z, actor.position.y) + .065;
+        const floor = groundAt(center.x, center.z, actor.position.y) + .065 + bracing * .12;
         const amount = Math.max(-1, Math.min(1, (floor - center.y) / (height * vertical.y)));
         pole.copy(vertical).multiplyScalar(amount).addScaledVector(horizontal, Math.sqrt(1 - amount * amount));
       }

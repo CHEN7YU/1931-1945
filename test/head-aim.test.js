@@ -90,6 +90,26 @@ test('real weighted eye geometry, camera/sensing projection and head bones share
   }
 });
 
+test('chest-fire eye sampling never mutates its cached natural head and remains stable across weapon-only changes', () => {
+  const f = fixture();
+  f.actor.rifle = createRifleState('sigm1920'); f.actor.health = 100;
+  f.actor.rifleReady = true; f.actor.aimPitch = .35;
+  f.actor.nativeMotion = createNraMotion(f.profile, f.actor);
+  const first = sampleNraMotion(f.actor).headAim;
+  assert.equal(first.weight, 0); assert.equal(nativeAimReady(f.actor), true);
+  for (let frame = 0; frame < 20; frame++) {
+    f.actor.rifle.ammo = 50 - frame;
+    const eye = nativeEyeLocal(f.actor), again = sampleNraMotion(f.actor).headAim;
+    assert.deepEqual(eye, first.eye); assert.deepEqual(again.eye, first.eye);
+    assert.deepEqual(again.headRotation, first.headRotation);
+  }
+  f.actor.shoulderAiming = true;
+  for (let frame = 0; frame < 120; frame++) advanceNraMotion(f.actor, 1 / 60);
+  assert.equal(f.actor.nativeMotion.chestFire, 0);
+  assert.equal(f.actor.nativeMotion.cheekWeight, 1);
+  assert.equal(nativeAimReady(f.actor), true);
+});
+
 test('travel and partial posture blends keep the same eye projection, with no aim pose during prone carry', () => {
   const f = fixture();
   for (const stance of ['standing', ...Object.keys(FIRING_POSES)]) {

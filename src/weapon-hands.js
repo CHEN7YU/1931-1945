@@ -30,6 +30,24 @@ const supportFrame = frame([-1, 0, -1], [.641, .423, -.641]);
 const pressFrame = frame([0, 0, 1], [1, 0, 0]);
 const boltFrame = frame([0, 0, 1], [-.8, .6, 0]);
 const magazineFrame = frame([0, -1, 0], [1, 0, 0]);
+export const WEAPON_RELOAD_FRAMES = Object.freeze({ magazine: magazineFrame, press: pressFrame });
+
+export function weaponGripFingerRotation(name, rest, side, kind) {
+  const joint = Number(name.at(-1)) - 1, euler = new THREE.Euler().setFromQuaternion(rest, 'XYZ');
+  if (!Number.isInteger(joint) || joint < 0 || joint > 2) return rest.clone();
+  if (name.includes('Thumb')) {
+    euler.x = kind === 'press' ? .12 : kind === 'bolt' ? joint === 0 ? .50 : .65
+      : side === 'left' ? joint === 0 ? -.25 : .15 : joint === 0 ? .25 : .45;
+    if (joint === 0) euler.z += side === 'left' ? -.22 : kind === 'bolt' ? .35 : .22;
+  } else {
+    const finger = ['Index', 'Middle', 'Ring', 'Pinky'].findIndex(finger => name.includes(finger));
+    const curls = kind === 'press' ? [.18, .24, .20] : kind === 'bolt' ? [.80, 1.25, .85]
+      : kind === 'charger' ? [.35, .85, .55] : kind === 'magazine' ? [.55, .95, .55] : [.5, .85, .5];
+    euler.x = Math.min([1.25, 1.5, 1.05][joint], curls[joint] + [0, .06, .09, .16][finger]);
+    if (joint > 0) { euler.y = 0; euler.z = 0; }
+  }
+  return new THREE.Quaternion().setFromEuler(euler);
+}
 
 function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, outward = null) {
   const axis = wrist.clone().sub(shoulder), distance = axis.length(), [upper, lower] = lengths;
@@ -182,11 +200,11 @@ export function createWeaponHands(createHand) {
       let left = [support];
       if (profile.automatic && state.action === 'reload') {
         const reload = machineGunReloadPose(state), t = state.elapsed / profile.reloadSeconds;
-        const reach = smooth(t, 0, .12) * (1 - smooth(t, .91, 1));
-        const pressing = profile.smg ? 0 : smooth(t, .7, .78) * (1 - smooth(t, .86, .94));
+        const reach = reload.handWeight;
+        const pressing = reload.pressWeight;
         const carry = state.model === 'zb26' ? [.065, .127, -.247].map((value, i) => value + reload.feed[i])
           : [reload.palm[0] + .035, reload.palm[1] - .025, reload.palm[2]];
-        const top = state.model === 'zb26' ? [.065, .182 - reload.press, -.247] : [-.123, .045, -.216];
+        const top = state.model === 'zb26' ? [.065, .182 - reload.press, -.247] : reload.palm;
         const magazine = goal('left', 'magazine', carry, magazineFrame, reach * (1 - pressing));
         if (state.model === 'zb26' && t >= .7 && t < .78) magazine.wrist.y += Math.sin((t - .7) / .08 * Math.PI) * .10;
         left = [

@@ -32,14 +32,14 @@ test('every road triangle stays on a dry bank rather than roofing the river', ()
   const { scene, world } = fixture(), road = scene.getObjectByName('sihang-bank-clipped-streets');
   assert.ok(road);
   const p = road.geometry.attributes.position, indices = road.geometry.index;
-  for (let i = 0; i < indices.count; i += 3) {
-    const ids = [indices.getX(i), indices.getX(i + 1), indices.getX(i + 2)];
+  for (let i = 0; i < (indices?.count ?? p.count); i += 3) {
+    const ids = [0, 1, 2].map(corner => indices ? indices.getX(i + corner) : i + corner);
     const x = ids.reduce((sum, id) => sum + p.getX(id), 0) / 3;
     const z = ids.reduce((sum, id) => sum + p.getZ(id), 0) / 3;
     const bank = sihangRiverBounds(x);
     assert.ok(z <= bank.northZ + .025 || z >= bank.southZ - .025, `Paving above water: ${x},${z}`);
   }
-  assert.ok(world.staticRendering.triangles < 29000, 'clipped paving is included in the existing static budget');
+  assert.ok(world.staticRendering.triangles < 40000, 'clipped paving and the curved Nanjing-style roofs stay within the static budget');
 });
 
 test('city doors are inward-folding paired leaves and an open leaf remains focusable and closable', () => {

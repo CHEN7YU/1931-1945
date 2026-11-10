@@ -75,6 +75,9 @@ export function createNativePosturePoses(normalized, bones) {
         quaternions: [0, 0, 0, 1, 0, 0, 0, 1] },
       shoulder,
       pocket,
+      reloadContact: (kneeling
+        ? position(bones.get('LeftUpLeg')).lerp(position(bones.get('LeftLeg')), .1).add(new THREE.Vector3(0, .055, 0))
+        : position(hips).add(new THREE.Vector3(.12, .11, -.03))).toArray(),
       pivot: position(bones.get('Spine')).toArray(),
       hips: hips.position.toArray(),
       feet: Object.fromEntries(['Left', 'Right'].map(side => [side, {

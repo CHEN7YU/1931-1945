@@ -23,6 +23,41 @@ function fixture() {
 }
 const impact = z => ({ position: { x: 0, y: .1, z }, normal: { x: 0, y: 1, z: 0 }, kind: 'stone' });
 
+test('tank fire and aircraft smoke both receive a single-use live vehicle registry iterator', () => {
+  const { effects } = fixture();
+  const registry = new Map([
+    ['tank', { id: 'tank', type: 'tank', health: 0, destroyedAt: 0, position: new THREE.Vector3(0, 0, -20),
+      heading: 0, turretYaw: 0 }],
+    ['plane', { id: 'plane', type: 'plane', team: 'enemy', health: 0,
+      position: new THREE.Vector3(0, 40, -30), heading: 0, pitch: 0, roll: 0 }],
+  ]);
+  for (const preset of ['high', 'low']) {
+    effects.clear(); effects.configure({ ...settings, preset });
+    effects.render(0, registry.values()); effects.render(.4, registry.values());
+    assert.ok(effects.snapshot.aircraftSmoke.sources.includes('plane'));
+    assert.ok(effects.snapshot.aircraftSmoke.puffs >= 4);
+    assert.ok(effects.snapshot.aircraftSmoke.visible);
+    assert.ok(effects.snapshot.tankFire.sources.length > 0, JSON.stringify(effects.snapshot.tankFire));
+  }
+});
+
+test('aircraft hits display a brief airborne fireball at flight distance without ground dust or a ground shock ring', () => {
+  const { effects, scene } = fixture();
+  for (const preset of ['high', 'low']) {
+    effects.clear(); effects.configure({ ...settings, preset });
+    effects.explosion(new THREE.Vector3(0, 60, -260), 0, 9, 'aircraft-hit');
+    effects.render(0);
+    assert.equal(effects.snapshot.lastExplosion.rendered, true);
+    assert.ok(effects.snapshot.renderedClouds >= 3);
+    assert.ok(effects.snapshot.fireClouds >= 2);
+    assert.equal(effects.snapshot.fragments, 0);
+    assert.equal(effects.snapshot.shockwaves, 0);
+    assert.ok(scene.children.filter(node => node.isSprite && node.visible).every(node => node.position.y >= 60));
+    effects.render(.65);
+    assert.equal(effects.snapshot.fireClouds, 0, 'hit fireball is not a permanent bonfire');
+  }
+});
+
 test('a grenade retains a readable flash, dust and shock front even with low-quality hit debris disabled', () => {
   const { effects } = fixture();
   effects.configure({ preset: 'low', effects: { muzzle: false, muzzleLight: false, hitParticles: false } });

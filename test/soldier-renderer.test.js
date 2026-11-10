@@ -53,6 +53,9 @@ test('idle models retain neutral legs and near/far batches project the same simu
     assert.deepEqual(actor.position, position);
     assert.equal(renderer.snapshot[distance === 5 ? 'near' : 'far'], 1);
     assert.equal(renderer.snapshot.melee, 0);
+    const template = soldierModel(false, distance === 5 ? 'near' : 'far');
+    assert.equal(scene.children.filter(object => object.isInstancedMesh && object.count > 0).length,
+      template.children.length, 'each LOD renders its own material batches rather than assuming the hit proxy has the same hierarchy');
     const batch = scene.children.find(object => object.isInstancedMesh && object.count > 0);
     const actual = new THREE.Matrix4(); batch.getMatrixAt(0, actual);
     const expected = new THREE.Matrix4().multiplyMatrices(actor.model.matrix, left.matrix);

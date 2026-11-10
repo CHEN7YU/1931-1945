@@ -2,6 +2,21 @@ export const BAYONET = Object.freeze({
   chargeRange: 8, disengageRange: 11, reach: 1.65, floorTolerance: .6,
   windup: .22, returnTime: .22, cooldown: 1.1, damage: 65, tipZ: -1.35,
 });
+export const EMPTY_MAGAZINE_MELEE = Object.freeze({ chargeRange: 12, disengageRange: 15 });
+
+export function meleeEngagementRange(actor, target) {
+  const state = actor.team === 'friendly' && actor.dadao ? actor.dadao : actor.bayonet;
+  const continuing = state?.targetId === target?.id && state?.mode !== 'idle';
+  const policy = actor.rifle?.ammo === 0 ? EMPTY_MAGAZINE_MELEE : BAYONET;
+  return continuing ? policy.disengageRange : policy.chargeRange;
+}
+
+export function emptyMagazineMeleeCandidate(actor, target) {
+  const armed = actor.team === 'friendly' && Boolean(actor.dadao) || hasBayonet(actor);
+  const distance = closeCombatDistance(actor, target, armed, BAYONET.floorTolerance);
+  return actor.hasFirearm !== false && !actor.emplacementId && !actor.dying && !actor.blastReaction &&
+    actor.rifle?.ammo === 0 && distance !== null && distance <= meleeEngagementRange(actor, target);
+}
 
 export function hasBayonet(actor) {
   return actor.team === 'enemy' && actor.groundType === 'infantry' && (actor.rifle?.model ?? 'rifle') === 'rifle';
@@ -56,7 +71,7 @@ export function advanceBayonet(actor, target, { now, visible, facing, settled })
   }
   const state = actor.bayonet, distance = bayonetDistance(actor, target);
   const continuing = state.mode !== 'idle' && state.targetId === target?.id;
-  if (distance === null || distance > (continuing ? BAYONET.disengageRange : BAYONET.chargeRange) || !visible) {
+  if (distance === null || distance > meleeEngagementRange(actor, target) || !visible) {
     cancelBayonet(state);
     return { active: false, hit: false };
   }

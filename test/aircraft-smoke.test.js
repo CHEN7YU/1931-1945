@@ -67,3 +67,21 @@ test('smoke is one dark billboard batch, obeys effects settings, freezes on paus
   effects.clear(); assert.deepEqual(effects.snapshot, { sources: [], puffs: 0, visible: false, oldestAge: 0 });
   assert.throws(() => effects.update([aircraft], NaN), /simulation time/);
 });
+
+test('engine puffs overlap at flight speed instead of drawing a dotted necklace in either quality preset', () => {
+  for (const preset of ['high', 'low']) {
+    const scene = new THREE.Scene(), effects = createAircraftSmokeEffects(scene, new THREE.Texture());
+    const aircraft = plane(); aircraft.health = 168;
+    effects.configure({ preset, effects: { hitParticles: true } });
+    for (let frame = 0; frame <= 60; frame++) {
+      aircraft.position.z = -55 * frame / 60;
+      effects.update([aircraft], frame / 60);
+    }
+    const mesh = scene.getObjectByName('aircraft-damage-black-smoke'), matrix = new THREE.Matrix4();
+    const point = index => { mesh.getMatrixAt(index, matrix); return new THREE.Vector3().setFromMatrixPosition(matrix); };
+    const sizes = mesh.geometry.attributes.smokeSize;
+    for (let index = 1; index < mesh.count; index++)
+      assert.ok(point(index).distanceTo(point(index - 1)) < (sizes.getX(index) + sizes.getX(index - 1)) / 2);
+    assert.ok(mesh.count <= (preset === 'low' ? AIRCRAFT_SMOKE.lowLimit : AIRCRAFT_SMOKE.limit));
+  }
+});

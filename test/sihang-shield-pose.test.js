@@ -318,14 +318,18 @@ test('far carry/installation adds only four shared banks, preserves default bank
   assert.equal(force.counts.poseBanks, original.counts.poseBanks + 4);
   assert.equal(progress.length, force.counts.poseBanks);
   assert.equal(progress.at(-1).completed, progress.at(-1).total);
-  assert.deepEqual(sampled.slice(-2), ['roof', 'front']);
+  assert.deepEqual(sampled.filter(mode => mode !== null).slice(-2), ['roof', 'front']);
   const banks = renderer => renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const base = banks(original), extended = banks(force);
-  const roof = base.length, turtle = roof + 1, installRoof = roof + 2;
-  assert.notDeepEqual(extended.at(-2).geometry.attributes.position.array, extended.at(-1).geometry.attributes.position.array);
+  const roof = extended.findIndex((mesh, index) => index < base.length &&
+    !mesh.geometry.attributes.position.array.every((value, slot) => value === base[index].geometry.attributes.position.array[slot]));
+  assert.ok(roof > 0, 'shield banks are inserted after the unchanged base poses, before later firing and blast poses');
+  const turtle = roof + 1, installRoof = roof + 2;
+  assert.notDeepEqual(extended[installRoof].geometry.attributes.position.array, extended[installRoof + 1].geometry.attributes.position.array);
   for (let index = 0; index < base.length; index++) {
-    assert.deepEqual(extended[index].geometry.attributes.position.array, base[index].geometry.attributes.position.array);
-    assert.deepEqual(extended[index].geometry.morphAttributes, base[index].geometry.morphAttributes);
+    const added = index >= roof ? 4 : 0;
+    assert.deepEqual(extended[index + added].geometry.attributes.position.array, base[index].geometry.attributes.position.array);
+    assert.deepEqual(extended[index + added].geometry.morphAttributes, base[index].geometry.morphAttributes);
   }
   await force.prepare({ async compileAsync() {} });
   const people = Array.from({ length: 20 }, (_, slot) => {

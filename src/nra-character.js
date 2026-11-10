@@ -14,6 +14,7 @@ import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
+import { blastCasualty } from './blast-reaction.js';
 import { createNraGrenadeHand } from './nra-hand.js';
 import { createNraDadaoPose } from './nra-dadao-pose.js';
 import { shoulderPocket } from './rifle-contacts.js';
@@ -110,6 +111,9 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
     riflePivots: { standing: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pivot])) },
+    rifleReloadContacts: { standing: inspected.canonical.get('Hips').getWorldPosition(new THREE.Vector3())
+      .add(new THREE.Vector3(.12, .11, -.03)).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.reloadContact])) },
     leanPivot: inspected.canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.carry])) };
   motionProfile.headAim = createHeadAimProfile(normalized, inspected.canonical, idle, postures, inspected.meshes);
@@ -117,16 +121,21 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
   let dadaoGrip = null;
   function getDadaoGrip() {
     if (!dadaoGrip) {
-      const hand = createNraGrenadeHand(normalized, 'right');
-      hand.poseGrip(1, 0, 'dadao');
-      const fingers = new Map();
-      let wristRotation;
-      hand.traverse(node => {
-        if (node.isBone && /^RightHand(?:Thumb|Index|Middle|Ring|Pinky)/.test(node.name)) fingers.set(node.name, node.quaternion.clone());
-        if (node.isBone && node.name === 'RightHand') wristRotation = node.getWorldQuaternion(new THREE.Quaternion());
-      });
-      dadaoGrip = { fingers, wristRotation, center: new THREE.Vector3(...hand.userData.throwableGrips.dadao) };
-      hand.traverseVisible(node => { if (node.isMesh) node.geometry.dispose(); });
+      const grips = {};
+      for (const side of ['right', 'left']) {
+        const prefix = side === 'right' ? 'Right' : 'Left', hand = createNraGrenadeHand(normalized, side);
+        hand.poseGrip(1, 0, 'dadao');
+        const fingers = new Map();
+        let wristRotation;
+        hand.traverse(node => {
+          if (node.isBone && node.name.startsWith(`${prefix}Hand`) && node.name !== `${prefix}Hand`)
+            fingers.set(node.name, node.quaternion.clone());
+          if (node.isBone && node.name === `${prefix}Hand`) wristRotation = node.getWorldQuaternion(new THREE.Quaternion());
+        });
+        grips[side] = { fingers, wristRotation, center: new THREE.Vector3(...hand.userData.throwableGrips.dadao) };
+        hand.traverseVisible(node => { if (node.isMesh) node.geometry.dispose(); });
+      }
+      dadaoGrip = { ...grips.right, left: grips.left };
     }
     return dadaoGrip;
   }
@@ -184,7 +193,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       return count;
     },
     createView,
-    createGrenadeHand: side => createNraGrenadeHand(normalized, side, { fullArm: true }),
+    createGrenadeHand: (side, { weaponRig = false } = {}) => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig }),
     createWeaponHand: side => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig: true }),
     bind(id) {
       supportPose.reset();
@@ -209,7 +218,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       officer.restore();
       if (!collision) appearance.apply(actor.avatarAppearance ?? null);
       if (!collision) officer.apply(actor);
-      motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
+      const blast = blastCasualty(actor);
+      motion = (blast ? sampleCasualtyMotion(blast, 0) : actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation); speed = motion.speed; active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
       actions.idle.time = motion.idleTime;
       const upright = motion.upright;
       actions.idle.setEffectiveWeight(upright);
@@ -223,7 +233,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       ({ legPose, restStance } = projectGait(actor, motion,
         ferrySupport && ['boarding', 'aboard'].includes(ferrySupport.phase) ? () => actor.position.y : groundAt));
       applyNativeUpperBody(root, canonical, motion);
-      syncWorldWeapon(gun, actor.rifle);
+      syncWorldWeapon(gun, actor.rifle, motion.automaticReload);
       const engineering = nativeEngineerPresentation(actor);
       riflePose.update(engineering ? { ...motion, rifleOperation: null } :
         rifleOperation === undefined ? motion : { ...motion, rifleOperation });
@@ -233,7 +243,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       dadaoPose?.update(motion.dadao);
       supportPose.update(actor, now);
       gun.visible = !motion.dadao && !nativeSupportWeaponPresentation(actor);
-      casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
+      casualtyPose = blast ? applyCasualty({ ...actor, casualty: blast }, 0) : actor.casualty ? applyCasualty(actor, now) : null;
     }),
     sampleAnatomy,
     get anatomy() { return readAnatomicalBones(canonical); },

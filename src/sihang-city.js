@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SIHANG_RESERVED_LANES, SIHANG_WAREHOUSE, SIHANG_ENEMY_APPROACHES, sihangRiverBounds } from './sihang-layout.js';
+import { createResidentialRoofGeometry } from './roof-geometry.js';
 
 const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
 
-export function createSihangCity({ scene, box: makeBox, town, materials }) {
+export function createSihangCity({ scene, box: makeBox, town, materials, surface, addMesh }) {
+  materials = { ...materials, brick: surface('brick', 0x989d91, .9),
+    plaster: surface('plaster', 0xaaa18b, 1.2), wood: surface('timber', 0x594a35, 2) };
+  const tiles = surface('tiles', 0x89918c, 1.4); tiles.side = THREE.DoubleSide;
   const budget = { northBuildings: 0, southBuildings: 0, usableGroundFloors: 0,
     awnings: 0, trees: 0, damagedTrunks: 0, reedClumps: 0, smokePlumes: 0,
     smokeSprites: 0, addedMaterials: 9, vegetationDrawCalls: 3, signDrawCalls: 1, sootDrawCalls: 1,
@@ -40,7 +44,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
       decorativeStoreys: Math.ceil(height / 3.2), accessible: true, playableFloors: [0], damaged: !south,
       bounds: lot, exit: { x, z: z - d / 2 - 1 },
       use: south ? ['hotel', 'restaurant', 'tea-house', 'theatre', 'inn', 'dance-hall', 'shop'][serial % 7] : 'residence',
-      style: 'shanghai-masonry-1937' };
+      style: 'nanjing-residential-reused', layout: 'sihang-original' };
     town.buildings.push(building); budget.usableGroundFloors++;
     budget[south ? 'southBuildings' : 'northBuildings']++;
     const front = z - d / 2, back = z + d / 2;
@@ -112,12 +116,26 @@ export function createSihangCity({ scene, box: makeBox, town, materials }) {
         piece.rotation.y = chunk * 1.7;
       }
     }
+    const roof = new THREE.Mesh(createResidentialRoofGeometry(w + .6, d + .8, .85,
+      tiles.userData.metersPerTile ?? 1.4, !south, serial), tiles);
+    roof.name = `${id}-nanjing-tile-roof`;
+    roof.position.set(x, height + (south ? .3 : .12), z);
+    roof.castShadow = roof.receiveShadow = true; roof.userData.keepUV = true;
+    scene.add(roof); addMesh(roof);
+    for (const side of [-1, 1]) {
+      box(x + side * 1.46, 1.4, front - .09, .12, 2.8, .16, materials.wood);
+      box(x + side * (w / 2 - .1), .18, z, .3, .36, d, materials.brick);
+    }
+    box(x, 2.85, front - .09, 3.04, .16, .16, materials.wood);
     for (let y = 4.6; y < height - .8; y += 2.6) for (let column = 0; column < 3; column++) {
       const wx = x + (column - 1) * w / 4;
       if (!south && column >= 1) continue;
       if (building.damageOpening && column === 1 && y < building.damageOpening.top) continue;
       if (!south && (column + serial) % 3 === 0) continue;
       box(wx, y, front - .24, w / 7, 1.4, .08, south ? warm : materials.wood);
+      for (const edge of [-1, 1])
+        box(wx + edge * w / 14, y, front - .31, .08, 1.52, .14, materials.wood);
+      box(wx, y, front - .34, .055, 1.4, .08, materials.wood);
       box(wx, y - .75, front - .3, w / 7 + .25, .12, .3, materials.concrete);
       if (south && serial % 3 === 0) {
         box(wx, y - .8, front - .65, w / 7 + .4, .12, 1, materials.concrete);

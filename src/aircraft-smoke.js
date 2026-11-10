@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TYPES } from './core.js';
 
-export const AIRCRAFT_SMOKE = Object.freeze({ life: 3.2, interval: .08, lowInterval: .12, limit: 160, lowLimit: 80 });
+export const AIRCRAFT_SMOKE = Object.freeze({ life: 3.2, interval: .03, lowInterval: .04, limit: 160, lowLimit: 80 });
 
 export function createAircraftSmokeState() {
   return { time: null, sources: new Map(), puffs: [] };
@@ -95,7 +95,7 @@ export function createAircraftSmokeEffects(scene, texture) {
           puff.position.y + age * .7, puff.position.z + age * .12);
         mesh.setMatrixAt(index, matrix);
         opacity.setX(index, (.65 + .3 * puff.intensity) * (1 - t) ** .7);
-        size.setX(index, 1.3 + puff.intensity * .6 + age * .9);
+        size.setX(index, 2.3 + puff.intensity * .6 + age * .9);
         spin.setX(index, phase + age * .1);
       }
       if (mesh.count) {

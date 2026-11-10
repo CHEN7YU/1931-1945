@@ -4,6 +4,23 @@ import { TYPES } from '../src/core.js';
 import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopLocomotion, recoverLocomotion, landLocomotion } from '../src/locomotion.js';
 
 const input = changes => ({ type: 'infantry', forward: 1, sideways: 0, yaw: 0, stance: 'standing', grounded: true, ...changes });
+test('player-controlled infantry and mortar sprint exactly 50 percent longer without increasing speed or AI endurance', () => {
+  for (const type of ['infantry', 'mortar']) for (const fps of [30, 60, 144]) {
+    const durations = [false, true].map(playerControlled => {
+      const motion = createLocomotion(), position = { x: 0, z: 0 };
+      motion.vz = -FOOT_SPEEDS[type].sprint;
+      let elapsed = 0;
+      while (!motion.exhausted && elapsed < 20) {
+        advanceLocomotion(motion, position, input({ type, playerControlled, sprint: true }), [], 1 / fps);
+        elapsed += 1 / fps;
+        if (!motion.exhausted) assert.ok(Math.abs(motion.speed - FOOT_SPEEDS[type].sprint) < .001);
+      }
+      assert.equal(motion.stamina, 0);
+      return elapsed;
+    });
+    assert.ok(Math.abs(durations[1] / durations[0] - 1.5) < .006, `${type}/${fps}: ${durations}`);
+  }
+});
 test('AI and player sprint effort share depletion, delayed recovery and exhaustion without free zero-time changes', () => {
   for (const fps of [30, 60, 144]) {
     const motion = createLocomotion();

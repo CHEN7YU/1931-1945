@@ -74,10 +74,10 @@ test('all 100 enemy identities use Japanese near/far views without changing comb
   renderer.update([replacement], 19, null, 'high');
   const banks = renderer.root.children.filter(mesh => mesh.geometry?.attributes.nraSkinTint && mesh.name !== 'distant-coarse-body');
   const coarseBanks = renderer.root.children.filter(mesh => mesh.name === 'distant-coarse-body');
-  assert.equal(renderer.snapshot.poseBanks, 11, 'continuous travel and thrust replace discrete action banks');
-  assert.equal(banks.length, 11);
-  assert.equal(coarseBanks.length, banks.length - 1,
-    'active hand-operation poses do not duplicate coarse geometry');
+  assert.equal(renderer.snapshot.poseBanks, 13, 'continuous travel/thrust plus one shared chest bank per automatic weapon class');
+  assert.equal(banks.length, 13);
+  assert.equal(coarseBanks.length, banks.length - 3,
+    'active hand-operation and pitch-morphed chest poses do not duplicate coarse geometry');
   assert.equal(banks.slice(2, 8).reduce((count, mesh, index) => count + mesh.count + coarseBanks[index + 2].count, 0), 1,
     'the far charging actor uses exactly one melee body pose across both geometry tiers');
   const weaponParts = renderer.root.children.filter(mesh => mesh.name === 'owned-weapon-rifle' && mesh.count);

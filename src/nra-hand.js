@@ -4,6 +4,7 @@ import { solveArm } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
 import { DADAO_GRIP } from './dadao.js';
 import { createOfficerHandAppearance, createOfficerSleeveAppearance } from './officer-appearance.js';
+import { weaponGripFingerRotation } from './weapon-hands.js';
 
 function trimSleeveAtShoulder(mesh, upper, lower) {
   const origin = upper.getWorldPosition(new THREE.Vector3()), axis = lower.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
@@ -174,28 +175,17 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
     if (weaponRig) {
-      const curls = name === 'press' ? [.18, .24, .20] : name === 'bolt' ? [.80, 1.25, .85]
-        : name === 'charger' ? [.35, .85, .55]
-        : name === 'magazine' ? [.55, .95, .55] : [.5, .85, .5];
-      const limits = [1.25, 1.5, 1.05], adjustments = [0, .06, .09, .16];
-      for (const [index, finger] of fingerNames.entries()) {
+      for (const finger of fingerNames) {
         const chain = chains.get(finger);
         for (let joint = 0; joint < 3; joint++) {
           const bone = chain[joint], original = rest.get(bone.name);
-          const euler = new THREE.Euler().setFromQuaternion(original, 'XYZ');
-          const angle = Math.min(limits[joint], curls[joint] + adjustments[index]);
-          euler.x = angle;
-          if (joint > 0) { euler.y = 0; euler.z = 0; }
-          bone.quaternion.setFromEuler(euler);
+          bone.quaternion.copy(weaponGripFingerRotation(bone.name, original, side, name));
         }
       }
       const thumb = chains.get('Thumb');
       for (let joint = 0; joint < 3; joint++) {
-        const bone = thumb[joint], euler = new THREE.Euler().setFromQuaternion(rest.get(bone.name), 'XYZ');
-        euler.x = name === 'press' ? .12 : name === 'bolt' ? joint === 0 ? .50 : .65
-          : side === 'left' ? joint === 0 ? -.25 : .15 : joint === 0 ? .25 : .45;
-        if (joint === 0) euler.z += side === 'left' ? -.22 : name === 'bolt' ? .35 : .22;
-        bone.quaternion.setFromEuler(euler);
+        const bone = thumb[joint];
+        bone.quaternion.copy(weaponGripFingerRotation(bone.name, rest.get(bone.name), side, name));
       }
       if (name === 'bolt') {
         root.updateMatrixWorld(true);

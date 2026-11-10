@@ -13,6 +13,7 @@ import { walkHeight } from './ground.js';
 import { createHitPoseSampler, readAnatomicalBones } from './soldier-hit-zones.js';
 import { createHeadAimProfile, createHeadAimProbe } from './head-aim.js';
 import { createCasualtyPose, sampleCasualtyMotion } from './casualties.js';
+import { blastCasualty } from './blast-reaction.js';
 import { shoulderPocket } from './rifle-contacts.js';
 import { createIjaRifleFlag, hasIjaRifleFlag, bakeIjaRifleFlag, updateIjaRifleFlagTime } from './ija-rifle-flag.js';
 import { createSihangShieldPose, createSihangSatchel, sihangShieldInstalling } from './sihang-shield-pose.js';
@@ -60,6 +61,9 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.shoulder])) },
     riflePivots: { standing: canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
       ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.pivot])) },
+    rifleReloadContacts: { standing: canonical.get('Hips').getWorldPosition(new THREE.Vector3())
+      .add(new THREE.Vector3(.12, .11, -.03)).toArray(),
+      ...Object.fromEntries(Object.entries(postures).map(([pose, value]) => [pose, value.reloadContact])) },
     leanPivot: canonical.get('Spine').getWorldPosition(new THREE.Vector3()).toArray(),
     ...Object.fromEntries(Object.entries(postures).map(([name, value]) => [name, value.carry])) };
   const clips = new Map(asset.animations.map(clip => [clip.name, clip]));
@@ -133,7 +137,8 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         flag.visible = hasIjaRifleFlag(actor);
         updateIjaRifleFlagTime(now);
         root.visible = !actor.vehicleId && (actor.health <= 0 || actor.id !== controlledId);
-        motion = (actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation);
+        const blast = blastCasualty(actor);
+        motion = (blast ? sampleCasualtyMotion(blast, 0) : actor.casualty && sampleCasualtyMotion(actor.casualty, now)) ?? sampleNraMotion(actor, true, rifleOperation);
         active = motion.weight > .5 ? motion.jog > .5 ? 'run' : 'walk' : 'idle';
         actions.idle.time = motion.idleTime; actions.idle.setEffectiveWeight(motion.upright);
         for (const stance of Object.keys(FIRING_POSES)) { actions[stance].time = 0; actions[stance].setEffectiveWeight(motion[stance]); }
@@ -144,7 +149,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         root.updateMatrixWorld(true);
         ({ legPose, restStance } = projectGait(actor, motion));
         applyNativeUpperBody(root, bones, motion);
-        syncWorldWeapon(gun, actor.rifle);
+        syncWorldWeapon(gun, actor.rifle, motion.automaticReload);
         const engineering = nativeEngineerPresentation(actor);
         pose.update(engineering ? { ...motion, rifleOperation: null } :
           rifleOperation === undefined ? motion : { ...motion, rifleOperation });
@@ -154,7 +159,7 @@ export async function loadIjaCharacter(walkHeightAt = walkHeight, { textureBudge
         supportPose.update(actor, now);
         gun.visible = !sihangShieldInstalling(actor) && !nativeSupportWeaponPresentation(actor);
         flag.visible = hasIjaRifleFlag(actor) && gun.visible;
-        casualtyPose = actor.casualty ? applyCasualty(actor, now) : null;
+        casualtyPose = blast ? applyCasualty({ ...actor, casualty: blast }, 0) : actor.casualty ? applyCasualty(actor, now) : null;
         if (actor.formation?.sihangDemolition) { gun.visible = false; flag.visible = false; }
       }),
       sampleAnatomy,

@@ -1,7 +1,7 @@
 import { blastProfile, BLAST_PROFILES } from './blast-profiles.js';
 
 export const PARTICLE_LIMITS = Object.freeze({ fragments: 96, clouds: 18, lights: 2 });
-export const EXPLOSION_STYLES = Object.freeze(['default', ...Object.keys(BLAST_PROFILES), 'tank-shell', 'tank-destruction']);
+export const EXPLOSION_STYLES = Object.freeze(['default', ...Object.keys(BLAST_PROFILES), 'tank-shell', 'tank-destruction', 'aircraft-hit']);
 const valid = point => point && ['x', 'y', 'z'].every(axis => Number.isFinite(point[axis]));
 
 export function createParticleState() {
@@ -70,6 +70,22 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
     z: (Math.cos(angle) * u.z + Math.sin(angle) * v.z) * distance });
   let seed = ++state.serial * 2654435761;
   const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  if (style === 'aircraft-hit') {
+    const scale = Math.min(1.4, Math.max(.7, radius / 7)), limit = low ? 6 : PARTICLE_LIMITS.clouds;
+    for (let i = 0; i < (low ? 2 : 4); i++)
+      Object.assign(take(state, 'clouds', limit), { style, ...position,
+        vx: (random() - .5) * 2, vy: .6 + random(), vz: (random() - .5) * 2,
+        age: 0, life: .35 + i * .06, size: (1.1 + random() * .6) * scale,
+        kind: 'blast-fire', rotation: random() * Math.PI * 2, bornAt: time });
+    Object.assign(take(state, 'clouds', limit), { style, ...position,
+      vx: 0, vy: .3, vz: 0, age: 0, life: .24, size: 3.2 * scale,
+      kind: 'blast-flash', rotation: 0, bornAt: time });
+    Object.assign(take(state, 'clouds', limit), { style, ...position,
+      vx: .2, vy: 1.2, vz: 0, age: 0, life: 1.6, size: 1.6 * scale,
+      kind: 'blast-soot', rotation: random() * Math.PI * 2, bornAt: time });
+    state.emitted++;
+    return;
+  }
   const profile = blastProfile(style);
   const tank = style === 'tank-destruction', shell = style === 'tank-shell', grenade = style === 'grenade';
   const heavy = style !== 'default' && !grenade;

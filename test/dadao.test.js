@@ -6,7 +6,7 @@ import { DADAO_DIMENSIONS, dadaoModel, dadaoViewModel, updateDadaoView } from '.
 import { damageForTarget } from '../src/combat-targets.js';
 import { createBattleStats, attackCategory } from '../src/battle-stats.js';
 import { createControlInput } from '../src/control-input.js';
-import { Texture } from 'three';
+import { Texture, Vector3 } from 'three';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { DADAO_ART_ROOT, DADAO_ART_MAPS, DADAO_CLOTH_TILE_METERS, loadDadaoSurfaces } from '../src/dadao-surface.js';
@@ -40,6 +40,18 @@ test('body anticipation and follow-through share the blade phases and settle con
   assert.ok(pose('windup', 1).yaw < 0);
   assert.ok(pose('cut', 1).yaw > 0);
 });
+test('first-person cut crosses the view from raised right to low left and has no phase-boundary jump', () => {
+  const view = dadaoViewModel();
+  const sample = (phase, progress) => {
+    updateDadaoView(view, { phase, progress }, { weaponX: 0, weaponY: 0 });
+    return view.userData.dadaoHand.localToWorld(new Vector3(.071, .62, 0));
+  };
+  const raised = sample('windup', 1), finished = sample('cut', 1);
+  assert.ok(raised.x - finished.x > .5, 'the real blade, not an exaggerated wrist target, must cross the screen');
+  assert.ok(raised.y - finished.y > .8);
+  for (const [a, b] of [[['windup', 1], ['cut', 0]], [['cut', 1], ['recover', 0]],
+    [['recover', 1], ['ready', 0]]]) assert.ok(sample(...a).distanceTo(sample(...b)) < 1e-8);
+});
 const select = (state, targets, now = middle, clear = () => true) =>
   selectDadaoTarget(state, now, actor, origin, forward, targets, aimPoint, clear);
 
@@ -48,8 +60,7 @@ test('drawing, windup, active cut, recovery and cooldown are separate; switching
   assert.equal(startDadaoSwing(state, 0, 1), false);
   drawDadao(state, 0);
   assert.equal(startDadaoSwing(state, .1, 1), false);
-  assert.equal(startDadaoSwing(state, .4, .01), false);
-  assert.ok(startDadaoSwing(state, .4, 1));
+  assert.ok(startDadaoSwing(state, .4, 0), 'even an exhausted soldier can swing');
   assert.equal(dadaoPhase(state, .5).phase, 'windup');
   assert.equal(dadaoPhase(state, middle).phase, 'cut');
   assert.equal(dadaoPhase(state, 1).phase, 'recover');

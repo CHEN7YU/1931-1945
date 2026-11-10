@@ -1,6 +1,7 @@
 import { before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { createHash } from 'node:crypto';
 import { circleBlocked } from '../src/core.js';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
 import {
@@ -66,6 +67,12 @@ describe('independent Sihang Warehouse battlefield', () => {
       assert.ok(['brick', 'plaster', 'tiles', 'paving', 'earth', 'timber'].includes(kind), 'Supported shared surface');
       return new THREE.MeshStandardMaterial({ color });
     });
+    const layout = { obstacles: world.obstacles, passages: world.town.passages, streets: world.town.streets,
+      houses: world.town.buildings.map(b => ({ id: b.id, x: b.x, z: b.z, width: b.width, depth: b.depth,
+        height: b.height, bounds: b.bounds, exit: b.exit, damageOpening: b.damageOpening })) };
+    assert.equal(createHash('sha256').update(JSON.stringify(layout)).digest('hex'),
+      '86e71889bc9bc5a2a17520b15d5e1a73032022aa09ed586be33e274169095e2c',
+      'Appearance changes preserve the original Sihang collision, footprint and passage contract');
   });
   beforeEach(() => world.resetCampaign());
 
@@ -124,7 +131,9 @@ describe('independent Sihang Warehouse battlefield', () => {
       close(ray.intersectObjects(world.solids)[0].point.y, -crater.depth, 'real bowl, no flat road cap', .002);
       close(world.groundHeight(crater.x, crater.z), -crater.depth, 'physical shell-hole support', .002);
     }
-    assert.ok(world.buildingFire.sources.length > 0);
+    assert.equal(world.buildingFire.sources.length, 0, 'Sihang has no persistent building fires');
+    world.buildingFire.update(12);
+    assert.deepEqual(world.buildingFire.snapshot, { sources: 0, smoke: 0, flames: 0, drawCalls: 0 });
     for (const method of ['reset', 'update', 'focus', 'openAhead', 'interact'])
       assert.equal(typeof world.doorSystem[method], 'function', `doorSystem.${method}`);
     assert.ok(world.doorSystem.navigationObstacles.length);
@@ -479,8 +488,8 @@ describe('independent Sihang Warehouse battlefield', () => {
   it('bounds static geometry and render submissions and stays within the playable map', () => {
     assert.ok(world.staticRendering.sources > 1000, 'Detailed original shell and city geometry');
     assert.ok(world.staticRendering.batches < 200, 'Static geometry is batched, not one draw per brick');
-    assert.ok(world.staticRendering.triangles < 29000,
-      'Bounded expanded neighborhood, seven shell holes and 120 first-floor sandbags');
+    assert.ok(world.staticRendering.triangles < 40000,
+      'Bounded neighborhood with shared Nanjing curved tile roofs, shell holes and sandbags');
     let drawCalls = 0;
     scene.traverseVisible(object => { if (object.isMesh) drawCalls++; });
     assert.ok(drawCalls < 250, `Bounded draw count: ${drawCalls}`);

@@ -41,7 +41,7 @@ test('friendly owned swords use Japanese entry/disengagement ranges without equi
   }
 });
 
-test('AI draws, winds up and cuts once with owned cooldown and stamina, without spending rifle ammo', () => {
+test('AI draws, winds up and cuts once with owned cooldown, without spending stamina or rifle ammo', () => {
   const { actor, target } = pair();
   const rifle = { ...actor.rifle }, stamina = actor.locomotion.stamina;
   step(actor, target, 0);
@@ -77,16 +77,16 @@ test('AI cuts recheck target, sight, actual sweep, floor, facing and posture at 
   }
 });
 
-test('empty rifles can use swords but insufficient stamina cannot start a cut or bypass readiness', () => {
+test('empty rifles and exhausted soldiers can use swords without bypassing facing and posture readiness', () => {
   const { actor, target } = pair();
-  actor.rifle.ammo = 0; actor.locomotion.stamina = DADAO.stamina - .001;
-  step(actor, target, 0); step(actor, target, 1);
+  actor.rifle.ammo = 0; actor.locomotion.stamina = 0;
+  step(actor, target, 0); step(actor, target, 1, { settled: false });
   assert.equal(actor.dadao.swings, 0);
-  actor.locomotion.stamina = 1;
   step(actor, target, 1.1, { settled: false }); step(actor, target, 1.2, { facing: false });
   assert.equal(actor.dadao.swings, 0);
   step(actor, target, 1.3);
   assert.equal(actor.dadao.swings, 1);
+  assert.equal(actor.locomotion.stamina, 0);
   assert.equal(nativePoseIntent(actor), 'dadao');
   assert.equal(attemptAIRifleShot(actor, { now: 2, targetId: target.id, mayFire: true, postureSettled: true,
     suppressed: false, confirmShot: () => { throw new Error('Dadao must exclude gunfire'); } }), false);

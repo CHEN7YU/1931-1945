@@ -7,6 +7,7 @@ export function resetCivilianStreetLife(person) {
   street.waypoint = street.initialWaypoint;
   street.wakeAt = street.initialDelay;
   street.cycles = 0;
+  person.userData.crowdDirection = person.userData.crowdYieldTo = person.userData.crowdYieldPoint = null;
   person.position.set(street.initialPosition.x, 0, street.initialPosition.z);
   person.visible = street.initialWaypoint > 0;
 }
@@ -58,6 +59,7 @@ export function beginCivilianStreetEvacuation(person) {
   data.route = [...exitPath, ...data.homeRoute];
   data.waypoint = 0;
   data.crowdTarget = data.crowdPath = null;
+  data.crowdDirection = data.crowdYieldTo = data.crowdYieldPoint = null;
   data.crowdStalled = 0;
   data.streetEvacuating = true;
 }

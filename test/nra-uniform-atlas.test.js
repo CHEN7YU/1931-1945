@@ -99,11 +99,12 @@ test('one shared pose bank selects different A/B atlas tiles per instance withou
       actor.nativeMotion = createNraMotion(profile, actor); return actor;
     });
     force.update(actors, 0, null, 'high');
-    assert.equal(force.counts.poseBanks, 24, 'original banks plus separate compact corpse presentation, independent of A/B variants');
+    assert.equal(force.counts.poseBanks, 21, 'the minimal profile uses 19 legacy banks and two automatic-weapon firing banks, shared by both uniform variants');
     const bank = force.root.children.find(node => node.isInstancedMesh && node.count > 0);
     assert.equal(bank.count, 2);
     assert.deepEqual([...bank.geometry.attributes.nraUniformVariant.array.slice(0, 2)], [0, 1]);
     force.update(actors.slice().reverse(), 1, null, 'low');
+    assert.equal(force.counts.poseBanks, 21, 'changing uniform order or quality must not duplicate pose banks');
     assert.deepEqual([...bank.geometry.attributes.nraUniformVariant.array.slice(0, 2)], [1, 0]);
     assert.deepEqual(force.snapshot.members.map(member => member.uniformVariant), ['B', 'A']);
     geometry.dispose(); merged.dispose(); materialA.dispose(); materialB.dispose();

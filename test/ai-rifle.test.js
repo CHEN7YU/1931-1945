@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AI_RIFLE, createAIRifleControl, attemptAIRifleShot, resetAIRifleAim, rifleAIAimSeconds } from '../src/ai-rifle.js';
-import { createRifleState, advanceRifle, RIFLE } from '../src/rifle-action.js';
+import { AI_RIFLE, createAIRifleControl, attemptAIRifleShot, resetAIRifleAim, rifleAIAimSeconds, automaticFireMovement } from '../src/ai-rifle.js';
+import { createRifleState, advanceRifle, RIFLE, infantryWeaponProfile } from '../src/rifle-action.js';
 
 function fixture(team = 'enemy') {
   const actor = { team, health: 100, vehicleId: null, nextFire: 0, rifle: createRifleState(),
@@ -150,4 +150,45 @@ test('close bolt follow-ups and machine-gun bursts do not inherit the far-contac
   assert.equal(fired.length, 3);
   assert.ok(fired[1] - fired[0] < 1.1 && fired[1] - fired[0] >= RIFLE.cycleSeconds);
   assert.ok(actor.aiRifle.lastShot.requiredSeconds <= .35);
+});
+
+test('both factions can fire owned automatic weapons while stepping or jogging, never sprinting', () => {
+  for (const team of ['friendly', 'enemy']) for (const model of ['sigm1920', 'zb26', 'type11'])
+    for (const speed of [1.1, 2.7]) {
+      const { actor, fire } = fixture(team);
+      actor.rifle = createRifleState(model); actor.stance = 'standing'; actor.automaticFireMoving = true;
+      actor.locomotion.speed = speed;
+      for (let frame = 0; frame <= 7; frame++) fire(frame / 10);
+      assert.equal(actor.rifle.shots, 1, `${team}/${model}/${speed}`);
+      assert.equal(actor.rifle.ammo, infantryWeaponProfile(actor.rifle).magazine - 1);
+      advanceRifle(actor.rifle, 1);
+      actor.locomotion.sprinting = true;
+      assert.equal(fire(1), false);
+      actor.locomotion.sprinting = false; actor.locomotion.speed = AI_RIFLE.movingFireSpeed + .01;
+      assert.equal(fire(1.1), false);
+      actor.locomotion.speed = speed;
+      assert.equal(fire(1.2, { confirmShot: () => null }), false);
+      assert.equal(actor.rifle.shots, 1);
+    }
+  const { actor, fire } = fixture();
+  actor.stance = 'standing'; actor.automaticFireMoving = true; actor.locomotion.speed = 1.1;
+  for (let frame = 0; frame < 20; frame++) assert.equal(fire(frame / 10), false, 'bolt rifle remains stationary-fire only');
+});
+
+test('automatic firing movement varies per actor and stays stable instead of rerolling every frame', () => {
+  for (const model of ['sigm1920', 'zb26', 'type11']) {
+    const modes = new Set();
+    for (let index = 0; index < 150; index++) {
+      const actor = { id: `soldier-${index}`, health: 100, rifle: createRifleState(model), tactics: {} };
+      const plan = automaticFireMovement(actor, 0, 'target', 25, { allowed: true });
+      modes.add(plan.mode);
+      for (let frame = 0; frame < 60; frame++)
+        assert.equal(automaticFireMovement(actor, frame / 60, 'target', 25, { allowed: true }), plan);
+      const next = automaticFireMovement(actor, plan.until, 'target', 25, { allowed: true });
+      assert.equal(next.sequence, plan.sequence + 1);
+      assert.equal(automaticFireMovement(actor, next.until + 1, 'target', 25, { allowed: false }), null);
+      assert.equal(actor.tactics.automaticFireMotion, null);
+    }
+    assert.deepEqual(modes, new Set(['stand', 'step', 'jog']));
+  }
 });

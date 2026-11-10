@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RIFLE_CONTACTS, rifleStockSection } from './rifle-contacts.js';
 import { rifleActionPalm } from './rifle-hand-action.js';
+import { WEAPON_RELOAD_FRAMES, weaponGripFingerRotation } from './weapon-hands.js';
 
 function position(bone) { return bone.getWorldPosition(new THREE.Vector3()); }
 function rotation(bone) { return bone.getWorldQuaternion(new THREE.Quaternion()); }
@@ -79,9 +80,11 @@ export function createNraRiflePose(root, bones, gun) {
   let right = null, left = null, rightTarget = new THREE.Vector3(), leftTarget = new THREE.Vector3(), contactTarget = null;
   let fingerError = 0, rightPalmGoal = new THREE.Vector3();
   const palmPosition = side => position(bone(`${side}Hand`)).lerp(position(bone(`${side}HandMiddle1`)), .55);
-  function orientHand(side, palmNormal) {
+  function orientHand(side, palmNormal, desiredForward = null) {
     const hand = bone(`${side}Hand`);
     const forward = position(hand).sub(position(bone(`${side}ForeArm`))).normalize();
+    if (desiredForward) forward.applyQuaternion(new THREE.Quaternion().slerp(
+      new THREE.Quaternion().setFromUnitVectors(forward, desiredForward.direction), desiredForward.weight));
     const normal = palmNormal.clone().addScaledVector(forward, -palmNormal.dot(forward));
     if (normal.lengthSq() < 1e-8) throw new Error('Palm normal cannot be parallel to its forearm');
     const across = normal.normalize().cross(forward).normalize();
@@ -113,12 +116,12 @@ export function createNraRiflePose(root, bones, gun) {
       fingerError = Math.max(fingerError, solved.error);
     }
   }
-  function placeHand(side, palm, seed, pole, normal, iterations = 4, damping = 1) {
+  function placeHand(side, palm, seed, pole, normal, iterations = 4, damping = 1, forward = null) {
     const target = seed.clone();
     let solved;
     for (let iteration = 0; iteration < iterations; iteration++) {
       solved = solveArm(bone(`${side}Arm`), bone(`${side}ForeArm`), bone(`${side}Hand`), target, pole);
-      orientHand(side, normal);
+      orientHand(side, normal, forward);
       const offset = palm.clone().sub(palmPosition(side));
       if (offset.length() < .0005 || iteration === iterations - 1) break;
       target.addScaledVector(offset, damping);
@@ -139,10 +142,14 @@ export function createNraRiflePose(root, bones, gun) {
       gun.position.fromArray(carry.weaponPosition); gun.quaternion.copy(localRotation);
       const lowGrip = carry.bayonet || carry.weaponBlocked ? .5 : carry.lowReady ?? 0;
       grip.position.fromArray(RIFLE_CONTACTS.supportPalm).lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportPalm), lowGrip);
-      if (gun.userData.smgReload?.handWeight > 0)
-        grip.position.lerp(new THREE.Vector3(...gun.userData.smgReload.palm), gun.userData.smgReload.handWeight);
+      const machineGun = ['zb26', 'type11'].includes(carry.weaponModel);
+      grip.position.z += (machineGun ? .04 * Math.max(0, -(carry.aimPitch ?? 0)) :
+        .07 + .12 * Math.max(0, -(carry.aimPitch ?? 0))) * (carry.chestFire ?? 0) * (1 - lowGrip);
+      const reload = gun.userData.automaticReload;
       grip.position.z += (.16 * (carry.prone ?? 0) + .06 * ((carry.wallLeft ?? 0) + (carry.wallRight ?? 0))) * (1 - (carry.lowReady ?? 0));
       grip.position.z += .05 * (carry.wallRight ?? 0) * (carry.lowReady ?? 0);
+      if (reload?.handWeight > 0)
+        grip.position.lerp(new THREE.Vector3(...reload.palm), reload.handWeight);
       root.updateMatrixWorld(true);
       contactTarget = carry.stockContact ? root.localToWorld(new THREE.Vector3(...carry.stockContact)) : null;
       const shoulder = bone('LeftShoulder');
@@ -157,7 +164,9 @@ export function createNraRiflePose(root, bones, gun) {
         rightPalmGoal.copy(gun.localToWorld(new THREE.Vector3(...rifleActionPalm(operation, clipY))));
         rightTarget.add(rightPalmGoal.clone().sub(position(triggerPalm)));
       }
-      right = placeHand('Right', rightPalmGoal, rightTarget, new THREE.Vector3(.7, -.7, .1).applyQuaternion(bodyFacing),
+      const bracing = machineGun ? (reload?.supportWeight ?? 0) * (1 - (carry.prone ?? 0)) : 0;
+      const rightPole = new THREE.Vector3(.7, -.7, .1).lerp(new THREE.Vector3(.12, -1, .05), bracing);
+      right = placeHand('Right', rightPalmGoal, rightTarget, rightPole.applyQuaternion(bodyFacing),
         new THREE.Vector3(-1, 0, 0).applyQuaternion(facing), carry.weaponBlocked ? 16 : carry.bayonet ? 8 : 4,
         carry.weaponBlocked ? .5 : 1);
       rightTarget = right.target;
@@ -166,9 +175,22 @@ export function createNraRiflePose(root, bones, gun) {
         .lerp(new THREE.Vector3(...RIFLE_CONTACTS.carrySupportWrist), lowGrip);
       seed.z = grip.position.z + .04;
       root.localToWorld(seed.applyQuaternion(localRotation).add(new THREE.Vector3(...carry.weaponPosition)));
+      const reloadWeight = reload?.handWeight ?? 0;
+      const handFrame = WEAPON_RELOAD_FRAMES.magazine.clone().slerp(WEAPON_RELOAD_FRAMES.press, reload?.pressWeight ?? 0);
+      const reloadNormal = new THREE.Vector3(0, 0, -1).applyQuaternion(handFrame);
+      const normal = new THREE.Vector3(0, 1, 0).lerp(reloadNormal, reloadWeight).normalize().applyQuaternion(facing);
+      const forward = reloadWeight > 0 ? {
+        direction: new THREE.Vector3(0, 1, 0).applyQuaternion(handFrame).applyQuaternion(facing), weight: reloadWeight,
+      } : null;
       left = placeHand('Left', position(grip), seed, new THREE.Vector3(-.9, -.6, .1).applyQuaternion(bodyFacing),
-        new THREE.Vector3(0, 1, 0).applyQuaternion(facing), carry.weaponBlocked ? 16 : carry.bayonet ? 8 : 4,
-        carry.weaponBlocked ? .5 : 1);
+        normal, carry.weaponBlocked ? 16 : reloadWeight > 0 ? 12 : carry.bayonet ? 8 : 4,
+        carry.weaponBlocked ? .5 : 1, forward);
+      if (reloadWeight > 0) for (const [joint, rest] of fingers) {
+        if (!joint.name.startsWith('LeftHand')) continue;
+        const magazine = weaponGripFingerRotation(joint.name, rest, 'left', 'magazine');
+        const press = weaponGripFingerRotation(joint.name, rest, 'left', 'press');
+        joint.quaternion.slerp(magazine.slerp(press, reload.pressWeight), reloadWeight);
+      }
       leftTarget = left.target;
       root.updateMatrixWorld(true);
       if (operation?.hand > 0) {

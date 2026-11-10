@@ -1,6 +1,6 @@
 import { shotState } from './core.js';
 import { controlledSoldier, occupiedVehicle } from './entities.js';
-import { advanceRifle, reloadRifle, infantryWeaponProfile, rifleReloadSeconds } from './rifle-action.js';
+import { advanceRifle, reloadRifle, infantryWeaponProfile, rifleReloadSeconds, cancelEmptyRifleReload } from './rifle-action.js';
 
 function requireWeapon(registry, weapon, ownerId, type) {
   if (!weapon || weapon.ownerId !== ownerId || weapon.type !== type || registry.weapons.get(weapon.id) !== weapon) throw new Error(`Broken weapon ownership: ${ownerId}`);
@@ -45,6 +45,11 @@ export function advanceOwnedWeapons(registry, dt, now, personalActive = false, a
     const active = autonomous || actor === selected && personalActive && actor.groundType === 'infantry';
     if (!active || actor.health <= 0 || actor.vehicleId || actor.emplacementWeaponId || actor.grenades?.action) continue;
     requireWeapon(registry, actor.rifle, actor.id, 'infantry');
+    if (actor.blastReaction && !actor.dying) continue;
+    if (autonomous && (actor.meleePriority || actor.dadao?.equipped || actor.bayonet?.mode && actor.bayonet.mode !== 'idle')) {
+      cancelEmptyRifleReload(actor.rifle);
+      continue;
+    }
     if (autonomous && actor.rifle.ammo === 0) reloadRifle(actor.rifle);
     for (const cue of advanceRifle(actor.rifle, dt)) {
       if (cue !== 'ready') events.push({ unitId: actor.unitId, soldierId: actor.id, weaponId: actor.rifle.id, cue });

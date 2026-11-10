@@ -270,6 +270,7 @@ export function projectUnaimedEye(profile, pose) {
 
 export function projectHeadAim(profile, pose, motion) {
   const key = [pose.idleTime, pose.hipDrop, pose.bodyLean, pose.torsoYaw, pose.lowReady, motion.cheekWeight,
+    pose.chestFire, pose.aimPitch,
     pose.upperBody?.yaw ?? 0, pose.upperBody?.pitch ?? 0, pose.upperBody?.roll ?? 0,
     pose.upperBody?.lift ?? 0, pose.upperBody?.lateral ?? 0,
     ...Object.values(pose.postures), ...pose.weaponPosition, ...pose.weaponQuaternion].join(',');
@@ -279,7 +280,8 @@ export function projectHeadAim(profile, pose, motion) {
   const base = baseHead(profile, pose, goal), gunPosition = vector(pose.weaponPosition), gunRotation = quaternion(pose.weaponQuaternion);
   const neck = goal ? new Quaternion().slerp(quaternion(goal.neckRotation), weight) : new Quaternion();
   const headPosition = base.Head.position.clone().sub(base.Neck.position).applyQuaternion(neck).add(base.Neck.position);
-  const headRotation = goal ? base.Head.rotation.clone().slerp(quaternion(goal.headRotation), weight) : base.Head.rotation;
+  const headRotation = goal ? base.Head.rotation.clone().slerp(quaternion(goal.headRotation), weight) : base.Head.rotation.clone();
+  if (pose.chestFire) headRotation.premultiply(new Quaternion().setFromAxisAngle(X, pose.aimPitch * pose.chestFire));
   const neckRotation = neck.clone().multiply(base.Neck.rotation);
   const eye = projectSkin(profile.samples.eye, base, neckRotation, headPosition, headRotation);
   const leftEye = projectSkin(profile.samples.leftEye, base, neckRotation, headPosition, headRotation);

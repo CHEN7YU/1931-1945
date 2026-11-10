@@ -488,7 +488,7 @@ export function rifleWorldModel(detail = 'near', weaponState = null, { bayonet =
   return model;
 }
 
-export function syncWorldWeapon(model, state) {
+export function syncWorldWeapon(model, state, reloadPose = null) {
   const profile = infantryWeaponProfile(state);
   const key = state.model ?? 'rifle';
   const bayonet = model.getObjectByName('fixed-bayonet');
@@ -516,8 +516,9 @@ export function syncWorldWeapon(model, state) {
     else updateRifleClip(rifleClip, state, pose);
   }
   const feed = model.getObjectByName('feed');
-  if (feed) applyMachineGunFeed(model, machineGunReloadPose(state));
-  model.userData.smgReload = profile.smg ? machineGunReloadPose(state) : null;
+  model.userData.automaticReload = profile.automatic ? reloadPose ?? machineGunReloadPose(state) : null;
+  if (feed) applyMachineGunFeed(model, model.userData.automaticReload);
+  model.userData.smgReload = profile.smg ? model.userData.automaticReload : null;
   const muzzle = model.getObjectByName('owned-muzzle');
   if (muzzle) muzzle.position.set(profile.muzzleX ?? 0, 0, profile.muzzleZ);
 }

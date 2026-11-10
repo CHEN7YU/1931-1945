@@ -8,6 +8,7 @@ import { attackCategory } from './battle-stats.js';
 import { headingError } from './ai-turning.js';
 import { createTraversal } from './infantry-traversal.js';
 import { createWeaponMount } from './weapon-mount.js';
+import { sampleBlastReaction } from './blast-reaction.js';
 
 const copyPosition = position => position.clone ? position.clone() : { ...position };
 const stanceHeights = Object.freeze({ standing: 1.67, crouched: 1.05, prone: .45 });
@@ -17,6 +18,9 @@ export function soldierPostureHeight(actor, kind = 'eye') {
   if (!heights) throw new RangeError('Unknown soldier posture height');
   if (actor.stance != null && !Object.hasOwn(stanceHeights, actor.stance)) throw new RangeError('Unknown personal stance');
   if (actor.vehicleId) return heights[0];
+  const blast = sampleBlastReaction(actor);
+  if (blast) return kind === 'eye' ? blast.eyeHeight :
+    heights[0] * (1 - blast.fall) + (kind === 'body' ? .7 : .32) * blast.fall;
   if (kind === 'eye' && actor.nativeMotion?.profile?.headAim) return nativeEyeLocal(actor)[1];
   const posture = actor.nativeMotion?.posture ?? { crouched: actor.stance === 'crouched' ? 1 : 0, prone: actor.stance === 'prone' ? 1 : 0 };
   const entries = Object.entries(posture), total = entries.reduce((sum, [, weight]) => sum + weight, 0);
@@ -30,6 +34,7 @@ export function soldierPostureHeight(actor, kind = 'eye') {
 export function soldierEyePosition(actor) {
   if (!actor?.position ||
     !['x', 'y', 'z'].every(axis => Number.isFinite(actor.position[axis]))) throw new RangeError('Eye projection requires a finite owned pose');
+  if (actor.blastReaction) return { x: actor.position.x, y: actor.position.y + soldierPostureHeight(actor), z: actor.position.z };
   if (!actor.vehicleId && actor.nativeMotion?.profile?.headAim) {
     if (!Number.isFinite(actor.heading)) throw new RangeError('Native eye projection requires a finite heading');
     const [x, y, z] = nativeEyeLocal(actor), c = Math.cos(actor.heading), s = Math.sin(actor.heading);

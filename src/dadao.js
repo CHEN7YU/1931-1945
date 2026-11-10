@@ -1,7 +1,7 @@
 export const DADAO = Object.freeze({
   reach: 1.75, halfArc: .65, heightTolerance: .65, diagonalSlope: 1,
   draw: .35, windup: .28, active: .2, recovery: .4, cooldown: .95,
-  damage: 100, stamina: .12,
+  damage: 100, stamina: 0,
 });
 
 export const DADAO_GRIP = Object.freeze({ length: .19, radiusX: .0145, radiusZ: .0165,
@@ -25,9 +25,9 @@ export function drawDadao(state, now) {
   state.readyAt = now + DADAO.draw;
 }
 
-export function startDadaoSwing(state, now, stamina) {
+export function startDadaoSwing(state, now) {
   if (!state.equipped || now < state.readyAt || now < state.nextAttackAt ||
-    state.startedAt !== null || stamina < DADAO.stamina) return false;
+    state.startedAt !== null) return false;
   state.startedAt = now; state.nextAttackAt = now + DADAO.cooldown;
   state.connected = false; state.swings++;
   return true;

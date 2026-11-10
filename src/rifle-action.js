@@ -1,4 +1,5 @@
 export const RIFLE = Object.freeze({ magazine: 5, range: 180, cycleSeconds: .65, reloadSeconds: 3.8, length: 1.11, sightHeight: .05 });
+export const TYPE11_CLIP_RELOAD = Object.freeze({ start: .25, duration: .57, seated: .8 });
 export const INFANTRY_WEAPONS = Object.freeze({
   sigm1920: Object.freeze({ magazine: 50, range: 100, cycleSeconds: .1, reloadSeconds: 3.2, length: .81,
     sightHeight: .05, muzzleZ: -.59, muzzleX: 0, name: 'SIG M1920 花机关', automatic: true, smg: true }),
@@ -37,6 +38,14 @@ export function reloadRifle(state) {
   return true;
 }
 
+export function cancelEmptyRifleReload(state) {
+  if (state.ammo !== 0) return false;
+  const pending = state.queuedReload || state.action === 'reload';
+  state.queuedReload = false;
+  if (state.action === 'reload') { state.action = 'idle'; state.elapsed = 0; state.reloadUntil = 0; }
+  return pending;
+}
+
 export function shootRifle(state) {
   if (state.action !== 'idle') return false;
   if (state.ammo <= 0) { reloadRifle(state); return false; }
@@ -59,7 +68,8 @@ export function advanceRifle(state, dt) {
     const clips = Math.max(1, Math.ceil((profile.magazine - state.ammo) / 5));
     const cues = profile.automatic
       ? reloading ? state.model === 'zb26' || profile.smg ? [[duration * .82, 'load'], [duration * .93, 'close']]
-        : [...Array.from({ length: clips }, (_, index) => [duration * (.2 + .62 * (index + .8) / clips), 'load']),
+        : [...Array.from({ length: clips }, (_, index) => [duration * (TYPE11_CLIP_RELOAD.start +
+          TYPE11_CLIP_RELOAD.duration * (index + TYPE11_CLIP_RELOAD.seated) / clips), 'load']),
           [duration * .93, 'close']] : []
       : reloading ? [[duration * .12 / 2.7, 'unlock'], [duration * .4 / 2.7, 'extract'],
         [duration * 1.45 / 2.7, 'load'], [duration * 2.3 / 2.7, 'close']] : [[.13, 'unlock'], [.3, 'extract'], [.54, 'close']];

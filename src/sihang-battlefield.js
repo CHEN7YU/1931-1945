@@ -8,7 +8,6 @@ import { staticGeometryBatches } from './static-scene-batches.js';
 import { obstacleLookup } from './spatial.js';
 import { createSihangFlag } from './sihang-flag.js';
 import { createSihangCity } from './sihang-city.js';
-import { createBuildingFire } from './building-fire.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { createNorthWallMaterial, createNorthWallGeometry, northApertureSpan } from './sihang-north-facade.js';
 import {
@@ -540,7 +539,8 @@ export function makeSihangBattlefield(scene, surface) {
     label.rotation.y = -Math.PI / 2; intact.add(label);
   }
 
-  const city = createSihangCity({ scene, box, town, materials });
+  const city = createSihangCity({ scene, box, town, materials, surface,
+    addMesh(mesh) { pending.get(scene).push(mesh); } });
 
   const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x557ca5, transparent: true, opacity: .7, depthWrite: false });
   const marker = new THREE.Mesh(new THREE.RingGeometry(4.8, 5, 64), markerMaterial);
@@ -891,7 +891,9 @@ export function makeSihangBattlefield(scene, surface) {
     spawns: SIHANG_ENEMY_APPROACHES,
     dry: (x, z) => !isDeepWater(x, z) && groundHeight(x, z) === 0 });
   craterSupport = addBattlefieldCraters(scene, terrainSurfaces, solids, shellCraters, materials.earth);
-  const buildingFire = createBuildingFire(scene, town.buildings);
+  const buildingFire = { sources: [], update() {}, get snapshot() {
+    return { sources: 0, smoke: 0, flames: 0, drawCalls: 0 };
+  } };
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
     mapBounds: M,

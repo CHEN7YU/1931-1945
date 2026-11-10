@@ -33,15 +33,19 @@ try {
     assert.ok(loaded.has(`${DADAO_ART_ROOT}${kind}/${map}.webp`), `Missing runtime texture: ${kind}/${map}`);
   }
   const decoded = await page.evaluate(async () => {
+    const { dadaoSurfaces } = await import('/src/dadao-surface.js');
     const samples = {};
     for (const texture of window.__battle.dadaoMaterials) {
-      if (texture.dataTexture || texture.imageType !== 'HTMLImageElement') throw new Error('Dadao map is not a drawable image');
+      if (texture.dataTexture || !['HTMLImageElement', 'HTMLCanvasElement'].includes(texture.imageType))
+        throw new Error('Dadao map is not a drawable image');
       const { kind, name } = texture, image = new Image(), canvas = document.createElement('canvas');
       image.src = texture.url; await image.decode();
-      if (image.width !== texture.width || image.height !== texture.height) throw new Error('Material dimensions do not match the loaded weapon');
-      canvas.width = image.width; canvas.height = image.height;
+      const factor = Math.min(1, window.__battle.startupResources.textures.textureLimit / Math.max(image.width, image.height));
+      if (Math.round(image.width * factor) !== texture.width || Math.round(image.height * factor) !== texture.height)
+        throw new Error('Material dimensions do not match the active texture budget');
+      canvas.width = texture.width; canvas.height = texture.height;
       const context = canvas.getContext('2d');
-      context.drawImage(image, 0, 0);
+      context.drawImage(dadaoSurfaces()[kind][name].image, 0, 0);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let sum = 0, minimum = 255, maximum = 0;
       for (let i = 0; i < pixels.length; i += 4) {
@@ -110,6 +114,40 @@ try {
     const after = await page.evaluate(() => window.__battle);
     assert.equal(after.rifle.shots, before);
     assert.equal(after.dadao.swings, data.dadao.swings + 3, 'one mouse press per captured swing, not held auto-repeat');
+    if (directory && name === 'wide') {
+      const sequence = await page.evaluate(async cost => {
+        const canvas = document.querySelector('canvas'), stream = canvas.captureStream(30), chunks = [];
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 7000000 });
+        const stopped = new Promise(resolve => { recorder.onstop = resolve; });
+        recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+        const started = window.__battle.time, swings = window.__battle.dadao.swings;
+        recorder.start();
+        await new Promise((resolve, reject) => {
+          const deadline = performance.now() + 60000;
+          const step = () => {
+            const battle = window.__battle;
+            if (performance.now() > deadline) { reject(new Error('Continuous sword recording stalled')); return; }
+            if (battle.time - started >= 8) { resolve(); return; }
+            if (battle.dadao.phase === 'ready' && battle.time >= battle.dadao.nextAttackAt && battle.locomotion.stamina >= cost) {
+              canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+              canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+            }
+            requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        });
+        recorder.stop(); await stopped; stream.getTracks().forEach(track => track.stop());
+        const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer()); let binary = '';
+        for (let index = 0; index < bytes.length; index += 32768)
+          binary += String.fromCharCode(...bytes.subarray(index, index + 32768));
+        return { video: btoa(binary), seconds: window.__battle.time - started,
+          swings: window.__battle.dadao.swings - swings };
+      }, DADAO.stamina);
+      assert.ok(sequence.swings >= 3);
+      await writeFile(join(directory, 'dadao-first-person.webm'), Buffer.from(sequence.video, 'base64'));
+      delete sequence.video;
+      await writeFile(join(directory, 'sequence.json'), JSON.stringify(sequence, null, 2));
+    }
   }
   await page.keyboard.press('1');
   await page.waitForFunction(() => window.__battle.rifle.model !== null);
