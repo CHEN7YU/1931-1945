@@ -156,6 +156,14 @@ export function createTankFireEffects(scene, camera, smokeTexture) {
     });
   };
   return {
+    prepareBattleViews() {
+      const previous = candidates;
+      const position = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5));
+      candidates = [{ ...tankFirePose({ id: 'render-preparation', type: 'tank', health: 0,
+        position, heading: 0, turretYaw: 0, destroyedAt: 0 }, 1), distance: 5 }];
+      display();
+      return () => { candidates = previous; display(); };
+    },
     configure(value) { settings = value; display(); },
     update(vehicles, now) {
       view.update();

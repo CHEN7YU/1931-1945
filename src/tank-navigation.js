@@ -11,33 +11,48 @@ function pathLength(start, path) {
   return length;
 }
 
-function trafficObstacles(vehicle, vehicles) {
-  return vehicles.filter(other => other.id !== vehicle.id && other.type === 'tank').map(other => {
+function trafficObstacles(vehicle, vehicles, protectedInfantry = []) {
+  const armor = vehicles.filter(other => other.id !== vehicle.id && other.type === 'tank').map(other => {
     const hull = vehicleCollider(other), radius = Math.hypot(hull.hx, hull.hz);
     // Reserve the entire turning envelope, not just the current hull orientation.
     return { id: other.id, circular: true, cx: hull.cx, cz: hull.cz, radius,
       minX: hull.cx - radius, maxX: hull.cx + radius, minZ: hull.cz - radius, maxZ: hull.cz + radius };
   });
+  return [...armor, ...protectedInfantry.filter(actor => actor.health > 0 && !actor.vehicleId &&
+    Math.abs(actor.position.y - vehicle.position.y) < .9).map(actor => {
+    const { x, z } = actor.position, radius = .42;
+    return { id: `infantry:${actor.id}`, circular: true, cx: x, cz: z, radius,
+      minX: x - radius, maxX: x + radius, minZ: z - radius, maxZ: z + radius };
+  })];
 }
 
 export function createTankNavigation(obstacles) {
   const views = new Map();
   let staticNavigate = null;
+  const prepareView = (vehicle, traffic) => {
+    const source = [...obstacles, ...traffic];
+    const view = { source, traffic, navigate: createNavigator(source, 1.5, navigationClearance) };
+    views.set(vehicle.id, view);
+    return view;
+  };
   return {
+    prepare(vehicles) {
+      for (const vehicle of vehicles) if (vehicle.variant === CHI_HA.id && !views.has(vehicle.id))
+        prepareView(vehicle, trafficObstacles(vehicle, vehicles));
+      if (views.size) staticNavigate ??= createNavigator(obstacles, 1.5, navigationClearance);
+    },
     canSpawn(position, vehicles) {
       return !circleBlocked(position.x, position.z, navigationClearance,
         [...obstacles, ...trafficObstacles({ id: null }, vehicles)]);
     },
-    pathTo(vehicle, goal, vehicles) {
+    pathTo(vehicle, goal, vehicles, protectedInfantry = []) {
       const ids = new Set(vehicles.map(other => other.id));
       for (const id of views.keys()) if (!ids.has(id)) views.delete(id);
       const traffic = trafficObstacles(vehicle, vehicles.filter(other => !movingArmor(other) ||
-        Math.hypot(other.position.x - vehicle.position.x, other.position.z - vehicle.position.z) <= 12));
+        Math.hypot(other.position.x - vehicle.position.x, other.position.z - vehicle.position.z) <= 12), protectedInfantry);
       let view = views.get(vehicle.id);
       if (!view) {
-        const source = [...obstacles, ...traffic];
-        view = { source, traffic, navigate: createNavigator(source, 1.5, navigationClearance) };
-        views.set(vehicle.id, view);
+        view = prepareView(vehicle, traffic);
       } else {
         view.source.splice(0, view.source.length, ...obstacles, ...traffic);
         const changed = [...view.traffic, ...traffic].filter(item => {
@@ -45,10 +60,7 @@ export function createTankNavigation(obstacles) {
           const next = traffic.find(other => other.id === item.id);
           return !previous || !next || previous.cx !== next.cx || previous.cz !== next.cz;
         });
-        if (changed.length) view.navigate.refresh({
-          minX: Math.min(...changed.map(item => item.minX)), maxX: Math.max(...changed.map(item => item.maxX)),
-          minZ: Math.min(...changed.map(item => item.minZ)), maxZ: Math.max(...changed.map(item => item.maxZ)),
-        });
+        if (changed.length) view.navigate.refreshMany(changed);
         view.traffic = traffic;
       }
       const path = view.navigate(vehicle.position, goal);
@@ -57,7 +69,7 @@ export function createTankNavigation(obstacles) {
         Math.hypot(other.position.x - vehicle.position.x, other.position.z - vehicle.position.z) <= 12)) {
         staticNavigate ??= createNavigator(obstacles, 1.5, navigationClearance);
         const convoy = staticNavigate(vehicle.position, goal);
-        const stationary = trafficObstacles(vehicle, vehicles.filter(other => !movingArmor(other)));
+        const stationary = trafficObstacles(vehicle, vehicles.filter(other => !movingArmor(other)), protectedInfantry);
         let from = vehicle.position;
         const usable = convoy.length > 0 && convoy.every(point => {
           const clear = segmentClear(from, point, navigationClearance, stationary);
@@ -72,13 +84,13 @@ export function createTankNavigation(obstacles) {
       }
       return path;
     },
-    canTravel(vehicle, from, to, vehicles) {
-      return segmentClear(from, to, navigationClearance, [...obstacles, ...trafficObstacles(vehicle, vehicles)]);
+    canTravel(vehicle, from, to, vehicles, protectedInfantry = []) {
+      return segmentClear(from, to, navigationClearance, [...obstacles, ...trafficObstacles(vehicle, vehicles, protectedInfantry)]);
     },
     stats(vehicle) { const stats = views.get(vehicle.id)?.stats; return stats ? { ...stats } : null; },
-    move(vehicle, dx, dz, vehicles) {
+    move(vehicle, dx, dz, vehicles, protectedInfantry = []) {
       const position = vehicle.position;
-      const traffic = trafficObstacles(vehicle, vehicles);
+      const traffic = trafficObstacles(vehicle, vehicles, protectedInfantry);
       const yielding = vehicles.find(other => {
         if (other.id === vehicle.id || !movingArmor(other) || !other.ai ||
           other.ai.objectiveId !== vehicle.ai?.objectiveId) return false;

@@ -24,6 +24,7 @@ import { createEmplacement, EMPLACEMENT_PROFILES } from './emplacements.js';
 import { createEmplacementModel } from './emplacement-model.js';
 import { INFANTRY_AIM_PITCH } from './infantry-aim.js';
 import { beginBlastReaction, sampleBlastReaction, BLAST_POSE_TIMES, BLAST_REACTION } from './blast-reaction.js';
+import { createEvacuationInstances, setInstanceEvacuationOpacity, setViewEvacuationOpacity } from './evacuation-fade.js';
 
 export function nativeActionWeights(value, frames, times = null) {
   if (!Number.isFinite(value) || value < 0 || value > 1 || !Number.isInteger(frames) || frames < 2)
@@ -157,7 +158,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         weaponLod.sourceTriangles += stats.sourceTriangles; weaponLod.triangles += stats.triangles;
         weaponLod.sourceBytes += geometryBytes(source.geometry); weaponLod.bytes += geometryBytes(geometry);
         weaponLod.maxError = Math.max(weaponLod.maxError, stats.error);
-        const mesh = new THREE.InstancedMesh(geometry, source.material, capacity);
+        const mesh = createEvacuationInstances(geometry, source.material, capacity);
         mesh.name = `owned-weapon-${key}`; mesh.userData.geometryLod = 'coarse';
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.count = 0;
         mesh.frustumCulled = false; root.add(mesh); return mesh;
@@ -179,7 +180,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         if (geometry.index) geometry.dispose();
       });
       const parts = [...batches].map(([material, geometries]) => {
-        const mesh = new THREE.InstancedMesh(mergeGeometries(geometries), material, capacity);
+        const mesh = createEvacuationInstances(mergeGeometries(geometries), material, capacity);
         mesh.name = `owned-weapon-${key}`;
         mesh.userData.geometryLod = 'original';
         geometries.forEach(geometry => geometry.dispose());
@@ -475,7 +476,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     residentResources.sourceTriangles += (geometry.index?.count ?? geometry.attributes.position.count) / 3;
     residentResources.residentTriangles += (residentGeometry.index?.count ?? residentGeometry.attributes.position.count) / 3;
     residentResources.morphFrames += residentGeometry.morphAttributes.position?.length ?? 0;
-    const instance = new THREE.InstancedMesh(residentGeometry, atlas.material, capacity);
+    const instance = createEvacuationInstances(residentGeometry, atlas.material, capacity);
     if (blast || chest || travelMorph || dead || postureMorph || kneelMorph || thrustMorph || turnMorph || rifleAction || shieldWalk || support)
       instance.setMorphAt(0, { morphTargetInfluences: Array(poses.length - 1).fill(0) });
     instance.geometry.setAttribute('nraSkinTint', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3)
@@ -499,7 +500,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         geometry.morphAttributes.normal = frames.slice(1).map(frame => frame.attributes.normal);
         geometry.computeBoundingBox(); geometry.computeBoundingSphere();
       }
-      const instance = new THREE.InstancedMesh(bake ? bake(geometry, mesh) : geometry, mesh.material, capacity);
+      const instance = createEvacuationInstances(bake ? bake(geometry, mesh) : geometry, mesh.material, capacity);
       if (frames?.length > 1) instance.setMorphAt(0, { morphTargetInfluences: Array(frames.length - 1).fill(0) });
       instance.customDepthMaterial = mesh.customDepthMaterial; instance.customDistanceMaterial = mesh.customDistanceMaterial;
       instance.name = mesh.name;
@@ -681,6 +682,58 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   }
   return {
     root, motionProfile: profile, excludedIds,
+    createStaticFormation(maximum) {
+      if (!Number.isInteger(maximum) || maximum < 1) throw new RangeError('Invalid static formation capacity');
+      const group = new THREE.Group(); group.name = 'evacuated-static-formation'; scene.add(group);
+      const bank = banks[0], fixedMatrix = new THREE.Matrix4(), bodyMatrix = new THREE.Matrix4();
+      const rotation = new THREE.Quaternion(), unitScale = new THREE.Vector3(1, 1, 1), skin = new THREE.Color();
+      const part = (source, enabled = () => true, local = null) => {
+        const geometry = settledNraGeometry(source.geometry);
+        for (const [name, attribute] of Object.entries(geometry.attributes)) if (attribute.isInstancedBufferAttribute) {
+          const replacement = new THREE.InstancedBufferAttribute(new attribute.array.constructor(maximum * attribute.itemSize), attribute.itemSize);
+          for (let i = 0; i < maximum; i++) for (let c = 0; c < attribute.itemSize; c++)
+            replacement.array[i * attribute.itemSize + c] = attribute.array[c];
+          geometry.setAttribute(name, replacement);
+        }
+        const mesh = createEvacuationInstances(geometry, source.material, maximum);
+        mesh.count = 0; mesh.castShadow = false; mesh.receiveShadow = true;
+        group.add(mesh);
+        return { mesh, enabled, local };
+      };
+      const parts = [
+        ...bank.parts.map(source => part(source)),
+        ...bank.attachments.map(item => part(item.mesh, item.enabled)),
+        ...weaponGroupFor('rifle', true).parts.map(source => part(source, () => true, bank.gunMatrix)),
+      ];
+      let total = 0;
+      return {
+        root: group,
+        add(actor, position, heading = 0) {
+          if (total >= maximum) throw new RangeError('Static formation exceeds the original troop budget');
+          rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+          bodyMatrix.compose(position, rotation, unitScale);
+          skin.set(actor.avatarAppearance?.skin ?? '#ffffff');
+          for (const item of parts) {
+            if (!item.enabled(actor)) continue;
+            const mesh = item.mesh, index = mesh.count++;
+            fixedMatrix.copy(bodyMatrix);
+            if (item.local) fixedMatrix.multiply(item.local);
+            mesh.setMatrixAt(index, fixedMatrix); mesh.instanceMatrix.needsUpdate = true;
+            const tint = mesh.geometry.attributes.nraSkinTint;
+            if (tint) { tint.setXYZ(index, skin.r, skin.g, skin.b); tint.needsUpdate = true; }
+            const uniform = mesh.geometry.attributes.nraUniformVariant;
+            if (uniform) { uniform.setX(index, Number(actor.avatarAppearance?.uniform === 'B')); uniform.needsUpdate = true; }
+            const officer = mesh.geometry.attributes.nativeOfficer;
+            if (officer) { officer.setX(index, Number(isNativeOfficer(actor))); officer.needsUpdate = true; }
+            mesh.computeBoundingSphere();
+          }
+          total++;
+        },
+        reset() { total = 0; for (const item of parts) item.mesh.count = 0; },
+        get count() { return total; },
+        get batches() { return parts.filter(item => item.mesh.count).length; },
+      };
+    },
     get appearanceResources() { return template.appearanceResources; },
     prepareBattleViews(actors = [], now = 0, controlledId = null) {
       const seen = new Set(), changed = [];
@@ -745,7 +798,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         await yieldStartupTask();
         const source = bank.parts[0].geometry;
         const settled = bank.deathStance || bank.postureMorph || bank.shieldWalk ? settledNraGeometry(source, Boolean(bank.deathStance)) : source;
-        const mesh = new THREE.InstancedMesh(await createDistantPoseGeometry(settled, { animated: Boolean(bank.travelControl) }), atlas.material, bank.capacity);
+        const mesh = createEvacuationInstances(await createDistantPoseGeometry(settled, { animated: Boolean(bank.travelControl) }), atlas.material, bank.capacity);
         if (bank.travelControl) mesh.setMorphAt(0, bank.travelControl);
         if (settled !== source) settled.dispose();
         mesh.name = 'distant-coarse-body';
@@ -824,6 +877,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         if (detailed.has(actor.id)) {
           const view = slotFor(actor, budget).view;
           view.update(actor, now, controlledId); tiers.set(actor.id, 'skinned'); summary.near++;
+          setViewEvacuationOpacity(view.root, actor.sihangEvacuationOpacity);
           summary.batches += view.drawBatches;
         } else {
           const pose = sampleNraPhase(actor);
@@ -950,7 +1004,10 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
               const lowReady = actor.nativeMotion.lowReady ?? 0;
               weaponMatrix.multiply(aimPitchRotation.makeRotationX(actor.aimPitch * (1 - lowReady)));
             }
-            for (const mesh of weapons.parts) mesh.setMatrixAt(weapons.count, weaponMatrix);
+            for (const mesh of weapons.parts) {
+              mesh.setMatrixAt(weapons.count, weaponMatrix);
+              setInstanceEvacuationOpacity(mesh, weapons.count, actor.sihangEvacuationOpacity);
+            }
             weapons.count++;
             summary.weaponGeometryTriangles += weapons.triangles;
             summary.weaponGeometryTrianglesWithoutLod += weapons.sourceTriangles;
@@ -1002,6 +1059,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           }
           for (const mesh of coarse ? bank.coarseParts : bank.parts) {
             mesh.setMatrixAt(bodyIndex, matrix);
+            setInstanceEvacuationOpacity(mesh, bodyIndex, actor.sihangEvacuationOpacity);
             if (dead && !coarse) mesh.setMorphAt(bodyIndex, morphControl);
             if (bank.postureMorph && !coarse) mesh.setMorphAt(bodyIndex, postureMorphControl);
             if (bank.actionControl) mesh.setMorphAt(bodyIndex, bank.actionControl);
@@ -1019,6 +1077,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           if (coarse) { bank.coarseCount++; summary.coarse++; nextCoarseIds.add(actor.id); }
           for (const attachment of bank.attachments) if (attachment.enabled(actor)) {
             attachment.mesh.setMatrixAt(attachment.count, matrix);
+            setInstanceEvacuationOpacity(attachment.mesh, attachment.count, actor.sihangEvacuationOpacity);
             if (attachment.poseFollowing && attachment.mesh.morphTexture) {
               attachment.mesh.setMorphAt(attachment.count, dead ? morphControl : bank.postureMorph ? postureMorphControl
                 : bank.rifleAction ? rifleMorphControl : bank.blastControl ?? bank.chestControl ?? bank.actionControl ?? bank.travelControl ?? bank.turnControl ?? bank.supportControl ?? shieldMorphControl);

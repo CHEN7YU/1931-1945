@@ -12,6 +12,18 @@ function fixture() {
   fire.configure(settings);
   return { scene, camera, fire };
 }
+test('loading preparation exposes real fire shaders without creating a persistent wreck or changing live effects', () => {
+  const { fire } = fixture();
+  const before = fire.snapshot;
+  const restore = fire.prepareBattleViews();
+  assert.ok(fire.snapshot.flamePlanes > 0);
+  restore();
+  assert.deepEqual(fire.snapshot, before);
+  fire.update([wreck()], 1.5);
+  const active = fire.snapshot;
+  fire.prepareBattleViews()();
+  assert.deepEqual(fire.snapshot, active);
+});
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`);
 
 test('both model-specific sources follow hull and turret coordinates, not the camera or world forward', () => {

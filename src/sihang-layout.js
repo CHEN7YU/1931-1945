@@ -89,6 +89,8 @@ export const SIHANG_RESERVED_LANES = Object.freeze([
   { id: 'retreat-exit', minX: 31, maxX: 39, minZ: -45, maxZ: -5 },
   { id: 'retreat-approach', minX: 33, maxX: 81, minZ: -39, maxZ: -30 },
   { id: 'retreat-bridge', minX: 72, maxX: 98, minZ: -32, maxZ: 10 },
+  { id: 'south-parade-approach', minX: 80, maxX: 98, minZ: 0, maxZ: 44 },
+  { id: 'south-parade-square', minX: 54, maxX: 84, minZ: 34, maxZ: 68 },
 ].map(Object.freeze));
 export const SIHANG_BRIDGE = Object.freeze({ name: '西藏路桥', x: 83, z: -22, width: 8,
   northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
@@ -162,8 +164,8 @@ export const SIHANG_FIRING_POSTS = Object.freeze([
 ].map(Object.freeze));
 export const SIHANG_DEFENSE_POSTS = SIHANG_FIRING_POSTS;
 export const SIHANG_SQUAD_ORIGINS = Object.freeze([
-  { x: -18, y: floorHeight, z: -31 }, { x: 18, y: floorHeight, z: -31 },
-  { x: -18, y: floorHeight, z: -18 }, { x: 18, y: floorHeight, z: -18 },
+  { x: -18, y: 0, z: -31 }, { x: 18, y: 0, z: -31 },
+  { x: -18, y: 0, z: -18 }, { x: 18, y: 0, z: -18 },
 ].map(Object.freeze));
 export const SIHANG_ENEMY_APPROACHES = Object.freeze([
   { x: -78, y: 0, z: -88 }, { x: 0, y: 0, z: -94 }, { x: 78, y: 0, z: -88 },

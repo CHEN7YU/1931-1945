@@ -326,6 +326,39 @@ test('traffic planning includes wrecks, newly moved vehicles and spawn turning c
   assert.ok(segmentClear(vehicle.position, goal, CHI_HA.clearance, []));
 });
 
+test('returned infantry reserve real clearance in tank routing and movement without disabling crushing', () => {
+  const navigation = createTankNavigation([]), { vehicle } = fixture(), vehicles = [vehicle];
+  vehicle.ai = { mode: 'hold' };
+  const actor = { id: 'returned-sapper', health: 100, position: new THREE.Vector3(0, 0, 12) };
+  const goal = { x: 0, z: 24 };
+  navigation.prepare(vehicles);
+  assert.equal(navigation.canTravel(vehicle, vehicle.position, goal, vehicles, [actor]), false);
+  const path = navigation.pathTo(vehicle, goal, vehicles, [actor]);
+  assert.ok(path.length > 1, 'a real route must go around the returned soldier');
+  for (let step = 0; step < 100; step++) navigation.move(vehicle, 0, .2, vehicles, [actor]);
+  assert.ok(vehicle.position.z < actor.position.z - CHI_HA.clearance);
+  actor.health = 0;
+  assert.equal(navigation.canTravel(vehicle, vehicle.position, goal, vehicles, [actor]), true);
+  assert.deepEqual(navigation.pathTo(vehicle, goal, vehicles, [actor]), [goal]);
+});
+
+test('preparing tank routes before combat preserves lazy route results after separated traffic moves and wall changes', () => {
+  const obstacles = [{ minX: -4, maxX: 4, minZ: -24, maxZ: -22 }];
+  const prepared = createTankNavigation(obstacles), lazy = createTankNavigation(obstacles);
+  const { vehicle } = fixture(), other = fixture().vehicle;
+  other.id = 'far-wreck'; other.health = 0; other.position.set(50, 0, 50);
+  const vehicles = [vehicle, other], goal = { x: 0, z: -35 };
+  prepared.prepare(vehicles);
+  for (const [x, z] of [[50, 50], [-50, -50], [0, -15], [20, 20]]) {
+    other.position.set(x, 0, z);
+    assert.deepEqual(prepared.pathTo(vehicle, goal, vehicles), lazy.pathTo(vehicle, goal, vehicles));
+  }
+  const removed = obstacles.pop();
+  prepared.refreshMany([removed]); lazy.refreshMany([removed]);
+  assert.deepEqual(prepared.pathTo(vehicle, goal, vehicles), [goal]);
+  assert.deepEqual(prepared.pathTo(vehicle, goal, vehicles), lazy.pathTo(vehicle, goal, vehicles));
+});
+
 function machineGunContext(crew, extra = {}) {
   return { crew, targets: [{ ...target, position: { x: -.51, y: 0, z: -20 } }],
     busyCrewIds: [], aimPoint: actor => ({ ...actor.position, y: actor.position.y + 1 }),

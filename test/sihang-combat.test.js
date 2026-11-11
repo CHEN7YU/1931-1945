@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createSihangCombat, sihangShieldLayout } from '../src/sihang-combat.js';
+import { createSihangCombat, sihangShieldLayout, sihangShieldSpawnPositions } from '../src/sihang-combat.js';
 import { createSihangCampaign } from '../src/sihang-campaign.js';
 import { SIHANG_DEMOLITION_POINT } from '../src/sihang-layout.js';
 
-const soldier = (index, z = -60) => ({ id: `sapper-${index}`, index, health: 100, heading: Math.PI,
-  position: new THREE.Vector3((index % 5 - 2) * 1.02, 0, z - Math.floor(index / 5) * 1.46),
-  formation: { sihangDemolition: true }, tactics: {} });
+const soldier = (index, z = -60) => {
+  const pose = sihangShieldLayout(index, 20);
+  return { id: `sapper-${index}`, index, health: 100, heading: pose.facing,
+    position: new THREE.Vector3(pose.x, 0, z + pose.z),
+    formation: { sihangDemolition: true }, tactics: {} };
+};
 const fixture = () => {
   const scene = new THREE.Scene(), world = { solids: [],
     elevatedPath: (_from, to) => [{ ...to }],
@@ -19,24 +22,35 @@ const fixture = () => {
   return { scene, world, combat, campaign, actors, player, keys };
 };
 
-test('twenty two-handed shields retain four-by-five slots in forward and overhead carry modes', () => {
-  const roof = Array.from({ length: 20 }, (_, slot) => sihangShieldLayout(slot, 20, 'roof'));
-  assert.equal(new Set(roof.map(point => point.x)).size, 5);
-  assert.equal(new Set(roof.map(point => point.z)).size, 4);
-  assert.ok(roof.every(point => point.mode === 'roof' && point.height === 1.96));
-  const front = roof.map((_, slot) => sihangShieldLayout(slot, 20, 'front'));
-  assert.ok(front.every(point => point.mode === 'front' && point.rotationX < -1 && point.height < 1.2));
+test('twenty sappers form front, rear, side and roof cover without overlapping soldier capsules', () => {
+  const poses = Array.from({ length: 20 }, (_, slot) => sihangShieldLayout(slot, 20));
+  assert.equal(poses.filter(pose => pose.role === 'roof').length, 4);
+  assert.equal(new Set(poses.filter(pose => pose.role !== 'roof').map(pose => pose.facing)).size, 4);
+  for (let i = 0; i < poses.length; i++) for (let j = 0; j < i; j++)
+    assert.ok(Math.hypot(poses[i].x - poses[j].x, poses[i].z - poses[j].z) >= 1);
 });
 
-test('sappers advance behind slanted shields, lift them near the wall, then withdraw shielding their front', () => {
+test('the original rear spawn deploys the complete turtle, or waits without scattering roles around an obstruction', () => {
+  const spawn = { id: 'demolition', x: 0, z: -72, altitude: 0, permanent: true };
+  const positions = sihangShieldSpawnPositions(spawn, 20, []);
+  for (let i = 0; i < positions.length; i++) {
+    const pose = sihangShieldLayout(i, 20);
+    assert.deepEqual(positions[i], { x: spawn.x + pose.x, z: spawn.z + pose.z });
+  }
+  assert.throws(() => sihangShieldSpawnPositions(spawn, 20, [], [positions[0]]), /完整爆破龟壳/);
+  assert.throws(() => sihangShieldSpawnPositions(spawn, 20, [], [],
+    [{ health: 100, position: { ...positions[0], y: 0 } }]), /完整爆破龟壳/);
+});
+
+test('sappers retain enclosed turtle cover while advancing, installing and withdrawing', () => {
   const f = fixture();
   f.combat.update(.05, 0, f);
-  assert.equal(f.combat.snapshot.mode, 'front');
-  let roof = false, armedAt = null;
+  assert.equal(f.combat.snapshot.mode, 'turtle');
+  let armedAt = null;
   for (let index = 1; index < 1200 && armedAt === null; index++) {
     const now = index * .05;
     const event = f.combat.update(.05, now, f);
-    roof ||= f.combat.snapshot.mode === 'roof';
+    assert.equal(f.actors.filter(actor => actor.sihangShield.mode === 'roof').length, 4);
     for (const actor of f.actors) {
       const goal = f.combat.goalFor(actor), dx = goal.x - actor.position.x, dz = goal.z - actor.position.z;
       const distance = Math.hypot(dx, dz), step = Math.min(.05, distance);
@@ -44,7 +58,6 @@ test('sappers advance behind slanted shields, lift them near the wall, then with
     }
     if (event === 'armed') armedAt = now;
   }
-  assert.equal(roof, true);
   assert.notEqual(armedAt, null);
   assert.equal(f.combat.snapshot.phase, 'withdraw');
   const installed = f.combat.snapshot.anchor.z;
@@ -58,7 +71,7 @@ test('sappers advance behind slanted shields, lift them near the wall, then with
         (goal.z - actor.position.z) / distance * Math.min(.05, distance));
     }
   }
-  assert.equal(f.combat.snapshot.mode, 'front');
+  assert.equal(f.combat.snapshot.mode, 'turtle');
   assert.ok(f.combat.snapshot.anchor.z < installed);
   assert.ok(f.actors.every(actor => actor.sihangShield.targets.left && actor.sihangShield.targets.right));
   f.actors[0].health = 0; f.combat.update(.05, armedAt + 3, f);
@@ -74,7 +87,11 @@ test('dynamic shields block real rays, disappear on reset, and require a real ne
     new THREE.Vector3(0, 0, -1));
   assert.ok(ray.intersectObjects(f.world.solids, false).length);
   assert.equal(f.campaign.demolition.state, 'idle');
-  f.actors[2].position.set(SIHANG_DEMOLITION_POINT.x, 0, SIHANG_DEMOLITION_POINT.z - 1);
+  f.combat.reset();
+  for (const actor of f.actors) {
+    const pose = sihangShieldLayout(actor.index, 20);
+    actor.position.set(pose.x, 0, SIHANG_DEMOLITION_POINT.z - sihangShieldLayout(0, 20).z - .7 + pose.z);
+  }
   assert.equal(f.combat.update(10, 11, f), 'armed');
   f.player.position.set(SIHANG_DEMOLITION_POINT.x + 1.7, 0, SIHANG_DEMOLITION_POINT.z); f.keys.add('KeyF');
   assert.ok(f.combat.prompt(f.campaign, f.player));
@@ -84,11 +101,14 @@ test('dynamic shields block real rays, disappear on reset, and require a real ne
   assert.equal(ray.intersectObjects(f.world.solids, false).length, 0);
 });
 
-test('the breach releases sapper shields and routes ordinary enemy infantry through five real entry lanes', () => {
+test('a breach keeps living sappers until their actual return and routes other infantry through real entry lanes', () => {
   const f = fixture();
   f.combat.update(.05, 0, f);
   f.campaign.northWallBreached = true;
-  f.combat.update(.05, 1, f);
+  assert.equal(f.combat.update(.05, 1, f), 'withdrawn');
+  assert.equal(f.combat.snapshot.shields, 20);
+  for (const actor of f.actors) actor.formation.sihangDemolition = false;
+  f.combat.update(0, 1, f);
   assert.equal(f.combat.snapshot.shields, 0); assert.equal(f.combat.snapshot.phase, 'breached');
   assert.ok(f.actors.every(actor => !actor.sihangShield));
   const lanes = [];
@@ -106,4 +126,21 @@ test('the breach releases sapper shields and routes ordinary enemy infantry thro
     assert.equal(f.combat.goalFor(actor, f.campaign), null);
   }
   assert.equal(new Set(lanes).size, 5);
+});
+
+test('closed turtle steel intercepts low, body, head and overhead projectile rays from every outside direction', () => {
+  const f = fixture();
+  f.combat.update(.05, 0, f);
+  const center = new THREE.Vector3(0, 1, -60), ray = new THREE.Raycaster();
+  for (const height of [.15, 1, 1.8]) for (let i = 0; i < 32; i++) {
+    const angle = i * Math.PI / 16;
+    const origin = new THREE.Vector3(Math.cos(angle) * 12, height, -60 + Math.sin(angle) * 12);
+    const target = center.clone().setY(height);
+    ray.set(origin, target.sub(origin).normalize()); ray.far = 12;
+    assert.ok(ray.intersectObjects(f.world.solids, false).length, `${height}/${i}`);
+  }
+  for (const x of [-.9, 0, .9]) for (const z of [-3.4, 0, 3.4]) {
+    ray.set(new THREE.Vector3(x, 15, -60 + z), new THREE.Vector3(0, -1, 0)); ray.far = 15;
+    assert.ok(ray.intersectObjects(f.world.solids, false).length, `roof ${x}/${z}`);
+  }
 });

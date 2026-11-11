@@ -83,6 +83,22 @@ export function createAircraftSmokeEffects(scene, texture) {
   let settings = null;
   const clear = () => { state.sources.clear(); state.puffs.length = 0; state.time = null; mesh.count = 0; mesh.visible = false; };
   return {
+    prepareBattleViews(camera) {
+      const previous = { count: mesh.count, visible: mesh.visible, opacity: opacity.getX(0),
+        size: size.getX(0), spin: spin.getX(0), matrix: new THREE.Matrix4() };
+      mesh.getMatrixAt(0, previous.matrix);
+      const point = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5));
+      mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(point.x, point.y, point.z));
+      opacity.setX(0, .1); size.setX(0, 1); spin.setX(0, 0);
+      mesh.count = 1; mesh.visible = true;
+      mesh.instanceMatrix.needsUpdate = opacity.needsUpdate = size.needsUpdate = spin.needsUpdate = true;
+      return () => {
+        mesh.count = previous.count; mesh.visible = previous.visible;
+        mesh.setMatrixAt(0, previous.matrix); opacity.setX(0, previous.opacity);
+        size.setX(0, previous.size); spin.setX(0, previous.spin);
+        mesh.instanceMatrix.needsUpdate = opacity.needsUpdate = size.needsUpdate = spin.needsUpdate = true;
+      };
+    },
     configure(value) { settings = value; if (!settings.effects.hitParticles) clear(); },
     update(vehicles, now) {
       if (!settings?.effects.hitParticles) return;

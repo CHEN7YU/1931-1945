@@ -184,6 +184,24 @@ for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-b
   const restored = forces[1].root.children.filter(child => child.isInstancedMesh);
   assert.ok(restored.some(mesh => mesh.count > 0));
   for (const mesh of restored) assert.equal(mesh.visible, mesh.count > 0, 'nonempty batches return in the first restored update');
+  if (team === 'friendly') {
+    const liveBefore = capture(forces[1]), frozen = forces[1].createStaticFormation(3);
+    for (let index = 0; index < 3; index++)
+      frozen.add(actors[index], new THREE.Vector3(56 + index * 1.3, 0, 66));
+    const fixed = frozen.root.children.map(mesh => Array.from(mesh.instanceMatrix.array));
+    assert.deepEqual(capture(forces[1]), liveBefore, 'freezing characters cannot overwrite live instance buffers');
+    forces[1].update(actors, 63, null, 'high');
+    assert.deepEqual(frozen.root.children.map(mesh => Array.from(mesh.instanceMatrix.array)), fixed,
+      'retired original characters never resume animation when live troops update');
+    assert.ok(frozen.root.children.every(mesh =>
+      mesh.geometry.attributes.position.array.every(Number.isFinite) &&
+      mesh.geometry.morphAttributes.position === undefined));
+    assert.equal(frozen.count, 3);
+    assert.throws(() => frozen.add(actors[0], new THREE.Vector3()), RangeError);
+    frozen.reset();
+    assert.ok(frozen.root.children.every(mesh => mesh.count === 0));
+    for (const mesh of frozen.root.children) { mesh.geometry.dispose(); mesh.dispose(); }
+  }
   for (const force of forces) for (const mesh of force.root.children) if (mesh.isInstancedMesh) {
     mesh.geometry.dispose(); mesh.dispose();
   }

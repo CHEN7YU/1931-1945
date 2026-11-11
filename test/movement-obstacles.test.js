@@ -59,3 +59,21 @@ test('door index rebuilds, spawn/removal and vehicle replacements are reflected 
   assert.equal(current.at(0, 0), lookup.at(0, 0));
   current.endStablePass();
 });
+
+test('a synchronous casualty search snapshots vehicle hulls once and can safely run inside an AI pass', () => {
+  const lookup = obstacleLookup([{ minX: -1, maxX: 1, minZ: -1, maxZ: 1, height: 2 }], 2.5);
+  const vehicles = new Map([['a', tank('a', 3, 0)], ['wreck', { ...tank('wreck', -2, 4), health: 0 }]]);
+  let constructions = 0;
+  const current = createMovementObstacles(lookup, vehicles, vehicle => { constructions++; return vehicleCollider(vehicle); });
+  current.beginStablePass();
+  const at = current.snapshot();
+  const before = constructions;
+  for (let i = 0; i < 2000; i++) {
+    const x = i % 20 - 10, z = i % 17 - 8;
+    assert.deepEqual(at(x, z), current.at(x, z));
+  }
+  assert.equal(constructions, before);
+  current.endStablePass();
+  vehicles.get('a').position.x = 30;
+  assert.notDeepEqual(at(0, 0), current.snapshot()(0, 0), 'the next search must use the current hull pose');
+});

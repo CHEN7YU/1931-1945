@@ -1,4 +1,4 @@
-import { SIHANG_WAREHOUSE } from './sihang-layout.js';
+import { SIHANG_WAREHOUSE, SIHANG_DEFENSE_POSTS } from './sihang-layout.js';
 
 export const SIHANG_COVER_DISTANCE = 20;
 
@@ -62,4 +62,24 @@ export function sihangCoverCandidates(actor, context) {
 export function sihangGroundGuardGoal(index) {
   if (!Number.isInteger(index) || index < 0) throw new RangeError('Invalid ground defender index');
   return { x: -24 + index % 5 * 2, y: 0, z: -46 - Math.floor(index / 5) * 2, transit: true };
+}
+
+const upperPosts = [1, 2].flatMap(level =>
+  SIHANG_DEFENSE_POSTS.filter(post => post.y === SIHANG_WAREHOUSE.floorHeight * level).slice(0, 5));
+
+export function sihangDefenseGoal(formationIndex, index) {
+  if (!Number.isInteger(formationIndex) || formationIndex < 1 || formationIndex > 3 ||
+    !Number.isInteger(index) || index < 0 || index > 10) throw new RangeError('Invalid Sihang defense assignment');
+  const ordinal = (formationIndex - 1) * 11 + index;
+  if (ordinal < 4) return { x: -29 + ordinal * 6, y: 0, z: -45.5,
+    heading: 0, duty: 'ground-intercept', transit: true };
+  if (ordinal < 21) {
+    const slot = ordinal - 4;
+    return { x: slot < 15 ? -26 + slot % 5 * 12 : -20 + (slot - 15) * 24,
+      y: 0, z: slot < 15 ? -35 + Math.floor(slot / 5) * 10 : -30,
+      heading: 0, duty: 'ground-defense', transit: true };
+  }
+  if (ordinal < 31) return { ...upperPosts[ordinal - 21], duty: 'wall-fire', transit: true };
+  return { x: ordinal === 31 ? -14 : -11, y: SIHANG_WAREHOUSE.roofY, z: -35,
+    heading: 0, duty: 'roof-aa', stationId: ordinal === 31 ? 'sihang-roof-aa' : null, transit: true };
 }

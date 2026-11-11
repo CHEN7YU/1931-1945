@@ -14,6 +14,7 @@ import { rifleWorldModel } from '../src/rifle-model.js';
 import { createCasualtyPose, createCasualtyState } from '../src/casualties.js';
 import { loadIjaCharacter } from '../src/ija-character.js';
 import { RIFLE_HAND_SAMPLES } from '../src/rifle-hand-action.js';
+import { SIHANG_SHIELD_CARRY } from '../src/sihang-shield-pose.js';
 
 async function nativeRig() {
   const binary = await readFile(new URL('../public/assets/game/ija-1938/character.glb', import.meta.url));
@@ -152,6 +153,35 @@ async function loadNativeTemplate() {
     globalThis.fetch = fetch; GLTFLoader.prototype.loadAsync = load;
   }
 }
+
+test('actual native hand and finger vertices stay behind the opaque steel in both carry poses', async () => {
+    const template = await loadNativeTemplate();
+    const person = { ...actor(SIHANG_SHIELD_POSES[0]), id: 'steel-contact', unitId: 'demolition', position: new THREE.Vector3(),
+      heading: 0, walkPhase: 0, locomotion: { speed: 0 }, rifle: createRifleState() };
+    person.nativeMotion = createNraMotion(template.motionProfile, person);
+    for (const pose of SIHANG_SHIELD_POSES) {
+      person.sihangShield = pose; template.update(person, 1, null); template.root.updateMatrixWorld(true);
+      let fingers = 0;
+      template.root.traverse(mesh => {
+        if (!mesh.isSkinnedMesh || !mesh.geometry.attributes.skinIndex) return;
+        mesh.skeleton.update();
+        const joints = mesh.geometry.attributes.skinIndex, weights = mesh.geometry.attributes.skinWeight;
+        for (let i = 0; i < joints.count; i++) {
+          let handWeight = 0;
+          for (let c = 0; c < 4; c++)
+            if (/^(Left|Right)Hand/.test(mesh.skeleton.bones[joints.getComponent(i, c)].name))
+              handWeight += weights.getComponent(i, c);
+          if (handWeight < .75) continue;
+          const vertex = mesh.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
+          const profile = SIHANG_SHIELD_CARRY[pose.mode];
+          assert.ok(pose.mode === 'roof' ? vertex.y < profile.height - .0325 :
+            vertex.z > profile.offsetZ + .0325, `${pose.mode} hand vertex ${vertex.toArray()}`);
+          fingers++;
+        }
+      });
+      assert.ok(fingers > 20, 'inspect the actual original skinned fingers, not only wrist anchors');
+    }
+});
 
 test('production IJA near/far views apply carry after native idle/rifle updates and clear it for normal actors and casualties', async () => {
   const template = await loadNativeTemplate();

@@ -21,28 +21,55 @@ export function accelerateCollisionMesh(object) {
 export function createSolidIndex(solids, size = 8) {
   if (!Number.isFinite(size) || size <= 0) throw new RangeError('Solid index cell size must be positive and finite');
   const cells = new Map(), global = [], dynamic = [], ray = new THREE.Ray(), point = new THREE.Vector3();
+  const entries = new Map();
   const acceleration = { meshes: 0, triangles: 0 };
-  for (const object of solids) {
+  const addStatic = object => {
     object.updateWorldMatrix(true, false);
-    if (object.isInstancedMesh || object.userData.dynamicCollision) { dynamic.push(object); continue; }
-    if (accelerateCollisionMesh(object)) {
+    const accelerated = accelerateCollisionMesh(object);
+    const triangles = accelerated ? (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3 : 0;
+    if (accelerated) {
       acceleration.meshes++;
-      acceleration.triangles += (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3;
+      acceleration.triangles += triangles;
     }
     if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
     const bounds = object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld);
-    const entry = { object, bounds };
+    const entry = { object, bounds, keys: [], accelerated, triangles };
+    entries.set(object, entry);
     const minX = Math.floor(bounds.min.x / size), maxX = Math.floor(bounds.max.x / size);
     const minZ = Math.floor(bounds.min.z / size), maxZ = Math.floor(bounds.max.z / size);
-    if ((maxX - minX + 1) * (maxZ - minZ + 1) > 256) { global.push(entry); continue; }
+    if ((maxX - minX + 1) * (maxZ - minZ + 1) > 256) { global.push(entry); return; }
     for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
       const key = `${x},${z}`;
+      entry.keys.push(key);
       if (!cells.has(key)) cells.set(key, []);
       cells.get(key).push(entry);
     }
+  };
+  for (const object of solids) {
+    if (object.isInstancedMesh || object.userData.dynamicCollision) {
+      object.updateWorldMatrix(true, false); dynamic.push(object);
+    } else addStatic(object);
   }
   return {
-    acceleration: Object.freeze(acceleration),
+    get acceleration() { return Object.freeze({ ...acceleration }); },
+    synchronize(solids) {
+      const present = new Set(solids);
+      for (const [object, entry] of entries) if (!present.has(object)) {
+        if (entry.keys.length) for (const key of entry.keys) {
+          const bucket = cells.get(key), index = bucket.indexOf(entry);
+          if (index >= 0) bucket.splice(index, 1);
+          if (!bucket.length) cells.delete(key);
+        } else global.splice(global.indexOf(entry), 1);
+        if (entry.accelerated) { acceleration.meshes--; acceleration.triangles -= entry.triangles; }
+        entries.delete(object);
+      }
+      for (let i = dynamic.length - 1; i >= 0; i--) if (!present.has(dynamic[i])) dynamic.splice(i, 1);
+      for (const object of solids) if (!entries.has(object) && !dynamic.includes(object)) {
+        if (object.isInstancedMesh || object.userData.dynamicCollision) {
+          object.updateWorldMatrix(true, false); dynamic.push(object);
+        } else addStatic(object);
+      }
+    },
     addDynamic(object) {
       if (!object?.isMesh || dynamic.includes(object)) throw new Error('Dynamic collision registration requires a new mesh');
       object.updateWorldMatrix(true, false);

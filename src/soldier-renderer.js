@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { soldierModel } from './world.js';
 import { casualtyProgress, casualtyRotation } from './casualties.js';
+import { createEvacuationInstances, setInstanceEvacuationOpacity } from './evacuation-fade.js';
 
 export function syncSoldierModelPose(actor, now = actor.deathTime) {
   if (!actor?.model || !actor.position || !Number.isFinite(actor.position.x) || !Number.isFinite(actor.position.y) ||
@@ -32,7 +33,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
     if (!groups.has(key)) {
       const template = soldierModel(friendly, detail, weapon);
       const parts = template.children.map(source => {
-        const mesh = new THREE.InstancedMesh(source.geometry, source.material, capacity);
+        const mesh = createEvacuationInstances(source.geometry.clone(), source.material, capacity);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.frustumCulled = false;
         mesh.castShadow = detail === 'near';
@@ -81,6 +82,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
           part.updateMatrix();
           matrix.multiplyMatrices(root, part.matrix);
           group.parts[index].setMatrixAt(group.count, matrix);
+          setInstanceEvacuationOpacity(group.parts[index], group.count, actor.sihangEvacuationOpacity);
         });
         group.count++; summary.visible++; summary[detail]++;
         if (sword) summary.melee++;

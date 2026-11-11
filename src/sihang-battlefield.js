@@ -6,6 +6,7 @@ import { createCivilianCharacterFactory } from './civilian-character.js';
 import { advanceCivilianMotion } from './civilian-motion.js';
 import { staticGeometryBatches } from './static-scene-batches.js';
 import { obstacleLookup } from './spatial.js';
+import { accelerateCollisionMesh } from './solid-index.js';
 import { createSihangFlag } from './sihang-flag.js';
 import { createSihangCity } from './sihang-city.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
@@ -592,6 +593,7 @@ export function makeSihangBattlefield(scene, surface) {
       }
     }
   }
+  for (const mesh of wallStates.get(northBreached).solids) accelerateCollisionMesh(mesh);
   let doorSystem = null;
   function switchNorthWall(breached) {
     const from = wallStates.get(breached ? northIntact : northBreached);
@@ -685,6 +687,8 @@ export function makeSihangBattlefield(scene, surface) {
     return position;
   }
   const navigators = new Map();
+  const floorNavigationObstacles = () => [...obstacles.filter(o => !o.door),
+    ...doorSystem.navigationObstacles.filter(o => o.door)];
   let connectorLookup = null;
   const navigationStats = { builds: 0, refreshes: 0, connectorCandidates: 0 };
   function physicalConnector(start, goal, sameLevel = false) {
@@ -708,6 +712,10 @@ export function makeSihangBattlefield(scene, surface) {
     return Math.abs(feet.y - goal.y) <= .025 ? path : [];
   }
   function floorPath(start, goal, level) {
+    if (goal.assembly || goal.parade) {
+      const direct = physicalConnector(start, goal, true);
+      if (direct.length) return [direct[direct.length - 1]];
+    }
     const finishAtGoal = path => {
       if (!path.length) return [];
       const last = path[path.length - 1];
@@ -719,10 +727,10 @@ export function makeSihangBattlefield(scene, surface) {
     let navigator = navigators.get(level);
     if (!navigator) {
       const y = levels[level];
-      const projected = doorSystem.navigationObstacles
+      const projected = floorNavigationObstacles()
         .filter(o => (!ruined || !standingObstacles.includes(o)) &&
           (o.minY ?? -Infinity) < y + 1.75 && (o.height ?? Infinity) > y + .025)
-        .map(o => ({ ...o, minY: -10, height: 40 }));
+        .map(o => ({ ...o, navigationSource: o, minY: -10, height: 40 }));
       projected.push({ minX: M.minX, maxX: M.maxX, minZ: M.maxZ, maxZ: 108, minY: -10, height: 40 });
       if (level && !ruined) {
         projected.push(
@@ -741,13 +749,15 @@ export function makeSihangBattlefield(scene, surface) {
     else navigator = navigator.navigator;
     const path = navigator(start, goal);
     if (!path.length && navigator.stats.reason === 'blocked-start' && !ruined) {
-      // Only bridge the artificial clearance collar of a stair cutout, never a real wall or an unsupported cell.
-      const candidates = SIHANG_STAIRWELLS.flatMap(stair => [
+      // Avoidance can enter the walkable strip beside a flight, inside its artificial navigation cutout.
+      const candidates = SIHANG_STAIRWELLS.filter(stair =>
+        start.x >= stair.minX - .6 && start.x <= stair.maxX + .6 &&
+        start.z >= stair.minZ - .6 && start.z <= stair.maxZ + .6).flatMap(stair => [
         { x: stair.minX - .6, z: start.z }, { x: stair.maxX + .6, z: start.z },
         { x: start.x, z: stair.minZ - .6 }, { x: start.x, z: stair.maxZ + .6 },
       ]).map(p => ({ ...p, y: levels[level],
         distance: Math.hypot(p.x - start.x, p.z - start.z) }))
-        .filter(p => p.distance > .001 && p.distance <= 1.2)
+        .filter(p => p.distance > .001)
         .sort((a, b) => a.distance - b.distance);
       for (const candidate of candidates) {
         const prefix = physicalConnector(start, candidate, true);
@@ -759,20 +769,21 @@ export function makeSihangBattlefield(scene, surface) {
     }
     return finishAtGoal(path.map(p => ({ ...p, y: level ? levels[level] : groundHeight(p.x, p.z) })));
   }
-  doorSystem.addNavigationListener((_bounds, regions) => {
+  function refreshNavigation(regions) {
     connectorLookup = null;
     movementLookup.rebuild();
-    const doorTop = Math.max(...doorSystem.doors.map(door => door.height));
     for (const { navigator, projected, y } of navigators.values()) {
-      if (y + .025 >= doorTop) continue;
-      for (let i = projected.length - 1; i >= 0; i--) if (projected[i].door) projected.splice(i, 1);
-      projected.push(...doorSystem.navigationObstacles.filter(o => o.door &&
-        (o.minY ?? -Infinity) < y + 1.75 && o.height > y + .025)
-        .map(o => ({ ...o, minY: -10, height: 40 })));
+      for (let i = projected.length - 1; i >= 0; i--)
+        if (projected[i].navigationSource) projected.splice(i, 1);
+      projected.push(...floorNavigationObstacles().filter(o =>
+        (!ruined || !standingObstacles.includes(o)) &&
+        (o.minY ?? -Infinity) < y + 1.75 && (o.height ?? Infinity) > y + .025)
+        .map(o => ({ ...o, navigationSource: o, minY: -10, height: 40 })));
       navigator.refreshMany(regions);
       navigationStats.refreshes++;
     }
-  });
+  }
+  doorSystem.addNavigationListener((_bounds, regions) => refreshNavigation(regions));
   function stairAt(point) {
     if (ruined || ![point?.x, point?.y, point?.z].every(Number.isFinite)) return null;
     return SIHANG_STAIR_ROUTES.find(route =>
@@ -897,7 +908,7 @@ export function makeSihangBattlefield(scene, surface) {
   const world = {
     solids, obstacles, smoke, flags, boxGeometry, groundHeight, walkHeight, moveInfantry, elevatedPath, stairAt,
     mapBounds: M,
-    connectInfantryPath: physicalConnector,
+    connectInfantryPath: physicalConnector, refreshNavigation,
     groundSurface: (x, z) => within(x, z, W) || sihangSouthBank({ x, z }) || sihangBridgeContains({ x, z }) ? 'stone' : 'earth',
     armorObstacles: obstacles, town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, navigationStats,
     sceneArt: { staticRendering, warehouseBreaches: breaches.filter(h => h.blown).length,
@@ -919,7 +930,17 @@ export function makeSihangBattlefield(scene, surface) {
     breachNorthWall() {
       if (northWallBreached || ruined) return false;
       northWallBreached = true; switchNorthWall(true);
-      navigators.clear(); connectorLookup = null; movementLookup.rebuild();
+      const wallObstacles = new Set([...wallStates.get(northIntact).obstacles, ...wallStates.get(northBreached).obstacles]);
+      for (const { navigator, projected, y } of navigators.values()) {
+        for (let i = projected.length - 1; i >= 0; i--)
+          if (wallObstacles.has(projected[i].navigationSource)) projected.splice(i, 1);
+        projected.push(...wallStates.get(northBreached).obstacles
+          .filter(o => (o.minY ?? -Infinity) < y + 1.75 && o.height > y + .025)
+          .map(o => ({ ...o, navigationSource: o, minY: -10, height: 40 })));
+        navigator.refreshMany([{ minX: -5, maxX: 5, minZ: -43, maxZ: -41 }]);
+        navigationStats.refreshes++;
+      }
+      connectorLookup = null; movementLookup.rebuild();
       scene.updateMatrixWorld(true);
       return true;
     },

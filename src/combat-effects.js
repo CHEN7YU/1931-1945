@@ -181,6 +181,39 @@ export function createCombatEffects(scene, camera, groundHeight) {
     display();
   };
   return {
+    prepareBattleViews() {
+      const point = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5));
+      const objects = [...clouds.slice(0, 4), waves[0]], saved = objects.map(object => ({
+        object, visible: object.visible, position: object.position.clone(), scale: object.scale.clone(),
+        quaternion: object.quaternion.clone(), map: object.material.map, opacity: object.material.opacity,
+        toneMapped: object.material.toneMapped, blending: object.material.blending,
+      }));
+      for (const [index, object] of objects.entries()) {
+        object.visible = true; object.position.copy(point); object.scale.setScalar(.3);
+        object.material.opacity = .1;
+        if (index < 4) {
+          object.material.map = [texture, blastTexture, fireTexture, shellTexture][index];
+          object.material.toneMapped = index !== 2;
+          object.material.blending = index === 2 ? THREE.AdditiveBlending : THREE.NormalBlending;
+        }
+      }
+      const count = fragments.count, matrix = new THREE.Matrix4();
+      fragments.getMatrixAt(0, matrix);
+      fragments.setMatrixAt(0, new THREE.Matrix4().compose(point, new THREE.Quaternion(), new THREE.Vector3(.1, .1, .1)));
+      fragments.count = Math.max(1, count); fragments.instanceMatrix.needsUpdate = true;
+      const restoreTank = tankFire.prepareBattleViews(), restoreAircraft = aircraftSmoke.prepareBattleViews(camera);
+      return () => {
+        restoreAircraft(); restoreTank();
+        fragments.count = count; fragments.setMatrixAt(0, matrix); fragments.instanceMatrix.needsUpdate = true;
+        for (const item of saved) {
+          const { object } = item;
+          object.visible = item.visible; object.position.copy(item.position); object.scale.copy(item.scale);
+          object.quaternion.copy(item.quaternion);
+          Object.assign(object.material, { map: item.map, opacity: item.opacity,
+            toneMapped: item.toneMapped, blending: item.blending });
+        }
+      };
+    },
     configure,
     muzzle(position, direction, time) {
       if (!settings.effects.muzzle || camera.position.distanceTo(position) > 35) return;

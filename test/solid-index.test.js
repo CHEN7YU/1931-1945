@@ -5,6 +5,33 @@ import { createSolidIndex } from '../src/solid-index.js';
 import { SpatialGrid, obstacleLookup } from '../src/spatial.js';
 import { circleBlocked } from '../src/core.js';
 
+test('wall replacement updates only changed meshes and preserves dynamic collision registrations', () => {
+  const material = new THREE.MeshBasicMaterial(), original = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 1, 8, 8, 8), material);
+  const intact = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 1), material);
+  intact.position.set(0, 1.5, 6);
+  const breached = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 1), material);
+  breached.position.set(2, 1.5, 6);
+  const dynamic = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+  dynamic.userData.dynamicCollision = true;
+  const addedDynamic = dynamic.clone();
+  addedDynamic.position.set(12, 1, 0);
+  const index = createSolidIndex([original, intact, dynamic]), ray = new THREE.Raycaster();
+  const before = original.matrixWorld.clone(), tree = original.geometry.boundsTree;
+  for (const solids of [[original, breached, dynamic, addedDynamic], [original, intact, dynamic]]) {
+    index.synchronize(solids);
+    dynamic.position.set(30, 1, 0); dynamic.updateMatrixWorld(true);
+    assert.deepEqual(original.matrixWorld, before);
+    assert.equal(original.geometry.boundsTree, tree, 'unchanged geometry retains its prepared BVH');
+    assert.equal(index.acceleration.meshes, 1);
+    for (const x of [0, 2, 12, 30]) {
+      ray.set(new THREE.Vector3(x, 1, -3), new THREE.Vector3(0, 0, 1)); ray.far = 12;
+      assert.equal(ray.intersectObjects(index.candidates(ray.ray.origin, ray.ray.direction, 12))[0]?.object,
+        ray.intersectObjects(solids)[0]?.object);
+    }
+    assert.deepEqual(new Set(index.sweptCandidates({ x: -3, y: 1, z: -3 }, { x: 33, y: 1, z: 8 }, 1)), new Set(solids));
+  }
+});
+
 test('rotating fixed-weapon collision meshes remain queryable after leaving their original static grid cell', () => {
   const moving = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshBasicMaterial());
   moving.userData.dynamicCollision = true;

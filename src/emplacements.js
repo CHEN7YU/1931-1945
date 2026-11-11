@@ -25,7 +25,9 @@ export const NANJING_EMPLACEMENTS = Object.freeze([
 ].map(Object.freeze));
 
 export function createEmplacement(spec) {
-  const profile = EMPLACEMENT_PROFILES[spec.profile];
+  const standard = EMPLACEMENT_PROFILES[spec.profile];
+  const profile = standard?.antiAircraft && spec.retreatCover
+    ? Object.freeze({ ...standard, minPitch: -.28 }) : standard;
   if (!profile || ![spec.x, spec.z, spec.heading].every(Number.isFinite)) throw new RangeError('Invalid fixed weapon position');
   const health = spec.profile === 'bofors75' ? 240 : 160;
   return { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
@@ -64,7 +66,7 @@ export function moveArtillery(point, forward, turn, dt, clear) {
 }
 
 export function aimEmplacement(point, target, dt, floor = 0) {
-  const profile = EMPLACEMENT_PROFILES[point.profile];
+  const profile = point.weapon.settings;
   const desiredYaw = Math.atan2(point.x - target.x, point.z - target.z);
   const desiredPitch = Math.atan2(target.y - floor - profile.muzzleHeight,
     Math.hypot(target.x - point.x, target.z - point.z));
@@ -76,7 +78,7 @@ export function aimEmplacement(point, target, dt, floor = 0) {
 }
 
 export function emplacementCanAimAt(point, target, floor = 0) {
-  const profile = EMPLACEMENT_PROFILES[point.profile];
+  const profile = point.weapon.settings;
   const yaw = Math.atan2(point.x - target.x, point.z - target.z);
   const pitch = Math.atan2(target.y - floor - profile.muzzleHeight,
     Math.hypot(target.x - point.x, target.z - point.z));
@@ -85,7 +87,7 @@ export function emplacementCanAimAt(point, target, floor = 0) {
 }
 
 export function emplacementLook(point, yaw, pitch) {
-  const profile = EMPLACEMENT_PROFILES[point.profile];
+  const profile = point.weapon.settings;
   const delta = Math.atan2(Math.sin(yaw - point.heading), Math.cos(yaw - point.heading));
   point.yaw = point.heading + Math.max(-profile.traverse, Math.min(profile.traverse, delta));
   point.pitch = Math.max(profile.minPitch, Math.min(profile.maxPitch, pitch));
@@ -93,7 +95,7 @@ export function emplacementLook(point, yaw, pitch) {
 }
 
 export function emplacementPose(point, floor = 0) {
-  const profile = EMPLACEMENT_PROFILES[point.profile], c = Math.cos(point.yaw), s = Math.sin(point.yaw);
+  const profile = point.weapon.settings, c = Math.cos(point.yaw), s = Math.sin(point.yaw);
   const operatorDistance = point.profile === 'bofors75' ? 1.02 : profile.antiAircraft ? .68 : .76;
   const standing = profile.antiAircraft || point.profile === 'bofors75' && point.position === 'march';
   return {

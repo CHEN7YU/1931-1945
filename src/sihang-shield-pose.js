@@ -1,10 +1,24 @@
 import * as THREE from 'three';
 import { addSupportGrip, createSupportWeaponPose, supportWeaponTargets } from './support-weapon-pose.js';
 
-export const SIHANG_SHIELD_POSES = Object.freeze([
-  Object.freeze({ mode: 'roof', slot: 0, active: true, handTarget: Object.freeze([-.3, 1.856, .055]) }),
-  Object.freeze({ mode: 'front', slot: 0, active: true, handTarget: Object.freeze([-.3, 1.068, -.263]) }),
-]);
+export const SIHANG_SHIELD_CARRY = Object.freeze({
+  roof: Object.freeze({ height: 1.96, offsetZ: 0, rotationX: 0, width: 3.1, length: 3.35 }),
+  front: Object.freeze({ height: 1.075, offsetZ: -.45, rotationX: -Math.PI / 2, width: 3.1, length: 2.15 }),
+});
+
+export function attachSihangShieldGrips(mesh) {
+  mesh.userData.supportWeapon = { grips: Object.fromEntries(['left', 'right'].map(side =>
+    [side, addSupportGrip(mesh, `${side}-shield`, { center: [side === 'left' ? -.3 : .3, -.14, 0],
+      radius: .016, normal: [0, -1, 0], forward: [0, 0, -1], axis: [0, 0, 1] })])) };
+}
+
+export const SIHANG_SHIELD_POSES = Object.freeze(['roof', 'front'].map(mode => {
+  const frame = new THREE.Object3D(), profile = SIHANG_SHIELD_CARRY[mode];
+  frame.position.set(0, profile.height, profile.offsetZ); frame.rotation.x = profile.rotationX;
+  attachSihangShieldGrips(frame);
+  const target = supportWeaponTargets(frame, new THREE.Object3D()).left.wrist;
+  return Object.freeze({ mode, slot: 0, active: true, handTarget: Object.freeze(target) });
+}));
 
 export const SIHANG_SHIELD_BANKS = Object.freeze([
   ...SIHANG_SHIELD_POSES,
@@ -56,8 +70,8 @@ export function createSihangShieldPose(root, bones, satchel = null) {
     }
     if (actor.sihangShield.targets) return actor.sihangShield.targets;
     const shield = actor.sihangShield, roof = shield.mode === 'roof';
-    const forward = roof ? [0, 0, -1] : [0, -Math.sin(1.15), -Math.cos(1.15)];
-    const normal = roof ? [0, -1, 0] : [0, -Math.cos(1.15), Math.sin(1.15)];
+    const forward = roof ? [0, 0, -1] : [0, -1, 0];
+    const normal = roof ? [0, -1, 0] : [0, 0, 1];
     return Object.fromEntries(['left', 'right'].map(side => {
       const wrist = shield.handTarget.slice(); wrist[0] = side === 'left' ? -Math.abs(wrist[0]) : Math.abs(wrist[0]);
       return [side, { wrist, palm: wrist.map((value, index) => value + forward[index] * .055), forward, normal }];

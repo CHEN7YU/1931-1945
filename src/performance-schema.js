@@ -3,6 +3,7 @@ export const FRAME_BUCKETS_MS = Object.freeze([8, 12, 16.7, 20, 25, 33.4, 50, 66
 export const PERFORMANCE_SCOPES = Object.freeze([
   'doors', 'vehicles', 'player', 'ai', 'motion', 'objectives', 'projectiles', 'grenades',
   'effects', 'hud', 'presentation', 'render', 'audio', 'steering', 'routes', 'posture', 'tankEvasion', 'civilians',
+  'casualtyPlacement', 'sihangDemolition',
 ]);
 export const PERFORMANCE_SCOPE_SAMPLE_EVERY = Object.freeze({ steering: 32, routes: 32, posture: 32, tankEvasion: 32 });
 export const PERFORMANCE_STATES = Object.freeze(['menu', 'playing', 'transferring', 'pause', 'dead', 'victory', 'defeat', 'draw', 'loading']);

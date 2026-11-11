@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { createHash } from 'node:crypto';
 import { circleBlocked } from '../src/core.js';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
+import { sihangRetreatGoal } from '../src/sihang-roster.js';
+import { createSquadRoutes } from '../src/squad-routes.js';
+import { sihangParadeExit, sihangParadePassage } from '../src/sihang-formation.js';
 import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_CAPTURE_AREA,
   SIHANG_DEMOLITION_POINT, SIHANG_EVACUATION, SIHANG_DEFENSE_POSTS,
@@ -61,6 +64,32 @@ function horizontalHits(x, y, z, direction, length) {
 }
 
 describe('independent Sihang Warehouse battlefield', () => {
+  it('evacuees pass the actual parade tail and battle boundary instead of crowding one terminal coordinate', () => {
+    const tail = sihangParadeExit(true), exit = sihangParadeExit();
+    assert.equal(sihangParadePassage({ x: tail.x, y: 0, z: tail.z - .2 }, tail), true,
+      'ordinary navigation arrival must already be beyond the physical passage, not stop short of it');
+    assert.equal(sihangParadePassage({ x: 65.3685676, y: 0, z: 64.6593933 }, tail), true);
+    assert.equal(sihangParadePassage({ x: 64, y: 0, z: 64.4 }, tail), false);
+    assert.equal(sihangParadePassage({ x: 70, y: 0, z: 65 }, tail), false);
+    assert.equal(sihangParadePassage({ x: 66.6055121, y: 0, z: 73.5798519 }, exit), true);
+    assert.equal(sihangParadePassage({ x: 64, y: 0, z: 71.99 }, exit), false);
+    assert.equal(sihangParadePassage({ x: 64, y: 2, z: 73.2 }, exit), false);
+  });
+
+  it('preserves the arched walking height when actual bridge routes are shared between soldiers', () => {
+    const routes = createSquadRoutes(world.walkHeight);
+    const goal = { ...sihangBridgePoint(1 + 4 / SIHANG_BRIDGE.length, 1.15), y: 0 };
+    const person = fraction => ({ position: { ...sihangBridgePoint(fraction, 1.15), y: 0 },
+      formation: { id: 'real-bridge', type: 'infantry' }, tactics: {} });
+    const lead = person(-.25), follower = person(-.2);
+    routes.find(lead, goal, 0, () => world.elevatedPath(lead.position, goal), world.connectInfantryPath);
+    const shared = routes.find(follower, goal, .1,
+      () => { throw new Error('Expected to exercise the cached actual bridge route'); }, world.connectInfantryPath);
+    assert.equal(routes.snapshot.shared, 1);
+    assert.ok(shared.some(point => point.y > 1));
+    for (const point of shared) close(point.y, world.walkHeight(point.x, point.z, point.y), 'Cached bridge support');
+    follow(follower.position, goal, shared);
+  });
   before(() => {
     scene = new THREE.Scene();
     world = makeSihangBattlefield(scene, (kind, color) => {
@@ -73,14 +102,14 @@ describe('independent Sihang Warehouse battlefield', () => {
       passages: world.town.passages.map(p => ({ id: p.id, groupId: p.groupId, x: p.x, z: p.z,
         width: p.width, axis: p.axis, hingeDirection: p.hingeDirection, openAngle: p.openAngle })) };
     assert.equal(createHash('sha256').update(JSON.stringify(planar)).digest('hex'),
-      '86adff1f6ab3a392dadb9c447ae13f3fc3505edca55db438e87e4d4f043bbaec',
-      'Original streets, lots, footprints, doorways and passage directions must not move');
+      'f45daba9de233bf47316bf4afe4c9f9ed03b82701e6d1c5d15eb183a59f2bf34',
+      'Street and doorway contract includes the reserved south parade square and relocated concession shop');
     const layout = { obstacles: world.obstacles, passages: world.town.passages, streets: world.town.streets,
       houses: world.town.buildings.map(b => ({ id: b.id, x: b.x, z: b.z, width: b.width, depth: b.depth,
         height: b.height, bounds: b.bounds, exit: b.exit, damageOpening: b.damageOpening })) };
     assert.equal(createHash('sha256').update(JSON.stringify(layout)).digest('hex'),
-      '740c8319384c9c66f2d43470a6c5188f945d230883f5587540ce5375ac0737dc',
-      'Reduced warehouse storeys and varied residential shells have a deterministic physical geometry contract');
+      '7042f3de4c9971a1050a5a39d63dc0bfd6ce4b545928f8cc004a3f4f61eecce2',
+      'Warehouse geometry and the physical south-bank parade clearance remain deterministic');
   });
   beforeEach(() => world.resetCampaign());
 
@@ -89,6 +118,9 @@ describe('independent Sihang Warehouse battlefield', () => {
     for (let cycle = 0; cycle < 2; cycle++) {
       assert.equal(world.northWallBreached, false);
       assert.ok(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length);
+      world.elevatedPath({ x: 0, y: 0, z: -60 }, { x: 0, y: 0, z: -60 });
+      world.elevatedPath({ x: 0, y: W.floorHeight, z: -38 }, { x: 0, y: W.floorHeight, z: -38 });
+      const builds = world.navigationStats.builds;
       assert.equal(world.breachNorthWall(), true); assert.equal(world.breachNorthWall(), false);
       assert.equal(world.warehouseRuined, false);
       assert.equal(world.landmarks.warehouse.intact.visible, true);
@@ -104,6 +136,8 @@ describe('independent Sihang Warehouse battlefield', () => {
         assert.ok(route.some(point => point.z > -42), 'navigation reaches inside the new breach');
       }
       assert.ok(horizontalHits(8, 1.75, -46, [0, 0, 1], 9).length, 'adjacent masonry stays solid');
+      world.elevatedPath({ x: 0, y: W.floorHeight, z: -38 }, { x: 0, y: W.floorHeight, z: -38 });
+      assert.equal(world.navigationStats.builds, builds, 'detonation refreshes local cells instead of rebuilding floor grids');
       assert.equal(world.walkHeight(0, -40, W.floorHeight), W.floorHeight);
       assert.equal(new Set(world.solids).size, world.solids.length);
       world.resetCampaign();
@@ -155,7 +189,7 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.ok(world.obstacles.every(o => Number.isFinite(o.height)), 'All collision obstacles have vertical bounds');
   });
 
-  it('fits all 44 allies on supported second-floor ground without walls or stair holes', () => {
+  it('fits all 44 allies on supported ground-floor positions without walls or stair holes', () => {
     const spawns = SIHANG_SQUAD_ORIGINS.flatMap(origin =>
       Array.from({ length: 11 }, (_, i) => ({
         x: origin.x + (i % 4 - 1.5) * 1.6,
@@ -164,12 +198,13 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.equal(spawns.length, 44);
     scene.updateMatrixWorld(true);
     for (const p of spawns) {
-      close(world.walkHeight(p.x, p.z, p.y), W.floorHeight, 'Spawn floor support');
+      close(p.y, 0, 'Initial ground-floor deployment');
+      close(world.walkHeight(p.x, p.z, p.y), p.y, 'Spawn floor support');
       assert.equal(circleBlocked(p.x, p.z, .45, world.obstacles, p.y), false, `Spawn collides: ${JSON.stringify(p)}`);
-      const ray = new THREE.Raycaster(point({ ...p, y: W.floorHeight + .1 }), new THREE.Vector3(0, -1, 0), 0, .3);
+      const ray = new THREE.Raycaster(point({ ...p, y: p.y + .1 }), new THREE.Vector3(0, -1, 0), 0, .3);
       const hit = ray.intersectObjects(world.solids, false)[0];
       assert.ok(hit, 'Visible floor supports spawn feet');
-      close(hit.point.y, W.floorHeight, 'Physical second-floor mesh');
+      close(hit.point.y, p.y, 'Physical ground-floor mesh');
     }
     for (let i = 0; i < spawns.length; i++) for (let j = i + 1; j < spawns.length; j++)
       assert.ok(Math.hypot(spawns[i].x - spawns[j].x, spawns[i].z - spawns[j].z) >= 1.25);
@@ -379,6 +414,19 @@ describe('independent Sihang Warehouse battlefield', () => {
     close(feet.x, end.x, 'Crosses the diagonal bridge to its south landing');
     close(feet.z, end.z, 'Crosses to the south');
     follow({ x: end.x, y: 0, z: end.z }, { x: begin.x, y: 0, z: begin.z });
+  });
+
+  it('evacuates every individual firing-post lane through the real stairs and bridge', () => {
+    for (let index = 0; index < SIHANG_DEFENSE_POSTS.length; index++) {
+      const start = SIHANG_DEFENSE_POSTS[index], actor = { index: index % 11, position: { ...start } };
+      for (let leg = 0; leg < 3; leg++) {
+        const goal = sihangRetreatGoal(actor);
+        assert.equal(world.groundHeight(goal.x, goal.z), 0, 'assembly targets cannot sit on the sloped bridge with y=0');
+        actor.position = follow(actor.position, goal).feet;
+        if (sihangSouthBank(actor.position, 4)) break;
+      }
+      assert.equal(sihangSouthBank(actor.position, 4), true, `Original firing-post defender ${index} must escape`);
+    }
   });
 
   it('rejects river shortcuts across the full width and routes ground traffic over the only bridge', () => {

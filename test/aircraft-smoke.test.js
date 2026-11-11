@@ -6,6 +6,16 @@ import { AIRCRAFT_SMOKE, createAircraftSmokeState, advanceAircraftSmoke, createA
 const plane = () => ({ id: 'hit-plane', type: 'plane', team: 'enemy', health: 180,
   position: new THREE.Vector3(10, 30, 0), heading: 0, pitch: 0, roll: 0 });
 
+test('preparing the smoke draw uploads an actual instance and restores the original emission state', () => {
+  const scene = new THREE.Scene(), effects = createAircraftSmokeEffects(scene, new THREE.Texture());
+  effects.configure({ preset: 'high', effects: { hitParticles: true } });
+  const before = effects.snapshot, mesh = scene.getObjectByName('aircraft-damage-black-smoke');
+  const restore = effects.prepareBattleViews(new THREE.PerspectiveCamera());
+  assert.equal(mesh.count, 1); assert.equal(mesh.visible, true);
+  restore();
+  assert.deepEqual(effects.snapshot, before);
+});
+
 test('a hit aircraft starts a black engine trail before death and keeps the trail in world space while falling', () => {
   const aircraft = plane(), state = createAircraftSmokeState();
   advanceAircraftSmoke(state, [aircraft], 0);

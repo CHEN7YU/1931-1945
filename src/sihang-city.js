@@ -27,6 +27,17 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
   const neonRed = new THREE.MeshStandardMaterial({ color: 0x393631, emissive: 0xbe352a, emissiveIntensity: 0 });
   const neonGreen = new THREE.MeshStandardMaterial({ color: 0x393631, emissive: 0x327953, emissiveIntensity: 0 });
   const signs = [], smoke = [], damaged = [];
+  const streetLights = [];
+  for (const x of [-72, -48, -24, 0, 24, 48, 72, 96]) {
+    const z = sihangRiverBounds(x).southZ + 4;
+    box(x, 2.1, z, .14, 4.2, .14, materials.iron);
+    box(x + .35, 4.2, z, .85, .12, .14, materials.iron);
+    box(x + .7, 4.05, z, .38, .32, .38, warm);
+    if (x === 48 || x === 72) {
+      const light = new THREE.PointLight(0xffbf72, 0, 22, 2);
+      light.position.set(x + .7, 3.8, z); scene.add(light); streetLights.push(light);
+    }
+  }
   const titles = ['春华旅馆', '江南饭店', '河畔茶室', '新声戏院', '永安客栈', '锦华舞厅', '民生商号'];
   const forms = [
     { name: 'low-brick-home', height: 3.25, southHeight: 4.3, roof: 'gable', rise: .95, columns: 2, brick: true },
@@ -222,7 +233,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     house(`north-infill-${i}`, x, -48, 10 + i % 2, 8, false, index++);
   for (const [i, x] of [-56, -42, -26, -10, 7, 23, 43, 59].entries())
     house(`north-quay-${i}`, x, sihangRiverBounds(x).northZ - 5.5, 8, 4, false, index++);
-  const shops = [-90, -66, -42, -18, 12, 76, 98];
+  const shops = [-90, -66, -42, -18, 12, 38, 98];
   for (const [i, x] of shops.entries()) house(`concession-shop-${i}`, x, 64, 15, 13, true, i);
   for (const [i, x] of [-98, -78, -54, -30, 0, 24, 48, 64, 100].entries())
     house(`concession-riverside-${i}`, x, Math.max(sihangRiverBounds(x - 7).southZ,
@@ -332,18 +343,23 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
   budget.signTriangles = signs.length * 2;
   budget.staticBatches = materialRegions.size;
   budget.totalTriangles = budget.staticTriangles + budget.vegetationTriangles + budget.signTriangles + budget.sootTriangles;
-  let night = false;
+  let night = false, lightingLevel = 0;
+  const dayWindow = warm.color.clone(), dayNeon = neonRed.color.clone();
+  const nightWindow = new THREE.Color(0xdbc38b), nightRed = new THREE.Color(0x923c38), nightGreen = new THREE.Color(0x3a6450);
   const setNightLighting = enabled => {
-    if (typeof enabled !== 'boolean') throw new TypeError('Concession lighting requires an explicit night state');
-    if (night === enabled) return;
-    night = enabled;
-    warm.color.setHex(night ? 0xdbc38b : 0x31414c); warm.emissiveIntensity = night ? .7 : 0;
-    neonRed.color.setHex(night ? 0x923c38 : 0x393631); neonRed.emissiveIntensity = night ? .55 : 0;
-    neonGreen.color.setHex(night ? 0x3a6450 : 0x393631); neonGreen.emissiveIntensity = night ? .4 : 0;
-    signMaterial.emissiveIntensity = night ? .45 : 0;
+    const level = typeof enabled === 'boolean' ? Number(enabled) : enabled;
+    if (!Number.isFinite(level) || level < 0 || level > 1) throw new TypeError('Concession lighting requires a bounded night transition');
+    if (lightingLevel === level) return;
+    lightingLevel = level; night = level > 0;
+    warm.color.copy(dayWindow).lerp(nightWindow, level); warm.emissiveIntensity = level * .7;
+    neonRed.color.copy(dayNeon).lerp(nightRed, level); neonRed.emissiveIntensity = level * .55;
+    neonGreen.color.copy(dayNeon).lerp(nightGreen, level); neonGreen.emissiveIntensity = level * .4;
+    signMaterial.emissiveIntensity = level * .45;
+    for (const light of streetLights) light.intensity = level * 35;
   };
   return { budget, smoke, titles, reservedLanes: SIHANG_RESERVED_LANES, setNightLighting,
-    get lighting() { return { night, windowIntensity: warm.emissiveIntensity,
+    get lighting() { return { night, transition: lightingLevel, streetLamps: 8, streetLightIntensity: streetLights[0].intensity,
+      windowIntensity: warm.emissiveIntensity,
       redIntensity: neonRed.emissiveIntensity, greenIntensity: neonGreen.emissiveIntensity,
       signIntensity: signMaterial.emissiveIntensity, windowColor: warm.color.getHex() }; } };
 }

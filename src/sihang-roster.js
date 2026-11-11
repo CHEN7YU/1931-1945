@@ -1,6 +1,7 @@
 import { CHI_HA } from './chi-ha.js';
 import { SIHANG_CAPTURE_AREA, SIHANG_WAREHOUSE, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS,
-  SIHANG_BRIDGE, SIHANG_EVACUATION, sihangBridgePoint, sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
+  SIHANG_BRIDGE, SIHANG_EVACUATION, sihangBridgePoint, sihangBridgeCoordinates,
+  sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
 
 export function sihangBattleRoster(playerType = 'infantry') {
   if (playerType !== 'infantry') throw new RangeError('四行仓库仅可选择步兵');
@@ -25,10 +26,17 @@ export function replaceSihangDemolition(formation) {
   return true;
 }
 
+export function sihangRetreatFormation(index) {
+  if (!Number.isInteger(index) || index < 4 || index > 5) throw new RangeError('Invalid retreat formation slot');
+  return { id: `friendly-${index}`, campaign: 'sihang', team: 'friendly', index, type: 'infantry',
+    memberCount: 11, player: false, members: [], generation: 0, respawnAt: null,
+    spawnId: `sihang-retreat-${index - 1}` };
+}
+
 export function sihangSpawns() {
   return [
     ...SIHANG_SQUAD_ORIGINS.map((point, index) => ({
-      id: `sihang-friendly-${index}`, name: `仓库二楼 · ${index + 1}班集结地`,
+      id: `sihang-friendly-${index}`, name: `仓库一楼 · ${index + 1}班集结地`,
       team: 'friendly', kind: 'base', x: point.x, z: point.z, altitude: point.y,
       permanent: true, allowNearbyEnemies: true, aiOnly: index !== 0,
       deploymentZone: { minX: point.x - 6, maxX: point.x + 6, minZ: point.z - 4, maxZ: point.z + 4 },
@@ -36,6 +44,10 @@ export function sihangSpawns() {
     { id: 'sihang-south-cover', name: '仓库南面 · 殿后补充点', team: 'friendly',
       kind: 'base', x: -4, z: -4, altitude: 0, permanent: true, allowNearbyEnemies: true,
       deploymentZone: { minX: -16, maxX: 8, minZ: -6.8, maxZ: -1.2 } },
+    ...Array.from({ length: 5 }, (_, slot) => ({ id: `sihang-retreat-${slot}`,
+      name: '仓库南面撤退集结点', team: 'friendly', kind: 'base', aiOnly: true, altitude: 0,
+      x: -24 + slot * 12, z: -4, permanent: true, allowNearbyEnemies: true,
+      deploymentZone: { minX: -29 + slot * 12, maxX: -19 + slot * 12, minZ: -6.8, maxZ: -1.2 } })),
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `sihang-enemy-${index}`, name: `日军北侧步兵集结区 ${index + 1}`,
       team: 'enemy', kind: 'base', aiOnly: true, altitude: 0,
@@ -58,6 +70,12 @@ export function sihangObjectives() {
 }
 
 export const SIHANG_EMPLACEMENTS = Object.freeze([
+  Object.freeze({ id: 'sihang-cover-gun', team: 'friendly', profile: 'bofors75', playerOnly: true,
+    retreatCover: true, x: 56, z: -26, altitude: 0, heading: .65 }),
+  Object.freeze({ id: 'sihang-cover-mg', team: 'friendly', profile: 'maxim24', playerOnly: true,
+    retreatCover: true, x: 64, z: -26, altitude: 0, heading: .4 }),
+  Object.freeze({ id: 'sihang-cover-aa', team: 'friendly', profile: 'maxim24aa', playerOnly: true,
+    retreatCover: true, x: 44, z: -26, altitude: 0, heading: .5 }),
   Object.freeze({ id: 'sihang-roof-aa', team: 'friendly', profile: 'maxim24aa',
     x: -14, z: -33, altitude: SIHANG_WAREHOUSE.roofY, heading: Math.PI }),
   Object.freeze({ id: 'sihang-ground-entrance-mg', team: 'friendly', profile: 'maxim24',
@@ -68,22 +86,28 @@ export const SIHANG_EMPLACEMENTS = Object.freeze([
     x: -12, z: -47.5, altitude: 0, heading: 0 }),
 ]);
 
-export function sihangEnemyTargetAllowed(actor) {
+export function sihangEnemyTargetAllowed(actor, campaign = null) {
+  if (campaign?.stage === 'sihang-retreat' && !campaign.counterattack) return false;
   return Boolean(actor?.position && Number.isFinite(actor.position.x) &&
     Number.isFinite(actor.position.z) && !sihangSouthBank(actor.position));
 }
 
-export function sihangEnemyRayRange(origin, direction, range) {
+export function sihangEnemyRayRange(origin, direction, range, campaign = null) {
+  if (campaign?.stage === 'sihang-retreat' && !campaign.counterattack) return 0;
   return sihangRiverRayRange(origin, direction, range);
 }
 
 export function sihangRetreatGoal(actor) {
   const position = actor.position;
   const lane = (actor.index % 5 - 2) * 1.15;
-  if (position.y >= 3 || position.x < SIHANG_BRIDGE.northX - 4 || position.z < SIHANG_BRIDGE.northZ - 3)
-    return { x: SIHANG_BRIDGE.northX + lane, y: 0, z: SIHANG_BRIDGE.northZ - 1.3, transit: true };
-  if (!sihangSouthBank(position, 4))
+  const approach = sihangBridgePoint(-.2, lane);
+  const bridge = sihangBridgeCoordinates(position);
+  if (!sihangSouthBank(position, 4)) {
+    if (position.y >= 3 || bridge.along < -4.5 ||
+      bridge.along < SIHANG_BRIDGE.length && Math.abs(bridge.across) > SIHANG_BRIDGE.width / 2 - .6)
+      return { ...approach, y: 0, transit: true };
     return { ...sihangBridgePoint(1 + 4 / SIHANG_BRIDGE.length, lane), y: 0, transit: true };
+  }
   return { x: SIHANG_EVACUATION.x + lane, y: 0,
     z: SIHANG_EVACUATION.z + Math.floor(actor.index / 5) * 1.5, transit: true };
 }

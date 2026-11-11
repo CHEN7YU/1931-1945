@@ -1,3 +1,5 @@
+import { AI_TURN, headingError } from './ai-turning.js';
+
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export function sampledRouteClear(start, end, clear) {
@@ -87,7 +89,8 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     }
     return peers.every(other => {
       const entry = reservations.get(other.id);
-      return !entry || distance(destination, entry) >= .9 || !connected(other);
+      return !entry || distance(destination, entry) >=
+        Math.min(.9, distance(actor.position, entry) - .01) || !connected(other);
     });
   };
   const result = (x, z, speed, waitingFor, reason) => {
@@ -134,9 +137,10 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     if (!clear(point(x, z, lookAhead))) continue;
     // A lateral retreat is a real, held destination, not a fresh coin flip every frame.
     if (Math.abs(angle) >= .85) {
-      const destination = point(x, z, 1.25);
+      const destination = point(x, z, constrained ? Math.max(.45, lookAhead) : 1.25);
       if (!clear(destination)) continue;
-      traffic.yieldPoint = destination; traffic.until = now + .8;
+      traffic.yieldPoint = destination;
+      traffic.until = now + .8 + Math.abs(headingError(actor.heading, Math.atan2(-x, -z))) / AI_TURN.movingRate;
       traffic.blockerId = ahead?.other.id ?? null;
     }
     traffic.side = s >= 0 ? 1 : -1;

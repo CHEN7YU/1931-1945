@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sihangCoverContext, sihangCoverCandidates, sihangOutsideCover, sihangGroundGuardGoal,
-  sihangBreachGoal, sihangAssaultFiringWindow } from '../src/sihang-tactics.js';
+  sihangBreachGoal, sihangAssaultFiringWindow, sihangDefenseGoal } from '../src/sihang-tactics.js';
 import { replaceSihangDemolition, sihangBattleRoster } from '../src/sihang-roster.js';
 import { infantryEquipment } from '../src/battle-roster.js';
 import * as THREE from 'three';
@@ -67,5 +67,20 @@ test('all eleven interception goals clear actual sandbags and remain reachable f
     const path = world.elevatedPath({ x: 18, y: 8.4, z: -34.1 }, sihangGroundGuardGoal(0), stair.id);
     assert.ok(path.some(point => Math.hypot(point.x - route.top.x, point.z - route.top.z) < .1 &&
       Math.abs(point.y - route.top.y) < .025), `Assigned ${stair.id} is actually used`);
+  }
+});
+
+test('first-stage AI assign four outside guards, seventeen ground interior defenders, ten window posts and two rooftop soldiers', () => {
+  const world = makeSihangBattlefield(new THREE.Scene(),
+    (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+  const goals = Array.from({ length: 33 }, (_, i) => sihangDefenseGoal(1 + Math.floor(i / 11), i % 11));
+  assert.equal(goals.filter(goal => goal.duty === 'ground-intercept').length, 4);
+  assert.equal(goals.filter(goal => goal.duty === 'ground-defense').length, 17);
+  assert.equal(goals.filter(goal => goal.duty === 'wall-fire').length, 10);
+  assert.equal(goals.filter(goal => goal.duty === 'roof-aa').length, 2);
+  for (const goal of goals) {
+    assert.equal(circleBlocked(goal.x, goal.z, .42, world.obstacles, goal.y), false, JSON.stringify(goal));
+    assert.equal(world.walkHeight(goal.x, goal.z, goal.y), goal.y, JSON.stringify(goal));
+    assert.ok(world.elevatedPath({ x: 18, y: 0, z: -31 }, goal).length, JSON.stringify(goal));
   }
 });

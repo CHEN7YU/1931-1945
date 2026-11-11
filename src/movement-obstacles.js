@@ -1,9 +1,19 @@
 export function createMovementObstacles(lookup, vehicles, collider) {
   let dynamic = null, merged = null;
+  const capture = () => [...vehicles.values()].filter(item => item.type === 'tank').map(collider);
   return {
+    snapshot() {
+      const colliders = capture(), buckets = new WeakMap();
+      return (x, z) => {
+        const base = lookup.at(x, z);
+        if (!colliders.length) return base;
+        if (!buckets.has(base)) buckets.set(base, [...base, ...colliders]);
+        return buckets.get(base);
+      };
+    },
     beginStablePass() {
       if (dynamic !== null) throw new Error('Movement obstacle passes cannot nest');
-      dynamic = [...vehicles.values()].filter(item => item.type === 'tank').map(collider);
+      dynamic = capture();
       merged = new WeakMap();
     },
     endStablePass() { dynamic = merged = null; },

@@ -4,8 +4,39 @@ import { infantrySteering, advanceInfantryPath } from '../src/infantry-spacing.j
 import { createTactics, objectiveDestination, objectiveAdvanceRequired } from '../src/tactics.js';
 import { advanceAITurn } from '../src/ai-turning.js';
 import { circleBlocked, createNavigator, moveGround, segmentClear } from '../src/core.js';
+import { SIHANG_ASSEMBLY_ARRIVAL } from '../src/sihang-formation.js';
 
 const person = (id, x, z, heading = 0) => ({ id: `person-${id}`, health: 100, position: { x, y: 0, z }, heading, tactics: { id } });
+test('a late assembly member finishes its aisle turn instead of orbiting between settled ranks', () => {
+  const arrival = SIHANG_ASSEMBLY_ARRIVAL;
+  const actor = person(167, 12.5555298324, -2.6654652221, 1.109985);
+  const guards = [person(289, 11.8 + arrival * .13, -1.7 - arrival * .97),
+    person(300, 11.8 - arrival * .3, -4.1 + arrival * .91),
+    person(290, 14.2 + arrival * .12, -1.7 - arrival * .72),
+    person(301, 14.2 + arrival * .09, -4.1 + arrival * .965)];
+  const path = [{ x: 12.6, y: 0, z: -2.9 }, { x: 5.8, y: 0, z: -2.9 }];
+  for (let step = 0; step < 1000 && path.length; step++) {
+    while (path.length && Math.hypot(actor.position.x - path[0].x, actor.position.z - path[0].z) < arrival)
+      path.shift();
+    const goal = path[0];
+    if (!goal) break;
+    const dx = goal.x - actor.position.x, dz = goal.z - actor.position.z;
+    const steering = infantrySteering(actor, guards, { x: dx, z: dz }, {
+      spacing: 1.02, constrained: true, dt: .05, now: step * .05,
+      lookAhead: Math.min(.65, Math.hypot(dx, dz)), blocked: () => false,
+    });
+    const turn = advanceAITurn(actor, Math.atan2(-steering.x, -steering.z), .05, true);
+    if (!turn.mayMove) continue;
+    const length = Math.min(Math.hypot(dx, dz), 2.7 * .05 * steering.speed * turn.moveScale);
+    const position = { x: actor.position.x + turn.direction.x * length,
+      z: actor.position.z + turn.direction.z * length };
+    if (guards.every(guard => Math.hypot(position.x - guard.position.x, position.z - guard.position.z) >= .84)) {
+      actor.position.x = position.x; actor.position.z = position.z;
+    }
+  }
+  assert.equal(path.length, 0, 'settled ranks must leave a usable aisle rather than trap the last soldier');
+});
+
 test('oncoming narrow-door traffic gives one member a stable right of way while the other actually backs out', () => {
   const priority = person(1, 0, 0), yielding = person(2, 0, -1.2, Math.PI);
   priority.intent = { x: 0, z: -1 }; yielding.intent = { x: 0, z: 1 };
@@ -46,6 +77,36 @@ test('short authored stair nodes do not inspect terrain beyond their actual dest
   assert.throws(() => infantrySteering(actor, [], { x: 0, z: -.2 }, { ...options, lookAhead: 0 }), RangeError);
 });
 
+test('a narrow stair landing permits a short physical yield without requiring space beyond its edge', () => {
+  const actor = person(2, 0, 0), other = person(1, 0, -.8, Math.PI);
+  other.intent = { x: 0, z: 1 };
+  const blocked = point => Math.abs(point.x) > .55 || point.z > .55 || point.z < -1;
+  const result = infantrySteering(actor, [other], { x: 0, z: -1 }, {
+    spacing: 1.2, constrained: true, dt: .05, now: 1, lookAhead: .2, blocked,
+  });
+  assert.ok(result.speed > 0, 'the pair must separate instead of waiting forever on a small landing');
+  assert.ok(Math.abs(result.x) > .9);
+  assert.equal(blocked(actor.tactics.traffic.yieldPoint), false);
+});
+
+test('a held backward yield lasts through the real body turn before its walking window expires', () => {
+  const actor = person(2, 0, -1.2, Math.PI), other = person(1, 0, 0);
+  other.intent = { x: 0, z: -1 };
+  const options = { spacing: 1.2, constrained: true, dt: .05, now: 1,
+    blocked: point => Math.abs(point.x) > .1 };
+  infantrySteering(actor, [other], { x: 0, z: 1 }, options);
+  const destination = actor.tactics.traffic.yieldPoint;
+  let mayMove = false;
+  for (let step = 1; step <= 24 && !mayMove; step++) {
+    const steering = infantrySteering(actor, [other], { x: 0, z: 1 }, { ...options, now: 1 + step * .05 });
+    const turn = advanceAITurn(actor, Math.atan2(-steering.x, -steering.z), .05, true);
+    assert.equal(actor.tactics.traffic.yieldPoint, destination,
+      'a still-clear retreat must not be replanned before the soldier finishes physically turning');
+    mayMove = turn.mayMove;
+  }
+  assert.equal(mayMove, true);
+});
+
 test('a bounded authored arrival radius still cannot skip a different floor or unseen route node', () => {
   const position = { x: 0, y: 4.2, z: -15 };
   const path = [{ x: .15, y: 4.2, z: -15 }, { x: 0, y: 0, z: -37 }];
@@ -79,10 +140,24 @@ test('reservations across a wall remain irrelevant and terrain connections are n
     spacing: 2.2, constrained: false, reservations,
     blocked: point => wall && point.x > .3 && point.x < .5,
   });
+
   assert.equal(run(true).speed, 1, 'a reservation through a wall cannot block the lane');
   const open = run(false);
   assert.ok(open.x !== 0 || open.speed !== 1, 'opening the passage restores peer avoidance immediately');
   assert.equal(run(true).speed, 1, 'closing the passage cannot reuse an old connection');
+});
+
+test('a short stair-step reservation cannot prevent a close pair from separating', () => {
+  const actor = person(1, .1, 0), other = person(2, -.7, -.23);
+  const reservations = new Map([[other.id, { x: -.4, z: -.23 }]]);
+  const result = infantrySteering(actor, [other], { x: 0, z: .24 }, {
+    spacing: 1.2, constrained: true, dt: .05, now: 1, reservations, lookAhead: .24,
+    blocked: point => point.x < -.1 || point.x > .2,
+  });
+  assert.equal(result.speed, 1);
+  assert.equal(result.z, 1);
+  assert.ok(Math.hypot(actor.position.x - other.position.x, .24 - other.position.z) >
+    Math.hypot(actor.position.x - other.position.x, actor.position.z - other.position.z));
 });
 
 test('lazy peer connections preserve eager terrain filtering across seeded crowd, floor and reservation cases', () => {
