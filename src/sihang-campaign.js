@@ -8,6 +8,13 @@ export const SIHANG_RULES = Object.freeze({
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
 });
 
+export function sihangRetreatDepartureTime(campaign, slot) {
+  if (campaign.stage !== 'sihang-retreat' || !Number.isInteger(slot) || slot < 0 || slot >= SIHANG_RULES.retreatSquads)
+    throw new RangeError('Invalid Sihang retreat departure slot');
+  const remainingNightfall = Math.max(0, SIHANG_RULES.nightfallSeconds - campaign.stageElapsed);
+  return campaign.elapsed + remainingNightfall + slot * SIHANG_RULES.waveSpacing;
+}
+
 export function createSihangCampaign() {
   return {
     stage: 'sihang-defense', stageElapsed: 0, stageRemaining: SIHANG_RULES.defenseSeconds,

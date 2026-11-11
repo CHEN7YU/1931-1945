@@ -4,6 +4,7 @@ import { createPlayerIdentityStore, playerUnitOptions, validatePlayerIdentity, P
 
 test('real unit cards are campaign-specific and custom naming is always the last option', () => {
   const nanjing = playerUnitOptions('nanjing'), taierzhuang = playerUnitOptions('taierzhuang-fort');
+  assert.equal(playerUnitOptions('sihang')[0].name, '国民革命军第88师524团');
   assert.equal(nanjing[0].name, '国民革命军第88师');
   assert.match(nanjing[0].description, /四行仓库/);
   assert.ok(!taierzhuang.some(unit => unit.id === '88'));

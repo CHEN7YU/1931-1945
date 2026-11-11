@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSihangCampaign, SIHANG_RULES, sihangDeploymentCount, registerSihangDeployment,
   advanceSihangCampaign, advanceSihangDemolition, sihangSafePosition, sihangEnemyMayAttack,
-  sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus } from '../src/sihang-campaign.js';
+  sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus,
+  sihangRetreatDepartureTime } from '../src/sihang-campaign.js';
 
 const soldier = (id, playerUnit = false, z = -25) => ({ id, playerUnit, health: 100, position: { x: 48, y: 0, z } });
 
@@ -61,6 +62,21 @@ test('crossing before the assembly is released remains reversible and cannot pre
   assert.equal(state.counterattack, true); assert.equal(state.outcome, null);
   advanceSihangCampaign(state, .1, { friendly });
   assert.equal(state.outcome, 'evacuated');
+});
+
+test('AI withdrawal waits for nightfall after assembly and preserves staggered wave spacing', () => {
+  const state = createSihangCampaign();
+  advanceSihangCampaign(state, SIHANG_RULES.defenseSeconds, { friendly: [soldier('p', true)] });
+  assert.equal(state.stage, 'sihang-retreat');
+  assert.equal(sihangRetreatDepartureTime(state, 0), SIHANG_RULES.defenseSeconds + SIHANG_RULES.nightfallSeconds);
+  state.elapsed += 12; state.stageElapsed = 12;
+  assert.equal(sihangRetreatDepartureTime(state, 0), SIHANG_RULES.defenseSeconds + SIHANG_RULES.nightfallSeconds);
+  assert.equal(sihangRetreatDepartureTime(state, 4), SIHANG_RULES.defenseSeconds +
+    SIHANG_RULES.nightfallSeconds + 4 * SIHANG_RULES.waveSpacing);
+  state.elapsed += 8; state.stageElapsed = SIHANG_RULES.nightfallSeconds;
+  assert.equal(sihangRetreatDepartureTime(state, 0), state.elapsed,
+    'if assembly finishes after dark, the first wave may depart immediately');
+  assert.throws(() => sihangRetreatDepartureTime(state, SIHANG_RULES.retreatSquads), RangeError);
 });
 
 test('majority does not end the mission; the final identity and its physical parade walk must both be resolved', () => {

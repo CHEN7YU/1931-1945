@@ -5,6 +5,29 @@ import { createResidentialRoofGeometry } from './roof-geometry.js';
 
 const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
 
+export const SIHANG_SOUTH_BANK_LAMP_SPACING = 5;
+
+export function sihangSouthBankStreetLampPositions() {
+  const startX = -72, endX = 96, sampleStep = .25;
+  const path = [];
+  for (let x = startX; x < endX; x += sampleStep)
+    path.push({ x, z: sihangRiverBounds(x).southZ + 4 });
+  path.push({ x: endX, z: sihangRiverBounds(endX).southZ + 4 });
+  const lamps = [path[0]];
+  let distance = 0, nextLamp = SIHANG_SOUTH_BANK_LAMP_SPACING;
+  for (let i = 1; i < path.length; i++) {
+    const from = path[i - 1], to = path[i], segment = Math.hypot(to.x - from.x, to.z - from.z);
+    while (nextLamp <= distance + segment + 1e-9) {
+      const progress = (nextLamp - distance) / segment;
+      lamps.push({ x: from.x + (to.x - from.x) * progress,
+        z: from.z + (to.z - from.z) * progress });
+      nextLamp += SIHANG_SOUTH_BANK_LAMP_SPACING;
+    }
+    distance += segment;
+  }
+  return lamps;
+}
+
 export function createSihangCity({ scene, box: makeBox, town, materials, surface, addMesh }) {
   materials = { ...materials, brick: surface('brick', 0x989d91, .9),
     plaster: surface('plaster', 0xaaa18b, 1.2), wood: surface('timber', 0x594a35, 2) };
@@ -27,13 +50,14 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
   const neonRed = new THREE.MeshStandardMaterial({ color: 0x393631, emissive: 0xbe352a, emissiveIntensity: 0 });
   const neonGreen = new THREE.MeshStandardMaterial({ color: 0x393631, emissive: 0x327953, emissiveIntensity: 0 });
   const signs = [], smoke = [], damaged = [];
-  const streetLights = [];
-  for (const x of [-72, -48, -24, 0, 24, 48, 72, 96]) {
-    const z = sihangRiverBounds(x).southZ + 4;
+  const streetLampPositions = sihangSouthBankStreetLampPositions(), streetLights = [];
+  const illuminatedLampIndices = [48, 72].map(targetX => streetLampPositions.reduce((best, point, index) =>
+    Math.abs(point.x - targetX) < Math.abs(streetLampPositions[best].x - targetX) ? index : best, 0));
+  for (const [index, { x, z }] of streetLampPositions.entries()) {
     box(x, 2.1, z, .14, 4.2, .14, materials.iron);
     box(x + .35, 4.2, z, .85, .12, .14, materials.iron);
     box(x + .7, 4.05, z, .38, .32, .38, warm);
-    if (x === 48 || x === 72) {
+    if (illuminatedLampIndices.includes(index)) {
       const light = new THREE.PointLight(0xffbf72, 0, 22, 2);
       light.position.set(x + .7, 3.8, z); scene.add(light); streetLights.push(light);
     }
@@ -358,7 +382,9 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     for (const light of streetLights) light.intensity = level * 35;
   };
   return { budget, smoke, titles, reservedLanes: SIHANG_RESERVED_LANES, setNightLighting,
-    get lighting() { return { night, transition: lightingLevel, streetLamps: 8, streetLightIntensity: streetLights[0].intensity,
+    get lighting() { return { night, transition: lightingLevel, streetLamps: streetLampPositions.length,
+      streetLampSpacing: SIHANG_SOUTH_BANK_LAMP_SPACING, streetLightSources: streetLights.length,
+      streetLightIntensity: streetLights[0].intensity,
       windowIntensity: warm.emissiveIntensity,
       redIntensity: neonRed.emissiveIntensity, greenIntensity: neonGreen.emissiveIntensity,
       signIntensity: signMaterial.emissiveIntensity, windowColor: warm.color.getHex() }; } };

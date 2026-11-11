@@ -5,7 +5,7 @@ const nanjingSource = 'https://www.19371213.com.cn/information/news/202112/t2021
 const custom = unit('custom', '自定义小队', '最后也可以使用自己的小队名字，不选择历史番号。', null);
 export const PLAYER_UNIT_OPTIONS = Object.freeze({
   sihang: Object.freeze([
-    unit('524', '国民革命军第88师262旅524团', '淞沪会战后期，第524团一部坚守四行仓库。末尾班号为游戏分组。', nanjingSource),
+    unit('524', '国民革命军第88师524团', '淞沪会战后期，第524团一部坚守四行仓库。末尾班号为游戏分组。', nanjingSource),
     custom,
   ]),
   'taierzhuang-fort': Object.freeze([

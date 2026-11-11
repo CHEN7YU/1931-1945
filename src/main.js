@@ -6,7 +6,8 @@ import { makeWorld } from './battlefield.js';
 import { campaignLayout } from './campaign-layout.js';
 import { campaignById } from './campaigns.js';
 import { createSihangCampaign, advanceSihangCampaign, sihangDeploymentCount, registerSihangDeployment,
-  sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus, sihangSafePosition, SIHANG_RULES } from './sihang-campaign.js';
+  sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus, sihangSafePosition, SIHANG_RULES,
+  sihangRetreatDepartureTime } from './sihang-campaign.js';
 import { createSihangNight, sihangNightVisibility } from './sihang-night.js';
 import { addSihangBridgeDefenses } from './sihang-bridge-defenses.js';
 import { SIHANG_ASSEMBLY_ARRIVAL, sihangAssemblyPosition, sihangAssemblyApproach, sihangParadePosition, sihangParadeExit, sihangParadePassage, createProceduralStaticFormation } from './sihang-formation.js';
@@ -6416,7 +6417,7 @@ function updateSihangMission(dt) {
     }
     for (const formation of formations.filter(formation => formation.team === 'enemy' && formation.type === 'plane'))
       formation.respawnEnabled = false;
-    toast('入夜集结 · 带本队到仓库南面；全员到齐后分批撤退。南岸禁火，掩护工事在北岸。', 8);
+    toast('入夜集结 · 带本队到仓库南面；天黑后各队分批撤退。南岸禁火，掩护工事在北岸。', 8);
     sihangVoices?.play(audioContext, 'withdrawal');
   }
   if (sihangCampaign.stage === 'sihang-retreat' && !sihangCampaign.outcome) {
@@ -6490,7 +6491,8 @@ function updateSihangMission(dt) {
       });
       if (!formation.retreatAssembled && assembled && members.length) {
         formation.retreatAssembled = true;
-        if (sihangCampaign.assemblyReleased) formation.withdrawAt = sihangCampaign.elapsed + SIHANG_RULES.waveSpacing;
+        if (sihangCampaign.assemblyReleased)
+          formation.withdrawAt = sihangRetreatDepartureTime(sihangCampaign, formation.sihangSlot);
       }
     }
     const playerReady = player?.health > 0
@@ -6502,8 +6504,8 @@ function updateSihangMission(dt) {
         !sihangRetreatDeploymentCount(sihangCampaign))) {
       sihangCampaign.assemblyReleased = true;
       for (const formation of friendlyUnits.filter(item => !item.player))
-        formation.withdrawAt = sihangCampaign.elapsed + formation.sihangSlot * SIHANG_RULES.waveSpacing;
-      toast('集结完毕 · 各队依次撤退，利用北岸工事掩护过桥。', 6);
+        formation.withdrawAt = sihangRetreatDepartureTime(sihangCampaign, formation.sihangSlot);
+      toast(`集结完毕 · ${Math.max(0, Math.ceil(SIHANG_RULES.nightfallSeconds - sihangCampaign.stageElapsed))}秒后各队依次撤退。`, 6);
     }
   }
   if (sihangCampaign.outcome && !battleEnding.fading && !battleEnding.complete) {
@@ -7507,10 +7509,21 @@ function drawRadar(ctx = radarContext, deployment = false) {
     const [x, z] = map(player.position.x, player.position.z);
     drawFacingSector(ctx, x, z, yaw);
   }
+  const pendingRetreatIds = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat'
+    ? new Set(sihangCampaign.retreatIds) : null;
+  if (pendingRetreatIds) {
+    for (const id of [...sihangCampaign.evacuatedIds, ...sihangCampaign.retreatLostIds]) pendingRetreatIds.delete(id);
+  }
   for (const actor of friendlyForces) {
     if (actor.health <= 0) continue;
     const [x, z] = map(actor.position.x, actor.position.z);
-    ctx.fillStyle = actor === allies[current] ? '#f6e0a9' : '#94bea1';
+    const pendingRetreat = pendingRetreatIds?.has(actor.id) ?? false;
+    ctx.fillStyle = pendingRetreat ? '#ffd06a' : actor === allies[current] ? '#f6e0a9' : '#94bea1';
+    if (pendingRetreat) {
+      ctx.strokeStyle = '#302518';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, z, 4.5, 0, Math.PI * 2); ctx.stroke();
+    }
     ctx.beginPath(); ctx.arc(x, z, actor === allies[current] ? 3 : 2, 0, Math.PI * 2); ctx.fill();
   }
   for (const target of currentMissionTargets()) {
@@ -7672,9 +7685,12 @@ function updateHUD() {
           : sihangCampaign.northWallBreached ? '北墙已被炸开 · 日军正从缺口突入！守住一楼，继续坚持到撤退命令'
           : point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
             : '守住一楼 · 阻止北墙爆破 · 一楼出生，楼梯通往窗口与屋顶'
-      : !sihangCampaign.assemblyReleased ? '仓库南面蹲姿列队 · 本人与本队也须到齐 · 玩家不必列队'
+      : !sihangCampaign.assemblyReleased
+        ? `仓库南面蹲姿列队 · ${Math.max(0, Math.ceil(SIHANG_RULES.nightfallSeconds - sihangCampaign.stageElapsed))}秒内渐暗 · 本人与本队也须到齐 · 未撤者见小地图金点`
+        : sihangCampaign.stageElapsed < SIHANG_RULES.nightfallSeconds
+          ? `集结完成 · ${Math.max(0, Math.ceil(SIHANG_RULES.nightfallSeconds - sihangCampaign.stageElapsed))}秒后首批撤退 · 未撤者见小地图金点`
         : sihangCeasefire(actor) ? '南岸禁火 · 等待其余将士撤离，无倒计时'
-          : `北岸掩护 · 交火区 ${retreat.active} · 待出发 ${retreat.waiting} · ${sihangCampaign.counterattack ? '日军反扑中' : '日军整顿中'}`;
+          : `北岸掩护 · 未撤 ${retreat.active} · 待出发 ${retreat.waiting} · 小地图金点为未撤人员 · ${sihangCampaign.counterattack ? '日军反扑中' : '日军整顿中'}`;
     document.querySelector('.objective-banner').hidden = false;
     document.querySelector('.capture-track').hidden = !defense;
     $('capture-fill').style.width = `${Math.max(0, -point.control) * 100}%`;

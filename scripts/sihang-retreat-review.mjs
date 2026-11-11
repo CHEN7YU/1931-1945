@@ -3,6 +3,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { deployFromMenu } from './game-entry.mjs';
+import { SIHANG_RULES } from '../src/sihang-campaign.js';
 
 const directory = process.env.ARTIFACT_DIR;
 if (!directory) throw new Error('ARTIFACT_DIR is required');
@@ -192,17 +193,24 @@ try {
           const player = controlledSoldier(entities);
           if (player.sihangEvacuated || sihangCampaign.assemblyReleased)
             throw new Error('Premature crossing must not lock the player out of the assembly');
-          player.position.set(8, 0, -4);
+          player.position.set(56, 0, -25);
           for (const actor of friendlyForces.filter(actor => actor !== player && actor.health > 0)) {
             const goal = sihangActorAssemblyGoal(actor);
             actor.position.set(goal.x, goal.y, goal.z);
+            actor.stance = 'crouched';
           }
+          updateSihangMission(0);
+          const waitedForPlayer = !sihangCampaign.assemblyReleased;
+          player.position.set(8, 0, -4);
           setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
           if (!sihangCampaign.assemblyReleased) throw new Error('All present soldiers and the returned player must release the assembly');
+          const release = { elapsed: sihangCampaign.elapsed, stageElapsed: sihangCampaign.stageElapsed,
+            departures: formations.filter(formation => formation.team === 'friendly' && !formation.player)
+              .map(formation => ({ slot: formation.sihangSlot, delay: formation.withdrawAt - sihangCampaign.elapsed })) };
           const actor = friendlyAI.find(actor => actor.health > 0 && !actor.sihangEvacuated);
           actor.position.set(90, 0, 35);
           updateSihangMission(.05);
-          return this.boundarySnapshot();
+          return { ...this.boundarySnapshot(), waitedForPlayer, release };
         },
         boundarySnapshot() {
           const actor = controlledSoldier(entities);
@@ -367,6 +375,11 @@ try {
     assert.equal(held.counterattack, false, 'player crossing alone must not start the counterattack');
     const crossing = await page.evaluate(() => retreatReview.boundaryCrossing());
     assert.equal(crossing.counterattack, true);
+    assert.equal(crossing.waitedForPlayer, true, 'the assembled survivors must wait for the player to join them');
+    assert.equal(crossing.release.departures.length, 5);
+    for (const { slot, delay } of crossing.release.departures)
+      assert.ok(Math.abs(delay - Math.max(0, SIHANG_RULES.nightfallSeconds - crossing.release.stageElapsed) -
+        slot * SIHANG_RULES.waveSpacing) < .001, 'AI departure must wait for full nightfall, then keep the eight-second spacing');
     await page.evaluate(() => retreatReview.boundaryStep(4));
     const lit = await record(); assert.equal(lit.night.visible, 3);
     await image('native-flare-lit', [98, 15, 23], [58, 4, -26]);

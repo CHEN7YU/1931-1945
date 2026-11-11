@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { createSihangCampaign, advanceSihangCampaign, SIHANG_RULES } from '../src/sihang-campaign.js';
 import { createSihangNight, sihangFlareState, sihangNightVisibility } from '../src/sihang-night.js';
 import { sihangEnemyRayRange, sihangEnemyTargetAllowed, sihangSpawns, SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
-import { sihangBlastClearOfSouthBank } from '../src/sihang-layout.js';
+import { sihangBlastClearOfSouthBank, sihangRiverBounds } from '../src/sihang-layout.js';
+import { SIHANG_SOUTH_BANK_LAMP_SPACING, sihangSouthBankStreetLampPositions } from '../src/sihang-city.js';
 import { addSihangBridgeDefenses } from '../src/sihang-bridge-defenses.js';
 import { makeWorld } from '../src/battlefield.js';
 import { campaignLayout } from '../src/campaign-layout.js';
@@ -75,12 +76,29 @@ test('nightfall and concession lights fade on simulation time without making the
   const world = makeWorld(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }), campaignLayout('sihang'));
   world.setNightLighting(.5);
   assert.equal(world.concessionLighting.windowIntensity, .35);
-  assert.equal(world.concessionLighting.streetLamps, 8);
+  assert.equal(world.concessionLighting.streetLamps, sihangSouthBankStreetLampPositions().length);
+  assert.equal(world.concessionLighting.streetLampSpacing, 5);
+  assert.equal(world.concessionLighting.streetLightSources, 2);
   assert.equal(world.concessionLighting.streetLightIntensity, 17.5);
   world.setNightLighting(1);
   assert.ok(world.concessionLighting.signIntensity > 0);
   world.setNightLighting(0);
   assert.equal(world.concessionLighting.streetLightIntensity, 0);
+});
+
+test('south-bank street lamps follow the curved quay at five-metre intervals', () => {
+  const lamps = sihangSouthBankStreetLampPositions();
+  assert.ok(lamps.length > 30);
+  assert.ok(lamps.length < 50);
+  for (let i = 0; i < lamps.length; i++) {
+    assert.ok(Math.abs(lamps[i].z - (sihangRiverBounds(lamps[i].x).southZ + 4)) < .02);
+    if (i) assert.ok(Math.abs(Math.hypot(lamps[i].x - lamps[i - 1].x, lamps[i].z - lamps[i - 1].z) -
+      SIHANG_SOUTH_BANK_LAMP_SPACING) < .025, 'adjacent lamp spacing should be five metres along the curved path');
+  }
+  const lastLamp = lamps[lamps.length - 1];
+  const finalGap = Math.hypot(96 - lastLamp.x,
+    sihangRiverBounds(96).southZ + 4 - lastLamp.z);
+  assert.ok(finalGap < SIHANG_SOUTH_BANK_LAMP_SPACING);
 });
 
 test('the entire south bank remains a military ceasefire zone even after the counterattack', () => {
