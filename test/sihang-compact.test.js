@@ -34,7 +34,7 @@ test('the two rear rows are never generated, including their doors, road and veg
   assert.equal(SIHANG_MAP_BOUNDS.maxZ, 74);
 });
 
-test('all twenty sappers still spawn and their full five-column shield formation physically traverses the narrower street', () => {
+test('all twenty sappers traverse the narrower street without penetrating the warehouse wall', () => {
   const spawn = sihangSpawns().find(s => s.id === 'sihang-enemy-9');
   assert.equal(formationPositions(spawn, 20, world.obstacles).length, 20);
   assert.equal(sihangBattleRoster().find(f => f.sihangDemolition).memberCount, 20);
@@ -42,7 +42,13 @@ test('all twenty sappers still spawn and their full five-column shield formation
     const offset = sihangShieldLayout(slot, 20);
     const feet = new THREE.Vector3(offset.x, 0, -72 + offset.z);
     world.moveInfantry(feet, 0, 25.2, .5);
-    assert.ok(Math.abs(feet.z - (-46.8 + offset.z)) < .025, `sapper ${slot} is blocked`);
+    const targetZ = -46.8 + offset.z;
+    if (targetZ > SIHANG_WAREHOUSE.minZ - .5) {
+      assert.ok(feet.z <= SIHANG_WAREHOUSE.minZ - .5, `sapper ${slot} penetrated the warehouse wall`);
+      assert.ok(feet.z > SIHANG_WAREHOUSE.minZ - 1, `sapper ${slot} stopped short of the warehouse wall`);
+    } else {
+      assert.ok(Math.abs(feet.z - targetZ) < .025, `sapper ${slot} is blocked`);
+    }
   }
 });
 

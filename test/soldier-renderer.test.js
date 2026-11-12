@@ -5,6 +5,26 @@ import { soldierModel } from '../src/world.js';
 import { createSoldierRenderer, syncSoldierModelPose } from '../src/soldier-renderer.js';
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
 
+test('procedural sniper batches retain finite geometry in both near and far views', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  camera.position.set(0, 1.67, 0);
+  const renderer = createSoldierRenderer(scene, camera, 16);
+  for (const friendly of [true, false]) for (const distance of [5, 70]) {
+    const actor = { id: `${friendly}-${distance}`, friendly, health: 100,
+      position: new THREE.Vector3(0, 0, -distance), heading: 0,
+      model: soldierModel(friendly, 'near', 'sniper'), rifle: { model: 'sniper' },
+      walkPhase: 0, walkPoseReady: false, vehicleId: null };
+    renderer.update([actor], 'high', 0);
+    for (const mesh of scene.children.filter(object => object.isInstancedMesh && object.count)) {
+      for (const name of ['position', 'normal'])
+        assert.ok(Array.from(mesh.geometry.getAttribute(name).array).every(Number.isFinite), `${friendly}/${distance}/${name}`);
+      mesh.computeBoundingSphere();
+      assert.ok(Number.isFinite(mesh.boundingSphere.radius));
+    }
+  }
+  for (const object of scene.children) if (object.isInstancedMesh) object.dispose();
+});
+
 test('corpse appearance derives from simulation death/seat/time without mutating health or physical position', () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
   camera.position.set(0, 1.67, 0);

@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { addSupportGrip, createSupportWeaponPose, supportWeaponTargets } from './support-weapon-pose.js';
 
 export const SIHANG_SHIELD_CARRY = Object.freeze({
-  roof: Object.freeze({ height: 1.96, offsetZ: 0, rotationX: 0, width: 3.1, length: 3.35 }),
-  front: Object.freeze({ height: 1.075, offsetZ: -.45, rotationX: -Math.PI / 2, width: 3.1, length: 2.15 }),
+  roof: Object.freeze({ height: 1.96, offsetZ: 0, rotationX: 0, width: 1, length: 1.5 }),
+  front: Object.freeze({ height: 1.06, offsetZ: -.38, rotationX: -1.15, width: 1, length: 1.5 }),
 });
 
 export function attachSihangShieldGrips(mesh) {
   mesh.userData.supportWeapon = { grips: Object.fromEntries(['left', 'right'].map(side =>
-    [side, addSupportGrip(mesh, `${side}-shield`, { center: [side === 'left' ? -.3 : .3, -.14, 0],
+    [side, addSupportGrip(mesh, `${side}-shield`, { center: [side === 'left' ? -.3 : .3, -.08, 0],
       radius: .016, normal: [0, -1, 0], forward: [0, 0, -1], axis: [0, 0, 1] })])) };
 }
 
@@ -70,8 +70,8 @@ export function createSihangShieldPose(root, bones, satchel = null) {
     }
     if (actor.sihangShield.targets) return actor.sihangShield.targets;
     const shield = actor.sihangShield, roof = shield.mode === 'roof';
-    const forward = roof ? [0, 0, -1] : [0, -1, 0];
-    const normal = roof ? [0, -1, 0] : [0, 0, 1];
+    const forward = roof ? [0, 0, -1] : [0, -Math.sin(1.15), -Math.cos(1.15)];
+    const normal = roof ? [0, -1, 0] : [0, -Math.cos(1.15), Math.sin(1.15)];
     return Object.fromEntries(['left', 'right'].map(side => {
       const wrist = shield.handTarget.slice(); wrist[0] = side === 'left' ? -Math.abs(wrist[0]) : Math.abs(wrist[0]);
       return [side, { wrist, palm: wrist.map((value, index) => value + forward[index] * .055), forward, normal }];

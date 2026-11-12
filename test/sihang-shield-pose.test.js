@@ -174,8 +174,9 @@ test('actual native hand and finger vertices stay behind the opaque steel in bot
           if (handWeight < .75) continue;
           const vertex = mesh.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
           const profile = SIHANG_SHIELD_CARRY[pose.mode];
-          assert.ok(pose.mode === 'roof' ? vertex.y < profile.height - .0325 :
-            vertex.z > profile.offsetZ + .0325, `${pose.mode} hand vertex ${vertex.toArray()}`);
+          const plateSide = (vertex.y - profile.height) * Math.cos(profile.rotationX) +
+            (vertex.z - profile.offsetZ) * Math.sin(profile.rotationX);
+          assert.ok(plateSide < -.0325, `${pose.mode} hand vertex ${vertex.toArray()}`);
           fingers++;
         }
       });

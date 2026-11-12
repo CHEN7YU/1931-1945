@@ -1,4 +1,5 @@
 import { CHI_HA } from './chi-ha.js';
+import { circleBlocked } from './core.js';
 import { SIHANG_CAPTURE_AREA, SIHANG_WAREHOUSE, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS,
   SIHANG_BRIDGE, SIHANG_EVACUATION, sihangBridgePoint, sihangBridgeCoordinates,
   sihangSouthBank, sihangRiverRayRange } from './sihang-layout.js';
@@ -42,12 +43,15 @@ export function sihangSpawns() {
       deploymentZone: { minX: point.x - 6, maxX: point.x + 6, minZ: point.z - 4, maxZ: point.z + 4 },
     })),
     { id: 'sihang-south-cover', name: '仓库南面 · 殿后补充点', team: 'friendly',
-      kind: 'base', x: -4, z: -4, altitude: 0, permanent: true, allowNearbyEnemies: true,
+      kind: 'base', playerOnly: true, retreatOnly: true, x: -4, z: -4, altitude: 0, permanent: true, allowNearbyEnemies: true,
       deploymentZone: { minX: -16, maxX: 8, minZ: -6.8, maxZ: -1.2 } },
+    { id: 'sihang-assembly-player', name: '仓库南面 · 集合点', team: 'friendly',
+      kind: 'base', playerOnly: true, retreatOnly: true, x: -23, z: -4, altitude: 0, permanent: true,
+      allowNearbyEnemies: true, deploymentZone: { minX: -33, maxX: -12, minZ: -7.4, maxZ: -1 } },
     ...Array.from({ length: 5 }, (_, slot) => ({ id: `sihang-retreat-${slot}`,
-      name: '仓库南面撤退集结点', team: 'friendly', kind: 'base', aiOnly: true, altitude: 0,
-      x: -24 + slot * 12, z: -4, permanent: true, allowNearbyEnemies: true,
-      deploymentZone: { minX: -29 + slot * 12, maxX: -19 + slot * 12, minZ: -6.8, maxZ: -1.2 } })),
+      name: '仓库西南侧撤退补充点', team: 'friendly', kind: 'base', aiOnly: true, altitude: 0,
+      x: -52, z: -4, permanent: true, allowNearbyEnemies: true,
+      deploymentZone: { minX: -62, maxX: -40, minZ: -7.4, maxZ: 1.5 } })),
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `sihang-enemy-${index}`, name: `日军北侧步兵集结区 ${index + 1}`,
       team: 'enemy', kind: 'base', aiOnly: true, altitude: 0,
@@ -63,6 +67,15 @@ export function sihangSpawns() {
   ];
 }
 
+export function sihangEnemyRegroupPosts(obstacles) {
+  const posts = [];
+  for (let z = -48; z >= -70; z -= 2.2) for (let x = -35; x <= 27; x += 2.2) {
+    if (!circleBlocked(x, z, .6, obstacles, 0)) posts.push({ x, y: 0, z, transit: true });
+  }
+  if (posts.length < 119) throw new Error('四行仓库北侧日军整顿区净空不足');
+  return posts;
+}
+
 export function sihangObjectives() {
   return [{ id: '仓', name: '四行仓库一楼', x: -4, z: -25, radius: 34, owner: 'friendly',
     control: 1, progress: 1, enemyProgress: 0, captured: true, status: 'friendly',
@@ -71,11 +84,15 @@ export function sihangObjectives() {
 
 export const SIHANG_EMPLACEMENTS = Object.freeze([
   Object.freeze({ id: 'sihang-cover-gun', team: 'friendly', profile: 'bofors75', playerOnly: true,
-    retreatCover: true, x: 56, z: -26, altitude: 0, heading: .65 }),
+    retreatCover: true, x: 53, z: -38, altitude: 0, heading: 1.16 }),
   Object.freeze({ id: 'sihang-cover-mg', team: 'friendly', profile: 'maxim24', playerOnly: true,
-    retreatCover: true, x: 64, z: -26, altitude: 0, heading: .4 }),
+    retreatCover: true, x: 62, z: -39, altitude: 0, heading: .2 }),
+  Object.freeze({ id: 'sihang-cover-gun-east', team: 'friendly', profile: 'bofors75', playerOnly: true,
+    retreatCover: true, x: 69, z: -45, altitude: 0, heading: .39 }),
+  Object.freeze({ id: 'sihang-cover-mg-east', team: 'friendly', profile: 'maxim24', playerOnly: true,
+    retreatCover: true, x: 76, z: -49, altitude: 0, heading: 0 }),
   Object.freeze({ id: 'sihang-cover-aa', team: 'friendly', profile: 'maxim24aa', playerOnly: true,
-    retreatCover: true, x: 44, z: -26, altitude: 0, heading: .5 }),
+    retreatCover: true, x: 84, z: -49, altitude: 0, heading: -.36 }),
   Object.freeze({ id: 'sihang-roof-aa', team: 'friendly', profile: 'maxim24aa',
     x: -14, z: -33, altitude: SIHANG_WAREHOUSE.roofY, heading: Math.PI }),
   Object.freeze({ id: 'sihang-ground-entrance-mg', team: 'friendly', profile: 'maxim24',

@@ -2,27 +2,80 @@ import * as THREE from 'three';
 import { soldierModel } from './world.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { pointSegmentDistance } from './tactics.js';
-import { SIHANG_BATTLE_AREA } from './sihang-layout.js';
+import { SIHANG_BATTLE_AREA, SIHANG_WAREHOUSE } from './sihang-layout.js';
 
-export const SIHANG_ASSEMBLY_ARRIVAL = .06;
+export const SIHANG_ASSEMBLY_ARRIVAL = .015;
+const ASSEMBLY_FIRST_CENTER = -28, ASSEMBLY_BLOCK_STEP = 5.2;
+const assemblyCenter = slot => slot === 5 ? 17 : ASSEMBLY_FIRST_CENTER + slot * ASSEMBLY_BLOCK_STEP;
 
 export function sihangAssemblyPosition(slot, index) {
   if (!Number.isInteger(slot) || slot < 0 || slot > 5 || !Number.isInteger(index) || index < 0 || index > 10)
     throw new RangeError('Invalid Sihang assembly position');
-  // Two squads per rank leave actual walking aisles on the shallow southern quay.
-  return { x: -29 + ((slot % 2) * 11 + index) * 2.4, y: 0,
-    z: -6.5 + Math.floor(slot / 2) * 2.4, transit: true, assembly: true };
+  const center = assemblyCenter(slot);
+  if (index === 2) return { x: center + 1.6, y: 0, z: -4,
+    transit: true, assembly: true, assemblyRank: 'officer' };
+  const rank = index < 2 ? index : index - 1;
+  return { x: center - Math.floor(rank / 5) * 1.6, y: 0,
+    z: -5.5 + rank % 5 * .75, transit: true, assembly: true,
+    assemblyRank: rank < 5 ? 'front' : 'rear' };
+}
+
+export function sihangRetreatFollowPosition(actor, player, desired) {
+  const { x, y, z } = player.position;
+  const blend = Math.max(0, Math.min(1, (x + 35) / 8, (26 - x) / 8,
+    z + 8, .5 - z, (.6 - Math.abs(y)) / .3));
+  if (!blend) return desired;
+  const rank = actor.index - Number(actor.index > player.index);
+  const row = { x: x + (rank % 2 ? -1 : 1) * (Math.floor(rank / 2) + 1) * 1.8,
+    z: Math.max(-2.2, Math.min(-1.3, z + 2.5)) };
+  return { x: desired.x + (row.x - desired.x) * blend,
+    z: desired.z + (row.z - desired.z) * blend };
+}
+
+export function sihangRetreatBlockedWaypoint(actor, waypoint, neighbors) {
+  return Math.hypot(actor.position.x - waypoint.x, actor.position.z - waypoint.z) < 1.2 &&
+    neighbors.some(other => other !== actor && other.health > 0 && !other.vehicleId &&
+      Math.abs(other.position.y - actor.position.y) < 1.5 &&
+      Math.hypot(other.position.x - waypoint.x, other.position.z - waypoint.z) < .9);
+}
+
+export function sihangRetreatYieldPosition(actor, waiting, clear) {
+  const direction = waiting.tactics.traffic?.direction;
+  if (!direction || !Number.isFinite(direction.x) || !Number.isFinite(direction.z) ||
+    Math.hypot(direction.x, direction.z) < .9) return null;
+  const start = waiting.position;
+  const end = { x: start.x + direction.x * 2.5, z: start.z + direction.z * 2.5 };
+  const previous = pointSegmentDistance(actor.position, start, end).distance;
+  let best = null, bestScore = 0;
+  for (const radius of [1.2, 1.8]) {
+    for (let index = 0; index < 16; index++) {
+      const angle = index * Math.PI / 8;
+      const goal = { x: actor.position.x + Math.cos(angle) * radius, y: actor.position.y,
+        z: actor.position.z + Math.sin(angle) * radius, transit: true };
+      const clearance = pointSegmentDistance(goal, start, end).distance;
+      if (clearance < 1.15 || clearance < previous + .25 || !clear(goal)) continue;
+      const score = clearance - radius * .3;
+      if (score > bestScore) { best = goal; bestScore = score; }
+    }
+  }
+  return best;
 }
 
 export function sihangAssemblyApproach(position, goal, blockers = []) {
-  const aisleZ = position.z < -4.1 ? -5.3 : -2.9;
-  const rankAisle = Math.min(-2.9, goal.z + 1.2);
-  const entryX = -27.8 + Math.round((position.x + 27.8) / 2.4) * 2.4;
-  const entry = Math.abs(position.z - aisleZ) > .3 ? [{ ...goal, x: entryX, z: position.z }] : [];
-  const routes = [1.2, -1.2].map(offset => {
-    const column = goal.x + offset;
-    return [...entry, { ...goal, x: entry.length ? entryX : position.x, z: aisleZ }, { ...goal, x: column, z: aisleZ },
-      { ...goal, x: column, z: rankAisle }, { ...goal, z: rankAisle }, goal];
+  const aisleZ = -1.1;
+  const approachX = goal.x + (goal.assemblyRank === 'rear' ? -.8 : .8);
+  if (position.x < SIHANG_WAREHOUSE.minX)
+    return [{ ...goal, x: position.x, z: aisleZ }, { ...goal, x: approachX, z: aisleZ },
+      { ...goal, x: approachX, z: goal.z }, goal];
+  const entryColumns = Array.from({ length: 6 }, (_, slot) => {
+    const center = assemblyCenter(slot);
+    return [center - 2.4, center - .8, center + .8, center + 2.4];
+  }).flat().sort((a, b) => Math.abs(a - position.x) - Math.abs(b - position.x));
+  const routes = entryColumns.map(entryColumn => {
+    const entry = Math.abs(position.z - aisleZ) > .3
+      ? [{ ...goal, x: entryColumn, z: position.z }, { ...goal, x: entryColumn, z: aisleZ }] : [];
+    return [...entry, { ...goal, x: approachX, z: aisleZ },
+      { ...goal, x: approachX, z: goal.z }, goal];
   });
   return routes.find(route => route.every((point, index) => blockers.every(blocker =>
     pointSegmentDistance(blocker, index ? route[index - 1] : position, point).distance >= .95))) ?? routes[0];

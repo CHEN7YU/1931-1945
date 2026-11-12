@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { deployFromMenu, setQualityPreset } from './game-entry.mjs';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 import { SIHANG_WAREHOUSE } from '../src/sihang-layout.js';
+import { sihangVoiceClips } from '../src/sihang-voices.js';
 
 const root = resolve(process.env.ARTIFACT_DIR ?? 'asset-research', 'sihang');
 await mkdir(root, { recursive: true });
@@ -106,7 +107,7 @@ try {
   assert.equal(initial.troops.filter(f => f.team === 'enemy').reduce((n, f) => n + f.members, 0), 97);
   assert.equal(initial.campaign.reserve, 356);
   assert.equal(initial.position[1], SIHANG_WAREHOUSE.floorHeight);
-  assert.equal(initial.voices.clips, 8);
+  assert.equal(initial.voices.clips, sihangVoiceClips().length - 1);
   assert.equal(initial.narration, true);
   const arranged = await page.evaluate(() => sihangReview.arrange());
   assert.equal(arranged.shields.shields, 20);

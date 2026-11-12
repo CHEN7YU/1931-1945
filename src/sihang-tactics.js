@@ -3,7 +3,7 @@ import { SIHANG_WAREHOUSE, SIHANG_DEFENSE_POSTS } from './sihang-layout.js';
 export const SIHANG_COVER_DISTANCE = 20;
 
 export function sihangBreachGoal(actor, campaign) {
-  if (!campaign?.northWallBreached || campaign.outcome || actor.team !== 'enemy' ||
+  if (campaign?.stage !== 'sihang-defense' || !campaign.northWallBreached || campaign.outcome || actor.team !== 'enemy' ||
     actor.health <= 0 || actor.vehicleId || actor.formation?.sihangDemolition || actor.position.y > 2.4) return null;
   const x = ((actor.index ?? 0) % 5 - 2) * .9, z = SIHANG_WAREHOUSE.minZ - 1.6;
   const approaching = actor.position.z < z - .7 ||

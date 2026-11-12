@@ -22,6 +22,6 @@ test('concession windows and actual light strips are off by day, on at night, wi
   const after = [];
   scene.traverse(node => { if (node.isMesh) after.push([node.uuid, node.geometry.uuid]); });
   assert.deepEqual(after, before);
-  assert.equal(scene.children.some(node => node.isPointLight), false);
+  assert.equal(scene.children.filter(node => node.isPointLight).length, 2);
   assert.throws(() => world.setNightLighting('night'), TypeError);
 });

@@ -17,8 +17,8 @@ export function sihangShieldLayout(slot, count) {
   const mode = role === 'roof' ? 'roof' : 'front';
   return { ...SIHANG_SHIELD_CARRY[mode], offsetX: 0, rotationZ: 0, mode, role,
     x: slot < 4 ? (slot % 2 - .5) * 1.1 : slot < 16 ? slot < 10 ? -1.1 : 1.1 : 0,
-    z: slot < 4 ? slot < 2 ? 3.9 : -3.9 : slot < 16
-      ? (slot - (slot < 10 ? 4 : 10) - 2.5) * 1.2 : (slot - 17.5) * (5.8 / 3),
+    z: slot < 4 ? slot < 2 ? 4.7 : -4.7 : slot < 16
+      ? (slot - (slot < 10 ? 4 : 10) - 2.5) * 1.5 : (slot - 17.5) * (5.8 / 3),
     facing: role === 'left' ? Math.PI / 2 : role === 'right' ? -Math.PI / 2 : role === 'rear' ? 0 : Math.PI };
 }
 
@@ -42,8 +42,8 @@ export function createSihangCombat(scene, world) {
     const pieces = [new THREE.BoxGeometry(profile.width, .065, profile.length)];
     for (const x of [-.3, .3]) {
       const handle = new THREE.CylinderGeometry(.016, .016, .18, 6);
-      handle.rotateX(Math.PI / 2); handle.translate(x, -.14, 0); pieces.push(handle);
-      for (const z of [-.075, .075]) pieces.push(new THREE.BoxGeometry(.03, .115, .03).translate(x, -.0875, z));
+      handle.rotateX(Math.PI / 2); handle.translate(x, -.08, 0); pieces.push(handle);
+      for (const z of [-.075, .075]) pieces.push(new THREE.BoxGeometry(.03, .055, .03).translate(x, -.0575, z));
     }
     const geometry = mergeGeometries(pieces); pieces.forEach(piece => piece.dispose());
     return [mode, geometry];

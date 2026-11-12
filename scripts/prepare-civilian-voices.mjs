@@ -64,6 +64,17 @@ const publish = async () => {
 };
 const clips = sihangOnly ? sihangVoiceClips() : endingOnly ? endingVoiceClips()
   : civilianVoiceClips().filter(clip => !encounterOnly || Number.isInteger(clip.encounterOrder));
+const budgetPath = process.env.SIHANG_VOICE_BUDGET_LOG;
+let budget;
+if (sihangOnly && !cacheOnly) {
+  if (!budgetPath) throw new Error('Sihang synthesis requires a durable SIHANG_VOICE_BUDGET_LOG');
+  budget = { authorizedUsd: 50, reservedUsd: 0, requests: [],
+    note: 'One USD reserved per request; this is not an Azure invoice. No automatic retries.' };
+  try { Object.assign(budget, JSON.parse(await readFile(budgetPath, 'utf8'))); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (budget.authorizedUsd !== 50 || !Number.isFinite(budget.reservedUsd) || budget.reservedUsd < 0 ||
+    !Array.isArray(budget.requests)) throw new Error('Invalid Sihang voice budget ledger');
+}
 // Validate the whole requested batch before sending any billable synthesis requests.
 if (!cacheOnly) for (const clip of clips) {
   const voice = available.find(item => item.ShortName === clip.voice &&
@@ -83,7 +94,17 @@ for (const [clipIndex, clip] of clips.entries()) {
   if (!bytes) {
     if (cacheOnly) throw new Error(`Civilian voice missing or changed: ${clip.file}`);
     let response;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    if (sihangOnly) {
+      if (budget.requests.some(request => request.file === clip.file && request.synthesisHash === synthesisHash))
+        throw new Error(`Sihang voice request already recorded: ${clip.file}; refusing a duplicate request`);
+      if (budget.reservedUsd + 1 > budget.authorizedUsd) throw new Error('Sihang voice budget exhausted');
+      budget.reservedUsd++;
+      budget.requests.push({ file: clip.file, synthesisHash, ssmlCharacters: ssml.length,
+        requestedAt: new Date().toISOString(), state: 'reserved' });
+      await writeFile(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);
+    }
+    const attempts = sihangOnly ? 1 : 3;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       if (manifest.attemptedCharactersByPhase[clip.phase] + ssml.length > manifest.requestSSMLCharacterLimit)
         throw new Error('Civilian synthesis character budget reached; no further paid requests sent');
       manifest.attemptedSSMLCharacters += ssml.length;
@@ -93,7 +114,7 @@ for (const [clipIndex, clip] of clips.entries()) {
         method: 'POST', headers: { Authorization: authorization, 'Content-Type': 'application/ssml+xml',
           'X-Microsoft-OutputFormat': VOICE_FORMAT }, body: ssml, signal: AbortSignal.timeout(60000),
       });
-      if (![429, 503].includes(response.status) || attempt === 2) break;
+      if (![429, 503].includes(response.status) || attempt === attempts - 1) break;
       await response.body?.cancel();
       await new Promise(done => setTimeout(done, 2000 * (attempt + 1)));
     }
@@ -103,6 +124,10 @@ for (const [clipIndex, clip] of clips.entries()) {
       bytes[0] === 255 && (bytes[1] & 224) === 224)) throw new Error(`Invalid MP3: ${clip.file}`);
     await writeFile(join(root, `${clip.file}.tmp`), bytes);
     await replaceFile(join(root, `${clip.file}.tmp`), join(root, clip.file));
+    if (sihangOnly) {
+      budget.requests[budget.requests.length - 1].state = 'saved';
+      await writeFile(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);
+    }
   }
   manifest.files = manifest.files.filter(file => file.file !== clip.file);
   manifest.files.push({ ...clip, bytes: bytes.length, sha256: hash(bytes), synthesisHash });

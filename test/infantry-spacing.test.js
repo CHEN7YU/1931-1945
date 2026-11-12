@@ -1,12 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { infantrySteering, advanceInfantryPath } from '../src/infantry-spacing.js';
+import { infantrySteering, advanceInfantryPath, sampledRouteClear } from '../src/infantry-spacing.js';
 import { createTactics, objectiveDestination, objectiveAdvanceRequired } from '../src/tactics.js';
 import { advanceAITurn } from '../src/ai-turning.js';
 import { circleBlocked, createNavigator, moveGround, segmentClear } from '../src/core.js';
-import { SIHANG_ASSEMBLY_ARRIVAL } from '../src/sihang-formation.js';
+import { SIHANG_ASSEMBLY_ARRIVAL, sihangRetreatBlockedWaypoint, sihangRetreatYieldPosition } from '../src/sihang-formation.js';
 
 const person = (id, x, z, heading = 0) => ({ id: `person-${id}`, health: 100, position: { x, y: 0, z }, heading, tactics: { id } });
+test('compact assembly spacing permits a soldier to enter a 75 cm rank without changing normal traffic', () => {
+  const peers = [person(2, 0, -.75), person(3, 0, .75)];
+  const options = { spacing: .7, minimumSeparation: .7, constrained: true, blocked: () => false, lookAhead: .65 };
+  const result = infantrySteering(person(1, .8, 0), peers, { x: -1, z: 0 }, options);
+  assert.equal(result.speed, 1);
+  assert.equal(result.x, -1);
+  const nearbyRank = [person(4, 0, -.735), person(5, 0, .735)];
+  const aligned = infantrySteering(person(6, .8, 0), nearbyRank, { x: -1, z: 0 }, options);
+  assert.equal(aligned.speed, 1, 'collision-clear rank neighbors must not be treated as a leader ahead');
+  assert.equal(aligned.x, -1);
+  assert.throws(() => infantrySteering(person(1, .8, 0), peers, { x: -1, z: 0 },
+    { ...options, minimumSeparation: .9 }), RangeError);
+});
+
 test('a late assembly member finishes its aisle turn instead of orbiting between settled ranks', () => {
   const arrival = SIHANG_ASSEMBLY_ARRIVAL;
   const actor = person(167, 12.5555298324, -2.6654652221, 1.109985);
@@ -68,6 +82,79 @@ test('a stationary guard merely facing the corridor does not receive oncoming mo
   assert.ok(result.speed > 0);
   assert.notEqual(actor.tactics.traffic.reason, 'wait-for-oncoming-yield');
 });
+
+test('a retreating soldier can turn sideways around a stationary ally at the river edge', () => {
+  const actor = person(182, 20.080162, -.774119);
+  const ally = person(134, 20.147433, -1.676356);
+  const path = [{ x: 20, z: -1 }, { x: 37, z: -13 }];
+  const blocked = point => point.z > -.65;
+  for (let step = 0; step < 500 && actor.position.x < 22; step++) {
+    const waypoint = advanceInfantryPath(actor.position, path, point =>
+      sihangRetreatBlockedWaypoint(actor, path[0], [ally]) &&
+      sampledRouteClear(actor.position, point, (x, z) => !blocked({ x, z })), .2);
+    const dx = waypoint.x - actor.position.x, dz = waypoint.z - actor.position.z;
+    const steering = infantrySteering(actor, [ally], { x: dx, z: dz }, {
+      spacing: 1.2, constrained: true, dt: .05, now: step * .05,
+      lookAhead: Math.min(.65, Math.hypot(dx, dz)), holdShallowYield: true, blocked,
+    });
+    const turn = advanceAITurn(actor, Math.atan2(-steering.x, -steering.z), .05, true);
+    if (!turn.mayMove || !steering.speed) continue;
+    const length = Math.min(Math.hypot(dx, dz), 2.7 * .05 * steering.speed * turn.moveScale);
+    const next = { x: actor.position.x + turn.direction.x * length, z: actor.position.z + turn.direction.z * length };
+    if (!blocked(next) && Math.hypot(next.x - ally.position.x, next.z - ally.position.z) >= .894) {
+      actor.position.x = next.x; actor.position.z = next.z;
+    }
+  }
+  assert.ok(actor.position.x >= 22, 'the soldier must leave the bank without crossing the ally or the obstacle');
+});
+
+test('a retreating soldier takes a swept-clear path beside a stationary ally at the river edge', () => {
+  const actor = person(183, 20.198609, -.727935);
+  const ally = person(134, 20.147433, -1.676356);
+  const blocked = point => point.z > -.65;
+  for (let step = 0; step < 300 && actor.position.x < 22; step++) {
+    const dx = 65 - actor.position.x, dz = -14 - actor.position.z;
+    const steering = infantrySteering(actor, [ally], { x: dx, z: dz }, {
+      spacing: 1.2, constrained: true, dt: .05, now: step * .05,
+      holdShallowYield: true, blocked,
+    });
+    const turn = advanceAITurn(actor, Math.atan2(-steering.x, -steering.z), .05, true);
+    if (!turn.mayMove || !steering.speed) continue;
+    const length = 2.7 * .05 * steering.speed * turn.moveScale;
+    const next = { x: actor.position.x + turn.direction.x * length, z: actor.position.z + turn.direction.z * length };
+    if (!blocked(next) && Math.hypot(next.x - ally.position.x, next.z - ally.position.z) >= .9) {
+      actor.position.x = next.x; actor.position.z = next.z;
+    }
+  }
+  assert.ok(actor.position.x >= 22, 'a clear path must not be blocked by a wider advisory threshold');
+});
+
+test('a blocked retreat waypoint cannot be skipped through a wall or another floor', () => {
+  const actor = person(182, 0, 0), ally = person(134, .6, 0);
+  const wall = (_x, z) => z <= .3 || z >= .7;
+  const route = [{ x: .6, y: 0, z: 0 }, { x: 2, y: 0, z: 1 }];
+  const check = point => sihangRetreatBlockedWaypoint(actor, route[0], [ally]) &&
+    sampledRouteClear(actor.position, point, wall);
+  assert.equal(advanceInfantryPath(actor.position, route, check, .2), route[0]);
+  route[1].y = 3;
+  assert.equal(advanceInfantryPath(actor.position, route, () => true, .2), route[0]);
+});
+
+test('a covering soldier can make physical space for a blocked retreat without crossing nearby bodies', () => {
+  const actor = person(144, 40.891921, -17.69464);
+  const waiting = person(180, 40.22841, -16.912818);
+  waiting.tactics.traffic = { direction: { x: .185506, z: -.982643 } };
+  const others = [waiting, person(142, 39.27171, -17.362874),
+    person(145, 39.361655, -16.249706), person(153, 41.075256, -16.520925)];
+  const clear = goal => sampledRouteClear(actor.position, goal, (x, z) => others.every(other =>
+    Math.hypot(x - other.position.x, z - other.position.z) >=
+      Math.min(.9, Math.hypot(actor.position.x - other.position.x, actor.position.z - other.position.z) - .01)));
+  const goal = sihangRetreatYieldPosition(actor, waiting, clear);
+  assert.ok(goal && clear(goal));
+  assert.ok(Math.hypot(goal.x - actor.position.x, goal.z - actor.position.z) <= 1.8 + 1e-8);
+  assert.equal(sihangRetreatYieldPosition(actor, waiting, () => false), null);
+});
+
 test('short authored stair nodes do not inspect terrain beyond their actual destination', () => {
   const actor = person(1, 0, 0);
   const blocked = point => point.z < -.3;
@@ -105,6 +192,20 @@ test('a held backward yield lasts through the real body turn before its walking 
     mayMove = turn.mayMove;
   }
   assert.equal(mayMove, true);
+});
+
+test('a retreating soldier holds a shallow clear detour through its body turn', () => {
+  const actor = person(2, 0, 0, 0), other = person(1, 0, -1.5);
+  const options = { spacing: 1.2, constrained: false, dt: .05, now: 1,
+    holdShallowYield: true, blocked: () => false };
+  const first = infantrySteering(actor, [other], { x: 0, z: -1 }, options);
+  assert.ok(first.x > 0 && first.z < 0);
+  const destination = actor.tactics.traffic.yieldPoint;
+  assert.ok(destination);
+  other.position.x = -.3;
+  const next = infantrySteering(actor, [other], { x: 0, z: -1 }, { ...options, now: 1.05 });
+  assert.equal(actor.tactics.traffic.yieldPoint, destination);
+  assert.ok(next.x > 0 && next.z < 0, 'a brief direct opening must not interrupt a still-clear physical detour');
 });
 
 test('a bounded authored arrival radius still cannot skip a different floor or unseen route node', () => {

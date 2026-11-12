@@ -24,13 +24,14 @@ test('the completed demolition formation is replaced once with eleven genuinely 
 
 test('breach assault alternates staggered covering fire and urgent travel before entering the warehouse', () => {
   const actor = { team: 'enemy', health: 100, index: 0, position: { x: 0, y: 0, z: -70 }, formation: {} };
-  assert.equal(sihangBreachGoal(actor, { northWallBreached: true }).assault, true);
+  assert.equal(sihangBreachGoal(actor, { stage: 'sihang-defense', northWallBreached: true }).assault, true);
+  assert.equal(sihangBreachGoal(actor, { stage: 'sihang-retreat', northWallBreached: true }), null);
   assert.equal(sihangAssaultFiringWindow(actor, 0), true);
   assert.equal(sihangAssaultFiringWindow(actor, 2.4), true);
   assert.equal(sihangAssaultFiringWindow(actor, 3.5), false);
   assert.equal(sihangAssaultFiringWindow({ index: 6 }, 0), false);
   actor.formation.sihangDemolition = true;
-  assert.equal(sihangBreachGoal(actor, { northWallBreached: true }), null);
+  assert.equal(sihangBreachGoal(actor, { stage: 'sihang-defense', northWallBreached: true }), null);
 });
 
 test('support goals remain twenty metres from every member, not merely from the squad centroid', () => {

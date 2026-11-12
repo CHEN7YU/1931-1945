@@ -3,17 +3,34 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createSihangCampaign, advanceSihangCampaign, SIHANG_RULES } from '../src/sihang-campaign.js';
 import { createSihangNight, sihangFlareState, sihangNightVisibility } from '../src/sihang-night.js';
-import { sihangEnemyRayRange, sihangEnemyTargetAllowed, sihangSpawns, SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
-import { sihangBlastClearOfSouthBank, sihangRiverBounds } from '../src/sihang-layout.js';
+import { sihangEnemyRayRange, sihangEnemyTargetAllowed, sihangSpawns, sihangEnemyRegroupPosts, SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
+import { sihangBlastClearOfSouthBank, sihangRiverBounds, sihangNorthBank, SIHANG_WAREHOUSE, SIHANG_TANK_ORIGINS } from '../src/sihang-layout.js';
 import { SIHANG_SOUTH_BANK_LAMP_SPACING, sihangSouthBankStreetLampPositions } from '../src/sihang-city.js';
 import { addSihangBridgeDefenses } from '../src/sihang-bridge-defenses.js';
 import { makeWorld } from '../src/battlefield.js';
 import { campaignLayout } from '../src/campaign-layout.js';
 import { formationPositions } from '../src/battle-roster.js';
-import { circleBlocked } from '../src/core.js';
+import { circleBlocked, createNavigator } from '../src/core.js';
 import { pointSegmentDistance } from '../src/tactics.js';
-import { createEmplacement, emplacementPose, emplacementCanAimAt, emplacementLook } from '../src/emplacements.js';
-import { sihangAssemblyPosition, sihangAssemblyApproach, sihangParadePosition, sihangParadeExit, createProceduralStaticFormation } from '../src/sihang-formation.js';
+import { createEmplacement, emplacementPose, emplacementCanAimAt, emplacementLook, emplacementObstacles } from '../src/emplacements.js';
+import { SIHANG_ASSEMBLY_ARRIVAL, sihangAssemblyPosition, sihangRetreatFollowPosition, sihangAssemblyApproach, sihangParadePosition, sihangParadeExit, createProceduralStaticFormation } from '../src/sihang-formation.js';
+
+test('the south-bank follow row transitions continuously back to normal following', () => {
+  const desired = { x: 20, z: -6 }, actor = { index: 8 };
+  const player = { index: 2, position: { x: 18, y: 0, z: -4 } };
+  const row = sihangRetreatFollowPosition(actor, player, desired);
+  assert.deepEqual(row, { x: 10.8, z: -1.5 });
+  player.position.x = 26;
+  assert.deepEqual(sihangRetreatFollowPosition(actor, player, desired), desired);
+  player.position.x = 18.001;
+  const next = sihangRetreatFollowPosition(actor, player, desired);
+  assert.ok(Math.hypot(next.x - row.x, next.z - row.z) < .01);
+  player.position.y = 4;
+  assert.deepEqual(sihangRetreatFollowPosition(actor, player, desired), desired);
+  player.position.y = 0;
+  player.index = 9;
+  assert.notDeepEqual(sihangRetreatFollowPosition(actor, player, desired), next);
+});
 
 function nightCampaign() {
   const state = createSihangCampaign();
@@ -21,6 +38,79 @@ function nightCampaign() {
   state.stageElapsed = SIHANG_RULES.nightfallSeconds;
   return state;
 }
+
+test('bridge defenses isolate the artificially trapped tank fixture from its real spawn', () => {
+  const scene = new THREE.Scene(), world = makeWorld(scene,
+    (_kind, color) => new THREE.MeshStandardMaterial({ color }), campaignLayout('sihang'));
+  const oldPositions = SIHANG_EMPLACEMENTS.filter(point =>
+    ['sihang-cover-gun', 'sihang-cover-mg', 'sihang-cover-aa'].includes(point.id)).map(point => ({
+    ...point, ...({
+      'sihang-cover-gun': { x: 56, z: -26, heading: .65 },
+      'sihang-cover-mg': { x: 64, z: -26, heading: .4 },
+      'sihang-cover-aa': { x: 44, z: -26, heading: .5 },
+    })[point.id],
+  }));
+  for (const point of oldPositions) {
+    world.obstacles.push(...emplacementObstacles(createEmplacement(point)));
+    for (const side of [-1, 1]) {
+      const x = point.x + side * 2.3, z = point.z - 1.8;
+      world.obstacles.push({ minX: x - 1.9, maxX: x + 1.9, minZ: z - .24, maxZ: z + .24,
+        minY: 0, height: .75 });
+    }
+  }
+  const navigate = createNavigator(world.armorObstacles, 1.5, 3.1);
+  const isolated = { x: 50, z: -24 }, connected = { x: 50, z: -35 };
+  assert.equal(circleBlocked(isolated.x, isolated.z, 3.1, world.armorObstacles), false);
+  assert.equal(navigate(SIHANG_TANK_ORIGINS[1], isolated).length, 0);
+  assert.equal(navigate(isolated, { x: 70, z: -55 }).length, 0);
+  assert.ok(navigate(SIHANG_TANK_ORIGINS[1], connected).length > 0);
+  assert.ok(navigate(connected, { x: 70, z: -55 }).length > 0);
+});
+
+test('retreat guns cover the northern approaches without pointing across the bridge route', () => {
+  const scene = new THREE.Scene(), world = makeWorld(scene,
+    (_kind, color) => new THREE.MeshStandardMaterial({ color }), campaignLayout('sihang'));
+  const positions = SIHANG_EMPLACEMENTS.filter(point => point.retreatCover);
+  addSihangBridgeDefenses(scene, world, positions);
+  scene.updateMatrixWorld(true);
+  const armorRoute = createNavigator(world.armorObstacles, 1.5, 3.1);
+  assert.ok(armorRoute(SIHANG_TANK_ORIGINS[1], { x: 70, z: -30 }).length,
+    'the new defenses must not cut off the eastern armored approach');
+  const guns = positions.filter(point => point.profile !== 'maxim24aa');
+  assert.equal(guns.filter(point => point.profile === 'bofors75').length, 2);
+  assert.equal(guns.filter(point => point.profile === 'maxim24').length, 2);
+  assert.ok(positions.every(point => point.z < -35));
+  assert.ok(Math.max(...positions.map(point => point.x)) > 76 &&
+    Math.min(...positions.map(point => point.x)) < 60 &&
+    Math.max(...positions.map(point => point.z)) - Math.min(...positions.map(point => point.z)) >= 10,
+  'positions form an arc around the northern bridge approach');
+  const path = world.elevatedPath(sihangAssemblyPosition(4, 2),
+    { x: 72, y: 0, z: -30, transit: true });
+  assert.ok(path.length, 'the real planner must retain a route to the bridge');
+  const route = [sihangAssemblyPosition(4, 2), ...path];
+  for (const spec of guns) {
+    const point = createEmplacement(spec), muzzle = emplacementPose(point, 0).muzzle;
+    for (let i = 1; i < route.length; i++) {
+      const start = route[i - 1], end = route[i];
+      for (let step = 0; step <= 20; step++) {
+        const t = step / 20, target = { x: start.x + (end.x - start.x) * t,
+          y: 1.2, z: start.z + (end.z - start.z) * t };
+        assert.ok(target.z > point.z, `${point.id}: withdrawal stays south of the firing line`);
+        assert.equal(emplacementCanAimAt(point, target), false, `${point.id}: route is outside its traverse`);
+      }
+    }
+    let visible = false;
+    for (let z = -50; z >= -90 && !visible; z -= 5) for (let x = 28; x <= 84 && !visible; x += 2) {
+      const target = { x, y: 1.2, z };
+      if (!emplacementCanAimAt(point, target) || circleBlocked(x, z, .5, world.obstacles, 0)) continue;
+      const origin = new THREE.Vector3(muzzle.x, muzzle.y, muzzle.z);
+      const direction = new THREE.Vector3(x, target.y, z).sub(origin);
+      const ray = new THREE.Raycaster(origin, direction.clone().normalize(), 0, direction.length());
+      visible = !ray.intersectObjects(world.solids, true).some(hit => hit.object.visible);
+    }
+    assert.ok(visible, `${point.id}: a real unobstructed northern firing lane is required`);
+  }
+});
 
 test('three fixed-count flare lights launch only after the first AI crossing, extinguish and repeat on simulation time', () => {
   const scene = new THREE.Scene(), sun = new THREE.DirectionalLight(), fill = new THREE.HemisphereLight();
@@ -119,18 +209,46 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
     (kind, color) => new THREE.MeshStandardMaterial({ color }), campaignLayout('sihang'));
   const positions = SIHANG_EMPLACEMENTS.filter(point => point.retreatCover);
   const bags = addSihangBridgeDefenses(scene, world, positions);
-  assert.equal(bags.count, 72); assert.equal(world.obstacles.filter(box => box.id?.includes('-sandbags-')).length, 6);
+  assert.equal(bags.count, 120); assert.equal(world.obstacles.filter(box => box.id?.includes('-sandbags-')).length, 10);
   assert.ok(world.obstacles.some(box => box.id === 'sihang-cover-gun:obstacle-0'),
     'mobile cannon reset and movement require its registered physical collider');
   const occupied = [];
-  for (const spawn of sihangSpawns().filter(point => point.id.startsWith('sihang-retreat-') || point.id === 'sihang-bridge-cover')) {
-    const members = formationPositions(spawn, 11, world.obstacles, occupied);
-    assert.equal(members.length, 11, spawn.id);
-    for (const member of members) {
+  const playerSpawn = sihangSpawns().find(point => point.id === 'sihang-assembly-player');
+  assert.equal(playerSpawn.playerOnly, true);
+  assert.equal(playerSpawn.retreatOnly, true);
+  const ranks = Array.from({ length: 55 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
+  assert.equal(formationPositions(playerSpawn, 11, world.obstacles, ranks).length, 11,
+    'player deployment must find real free positions even with five assembled squads');
+  const simultaneous = [];
+  for (const [slot, spawn] of sihangSpawns().filter(point => point.id.startsWith('sihang-retreat-')).entries()) {
+    assert.ok(spawn.deploymentZone.maxX < SIHANG_WAREHOUSE.minX);
+    assert.ok(spawn.deploymentZone.minZ >= SIHANG_WAREHOUSE.maxZ);
+    const fullSquad = formationPositions(spawn, 11, world.obstacles, simultaneous);
+    assert.equal(fullSquad.length, 11);
+    for (const member of fullSquad) {
+      assert.ok(sihangNorthBank(member, .5));
+      simultaneous.push({ ...member, y: 0 });
+    }
+    for (let index = 0; index < 3; index++) occupied.push(sihangAssemblyPosition(slot, index));
+    const members = formationPositions(spawn, 8, world.obstacles, occupied);
+    assert.equal(members.length, 8, spawn.id);
+    for (const [index, member] of members.entries()) {
       assert.equal(world.walkHeight(member.x, member.z, 0), 0, spawn.id);
+      occupied.push(sihangAssemblyPosition(slot, index + 3));
+    }
+  }
+  const cover = sihangSpawns().find(point => point.id === 'sihang-bridge-cover');
+  if (cover) {
+    const members = formationPositions(cover, 11, world.obstacles, occupied);
+    for (const member of members) {
+      assert.equal(world.walkHeight(member.x, member.z, 0), 0, cover.id);
       occupied.push({ ...member, y: 0 });
     }
   }
+  const posts = sihangEnemyRegroupPosts(world.obstacles);
+  assert.ok(posts.length >= 119);
+  assert.ok(posts.every(post => post.z < SIHANG_WAREHOUSE.minZ &&
+    !circleBlocked(post.x, post.z, .6, world.obstacles, 0) && world.walkHeight(post.x, post.z, 0) === 0));
   for (const spec of positions) {
     const point = createEmplacement(spec), pose = emplacementPose(point, 0);
     assert.equal(circleBlocked(pose.operator.x, pose.operator.z, .43, world.obstacles, 0), false, spec.id);
@@ -147,6 +265,29 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
     assert.equal(world.walkHeight(position.x, position.z, 0), 0);
   }
   const slots = Array.from({ length: 66 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
+  assert.ok(.75 - 2 * SIHANG_ASSEMBLY_ARRIVAL > .7,
+    'two accepted rank positions must not obstruct each other at the assembly clearance');
+  const westStart = { x: -52, y: 0, z: -4 };
+  const westApproach = sihangAssemblyApproach(westStart, slots[10]);
+  assert.equal(westApproach[0].x, westStart.x);
+  assert.equal(westApproach[0].z, -1.1, 'western reinforcements enter the riverside aisle before reaching the ranks');
+  for (let slot = 0; slot < 5; slot++) {
+    const officer = sihangAssemblyPosition(slot, 2);
+    const team = Array.from({ length: 11 }, (_, index) => sihangAssemblyPosition(slot, index));
+    assert.ok(team.filter((_, index) => index !== 2).every(member => member.x < officer.x));
+    for (const x of new Set(team.filter((_, index) => index !== 2).map(member => member.x))) {
+      const row = team.filter(member => member.x === x).sort((a, b) => a.z - b.z);
+      assert.equal(row.length, 5);
+      for (let index = 1; index < row.length; index++)
+        assert.ok(Math.abs(row[index].z - row[index - 1].z - .75) < 1e-9);
+    }
+    if (slot) {
+      const previousOfficer = sihangAssemblyPosition(slot - 1, 2);
+      const nearestSoldier = Math.min(...team.filter((_, index) => index !== 2)
+        .map(member => Math.hypot(member.x - previousOfficer.x, member.z - previousOfficer.z)));
+      assert.ok(Math.abs(nearestSoldier - 2) < 1e-9, 'adjacent blocks keep a two-metre officer-to-soldier gap');
+    }
+  }
   const aislePath = world.elevatedPath({ x: 22, y: 0, z: -2.9 },
     { x: -11, y: 0, z: -2.9, assembly: true });
   assert.ok(aislePath.length > 0);
@@ -181,16 +322,16 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
   world.obstacles.splice(world.obstacles.indexOf(temporary), 1); world.refreshNavigation([temporary]);
   for (const goal of slots) {
     const peers = slots.filter(slot => slot !== goal).map(slot => ({
-      circular: true, cx: slot.x, cz: slot.z, radius: .45, height: 1.8,
-      minX: slot.x - .45, maxX: slot.x + .45, minZ: slot.z - .45, maxZ: slot.z + .45,
+      circular: true, cx: slot.x, cz: slot.z, radius: .35, height: 1.8,
+      minX: slot.x - .35, maxX: slot.x + .35, minZ: slot.z - .35, maxZ: slot.z + .35,
     }));
-    let previous = { x: 22.6, y: 0, z: -5.3 };
+    let previous = { x: -34, y: 0, z: -1.1 };
     for (const next of sihangAssemblyApproach(previous, goal)) {
       const count = Math.max(1, Math.ceil(Math.hypot(next.x - previous.x, next.z - previous.z) / .1));
       for (let step = 0; step <= count; step++) {
         const x = previous.x + (next.x - previous.x) * step / count;
         const z = previous.z + (next.z - previous.z) * step / count;
-        assert.equal(circleBlocked(x, z, .42, peers, 0), false,
+        assert.equal(circleBlocked(x, z, .35, peers, 0), false,
           `rank approach must not cross a settled squadmate: ${goal.x}/${goal.z}`);
         assert.equal(circleBlocked(x, z, .42, world.obstacles, 0), false,
           `rank aisle must clear warehouse walls and river railing: ${x}/${z}`);

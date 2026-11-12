@@ -29,8 +29,12 @@ try {
         },
         demolition() {
           const builds = world.navigationStats.builds, start = performance.now();
+          const operator = allForces.find(actor => actor.health > 0 && actor.formation.sihangDemolition);
+          if (!operator) throw new Error('Demolition fixture requires a living shield operator');
+          operator.position.x += 3;
           sihangCampaign.demolition.state = 'armed'; sihangCampaign.demolition.fuseRemaining = .001;
           setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.02, time);
+          const voice = { ...sihangVoices?.snapshot, context: audioContext?.state, failure: sihangVoicesFailure };
           setGameState('pause');
           const simulationMs = performance.now() - start, renderStart = performance.now();
           camera.position.set(0, 3, -54); camera.lookAt(0, 2, -42); camera.updateMatrixWorld(true);
@@ -38,7 +42,8 @@ try {
           renderer.render(scene, camera);
           return { simulationMs, renderMs: performance.now() - renderStart, builds,
             afterBuilds: world.navigationStats.builds, northWallBreached: world.northWallBreached,
-            charge: sihangCampaign.demolition.state, navigation: world.navigationStats,
+            charge: sihangCampaign.demolition.state, stage: sihangCampaign.stage, outcome: sihangCampaign.outcome,
+            voice, navigation: world.navigationStats,
             population: { friendly: friendlyForces.length, enemy: enemies.length },
             programs: renderer.info.programs.length, effects: combatEffects.snapshot,
             image: renderer.domElement.toDataURL() };
@@ -71,6 +76,26 @@ try {
           return { effects: combatEffects.snapshot, ownershipPreserved: owned === JSON.stringify([tank, plane]),
             programsBefore: before, programsAfter: renderer.info.programs.length,
             image: renderer.domElement.toDataURL() };
+        },
+        withdrawalVoices() {
+          setGameState('menu'); beginMatch(); missionBriefing.hide(); setGameState('playing');
+          sihangCampaign.reserve = 0;
+          sihangCampaign.stageElapsed = SIHANG_RULES.defenseSeconds - .01;
+          updateSihangMission(.02);
+          const withdrawal = { ...sihangVoices?.snapshot };
+          sihangCampaign.assemblyReleased = true;
+          const crossing = friendlyAI.find(actor => actor.health > 0);
+          if (!crossing) throw new Error('Voice fixture requires a living AI soldier');
+          crossing.position.set(88, 0, 30);
+          updateSihangMission(.05);
+          const counterattack = { ...sihangVoices?.snapshot };
+          const needed = sihangCampaign.retreatRequired - sihangCampaign.evacuatedIds.length;
+          sihangCampaign.evacuatedIds.push(...sihangCampaign.retreatIds
+            .filter(id => !sihangCampaign.evacuatedIds.includes(id)).slice(0, needed));
+          updateSihangMission(.05);
+          const retreatOpen = { ...sihangVoices?.snapshot };
+          setGameState('pause');
+          return { withdrawal, counterattack, retreatOpen };
         }
       };` });
   });
@@ -85,8 +110,11 @@ try {
   assert.deepEqual(preparation.afterEvents, preparation.events, 'render preparation cannot issue gameplay events');
   const { image: demolitionImage, ...demolition } = await page.evaluate(() => eventReview.demolition());
   await writeFile(join(directory, 'demolition.png'), Buffer.from(demolitionImage.split(',')[1], 'base64'));
+  await writeFile(join(directory, 'demolition.json'), JSON.stringify({ demolition, errors }, null, 2));
   assert.equal(demolition.northWallBreached, true);
   assert.equal(demolition.charge, 'detonated');
+  assert.equal(demolition.voice.context, 'running');
+  assert.equal(demolition.voice.active, 'detonated', 'the real detonation path must play its command voice');
   assert.equal(demolition.afterBuilds, demolition.builds);
   const effects = [], report = { fixture: 'full-opening-roster-high-quality-isolated-events',
     preparation, demolition, effects, errors };
@@ -107,6 +135,12 @@ try {
   assert.ok(vehicles.effects.aircraftSmoke.puffs > 0);
   assert.equal(vehicles.ownershipPreserved, true);
   assert.equal(vehicles.programsAfter, vehicles.programsBefore);
+  const voices = await page.evaluate(() => eventReview.withdrawalVoices());
+  report.voices = voices;
+  await writeFile(join(directory, 'events.json'), JSON.stringify(report, null, 2));
+  assert.equal(voices.withdrawal.active, 'withdrawal');
+  assert.equal(voices.counterattack.active, 'counterattack');
+  assert.equal(voices.retreatOpen.active, 'retreat-open');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ demolition, effects: effects.map(({ style, milliseconds, programsBefore, programsAfter }) =>
     ({ style, milliseconds, programsBefore, programsAfter })) }, null, 2));

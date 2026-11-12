@@ -2,18 +2,11 @@ import { sihangSouthBank } from './sihang-layout.js';
 
 export const SIHANG_RULES = Object.freeze({
   defenseSeconds: 240, troopLimit: 400, squadMembers: 11,
-  retreatSquads: 5, waveSpacing: 8, coverRespawnSeconds: 10,
+  retreatSquads: 5, waveInterval: 5, retreatSpawnInterval: 2, coverRespawnSeconds: 10,
   flareSeconds: 24, flareInterval: 34, nightfallSeconds: 20,
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
 });
-
-export function sihangRetreatDepartureTime(campaign, slot) {
-  if (campaign.stage !== 'sihang-retreat' || !Number.isInteger(slot) || slot < 0 || slot >= SIHANG_RULES.retreatSquads)
-    throw new RangeError('Invalid Sihang retreat departure slot');
-  const remainingNightfall = Math.max(0, SIHANG_RULES.nightfallSeconds - campaign.stageElapsed);
-  return campaign.elapsed + remainingNightfall + slot * SIHANG_RULES.waveSpacing;
-}
 
 export function createSihangCampaign() {
   return {
@@ -21,11 +14,47 @@ export function createSihangCampaign() {
     elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, retreatDeployed: 0, outcome: null,
     retreatIds: [], aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [], northWallBreached: false,
     retreatTotal: 0, retreatRequired: 0, retreatReserve: 0, retreatLostIds: [],
-    counterattack: false, counterattackAt: null, assemblyReleased: false, coverRespawnAt: 0,
+    counterattack: false, counterattackAt: null, assemblyPrepared: false, assemblyReleased: false, coverRespawnAt: 0,
+    withdrawalWave: null, withdrawalWaveNumber: 0, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,
     demolition: { state: 'idle', operatorId: null, installProgress: 0,
       fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null, defuseInterruptedFor: 0,
       cooldownUntil: 0, installations: 0, disarmed: 0 },
   };
+}
+
+export function startSihangWithdrawalWave(campaign, squads) {
+  if (campaign.stage !== 'sihang-retreat' || campaign.outcome || !campaign.assemblyReleased ||
+    campaign.stageElapsed < SIHANG_RULES.nightfallSeconds || campaign.withdrawalWave ||
+    !Array.isArray(squads) || squads.length !== SIHANG_RULES.retreatSquads ||
+    squads.some(squad => !Array.isArray(squad) || squad.some(id => typeof id !== 'string')) ||
+    new Set(squads.flat()).size !== squads.flat().length || !squads.some(squad => squad.length))
+    throw new RangeError('Invalid Sihang withdrawal wave');
+  const coverSlot = squads.findIndex(squad => squad.length);
+  campaign.withdrawalWave = { number: ++campaign.withdrawalWaveNumber, phase: 'main', coverSlot, covering: false,
+    squads: squads.map(squad => [...squad]), completedAt: null };
+  return campaign.withdrawalWave;
+}
+
+export function advanceSihangWithdrawalWave(campaign) {
+  const wave = campaign.withdrawalWave;
+  if (!wave || campaign.outcome) return null;
+  const resolved = new Set([...campaign.evacuatedIds, ...campaign.retreatLostIds]);
+  const completed = ids => ids.every(id => resolved.has(id));
+  if (wave.phase === 'main' && wave.covering &&
+    wave.squads.every((ids, slot) => slot === wave.coverSlot || completed(ids))) wave.phase = 'cover';
+  if (wave.phase === 'main' && !wave.covering && wave.squads.every(completed)) {
+    wave.phase = 'interval';
+    wave.completedAt = campaign.elapsed;
+  }
+  if (wave.phase === 'cover' && completed(wave.squads[wave.coverSlot])) {
+    wave.phase = 'interval';
+    wave.completedAt = campaign.elapsed;
+  }
+  if (wave.phase === 'interval' && campaign.elapsed >= wave.completedAt + SIHANG_RULES.waveInterval) {
+    campaign.withdrawalWave = null;
+    return 'refill';
+  }
+  return wave.phase;
 }
 
 export function sihangDeploymentCount(campaign, requested = SIHANG_RULES.squadMembers) {
@@ -39,6 +68,22 @@ export function sihangRetreatDeploymentCount(campaign, requested = SIHANG_RULES.
   if (!Number.isInteger(requested) || requested < 1 || requested > SIHANG_RULES.squadMembers)
     throw new RangeError('Invalid retreat squad size');
   return campaign.stage === 'sihang-retreat' && !campaign.outcome ? Math.min(requested, campaign.retreatReserve) : 0;
+}
+
+export function returnSihangRetreatSquadToReserve(campaign, actors) {
+  if (campaign.stage !== 'sihang-retreat' || campaign.outcome || !Array.isArray(actors) ||
+    new Set(actors.map(actor => actor?.id)).size !== actors.length ||
+    actors.some(actor => !actor?.id || actor.playerUnit || actor.health <= 0 ||
+      !campaign.aiRetreatIds.includes(actor.id) || !campaign.retreatIds.includes(actor.id) ||
+      campaign.evacuatedIds.includes(actor.id) || campaign.retreatLostIds.includes(actor.id)) ||
+    campaign.deployed < actors.length)
+    throw new RangeError('Only active living AI retreat soldiers can return to reserve');
+  const returned = new Set(actors.map(actor => actor.id));
+  campaign.retreatIds = campaign.retreatIds.filter(id => !returned.has(id));
+  campaign.aiRetreatIds = campaign.aiRetreatIds.filter(id => !returned.has(id));
+  campaign.reserve += actors.length;
+  campaign.retreatReserve += actors.length;
+  campaign.deployed -= actors.length;
 }
 
 export function registerSihangRetreatSquad(campaign, actors) {

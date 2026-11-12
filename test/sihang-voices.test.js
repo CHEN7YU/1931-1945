@@ -8,7 +8,7 @@ import { voiceSSML, VOICE_FORMAT } from '../scripts/prepare-battle-voices.mjs';
 test('all new Sihang warnings, encouragement and memorial recordings have original Azure provenance and bounded charges', async () => {
   const root = new URL('../public/assets/audio/sihang-voices/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
-  assert.equal(manifest.provider, 'Azure AI Speech'); assert.equal(manifest.files.length, 9);
+  assert.equal(manifest.provider, 'Azure AI Speech'); assert.equal(manifest.files.length, sihangVoiceClips().length);
   assert.ok(manifest.attemptedSSMLCharacters < 10000);
   assert.ok(manifest.attemptedCharactersByPhase.sihang < 10000);
   for (const clip of sihangVoiceClips()) {

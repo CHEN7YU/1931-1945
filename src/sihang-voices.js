@@ -4,8 +4,13 @@ export const SIHANG_VOICE_LINES = Object.freeze({
   installing: '北墙发现日军爆破队！阻止他们安装炸药！',
   armed: '北墙炸药已装好！二十五秒后引爆，立刻靠近拆除！',
   disarmed: '炸药已经拆除！继续守住仓库！',
-  withdrawal: '撤退命令！掩护友军过桥，撤入苏州河南岸！',
-  'retreat-open': '友军已经撤离！带上你的弟兄，过桥！',
+  detonated: '北墙被炸开了！守住缺口！',
+  withdrawal: '撤退命令！各队到仓库南面集合！',
+  assembled: '队伍集结完毕！准备撤离！',
+  'wave-start': '下一批弟兄，准备过桥！',
+  'wave-cover': '掩护队，撤退！',
+  counterattack: '日军反扑！掩护弟兄们过桥！',
+  'retreat-open': '过半弟兄已撤离！带上你的弟兄，过桥！',
   cheer1: '弟兄们，挺住啊！',
   cheer2: '中国军人，好样的！',
   cheer3: '弟兄们，保重啊！',
@@ -19,7 +24,8 @@ export function sihangVoiceClips() {
     locale: 'zh-CN', gender: cue === 'cheer2' ? 'Female' : 'Male',
     style: cue === 'cheer2' ? 'cheerful' : 'serious',
     styledegree: '1.4', rate: '-3%', pitch: '-3%', volume: 'loud',
-    audioRevision: cue === 'armed' ? 'sihang-demolition-v2' : 'sihang-1937-v1',
+    audioRevision: ['detonated', 'withdrawal', 'assembled', 'wave-start', 'wave-cover', 'counterattack', 'retreat-open'].includes(cue)
+      ? 'sihang-regroup-v1' : cue === 'armed' ? 'sihang-demolition-v2' : 'sihang-1937-v1',
   }));
 }
 

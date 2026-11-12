@@ -114,10 +114,13 @@ test('ROC cloth has the red field, blue upper-hoist canton, twelve white rays, p
 });
 
 test('north sandbag positions register real MG profiles without changing the roof AA', () => {
-  assert.equal(SIHANG_EMPLACEMENTS.length, 4);
-  assert.equal(SIHANG_EMPLACEMENTS[0].profile, 'maxim24aa');
-  assert.equal(SIHANG_EMPLACEMENTS[0].altitude, 21.6);
-  assert.equal(SIHANG_EMPLACEMENTS[0].altitude, SIHANG_WAREHOUSE.roofY);
+  assert.equal(SIHANG_EMPLACEMENTS.length, 9);
+  const roofAA = SIHANG_EMPLACEMENTS.find(point => point.id === 'sihang-roof-aa');
+  assert.equal(roofAA.profile, 'maxim24aa');
+  assert.equal(roofAA.altitude, 21.6);
+  assert.equal(roofAA.altitude, SIHANG_WAREHOUSE.roofY);
+  assert.equal(SIHANG_EMPLACEMENTS.filter(point => point.retreatCover).length, 5);
+  assert.equal(SIHANG_EMPLACEMENTS.filter(point => !point.retreatCover).length, 4);
   for (const emplacement of SIHANG_EMPLACEMENTS) assert.ok(EMPLACEMENT_PROFILES[emplacement.profile]);
   const entrance = SIHANG_EMPLACEMENTS.find(point => point.id === 'sihang-ground-entrance-mg');
   assert.equal(entrance.profile, 'maxim24'); assert.equal(entrance.altitude, 0);

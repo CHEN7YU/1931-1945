@@ -34,12 +34,15 @@ export function advanceInfantryPath(position, path, clear, arrivalRadius = .1) {
 }
 
 export function infantrySteering(actor, neighbors, direction, { spacing, constrained, blocked, dt = 0, now = 0,
-  reservations = new Map(), lookAhead = .65 }) {
+  reservations = new Map(), lookAhead = .65, minimumSeparation = .9, holdShallowYield = false }) {
   const length = Math.hypot(direction.x, direction.z);
-  if (!Number.isFinite(length) || length < 1e-8 || !Number.isFinite(spacing) || spacing < 1 ||
+  if (!Number.isFinite(length) || length < 1e-8 || !Number.isFinite(minimumSeparation) ||
+    minimumSeparation < .5 || minimumSeparation > .9 ||
+    !Number.isFinite(spacing) || spacing < (minimumSeparation < .9 ? minimumSeparation : 1) ||
     !Number.isFinite(dt) || dt < 0 || !Number.isFinite(now) || now < 0 ||
     !Number.isFinite(lookAhead) || lookAhead <= 0 || lookAhead > .65 ||
-    typeof constrained !== 'boolean' || typeof blocked !== 'function') throw new RangeError('Infantry spacing needs a finite direction, clearance and terrain query');
+    typeof constrained !== 'boolean' || typeof holdShallowYield !== 'boolean' ||
+    typeof blocked !== 'function') throw new RangeError('Infantry spacing needs a finite direction, clearance and terrain query');
   const forward = { x: direction.x / length, z: direction.z / length }, right = { x: -forward.z, z: forward.x };
   const terrainClear = point => {
     const result = blocked(point);
@@ -84,13 +87,13 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
         const initial = distance(actor.position, other.position);
         const predicted = { x: other.position.x + (other.velocity?.x ?? 0) * .2 * step / steps,
           z: other.position.z + (other.velocity?.z ?? 0) * .2 * step / steps };
-        if (distance(p, predicted) < Math.min(.9, initial - .01) && connected(other)) return false;
+        if (distance(p, predicted) < Math.min(minimumSeparation, initial - .01) && connected(other)) return false;
       }
     }
     return peers.every(other => {
       const entry = reservations.get(other.id);
       return !entry || distance(destination, entry) >=
-        Math.min(.9, distance(actor.position, entry) - .01) || !connected(other);
+        Math.min(minimumSeparation, distance(actor.position, entry) - .01) || !connected(other);
     });
   };
   const result = (x, z, speed, waitingFor, reason) => {
@@ -110,7 +113,8 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
   for (const other of peers) {
     const dx = other.position.x - actor.position.x, dz = other.position.z - actor.position.z;
     const along = dx * forward.x + dz * forward.z, across = Math.abs(dx * right.x + dz * right.z);
-    if (along > 0 && along < spacing + .6 && across < .95 && (!ahead || along < ahead.along) && connected(other)) ahead = { other, along, across };
+    const lateralClearance = minimumSeparation < .9 || holdShallowYield ? minimumSeparation : minimumSeparation + .05;
+    if (along > 0 && along < spacing + .6 && across < lateralClearance && (!ahead || along < ahead.along) && connected(other)) ahead = { other, along, across };
   }
   const directClear = clear(point(forward.x, forward.z, lookAhead));
   if (!ahead && directClear) return result(forward.x, forward.z, 1, null, null);
@@ -119,7 +123,8 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
   const movingLeader = ahead && ahead.other.locomotion?.speed > .5 && !opposing;
   if (movingLeader && directClear) {
     const comfort = constrained ? 1.2 : spacing;
-    const speed = Math.max(0, Math.min(1, (ahead.along - .95) / Math.max(.25, comfort - .9)));
+    const speed = Math.max(0, Math.min(1, (ahead.along - minimumSeparation - .05) /
+      Math.max(.25, comfort - minimumSeparation)));
     return result(forward.x, forward.z, speed, ahead.other.id, 'queue');
   }
   const yields = opposing && actor.tactics.id > ahead.other.tactics.id;
@@ -136,8 +141,9 @@ export function infantrySteering(actor, neighbors, direction, { spacing, constra
     const x = forward.x * c + right.x * s, z = forward.z * c + right.z * s;
     if (!clear(point(x, z, lookAhead))) continue;
     // A lateral retreat is a real, held destination, not a fresh coin flip every frame.
-    if (Math.abs(angle) >= .85) {
-      const destination = point(x, z, constrained ? Math.max(.45, lookAhead) : 1.25);
+    if (Math.abs(angle) >= .85 || holdShallowYield) {
+      const destination = point(x, z, Math.abs(angle) < .85 ? lookAhead :
+        constrained ? Math.max(.45, lookAhead) : 1.25);
       if (!clear(destination)) continue;
       traffic.yieldPoint = destination;
       traffic.until = now + .8 + Math.abs(headingError(actor.heading, Math.atan2(-x, -z))) / AI_TURN.movingRate;

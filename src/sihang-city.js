@@ -259,9 +259,13 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     house(`north-quay-${i}`, x, sihangRiverBounds(x).northZ - 5.5, 8, 4, false, index++);
   const shops = [-90, -66, -42, -18, 12, 38, 98];
   for (const [i, x] of shops.entries()) house(`concession-shop-${i}`, x, 64, 15, 13, true, i);
-  for (const [i, x] of [-98, -78, -54, -30, 0, 24, 48, 64, 100].entries())
-    house(`concession-riverside-${i}`, x, Math.max(sihangRiverBounds(x - 7).southZ,
-      sihangRiverBounds(x + 7).southZ) + 13, 12, 10, true, i + 19);
+  for (const [i, x, w, d] of [
+    [0, -98, 12, 10], [1, -78, 5, 6], [2, -54, 5, 6], [3, -30, 12, 10],
+    [4, 0, 12, 10], [5, 24, 12, 10], [6, 48, 12, 10], [7, 64, 12, 10], [8, 100, 12, 10],
+  ])
+    house(`concession-riverside-${i}`, x,
+      Math.max(sihangRiverBounds(x - w / 2).southZ, sihangRiverBounds(x + w / 2).southZ) + 13,
+      w, d, true, i + 19);
 
   for (const [index, [x, z]] of [[-62, -49], [-42, -45], [-57, -3], [43, -15], [59, -45]].entries()) {
     const bounds = { minX: x - 1.5, maxX: x + 1.5, minZ: z - .25, maxZ: z + .25 };

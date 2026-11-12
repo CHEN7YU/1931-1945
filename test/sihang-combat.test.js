@@ -42,7 +42,7 @@ test('the original rear spawn deploys the complete turtle, or waits without scat
     [{ health: 100, position: { ...positions[0], y: 0 } }]), /完整爆破龟壳/);
 });
 
-test('sappers retain enclosed turtle cover while advancing, installing and withdrawing', () => {
+test('sappers retain individually carried turtle plates while advancing, installing and withdrawing', () => {
   const f = fixture();
   f.combat.update(.05, 0, f);
   assert.equal(f.combat.snapshot.mode, 'turtle');
@@ -125,22 +125,24 @@ test('a breach keeps living sappers until their actual return and routes other i
     actor.team = 'friendly';
     assert.equal(f.combat.goalFor(actor, f.campaign), null);
   }
+  f.campaign.stage = 'sihang-retreat';
+  assert.equal(f.combat.goalFor({ index: 0, team: 'enemy', health: 100,
+    formation: {}, position: new THREE.Vector3(0, 0, -35) }, f.campaign), null,
+  'the first-stage breach goal must not override second-stage pursuit');
   assert.equal(new Set(lanes).size, 5);
 });
 
-test('closed turtle steel intercepts low, body, head and overhead projectile rays from every outside direction', () => {
+test('individual steel plates block hits while the formed turtle retains gaps at the side and roof', () => {
   const f = fixture();
   f.combat.update(.05, 0, f);
-  const center = new THREE.Vector3(0, 1, -60), ray = new THREE.Raycaster();
-  for (const height of [.15, 1, 1.8]) for (let i = 0; i < 32; i++) {
-    const angle = i * Math.PI / 16;
-    const origin = new THREE.Vector3(Math.cos(angle) * 12, height, -60 + Math.sin(angle) * 12);
-    const target = center.clone().setY(height);
-    ray.set(origin, target.sub(origin).normalize()); ray.far = 12;
-    assert.ok(ray.intersectObjects(f.world.solids, false).length, `${height}/${i}`);
+  const ray = new THREE.Raycaster();
+  ray.far = 4;
+  for (const [z, hits] of [[-63.75, true], [-63, false]]) {
+    ray.set(new THREE.Vector3(-4, 1, z), new THREE.Vector3(1, 0, 0));
+    assert.equal(ray.intersectObjects(f.world.solids, false).length > 0, hits);
   }
-  for (const x of [-.9, 0, .9]) for (const z of [-3.4, 0, 3.4]) {
-    ray.set(new THREE.Vector3(x, 15, -60 + z), new THREE.Vector3(0, -1, 0)); ray.far = 15;
-    assert.ok(ray.intersectObjects(f.world.solids, false).length, `roof ${x}/${z}`);
+  for (const [z, hits] of [[-60 - 5.8 / 6, true], [-60, false]]) {
+    ray.set(new THREE.Vector3(0, 3, z), new THREE.Vector3(0, -1, 0));
+    assert.equal(ray.intersectObjects(f.world.solids, false).length > 0, hits);
   }
 });
