@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { ferryVisibility, updateFerryVisibility, restoreFerryPassenger, NANJING_FERRY_ROUTE,
-  shouldDepartNanjingFerry } from '../src/nanjing-ferry.js';
+  shouldDepartNanjingFerry, selectCivilianBoarding } from '../src/nanjing-ferry.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { rejoinCivilianRoute } from '../src/civilian-crowd.js';
 import { segmentClear } from '../src/core.js';
@@ -27,6 +27,39 @@ test('partly loaded boats stop waiting for distant civilians but never leave dur
   assert.equal(shouldDepartNanjingFerry(ferry, boat, 30, true, 0), false);
   boat.passengers = 2; boat.returning = true;
   assert.equal(shouldDepartNanjingFerry(ferry, boat, 30, true, 0), false);
+});
+
+test('waiting civilians are distributed across available boats and an unreachable candidate can be retried later', () => {
+  const ferries = Array.from({ length: 5 }, (_, id) => ({
+    position: { x: -76, z: -86 + id * 3 },
+    userData: { ferryId: id, state: 'docked', boarding: null },
+  }));
+  const campaign = { dockActivated: true, boardingClock: 1,
+    boats: ferries.map((_, id) => ({ id, passengers: 0, returning: false })) };
+  const queue = ferries.map((ferry, id) => ({
+    position: { x: -71, z: ferry.position.z }, userData: { civilianId: id },
+  }));
+  for (let id = 0; id < 5; id++) {
+    campaign.boardingClock = 1;
+    const selected = selectCivilianBoarding(campaign, ferries, queue, id);
+    assert.equal(selected.ferry, ferries[id]);
+    assert.equal(selected.civilian.userData.civilianId, id);
+    ferries[id].userData.boarding = { civilian: selected.civilian };
+    queue.splice(queue.indexOf(selected.civilian), 1);
+  }
+  assert.equal(selectCivilianBoarding(campaign, ferries, queue, 5), null);
+  ferries[0].userData.boarding = null;
+  const blocked = { position: { x: -71, z: -86 }, userData: { civilianId: 10 } };
+  const alternate = { position: { x: -70, z: -86 }, userData: { civilianId: 11 } };
+  queue.push(blocked, alternate);
+  ferries[0].userData.civilianRouteRetry = new Map([[10, 15]]);
+  campaign.boardingClock = 1;
+  assert.equal(selectCivilianBoarding(campaign, ferries, queue, 6).civilian, alternate);
+  campaign.boardingClock = 1;
+  assert.equal(selectCivilianBoarding(campaign, ferries, queue, 15).civilian, blocked);
+  campaign.boats[0].returning = true;
+  campaign.boardingClock = 1;
+  assert.equal(selectCivilianBoarding(campaign, ferries, queue, 16), null);
 });
 
 test('boat and passenger fades never change shared city or civilian materials and restore the original passenger resources', () => {

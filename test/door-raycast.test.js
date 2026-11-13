@@ -58,3 +58,24 @@ test('door broad phase preserves nearest hits, material faces and instance IDs t
     JSON.stringify(world.raycastStats));
   t.diagnostic(JSON.stringify(world.raycastStats));
 });
+
+test('focus skips scene raycasts only when no doorway or moving leaf can be reached', () => {
+  const scene = new THREE.Scene(), solids = [], material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const world = createDoorWorld(scene, { buildings: [], passages: [
+    { id: 'wide-door', axis: 'x', x: 0, z: 0, width: 8, height: 2.4, openAngle: 0 },
+  ] }, [], solids, material, material);
+  const leaf = solids[0], camera = new THREE.PerspectiveCamera();
+  let raycasts = 0;
+  const original = leaf.raycast;
+  leaf.raycast = (ray, hits) => { raycasts++; original(ray, hits); };
+  camera.position.set(100, 1, 100); camera.lookAt(0, 1, 0);
+  scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+  assert.equal(world.focus(camera), null);
+  assert.equal(raycasts, 0, 'distant doors cannot force a raycast through all scene solids');
+  camera.position.set(3.8, 1, 1); camera.lookAt(3.8, 1, 0); camera.updateMatrixWorld(true);
+  assert.equal(world.focus(camera)?.id, 'wide-door', 'the reachable edge of a wide leaf remains focusable');
+  assert.ok(raycasts > 0);
+  leaf.position.x = 20; scene.updateMatrixWorld(true);
+  camera.position.set(23.8, 1, 1); camera.lookAt(23.8, 1, 0); camera.updateMatrixWorld(true);
+  assert.equal(world.focus(camera)?.id, 'wide-door', 'transformed leaves retain the original raycast behavior');
+});

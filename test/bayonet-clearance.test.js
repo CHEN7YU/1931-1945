@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { Quaternion, Vector3 } from 'three';
 import { bayonetObstructed } from '../src/bayonet-clearance.js';
 import { bayonetCarry } from '../src/bayonet.js';
+import { createMovementObstacles } from '../src/movement-obstacles.js';
+import { obstacleLookup } from '../src/spatial.js';
+import { vehicleCollider } from '../src/entities.js';
 
 const actor = { heading: 0, position: new Vector3() };
 const pose = extension => {
@@ -26,4 +29,16 @@ test('wall clearance follows the owned soldier heading and changes immediately w
   assert.equal(bayonetObstructed({ ...actor, heading: -Math.PI / 2 }, pose(1), () => [wall]), true);
   wall.minX = 3; wall.maxX = 3.3;
   assert.equal(bayonetObstructed({ ...actor, heading: -Math.PI / 2 }, pose(1), () => [wall]), false);
+});
+
+test('a fresh motion-pass snapshot preserves blade clearance when a tank moves between simulation steps', () => {
+  const tank = { id: 'tank', type: 'tank', variant: 'chi-ha', position: new Vector3(0, 0, -1), heading: 0, health: 100 };
+  const obstacles = createMovementObstacles(obstacleLookup([]), new Map([[tank.id, tank]]), vehicleCollider);
+  const check = () => bayonetObstructed(actor, pose(1), (x, z) => obstacles.at(x, z));
+  for (const [z, expected] of [[-1, true], [-20, false], [-1, true]]) {
+    tank.position.z = z;
+    assert.equal(check(), expected);
+    obstacles.beginStablePass();
+    try { assert.equal(check(), expected); } finally { obstacles.endStablePass(); }
+  }
 });

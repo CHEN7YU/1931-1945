@@ -32,6 +32,7 @@ export function createEmplacement(spec) {
   const health = spec.profile === 'bofors75' ? 240 : 160;
   return { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
     yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
+    recoil: 0, recoilShotAt: null,
     weapon: { type: profile.type, model: profile.model, ammo: profile.magazine, reserve: profile.reserve,
       nextShot: 0, reloadUntil: 0, settings: profile } };
 }
@@ -98,16 +99,19 @@ export function emplacementPose(point, floor = 0) {
   const profile = point.weapon.settings, c = Math.cos(point.yaw), s = Math.sin(point.yaw);
   const operatorDistance = point.profile === 'bofors75' ? 1.02 : profile.antiAircraft ? .68 : .76;
   const standing = profile.antiAircraft || point.profile === 'bofors75' && point.position === 'march';
+  const recoil = point.recoil ?? 0, horizontal = Math.cos(point.pitch), vertical = Math.sin(point.pitch);
   return {
     operator: { x: point.x + s * operatorDistance, y: floor,
       z: point.z + c * operatorDistance },
     operatorDistance,
     stance: standing ? 'standing' : 'crouched',
     firingPose: standing ? null : 'kneeling',
-    eye: { x: point.x + s * .75, y: floor + profile.muzzleHeight + .25, z: point.z + c * .75 },
-    muzzle: { x: point.x - s * Math.cos(point.pitch) * profile.barrel,
-      y: floor + profile.muzzleHeight + Math.sin(point.pitch) * profile.barrel,
-      z: point.z - c * Math.cos(point.pitch) * profile.barrel },
+    eye: { x: point.x + s * (.75 + recoil * horizontal),
+      y: floor + profile.muzzleHeight + .25 - recoil * vertical,
+      z: point.z + c * (.75 + recoil * horizontal) },
+    muzzle: { x: point.x - s * horizontal * (profile.barrel - recoil),
+      y: floor + profile.muzzleHeight + vertical * (profile.barrel - recoil),
+      z: point.z - c * horizontal * (profile.barrel - recoil) },
   };
 }
 
@@ -177,6 +181,9 @@ export function emplacementCooldown(point, now) {
 
 export function advanceEmplacement(point, dt, now) {
   if (point.health <= 0) return;
+  const age = point.recoilShotAt === null ? Infinity : now - point.recoilShotAt;
+  point.recoil = point.weapon.type !== 'field-gun' && age >= 0 && age < point.weapon.settings.interval
+    ? .025 * Math.sin(Math.PI * age / point.weapon.settings.interval) : 0;
   point.heat = Math.max(0, point.heat - dt * .12);
   if (point.heat <= .35) point.overheated = false;
   const weapon = point.weapon;
@@ -192,6 +199,7 @@ export function fireEmplacement(point, now) {
   if (weapon.ammo <= 0) { reloadEmplacement(point, now); return false; }
   weapon.ammo--; weapon.nextShot = now + weapon.settings.interval; point.shots++;
   if (point.weapon.type !== 'field-gun') {
+    point.recoilShotAt = now;
     point.heat = Math.min(1, point.heat + .022);
     point.overheated = point.heat >= 1;
   } else reloadEmplacement(point, now);

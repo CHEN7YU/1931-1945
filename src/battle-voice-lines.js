@@ -22,6 +22,8 @@ export const BATTLE_VOICE_LINES = Object.freeze({
         text: `守住渡口！还要坚守${minutes}分钟，掩护百姓渡江！` },
     ]),
     { id: 'nanjing-withdrawal', cue: 'nanjing-withdrawal', text: '我们撤退到渡口，掩护百姓渡江！' },
+    { id: 'nanjing-troops-boarding', cue: 'nanjing-troops-boarding', text: '友军开始登船了！继续掩护，很快就轮到我们！' },
+    { id: 'nanjing-evacuation-ready', cue: 'nanjing-evacuation-ready', text: '能撤离的百姓已经过江，友军也已登船！掩护任务完成，赶紧登船离开南京！' },
     { id: 'east-breakout-1', cue: 'east-breakout', text: '敌军失去支援，正向东门突围！守住东门，阻止他们！' },
     { id: 'advance-1', cue: 'advance', text: '冲啊！跟我上！' },
     { id: 'advance-2', cue: 'advance', text: '弟兄们，向前推进！' },

@@ -73,6 +73,8 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
   const points = compact.footprint ?? [[compact.min[0], compact.min[2]], [compact.max[0], compact.max[2]], [0, 0]];
   let best = null;
   for (const offset of offsets) for (const heading of [actor.heading, cardinal, cardinal + Math.PI / 2, cardinal + Math.PI, cardinal - Math.PI / 2]) {
+    const distance = Math.hypot(offset.x, offset.z);
+    if (best && distance >= best.score) continue;
     const c = Math.cos(heading), s = Math.sin(heading);
     let contacts = 0;
     for (const [x, z] of points) {
@@ -80,8 +82,9 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
         z: actor.position.z + offset.z - x * s + z * c }, .13, .75);
       if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
       contacts += Number(hit);
+      if (best && contacts * 100 + distance >= best.score) break;
     }
-    const score = contacts * 100 + Math.hypot(offset.x, offset.z);
+    const score = contacts * 100 + distance;
     if (!best || score < best.score) best = { score, contacts, offset, yaw: Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading)) };
   }
   return Object.freeze({ ...casualty, variant, retainGun: false, yaw: best.yaw,

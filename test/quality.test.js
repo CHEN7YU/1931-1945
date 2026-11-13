@@ -95,3 +95,29 @@ test('restored automatic quality is applied before allocating any high-resolutio
   assert.equal(settings.snapshot.requested.preset, 'high');
   assert.throws(() => createQualitySettings({ ...options, initialAutomaticLevel: 4 }), RangeError);
 });
+
+test('Nanjing can retain bounded skyline smoke at automatic level two without overriding manual or memory safeguards', () => {
+  let ratio = 1;
+  const renderer = { capabilities: { maxTextureSize: 8192 }, shadowMap: { enabled: true },
+    getPixelRatio: () => ratio, setPixelRatio(value) { ratio = value; },
+    domElement: {}, info: { memory: { textures: 0 } } };
+  const options = { renderer, scene: new THREE.Scene(), sun: new THREE.DirectionalLight(),
+    smoke: Array.from({ length: 60 }, (_, index) => ({ visible: true, userData: { homeId: Math.floor(index / 5) } })),
+    grain: {}, deviceRatio: () => 1,
+    initialPreset: 'high', initialAutomaticLevel: 2, reducedSmokeAtLevel2: true };
+  const settings = createQualitySettings(options);
+  assert.equal(settings.snapshot.visibleSmoke, 10);
+  const homes = options.smoke.filter(puff => puff.visible).map(puff => puff.userData.homeId);
+  assert.deepEqual(homes, [0, 0, 0, 0, 0, 6, 6, 6, 6, 6],
+    'the reduced budget retains complete plumes instead of isolated floating puffs');
+  assert.equal(settings.snapshot.effects.smoke, false, 'expensive building-fire smoke remains reduced');
+  settings.setEffect('smoke', false);
+  assert.equal(settings.snapshot.visibleSmoke, 0);
+  settings.setEffect('smoke', true);
+  settings.setAutomaticLevel(3);
+  assert.equal(settings.snapshot.visibleSmoke, 0);
+  settings.setAutomaticLevel(2);
+  assert.equal(settings.snapshot.visibleSmoke, 10);
+  const lowMemory = createQualitySettings({ ...options, smoke: Array.from({ length: 60 }, () => ({})), lowMemory: true });
+  assert.equal(lowMemory.snapshot.visibleSmoke, 0);
+});

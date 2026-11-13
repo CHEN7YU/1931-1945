@@ -28,7 +28,7 @@ test('tank fire and aircraft smoke both receive a single-use live vehicle regist
   const registry = new Map([
     ['tank', { id: 'tank', type: 'tank', health: 0, destroyedAt: 0, position: new THREE.Vector3(0, 0, -20),
       heading: 0, turretYaw: 0 }],
-    ['plane', { id: 'plane', type: 'plane', team: 'enemy', health: 0,
+    ['plane', { id: 'plane', type: 'plane', team: 'enemy', health: 0, fall: { grounded: false },
       position: new THREE.Vector3(0, 40, -30), heading: 0, pitch: 0, roll: 0 }],
   ]);
   for (const preset of ['high', 'low']) {

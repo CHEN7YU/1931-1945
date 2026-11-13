@@ -1778,6 +1778,7 @@ export function makeNanjingBattlefield(scene, surface) {
       for (const ferry of ferries) {
         ferry.userData.passengers = [];
         ferry.userData.boarding = null;
+        ferry.userData.civilianRouteRetry = null;
         ferry.userData.loadedAt = null;
         ferry.userData.oar.visible = false;
         ferry.userData.gangplank.visible = true;

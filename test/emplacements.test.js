@@ -141,6 +141,36 @@ test('fixed weapon barrels share the constrained sight direction and use only lo
   assert.ok(Number.isFinite(pose.muzzle.x));
 });
 
+test('machine-gun recoil follows successful shots without changing the next shot origin or aim', () => {
+  for (const profile of ['maxim24', 'maxim24aa']) {
+    const point = createEmplacement({ id: profile, profile, x: 4, z: 7, heading: .6 });
+    point.operatorId = 'operator';
+    emplacementLook(point, .8, .3);
+    const model = createEmplacementModel(point), barrel = model.children[0].children[0];
+    const base = emplacementPose(point), before = point.weapon.ammo;
+    assert.equal(fireEmplacement(point, 1), true);
+    assert.equal(fireEmplacement(point, 1.01), false);
+    advanceEmplacement(point, .05, 1.05);
+    model.userData.update();
+    const kick = emplacementPose(point);
+    assert.ok(point.recoil > .024 && point.recoil <= .025);
+    const tip = barrel.localToWorld(new THREE.Vector3(0, 0, -point.weapon.settings.barrel));
+    assert.ok(tip.distanceTo(new THREE.Vector3(kick.muzzle.x, kick.muzzle.y, kick.muzzle.z)) < 1e-10);
+    const eyeShift = new THREE.Vector3(kick.eye.x - base.eye.x, kick.eye.y - base.eye.y, kick.eye.z - base.eye.z);
+    const muzzleShift = new THREE.Vector3(kick.muzzle.x - base.muzzle.x, kick.muzzle.y - base.muzzle.y, kick.muzzle.z - base.muzzle.z);
+    assert.ok(eyeShift.distanceTo(muzzleShift) < 1e-10, 'camera and real muzzle recoil together along the aim axis');
+    assert.equal(point.weapon.ammo, before - 1);
+    advanceEmplacement(point, 0, 1.05);
+    assert.ok(point.recoil > .024, 'pausing cannot advance recoil');
+    advanceEmplacement(point, .05, 1.1);
+    model.userData.update();
+    assert.equal(point.recoil, 0);
+    assert.deepEqual(emplacementPose(point), base);
+    assert.equal(fireEmplacement(point, 1.1), true);
+    assert.equal(point.weapon.ammo, before - 2);
+  }
+});
+
 test('gunner sights remain open through the cannon shield and machine-gun nests retain rear access', () => {
   for (const spec of NANJING_EMPLACEMENTS) {
     const point = createEmplacement(spec), model = createEmplacementModel(point);

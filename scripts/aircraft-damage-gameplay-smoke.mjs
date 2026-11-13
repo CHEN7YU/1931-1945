@@ -67,10 +67,12 @@ try {
     window.__airDamageTest.snapshot().effects.fireClouds > 0);
   const burst = await page.evaluate(() => window.__airDamageTest.snapshot());
   await page.screenshot({ path: join(directory, 'first-hit-fireball.png') });
-  await page.waitForFunction(() => window.__airDamageTest.snapshot().effects.aircraftSmoke.puffs >= 7);
+  await page.waitForFunction(born => window.__airDamageTest.snapshot().time > born + .5, burst.time);
   const wounded = await page.evaluate(() => window.__airDamageTest.snapshot());
   assert.equal(wounded.health, firstHit.health); assert.ok(!wounded.fall);
-  await page.screenshot({ path: join(directory, 'wounded-black-smoke.png') });
+  assert.ok(!wounded.effects.aircraftSmoke.sources.includes('damage-review-plane'),
+    'nonfatal hits must not start a black smoke trail');
+  await page.screenshot({ path: join(directory, 'wounded-no-black-smoke.png') });
   const fatalHit = await page.evaluate(() => window.__airDamageTest.destroy());
   console.log('Fatal damage checkpoint: ' + JSON.stringify({ health: fatalHit.health, fall: fatalHit.fall, state: fatalHit.state }));
   assert.equal(fatalHit.health, 0);
@@ -83,6 +85,7 @@ try {
   const falling = await page.evaluate(() => window.__airDamageTest.snapshot());
   assert.ok(falling.position[1] < destroyed.position[1] - 4);
   assert.ok(falling.effects.aircraftSmoke.visible && falling.effects.aircraftSmoke.puffs >= 15);
+  assert.ok(falling.effects.aircraftSmoke.sources.includes('damage-review-plane'));
   assert.ok(!falling.fall.grounded);
   await page.screenshot({ path: join(directory, 'falling-black-smoke.png') });
   await page.waitForFunction(() => {
@@ -104,5 +107,6 @@ try {
     videoStartSeconds, fixture: 'Test-only aircraft and observer; production damage, death, fall and effect pipeline.',
     firstHit, burst, wounded, destroyed, falling, crashed, errors }, null, 2));
   console.log(JSON.stringify({ passed: true, firstHitFireball: burst.effects.lastExplosion.rendered,
-    woundedSmokePuffs: wounded.effects.aircraftSmoke.puffs, fallingSmokePuffs: falling.effects.aircraftSmoke.puffs }));
+    woundedPlaneSmoking: wounded.effects.aircraftSmoke.sources.includes('damage-review-plane'),
+    fallingSmokePuffs: falling.effects.aircraftSmoke.puffs }));
 } finally { await browser.close(); }

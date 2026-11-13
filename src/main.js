@@ -175,7 +175,7 @@ import { updateMortarModel } from './mortar-model.js';
 import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from './player-aircraft.js';
 import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
-  nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
+  nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
   recordNanjingAISquadBoarding, nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, recordNanjingCivilianCityEntry } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint, nanjingCoreGuard } from './nanjing-defense.js';
@@ -183,17 +183,18 @@ import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjin
   nanjingDockOutsideGoal, nanjingDockAssaultGoal, assignNanjingDockDefense } from './nanjing-dock-defense.js';
 import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
-  activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from './civilian-crowd.js';
+  activateCivilianEvacuation, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
 import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
 import { registerBreakoutStrength, crossedEastGate } from './encirclement.js';
-import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger, shouldDepartNanjingFerry } from './nanjing-ferry.js';
+import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger, shouldDepartNanjingFerry,
+  selectCivilianBoarding } from './nanjing-ferry.js';
 import { NANJING_FERRY_FLOOR, updateNanjingFerryRower } from './nanjing-river-details.js';
 import { troopFerryWaitPoint, beginTroopFerryBoarding, advanceTroopFerryBoarding,
-  syncTroopFerryPassengers, troopFerryReady, playerFerryReady, completeTroopFerryCrossing,
+  syncTroopFerryPassengers, troopFerryReady, finalTroopDepartureReady, completeTroopFerryCrossing,
   startFinalBoardingFireBuffer, finalBoardingFireHeld, finalBoardingDamageHeld, retainTroopFerryCasualty,
   syncTroopFerryCorpses } from './nanjing-troop-ferry.js';
 import {civilianCombatTargets,civilianAimHeight,civilianEngagementPreferred} from './civilian-targets.js';
@@ -768,7 +769,7 @@ function updateSupportGripMarkers() {
 const graphics = createQualitySettings({ renderer, scene, sun, smoke: world.smoke, grain: document.querySelector('.grain'),
   initialPreset: preferenceValues.quality.preset, initialEffects: preferenceValues.quality.effects,
   initialAutomaticLevel: preferenceValues.startupQualityLevel,
-  lowMemory: startupResources.lowMemory });
+  lowMemory: startupResources.lowMemory, reducedSmokeAtLevel2: nanjingCampaignMode });
 const automaticQuality = createAdaptiveQuality({ initialLevel: preferenceValues.startupQualityLevel, onChange({ level, reason }) {
   performanceDiagnostics.checkpoint();
   if (['pressure', 'backlog', 'recovery', 'manual'].includes(reason) &&
@@ -1332,13 +1333,14 @@ function nanjingPlayerFerry() {
 }
 
 function nanjingBoardingGoal(actor) {
-  const ferry = actor.playerUnit ? nanjingPlayerFerry() : null;
-  return ferry ? { x: -72.2, z: ferry.position.z, transit: true } : troopFerryWaitPoint(actor, world.ferries);
+  const ferry = actor === controlledSoldier(entities) ? nanjingPlayerFerry() : null;
+  return ferry ? { x: -72.2, z: ferry.position.z, transit: true } : troopFerryWaitPoint(actor, world.ferries,
+    nanjingPlayerFerry() ? null : world.ferries[0].userData.ferryId);
 }
 
 function hasFerrySupport(actor) {
   const phase = actor?.tactics?.nanjingFerry?.phase;
-  return phase === 'boarding' || phase === 'aboard';
+  return phase === 'boarding' || phase === 'aboard' || phase === 'evacuated';
 }
 
 function nextDeathTransferMember() {
@@ -1348,7 +1350,16 @@ function nextDeathTransferMember() {
       actor.tactics.nanjingFerry?.phase === 'aboard' && actor.tactics.nanjingFerry.ferryId === ferry.userData.ferryId);
     if (onboard >= 0) return onboard;
   }
-  return nextAlive(allies, current);
+  return nextControllableMember();
+}
+
+function nextControllableMember() {
+  if (!nanjingCampaignMode) return nextAlive(allies, current);
+  for (let offset = 1; offset <= allies.length; offset++) {
+    const index = (current + offset) % allies.length, actor = allies[index];
+    if (actor.health > 0 && actor.tactics.nanjingFerry?.phase !== 'evacuated') return index;
+  }
+  return -1;
 }
 
 function movementObstacles(x, z, ignoreVehicleId = null) {
@@ -2677,7 +2688,8 @@ function renderConstruction() {
 }
 
 function switchMember(index) {
-  if (index === current || !allies[index] || allies[index].health <= 0) return;
+  if (index === current || !allies[index] || allies[index].health <= 0 ||
+    nanjingCampaignMode && allies[index].tactics.nanjingFerry?.phase === 'evacuated') return;
   if (allies[current]?.dying || allies[current]?.blastReaction) {
     if (!allies[current]?.dying) toast('暂时无法换人');
     return;
@@ -2703,10 +2715,14 @@ function switchMember(index) {
   recoil = 0; rifleRecoil.clear();
   eyeHeight = controlPose.eyeHeight;
   emitControlEvent('control.changed', { index, reason: state === 'transferring' ? 'death' : 'manual' });
-  const ferry = nanjingPlayerFerry();
-  if (ferry?.userData.state === 'outbound' && !hasFerrySupport(allies[current])) {
-    nanjingCampaign.playerBoardingBoatId = null;
-    toast('当前队员仍在岸边，靠近有空位的木船按F登船。', 5);
+  if (nanjingCampaignMode && nanjingCampaign?.stage === 'withdrawal-to-boats') {
+    const support = allies[current].tactics.nanjingFerry;
+    if (support && ['boarding', 'aboard'].includes(support.phase)) {
+      nanjingCampaign.playerBoardingBoatId = support.ferryId;
+    } else if (nanjingCampaign.playerBoardingBoatId != null) {
+      nanjingCampaign.playerBoardingBoatId = null;
+      toast('当前队员仍在岸边，靠近有空位的木船按F登船。', 5);
+    }
   }
 }
 
@@ -5910,11 +5926,8 @@ function updateAI(dt) {
         actor.locomotion.speed = ferryState.speed;
         if (ferryState.phase === 'aboard') actor.stance = 'crouched';
       } else {
-        const selected = actor.playerUnit ? nanjingPlayerFerry() : null;
-        if (!selected || selected.userData.state === 'docked') {
-          const goal = nanjingBoardingGoal(actor);
-          walkActor(actor, { ...goal, y: world.groundHeight(goal.x, goal.z) }, 3.5, dt);
-        }
+        const goal = nanjingBoardingGoal(actor);
+        walkActor(actor, { ...goal, y: world.groundHeight(goal.x, goal.z) }, 3.5, dt);
       }
       continue;
     }
@@ -7024,11 +7037,18 @@ function updateNanjingMission(dt) {
         rebuildForces();
       }
     }
+    const evacuationVoice = nanjingEvacuationVoice(nanjingCampaign, civiliansSafe,
+      world.ferries.some(ferry => ferry.userData.troopBoarding?.actor?.health > 0 &&
+        !ferry.userData.troopBoarding.actor.playerUnit));
+    if (evacuationVoice) battleVoiceEvent(evacuationVoice, { soldierId: 'nanjing-command', eventKey: evacuationVoice });
     const playerBoat = nanjingPlayerFerry(), player = controlledSoldier(entities);
     if (playerBoat?.userData.state === 'outbound' && player?.health > 0 &&
       player.tactics.nanjingFerry?.phase === 'aboard' &&
       player.tactics.nanjingFerry.ferryId === playerBoat.userData.ferryId &&
-      playerBoat.position.x <= NANJING_DOCK.ferryX - 1)
+      playerBoat.position.x <= NANJING_DOCK.ferryX - 1 &&
+      nanjingCampaign.finalTroopDepartureIssued && world.ferries.every(ferry =>
+        ferry.userData.state === 'offscreen' ||
+        ferry.userData.state === 'outbound' && ferry.position.x <= NANJING_DOCK.ferryX - 1))
       recordNanjingSquadEvacuation(nanjingCampaign, 'friendly-0', true);
   }
 
@@ -7359,6 +7379,7 @@ function updateNanjingCivilians(dt) {
   const allArrivalsResolved = world.civilians.every(civilian => civilian.userData.arrived ||
     civilian.userData.dead || civilian.userData.unrescued);
   if (nanjingCampaign.dockActivated) nanjingCampaign.boardingClock = (nanjingCampaign.boardingClock ?? 0) + dt;
+  const civilianSelection = selectCivilianBoarding(nanjingCampaign, world.ferries, queue, time);
   const troopsMayBoard = nanjingCampaign.stage === 'withdrawal-to-boats' &&
     nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
   for (const ferry of world.ferries) {
@@ -7367,8 +7388,12 @@ function updateNanjingCivilians(dt) {
       const personal = nanjingPlayerFerry() === ferry, player = controlledSoldier(entities);
       const playerAboard = player?.health > 0 && player.tactics.nanjingFerry?.phase === 'aboard' &&
         player.tactics.nanjingFerry.ferryId === ferry.userData.ferryId;
-      const boarders = personal ? playerAboard ? allies : player ? [player] : [] : friendlyAI;
-      const started = beginTroopFerryBoarding(ferry, boarders, time, (actor, shore) => {
+      const selected = nanjingPlayerFerry();
+      const boarders = personal && !playerAboard ? player ? [player] : []
+        : selected ? [...friendlyAI, ...allies.filter(actor => actor !== player)] : friendlyAI;
+      const reserved = !selected && ferry === world.ferries[0];
+      const canStart = !reserved || (ferry.userData.troopPassengers?.length ?? 0) < NANJING_BOAT_CAPACITY - 1;
+      const started = canStart && beginTroopFerryBoarding(ferry, boarders, time, (actor, shore) => {
         const path = rejoinCivilianRoute(actor.position, shore, world.civilianNavigate,
           world.civilianNavigationObstacles, civilianNavigationLookup);
         if (path === null) {
@@ -7379,44 +7404,44 @@ function updateNanjingCivilians(dt) {
           return null;
         }
         return path.map(point => ({ ...point, y: world.groundHeight(point.x, point.z) }));
-      }, personal);
+      }, Boolean(selected));
       if (started && personal) startFinalBoardingFireBuffer(nanjingCampaign, player, time);
       const step = started ? null : advanceTroopFerryBoarding(ferry, dt);
       if (step?.moved > .001 && Math.floor(step.actor.walkPhase / Math.PI) !==
         Math.floor((step.actor.walkPhase - step.moved * 3.6) / Math.PI))
         tacticalAudio?.emit('deck-step', step.actor.position, time, step.actor.id);
-      const currentPlayer = controlledSoldier(entities), ownBoat = nanjingPlayerFerry();
-      const playerOnBoat = currentPlayer?.health > 0 && currentPlayer.tactics.nanjingFerry?.phase === 'aboard';
-      const ready = personal ? playerFerryReady(ferry, allies, currentPlayer?.id)
-        : troopFerryReady(ferry, friendlyAI, time, !ownBoat || !playerOnBoat);
+      const waiting = [...friendlyAI, ...allies.filter(actor => actor !== player)].some(actor =>
+        actor.health > 0 && !['aboard', 'evacuated'].includes(actor.tactics.nanjingFerry?.phase));
+      const ready = !personal && !reserved && (!selected || waiting) &&
+        troopFerryReady(ferry, boarders, time);
       if (ready && !boatState.returning) {
         boatState.returning = true; boatState.departures++;
       }
     }
     if (ferry.userData.state === 'docked') {
       let boardingStarted = false;
-      if (nanjingCampaign.dockActivated && queue.length && !ferry.userData.boarding &&
-        boatState.passengers < NANJING_BOAT_CAPACITY && nanjingCampaign.boardingClock >= 1) {
-        nanjingCampaign.boardingClock = 0;
-        const civilian = closestCivilianForBoat(queue, ferry.position);
+      if (civilianSelection?.ferry === ferry) {
+        const { civilian } = civilianSelection;
         const shore = { x: -72.2, z: ferry.position.z };
         const path = rejoinCivilianRoute(civilian.position, shore, world.civilianNavigate,
           world.civilianNavigationObstacles, civilianNavigationLookup);
         if (path === null) {
+          (ferry.userData.civilianRouteRetry ??= new Map()).set(civilian.userData.civilianId, time + 10);
           console.warn(`No boarding route for civilian ${civilian.userData.civilianId}: ${world.civilianNavigate.stats.reason}`);
-          continue;
+        } else {
+          ferry.userData.civilianRouteRetry?.delete(civilian.userData.civilianId);
+          queue.splice(queue.indexOf(civilian), 1);
+          civilian.userData.boarding = true;
+          civilian.userData.escapeMotion = null;
+          civilian.userData.escapeMode = null;
+          civilian.civilianSkin.joints.root.position.y = 0;
+          const passengerIndex = ferry.userData.passengers.length;
+          const seat = { x: ferry.position.x + (Math.floor(passengerIndex / 2) - 2) * .9,
+            z: ferry.position.z + (passengerIndex % 2 ? .4 : -.4), y: ferry.position.y + NANJING_FERRY_FLOOR };
+          ferry.userData.boarding = { civilian, path: [...path.map(point => ({ ...point, y: world.groundHeight(point.x, point.z) })),
+            { x: -74.3, z: ferry.position.z, y: ferry.position.y + NANJING_FERRY_FLOOR }, seat] };
+          boardingStarted = true;
         }
-        queue.splice(queue.indexOf(civilian), 1);
-        civilian.userData.boarding = true;
-        civilian.userData.escapeMotion = null;
-        civilian.userData.escapeMode = null;
-        civilian.civilianSkin.joints.root.position.y = 0;
-        const passengerIndex = ferry.userData.passengers.length;
-        const seat = { x: ferry.position.x + (Math.floor(passengerIndex / 2) - 2) * .9,
-          z: ferry.position.z + (passengerIndex % 2 ? .4 : -.4), y: ferry.position.y + NANJING_FERRY_FLOOR };
-        ferry.userData.boarding = { civilian, path: [...path.map(point => ({ ...point, y: world.groundHeight(point.x, point.z) })),
-          { x: -74.3, z: ferry.position.z, y: ferry.position.y + NANJING_FERRY_FLOOR }, seat] };
-        boardingStarted = true;
       }
       const boarding = ferry.userData.boarding;
       if (boarding && !boardingStarted) {
@@ -7512,6 +7537,17 @@ function updateNanjingCivilians(dt) {
     syncTroopFerryCorpses(ferry, { dt, groundAt: (x, z, y) => world.walkHeight(x, z, y) });
     updateNanjingFerryRower(ferry, time);
     tacticalAudio?.rower(ferry, time, world.impactHeight, world.isDeepWater);
+  }
+  const player = controlledSoldier(entities);
+  if (troopsMayBoard && !nanjingCampaign.finalTroopDepartureIssued &&
+    finalTroopDepartureReady(world.ferries, [...friendlyAI, ...allies], player, nanjingCampaign)) {
+    nanjingCampaign.finalTroopDepartureIssued = true;
+    for (const ferry of world.ferries) {
+      const boat = nanjingCampaign.boats[ferry.userData.ferryId];
+      boat.returning = true; boat.departures++;
+      ferry.userData.state = 'outbound';
+      ferry.userData.gangplank.visible = false;
+    }
   }
   if (state === 'playing' && hasFerrySupport(controlledSoldier(entities))) updateCamera(0);
 }
@@ -8071,8 +8107,10 @@ function updateHUD() {
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
             ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}${!nanjingCampaign.finalShoreWaitExpired ? ` · 等待 ${Math.max(0, Math.ceil(NANJING_CIVILIAN_FINAL_WAIT - nanjingCampaign.finalWithdrawalElapsed))}秒` : ''}`
-            : nanjingPlayerFerry() ? '正在登船 · 你先上船，队友随后 · 满船或本队登齐后离岸'
-              : nanjingAISquadsBoarded(nanjingCampaign) ? '友军已登船 · 随后登船撤离南京'
+            : nanjingPlayerFerry() ? '正在登船 · 队友分船登船后共同离岸'
+              : nanjingAISquadsBoarded(nanjingCampaign) ? nanjingCampaign.requiredAISquads === 0
+                ? '撤离条件已满足 · 靠近木船按F登船'
+                : '友军已登船 · 随后登船撤离南京'
                 : `掩护友军登船 ${aiBoarded}/${nanjingCampaign.requiredAISquads} · 随后撤离南京` : help;
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && civilianEvacuation.ready)
       $('objective-help').textContent += ` · 百姓已过江 ${civilianEvacuation.evacuated} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`;
@@ -8186,7 +8224,7 @@ function updateDoorPrompt() {
     const ready = nanjingCivilianEvacuationStatus(nanjingCampaign, world.civilians).ready;
     const alliesReady = nanjingAISquadsBoarded(nanjingCampaign);
     prompt.hidden = false;
-    prompt.textContent = nanjingPlayerFerry() ? '正在登船 · 等待队友上船后发航'
+    prompt.textContent = nanjingPlayerFerry() ? '正在登船 · 等待全员和船只准备撤离'
       : !ready ? '继续掩护百姓过江' : !alliesReady ? '继续掩护友军登船' : 'F 登船 · 你先上船，队友随后';
     return;
   }
@@ -8299,13 +8337,16 @@ function advanceBattleStep(dt, presentationTime) {
     finally { movementCollision.endStablePass(); }
   }
   // Sample the completed AI movement/turn, not last step's heading and speed.
-  performanceDiagnostics.measure('motion', () => {
-    for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
-      (state !== 'playing' || actor !== controlledSoldier(entities))) {
-      updateAIWeaponClearance(actor);
-      advanceNraMotion(actor, dt);
-    }
-  });
+  movementCollision.beginStablePass();
+  try {
+    performanceDiagnostics.measure('motion', () => {
+      for (const actor of allForces) if (actor.nativeMotion && actor.health > 0 &&
+        (state !== 'playing' || actor !== controlledSoldier(entities))) {
+        updateAIWeaponClearance(actor);
+        advanceNraMotion(actor, dt);
+      }
+    });
+  } finally { movementCollision.endStablePass(); }
   if (activeStates.has(state)) updateBattleBoundary(dt);
   if (benchmark) { telemetry.add('aiMs', performance.now() - started); started = performance.now(); }
   if (activeStates.has(state)) performanceDiagnostics.measure('objectives', () => {
@@ -8751,8 +8792,8 @@ function performControlCommand(command) {
     playerInput.clearFire(); held.primary = held.secondary = held.aiming = false;
     toast('南岸军事禁区 · 禁止开火', 3); return;
   }
-  if (nanjingPlayerFerry() && !battleEnding.fading && !['look', 'pause', 'releaseFire', 'releaseAim'].includes(action)) {
-    toast('正在登船撤离 · 可观察四周或按Esc暂停', 3);
+  if (nanjingPlayerFerry() && !battleEnding.fading && !['look', 'pause', 'releaseFire', 'releaseAim', 'cycleMember'].includes(action)) {
+    toast('正在登船撤离 · 可观察、换人或按Esc暂停', 3);
     return;
   }
   if(actor.emplacementId&&['equipRifle','equipTool'].includes(action)) {
@@ -8819,7 +8860,7 @@ function performControlCommand(command) {
         if (ferry) {
           nanjingCampaign.playerBoardingBoatId = ferry.userData.ferryId;
           clearControlInputs(); bindControlInput();
-          toast('登船撤离 · 日军已停止攻击，队友随后上船；船满或本队登齐后发航。', 6);
+          toast('登船撤离 · 日军已停止攻击，队友分船登船后共同离岸。', 6);
         } else {
         toast('靠近已返回渡口的木船，再按 F 登船。');
         }
@@ -8843,7 +8884,7 @@ function performControlCommand(command) {
   }
   else if (action === 'equipTool' && unit.type === 'infantry') equipTool(true);
   else if (action === 'cycleMember') {
-    const next = nextAlive(allies, current);
+    const next = nextControllableMember();
     if (next >= 0) changeMember(next);
   } else if (['crouch', 'prone'].includes(action) && foot) {
     const lowered = action === 'prone' ? 'prone' : 'crouched';

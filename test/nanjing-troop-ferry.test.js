@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Group, Vector3, Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
 import { beginTroopFerryBoarding, advanceTroopFerryBoarding, syncTroopFerryPassengers,
-  troopFerryReady, playerFerryReady, completeTroopFerryCrossing, startFinalBoardingFireBuffer,
+  troopFerryReady, troopFerryWaitPoint, finalTroopDepartureReady, completeTroopFerryCrossing, startFinalBoardingFireBuffer,
   finalBoardingFireHeld, finalBoardingDamageHeld, FINAL_BOARDING_FIRE_BUFFER_SECONDS, retainTroopFerryCasualty,
   syncTroopFerryCorpses } from '../src/nanjing-troop-ferry.js';
 
@@ -21,6 +21,25 @@ function fixture(count = 1) {
   };
   return { ferry, actors, route, board };
 }
+
+test('a failed shore route is retried later without starving other soldiers or retrying every frame', () => {
+  const { ferry, actors } = fixture(2);
+  let attempts = 0;
+  const route = (actor, shore) => {
+    attempts++;
+    return actor === actors[0] ? null : [{ ...shore, y: .36 }];
+  };
+  assert.equal(beginTroopFerryBoarding(ferry, actors, 0, route), false);
+  assert.equal(beginTroopFerryBoarding(ferry, actors, .5, route), false);
+  assert.equal(attempts, 1);
+  assert.equal(beginTroopFerryBoarding(ferry, actors, 1, route), true);
+  assert.equal(ferry.userData.troopBoarding.actor, actors[1]);
+  assert.equal(attempts, 2);
+  ferry.userData.troopBoarding = null;
+  assert.equal(beginTroopFerryBoarding(ferry, [actors[0]], 9.9, route), false);
+  assert.equal(beginTroopFerryBoarding(ferry, [actors[0]], 10, route), false);
+  assert.equal(attempts, 3);
+});
 
 test('final boarding gives one bounded simulation-time fire buffer only after actual player boarding begins', () => {
   const campaign = { stage: 'withdrawal-to-boats', embarkFireBufferStartedAt: null, embarkFireBufferUntil: 0 };
@@ -193,23 +212,48 @@ test('a player already standing at the shore point needs no extra land route bef
   assert.ok(player.position.x < before.x);
 });
 
-test('the player boards first within their squad and the boat waits for full capacity or every surviving squadmate', () => {
-  const { ferry, actors, route, board } = fixture(3);
-  for (let index = 0; index < 3; index++) board(index);
-  const squad = fixture(4).actors.map((actor, index) => ({ ...actor, id: `player-${index}`, playerUnit: true }));
-  const boardPerson = actor => {
-    assert.equal(beginTroopFerryBoarding(ferry, [actor], 10, route, true), true);
-    for (let step = 0; ferry.userData.troopBoarding; step++) advanceTroopFerryBoarding(ferry, .05);
-    syncTroopFerryPassengers(ferry);
-  };
-  boardPerson(squad[0]);
-  assert.equal(playerFerryReady(ferry, squad, squad[0].id), false);
-  assert.equal(ferry.userData.troopPassengers.find(person => person.actor.playerUnit).actor.id, squad[0].id);
-  for (const actor of squad.slice(1)) boardPerson(actor);
-  assert.equal(ferry.userData.troopPassengers.length, 7);
-  assert.equal(playerFerryReady(ferry, squad, squad[0].id), true, 'the final boat may leave below capacity once all squad AI have boarded');
-  const full = fixture(10);
-  for (let index = 0; index < 10; index++) full.board(index);
-  full.actors[0].playerUnit = true;
-  assert.equal(playerFerryReady(full.ferry, [full.actors[0], squad[0]], full.actors[0].id), true, 'a completely full player boat can leave');
+test('soldiers select an available ferry and leave the reserved player seat free', () => {
+  const ferries = Array.from({ length: 5 }, (_, id) => {
+    const ferry = new Group();
+    ferry.position.set(-76, .05, -86 + id * 3);
+    ferry.userData = { ferryId: id, state: 'docked', troopPassengers: [] };
+    return ferry;
+  });
+  const actor = fixture().actors[0];
+  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[0].position.z);
+  ferries[0].userData.troopPassengers = Array.from({ length: 9 }, () => ({}));
+  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[1].position.z);
+  ferries[1].userData.state = 'outbound';
+  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[2].position.z);
+  assert.equal(troopFerryWaitPoint(actor, ferries).z, ferries[0].position.z);
+});
+
+test('final departure waits for the actual player, every living soldier and all five returned boats', () => {
+  const ferries = Array.from({ length: 5 }, (_, id) => {
+    const ferry = new Group();
+    ferry.userData = { ferryId: id, state: 'docked', troopPassengers: [] };
+    return ferry;
+  });
+  const campaign = { playerBoardingBoatId: 0, boats: ferries.map((_, id) => ({ id, returning: false })) };
+  const actors = fixture(3).actors, player = actors[0];
+  player.tactics.nanjingFerry = { phase: 'aboard', ferryId: 0 };
+  actors[1].tactics.nanjingFerry = { phase: 'aboard', ferryId: 1 };
+  actors[2].tactics.nanjingFerry = { phase: 'evacuated', ferryId: 2 };
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), true);
+  actors[1].tactics.nanjingFerry.phase = 'boarding';
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), false);
+  actors[1].tactics.nanjingFerry.phase = 'aboard';
+  ferries[2].userData.state = 'inbound';
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), false);
+  ferries[2].userData.state = 'docked'; ferries[3].userData.troopBoarding = {};
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), false);
+  ferries[3].userData.troopBoarding = null;
+  campaign.boats[4].returning = true;
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), false);
+  campaign.boats[4].returning = false;
+  player.tactics.nanjingFerry.ferryId = 1;
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), false);
+  player.tactics.nanjingFerry.ferryId = 0;
+  actors[1].health = 0; delete actors[1].tactics.nanjingFerry;
+  assert.equal(finalTroopDepartureReady(ferries, actors, player, campaign), true);
 });

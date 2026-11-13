@@ -16,7 +16,7 @@ test('preparing the smoke draw uploads an actual instance and restores the origi
   assert.deepEqual(effects.snapshot, before);
 });
 
-test('a hit aircraft starts a black engine trail before death and keeps the trail in world space while falling', () => {
+test('only a destroyed aircraft already falling emits a world-space black engine trail', () => {
   const aircraft = plane(), state = createAircraftSmokeState();
   advanceAircraftSmoke(state, [aircraft], 0);
   assert.equal(state.puffs.length, 0);
@@ -24,15 +24,20 @@ test('a hit aircraft starts a black engine trail before death and keeps the trai
   const owned = JSON.stringify(aircraft);
   advanceAircraftSmoke(state, [aircraft], 1);
   assert.equal(JSON.stringify(aircraft), owned);
+  assert.equal(state.puffs.length, 0);
+  aircraft.health = 0;
+  advanceAircraftSmoke(state, [aircraft], 1.1);
+  assert.equal(state.puffs.length, 0, 'destruction without an initialized fall does not emit');
+  aircraft.fall = { grounded: false };
+  advanceAircraftSmoke(state, [aircraft], 1.2);
   assert.equal(state.puffs.length, 1);
   assert.deepEqual(state.puffs[0].position.toArray(), [10, 30.35, -3.1]);
   const initial = state.puffs[0].position.clone();
-  aircraft.position.set(12, 27, -6); aircraft.health = 0;
-  aircraft.pitch = -.4; aircraft.fall = { grounded: false };
+  aircraft.position.set(12, 27, -6);
+  aircraft.pitch = -.4;
   advanceAircraftSmoke(state, [aircraft], 1.24);
-  assert.ok(state.puffs.length >= 4);
+  assert.ok(state.puffs.length >= 2);
   assert.deepEqual(state.puffs[0].position, initial, 'the old smoke cannot follow the plane as an attached object');
-  assert.ok(state.puffs.at(-1).intensity > state.puffs[0].intensity, 'destroyed aircraft produce a denser trail');
   const paused = JSON.stringify(state.puffs);
   advanceAircraftSmoke(state, [aircraft], 1.24);
   assert.equal(JSON.stringify(state.puffs), paused);
@@ -40,7 +45,7 @@ test('a hit aircraft starts a black engine trail before death and keeps the trai
 
 test('ground and water impacts end emission, old puffs fade, and low quality remains bounded across multiple planes', () => {
   for (const fall of [{ grounded: true }, { sinking: true }, { sunk: true }]) {
-    const aircraft = plane(), state = createAircraftSmokeState(); aircraft.health = 0;
+    const aircraft = plane(), state = createAircraftSmokeState(); aircraft.health = 0; aircraft.fall = { grounded: false };
     advanceAircraftSmoke(state, [aircraft], 1);
     aircraft.fall = fall; advanceAircraftSmoke(state, [aircraft], 1.1);
     assert.equal(state.sources.size, 0);
@@ -49,7 +54,7 @@ test('ground and water impacts end emission, old puffs fade, and low quality rem
   }
   for (const low of [false, true]) {
     const state = createAircraftSmokeState(), fleet = Array.from({ length: 10 }, (_, index) =>
-      ({ ...plane(), id: `damaged-${index}`, health: 40 }));
+      ({ ...plane(), id: `falling-${index}`, health: 0, fall: { grounded: false } }));
     for (let frame = 0; frame < 600; frame++) advanceAircraftSmoke(state, fleet, frame / 30, low);
     assert.ok(state.puffs.length <= (low ? AIRCRAFT_SMOKE.lowLimit : AIRCRAFT_SMOKE.limit));
     advanceAircraftSmoke(state, [], 30, low);
@@ -59,7 +64,7 @@ test('ground and water impacts end emission, old puffs fade, and low quality rem
 
 test('smoke is one dark billboard batch, obeys effects settings, freezes on pause and clears for redeployment', () => {
   const scene = new THREE.Scene(), effects = createAircraftSmokeEffects(scene, new THREE.Texture());
-  const aircraft = plane(); aircraft.health = 0;
+  const aircraft = plane(); aircraft.health = 0; aircraft.fall = { grounded: false };
   effects.configure({ preset: 'low', effects: { hitParticles: true } });
   effects.update([aircraft], 1);
   const mesh = scene.getObjectByName('aircraft-damage-black-smoke');
@@ -81,7 +86,7 @@ test('smoke is one dark billboard batch, obeys effects settings, freezes on paus
 test('engine puffs overlap at flight speed instead of drawing a dotted necklace in either quality preset', () => {
   for (const preset of ['high', 'low']) {
     const scene = new THREE.Scene(), effects = createAircraftSmokeEffects(scene, new THREE.Texture());
-    const aircraft = plane(); aircraft.health = 168;
+    const aircraft = plane(); aircraft.health = 0; aircraft.fall = { grounded: false };
     effects.configure({ preset, effects: { hitParticles: true } });
     for (let frame = 0; frame <= 60; frame++) {
       aircraft.position.z = -55 * frame / 60;

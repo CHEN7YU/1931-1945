@@ -11,9 +11,26 @@ export function qualityProfile(preset, deviceRatio, maxTextureSize) {
   return { ...profile, pixelRatio: Math.min(deviceRatio, profile.pixelRatioCap), shadowSize: Math.min(profile.shadowSize, maxTextureSize) };
 }
 
+function reducedSkylineSmoke(smoke, budget) {
+  const groups = new Map();
+  for (const [index, puff] of smoke.entries()) {
+    const id = puff.userData?.homeId;
+    if (id == null) return null;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(index);
+  }
+  const homes = [...groups.values()];
+  if (!homes.length) return [];
+  const count = Math.max(1, Math.min(homes.length, Math.floor(budget / Math.max(...homes.map(home => home.length)))));
+  return Array.from({ length: count }, (_, index) => homes[Math.floor(index * homes.length / count)])
+    .flat().slice(0, budget);
+}
+
 export function createQualitySettings({ renderer, scene, sun, smoke, grain, deviceRatio = () => window.devicePixelRatio,
-  initialPreset = 'low', initialEffects = {}, initialAutomaticLevel = 0, lowMemory = false }) {
-  if (typeof lowMemory !== 'boolean') throw new TypeError('Invalid startup graphics resource mode');
+  initialPreset = 'low', initialEffects = {}, initialAutomaticLevel = 0, lowMemory = false,
+  reducedSmokeAtLevel2 = false }) {
+  if (typeof lowMemory !== 'boolean' || typeof reducedSmokeAtLevel2 !== 'boolean')
+    throw new TypeError('Invalid startup graphics resource mode');
   if (!Number.isInteger(initialAutomaticLevel) || initialAutomaticLevel < 0 || initialAutomaticLevel > 3)
     throw new RangeError('Invalid startup automatic graphics level');
   qualityProfile(initialPreset, deviceRatio(), renderer.capabilities.maxTextureSize);
@@ -58,8 +75,11 @@ export function createQualitySettings({ renderer, scene, sun, smoke, grain, devi
     sun.shadow.autoUpdate = state.automaticLevel < 3;
     renderer.shadowMap.enabled = effects.shadows;
     scene.fog = effects.fog ? fog : null;
-    const budget = effects.smoke ? Math.min(smoke.length, profile.smokeBudget) : 0;
-    const indices = new Set(Array.from({ length: budget }, (_, i) => Math.floor(i * smoke.length / budget)));
+    const smokeEnabled = effects.smoke || reducedSmokeAtLevel2 && !lowMemory &&
+      state.automaticLevel === 2 && state.effects.smoke;
+    const budget = smokeEnabled ? Math.min(smoke.length, profile.smokeBudget) : 0;
+    const grouped = budget && !effects.smoke ? reducedSkylineSmoke(smoke, budget) : null;
+    const indices = new Set(grouped ?? Array.from({ length: budget }, (_, i) => Math.floor(i * smoke.length / budget)));
     smoke.forEach((puff, i) => { puff.visible = indices.has(i); });
     grain.hidden = !effects.grain;
     if (shadersChanged) invalidateMaterials();

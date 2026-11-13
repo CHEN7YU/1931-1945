@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { TYPES } from './core.js';
 
 export const AIRCRAFT_SMOKE = Object.freeze({ life: 3.2, interval: .03, lowInterval: .04, limit: 160, lowLimit: 80 });
 
@@ -16,7 +15,7 @@ export function advanceAircraftSmoke(state, vehicles, now, low = false) {
   const active = new Set();
   state.puffs = state.puffs.filter(puff => now - puff.birth < AIRCRAFT_SMOKE.life);
   for (const vehicle of vehicles) {
-    if (vehicle.type !== 'plane' || vehicle.health >= TYPES.plane.health ||
+    if (vehicle.type !== 'plane' || vehicle.health > 0 || !vehicle.fall ||
       vehicle.fall?.grounded || vehicle.fall?.sinking || vehicle.fall?.sunk) continue;
     if (!Number.isFinite(vehicle.health) || !['x', 'y', 'z'].every(axis => Number.isFinite(vehicle.position?.[axis])) ||
       ![vehicle.heading, vehicle.pitch, vehicle.roll].every(Number.isFinite)) throw new Error('Damaged aircraft smoke lacks a finite flight pose');
@@ -27,7 +26,7 @@ export function advanceAircraftSmoke(state, vehicles, now, low = false) {
     const continuous = previous && engine.distanceTo(previous.position) < 80;
     const first = continuous ? previous.emittedAt + interval : now;
     let emittedAt = continuous ? previous.emittedAt : now;
-    const intensity = .4 + .6 * (1 - Math.max(0, vehicle.health) / TYPES.plane.health);
+    const intensity = 1;
     for (let birth = Math.max(first, now - AIRCRAFT_SMOKE.life + interval); birth <= now + 1e-8; birth += interval) {
       const blend = continuous && now > previous.time ? Math.max(0, Math.min(1, (birth - previous.time) / (now - previous.time))) : 1;
       const position = continuous ? previous.position.clone().lerp(engine, blend) : engine.clone();

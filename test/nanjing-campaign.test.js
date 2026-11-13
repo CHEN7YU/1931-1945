@@ -5,7 +5,7 @@ import {
   NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_OBJECTIVES, NANJING_SPAWNS,
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
-  isNanjingSpawnAvailable, nanjingMissionVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
+  isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, recordNanjingCivilianCityEntry,
 } from '../src/nanjing-campaign.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
@@ -98,6 +98,25 @@ test('mission voice announces each remaining minute once, withdraws at zero and 
   assert.equal(nanjingMissionVoice(campaign), 'nanjing-dock-2');
   assert.equal(nanjingMissionVoice(campaign), null);
   assert.equal(nanjingMissionVoice(createNanjingCampaign()), 'nanjing-gate-3');
+});
+
+test('evacuation announcements follow actual boarding readiness once and never claim troops have crossed', () => {
+  const campaign = createNanjingCampaign();
+  assert.equal(nanjingEvacuationVoice(campaign, true, true), null);
+  campaign.stage = 'withdrawal-to-boats';
+  assert.equal(nanjingEvacuationVoice(campaign, false, true), null);
+  assert.equal(nanjingEvacuationVoice(campaign, true, true), 'nanjing-troops-boarding');
+  assert.equal(nanjingEvacuationVoice(campaign, true, true), null);
+  campaign.boardedAISquads = ['a', 'b', 'c', 'd'];
+  assert.equal(nanjingEvacuationVoice(campaign, true, false), 'nanjing-evacuation-ready');
+  assert.equal(nanjingEvacuationVoice(campaign, true, false), null);
+  const alreadyReady = createNanjingCampaign();
+  alreadyReady.stage = 'withdrawal-to-boats'; alreadyReady.requiredAISquads = 0;
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true, false), 'deploy',
+    'when no AI squad survives, use the existing general departure announcement');
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true, false), null);
+  alreadyReady.playerBoardingBoatId = 0;
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true, true), null);
 });
 
 test('Nanjing campaign uses dedicated gate, dock, and three-direction assault positions', () => {

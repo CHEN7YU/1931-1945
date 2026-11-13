@@ -91,6 +91,35 @@ test('a constrained casualty uses a folded death pose instead of returning to a 
   assert.equal(JSON.stringify(state), snapshot, 'sampling never mutates the immutable death snapshot');
 });
 
+test('folded placement skips candidates that cannot beat the exhaustive collision score', () => {
+  const actor = corpse(5);
+  const points = [[-.3, -.4], [.3, .4], [0, 0]];
+  const bounds = () => ({ min: [-.35, 0, -.5], max: [.35, .6, .5], footprint: points });
+  const offsets = [{ x: 0, z: 0 }];
+  for (const radius of [.15, .3, .5, .75, 1, 1.5, 2]) for (let side = 0; side < 8; side++) {
+    offsets.push({ x: Math.cos(side * Math.PI / 4) * radius, z: Math.sin(side * Math.PI / 4) * radius });
+  }
+  const cardinal = Math.round(actor.heading / (Math.PI / 2)) * Math.PI / 2;
+  for (const obstructed of [() => false, () => true, point => point.x < .1 && point.z < .6]) {
+    let best = null, calls = 0;
+    for (const offset of offsets) for (const heading of [actor.heading, cardinal, cardinal + Math.PI / 2, cardinal + Math.PI, cardinal - Math.PI / 2]) {
+      const c = Math.cos(heading), s = Math.sin(heading);
+      const contacts = points.filter(([x, z]) => obstructed({ x: actor.position.x + offset.x + x * c + z * s,
+        z: actor.position.z + offset.z - x * s + z * c })).length;
+      const score = contacts * 100 + Math.hypot(offset.x, offset.z);
+      if (!best || score < best.score) best = { score, offset, yaw: Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading)) };
+    }
+    const result = placeCasualty(actor, actor.casualty, bounds, (point, radius, height) => {
+      calls++;
+      return height > .75 || obstructed(point);
+    });
+    assert.equal(result.wallLimited, true);
+    assert.deepEqual(result.offset, best.offset);
+    assert.equal(result.yaw, best.yaw);
+    if (best.score === 0) assert.ok(calls < 700, 'a zero-contact solution avoids redundant compact-pose queries');
+  }
+});
+
 test('an ordinary backward collapse does not artificially turn a standing casualty into a kneeling crossed-leg pose', () => {
   const actor = corpse(5);
   const motion = { upright: 1, bodyLean: .2, hipDrop: .1, weight: 0, speed: 0, prone: 0,

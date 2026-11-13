@@ -187,6 +187,20 @@ export function nanjingMissionVoice(campaign) {
   return cue;
 }
 
+export function nanjingEvacuationVoice(campaign, civiliansReady, troopsBoarding) {
+  if (campaign.stage !== 'withdrawal-to-boats' || campaign.outcome || campaign.playerBoardingBoatId != null) return null;
+  if (civiliansReady && nanjingAISquadsBoarded(campaign)) {
+    if (campaign.evacuationVoiceReady) return null;
+    campaign.evacuationVoiceReady = true;
+    return campaign.requiredAISquads === 0 ? 'deploy' : 'nanjing-evacuation-ready';
+  }
+  if (civiliansReady && troopsBoarding && !campaign.evacuationVoiceBoarding) {
+    campaign.evacuationVoiceBoarding = true;
+    return 'nanjing-troops-boarding';
+  }
+  return null;
+}
+
 export const NANJING_CIVILIAN_FINAL_WAIT = 120;
 
 export function recordNanjingCivilianCityEntry(campaign, civilian) {

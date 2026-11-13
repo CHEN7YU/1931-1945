@@ -141,6 +141,12 @@ export function createDoorWorld(scene, town, obstacles, solids, wood, iron, leaf
       notifyRegions(regions);
     },
     focus(camera) {
+      if (leaf.matrixWorld.equals(identity) && !doors.some((door, index) => {
+        const box = colliders[index], x = camera.position.x, z = camera.position.z;
+        return Math.hypot(x - door.x, z - door.z) <= 3.5 ||
+          x >= box.minX - 2.5 && x <= box.maxX + 2.5 &&
+          z >= box.minZ - 2.5 && z <= box.maxZ + 2.5;
+      })) return null;
       const direction = camera.getWorldDirection(new THREE.Vector3());
       cast.set(camera.position, direction); cast.far = 2.5;
       const visibleHit = cast.intersectObjects(solids, false)[0];

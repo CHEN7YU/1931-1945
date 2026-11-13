@@ -84,10 +84,28 @@ export function syncTroopFerryCorpses(ferry, { dt = 0, groundAt = null } = {}) {
   });
 }
 
-export function troopFerryWaitPoint(actor, ferries) {
+export function troopFerryWaitPoint(actor, ferries, reservedFerryId = null) {
   if (!ferries.length) throw new Error('Troop evacuation requires an actual ferry');
-  const ferry = ferries[actor.index % ferries.length];
+  const start = actor.index % ferries.length;
+  const ferry = Array.from({ length: ferries.length }, (_, offset) => ferries[(start + offset) % ferries.length])
+    .find(candidate => candidate.userData.state === 'docked' &&
+      (candidate.userData.troopPassengers?.length ?? 0) <
+        NANJING_BOAT_CAPACITY - Number(candidate.userData.ferryId === reservedFerryId)) ?? ferries[start];
   return { x: -72.2, z: ferry.position.z, transit: true };
+}
+
+export function finalTroopDepartureReady(ferries, actors, player, campaign) {
+  if (!ferries.length || !player || player.health <= 0 ||
+    player.tactics.nanjingFerry?.phase !== 'aboard' ||
+    player.tactics.nanjingFerry.ferryId !== campaign.playerBoardingBoatId) return false;
+  return ferries.every(ferry => {
+    const boat = campaign.boats.find(candidate => candidate.id === ferry.userData.ferryId);
+    if (!boat) throw new Error('Troop ferry is missing its campaign boat');
+    return ferry.userData.state === 'docked' && !ferry.userData.boarding &&
+      !ferry.userData.troopBoarding && !boat.returning;
+  }) &&
+    actors.every(actor => actor.health <= 0 ||
+      ['aboard', 'evacuated'].includes(actor.tactics.nanjingFerry?.phase));
 }
 
 export function beginTroopFerryBoarding(ferry, actors, time, shorePath, allowPlayerUnit = false) {
@@ -96,22 +114,30 @@ export function beginTroopFerryBoarding(ferry, actors, time, shorePath, allowPla
   data.troopPassengers ??= [];
   data.troopPassengers = data.troopPassengers.filter(passenger => passenger.actor.health > 0);
   if (data.state !== 'docked' || data.boarding || data.troopBoarding ||
+    time < (data.troopNextRouteAttemptAt ?? 0) ||
     data.troopPassengers.length >= NANJING_BOAT_CAPACITY) return false;
   const shore = { x: -72.2, z: ferry.position.z };
   const candidates = actors.filter(actor => actor.team === 'friendly' && (!actor.playerUnit || allowPlayerUnit) && actor.health > 0 && !actor.vehicleId &&
     !actor.grenades?.action && actor.traversal?.kind === 'grounded' &&
-    !actor.tactics.nanjingFerry && Math.hypot(actor.position.x - shore.x, actor.position.z - shore.z) < 3)
+    !actor.tactics.nanjingFerry && time >= (actor.tactics.nanjingFerryRetryAt?.[data.ferryId] ?? 0) &&
+    Math.hypot(actor.position.x - shore.x, actor.position.z - shore.z) < 3)
     .sort((a, b) => a.position.distanceToSquared(ferry.position) - b.position.distanceToSquared(ferry.position) || a.id.localeCompare(b.id));
   const actor = candidates[0];
   if (!actor) return false;
   const path = shorePath(actor, shore);
-  if (path == null) return false;
+  if (path == null) {
+    actor.tactics.nanjingFerryRetryAt ??= {};
+    actor.tactics.nanjingFerryRetryAt[data.ferryId] = time + 10;
+    data.troopNextRouteAttemptAt = time + 1;
+    return false;
+  }
   if (!Array.isArray(path) || !path.length && Math.hypot(actor.position.x - shore.x, actor.position.z - shore.z) > .02)
     throw new Error('Troop boarding requires a route to the shore or an actor already at that shore point');
   const seat = Array.from({ length: NANJING_BOAT_CAPACITY }, (_, index) => index)
     .find(index => !data.troopPassengers.some(passenger => passenger.seat === index));
   const local = new Vector3((Math.floor(seat / 2) - 2) * .9, NANJING_FERRY_FLOOR, seat % 2 ? .4 : -.4);
   const target = ferry.localToWorld(local.clone());
+  delete actor.tactics.nanjingFerryRetryAt;
   actor.tactics.nanjingFerry = { ferryId: data.ferryId, phase: 'boarding', speed: 0 };
   data.troopBoarding = { actor, seat, local, path: [...path,
     { x: -74.3, z: ferry.position.z, y: target.y }, { x: target.x, y: target.y, z: target.z }] };
@@ -176,14 +202,6 @@ export function troopFerryReady(ferry, actors, time, holdForPlayer = false) {
     (data.troopPassengers.length >= NANJING_BOAT_CAPACITY ||
       !holdForPlayer && (time - data.troopsLoadedAt >= 15 ||
       !actors.some(actor => actor.health > 0 && !actor.vehicleId && !actor.tactics.nanjingFerry)));
-}
-
-export function playerFerryReady(ferry, squad, playerId) {
-  const data = ferry.userData, people = data.troopPassengers ?? [];
-  const player = people.find(passenger => passenger.actor.id === playerId && passenger.actor.health > 0);
-  return data.state === 'docked' && !data.troopBoarding && Boolean(player) &&
-    (people.length >= NANJING_BOAT_CAPACITY ||
-      squad.filter(actor => actor.health > 0).every(actor => people.some(passenger => passenger.actor.id === actor.id)));
 }
 
 export function completeTroopFerryCrossing(ferry) {

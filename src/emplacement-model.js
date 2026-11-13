@@ -170,6 +170,8 @@ export function createEmplacementModel(point) {
     root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
     swivel.rotation.y = point.yaw - point.heading;
     barrel.rotation.x = point.pitch;
+    barrel.position.set(0, -Math.sin(point.pitch) * (point.recoil ?? 0),
+      Math.cos(point.pitch) * (point.recoil ?? 0));
     const standing = profile.antiAircraft || cannon && point.position === 'march';
     root.userData.supportWeapon.stance = standing ? 'standing' : 'crouched';
     root.userData.supportWeapon.firingPose = standing ? null : 'kneeling';
