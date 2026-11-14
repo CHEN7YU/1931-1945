@@ -29,7 +29,7 @@ export const CAMPAIGNS = Object.freeze([
       url: 'https://www.19371213.com.cn/information/news/202112/t20211209_3226524.html' }),
     goals: Object.freeze(['坚守仓库一楼4分钟，阻止日军占领与北墙爆破。',
       '两阶段共用400人兵力；入夜后带本队到仓库南面，全员到齐再分批撤退。',
-      '北岸工事掩护五队友军过桥，南岸禁止开火；不限时，全部人员去向确定后，超过半数撤离才算成功。']) }),
+      '北岸工事掩护每批最多十队友军过桥，南岸禁止开火；不限时，全部人员去向确定后，超过半数撤离才算成功。']) }),
   Object.freeze({ id: 'nanjing', name: '南京保卫战', year: 1937, region: '南京',
     preview: campaignPreview('nanjing'),
     x: 81, y: 58, description: '坚守中华门，沿陆路撤往上新河渡口，掩护百姓渡江后登船撤离。',

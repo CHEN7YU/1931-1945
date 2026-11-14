@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { sihangPursuitGoal, SIHANG_EMPLACEMENTS, sihangSpawns } from '../src/sihang-roster.js';
-import { SIHANG_WAREHOUSE as W, sihangNorthBank } from '../src/sihang-layout.js';
+import { sihangPursuitGoal, sihangArmorInterceptObjective, SIHANG_EMPLACEMENTS, sihangSpawns } from '../src/sihang-roster.js';
+import { SIHANG_BRIDGE, SIHANG_WAREHOUSE as W, sihangNorthBank } from '../src/sihang-layout.js';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
-import { circleBlocked } from '../src/core.js';
+import { circleBlocked, segmentClear } from '../src/core.js';
+import { sihangNightVisibility } from '../src/sihang-night.js';
+import { CHI_HA, chiHaObjectiveDestination } from '../src/chi-ha.js';
+import { createTankNavigation } from '../src/tank-navigation.js';
+import { addSihangBridgeDefenses } from '../src/sihang-bridge-defenses.js';
+import { pointSegmentDistance } from '../src/tactics.js';
 
 test('stage-two infantry must actually penetrate the warehouse before pursuing the retreat corridor', () => {
   for (const index of [0, 1, 2, 5]) {
@@ -16,8 +21,11 @@ test('stage-two infantry must actually penetrate the warehouse before pursuing t
     actor.position = { x: -20, y: 0, z: -41 };
     assert.equal(sihangPursuitGoal(actor).x, first.x, 'merely reaching the doorway does not count as clearing the warehouse');
     actor.position = { x: first.x, y: first.y, z: first.z };
-    const next = sihangPursuitGoal(actor);
+    const approach = sihangPursuitGoal(actor);
     assert.equal(actor.tactics.sihangEnteredWarehouse, true);
+    assert.equal(actor.tactics.sihangPursuit, 'approach-interception');
+    actor.position = { x: approach.x, y: approach.y, z: approach.z };
+    const next = sihangPursuitGoal(actor);
     assert.equal(actor.tactics.sihangPursuit, 'intercept-withdrawal');
     assert.ok(next.x > W.maxX && sihangNorthBank(next, .5));
     actor.position = { x: next.x, y: 0, z: next.z };
@@ -38,6 +46,94 @@ test('real warehouse entry goals remain capsule-clear and reachable from origina
   const point = SIHANG_EMPLACEMENTS.find(point => point.id === 'sihang-ground-entrance-mg');
   assert.equal(point.altitude, 0); assert.equal(point.profile, 'maxim24');
   assert.ok(point.x > W.minX && point.x < W.maxX && point.z > W.minZ && point.z < W.maxZ);
+});
+
+test('bridge interception posts remain reachable, visible at night and clear of real cover', () => {
+  const scene = new THREE.Scene();
+  const world = makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+  addSihangBridgeDefenses(scene, world, SIHANG_EMPLACEMENTS.filter(spec => spec.retreatCover));
+  const obstacles = world.obstacles;
+  const bridge = { x: SIHANG_BRIDGE.northX, y: 0, z: SIHANG_BRIDGE.northZ };
+  const goals = new Map();
+  for (let formation = 0; formation < 6; formation++) for (let index = 0; index < 11; index++) {
+    const actor = { index, formation: { index: formation },
+      tactics: { sihangEnteredWarehouse: true, sihangInterceptStaged: true },
+      position: { x: 25, y: 0, z: -14 } };
+    const goal = sihangPursuitGoal(actor);
+    goals.set(`${goal.x},${goal.z}`, goal);
+  }
+  assert.equal(goals.size, 23);
+  for (const goal of goals.values()) {
+    const distance = Math.hypot(goal.x - bridge.x, goal.z - bridge.z);
+    assert.ok(distance >= 21.5, JSON.stringify({ goal, distance }));
+    assert.ok(sihangNightVisibility({ stage: 'sihang-retreat', stageElapsed: 120, counterattackAt: 0, elapsed: 85 },
+      goal, bridge), JSON.stringify(goal));
+    assert.ok(sihangNorthBank(goal, 1));
+    assert.equal(circleBlocked(goal.x, goal.z, .55, obstacles), false, JSON.stringify(goal));
+    assert.ok(segmentClear(goal, bridge, .1, obstacles, null, 1.3, .1), JSON.stringify(goal));
+    const path = world.elevatedPath({ x: 25, y: 0, z: -14 }, goal);
+    assert.ok(path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= .8,
+      JSON.stringify({ goal, path }));
+  }
+});
+
+test('pursuing infantry use actual clear approach points behind the bridge defenses', () => {
+  const scene = new THREE.Scene();
+  const world = makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+  addSihangBridgeDefenses(scene, world, SIHANG_EMPLACEMENTS.filter(spec => spec.retreatCover));
+  for (let formation = 0; formation < 6; formation++) for (let index = 0; index < 11; index++) {
+    const actor = { index, formation: { index: formation }, tactics: { sihangEnteredWarehouse: true },
+      position: { x: 25, y: 0, z: -14 } };
+    const goal = sihangPursuitGoal(actor);
+    assert.ok(Math.hypot(goal.x - SIHANG_BRIDGE.northX, goal.z - SIHANG_BRIDGE.northZ) > 25);
+    assert.equal(circleBlocked(goal.x, goal.z, .55, world.obstacles), false, JSON.stringify(goal));
+    for (const start of [{ x: 25, y: 0, z: -14 }, { x: -20, y: 0, z: -35 }]) {
+      const path = world.elevatedPath(start, goal);
+      assert.ok(path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= .8,
+        JSON.stringify({ start, goal, path }));
+    }
+    actor.position = goal;
+    const post = sihangPursuitGoal(actor);
+    const path = world.elevatedPath(goal, post);
+    assert.ok(path.length && Math.hypot(path.at(-1).x - post.x, path.at(-1).z - post.z) <= .8,
+      JSON.stringify({ goal, post, path }));
+    let previous = goal;
+    for (const point of path) {
+      const bridge = { x: SIHANG_BRIDGE.northX, z: SIHANG_BRIDGE.northZ };
+      assert.ok(pointSegmentDistance(bridge, previous, point).distance >= 20,
+        JSON.stringify({ goal, post, previous, point }));
+      previous = point;
+    }
+  }
+});
+
+test('both armor interception destinations are reachable from their regroup positions', () => {
+  const scene = new THREE.Scene();
+  const world = makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+  addSihangBridgeDefenses(scene, world, SIHANG_EMPLACEMENTS.filter(spec => spec.retreatCover));
+  const obstacles = world.obstacles;
+  const navigation = createTankNavigation(obstacles), objective = sihangArmorInterceptObjective();
+  for (const slot of [0, 1]) {
+    const vehicle = { id: `tank-${slot}`, type: 'tank', variant: CHI_HA.id, health: 280, ai: { mode: 'hold' },
+      position: new THREE.Vector3(slot === 0 ? -70 : 70, 0, -55) };
+    const goal = chiHaObjectiveDestination(slot, objective);
+    assert.ok(Math.hypot(goal.x - SIHANG_BRIDGE.northX, goal.z - SIHANG_BRIDGE.northZ) > 20);
+    const bridge = { x: SIHANG_BRIDGE.northX, z: SIHANG_BRIDGE.northZ };
+    assert.ok(segmentClear(goal, bridge, .1, obstacles, null, 1.3, .1), JSON.stringify(goal));
+    assert.ok(sihangNightVisibility({ stage: 'sihang-retreat', stageElapsed: 120, counterattack: true,
+      counterattackAt: 0, elapsed: 3 }, goal, bridge), JSON.stringify(goal));
+    const path = navigation.pathTo(vehicle, goal, [vehicle]);
+    assert.ok(path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= CHI_HA.arrivalDistance,
+      JSON.stringify({ goal, path, stats: navigation.stats(vehicle) }));
+    assert.ok(path.every(point => sihangNorthBank(point, 3)), JSON.stringify(path));
+  }
+  const stuck = { id: 'stuck-tank', type: 'tank', variant: CHI_HA.id, health: 280, ai: { mode: 'hold' },
+    position: new THREE.Vector3(74.91434583905716, 0, -55.52891010576034) };
+  const goal = chiHaObjectiveDestination(1, objective);
+  const path = navigation.pathTo(stuck, goal, [stuck]);
+  assert.ok(Math.hypot(stuck.position.x - goal.x, stuck.position.z - goal.z) <= CHI_HA.arrivalDistance ||
+    path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= CHI_HA.arrivalDistance,
+    JSON.stringify({ goal, path, stats: navigation.stats(stuck) }));
 });
 
 test('warehouse surroundings have real adjacent buildings while most of the exposed river facade remains masonry', () => {

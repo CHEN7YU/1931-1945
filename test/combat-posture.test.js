@@ -68,6 +68,9 @@ test('advance pace varies by person, with aimed walking and tactical catch-up ra
   assert.equal(chooseAdvancePace({ ...base, preference: .1, catchUp: true }), 'sprint');
   assert.equal(chooseAdvancePace({ ...base, preference: .9, exhausted: true }), 'jog');
   assert.equal(chooseAdvancePace({ ...base, preference: .9, constrained: true, urgent: true }), 'walk');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, constrained: true, urgent: true, urgentConstrainedJog: true }), 'jog');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, constrained: true, urgent: true, urgentConstrainedJog: true, exhausted: true }), 'jog');
+  assert.equal(chooseAdvancePace({ ...base, preference: .1, constrained: true, urgentConstrainedJog: true }), 'aim');
   assert.equal(chooseAdvancePace({ ...base, preference: .1, constrained: true }), 'aim');
   assert.equal(chooseAdvancePace({ ...base, preference: .9, threat: false, distance: 2 }), 'walk');
   assert.equal(chooseAdvancePace({ ...base, preference: .5, urgent: true }), 'sprint');

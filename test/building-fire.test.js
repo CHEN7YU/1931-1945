@@ -83,6 +83,18 @@ test('low quality retains three beds, six anchored tongues and an ember; smoke c
   assert.deepEqual(fire.snapshot, { sources: 4, smoke: 16, flames: 40, drawCalls: 2 });
 });
 
+test('disabling building flames keeps smoke independently available at both quality levels', () => {
+  const scene = new THREE.Scene(), fire = createBuildingFire(scene, buildings, { flames: false });
+  for (const low of [false, true]) {
+    fire.update(12.4, { low, smoke: true });
+    assert.ok(fire.snapshot.smoke > 0);
+    assert.equal(fire.snapshot.flames, 0);
+    assert.equal(scene.getObjectByName('damaged-building-flames').visible, false);
+    fire.update(13, { low, smoke: false });
+    assert.deepEqual(fire.snapshot, { sources: 4, smoke: 0, flames: 0, drawCalls: 0 });
+  }
+});
+
 test('intact or absent buildings produce no active draw calls', () => {
   const scene = new THREE.Scene(), fire = createBuildingFire(scene, [{ x: 0, z: 0 }]);
   fire.update(3);

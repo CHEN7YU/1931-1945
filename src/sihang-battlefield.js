@@ -9,6 +9,8 @@ import { obstacleLookup } from './spatial.js';
 import { accelerateCollisionMesh } from './solid-index.js';
 import { createSihangFlag } from './sihang-flag.js';
 import { createSihangCity } from './sihang-city.js';
+import { createWaterWaveClock } from './water-waves.js';
+import { createFloatingBodies } from './floating-bodies.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { createNorthWallMaterial, createNorthWallGeometry, northApertureSpan } from './sihang-north-facade.js';
 import {
@@ -170,14 +172,19 @@ export function makeSihangBattlefield(scene, surface) {
   // Every strip uses the same analytic river as safety, ray clipping and foot support.
   const riverVertices = [], riverIndices = [], bankVertices = [[], []], bankIndices = [];
   const riverBlocks = [];
+  const riverSegments = 16;
   for (let i = 0; i <= 108; i++) {
     const x = -108 + i * 2, bounds = sihangRiverBounds(x);
-    riverVertices.push(x, R.waterY, bounds.northZ, x, R.waterY, bounds.southZ);
+    for (let row = 0; row <= riverSegments; row++)
+      riverVertices.push(x, R.waterY, THREE.MathUtils.lerp(bounds.northZ, bounds.southZ, row / riverSegments));
     bankVertices[0].push(x, -.05, M.minZ, x, -.05, bounds.northZ);
     bankVertices[1].push(x, -.05, bounds.southZ, x, -.05, M.maxZ);
     if (i) {
       const j = i * 2;
-      riverIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
+      for (let row = 0; row < riverSegments; row++) {
+        const current = i * (riverSegments + 1) + row, previous = current - riverSegments - 1;
+        riverIndices.push(previous, previous + 1, current, previous + 1, current + 1, current);
+      }
       bankIndices.push(j - 2, j - 1, j, j - 1, j + 1, j);
     }
     if (i === 108) continue;
@@ -190,24 +197,63 @@ export function makeSihangBattlefield(scene, surface) {
       return { min: Math.max(center - B.width / (2 * dx), B.northZ - (at - B.northX) * dx / dz - .75 / dz),
         max: Math.min(center + B.width / (2 * dx), B.northZ + (B.length + .75) / dz - (at - B.northX) * dx / dz) };
     };
-    const left = cut(x), right = cut(x + 2), low = Math.max(north, left.min, right.min),
-      high = Math.min(south, left.max, right.max);
-    const bands = low < high ? [[north, low], [high, south]] : [[north, south]];
-    for (const [minZ, maxZ] of bands) if (maxZ - minZ > 1e-6) {
-      let polygon = [{ x, z: bounds.northZ }, { x: x + 2, z: end.northZ },
-        { x: x + 2, z: end.southZ }, { x, z: bounds.southZ }];
-      for (const [edge, sign] of [[minZ, 1], [maxZ, -1]]) {
-        const clipped = [];
+    // Subtract the diagonal bridge from water polygons without shrinking its usable deck to a strip envelope.
+    if (x + 2 >= B.northX - B.width && x <= B.southX + B.width) {
+      const clip = (polygon, distance) => {
+        const result = [];
         for (let j = 0; j < polygon.length; j++) {
           const a = polygon[j], b = polygon[(j + 1) % polygon.length];
-          const insideA = sign * (a.z - edge) >= 0, insideB = sign * (b.z - edge) >= 0;
-          if (insideA) clipped.push(a);
-          if (insideA !== insideB) clipped.push({ x: a.x + (b.x - a.x) * (edge - a.z) / (b.z - a.z), z: edge });
+          const da = distance(a), db = distance(b);
+          if (da >= 0) result.push(a);
+          if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+            const t = da / (da - db);
+            result.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+          }
         }
-        polygon = clipped;
+        return result;
+      };
+      let remaining = [{ x, z: bounds.northZ }, { x: x + 2, z: end.northZ },
+        { x: x + 2, z: end.southZ }, { x, z: bounds.southZ }];
+      const edges = [
+        point => sihangBridgeCoordinates(point).along + .75,
+        point => B.length + .75 - sihangBridgeCoordinates(point).along,
+        point => B.width / 2 + sihangBridgeCoordinates(point).across,
+        point => B.width / 2 - sihangBridgeCoordinates(point).across,
+      ];
+      for (const distance of edges) {
+        const polygon = clip(remaining, point => -distance(point));
+        const area = polygon.reduce((sum, point, index) => {
+          const next = polygon[(index + 1) % polygon.length];
+          return sum + point.x * next.z - next.x * point.z;
+        }, 0);
+        if (polygon.length >= 3 && Math.abs(area) > 1e-6)
+          riverBlocks.push({ minX: Math.min(...polygon.map(point => point.x)),
+            maxX: Math.max(...polygon.map(point => point.x)),
+            minZ: Math.min(...polygon.map(point => point.z)),
+            maxZ: Math.max(...polygon.map(point => point.z)), minY: -10, height: 40, water: true, polygon });
+        remaining = clip(remaining, distance);
+        if (remaining.length < 3) break;
       }
-      if (polygon.length >= 3)
-        riverBlocks.push({ minX: x, maxX: x + 2, minZ, maxZ, minY: -10, height: 40, water: true, polygon });
+    } else {
+      const left = cut(x), right = cut(x + 2), low = Math.max(north, left.min, right.min),
+        high = Math.min(south, left.max, right.max);
+      const bands = low < high ? [[north, low], [high, south]] : [[north, south]];
+      for (const [minZ, maxZ] of bands) if (maxZ - minZ > 1e-6) {
+        let polygon = [{ x, z: bounds.northZ }, { x: x + 2, z: end.northZ },
+          { x: x + 2, z: end.southZ }, { x, z: bounds.southZ }];
+        for (const [edge, sign] of [[minZ, 1], [maxZ, -1]]) {
+          const clipped = [];
+          for (let j = 0; j < polygon.length; j++) {
+            const a = polygon[j], b = polygon[(j + 1) % polygon.length];
+            const insideA = sign * (a.z - edge) >= 0, insideB = sign * (b.z - edge) >= 0;
+            if (insideA) clipped.push(a);
+            if (insideA !== insideB) clipped.push({ x: a.x + (b.x - a.x) * (edge - a.z) / (b.z - a.z), z: edge });
+          }
+          polygon = clipped;
+        }
+        if (polygon.length >= 3)
+          riverBlocks.push({ minX: x, maxX: x + 2, minZ, maxZ, minY: -10, height: 40, water: true, polygon });
+      }
     }
     for (const bank of ['northZ', 'southZ']) {
       const middle = sihangRiverBounds(x + 1)[bank], slope = (end[bank] - bounds[bank]) / 2;
@@ -263,7 +309,11 @@ export function makeSihangBattlefield(scene, surface) {
   const streetSurface = strip(streetVertices, streetIndices, materials.street, 'sihang-bank-clipped-streets');
   solids.push(streetSurface); terrainSurfaces.push(streetSurface);
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
+  const waterWaves = createWaterWaveClock();
+  waterWaves.attach(waterMaterial, 'y');
   const water = strip(riverVertices, riverIndices, waterMaterial, 'suzhou-river');
+  water.geometry.computeBoundingSphere();
+  water.geometry.boundingSphere.radius += .102;
   obstacles.push(...riverBlocks);
   // A continuous arched walking surface, not a flat collider floating above a decorative arch.
   const bridgeVertices = [], bridgeIndices = [];
@@ -489,15 +539,6 @@ export function makeSihangBattlefield(scene, surface) {
     box(x, W.roofY - .1, W.z, 1.15, .35, W.depth, materials.concrete, { parent: intact, block: true });
     box(x, W.roofY + .4, W.z, .6, .75, W.depth, wallMaterial, { parent: intact, block: true });
   }
-  for (const x of [-28, -12]) {
-    for (let row = 0; row < 3; row++) for (let bag = 0; bag < 7; bag++)
-      box(x + (bag - 3) * .75 + (row % 2) * .18, .2 + row * .34, -49.4,
-        .8, .36, .55, materials.earth, { block: true });
-    for (const side of [-1, 1]) for (let row = 0; row < 2; row++) for (let bag = 0; bag < 3; bag++)
-      box(x + side * 2.7, .2 + row * .34, -48.5 + bag * .7,
-        .55, .36, .8, materials.earth, { block: true });
-    town.fortifications.push({ id: `north-gate-sandbags-${x}`, x, z: -49.4, use: 'machine-gun-cover' });
-  }
   const groundCoverPositions = [[-25, -37.5], [8, -37.5], [-25, -13.5], [18, -13.5], [10, -26], [-13, -26]];
   for (const [index, [x, z]] of groundCoverPositions.entries()) {
     for (let row = 0; row < 2; row++) for (let bag = 0; bag < 6; bag++)
@@ -612,6 +653,11 @@ export function makeSihangBattlefield(scene, surface) {
   doorSystem = createDoorWorld(scene, town, obstacles, solids, materials.wood, materials.iron);
   const movementLookup = obstacleLookup(obstacles, 3.5);
   const civiliansFactory = createCivilianCharacterFactory();
+  const floatingBodies = createFloatingBodies(scene, civiliansFactory, [
+    { x: 10, z: 15, waterLevel: R.waterY, heading: .5 },
+    { x: -19, z: 21, waterLevel: R.waterY, heading: -1.1 },
+    { x: 44, z: 12, waterLevel: R.waterY, heading: 1.8 },
+  ]);
   for (let i = 0; i < 36; i++) {
     const age = i % 9 === 0 ? 'child' : i % 9 === 1 ? 'elderly' : 'adult';
     const person = civiliansFactory.create(i, age, i % 2 ? 'man' : 'woman', 'none');
@@ -917,6 +963,10 @@ export function makeSihangBattlefield(scene, surface) {
     bridgeSurfaces: { deck: 1.15, northRamp: 0, southRamp: 0, heightAt: bridgeHeight },
     riverSurfaces: { water: -1, northBank: 0, southBank: 0, street: 0 },
     impactHeight: groundHeight, isDeepWater, riverBounds: sihangRiverBounds,
+    updateWater(time) {
+      waterWaves.update(time);
+      floatingBodies.update(time);
+    },
     updateFlag: flagAnimation.update,
     setNightLighting: city.setNightLighting,
     get concessionLighting() { return city.lighting; },

@@ -23,7 +23,7 @@ function housePoint(home, x, z) {
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
 
-test('Nanjing has small and large physical shell holes and active fire sources on damaged houses', () => {
+test('Nanjing has physical shell holes and smoke without persistent building flames', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
   assert.equal(world.staticDamage.craters.length, 6);
@@ -37,6 +37,15 @@ test('Nanjing has small and large physical shell holes and active fire sources o
       assert.ok(Math.hypot(crater.x - spawn.x, crater.z - spawn.z) > crater.radius * 1.35 + 9);
   }
   assert.ok(world.buildingFire.sources.length > 0);
+  for (const low of [false, true]) {
+    world.buildingFire.update(12.4, { low, smoke: true });
+    assert.ok(world.buildingFire.snapshot.smoke > 0);
+    assert.equal(world.buildingFire.snapshot.flames, 0);
+    assert.equal(scene.getObjectByName('damaged-building-flames').visible, false);
+    world.buildingFire.update(13, { low, smoke: false });
+    assert.equal(world.buildingFire.snapshot.smoke, 0);
+    assert.equal(world.buildingFire.snapshot.flames, 0);
+  }
 });
 
 test('interior courtyard sandbags shield crouched defenders from grenade-height rays without blocking the gate lane', () => {
@@ -297,6 +306,9 @@ test('river water is exposed in the rendered scene, with only stone bridges cros
   scene.updateMatrixWorld(true);
   const ray = new THREE.Raycaster();
   const surfaces = scene.children.filter(object => object.isMesh);
+  const water = surfaces.filter(object => object.userData.nanjingFeature === 'river-water');
+  assert.ok(water.length > 0 && water.every(surface => surface.geometry.attributes.position.count < 50000),
+    'extended water must retain a bounded mesh rather than uniformly subdividing the whole river');
   for (const [x, z] of [[0, 52], [-35, 52], [-84, -25]]) {
     ray.set(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0));
     const hit = ray.intersectObjects(surfaces, true)[0];

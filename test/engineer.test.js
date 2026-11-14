@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEngineerState, consumeEngineerMaterial, selectEngineerEquipment, engineerObstacle,
-  engineerFootprintBlocked, ENGINEER, engineerBuiltSpec } from '../src/engineer.js';
+  engineerFootprintBlocked, engineerConstructionReservations, ENGINEER, engineerBuiltSpec } from '../src/engineer.js';
 import { advanceConstruction, selectConstructionBlueprint } from '../src/construction.js';
 import { infantryEquipment } from '../src/battle-roster.js';
 import { createEmplacement, damageEmplacement, artilleryPositionTargets, fireEmplacement } from '../src/emplacements.js';
@@ -57,6 +57,24 @@ test('construction interruption and another owner cannot inherit the first engin
   advanceConstruction(state, input, 19, () => null);
   const result = advanceConstruction(state, { ...input, builderId: 'another-builder' }, 1, () => null);
   assert.equal(result.completed, null); assert.equal(state.progress, 0);
+});
+
+test('active construction reserves its footprint only against the builders teammates', () => {
+  const builder = { id: 'builder', team: 'friendly', health: 100, heading: 0, engineer: createEngineerState() };
+  const teammate = { id: 'teammate', team: 'friendly' }, enemy = { id: 'enemy', team: 'enemy' };
+  selectConstructionBlueprint(builder.engineer.construction, builder.id);
+  const input = { builderId: builder.id, position: { x: 0, y: 0, z: 0 },
+    candidate: { x: 0, y: 0, z: -3.2 }, holding: true, allowed: true, buildSeconds: 20 };
+  assert.deepEqual(engineerConstructionReservations(teammate, [builder]), []);
+  advanceConstruction(builder.engineer.construction, input, 1, () => null);
+  const [reservation] = engineerConstructionReservations(teammate, [builder]);
+  assert.ok(reservation);
+  assert.equal(engineerFootprintBlocked(reservation, { circular: true, cx: 0, cz: -3.2, radius: .45,
+    minX: -.45, maxX: .45, minZ: -3.65, maxZ: -2.75, minY: 0, height: 1.8 }), true);
+  assert.deepEqual(engineerConstructionReservations(builder, [builder]), []);
+  assert.deepEqual(engineerConstructionReservations(enemy, [builder]), []);
+  advanceConstruction(builder.engineer.construction, { ...input, holding: false }, .05, () => null);
+  assert.deepEqual(engineerConstructionReservations(teammate, [builder]), []);
 });
 
 test('placement footprint detects thin walls, oriented walls and people without blocking the supporting floor', () => {

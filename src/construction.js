@@ -37,6 +37,8 @@ export function advanceConstruction(state, input, dt, validate) {
   if (!Number.isFinite(duration) || duration <= 0) throw new RangeError('Construction duration must be positive and finite');
   if (!Number.isFinite(dt) || dt < 0 || typeof input.holding !== 'boolean' ||
     typeof input.allowed !== 'boolean' || typeof validate !== 'function') throw new RangeError('Invalid construction step');
+  if (input.pauseOnReason !== undefined && (typeof input.pauseOnReason !== 'string' || !input.pauseOnReason))
+    throw new RangeError('Construction pause reason must be a non-empty string');
   if (!input.allowed || (state.blueprint && state.builderId !== input.builderId)) {
     const notice = state.blueprint ? input.allowed ? 'owner-changed' : 'unavailable' : null;
     resetConstructionState(state);
@@ -62,6 +64,8 @@ export function advanceConstruction(state, input, dt, validate) {
       resetConstructionState(state);
       return { completed, notice: null };
     }
+  } else if (input.holding && state.site && reason === input.pauseOnReason) {
+    state.mode = 'building';
   } else {
     state.site = state.anchor = null;
     state.progress = 0;

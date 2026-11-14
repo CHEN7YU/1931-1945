@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSquadRoutes } from '../src/squad-routes.js';
+import { sihangRetreatGoal } from '../src/sihang-roster.js';
+import { sihangRiverBounds } from '../src/sihang-layout.js';
 
 const actor = (x = 0, patch = {}) => ({ position: { x, y: 0, z: 0 }, stuckTime: 0, tactics: {},
   formation: { id: 'squad', generation: 1, type: 'infantry' }, ...patch });
@@ -69,4 +71,18 @@ test('precise formation slots never route through an occupied squadmate endpoint
     assert.equal(searches, 1);
     assert.equal(routes.snapshot.shared, 0);
   }
+});
+
+test('riverside withdrawal columns keep separate shared route trunks', () => {
+  const routes = createSquadRoutes(flat);
+  const squad = { id: 'squad', generation: 1, type: 'infantry', sihangSlot: 1 };
+  const soldier = index => actor(28, { index, formation: squad,
+    position: { x: 28, y: 0, z: sihangRiverBounds(28).northZ - (index % 2 ? 3.2 : 2) } });
+  const a = soldier(0), b = soldier(1), goalA = sihangRetreatGoal(a), goalB = sihangRetreatGoal(b);
+  let searches = 0;
+  for (const [person, goal] of [[a, goalA], [b, goalB]]) routes.find(person, goal, 0,
+    () => { searches++; return line(null, goal); }, line);
+  assert.equal(searches, 2, 'different river columns must not reuse one trunk');
+  routes.find(soldier(2), goalA, 1, () => { throw new Error('Same-column route should be shared'); }, line);
+  assert.equal(routes.snapshot.shared, 1);
 });

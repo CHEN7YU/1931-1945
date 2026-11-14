@@ -1,0 +1,18 @@
+{
+  "provider": "Qwen",
+  "model": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+  "revision": "85e237c12c027371202489a0ec509ded67b5e4b5",
+  "source": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+  "license": "Apache-2.0",
+  "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+  "speaker": "Dylan",
+  "language": "Chinese",
+  "files": [
+    {
+      "file": "withdrawal.wav",
+      "text": "带上存活的队员，到仓库南侧集合！全队到齐才能撤退！",
+      "bytes": 311084,
+      "sha256": "b20162b757b3d7862fc7cd824c5253d5532b020a8b69b94751a2c44b15755131"
+    }
+  ]
+}

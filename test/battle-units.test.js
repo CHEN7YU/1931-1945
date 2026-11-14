@@ -28,9 +28,24 @@ test('both teams use referenced Taierzhuang formations with explicitly abstract 
   assert.ok(names[0].some(name => name.startsWith('第20军团')));
   assert.ok(names[1].some(name => name.startsWith('第10师团·濑谷')));
   assert.ok(names[1].some(name => name.startsWith('第5师团·坂本')));
-  assert.ok(names[1].slice(8).every(name => name.startsWith('装甲支援')));
+  assert.ok(names[1].slice(8).every(name => name.startsWith('日军装甲支援')));
   assert.notEqual(campaignUnitName({ team: 'friendly', type: 'infantry', index: 0, player: true, squadId: 'infantry' }),
     campaignUnitName({ team: 'friendly', type: 'infantry', index: 0, player: true, squadId: 'infantry-reserve' }));
+});
+
+test('enemy scoreboard labels identify campaign formations without inventing support assignments', () => {
+  const infantry = { team: 'enemy', type: 'infantry', index: 0 };
+  assert.match(campaignUnitName({ ...infantry, campaign: 'sihang' }), /^上海海军陆战队·1班$/);
+  assert.match(campaignUnitName({ ...infantry, campaign: 'sihang', sihangDemolition: true }), /^上海海军陆战队·爆破队$/);
+  assert.match(campaignUnitName({ ...infantry, campaign: 'nanjing' }), /^第6师团·1班$/);
+  for (const campaign of ['sihang', 'nanjing', 'taierzhuang-fort']) {
+    for (const type of ['mortar', 'tank', 'plane']) {
+      const name = campaignUnitName({ ...infantry, campaign, type });
+      assert.match(name, /^日军.*支援/);
+      assert.doesNotMatch(name, /游戏/);
+      assert.match(campaignUnitDescription(name), /不代表.*实有独立部队番号或装备配属/);
+    }
+  }
 });
 
 test('prototype support is not assigned fabricated historical regiment names and invalid units fail explicitly', () => {

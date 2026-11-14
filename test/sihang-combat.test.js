@@ -30,6 +30,40 @@ test('twenty sappers form front, rear, side and roof cover without overlapping s
     assert.ok(Math.hypot(poses[i].x - poses[j].x, poses[i].z - poses[j].z) >= 1);
 });
 
+test('casualty layouts retain balanced cover and compact without overlapping soldiers', () => {
+  for (let count = 1; count <= 20; count++) {
+    const poses = Array.from({ length: count }, (_, slot) => sihangShieldLayout(slot, count));
+    const sides = role => poses.filter(pose => pose.role === role).length;
+    assert.ok(Math.abs(sides('left') - sides('right')) <= 1);
+    if (count >= 4) {
+      assert.equal(sides('front'), 2);
+      assert.equal(sides('rear'), 2);
+    }
+    for (let i = 0; i < poses.length; i++) for (let j = 0; j < i; j++)
+      assert.ok(Math.hypot(poses[i].x - poses[j].x, poses[i].z - poses[j].z) >= 1,
+        `${count} survivors: slots ${i} and ${j} overlap`);
+  }
+  assert.ok(sihangShieldLayout(0, 12).z < sihangShieldLayout(0, 20).z);
+});
+
+test('a casualty causes nearby survivors to regroup without reshuffling every slot', () => {
+  const f = fixture();
+  f.combat.update(.05, 0, f);
+  f.actors[0].health = 0;
+  f.combat.update(.05, .05, f);
+  const reassigned = f.actors.filter(actor => actor.health > 0 &&
+    Math.hypot(actor.position.x - f.combat.goalFor(actor).x, actor.position.z - f.combat.goalFor(actor).z) > .05);
+  assert.ok(reassigned.length < 10, `${reassigned.length} survivors moved after one casualty`);
+  assert.equal(f.combat.snapshot.shields, 19);
+  assert.equal(f.actors.filter(actor => actor.sihangShield?.role === 'front').length, 2);
+  for (const actor of f.actors) if (actor.health > 0) {
+    const goal = f.combat.goalFor(actor);
+    actor.position.set(goal.x, goal.y, goal.z);
+  }
+  f.combat.update(.05, 1.1, f);
+  assert.equal(f.combat.formed, true);
+});
+
 test('the original rear spawn deploys the complete turtle, or waits without scattering roles around an obstruction', () => {
   const spawn = { id: 'demolition', x: 0, z: -72, altitude: 0, permanent: true };
   const positions = sihangShieldSpawnPositions(spawn, 20, []);

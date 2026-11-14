@@ -14,6 +14,8 @@ import { AIRCRAFT_GUN } from './aircraft-ai.js';
 import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
 import { createBuildingFire } from './building-fire.js';
+import { createWaterWaveClock } from './water-waves.js';
+import { createFloatingBodies } from './floating-bodies.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
@@ -91,8 +93,11 @@ export function makeNanjingBattlefield(scene, surface) {
   const wavePixels = new Uint8Array(64 * 64 * 4);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
     const index = (y * 64 + x) * 4;
-    wavePixels[index] = 128 + Math.round(32 * Math.sin(x / 64 * Math.PI * 8 + Math.sin(y / 64 * Math.PI * 4)));
-    wavePixels[index + 1] = 128 + Math.round(22 * Math.cos(y / 64 * Math.PI * 12 + Math.sin(x / 64 * Math.PI * 4)));
+    const phase = Math.PI * 2 / 64;
+    wavePixels[index] = 128 + Math.round(12 * Math.sin((3 * x + 2 * y) * phase) +
+      9 * Math.sin((5 * x - 3 * y) * phase) + 6 * Math.cos((2 * x - 5 * y) * phase));
+    wavePixels[index + 1] = 128 + Math.round(12 * Math.cos((2 * x + 3 * y) * phase) +
+      9 * Math.cos((4 * x - 5 * y) * phase) + 6 * Math.sin((5 * x + y) * phase));
     wavePixels[index + 2] = 250;
     wavePixels[index + 3] = 255;
   }
@@ -102,6 +107,8 @@ export function makeNanjingBattlefield(scene, surface) {
   waveTexture.needsUpdate = true;
   const water = new THREE.MeshStandardMaterial({ color: 0x263e35, roughness: .58, metalness: .02,
     normalMap: waveTexture, normalScale: new THREE.Vector2(.24, .24) });
+  const waterWaves = createWaterWaveClock();
+  waterWaves.attach(water, 'z');
   const burlap = surface('burlap', 0x9a8b67);
   burlap.vertexColors = true;
   const detailedSandbagGeometry = sandbagGeometry();
@@ -215,13 +222,33 @@ export function makeNanjingBattlefield(scene, surface) {
       NANJING_FERRY_ROUTE.riverWidth, NANJING_FERRY_ROUTE.riverDepth, water, riverLevel)];
     for (const riverSurface of surfaces) {
       riverSurface.userData.nanjingFeature = 'river-water';
-      if (w < d && other) {
-        riverSurface.geometry.dispose();
-        riverSurface.geometry = new THREE.PlaneGeometry(NANJING_FERRY_ROUTE.riverWidth,
-          NANJING_FERRY_ROUTE.riverDepth, 1, Math.ceil(NANJING_FERRY_ROUTE.riverDepth));
+      const oldGeometry = riverSurface.geometry;
+      const { width, height } = oldGeometry.parameters;
+      const extendedRiver = w < d && other;
+      const outerWidthSegments = 32, nearWidthSegments = 100;
+      const outerDepthSegments = 16, nearDepthSegments = 300;
+      const nearWidth = Math.min(200, width), nearDepth = Math.min(300, height);
+      const widthSegments = extendedRiver ? outerWidthSegments + nearWidthSegments : Math.ceil(width / 2);
+      const heightSegments = extendedRiver ? outerDepthSegments * 2 + nearDepthSegments : Math.ceil(height / 2);
+      riverSurface.geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
+      oldGeometry.dispose();
+      if (extendedRiver) {
         const vertices = riverSurface.geometry.attributes.position;
+        const uv = riverSurface.geometry.attributes.uv;
         for (let index = 0; index < vertices.count; index++) {
-          const worldZ = z - vertices.getY(index);
+          const column = index % (widthSegments + 1), row = Math.floor(index / (widthSegments + 1));
+          const localX = column <= outerWidthSegments
+            ? -width / 2 + (width - nearWidth) * column / outerWidthSegments
+            : width / 2 - nearWidth + nearWidth * (column - outerWidthSegments) / nearWidthSegments;
+          const localY = row <= outerDepthSegments
+            ? height / 2 - (height - nearDepth) / 2 * row / outerDepthSegments
+            : row <= outerDepthSegments + nearDepthSegments
+              ? nearDepth / 2 - nearDepth * (row - outerDepthSegments) / nearDepthSegments
+              : -nearDepth / 2 - (height - nearDepth) / 2 *
+                (row - outerDepthSegments - nearDepthSegments) / outerDepthSegments;
+          vertices.setXY(index, localX, localY);
+          uv.setXY(index, localX / width + .5, localY / height + .5);
+          const worldZ = z - localY;
           const distance = Math.max(0, Math.abs(worldZ - other.z) - other.depth / 2);
           const blend = Math.min(1, distance / 12);
           const smooth = blend * blend * (3 - 2 * blend);
@@ -229,6 +256,8 @@ export function makeNanjingBattlefield(scene, surface) {
         }
         riverSurface.geometry.computeVertexNormals();
       }
+      riverSurface.geometry.computeBoundingSphere();
+      riverSurface.geometry.boundingSphere.radius += .102;
     }
     const bank = 3, addBank = (minX, maxX, minZ, maxZ) => {
       // The two rivers meet here; neither embankment may divide the other waterway.
@@ -576,6 +605,7 @@ export function makeNanjingBattlefield(scene, surface) {
   makeRiver(0, 52, 210, 26, [YUHUA_BRIDGE]);
   makeRiver(-84, 0, 24, 300);
   const rippleMaterial = new THREE.MeshBasicMaterial({ color: 0xb4c3b4, transparent: true, opacity: .18, depthWrite: false });
+  waterWaves.attach(rippleMaterial, 'z');
   for (let index = 0; index < 72; index++) {
     const ripple = makeSurface(-68 + (index * 17.31 % 164), 40 + (index * 7.73 % 23),
       .5 + index % 5 * .3, .025, rippleMaterial, SOUTH_RIVER_WATER + .025);
@@ -1253,6 +1283,11 @@ export function makeNanjingBattlefield(scene, surface) {
   const dockRamp = new THREE.Mesh(rampGeometry, rampMaterial);
   scene.add(dockRamp); solids.push(dockRamp);
   const civilianCharacters = createCivilianCharacterFactory();
+  const floatingBodies = createFloatingBodies(scene, civilianCharacters, [
+    { x: 2, z: 51, waterLevel: SOUTH_RIVER_WATER, heading: .7 },
+    { x: 29, z: 54, waterLevel: SOUTH_RIVER_WATER, heading: -1.2 },
+    { x: -93, z: 12, waterLevel: -.28, heading: 2.1 },
+  ]);
   const makeFerry = createNanjingFerryFactory(timber), ferryRowers = [];
   const reeds = createShoreReeds(solids.filter(mesh => mesh.userData.nanjingFeature === 'river-stone-bank'));
   scene.add(reeds);
@@ -1679,7 +1714,7 @@ export function makeNanjingBattlefield(scene, surface) {
     dry: (x, z) => !(Math.abs(z - 52) < 16 || x < -70) && groundHeight(x, z) === 0,
   }));
   craterSupport = addBattlefieldCraters(scene, terrainSurfaces, solids, shellCraters, ground);
-  const buildingFire = createBuildingFire(scene, residentialBuildings);
+  const buildingFire = createBuildingFire(scene, residentialBuildings, { flames: false });
   const masonryMeshes = solids.filter(mesh => mesh.isMesh && masonryFeatures.has(mesh.userData.nanjingFeature) &&
     !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent);
   const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
@@ -1701,6 +1736,11 @@ export function makeNanjingBattlefield(scene, surface) {
       }
     },
     bridgeSurfaces: { deck: 0, northRamp: 0, southRamp: 0 },
+    updateWater(time) {
+      waterWaves.update(time);
+      waveTexture.offset.set(time * .004, time * -.003);
+      floatingBodies.update(time);
+    },
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,

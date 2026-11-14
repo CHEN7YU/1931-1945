@@ -15,6 +15,7 @@ try {
     <style>body{margin:0}canvas{display:block}</style><script type="module">
     import * as THREE from '/node_modules/three/build/three.module.js';
     import {makeWorld} from '/src/battlefield.js';
+    import {campaignLayout} from '/src/campaign-layout.js';
     import {loadSceneMaterials} from '/src/materials.js';
     const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
     renderer.setSize(1280,720);document.body.append(renderer.domElement);
@@ -28,11 +29,12 @@ try {
         const sun=new THREE.DirectionalLight(0xffeed9,2.3);sun.position.set(-20,40,-30);scene.add(sun);
         if(!surface){surface=await loadSceneMaterials(renderer,scene,{lowMemory:true});sky=scene.background;}
         else scene.background=sky;
-        world=makeWorld(scene,surface,campaign==='town'?{}:{campaign});
+        world=makeWorld(scene,surface,campaign==='town'?{}:
+          campaign==='taierzhuang'?campaignLayout('taierzhuang-fort'):{campaign});
       },
       frame(time,low=false,smoke=true,angle=0){
         world.buildingFire.update(time,{low,smoke});
-        const source=world.buildingFire.sources[0];
+        const source=world.buildingFire.sources[0] ?? {x: 0, y: 0, z: 0};
         camera.position.set(source.x+Math.cos(angle)*5,source.y+6,source.z+Math.sin(angle)*5);
         camera.lookAt(source.x,source.y+.8,source.z);
         renderer.render(scene,camera);
@@ -48,33 +50,39 @@ try {
         return {warm,checksum,fire:world.buildingFire.snapshot,error:gl.getError(),
           gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),
           programs:renderer.info.programs.map(program=>program.diagnostics?.runnable!==false),
-          finite:meshes.every(mesh=>Array.from(mesh.instanceMatrix.array).every(Number.isFinite)),
-          smokeVisible:meshes[1].visible};
+          finite:meshes.every(mesh=>!mesh||Array.from(mesh.instanceMatrix.array).every(Number.isFinite)),
+          smokeVisible:meshes[1]?.visible ?? false};
       }
     };window.ready=true;
     </script>` }));
   await page.goto(new URL('/__building-fire-review.html', process.env.GAME_URL ?? 'http://127.0.0.1:5353').href);
   await page.waitForFunction(() => window.ready, null, { timeout: 120000 });
   const results = [];
-  for (const campaign of ['town', 'sihang', 'nanjing']) {
+  for (const campaign of ['town', 'taierzhuang', 'sihang', 'nanjing']) {
     await page.evaluate(campaign => review.map(campaign), campaign);
     const high = await page.evaluate(() => review.frame(12.4, false, true, .8));
     const paused = await page.evaluate(() => review.frame(12.4, false, true, .8));
     assert.equal(high.checksum, paused.checksum, 'paused fire pixels must be deterministic');
     await page.screenshot({ path: join(directory, campaign + '-fire-high.png') });
     const moved = await page.evaluate(() => review.frame(12.9, false, true, .8));
-    assert.notEqual(high.checksum, moved.checksum, 'flame geometry and glow must animate');
+    if (campaign !== 'sihang')
+      assert.notEqual(high.checksum, moved.checksum, 'building fire or smoke must animate');
     const reverse = await page.evaluate(() => review.frame(12.4, false, true, -.8));
     await page.screenshot({ path: join(directory, campaign + '-fire-reverse.png') });
     const low = await page.evaluate(() => review.frame(12.4, true, false, .8));
     await page.screenshot({ path: join(directory, campaign + '-fire-low-no-smoke.png') });
-    assert.equal(high.fire.drawCalls, 2);
-    assert.equal(low.fire.drawCalls, 1);
     assert.equal(low.fire.smoke, 0);
     assert.equal(low.smokeVisible, false);
-    assert.ok(low.fire.flames < high.fire.flames && low.fire.flames >= low.fire.sources * 10);
-    assert.ok(high.warm > 30 && reverse.warm > 30 && low.warm > 30,
-      JSON.stringify({ campaign, high: high.warm, reverse: reverse.warm, low: low.warm }));
+    if (campaign === 'town' || campaign === 'taierzhuang' || campaign === 'nanjing') {
+      assert.ok(high.fire.sources > 0 && high.fire.smoke > 0);
+      assert.equal(high.fire.drawCalls, 1);
+      assert.equal(high.fire.flames, 0);
+      assert.equal(low.fire.flames, 0);
+      assert.equal(low.fire.drawCalls, 0);
+    } else {
+      assert.deepEqual(high.fire, { sources: 0, smoke: 0, flames: 0, drawCalls: 0 });
+      assert.deepEqual(low.fire, high.fire);
+    }
     for (const frame of [high, paused, moved, reverse, low]) {
       assert.equal(frame.error, 0); assert.ok(frame.finite && frame.programs.every(Boolean));
     }

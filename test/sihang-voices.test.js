@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { sihangVoiceClips, SIHANG_VOICE_LINES, createSihangVoices } from '../src/sihang-voices.js';
+import { sihangVoiceClips, SIHANG_VOICE_LINES, createSihangVoices, loadSihangVoices } from '../src/sihang-voices.js';
 import { voiceSSML, VOICE_FORMAT } from '../scripts/prepare-battle-voices.mjs';
 
 test('all new Sihang warnings, encouragement and memorial recordings have original Azure provenance and bounded charges', async () => {
@@ -27,4 +27,16 @@ test('Sihang scene voices require valid clips and do not invent playback before 
   assert.equal(voices.play(null, 'armed'), false);
   assert.equal(voices.snapshot.spoken, 0);
   assert.throws(() => voices.play(null, 'unknown'), RangeError);
+});
+
+test('the actual loader uses the separately sourced assembly recording for withdrawal', async () => {
+  const previousAudio = globalThis.OfflineAudioContext, previousFetch = globalThis.fetch, requests = [];
+  globalThis.OfflineAudioContext = class { async decodeAudioData() { return { duration: 2 }; } };
+  globalThis.fetch = async url => { requests.push(url); return new Response(new Uint8Array([0])); };
+  try {
+    await loadSihangVoices();
+    assert.ok(requests.includes('/assets/audio/sihang-assembly/withdrawal.wav?v=b20162b7'));
+    assert.ok(!requests.some(url => url.includes('/sihang-voices/withdrawal.mp3')));
+    assert.ok(requests.some(url => url.includes('/sihang-voices/assembled.mp3')));
+  } finally { globalThis.fetch = previousFetch; globalThis.OfflineAudioContext = previousAudio; }
 });

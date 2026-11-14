@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createNraAppearance, nraUniformForSquad, sculptNraPoint, createNraAppearanceApplicator, NRA_FACE_NAME } from '../src/nra-appearance.js';
+import { sihangRetreatFormation } from '../src/sihang-roster.js';
 
 test('five whole squad slots use each uniform and replacement generations retain their squad style', () => {
   const squads = Array.from({ length: 10 }, (_, index) => ({ index, id: `friendly-${index}` }));
@@ -12,7 +13,14 @@ test('five whole squad slots use each uniform and replacement generations retain
     }));
     assert.ok(members.every(member => member.uniform === nraUniformForSquad(formation.index)));
   }
-  for (const invalid of [-1, 10, 4.5, NaN, undefined]) assert.throws(() => nraUniformForSquad(invalid), /ten squad slots/);
+  for (const invalid of [-1, 10, 4.5, NaN, undefined]) assert.throws(() => nraUniformForSquad(invalid), /valid squad slot/);
+});
+
+test('the tenth Sihang AI squad has a valid appearance without widening other campaigns', () => {
+  const formation = sihangRetreatFormation(10);
+  assert.equal(createNraAppearance({ id: 'soldier-last', unitId: formation.id, formation }).uniform, 'B');
+  assert.throws(() => nraUniformForSquad(11, 'sihang'), /valid squad slot/);
+  assert.throws(() => nraUniformForSquad(10, 'nanjing'), /valid squad slot/);
 });
 
 test('individual traits are stable per owned identity and distribute across many combinations', () => {

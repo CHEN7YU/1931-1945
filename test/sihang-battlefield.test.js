@@ -4,8 +4,11 @@ import * as THREE from 'three';
 import { createHash } from 'node:crypto';
 import { circleBlocked } from '../src/core.js';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
-import { sihangRetreatGoal } from '../src/sihang-roster.js';
+import { SIHANG_EMPLACEMENTS, sihangRetreatGoal, sihangRetreatVehicleBypass } from '../src/sihang-roster.js';
+import { addSihangBridgeDefenses } from '../src/sihang-bridge-defenses.js';
 import { createSquadRoutes } from '../src/squad-routes.js';
+import { sampledRouteClear } from '../src/infantry-spacing.js';
+import { vehicleCollider } from '../src/entities.js';
 import { sihangParadeExit, sihangParadePassage } from '../src/sihang-formation.js';
 import {
   SIHANG_WAREHOUSE as W, SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_CAPTURE_AREA,
@@ -101,17 +104,46 @@ describe('independent Sihang Warehouse battlefield', () => {
         depth: b.depth, bounds: b.bounds, exit: b.exit })),
       passages: world.town.passages.map(p => ({ id: p.id, groupId: p.groupId, x: p.x, z: p.z,
         width: p.width, axis: p.axis, hingeDirection: p.hingeDirection, openAngle: p.openAngle })) };
-    assert.equal(createHash('sha256').update(JSON.stringify(planar)).digest('hex'),
+    const addedHouses = new Set(['concession-riverside-1', 'concession-riverside-2']);
+    const originalPlanar = { ...planar,
+      houses: planar.houses.filter(house => !addedHouses.has(house.id)),
+      passages: planar.passages.filter(passage => !addedHouses.has(passage.groupId?.replace(/-front-door$/, ''))) };
+    assert.equal(createHash('sha256').update(JSON.stringify(originalPlanar)).digest('hex'),
       'f45daba9de233bf47316bf4afe4c9f9ed03b82701e6d1c5d15eb183a59f2bf34',
-      'Street and doorway contract includes the reserved south parade square and relocated concession shop');
+      'Existing streets, buildings and doorways retain their original contract');
+    assert.equal(createHash('sha256').update(JSON.stringify(planar)).digest('hex'),
+      '9a44fd293ec12c760be545deb14cfd7ee68e8f500481dca097e432e08d8e7cda',
+      'The two added narrow houses and their doorways remain deterministic');
     const layout = { obstacles: world.obstacles, passages: world.town.passages, streets: world.town.streets,
       houses: world.town.buildings.map(b => ({ id: b.id, x: b.x, z: b.z, width: b.width, depth: b.depth,
         height: b.height, bounds: b.bounds, exit: b.exit, damageOpening: b.damageOpening })) };
+    assert.equal(createHash('sha256').update(JSON.stringify(layout.houses.filter(house => !addedHouses.has(house.id)))).digest('hex'),
+      'fa3a6c76b3f30b3931e309826763f68240a36a8025d57adac564c1d7b2a0da3c',
+      'Existing house heights and openings retain their original contract');
     assert.equal(createHash('sha256').update(JSON.stringify(layout)).digest('hex'),
-      '7042f3de4c9971a1050a5a39d63dc0bfd6ce4b545928f8cc004a3f4f61eecce2',
-      'Warehouse geometry and the physical south-bank parade clearance remain deterministic');
+      'e325687ef2b06078d64cd79209f9f15a3c2dfa4c58b60bf6557ec46009a10209',
+      'Warehouse geometry, bridge water collision, gun cover and south-bank buildings remain deterministic');
   });
   beforeEach(() => world.resetCampaign());
+
+  it('keeps the added narrow riverside houses on dry, separated, accessible lots', () => {
+    for (const [id, x] of [['concession-riverside-1', -78], ['concession-riverside-2', -54]]) {
+      const house = world.town.buildings.find(building => building.id === id);
+      assert.ok(house, `${id} must be present`);
+      assert.equal(house.x, x);
+      assert.equal(house.width, 5);
+      assert.equal(house.depth, 6);
+      const bank = Math.max(sihangRiverBounds(house.bounds.minX).southZ,
+        sihangRiverBounds(house.bounds.maxX).southZ);
+      assert.ok(house.bounds.minZ >= bank + 3, `${id} lot must clear the river`);
+      for (const other of world.town.buildings.filter(building => building !== house && building.bounds))
+        assert.ok(!(house.bounds.minX < other.bounds.maxX && house.bounds.maxX > other.bounds.minX &&
+          house.bounds.minZ < other.bounds.maxZ && house.bounds.maxZ > other.bounds.minZ),
+        `${id} overlaps ${other.id}`);
+      assert.equal(world.town.passages.filter(passage => passage.groupId === `${id}-front-door`).length, 2);
+      follow({ x, y: 0, z: house.z - house.depth / 2 - 2 }, { x, y: 0, z: house.z });
+    }
+  });
 
   it('detonation opens a real jagged north-wall breach, preserves the warehouse, and resets its collision and navigation', () => {
     const solids = world.solids.length, obstacles = world.obstacles.length;
@@ -429,6 +461,55 @@ describe('independent Sihang Warehouse battlefield', () => {
     }
   });
 
+  it('keeps the riverside withdrawal columns on dry, unobstructed ground and rejoins the bridge', () => {
+    const scene = new THREE.Scene();
+    const world = makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+    addSihangBridgeDefenses(scene, world, SIHANG_EMPLACEMENTS.filter(spec => spec.retreatCover));
+    for (const index of [0, 1]) {
+      const actor = { index, playerUnit: false, formation: { sihangSlot: 1 }, tactics: {},
+        position: { x: -30, y: 0, z: sihangRiverBounds(-30).northZ - (index ? 3.2 : 2) } };
+      for (let leg = 0; leg < 18; leg++) {
+        const from = actor.position, goal = sihangRetreatGoal(actor);
+        assert.ok(goal.x > from.x, JSON.stringify({ from, goal }));
+        assert.ok(sampledRouteClear(from, goal, (x, z) => !world.isDeepWater(x, z) &&
+          !circleBlocked(x, z, .46, world.obstacles, 0)), JSON.stringify({ from, goal }));
+        actor.position = { ...goal };
+      }
+      const approach = sihangRetreatGoal(actor);
+      assert.deepEqual(approach, { ...sihangBridgePoint(-.2, (index % 5 - 2) * 1.15), y: 0, transit: true });
+      const path = world.elevatedPath(actor.position, approach);
+      assert.ok(path.length && Math.hypot(path.at(-1).x - approach.x, path.at(-1).z - approach.z) <= .8);
+    }
+    const actor = { index: 0, playerUnit: false, formation: { sihangSlot: 0 }, tactics: {},
+      position: { x: 28, y: 0, z: -5 } };
+    assert.deepEqual(sihangRetreatGoal(actor), { ...sihangBridgePoint(-.2, -2.3), y: 0, transit: true });
+    assert.equal(actor.tactics.sihangRiversideWaypoint, undefined);
+    const diverted = { index: 0, playerUnit: false, formation: { sihangSlot: 1 },
+      tactics: { sihangRiversideWaypoint: 1 }, position: { x: 45, y: 0, z: -5 } };
+    assert.equal(sihangRetreatGoal(diverted).x, 46, 'a detour must not send a soldier back to an old waypoint');
+  });
+
+  it('finds a clear bridge approach around a tank blocking the normal retreat goal', () => {
+    const start = { x: 76.5, y: 0, z: -33.6 };
+    const tank = vehicleCollider({ variant: 'chi-ha',
+      position: { x: 74.76838959948437, z: -31.500621994607055 }, heading: 4.7097034657860535 });
+    const obstacles = [...world.obstacles, tank];
+    const clearPoint = p => !world.isDeepWater(p.x, p.z) &&
+      Math.abs(world.walkHeight(p.x, p.z, 0)) <= .3 &&
+      !circleBlocked(p.x, p.z, .46, obstacles.filter(obstacle =>
+        !obstacle.walkable || obstacle.height > world.walkHeight(p.x, p.z, 0) + .25), 0);
+    const clearSegment = (a, b) => sampledRouteClear(a, b, (x, z) => clearPoint({ x, z }));
+    const path = sihangRetreatVehicleBypass(start, tank, clearPoint, clearSegment);
+    assert.ok(path.length > 1, 'the route must go around the vehicle, not through it');
+    let previous = start;
+    for (const waypoint of path) {
+      assert.ok(clearPoint(waypoint) && clearSegment(previous, waypoint));
+      previous = waypoint;
+    }
+    assert.ok(sihangBridgeCoordinates(previous).along > -4.5, 'the route reaches the bridge entrance');
+    assert.deepEqual(sihangRetreatVehicleBypass(start, tank, () => false, () => false), []);
+  });
+
   it('rejects river shortcuts across the full width and routes ground traffic over the only bridge', () => {
     for (const x of [-107, -80, 0, 40, 56, 96, 107]) {
       const bounds = sihangRiverBounds(x);
@@ -450,6 +531,21 @@ describe('independent Sihang Warehouse battlefield', () => {
     world.moveInfantry(edge, sideways.x - center.x, sideways.z - center.z, .42);
     assert.ok(Math.abs(sihangBridgeCoordinates(edge).across) <= SIHANG_BRIDGE.width / 2 - .35,
       'Real diagonal bridge railing blocks a sideways river exit');
+  });
+
+  it('keeps the actual bridge deck clear of river collision near both railings', () => {
+    for (let fraction = .1; fraction <= .9; fraction += .05) for (const lateral of [-3, 3]) {
+      const point = sihangBridgePoint(fraction, lateral);
+      const y = world.walkHeight(point.x, point.z, 0);
+      assert.equal(circleBlocked(point.x, point.z, .42, world.obstacles.filter(o => o.water), y),
+        false, `water collider overlaps bridge deck at ${fraction}, ${lateral}`);
+    }
+    for (let fraction = .1; fraction <= .9; fraction += .05) for (const lateral of [-6, -5, 5, 6]) {
+      const point = sihangBridgePoint(fraction, lateral);
+      if (world.isDeepWater(point.x, point.z))
+        assert.equal(circleBlocked(point.x, point.z, .05, world.obstacles.filter(o => o.water)), true,
+          `river must remain blocked outside the bridge at ${fraction}, ${lateral}`);
+    }
   });
 
   it('keeps 36 varied, animated skinned civilians on actual south-bank routes', () => {
@@ -585,7 +681,12 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.ok(world.sceneArt.city.vegetationTriangles < 4000);
     assert.equal(world.sceneArt.city.signDrawCalls, 1);
     assert.equal(world.sceneArt.city.trees, 7, 'rear-row trees are removed with the cropped blocks');
-    assert.ok(world.town.fortifications.length >= 8);
     assert.equal(world.town.fortifications.filter(point => point.id.startsWith('warehouse-ground-sandbags')).length, 6);
+    for (const x of [-28, -12]) {
+      assert.equal(world.town.fortifications.some(point => point.id === `north-gate-sandbags-${x}`), false);
+      assert.equal(world.obstacles.some(obstacle => obstacle.minX === x - 3 * .75 - .4 &&
+        obstacle.maxX === x - 3 * .75 + .4 && obstacle.minZ === -49.4 - .55 / 2 &&
+        obstacle.maxZ === -49.4 + .55 / 2), false, 'removed machine-gun barricades leave no original collider');
+    }
   });
 });

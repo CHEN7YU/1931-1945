@@ -3,7 +3,8 @@ import * as THREE from 'three';
 const fraction = value => value - Math.floor(value);
 const noise = value => fraction(Math.sin(value * 127.1 + 311.7) * 43758.5453);
 
-export function createBuildingFire(scene, buildings) {
+export function createBuildingFire(scene, buildings, { flames = true } = {}) {
+  if (typeof flames !== 'boolean') throw new TypeError('Building flames option must be boolean');
   const sources = buildings.filter(building => building.damaged || building.ruined).map((building, index) => {
     const width = building.width ?? building.w ?? 6, depth = building.depth ?? building.d ?? 6;
     const phase = noise(index + 1), outskirts = building.near !== undefined;
@@ -127,6 +128,10 @@ export function createBuildingFire(scene, buildings) {
     // Bound GPU time as well as phase arithmetic during long-running sessions.
     time %= 4096;
     for (const { mesh, fire, attributes } of groups) {
+      if (fire && !flames) {
+        mesh.count = 0; mesh.visible = false;
+        continue;
+      }
       let index = 0;
       const put = (x, y, z, width, height, yaw, opacity, kind, seed) => {
         dummy.position.set(x, y, z); dummy.scale.set(width, height, 1);

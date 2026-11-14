@@ -81,9 +81,12 @@ export async function loadSihangVoices() {
   if (!Audio) throw new Error('Browser does not provide Sihang voice decoding');
   const context = new Audio(1, 1, 24000), buffers = {};
   await Promise.all(sihangVoiceClips().filter(clip => clip.cue !== 'memorial').map(async clip => {
-    const response = await fetch(`/assets/audio/sihang-voices/${clip.file}?v=${clip.audioRevision}`,
+    const url = clip.cue === 'withdrawal'
+      ? '/assets/audio/sihang-assembly/withdrawal.wav?v=b20162b7'
+      : `/assets/audio/sihang-voices/${clip.file}?v=${clip.audioRevision}`;
+    const response = await fetch(url,
       { signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw new Error(`Sihang voice ${clip.file}: HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`Sihang voice ${url}: HTTP ${response.status}`);
     buffers[clip.cue] = await context.decodeAudioData(await response.arrayBuffer());
   }));
   return createSihangVoices(buffers);

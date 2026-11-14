@@ -203,7 +203,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       officer.restore();
       actorId = id; observedActor = null; speed = 0; active = 'idle'; motion = null; casualtyPose = null; resets++;
       mixer.stopAllAction();
-      for (const leg of animatedLegs) { leg.rotation.copy(leg.bone.quaternion); leg.position.copy(leg.bone.position); }
+      for (const leg of animatedLegs) { leg.bone.quaternion.copy(leg.rotation); leg.bone.position.copy(leg.position); }
       for (const action of Object.values(actions)) { action.reset().play(); action.paused = true; }
       actions.idle.setEffectiveWeight(1); root.visible = false;
       for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);

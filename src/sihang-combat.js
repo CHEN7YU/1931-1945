@@ -10,16 +10,60 @@ import { circleBlocked } from './core.js';
 import { FormationPlacementError } from './battle-roster.js';
 import { SPAWN_RULES } from './spawns.js';
 
-export function sihangShieldLayout(slot, count) {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= count || count > 20)
+export function sihangShieldLayout(slot, count, sideBias = 'left') {
+  if (!Number.isInteger(count) || count < 1 || !Number.isInteger(slot) || slot < 0 || slot >= count || count > 20)
     throw new RangeError('Invalid demolition shield slot');
-  const role = slot < 2 ? 'front' : slot < 4 ? 'rear' : slot < 10 ? 'left' : slot < 16 ? 'right' : 'roof';
+  if (!['left', 'right'].includes(sideBias)) throw new RangeError('Invalid demolition shield side bias');
+  const front = Math.min(2, count), rear = Math.min(2, count - front);
+  const remaining = count - front - rear;
+  const left = Math[sideBias === 'left' ? 'ceil' : 'floor'](remaining * 3 / 8);
+  const right = Math[sideBias === 'left' ? 'floor' : 'ceil'](remaining * 3 / 8);
+  const roof = remaining - left - right;
+  const edge = Math.max(1.5, (Math.max(left, right) - 1) * .75 + .95);
+  const role = slot < front ? 'front' : slot < front + rear ? 'rear'
+    : slot < front + rear + left ? 'left' : slot < front + rear + left + right ? 'right' : 'roof';
+  const roleIndex = role === 'front' ? slot : role === 'rear' ? slot - front
+    : role === 'left' ? slot - front - rear
+      : role === 'right' ? slot - front - rear - left : slot - front - rear - left - right;
   const mode = role === 'roof' ? 'roof' : 'front';
+  const x = role === 'front' || role === 'rear'
+    ? (roleIndex - ((role === 'front' ? front : rear) - 1) / 2) * 1.1
+    : role === 'left' ? -1.1 : role === 'right' ? 1.1 : 0;
+  const roofSpan = Math.max((roof - 1) * .5, edge - 1.8);
+  const z = role === 'front' ? edge : role === 'rear' ? -edge
+    : role === 'left' || role === 'right'
+      ? (roleIndex - ((role === 'left' ? left : right) - 1) / 2) * 1.5
+      : roof === 1 ? 0 : (roleIndex / (roof - 1) * 2 - 1) * roofSpan;
   return { ...SIHANG_SHIELD_CARRY[mode], offsetX: 0, rotationZ: 0, mode, role,
-    x: slot < 4 ? (slot % 2 - .5) * 1.1 : slot < 16 ? slot < 10 ? -1.1 : 1.1 : 0,
-    z: slot < 4 ? slot < 2 ? 4.7 : -4.7 : slot < 16
-      ? (slot - (slot < 10 ? 4 : 10) - 2.5) * 1.5 : (slot - 17.5) * (5.8 / 3),
+    x, z,
     facing: role === 'left' ? Math.PI / 2 : role === 'right' ? -Math.PI / 2 : role === 'rear' ? 0 : Math.PI };
+}
+
+function assignShieldSlots(squad, anchor) {
+  const choices = ['left', 'right'].map(sideBias => assignShieldSlotsForBias(squad, anchor, sideBias));
+  return choices[1].distance < choices[0].distance ? choices[1] : choices[0];
+}
+
+function assignShieldSlotsForBias(squad, anchor, sideBias) {
+  const assigned = Array(squad.length), available = new Set(squad);
+  let distance = 0;
+  for (const roles of [['front'], ['rear'], ['left', 'right'], ['roof']]) {
+    const pairs = [];
+    for (let slot = 0; slot < squad.length; slot++) {
+      const pose = sihangShieldLayout(slot, squad.length, sideBias);
+      if (!roles.includes(pose.role)) continue;
+      for (const actor of available) pairs.push({ actor, slot,
+        distance: Math.hypot(actor.position.x - anchor.x - pose.x, actor.position.z - anchor.z - pose.z) });
+    }
+    pairs.sort((a, b) => a.distance - b.distance || a.slot - b.slot || a.actor.index - b.actor.index);
+    for (const pair of pairs) if (!assigned[pair.slot] && available.has(pair.actor)) {
+      const { actor, slot } = pair;
+      assigned[slot] = actor;
+      available.delete(actor);
+      distance += pair.distance;
+    }
+  }
+  return { assigned, sideBias, distance };
 }
 
 export function sihangShieldSpawnPositions(spawn, count, obstacles, occupied = [], hostiles = []) {
@@ -70,7 +114,8 @@ export function createSihangCombat(scene, world) {
   const actorFrame = new THREE.Object3D(), desiredPosition = new THREE.Vector3();
   const desiredRotation = new THREE.Quaternion(), vertical = new THREE.Vector3(0, 1, 0);
   let anchor = null, home = null, path = null, nextPathAt = 0, readyAt = 0;
-  let lastPlayer = null, defuser = null, mode = 'turtle', phase = 'advance', living = [], formed = false;
+  let lastPlayer = null, defuser = null, mode = 'turtle', phase = 'advance', living = [], assigned = [], formed = false;
+  let sideBias = 'left';
   const defuseAvailable = (campaign, player) => {
     if (campaign.stage !== 'sihang-defense' || campaign.demolition.state !== 'armed' ||
       player?.health <= 0 || !player || player.vehicleId ||
@@ -98,7 +143,7 @@ export function createSihangCombat(scene, world) {
         if (defuser) defuser.tactics.sihangDefusing = false;
         defuser = null;
         for (const actor of bindings) delete actor.sihangShield;
-        bindings.clear(); goals.clear(); living = []; phase = 'breached'; formed = false;
+        bindings.clear(); goals.clear(); living = []; assigned = []; phase = 'breached'; formed = false;
         for (const slot of shieldSlots) slot.mesh.visible = false;
         charge.visible = light.visible = false;
         return null;
@@ -116,6 +161,10 @@ export function createSihangCombat(scene, world) {
           y: 0, z: squad.reduce((sum, actor) => sum + actor.position.z, 0) / squad.length };
         home = { ...anchor };
       }
+      if (squad.length !== assigned.length || squad.some(actor => !assigned.includes(actor))) {
+        const result = squad.length ? assignShieldSlots(squad, anchor) : { assigned: [], sideBias: 'left' };
+        assigned = result.assigned; sideBias = result.sideBias;
+      }
       if (campaign.northWallBreached || campaign.demolition.state === 'armed' || campaign.stage === 'sihang-retreat') phase = 'withdraw';
       if (phase === 'withdraw' && home && Math.hypot(anchor.x - home.x, anchor.z - home.z) < .5 &&
         !campaign.northWallBreached && campaign.stage === 'sihang-defense' &&
@@ -125,9 +174,9 @@ export function createSihangCombat(scene, world) {
       if (anchor && squad.length && !campaign.outcome && now >= readyAt) {
         const destination = phase === 'withdraw' ? home
           : { x: SIHANG_DEMOLITION_POINT.x, y: 0,
-            z: SIHANG_DEMOLITION_POINT.z - sihangShieldLayout(0, squad.length).z - .7 };
-        const lag = Math.max(...squad.map((actor, index) => {
-          const pose = sihangShieldLayout(index, squad.length);
+            z: SIHANG_DEMOLITION_POINT.z - sihangShieldLayout(0, squad.length, sideBias).z - .7 };
+        const lag = Math.max(...assigned.map((actor, index) => {
+          const pose = sihangShieldLayout(index, squad.length, sideBias);
           return Math.hypot(actor.position.x - anchor.x - pose.x, actor.position.z - anchor.z - pose.z);
         }));
         if ((!path || !path.length) && now >= nextPathAt) {
@@ -144,13 +193,13 @@ export function createSihangCombat(scene, world) {
         }
       }
       for (let index = 0; index < shieldSlots.length; index++) {
-        const entry = shieldSlots[index], actor = squad[index];
+        const entry = shieldSlots[index], actor = assigned[index];
         if (!actor) {
           entry.mesh.visible = false; if (actor) delete actor.sihangShield; continue;
         }
         const rebound = entry.actorId !== actor.id;
         if (rebound) { entry.actorId = actor.id; entry.knockedUntil = 0; }
-        const pose = sihangShieldLayout(index, squad.length);
+        const pose = sihangShieldLayout(index, squad.length, sideBias);
         entry.mesh.geometry = geometries[pose.mode];
         goals.set(actor.id, { x: anchor.x + pose.x, y: 0, z: anchor.z + pose.z, transit: true,
           facing: pose.facing, backwards: phase === 'withdraw' });
@@ -218,7 +267,7 @@ export function createSihangCombat(scene, world) {
       bindings.clear(); goals.clear();
       for (const slot of shieldSlots) { slot.mesh.visible = false; slot.actorId = null; slot.knockedUntil = 0; }
       charge.visible = false; anchor = home = path = lastPlayer = null; nextPathAt = readyAt = 0;
-      mode = 'turtle'; phase = 'advance'; living = []; formed = false;
+      mode = 'turtle'; phase = 'advance'; living = []; assigned = []; sideBias = 'left'; formed = false;
     },
     get formed() { return formed; },
     get snapshot() { return { mode, phase, formed, shields: shieldSlots.filter(slot => slot.mesh.visible).length,

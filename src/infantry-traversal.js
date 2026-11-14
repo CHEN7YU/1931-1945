@@ -26,17 +26,28 @@ function overlaps(position, obstacle, radius) {
 export function landingHeight(position, referenceY, obstacles, heightAt) {
   let height = heightAt(position.x, position.z, referenceY);
   for (const obstacle of obstacles) {
+    if (obstacle.nonSupporting) continue;
     if (!Number.isFinite(obstacle.height) || obstacle.height > referenceY + .025 || obstacle.height <= height) continue;
     if (overlaps(position, obstacle, TRAVERSAL.radius)) height = obstacle.height;
   }
   return height;
 }
 
+export function reservationMovementBlockers(position, radius, obstacles, bodyHeight = TRAVERSAL.bodyHeight) {
+  if (!obstacles.some(obstacle => obstacle.nonSupporting &&
+    circleBlocked(position.x, position.z, radius, [obstacle], position.y, bodyHeight))) return obstacles;
+  return obstacles.filter(obstacle => !obstacle.nonSupporting ||
+    !circleBlocked(position.x, position.z, radius, [obstacle], position.y, bodyHeight));
+}
+
 export function moveAirborne(position, dx, dz, radius, obstacles, bodyHeight = TRAVERSAL.bodyHeight) {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / .04));
+  const reserved = obstacles.some(obstacle => obstacle.nonSupporting);
   for (let i = 0; i < steps; i++) {
-    if (!circleBlocked(position.x + dx / steps, position.z, radius, obstacles, position.y, bodyHeight)) position.x += dx / steps;
-    if (!circleBlocked(position.x, position.z + dz / steps, radius, obstacles, position.y, bodyHeight)) position.z += dz / steps;
+    let blockers = reserved ? reservationMovementBlockers(position, radius, obstacles, bodyHeight) : obstacles;
+    if (!circleBlocked(position.x + dx / steps, position.z, radius, blockers, position.y, bodyHeight)) position.x += dx / steps;
+    blockers = reserved ? reservationMovementBlockers(position, radius, obstacles, bodyHeight) : obstacles;
+    if (!circleBlocked(position.x, position.z + dz / steps, radius, blockers, position.y, bodyHeight)) position.z += dz / steps;
   }
   return position;
 }
@@ -44,14 +55,24 @@ export function moveAirborne(position, dx, dz, radius, obstacles, bodyHeight = T
 export function moveSupported(position, dx, dz, radius, obstacles, heightAt, moveGround,
   bodyHeight = TRAVERSAL.bodyHeight, maxDrop = Infinity) {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / .04));
+  const reserved = obstacles.some(obstacle => obstacle.nonSupporting);
   for (let step = 0; step < steps; step++) {
     const next = { x: position.x + dx / steps, z: position.z + dz / steps };
     const terrain = heightAt(next.x, next.z, position.y);
     const floor = landingHeight(next, position.y, obstacles, heightAt);
     if (position.y - floor > maxDrop) continue;
+    if (position.y - floor > .25 &&
+      position.y - landingHeight(position, position.y, obstacles, heightAt) <= .25 &&
+      obstacles.some(obstacle => obstacle.nonSupporting &&
+        circleBlocked(next.x, next.z, radius, [obstacle], floor, bodyHeight))) continue;
     // Let the body clear a low edge before its support footprint releases.
     const move = position.y - Math.min(terrain, floor) > .25 ? moveAirborne : moveGround;
-    move(position, dx / steps, dz / steps, radius, obstacles, bodyHeight);
+    const blockers = reserved ? reservationMovementBlockers(position, radius, obstacles, bodyHeight) : obstacles;
+    if (blockers !== obstacles && dx && dz) {
+      move(position, dx / steps, 0, radius, blockers, bodyHeight);
+      move(position, 0, dz / steps, radius,
+        reservationMovementBlockers(position, radius, obstacles, bodyHeight), bodyHeight);
+    } else move(position, dx / steps, dz / steps, radius, blockers, bodyHeight);
   }
   return position;
 }
@@ -107,6 +128,33 @@ export function findVault(position, yaw, obstacles, heightAt) {
   return null;
 }
 
+export function findSillClimb(position, yaw, openings, obstacles, heightAt) {
+  if (![position.x, position.y, position.z, yaw].every(Number.isFinite))
+    throw new RangeError('Sill climb requires a finite owned pose');
+  const direction = { x: -Math.sin(yaw), z: -Math.cos(yaw) }, candidates = [];
+  for (const opening of openings) {
+    if (!opening.blown || !['x', 'z'].includes(opening.axis)) continue;
+    const normal = opening.axis === 'x' ? 'z' : 'x';
+    const along = opening.axis;
+    if (Math.abs(direction[normal]) < .7) continue;
+    const distance = (opening[normal] - position[normal]) / direction[normal];
+    if (distance < TRAVERSAL.radius || distance > TRAVERSAL.reach) continue;
+    const end = { x: position.x + direction.x * distance, z: position.z + direction.z * distance };
+    if (Math.abs(end[along] - opening[along]) > opening.width / 2 - TRAVERSAL.radius) continue;
+    const support = landingHeight(end, opening.bottom + .25, obstacles, heightAt);
+    const rise = support - position.y;
+    if (rise < .2 || rise > TRAVERSAL.maxVaultHeight || Math.abs(support - opening.bottom) > .25) continue;
+    end.y = support;
+    const plan = { start: { ...position }, end, top: support + TRAVERSAL.clearance };
+    if (Array.from({ length: 101 }, (_, index) => vaultPosition(plan, index / 100))
+      .some(point => circleBlocked(point.x, point.z, TRAVERSAL.radius, obstacles, point.y, TRAVERSAL.bodyHeight)))
+      continue;
+    candidates.push({ distance, plan });
+  }
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.plan ?? null;
+}
+
 export function beginTraversal(state, position, plan = null) {
   if (state.kind !== 'grounded') return false;
   Object.assign(state, { kind: plan ? 'vaulting' : 'jumping', baseY: position.y,
@@ -114,7 +162,7 @@ export function beginTraversal(state, position, plan = null) {
   return true;
 }
 
-export function advanceTraversal(state, position, dt, obstacles, heightAt) {
+export function advanceTraversal(state, position, dt, obstacles, heightAt, traversalBlockers = []) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Traversal requires finite non-negative time');
   let impact = null;
   const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
@@ -122,7 +170,8 @@ export function advanceTraversal(state, position, dt, obstacles, heightAt) {
     if (state.kind === 'vaulting') {
       const elapsed = Math.min(TRAVERSAL.vaultSeconds, state.elapsed + h);
       const next = vaultPosition(state.plan, elapsed / TRAVERSAL.vaultSeconds);
-      if (circleBlocked(next.x, next.z, TRAVERSAL.radius, obstacles, next.y, TRAVERSAL.bodyHeight)) {
+      if (circleBlocked(next.x, next.z, TRAVERSAL.radius, obstacles, next.y, TRAVERSAL.bodyHeight) ||
+        circleBlocked(next.x, next.z, TRAVERSAL.radius, traversalBlockers, next.y, TRAVERSAL.bodyHeight)) {
         state.kind = 'jumping'; state.velocity = 0; state.plan = null; state.blocked = true;
         continue;
       }

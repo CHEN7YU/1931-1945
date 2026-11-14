@@ -12,7 +12,7 @@ export function createSquadRoutes(heightAt) {
       if (!Number.isFinite(now) || ![actor.position.x, actor.position.y, actor.position.z,
         goal.x, goal.z, goal.y ?? 0].every(Number.isFinite))
         throw new RangeError('Squad routing requires finite endpoints and simulation time');
-      const key = `${actor.formation?.id}:${actor.formation?.generation ?? 0}:${actor.tactics?.preferredStair ?? ''}`;
+      const key = `${actor.formation?.id}:${actor.formation?.generation ?? 0}:${actor.tactics?.preferredStair ?? ''}:${goal.routeGroup ?? ''}`;
       const entries = (routes.get(key) ?? []).filter(entry => now - entry.created < 4);
       const share = eligible(actor) && !goal.assembly && !goal.parade;
       if (share) for (const entry of entries) {

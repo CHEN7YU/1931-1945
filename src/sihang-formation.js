@@ -3,13 +3,16 @@ import { soldierModel } from './world.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { pointSegmentDistance } from './tactics.js';
 import { SIHANG_BATTLE_AREA, SIHANG_WAREHOUSE } from './sihang-layout.js';
+import { SIHANG_RULES } from './sihang-campaign.js';
 
 export const SIHANG_ASSEMBLY_ARRIVAL = .015;
-const ASSEMBLY_FIRST_CENTER = -28, ASSEMBLY_BLOCK_STEP = 5.2;
-const assemblyCenter = slot => slot === 5 ? 17 : ASSEMBLY_FIRST_CENTER + slot * ASSEMBLY_BLOCK_STEP;
+const ASSEMBLY_CENTERS = [-28, -22.8, -17.6, -12.4, -7.2, -2, 3.2, 8.4, 28, 33.2, 17];
+export const SIHANG_ASSEMBLY_APPROACH_MAX_X = Math.max(...ASSEMBLY_CENTERS) + 2.4;
+const assemblyCenter = slot => ASSEMBLY_CENTERS[slot];
 
 export function sihangAssemblyPosition(slot, index) {
-  if (!Number.isInteger(slot) || slot < 0 || slot > 5 || !Number.isInteger(index) || index < 0 || index > 10)
+  if (!Number.isInteger(slot) || slot < 0 || slot > SIHANG_RULES.retreatSquads ||
+    !Number.isInteger(index) || index < 0 || index > 10)
     throw new RangeError('Invalid Sihang assembly position');
   const center = assemblyCenter(slot);
   if (index === 2) return { x: center + 1.6, y: 0, z: -4,
@@ -22,12 +25,12 @@ export function sihangAssemblyPosition(slot, index) {
 
 export function sihangRetreatFollowPosition(actor, player, desired) {
   const { x, y, z } = player.position;
-  const blend = Math.max(0, Math.min(1, (x + 35) / 8, (26 - x) / 8,
+  const blend = Math.max(0, Math.min(1, (x + 35) / 8, (34 - x) / 8,
     z + 8, .5 - z, (.6 - Math.abs(y)) / .3));
   if (!blend) return desired;
   const rank = actor.index - Number(actor.index > player.index);
   const row = { x: x + (rank % 2 ? -1 : 1) * (Math.floor(rank / 2) + 1) * 1.8,
-    z: Math.max(-2.2, Math.min(-1.3, z + 2.5)) };
+    z: -6.7 };
   return { x: desired.x + (row.x - desired.x) * blend,
     z: desired.z + (row.z - desired.z) * blend };
 }
@@ -67,7 +70,7 @@ export function sihangAssemblyApproach(position, goal, blockers = []) {
   if (position.x < SIHANG_WAREHOUSE.minX)
     return [{ ...goal, x: position.x, z: aisleZ }, { ...goal, x: approachX, z: aisleZ },
       { ...goal, x: approachX, z: goal.z }, goal];
-  const entryColumns = Array.from({ length: 6 }, (_, slot) => {
+  const entryColumns = Array.from({ length: SIHANG_RULES.retreatSquads + 1 }, (_, slot) => {
     const center = assemblyCenter(slot);
     return [center - 2.4, center - .8, center + .8, center + 2.4];
   }).flat().sort((a, b) => Math.abs(a - position.x) - Math.abs(b - position.x));

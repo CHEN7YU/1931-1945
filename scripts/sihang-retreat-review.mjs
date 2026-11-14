@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { deployFromMenu } from './game-entry.mjs';
 import { SIHANG_RULES } from '../src/sihang-campaign.js';
 import { SIHANG_ASSEMBLY_ARRIVAL } from '../src/sihang-formation.js';
+import { SIHANG_BRIDGE, sihangBridgeCoordinates } from '../src/sihang-layout.js';
 
 const directory = process.env.ARTIFACT_DIR;
 if (!directory) throw new Error('ARTIFACT_DIR is required');
@@ -14,6 +15,17 @@ const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 
     '--disable-backgrounding-occluded-windows'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = [];
+  if (process.env.REVIEW_SEED !== undefined) {
+    const seed = Number(process.env.REVIEW_SEED);
+    if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new RangeError('Invalid review seed');
+    await page.addInitScript(initial => {
+      let state = initial;
+      Math.random = () => {
+        state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+        return state / 0x100000000;
+      };
+    }, seed);
+  }
   await page.addInitScript(() => {
     const report = console.error;
     window.__nanGeometries = [];
@@ -33,11 +45,118 @@ try {
     }
   });
   await page.route('**/api/performance', route => route.abort());
+  if (process.env.BRIDGE_INTERCEPT_BASELINE === '1') await page.route('**/src/sihang-roster.js*', async route => {
+    const response = await route.fetch();
+    const source = (await response.text()).replace(/\r\n/g, '\n');
+    const current = `  const post = SIHANG_INTERCEPT_POSTS[((actor.formation?.index ?? 0) * 11 + actor.index) % SIHANG_INTERCEPT_POSTS.length];
+  return { x: SIHANG_BRIDGE.northX + post[0], y: 0, z: SIHANG_BRIDGE.northZ + post[1], transit: true };`;
+    const original = `  return { x: SIHANG_BRIDGE.northX - 3 + (actor.index % 3 - 1) * 1.1, y: 0,
+    z: SIHANG_BRIDGE.northZ - 3 - Math.floor(actor.index / 3) % 3 * 1.1, transit: true };`;
+    if (!source.includes(current)) throw new Error('Cannot reconstruct bridge interception baseline');
+    const approach = `  const approach = { x: 50 + actor.index % 11, y: 0,
+    z: -55 - ((actor.formation?.index ?? 0) % 4) * 2, transit: true };
+  if (!tactics.sihangInterceptStaged && Math.hypot(position.x - approach.x, position.z - approach.z) <= 1 &&
+    Math.abs(position.y) < .4)
+    tactics.sihangInterceptStaged = true;
+  if (!tactics.sihangInterceptStaged) {
+    tactics.sihangPursuit = 'approach-interception';
+    return approach;
+  }
+`;
+    if (!source.includes(approach)) throw new Error('Cannot reconstruct bridge approach baseline');
+    const armor = "x: SIHANG_BRIDGE.northX - 13, z: SIHANG_BRIDGE.northZ - 32,";
+    if (!source.includes(armor)) throw new Error('Cannot reconstruct bridge armor baseline');
+    await route.fulfill({ response, body: source.replace(approach, '').replace(current, original)
+      .replace(armor, "x: SIHANG_BRIDGE.northX, z: SIHANG_BRIDGE.northZ - 1.3,") });
+  });
   await page.route('**/src/main.js*', async route => {
     const response = await route.fetch();
-    await route.fulfill({ response, body: await response.text() + `
+    let source = await response.text();
+    if (process.env.MASS_MECHANICAL_BASELINE === '1') {
+      const current = "  for (const cue of cues)\n    if (cue.soldierId === entities.control.soldierId) emitControlEvent('weapon.mechanical', cue);";
+      if (!source.replace(/\r\n/g, '\n').includes(current))
+        throw new Error('Cannot reconstruct mechanical feedback baseline');
+      source = source.replace(/\r\n/g, '\n').replace(current,
+        "  for (const cue of cues) emitControlEvent('weapon.mechanical', cue);");
+    }
+    if (process.env.NATURAL_TRACE_BRIDGE === '1') {
+      const marker = '  presentControlEvents();\n  if (benchmark) telemetry.add(\'effectsMs\', performance.now() - started);';
+      source = source.replace(/\r\n/g, '\n');
+      if (!source.includes(marker)) throw new Error('Cannot instrument continuous bridge positions');
+      source = source.replace(marker, `  presentControlEvents();
+  if (sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && sihangCampaign.counterattack) {
+    const records = window.__bridgeMinima ??= {};
+    for (const subject of [...enemies.filter(actor => actor.health > 0 && !actor.vehicleId),
+      ...[...entities.vehicles.values()].filter(vehicle => vehicle.team === 'enemy' &&
+        vehicle.type === 'tank' && vehicle.health > 0)]) {
+      const distance = Math.hypot(subject.position.x - SIHANG_BRIDGE.northX, subject.position.z - SIHANG_BRIDGE.northZ);
+      if (!records[subject.id] || distance < records[subject.id].distance)
+        records[subject.id] = { id: subject.id, index: subject.index, formation: subject.formation?.index,
+          kind: subject.type === 'tank' ? 'tank' : 'soldier', distance, time, stageElapsed: sihangCampaign.stageElapsed,
+          position: subject.position.toArray(), mode: subject.tactics?.mode ?? subject.ai?.mode,
+          pursuit: subject.tactics?.sihangPursuit, target: subject.target?.id,
+          path: subject.path?.slice(0, 3), pathGoal: subject.pathGoal };
+    }
+  }
+  if (benchmark) telemetry.add('effectsMs', performance.now() - started);`);
+    }
+    if (process.env.NATURAL_TRACE_DEATHS === '1') {
+      const marker = /function finishActorDeath\(actor, source\) \{\r?\n  if \(!actor\.deathProcessed\) \{/;
+      if (!marker.test(source)) throw new Error('Cannot instrument actual soldier deaths');
+      source = source.replace(marker, match => match + `
+    if (actor.friendly) (window.__retreatDeaths ??= []).push({
+      id: actor.id, time, stageElapsed: sihangCampaign?.stageElapsed,
+      wave: sihangCampaign?.withdrawalWave?.number, position: actor.position.toArray(),
+      mode: actor.tactics.mode, source: source && typeof source === 'object' ? { ...source } : null,
+      lastHit: actor.lastHit ? { ...actor.lastHit } : null,
+    });`);
+    }
+    if (process.env.BRIDGE_OBSTACLE_REVIEW_ONLY === '1') {
+      const marker = /for \(const transport of entities\.vehicles\.values\(\)\) \{\r?\n    if \(transport\.health <= 0\)/;
+      const start = source.indexOf('function updateVehicles(dt) {');
+      if (start < 0 || !marker.test(source.slice(start))) throw new Error('Bridge probe cannot freeze its selected tank');
+      source = source.slice(0, start) + source.slice(start).replace(marker, `for (const transport of entities.vehicles.values()) {
+    if (window.__bridgeProbeTank === transport.id) {
+      for (const seat of transport.seats) {
+        const occupant = entities.soldiers.get(seat.occupantId);
+        if (occupant) occupant.position.copy(transport.position);
+      }
+      continue;
+    }
+    if (transport.health <= 0)`);
+    }
+    if (process.env.WAVE_COVER_SPACING_REVIEW_ONLY === '1') {
+      const marker = '  const steeringNeighbors = withdrawalCoverEgress ? neighbors.filter(other => other.friendly) : neighbors;';
+      if (!source.includes(marker)) throw new Error('Cannot instrument cover egress traffic neighbors');
+      source = source.replace(marker, marker + `
+  if (withdrawalCoverEgress && actor.id === window.__coverSpacingActor)
+    window.__coverSpacingNeighbors = { all: neighbors.map(other => ({ id: other.id, friendly: other.friendly })),
+      steering: steeringNeighbors.map(other => other.id) };`);
+    }
+    await route.fulfill({ response, body: source + `
       window.retreatReview = {
         restart() { setGameState('menu'); beginMatch(); },
+        massMechanicalCueStep() {
+          setGameState('pause'); missionBriefing.hide(); keys.clear();
+          const player = controlledSoldier(entities);
+          const actors = [...entities.soldiers.values()].filter(actor =>
+            actor.health > 0 && actor.hasFirearm !== false && !actor.vehicleId &&
+            !actor.emplacementWeaponId && !actor.dying && !actor.fatalFall && !actor.blastReaction &&
+            !infantryWeaponProfile(actor.rifle).automatic);
+          if (!actors.includes(player) || actors.length < 65)
+            throw new Error('Mass mechanical cue fixture requires a controlled rifle and at least 64 AI rifles');
+          for (const actor of actors) {
+            actor.rifle.action = 'idle'; actor.rifle.elapsed = 0; actor.rifle.queuedReload = false;
+            actor.rifle.ammo = infantryWeaponProfile(actor.rifle).magazine - 1;
+            if (!reloadRifle(actor.rifle)) throw new Error('Fixture rifle failed to start its owned reload');
+          }
+          controlEvents.clear();
+          setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.15, time);
+          const events = controlEvents.snapshot;
+          setGameState('pause');
+          return { player: player.id, actors: actors.length,
+            advanced: actors.filter(actor => actor.rifle.elapsed > 0).length, events };
+        },
         defenseStart() {
           setGameState('pause'); missionBriefing.hide(); keys.clear();
           const formation = formations.find(f => f.id === 'enemy-0');
@@ -162,7 +281,13 @@ try {
           renderer.render(scene, camera);
           return renderer.domElement.toDataURL('image/png').split(',')[1];
         },
-        regroupStart(partial = false) {
+        captureNaturalCrowd() {
+          const position = camera.position.clone(), rotation = camera.quaternion.clone();
+          const image = this.capture([25, 16, 8], [14, 0, -4]);
+          camera.position.copy(position); camera.quaternion.copy(rotation); camera.updateMatrixWorld(true);
+          return image;
+        },
+        regroupStart(partial = false, preservePositions = false) {
           setGameState('pause'); missionBriefing.hide(); keys.clear();
           for (const actor of friendlyForces) actor.health = 100000;
           if (partial) {
@@ -176,7 +301,7 @@ try {
             sihangCampaign.deployed = SIHANG_RULES.troopLimit;
           }
           for (const actor of friendlyAI) {
-            actor.position.set(18, SIHANG_WAREHOUSE.floorHeight, -31);
+            if (!preservePositions) actor.position.set(18, SIHANG_WAREHOUSE.floorHeight, -31);
             actor.rifle.ammo = 0;
           }
           const enemy = enemies.find(actor => !actor.vehicleId && !actor.formation.sihangDemolition);
@@ -201,8 +326,10 @@ try {
           updateSihangMission(.05);
           return this.regroupSnapshot();
         },
-        regroupStep(seconds) {
+        regroupStep(seconds, holdAssemblyDeadline = false) {
           for (let i = 0; i < Math.round(seconds / .05) && !sihangCampaign.assemblyReleased; i++) {
+            if (holdAssemblyDeadline && sihangCampaign.waveAssemblyAt !== null)
+              sihangCampaign.waveAssemblyAt = sihangCampaign.elapsed;
             setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
             if (sihangCampaign.assemblyReleased) this.assemblyVoice = { ...sihangVoices?.snapshot };
             for (const actor of friendlyAI) if (!this.oldAI.includes(actor.id)) {
@@ -231,6 +358,7 @@ try {
             saved: sihangCampaign.evacuatedIds.length, counterattack: sihangCampaign.counterattack,
             assemblyVoice: this.assemblyVoice,
             oldPresent: friendlyAI.filter(actor => this.oldAI.includes(actor.id)).map(actor => actor.id),
+            originalAI: [...this.oldAI],
             keptAI: this.keptAI, births: Object.values(this.births),
             playerEquipment: allies.map(actor => ({ id: actor.id, health: actor.health,
               ammo: actor.rifle.ammo, grenades: actor.grenades.ammo })),
@@ -253,7 +381,7 @@ try {
         },
         waveFixtureStart(liveCombat = false) {
           this.regroupStart();
-          this.regroupStep(10);
+          this.regroupStep(30);
           for (const actor of friendlyForces.filter(actor => actor.health > 0)) {
             const goal = sihangActorAssemblyGoal(actor);
             actor.position.set(goal.x, goal.y, goal.z);
@@ -265,10 +393,10 @@ try {
           if (!sihangCampaign.withdrawalWave) throw new Error('Wave fixture requires a complete first wave');
           return this.waveFixtureSnapshot();
         },
-        waveFixtureContactStart() {
+        waveFixtureContactStart(cover = false, distance = 10) {
           this.waveFixtureStart();
           const wave = sihangCampaign.withdrawalWave;
-          const slot = wave.squads.findIndex((ids, index) => index !== wave.coverSlot && ids.length);
+          const slot = cover ? wave.coverSlot : wave.squads.findIndex((ids, index) => index !== wave.coverSlot && ids.length);
           const actor = entities.soldiers.get(wave.squads[slot]?.find(id => entities.soldiers.get(id)?.health > 0));
           const enemy = enemies.find(candidate => candidate.health > 0 && !candidate.vehicleId &&
             !candidate.formation.sihangDemolition && candidate.hasFirearm !== false);
@@ -279,7 +407,7 @@ try {
           let found = null;
           for (const back of [18, 22, 26, 30, 34, 38]) for (const lateral of [0, -2, 2, -4, 4]) {
             const x = goal.x - dx * back - dz * lateral, z = goal.z - dz * back + dx * lateral;
-            const targetX = x + dx * 10, targetZ = z + dz * 10;
+            const targetX = x + dx * distance, targetZ = z + dz * distance;
             if (world.isDeepWater(x, z) || world.isDeepWater(targetX, targetZ)) continue;
             const y = world.walkHeight(x, z, goal.y ?? 0), targetY = world.walkHeight(targetX, targetZ, y);
             if (circleBlocked(x, z, .42, movementObstacles(x, z), y) ||
@@ -314,9 +442,47 @@ try {
           actor.tactics.sihangTrafficYield = null;
           actor.path = actor.pathGoal = null;
           actor.heading = Math.atan2(actor.position.x - enemy.position.x, actor.position.z - enemy.position.z);
+          if (cover) {
+            wave.covering = true;
+            for (const other of enemies) if (other !== enemy && !other.vehicleId) other.health = 0;
+            actor.target = null; actor.nextThink = 0;
+            actor.tactics.lastSeen = actor.tactics.threatId = actor.tactics.threatSense = null;
+          }
           actorGrid.rebuild(allForces);
           this.waveContact = { actor: actor.id, enemy: enemy.id, direction: { x: dx, z: dz } };
           return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureCoverSpacing() {
+          this.waveFixtureStart();
+          sihangCampaign.withdrawalWave.covering = true;
+          this.waveFixtureResolveMain();
+          const wave = sihangCampaign.withdrawalWave;
+          if (wave.phase !== 'cover') throw new Error('Cover spacing fixture requires cover withdrawal');
+          const cover = wave.squads[wave.coverSlot].map(id => entities.soldiers.get(id))
+            .filter(actor => actor?.health > 0);
+          const [actor, peer] = cover;
+          const enemy = enemies.find(other => other.health > 0 && !other.vehicleId);
+          if (!actor || !peer || !enemy) throw new Error('Cover spacing fixture needs a soldier, ally and enemy');
+          const point = { x: 45, z: -16 }, friendPoint = { x: 45, z: -15 },
+            enemyPoint = { x: 46, z: -16 };
+          for (const p of [point, friendPoint, enemyPoint])
+            if (world.isDeepWater(p.x, p.z) || circleBlocked(p.x, p.z, .43, movementObstacles(p.x, p.z), 0))
+              throw new Error('Cover spacing fixture requires clear dry positions');
+          actor.position.set(point.x, 0, point.z);
+          peer.position.set(friendPoint.x, 0, friendPoint.z);
+          enemy.position.set(enemyPoint.x, 0, enemyPoint.z);
+          for (const unit of [actor, peer, enemy]) {
+            unit.health = 100000; unit.nextThink = time + 100000;
+            unit.target = null; unit.tactics.lastSeen = null; unit.nextFire = time + 100000;
+          }
+          const goal = sihangRetreatGoal(actor);
+          actor.path = [{ ...goal }]; actor.pathGoal = goal;
+          actor.tactics.traffic = { waitSeconds: 3, reason: 'no-yield-space', side: 1,
+            progress: { x: point.x, z: point.z }, direction: { x: 1, z: 0 }, yieldPoint: null, until: 0 };
+          window.__coverSpacingActor = actor.id;
+          setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time); setGameState('pause');
+          return { phase: wave.phase, actor: actor.id, peer: peer.id, enemy: enemy.id,
+            neighbors: window.__coverSpacingNeighbors ?? null };
         },
         waveFixtureContactSetDistance(distance) {
           const actor = entities.soldiers.get(this.waveContact.actor), enemy = entities.soldiers.get(this.waveContact.enemy);
@@ -330,17 +496,112 @@ try {
           actorGrid.rebuild(allForces);
           return this.waveFixtureContactSnapshot();
         },
-        waveFixtureContactStep(seconds) {
+        waveFixtureContactSwitchTarget() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          const previous = entities.soldiers.get(this.waveContact.enemy);
+          const next = enemies.find(candidate => candidate !== previous && candidate.health > 0 &&
+            !candidate.vehicleId && !candidate.formation.sihangDemolition && candidate.hasFirearm !== false);
+          if (!next) throw new Error('Target-switch fixture requires a second living infantry target');
+          next.position.copy(previous.position);
+          previous.position.set(previous.spawnPosition.x,
+            world.walkHeight(previous.spawnPosition.x, previous.spawnPosition.z, 0), previous.spawnPosition.z);
+          next.health = 100000;
+          cancelAIMelee(actor);
+          actor.target = null;
+          actor.nextThink = 0;
+          actor.heading = Math.atan2(actor.position.x - next.position.x, actor.position.z - next.position.z);
+          this.waveContact.enemy = next.id;
+          actorGrid.rebuild(allForces);
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureContactBreak() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          for (const enemy of enemies) if (enemy.health > 0 && !enemy.vehicleId &&
+            Math.hypot(actor.position.x - enemy.position.x, actor.position.z - enemy.position.z) <= 12) {
+            enemy.position.set(enemy.spawnPosition.x,
+              world.walkHeight(enemy.spawnPosition.x, enemy.spawnPosition.z, 0), enemy.spawnPosition.z);
+            enemy.nextThink = time + 100000;
+          }
+          actor.target = null; actor.nextThink = time + 100000;
+          actorGrid.rebuild(allForces);
+          setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time); setGameState('pause');
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureContactReappear() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          const enemy = entities.soldiers.get(this.waveContact.enemy);
+          const x = actor.position.x + this.waveContact.direction.x * 10;
+          const z = actor.position.z + this.waveContact.direction.z * 10;
+          enemy.position.set(x, world.walkHeight(x, z, actor.position.y), z);
+          actor.target = null; actor.nextThink = 0;
+          actor.heading = Math.atan2(actor.position.x - x, actor.position.z - z);
+          actorGrid.rebuild(allForces);
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureCoverBlock() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          const enemy = entities.soldiers.get(this.waveContact.enemy);
+          const blocker = friendlyForces.find(other => other !== actor && other !== controlledSoldier(entities) &&
+            other.health > 0 && !other.vehicleId);
+          if (!blocker) throw new Error('Cover fixture requires a living friendly blocker');
+          this.coverBlocker = blocker.id;
+          blocker.stance = 'standing'; blocker.firingPose = null;
+          blocker.position.set((actor.position.x + enemy.position.x) / 2, actor.position.y,
+            (actor.position.z + enemy.position.z) / 2);
+          actorGrid.rebuild(allForces);
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureCoverRelease() {
+          const blocker = entities.soldiers.get(this.coverBlocker);
+          blocker.position.set(blocker.spawnPosition.x,
+            world.walkHeight(blocker.spawnPosition.x, blocker.spawnPosition.z, 0), blocker.spawnPosition.z);
+          this.coverBlocker = null;
+          actorGrid.rebuild(allForces);
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureCoverAmmo(ammo, reserve) {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          actor.rifle.ammo = ammo; actor.rifle.reserve = reserve;
+          actor.rifle.action = 'idle';
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureCoverHideTarget() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          const enemy = entities.soldiers.get(this.waveContact.enemy);
+          const eye = soldierEyePosition(actor), from = new THREE.Vector3(eye.x, eye.y, eye.z);
+          let found = false;
+          for (let dx = -35; dx <= 35 && !found; dx += 5) for (let dz = -35; dz <= 35; dz += 5) {
+            const x = actor.position.x + dx, z = actor.position.z + dz, distance = Math.hypot(dx, dz);
+            if (distance < 18 || distance > 40 || world.isDeepWater(x, z)) continue;
+            const y = world.walkHeight(x, z, actor.position.y);
+            if (Math.abs(y - actor.position.y) > .3 || circleBlocked(x, z, .42, movementObstacles(x, z), y)) continue;
+            enemy.position.set(x, y, z);
+            if (!visibleTargetPoint(enemy, point => hasLine(from, point, 75))) { found = true; break; }
+          }
+          if (!found) throw new Error('Cover fixture requires a real wall hiding its target');
+          actor.target = enemy; actor.nextThink = time + 100000;
+          actorGrid.rebuild(allForces);
+          return this.waveFixtureContactSnapshot();
+        },
+        waveFixtureContactStep(seconds, naturalObservation = false) {
           const actor = entities.soldiers.get(this.waveContact.actor);
           const enemy = entities.soldiers.get(this.waveContact.enemy), heldPosition = enemy.position.clone();
           for (let i = 0; i < Math.round(seconds / .05); i++) {
+            if (this.coverBlocker) {
+              const blocker = entities.soldiers.get(this.coverBlocker);
+              blocker.position.set((actor.position.x + heldPosition.x) / 2, actor.position.y,
+                (actor.position.z + heldPosition.z) / 2);
+              actorGrid.rebuild(allForces);
+            }
             for (const hostile of enemies) hostile.nextFire = time + 1000000;
             for (const weapon of entities.weapons.values()) weapon.nextShot = time + 1000000;
             enemy.position.copy(heldPosition); enemy.path = enemy.pathGoal = null;
             enemy.target = null; enemy.nextThink = time + 100000;
-            actor.target = enemy; actor.nextThink = time + 100000;
-            rememberThreat(actor.tactics, { x: heldPosition.x, y: heldPosition.y + 1.1, z: heldPosition.z },
-              time, 'person', 'vision', enemy.id);
+            if (!naturalObservation) {
+              actor.target = enemy; actor.nextThink = time + 100000;
+              rememberThreat(actor.tactics, { x: heldPosition.x, y: heldPosition.y + 1.1, z: heldPosition.z },
+                time, 'person', 'vision', enemy.id);
+            }
             setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
             enemy.position.copy(heldPosition); actorGrid.rebuild(allForces);
           }
@@ -359,6 +620,7 @@ try {
             assemblyReleased: sihangCampaign.assemblyReleased,
             retreatAssembled: actor.formation.retreatAssembled, ceasefire: sihangCeasefire(actor),
             clearShotLine: Boolean(clearAIRifleLine(actor, new THREE.Vector3(eye.x, eye.y, eye.z), aim)),
+            visible: Boolean(visibleTargetPoint(enemy, point => hasLine(new THREE.Vector3(eye.x, eye.y, eye.z), point, 75))),
             contactEligible: Boolean(actor.friendly && sihangCampaign.stage === 'sihang-retreat' &&
               actor.tactics.threatSense === 'vision' && actor.tactics.threatId === enemy.id &&
               Math.hypot(actor.position.x - enemy.position.x, actor.position.z - enemy.position.z) <= 12 &&
@@ -366,10 +628,233 @@ try {
             targetKind: enemy.targetKind, canDamage: canWeaponDamageTarget('rifle', enemy.targetKind),
             canTrack: canRiflemanTrackTarget(enemy.targetKind),
             engineer: Boolean(actor.engineer), playerUnit: actor.playerUnit,
-            mode: actor.tactics.mode, ammo: actor.rifle.ammo, rifleShots: actor.rifle.shots,
+            contact: actor.tactics.sihangRetreatContact,
+            cachedContacts: [...(actor.tactics.sihangRetreatContacts?.keys() ?? [])],
+            mode: actor.tactics.mode, ammo: actor.rifle.ammo, rifleShots: actor.rifle.shots, nextFire: actor.nextFire,
+            coverGoalDistance: Math.hypot(actor.position.x -
+              sihangDefenseGoal(Math.max(1, Math.min(3, actor.formation.index)), actor.index).x,
+            actor.position.z - sihangDefenseGoal(Math.max(1, Math.min(3, actor.formation.index)), actor.index).z),
             rifleBlocked: actor.aiRifle.blocked, stance: actor.stance,
             firingPose: actor.firingPose, speed: actor.locomotion.speed,
             dadaoSwings: actor.dadao?.swings ?? 0, dadaoHits: actor.dadao?.hits ?? 0 };
+        },
+        surroundedStart() {
+          this.waveFixtureContactStart();
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          const candidates = enemies.filter(enemy => enemy.health > 0 && !enemy.vehicleId &&
+            !enemy.formation.sihangDemolition && enemy.hasFirearm !== false);
+          const positions = [];
+          for (let i = 0; i < 8; i++) {
+            const angle = i * Math.PI / 4;
+            const x = actor.position.x + Math.cos(angle) * 1.2;
+            const z = actor.position.z + Math.sin(angle) * 1.2;
+            if (Math.abs(world.walkHeight(x, z, actor.position.y) - actor.position.y) < .1 &&
+              !circleBlocked(x, z, .42, movementObstacles(x, z), actor.position.y))
+              positions.push({ x, y: actor.position.y, z });
+          }
+          if (positions.length !== 8 || candidates.length < 8 || !actor.dadao)
+            throw new Error('Surrounded fixture requires eight clear positions and a Dadao soldier');
+          this.surrounding = candidates.slice(0, 8).map((enemy, index) => {
+            enemy.position.set(positions[index].x, positions[index].y, positions[index].z);
+            enemy.health = 100000; enemy.target = null; enemy.nextThink = time + 100000;
+            return { id: enemy.id, position: enemy.position.clone() };
+          });
+          actor.health = 100000; actor.nextThink = time; actor.target = null;
+          actor.tactics.sihangRetreatContact = null; actor.tactics.traffic = null;
+          actor.path = actor.pathGoal = null; cancelAIMelee(actor);
+          actorGrid.rebuild(allForces);
+          return this.surroundedSnapshot();
+        },
+        surroundedStep(seconds) {
+          for (let i = 0; i < Math.round(seconds / .05); i++) {
+            for (const actor of allForces) {
+              if (actor.friendly && actor.health > 0) actor.health = 100000;
+              if (!actor.friendly) actor.nextFire = time + 1000000;
+              if (actor.friendly && actor.id !== this.waveContact.actor) actor.nextFire = time + 1000000;
+            }
+            for (const weapon of entities.weapons.values()) weapon.nextShot = time + 1000000;
+            for (const held of this.surrounding) {
+              const enemy = entities.soldiers.get(held.id);
+              enemy.position.copy(held.position); enemy.health = 100000;
+              enemy.target = null; enemy.nextThink = time + 100000;
+            }
+            actorGrid.rebuild(allForces);
+            setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
+          }
+          setGameState('pause');
+          return this.surroundedSnapshot();
+        },
+        surroundedRelease() {
+          for (const held of this.surrounding) entities.soldiers.get(held.id).health = 0;
+          this.surrounding = [];
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          actor.target = null; actor.nextThink = time;
+          actorGrid.rebuild(allForces);
+          return this.surroundedSnapshot();
+        },
+        surroundedSnapshot() {
+          const actor = entities.soldiers.get(this.waveContact.actor);
+          return { elapsed: sihangCampaign.elapsed, position: actor.position.toArray(),
+            mode: actor.tactics.mode, traffic: actor.tactics.traffic,
+            contact: actor.tactics.sihangRetreatContact, target: actor.target?.id ?? null,
+            swings: actor.dadao.swings, hits: actor.dadao.hits,
+            enemies: this.surrounding.map(held => ({ id: held.id, position: held.position.toArray() })) };
+        },
+        bridgeProbeStart(replay = false, wreck = false) {
+          this.waveFixtureStart();
+          const wave = sihangCampaign.withdrawalWave;
+          const actor = wave.squads.flatMap((ids, slot) => slot === wave.coverSlot ? [] : ids)
+            .map(id => entities.soldiers.get(id)).find(member => member?.index % 5 === (replay ? 3 : 4));
+          const tank = [...entities.vehicles.values()].find(vehicle =>
+            vehicle.type === 'tank' && vehicle.team === 'enemy' && vehicle.health > 0);
+          if (!actor || !tank) throw new Error('Bridge probe requires a withdrawal soldier and enemy tank');
+          const goal = sihangRetreatGoal(actor);
+          if (replay) {
+            tank.position.set(74.76838959948437, 0, -31.500621994607055);
+            tank.heading = 4.7097034657860535;
+          } else tank.position.set(goal.x, 0, goal.z + .65);
+          tank.speed = 0;
+          if (wreck) tank.health = 0;
+          window.__bridgeProbeTank = tank.id;
+          for (const enemy of enemies) if (!enemy.vehicleId) enemy.health = 0;
+          actor.position.set(replay ? 76.5 : 72, 0, replay ? -33.6 : -34);
+          actor.path = actor.pathGoal = null;
+          actor.nextPath = 0; actor.tactics.traffic = null;
+          this.bridgeProbe = { actor: actor.id, tank: tank.id, tankPosition: tank.position.clone(), overlaps: 0 };
+          actorGrid.rebuild(allForces);
+          return this.bridgeProbeSnapshot();
+        },
+        bridgeWorkStart(withWork = true, profile = 'maxim24', group = false) {
+          this.waveFixtureStart();
+          const wave = sihangCampaign.withdrawalWave;
+          const builder = friendlyForces.find(actor => !actor.playerUnit && actor.health > 0 &&
+            actor.engineer?.materials[profile]);
+          const candidates = wave.squads.flatMap((ids, slot) => slot === wave.coverSlot ? [] : ids)
+            .map(id => entities.soldiers.get(id)).filter(member => member?.health > 0 &&
+              member !== builder && member.index % 5 === 3);
+          const actors = candidates.slice(0, group ? 4 : 1), actor = actors[0];
+          if (!builder || !actor) throw new Error('Bridge work probe needs an engineer and a retreating soldier');
+          if (group && actors.length !== 4) throw new Error('Bridge work group needs four soldiers');
+          const heading = Math.atan2(SIHANG_BRIDGE.northX - SIHANG_BRIDGE.southX,
+            SIHANG_BRIDGE.northZ - SIHANG_BRIDGE.southZ);
+          const site = sihangBridgePoint(.5);
+          const bx = site.x + Math.sin(heading) * ENGINEER.reach;
+          const bz = site.z + Math.cos(heading) * ENGINEER.reach;
+          const previous = builder.position.clone();
+          let obstacles = [];
+          if (withWork) {
+            builder.position.set(bx, world.walkHeight(bx, bz, 0), bz);
+            builder.engineer.heading = heading;
+            builder.engineer.selected = profile;
+            selectConstructionBlueprint(builder.engineer.construction, builder.id);
+            const count = engineerWorks.length;
+            for (let i = 0; i < 1000 && engineerWorks.length === count; i++)
+              updateEngineerConstruction(builder, .05, true);
+            if (engineerWorks.length !== count + 1)
+              throw new Error('Bridge work construction failed: ' + builder.engineer.construction.blockedReason);
+            obstacles = engineerWorks.at(-1).obstacles;
+            builder.position.copy(previous);
+          }
+          for (const enemy of enemies) if (!enemy.vehicleId) enemy.health = 0;
+          for (const [index, member] of actors.entries()) {
+            member.position.set(76.5 - index * 1.1, 0, -33.6 - index * .95);
+            member.path = member.pathGoal = null; member.nextPath = 0; member.tactics.traffic = null;
+          }
+          this.bridgeWork = { actor, actors, obstacles,
+            overlaps: 0, crossed: new Set() };
+          actorGrid.rebuild(allForces);
+          return this.bridgeWorkSnapshot();
+        },
+        bridgeWorkStep(seconds) {
+          for (let i = 0; i < Math.round(seconds / .05); i++) {
+            for (const actor of friendlyForces) if (actor.health > 0) actor.health = 100000;
+            for (const weapon of entities.weapons.values()) weapon.nextShot = time + 1000000;
+            setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
+            for (const actor of this.bridgeWork.actors) {
+              if (circleBlocked(actor.position.x, actor.position.z, .42, this.bridgeWork.obstacles, actor.position.y))
+                this.bridgeWork.overlaps++;
+              if (sihangBridgeCoordinates(actor.position).along > SIHANG_BRIDGE.length)
+                this.bridgeWork.crossed.add(actor.id);
+            }
+          }
+          setGameState('pause');
+          return this.bridgeWorkSnapshot();
+        },
+        bridgeWorkSnapshot() {
+          const actor = this.bridgeWork.actor;
+          return { time, position: actor.position.toArray(), mode: actor.tactics.mode,
+            overlaps: this.bridgeWork.overlaps, crossed: [...this.bridgeWork.crossed],
+            positions: this.bridgeWork.actors.map(member => ({ id: member.id, position: member.position.toArray() })),
+            goal: sihangRetreatGoal(actor),
+            pathReason: actor.tactics.pathReason, path: actor.path?.slice(0, 3) };
+        },
+        bridgeProbeStep(seconds) {
+          const tank = entities.vehicles.get(this.bridgeProbe.tank);
+          for (let i = 0; i < Math.round(seconds / .05); i++) {
+            tank.position.copy(this.bridgeProbe.tankPosition); tank.speed = 0;
+            for (const actor of friendlyForces) if (actor.health > 0) actor.health = 100000;
+            for (const weapon of entities.weapons.values()) weapon.nextShot = time + 1000000;
+            setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
+            tank.position.copy(this.bridgeProbe.tankPosition);
+            const actor = entities.soldiers.get(this.bridgeProbe.actor);
+            if (circleBlocked(actor.position.x, actor.position.z, .42, [vehicleCollider(tank)], actor.position.y))
+              this.bridgeProbe.overlaps++;
+          }
+          tank.position.copy(this.bridgeProbe.tankPosition);
+          setGameState('pause');
+          return this.bridgeProbeSnapshot();
+        },
+        bridgeProbeGraph() {
+          const actor = entities.soldiers.get(this.bridgeProbe.actor);
+          const collider = vehicleCollider(entities.vehicles.get(this.bridgeProbe.tank));
+          const points = [{ x: actor.position.x, z: actor.position.z, kind: 'start' }];
+          for (const margin of [.8, 1.4, 2.2]) for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+            const lx = sx * (collider.hx + margin), lz = sz * (collider.hz + margin);
+            points.push({ x: collider.cx + collider.cos * lx + collider.sin * lz,
+              z: collider.cz - collider.sin * lx + collider.cos * lz, kind: 'corner' });
+          }
+          for (const along of [-3, -2, -1]) for (const lateral of [-3, -2, -1, 0, 1, 2, 3])
+            points.push({ ...sihangBridgePoint(along / SIHANG_BRIDGE.length, lateral), kind: 'entrance' });
+          const valid = points.map((point, index) => index === 0 ||
+            !infantryNavigationBlocked(point, actor.position, .46, actor) &&
+            Math.abs(world.walkHeight(point.x, point.z, actor.position.y) - actor.position.y) <= .3);
+          const costs = points.map(() => Infinity), paths = points.map(() => null), done = new Set();
+          costs[0] = 0; paths[0] = [points[0]];
+          while (done.size < points.length) {
+            let current = -1;
+            for (let i = 0; i < points.length; i++)
+              if (!done.has(i) && valid[i] && (current < 0 || costs[i] < costs[current])) current = i;
+            if (current < 0 || !Number.isFinite(costs[current])) break;
+            if (points[current].kind === 'entrance') return { route: paths[current], cost: costs[current] };
+            done.add(current);
+            for (let i = 1; i < points.length; i++) {
+              if (!valid[i] || done.has(i)) continue;
+              const distance = Math.hypot(points[i].x - points[current].x, points[i].z - points[current].z);
+              if (costs[current] + distance >= costs[i]) continue;
+              if (!sampledRouteClear(points[current], points[i], (x, z) =>
+                !infantryNavigationBlocked({ x, z }, actor.position, .46, actor) &&
+                Math.abs(world.walkHeight(x, z, actor.position.y) - actor.position.y) <= .3)) continue;
+              costs[i] = costs[current] + distance;
+              paths[i] = [...paths[current], points[i]];
+            }
+          }
+          return { route: null, valid: points.filter((_, i) => valid[i]) };
+        },
+        bridgeProbeSnapshot() {
+          const actor = entities.soldiers.get(this.bridgeProbe.actor);
+          const tank = entities.vehicles.get(this.bridgeProbe.tank);
+          const goal = sihangRetreatGoal(actor);
+          return { time, position: actor.position.toArray(), goal, selectedGoal: formationDestination(actor, true),
+            overlaps: this.bridgeProbe.overlaps, mode: actor.tactics.mode,
+            path: actor.path?.slice(0, 3), blocked: actor.tactics.blockedBy, traffic: actor.tactics.traffic,
+            tank: { position: tank.position.toArray(), health: tank.health },
+            goalBlocked: infantryNavigationBlocked(goal, actor.position, .43, actor),
+            lanes: [-3, -2, -1, 0, 1, 2, 3].map(lateral => {
+              const point = { ...sihangBridgePoint(-3 / SIHANG_BRIDGE.length, lateral), y: 0 };
+              return { lateral, point, blocked: infantryNavigationBlocked(point, actor.position, .43, actor),
+                routeClear: sampledRouteClear(actor.position, point, (x, z) =>
+                  !infantryNavigationBlocked({ x, z }, actor.position, .43, actor)) };
+            }) };
         },
         pursuitReviewStart() {
           this.waveFixtureStart();
@@ -412,6 +897,7 @@ try {
           if (!shooter || !this.nightDischarger) throw new Error('Night fixture requires a rifleman and a discharger');
           for (const actor of allForces) if (actor !== shooter && actor !== target) actor.health = 0;
           shooter.tactics.sihangEnteredWarehouse = true;
+          shooter.tactics.sihangInterceptStaged = true;
           const goal = sihangPursuitGoal(shooter);
           shooter.position.set(goal.x, 0, goal.z);
           shooter.tactics.stationCooldownUntil = time + 100000;
@@ -441,6 +927,17 @@ try {
           shooter.nextThink = 0;
           return this.nightFireSnapshot();
         },
+        bridgeInterceptFireStart() {
+          this.nightFireStart();
+          const shooter = entities.soldiers.get(this.nightShooter), target = entities.soldiers.get(this.nightTarget);
+          target.position.set(SIHANG_BRIDGE.northX, 0, SIHANG_BRIDGE.northZ);
+          shooter.heading = Math.atan2(shooter.position.x - target.position.x, shooter.position.z - target.position.z);
+          shooter.nextThink = shooter.nextFire = 0;
+          sihangCampaign.stageElapsed = SIHANG_RULES.nightfallSeconds + 1;
+          sihangCampaign.counterattackAt = sihangCampaign.elapsed - 25;
+          actorGrid.rebuild(allForces);
+          return this.nightFireSnapshot();
+        },
         nightFireStep(seconds) {
           for (let i = 0; i < Math.round(seconds / .05); i++) {
             setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
@@ -455,7 +952,7 @@ try {
           const dischargerVisible = dischargerTargetVisible(discharger, target);
           discharger.position.copy(old);
           return { time, shooter: shooter.position.toArray(), target: target.position.toArray(),
-            mode: shooter.tactics.mode, shots: shooter.rifle.shots, aim: shooter.target?.id ?? null,
+            mode: shooter.tactics.mode, shots: shooter.rifle.shots, aim: shooter.target?.id ?? null, health: target.health,
             visible: sihangNightVisibility(sihangCampaign, shooter.position, target.position),
             dischargerVisible, flare: sihangNight.snapshot.intensity };
         },
@@ -552,6 +1049,7 @@ try {
         },
         naturalWithdrawalStart() {
           setGameState('pause'); missionBriefing.hide(); keys.clear();
+          this.naturalResumeState = 'playing';
           const initial = friendlyForces.filter(actor => actor.health > 0).map(actor => ({
             id: actor.id, playerUnit: actor.playerUnit, position: actor.position.toArray() }));
           sihangCampaign.stageElapsed = SIHANG_RULES.defenseSeconds - .01;
@@ -559,34 +1057,87 @@ try {
           return { initial, state: this.naturalWithdrawalSnapshot() };
         },
         naturalWithdrawalPlayerStart(yaw) {
+          if (this.naturalResumeState !== 'playing') throw new Error('Cannot steer without a living player in control');
           controlPose.yaw = yaw;
           setGameState('playing');
           return this.naturalWithdrawalSnapshot();
         },
         naturalWithdrawalPause() {
+          this.naturalResumeState = state;
           setGameState('pause');
           return this.naturalWithdrawalSnapshot();
         },
-        naturalWithdrawalStep(seconds) {
-          for (let i = 0; i < Math.round(seconds / .05); i++) {
-            setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
-          }
+        naturalWithdrawalResume() {
+          if (!activeStates.has(this.naturalResumeState))
+            throw new Error('Cannot resume a finished withdrawal');
+          setGameState(this.naturalResumeState);
+        },
+        bridgeContinuousSnapshot() {
+          return Object.values(window.__bridgeMinima ?? {}).sort((a, b) => a.distance - b.distance);
+        },
+        naturalDeathStart() {
+          setGameState('playing');
+          const actor = controlledSoldier(entities);
+          if (!actor || allies.filter(member => member.health > 0).length < 2)
+            throw new Error('Death transition review needs two living player squad members');
+          hurt(actor, actor.health, { credit: 'environment', cause: 'boundary', subjectId: actor.id }, 'boundary');
+          this.naturalResumeState = state;
           setGameState('pause');
+          return actor.id;
+        },
+        naturalWithdrawalStep(seconds) {
+          if (state === 'pause') setGameState(this.naturalResumeState);
+          for (let i = 0; i < Math.round(seconds / .05); i++) {
+            if (!activeStates.has(state)) break;
+            aiDecisions.beginFrame(); advanceBattleStep(.05, time);
+          }
+          this.naturalResumeState = state;
+          if (activeStates.has(state)) setGameState('pause');
           return this.naturalWithdrawalSnapshot();
         },
         naturalWithdrawalSnapshot() {
-          return { time, stage: sihangCampaign.stage, stageElapsed: sihangCampaign.stageElapsed,
+          return { time, gameState: state === 'pause' ? this.naturalResumeState : state,
+            controlledId: entities.control.soldierId,
+            stage: sihangCampaign.stage, stageElapsed: sihangCampaign.stageElapsed,
             assemblyReleased: sihangCampaign.assemblyReleased, counterattack: sihangCampaign.counterattack,
+            assemblyPrepared: sihangCampaign.assemblyPrepared, outcome: sihangCampaign.outcome,
+            saved: sihangCampaign.evacuatedIds.length, lost: sihangCampaign.retreatLostIds.length,
+            savedIds: [...sihangCampaign.evacuatedIds], lostIds: [...sihangCampaign.retreatLostIds],
+            reserve: sihangCampaign.retreatReserve,
+            deaths: window.__retreatDeaths ?? [],
             wave: sihangCampaign.withdrawalWave && structuredClone(sihangCampaign.withdrawalWave),
             friendly: friendlyForces.filter(actor => actor.health > 0).map(actor => ({
               id: actor.id, playerUnit: actor.playerUnit, position: actor.position.toArray(),
+              index: actor.index, slot: actor.formation.sihangSlot, order: actor.order,
               goal: actor.playerUnit ? playerOrderDestination(actor, controlledSoldier(entities))
                 : sihangActorAssemblyGoal(actor), mode: actor.tactics.mode,
-              path: actor.path?.slice(0, 3), blocked: actor.tactics.blockedBy })),
+              assemblyGoal: sihangActorAssemblyGoal(actor), assemblySlot: actor.sihangAssemblySlot,
+              assemblyRoute: actor.sihangAssemblyRoute,
+              path: actor.path?.slice(0, 3), pathGoal: actor.pathGoal, pathReason: actor.tactics.pathReason,
+              nextPath: actor.nextPath, blocked: actor.tactics.blockedBy,
+              engineer: actor.engineer && { site: actor.engineer.site,
+                mode: actor.engineer.construction.mode },
+              traffic: actor.tactics.traffic && { reason: actor.tactics.traffic.reason,
+                waitSeconds: actor.tactics.traffic.waitSeconds },
+              ...(actor.playerUnit ? { traversal: actor.traversal.kind, grenadeAction: actor.grenades.action,
+                blastReaction: actor.blastReaction, dying: actor.dying,
+                pendingPath: pathRequests.get(actor.tactics.id)?.target,
+              } : {}) })),
             formations: formations.filter(formation => formation.team === 'friendly').map(formation => ({ id: formation.id,
               player: formation.player, retreatAssembled: formation.retreatAssembled,
-              living: formation.members.filter(actor => actor.health > 0).length })),
+              living: formation.members.filter(actor => actor.health > 0).length,
+              appearances: formation.members.filter(actor => actor.health > 0).map(actor => actor.avatarAppearance?.uniform ?? null) })),
+            nativeNraLoaded: Boolean(nraCharacter),
             player: controlledSoldier(entities)?.position.toArray() ?? null,
+            ...(${JSON.stringify(process.env.NATURAL_TRACE_BRIDGE === '1')} ? {
+              bridgeEnemies: enemies.filter(actor => actor.health > 0 && !actor.vehicleId).map(actor => ({
+                id: actor.id, index: actor.index, formation: actor.formation.index, position: actor.position.toArray(), mode: actor.tactics.mode,
+                path: actor.path?.slice(0, 3), pathGoal: actor.pathGoal, target: actor.target?.id ?? null,
+                pursuit: actor.tactics.sihangPursuit, shots: actor.rifle?.shots ?? 0 })),
+              bridgeArmor: [...entities.vehicles.values()].filter(vehicle => vehicle.type === 'tank' && vehicle.team === 'enemy')
+                .map(vehicle => ({ id: vehicle.id, position: vehicle.position.toArray(), health: vehicle.health,
+                  goal: vehicle.ai?.goal, mode: vehicle.ai?.mode, shots: vehicle.ai?.shots ?? 0 })),
+            } : {}),
             enemyAlive: enemies.filter(actor => actor.health > 0).length };
         },
         waveFixturePlayerYieldStart() {
@@ -629,7 +1180,8 @@ try {
                 id: actor.id, playerUnit: actor.playerUnit, mode: actor.tactics.mode,
                 traffic: actor.tactics.traffic }));
               throw new Error('Player-yield ' + phase + ' AI update failed; invalid traffic=' +
-                JSON.stringify(invalidTraffic) + '; ' + error.message);
+                JSON.stringify(invalidTraffic) + '; control events=' + JSON.stringify(controlEvents.snapshot) +
+                '; ' + error.stack);
             }
           };
           setGameState('playing');
@@ -689,6 +1241,7 @@ try {
               if (actor && !sihangCampaign.evacuatedIds.includes(id)) actor.health = 0;
             }
           updateSihangMission(.05);
+          this.waveFixtureTrackSpawns();
           return this.waveFixtureSnapshot();
         },
         waveFixtureThreat() {
@@ -721,9 +1274,22 @@ try {
             if (actor && actor.health > 0) actor.position.set(88, 0, 35);
           }
           updateSihangMission(.05);
+          if (!this.waveGenerations) this.waveFixtureBeginSpawnTracking();
+          else this.waveFixtureTrackSpawns();
+          return this.waveFixtureSnapshot();
+        },
+        waveFixtureBeginSpawnTracking() {
           this.waveSpawnRecords = [];
           this.waveGenerations = formations.filter(f => f.team === 'friendly' && !f.player).map(f => f.generation);
-          return this.waveFixtureSnapshot();
+        },
+        waveFixtureTrackSpawns() {
+          if (this.waveGenerations) for (const [slot, formation] of formations.filter(f =>
+            f.team === 'friendly' && !f.player).entries()) {
+            if (formation.generation > this.waveGenerations[slot]) {
+              this.waveSpawnRecords.push({ slot, time, elapsed: sihangCampaign.elapsed });
+              this.waveGenerations[slot] = formation.generation;
+            }
+          }
         },
         waveFixtureStep(seconds, safeRefill = false) {
           for (let i = 0; i < Math.round(seconds / .05); i++) {
@@ -733,12 +1299,7 @@ try {
               for (const weapon of entities.weapons.values()) weapon.nextShot = time + 1000000;
             }
             setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time);
-            if (this.waveGenerations) for (const [slot, formation] of formations.filter(f => f.team === 'friendly' && !f.player).entries()) {
-              if (formation.generation > this.waveGenerations[slot]) {
-                this.waveSpawnRecords.push({ slot, time, elapsed: sihangCampaign.elapsed });
-                this.waveGenerations[slot] = formation.generation;
-              }
-            }
+            this.waveFixtureTrackSpawns();
           }
           setGameState('pause');
           return this.waveFixtureSnapshot();
@@ -766,6 +1327,35 @@ try {
         },
         waveFixturePlayerAway() {
           controlledSoldier(entities).position.set(5, 0, -20);
+        },
+        waveFixtureEarlyRefillSnapshot() {
+          const wave = sihangCampaign.withdrawalWave;
+          const original = new Set(wave?.squads.flat() ?? []);
+          return { elapsed: sihangCampaign.elapsed, assemblyAt: sihangCampaign.waveAssemblyAt,
+            wave: wave && structuredClone(wave), reserve: sihangCampaign.retreatReserve,
+            recruits: friendlyAI.filter(actor => actor.health > 0 && !original.has(actor.id)).map(actor => ({
+              id: actor.id, slot: actor.formation.sihangSlot, position: actor.position.toArray(),
+              mode: actor.tactics.mode })) };
+        },
+        waveFixtureLimitReserve(count) {
+          if (!Number.isInteger(count) || count < 0 || count > sihangCampaign.retreatReserve)
+            throw new RangeError('Fixture reserve must be within the actual remaining reserve');
+          const removed = sihangCampaign.retreatReserve - count;
+          sihangCampaign.retreatReserve -= removed;
+          sihangCampaign.reserve -= removed;
+          sihangCampaign.retreatTotal -= removed;
+          return this.waveFixtureEarlyRefillSnapshot();
+        },
+        waveFixtureLoseEarlyRecruit() {
+          const wave = sihangCampaign.withdrawalWave;
+          const original = new Set(wave.squads.flat());
+          const actor = friendlyAI.find(item => item.health > 0 && !original.has(item.id));
+          if (!actor) throw new Error('Expected an early replacement soldier');
+          actor.health = 0;
+          updateSihangMission(.05);
+          return { id: actor.id, original: original.has(actor.id),
+            lost: sihangCampaign.retreatLostIds.includes(actor.id),
+            phase: sihangCampaign.withdrawalWave?.phase };
         },
         waveFixtureSnapshot() {
           const wave = sihangCampaign.withdrawalWave;
@@ -798,6 +1388,7 @@ try {
           return { elapsed: sihangCampaign.elapsed, wave: wave && structuredClone(wave),
             reserve: sihangCampaign.retreatReserve, saved: sihangCampaign.evacuatedIds.length,
             lost: sihangCampaign.retreatLostIds.length, total: sihangCampaign.retreatTotal,
+            savedIds: [...sihangCampaign.evacuatedIds], lostIds: [...sihangCampaign.retreatLostIds],
             counterattack: sihangCampaign.counterattack, voice: sihangVoices?.snapshot,
             coverSight,
             yielding: friendlyForces.filter(actor => actor.tactics.sihangTrafficYield).map(actor => ({
@@ -824,11 +1415,18 @@ try {
               const actor = entities.soldiers.get(id);
               const blocker = entities.soldiers.get(actor?.tactics.blockedBy);
               return { id, slot, position: actor?.position.toArray(), goal: actor && sihangRetreatGoal(actor),
+                goalBlocked: actor && infantryNavigationBlocked(sihangRetreatGoal(actor), actor.position, .43, actor),
                 mode: actor?.tactics.mode, blocked: actor?.tactics.blockedBy,
                 blocker: blocker && { id: blocker.id, playerUnit: blocker.playerUnit, friendly: blocker.friendly,
                   position: blocker.position.toArray(), mode: blocker.tactics.mode },
                 target: actor?.target && { id: actor.target.id, health: actor.target.health,
-                  position: actor.target.position.toArray() },
+                  position: actor.target.position.toArray(), vehicleId: actor.target.vehicleId,
+                  targetKind: actor.target.targetKind },
+                vehicles: actor && [...entities.vehicles.values()].filter(vehicle =>
+                  vehicle.type === 'tank' && vehicle.health > 0 &&
+                  Math.hypot(vehicle.position.x - actor.position.x, vehicle.position.z - actor.position.z) < 12)
+                  .map(vehicle => ({ id: vehicle.id, position: vehicle.position.toArray(), heading: vehicle.heading,
+                    speed: vehicle.speed, collider: vehicleCollider(vehicle) })),
                 nearby: actor && allForces.filter(other => other !== actor && other.health > 0 &&
                   Math.abs(other.position.y - actor.position.y) < 1.5 &&
                   Math.hypot(other.position.x - actor.position.x, other.position.z - actor.position.z) < 2)
@@ -839,6 +1437,9 @@ try {
             geometryErrors: this.geometryErrors(),
             spawnRecords: this.waveSpawnRecords ?? [],
             threatId: this.waveThreatId ?? null,
+            refill: formations.filter(f => f.team === 'friendly' && !f.player).map(f => ({
+              id: f.id, living: f.members.filter(actor => actor.health > 0).length,
+              blocked: f.blockedReason, respawnAt: f.respawnAt })),
             generations: formations.filter(f => f.team === 'friendly' && !f.player).map(f => f.generation) };
         },
         enemyRegroupStart(reachable = false) {
@@ -888,6 +1489,34 @@ try {
                   Math.hypot(a.position.x - v.position.x, a.position.z - v.position.z) < 10)
                   .map(a => ({ id: a.id, position: a.position.toArray() })),
                 crew: v.seats.map(seat => entities.soldiers.get(seat.occupantId)?.health ?? null) })) };
+        },
+        armorInterceptStart() {
+          this.waveFixtureStart();
+          this.waveFixtureCross();
+          const intruder = enemies.find(actor => !actor.vehicleId && !actor.formation.sihangDemolition);
+          const tank = [...entities.vehicles.values()].find(vehicle => vehicle.type === 'tank' &&
+            vehicle.team === 'enemy' && entities.units.get(vehicle.unitId).armorSlot === 1);
+          if (!intruder || !tank) throw new Error('Armor interception fixture requires an intruder and the east tank');
+          intruder.tactics.sihangEnteredWarehouse = true;
+          tank.position.set(74.91434583905716, 0, -55.52891010576034);
+          tank.ai = null;
+          for (const actor of allForces) actor.health = 100000;
+          this.armorInterceptId = tank.id;
+          return this.armorInterceptSnapshot();
+        },
+        armorInterceptSnapshot() {
+          const tank = entities.vehicles.get(this.armorInterceptId);
+          const goal = tank.ai?.goal;
+          const planner = goal && createNavigator(world.armorObstacles, 1.5, 3.1);
+          const staticPath = planner ? planner(tank.position, goal) : null;
+          return { time, position: tank.position.toArray(), mode: tank.ai?.mode, goal: tank.ai?.goal,
+            path: tank.ai?.path?.slice(0, 3), navigation: armorNavigate.stats(tank), staticPath,
+            staticStats: planner?.stats,
+            goalBlockers: goal && world.armorObstacles.filter(obstacle =>
+              circleBlocked(goal.x, goal.z, 3.1, [obstacle])).map(obstacle => ({ ...obstacle })),
+            nearbyProtected: enemies.filter(actor => actor.health > 0 && actor.tactics.sihangDemolitionReturned &&
+              Math.hypot(actor.position.x - tank.position.x, actor.position.z - tank.position.z) < 12)
+              .map(actor => ({ id: actor.id, position: actor.position.toArray() })) };
         },
         boundaryStart() {
           setGameState('pause'); missionBriefing.hide(); keys.clear();
@@ -1081,6 +1710,37 @@ try {
   }
   await page.waitForFunction(() => !document.querySelector('#loading') ||
     document.querySelector('#loading').hidden, null, { timeout: 180000 });
+  if (process.env.MASS_MECHANICAL_REVIEW_ONLY === '1') {
+    const result = await page.evaluate(() => retreatReview.massMechanicalCueStep());
+    await writeFile(join(directory, 'mass-mechanical-cues.json'), JSON.stringify({
+      fixture: 'production-battle-step-synchronized-owned-rifle-reloads', result, errors }, null, 2));
+    assert.ok(result.actors >= 65 && result.advanced >= 65,
+      'at least 65 real soldiers must advance their own rifle actions');
+    const cues = result.events.history.filter(event => event.type === 'weapon.mechanical');
+    assert.ok(cues.some(event => event.soldierId === result.player && event.cue === 'unlock'),
+      'the controlled soldier must receive its own mechanical cue');
+    assert.ok(cues.every(event => event.soldierId === result.player),
+      'background cues must not enter the controlled feedback queue');
+    assert.equal(result.events.pending, 0, 'the real battle step must drain its feedback');
+    assert.deepEqual(errors, []);
+    console.log('Mass mechanical cue feedback passed.');
+  }
+  if (process.env.NATURAL_DEATH_REVIEW_ONLY === '1') {
+    await page.evaluate(() => retreatReview.naturalWithdrawalStart());
+    const original = await page.evaluate(() => retreatReview.naturalDeathStart());
+    const records = [];
+    for (let step = 0; step < 12; step++)
+      records.push(await page.evaluate(() => retreatReview.naturalWithdrawalStep(.1)));
+    await writeFile(join(directory, 'natural-death-transition.json'), JSON.stringify({
+      fixture: 'synthetic-boundary-damage-production-death-transfer-manual-0.05s-steps',
+      original, records, errors }, null, 2));
+    assert.ok(records.some(record => record.gameState === 'transferring' && record.controlledId === original));
+    assert.ok(records.some(record => record.gameState === 'transferring' && record.controlledId !== original));
+    assert.equal(records.at(-1).gameState, 'playing');
+    assert.notEqual(records.at(-1).controlledId, original);
+    assert.deepEqual(errors, []);
+    console.log('Death transfer preserved across manual simulation batches.');
+  }
   if (process.env.PLAYER_SPAWN_UI_REVIEW_ONLY === '1') {
     await page.evaluate(() => retreatReview.playerSpawnUIStart());
     await page.locator('#redeploy-choices [data-type="infantry"]').click();
@@ -1103,7 +1763,7 @@ try {
   }
   if (process.env.PURSUIT_REVIEW_ONLY === '1') {
     const records = [await page.evaluate(() => retreatReview.pursuitReviewStart())];
-    for (let step = 0; step < 12; step++) {
+    for (let step = 0; step < 18; step++) {
       records.push(await page.evaluate(() => retreatReview.pursuitReviewStep(5)));
       await writeFile(join(directory, 'pursuit.json'), JSON.stringify({
         fixture: 'manual-warehouse-positions-artificial-breach-and-counterattack-firing-disabled-health-raised',
@@ -1111,9 +1771,27 @@ try {
     }
     const first = records[0], last = records.at(-1);
     assert.equal(last.counterattack, true);
+    assert.ok(records[12].attackers.every(actor => actor.entered));
+    assert.ok(records[12].attackers.some(actor => actor.pursuit === 'intercept-withdrawal'));
     assert.ok(last.attackers.every(actor => actor.entered && actor.pursuit === 'intercept-withdrawal'));
     assert.ok(last.attackers.filter((actor, index) => actor.position[0] - first.attackers[index].position[0] > 8).length >= 3,
       'armed soldiers inside the warehouse must physically progress toward the retreat corridor');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.BRIDGE_ENGINEER_REVIEW_ONLY === '1') {
+    const profile = process.env.BRIDGE_ENGINEER_PROFILE ?? 'maxim24';
+    const group = process.env.BRIDGE_ENGINEER_GROUP === '1';
+    const records = [await page.evaluate(({ withWork, profile, group }) => retreatReview.bridgeWorkStart(withWork, profile, group),
+      { withWork: process.env.BRIDGE_ENGINEER_BASELINE !== '1', profile, group })];
+    for (let i = 0; i < (group ? 30 : 15); i++) records.push(await page.evaluate(() => retreatReview.bridgeWorkStep(2)));
+    await writeFile(join(directory, 'bridge-engineer.json'), JSON.stringify({
+      fixture: 'production-ai-manually-assembled-bridge-work-enemy-infantry-disabled-friendly-health-raised',
+      profile, records, errors }, null, 2));
+    console.log(JSON.stringify({ initial: records[0], final: records.at(-1) }));
+    assert.ok(records.some(record => sihangBridgeCoordinates({ x: record.position[0], z: record.position[2] }).along > SIHANG_BRIDGE.length),
+      'the retreating soldier must cross the bridge around the built emplacement');
+    assert.equal(records.at(-1).crossed.length, group ? 4 : 1, 'every tracked soldier must cross');
+    assert.equal(records.at(-1).overlaps, 0, 'the soldier must not overlap the built emplacement');
     assert.deepEqual(errors, []);
   }
   if (process.env.EMPLACEMENT_REVIEW_ONLY === '1') {
@@ -1177,6 +1855,34 @@ try {
     assert.equal(fixed[1].shots, fixed[0].shots, 'fixed guns must not fire at unseen distant targets');
     assert.equal(fixed[2].visible, true);
     assert.ok(fixed[3].shots > fixed[2].shots, 'fixed guns must engage a visible target under flares');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.BRIDGE_INTERCEPT_FIRE_REVIEW_ONLY === '1') {
+    const records = [await page.evaluate(() => retreatReview.bridgeInterceptFireStart())];
+    for (let i = 0; i < 4; i++) records.push(await page.evaluate(() => retreatReview.nightFireStep(2)));
+    await writeFile(join(directory, 'bridge-intercept-fire.json'), JSON.stringify({
+      fixture: 'two-man-isolated-night-bridge-production-ai-target-health-raised', records, errors }, null, 2));
+    const distance = Math.hypot(records[0].shooter[0] - records[0].target[0],
+      records[0].shooter[2] - records[0].target[2]);
+    assert.ok(distance > 20);
+    assert.equal(records[0].visible, true);
+    assert.ok(records.at(-1).shots > records[0].shots, 'the enemy must actually fire from the interception post');
+    assert.ok(records.at(-1).health < records[0].health, 'the enemy must hit the bridge approach through the real firing path');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.ARMOR_INTERCEPT_REVIEW_ONLY === '1') {
+    const records = [await page.evaluate(() => retreatReview.armorInterceptStart())];
+    for (let i = 0; i < Number(process.env.ARMOR_INTERCEPT_STEPS ?? 10); i++) {
+      await page.evaluate(() => retreatReview.enemyRegroupStep(2));
+      records.push(await page.evaluate(() => retreatReview.armorInterceptSnapshot()));
+    }
+    await writeFile(join(directory, 'armor-intercept.json'), JSON.stringify({
+      fixture: 'manual-observed-blocked-tank-position-production-updates-firing-disabled-health-raised',
+      records, errors }, null, 2));
+    const last = records.at(-1), goal = last.goal;
+    assert.ok(goal && Math.hypot(last.position[0] - goal.x, last.position[2] - goal.z) <= 1.25,
+      'the observed tank position must be within the new arrival radius');
+    assert.ok(['hold', 'engage'].includes(last.mode), 'the tank must not remain blocked at its destination');
     assert.deepEqual(errors, []);
   }
   if (process.env.RETREAT_ENGINEER_REVIEW_ONLY === '1') {
@@ -1262,6 +1968,17 @@ try {
     assert.deepEqual(errors, []);
     console.log('Wave follow yielding passed.');
   }
+  if (process.env.WAVE_COVER_SPACING_REVIEW_ONLY === '1') {
+    const result = await page.evaluate(() => retreatReview.waveFixtureCoverSpacing());
+    await writeFile(join(directory, 'wave-cover-spacing.json'), JSON.stringify({
+      fixture: 'manual-cover-egress-production-ai-step-with-nearby-friendly-and-enemy', result, errors }, null, 2));
+    assert.ok(result.neighbors, 'the production cover-egress branch must actually run');
+    assert.ok(result.neighbors.all.some(other => other.id === result.peer), 'the friendly must be in the actual traffic grid');
+    assert.ok(result.neighbors.all.some(other => other.id === result.enemy), 'the enemy must be in the actual traffic grid');
+    assert.ok(result.neighbors.steering.includes(result.peer), 'cover egress must still avoid nearby friendlies');
+    assert.ok(!result.neighbors.steering.includes(result.enemy), 'cover egress must not let an enemy trap the soldier');
+    assert.deepEqual(errors, []);
+  }
   if (process.env.NATURAL_RETREAT_REVIEW_ONLY === '1') {
     const started = await page.evaluate(() => retreatReview.naturalWithdrawalStart());
     const playerStart = await page.evaluate(() => retreatReview.naturalWithdrawalPlayerStart(Math.PI));
@@ -1269,21 +1986,97 @@ try {
     await page.keyboard.down('Shift');
     await page.waitForTimeout(1500);
     await page.keyboard.up('Shift');
-    await page.waitForTimeout(7000);
+    await page.waitForTimeout(process.env.NATURAL_RETREAT_EXTENDED === '1' ? 8200 : 7000);
     await page.keyboard.up('w');
     const playerTravel = await page.evaluate(() => retreatReview.naturalWithdrawalPause());
     const records = [started.state, playerStart, playerTravel];
-    for (let step = 0; step < 6; step++)
-      records.push(await page.evaluate(() => retreatReview.naturalWithdrawalStep(5)));
+    if (process.env.NATURAL_RETREAT_EXTENDED === '1') {
+      const legs = [
+        { yaw: 0, axis: 2, limit: -14, direction: -1 },
+        { yaw: -Math.PI / 2, axis: 0, limit: 30, direction: 1 },
+        { yaw: Math.PI, axis: 2, limit: -5.5, direction: 1 },
+        { yaw: Math.PI / 2, axis: 0, limit: 24, direction: -1 },
+      ];
+      for (const leg of legs) {
+        await page.evaluate(yaw => retreatReview.naturalWithdrawalPlayerStart(yaw), leg.yaw);
+        await page.keyboard.down('w');
+        let stalled = 0;
+        for (let step = 0; step < 100; step++) {
+          const before = records.at(-1), next = await page.evaluate(() => retreatReview.naturalWithdrawalStep(.5));
+          records.push(next);
+          if (!next.player || leg.direction * (next.player[leg.axis] - leg.limit) >= 0) break;
+          if (!before.player || Math.abs(next.player[leg.axis] - before.player[leg.axis]) < .02) stalled++;
+          else stalled = 0;
+          if (stalled >= 8) break;
+        }
+        await page.keyboard.up('w');
+        await writeFile(join(directory, 'natural-retreat-steering.json'), JSON.stringify({
+          fixture: 'natural-spawn-normal-health-live-combat-synthetic-W-manual-camera-steering', legs, records, errors }, null, 2));
+        if (!records.at(-1).player || leg.direction * (records.at(-1).player[leg.axis] - leg.limit) < 0) break;
+      }
+    }
+    const reachedAssembly = player => player && player[0] >= -34 && player[0] <= 26 &&
+      player[2] >= -7.7 && player[2] <= -.4 && Math.abs(player[1]) < .4;
+    const naturalWaves = Number(process.env.NATURAL_WAVES ?? 1);
+    if (!Number.isInteger(naturalWaves) || naturalWaves < 1 || naturalWaves > 10)
+      throw new RangeError('Invalid natural withdrawal wave count');
+    const enteredAssembly = reachedAssembly(records.at(-1).player);
+    const assemblyOnly = process.env.NATURAL_ASSEMBLY_ONLY === '1';
+    const appearanceOnly = process.env.NATURAL_APPEARANCE_ONLY === '1';
+    const realTime = process.env.NATURAL_REALTIME_REVIEW === '1';
+    if (realTime && (!enteredAssembly || process.env.NATURAL_RETREAT_EXTENDED !== '1' || assemblyOnly || appearanceOnly))
+      throw new Error('Real-time withdrawal requires the extended steering run and a player in the assembly area');
+    if (realTime) await page.evaluate(() => retreatReview.naturalWithdrawalResume());
+    let crowdCaptured = false;
+    for (let step = 0; step < (assemblyOnly ? 24 : process.env.NATURAL_RETREAT_EXTENDED === '1' ? 60 * naturalWaves : 6) &&
+      (process.env.NATURAL_RETREAT_EXTENDED !== '1' || enteredAssembly); step++) {
+      if (realTime) {
+        await page.waitForTimeout(5000);
+        records.push(await page.evaluate(() => retreatReview.naturalWithdrawalSnapshot()));
+      } else records.push(await page.evaluate(() => retreatReview.naturalWithdrawalStep(5)));
+      if (process.env.NATURAL_RETREAT_EXTENDED === '1') {
+        await writeFile(join(directory, 'natural-retreat-progress.json'), JSON.stringify({
+          fixture: realTime
+            ? 'natural-spawn-synthetic-input-and-manual-clock-jump-then-live-headless-frame-loop'
+            : 'natural-spawn-actual-input-stage-clock-advanced-only-normal-health-and-live-combat-simulated-steps',
+          started, records, errors }, null, 2));
+        const latest = records.at(-1);
+        if (process.env.NATURAL_CAPTURE_CROWD === '1' && !crowdCaptured &&
+          latest.wave?.number === 1 && latest.stageElapsed >= 120) {
+          const image = await page.evaluate(() => retreatReview.captureNaturalCrowd());
+          await writeFile(join(directory, 'natural-crowd.png'), Buffer.from(image, 'base64'));
+          crowdCaptured = true;
+        }
+        console.log(JSON.stringify({ elapsed: latest.stageElapsed, prepared: latest.assemblyPrepared,
+          released: latest.assemblyReleased, wave: latest.wave?.number, phase: latest.wave?.phase, saved: latest.saved,
+          lost: latest.lost, outcome: latest.outcome, player: latest.player }));
+        if (appearanceOnly && latest.nativeNraLoaded &&
+          latest.formations.some(formation => formation.id === 'friendly-10' && formation.appearances.includes('B')) ||
+          assemblyOnly && latest.assemblyPrepared ||
+          latest.wave?.number >= naturalWaves && latest.wave?.phase === 'interval' || latest.outcome) break;
+      }
+    }
+    if (process.env.NATURAL_CAPTURE_CROWD === '1')
+      assert.ok(crowdCaptured, 'the withdrawal crowd capture must actually be produced');
     const initial = new Map(started.initial.map(actor => [actor.id, actor.position]));
-    const moved = records.at(-1).friendly.filter(actor => !actor.playerUnit && initial.has(actor.id) &&
-      Math.hypot(actor.position[0] - initial.get(actor.id)[0],
-        actor.position[2] - initial.get(actor.id)[2]) > .5);
+    const movedById = new Map();
+    for (const record of records) for (const actor of record.friendly)
+      if (!actor.playerUnit && initial.has(actor.id) &&
+        Math.hypot(actor.position[0] - initial.get(actor.id)[0],
+          actor.position[2] - initial.get(actor.id)[2]) > .5) movedById.set(actor.id, actor);
+    const moved = [...movedById.values()];
     await writeFile(join(directory, 'natural-retreat-formation.json'), JSON.stringify({ fixture:
-      'natural-starting-positions-and-health-stage-clock-advanced-only-enemy-fire-enabled',
+      process.env.NATURAL_RETREAT_EXTENDED === '1'
+        ? realTime ? 'natural-spawn-synthetic-W-manual-steering-and-clock-jump-then-live-headless-frame-loop'
+          : 'natural-spawn-normal-health-live-combat-synthetic-W-manual-camera-steering-stage-clock-jump-and-simulated-steps'
+        : 'natural-starting-positions-and-health-stage-clock-advanced-only-enemy-fire-enabled',
       started, records, moved: moved.map(actor => ({ id: actor.id, position: actor.position,
         goal: actor.goal, mode: actor.mode, path: actor.path, blocked: actor.blocked })),
       errors }, null, 2));
+    if (process.env.NATURAL_TRACE_BRIDGE === '1')
+      await writeFile(join(directory, 'bridge-continuous-minima.json'), JSON.stringify({
+        fixture: 'every-battle-step-after-counterattack', minima: await page.evaluate(() => retreatReview.bridgeContinuousSnapshot()),
+        errors }, null, 2));
     assert.equal(records.at(-1).stage, 'sihang-retreat',
       'the controlled clock transition must enter the actual withdrawal stage');
     assert.ok(moved.length > 0,
@@ -1291,8 +2084,74 @@ try {
     assert.ok(playerTravel.player && Math.hypot(playerTravel.player[0] - playerStart.player[0],
       playerTravel.player[2] - playerStart.player[2]) > .5,
     'actual W and sprint input must move the naturally spawned player toward assembly');
+    if (process.env.NATURAL_RETREAT_EXTENDED === '1') {
+      if (appearanceOnly) {
+        assert.ok(records.some(record => record.nativeNraLoaded &&
+          record.formations.some(formation => formation.id === 'friendly-10' && formation.appearances.includes('B'))),
+        'the tenth AI squad must spawn with the loaded native appearance');
+      } else if (assemblyOnly) {
+        assert.ok(records.some(record => record.assemblyPrepared),
+          'the player and living squad must reach the assembly area within the diagnostic window');
+      } else {
+        assert.ok(records.some(record => record.assemblyReleased), 'the player squad must actually reach the assembly area');
+        assert.ok(records.some(record => record.wave?.number >= naturalWaves && record.wave.phase === 'interval'),
+          `withdrawal wave ${naturalWaves} must complete without changing positions or health`);
+        for (let number = 1; number <= naturalWaves; number++) {
+          const wave = records.find(record => record.wave?.number === number && record.wave.phase === 'interval');
+          assert.ok(wave, `withdrawal wave ${number} must reach its interval`);
+          const resolved = new Set([...wave.savedIds, ...wave.lostIds]);
+          assert.ok(wave.wave.squads.flat().every(id => resolved.has(id)),
+            `every original member of withdrawal wave ${number} must be evacuated or killed`);
+        }
+        if (process.env.NATURAL_FOLLOW_WALL_REVIEW === '1') {
+          const release = records.find(record => record.assemblyReleased);
+          const initialPositions = new Map(release.friendly.map(actor => [actor.id, actor.position]));
+          assert.ok(records.some(record => record.wave?.number === 1 && record.friendly.filter(actor => {
+            const start = initialPositions.get(actor.id);
+            return actor.playerUnit && actor.id !== record.controlledId && actor.order === 'follow' && start &&
+              Math.abs(actor.goal?.z + 6.7) < 1e-6 &&
+              Math.hypot(actor.position[0] - actor.goal.x, actor.position[2] - actor.goal.z) < 1.2 &&
+              Math.hypot(actor.position[0] - start[0], actor.position[2] - start[2]) > 1;
+          }).length >= 3), 'following soldiers must physically move from assembly to their wall-side goals');
+        }
+      }
+    }
     assert.deepEqual(errors, []);
     console.log('Natural-position withdrawal movement passed.');
+  }
+  if (process.env.WAVE_EARLY_REFILL_REVIEW_ONLY === '1') {
+    await page.evaluate(() => retreatReview.waveFixtureStart());
+    await page.evaluate(() => retreatReview.waveFixtureCross());
+    const covering = process.env.WAVE_EARLY_NO_COVER !== '1';
+    if (covering) await page.evaluate(() => retreatReview.waveFixtureAttack());
+    const cover = await page.evaluate(() => retreatReview.waveFixtureResolveMain());
+    assert.equal(cover.wave?.phase, covering ? 'cover' : 'main');
+    await page.evaluate(() => retreatReview.waveFixtureStep(6, true));
+    const early = await page.evaluate(() => retreatReview.waveFixtureEarlyRefillSnapshot());
+    assert.equal(early.wave?.phase, covering ? 'cover' : 'main',
+      'the last original squad must still be withdrawing');
+    assert.ok(early.recruits.length > 0, 'replacement soldiers must start preparing before cover completes');
+    assert.ok(early.recruits.every(actor => actor.mode === 'sihang-assembly'),
+      'new soldiers must prepare, not leave in the old wave');
+    assert.ok(Number.isFinite(early.assemblyAt), 'next-wave countdown must start during cover withdrawal');
+    await page.waitForTimeout(500);
+    const paused = await page.evaluate(() => retreatReview.waveFixtureEarlyRefillSnapshot());
+    assert.equal(paused.elapsed, early.elapsed, 'pausing must freeze the early assembly countdown');
+    assert.equal(paused.assemblyAt, early.assemblyAt);
+    const casualty = await page.evaluate(() => retreatReview.waveFixtureLoseEarlyRecruit());
+    assert.equal(casualty.original, false);
+    assert.equal(casualty.lost, true, 'a replacement casualty must retain its own loss identity');
+    assert.equal(casualty.phase, early.wave.phase, 'a replacement loss must not resolve the original wave');
+    await page.evaluate(() => retreatReview.waveFixtureResolveCover());
+    await page.evaluate(() => retreatReview.waveFixtureStep(5.5, true));
+    const next = await page.evaluate(() => retreatReview.waveFixtureEarlyRefillSnapshot());
+    await writeFile(join(directory, 'wave-early-refill.json'), JSON.stringify({
+      fixture: 'manual-wave-losses-cover-and-enemy-fire-disabled-production-mission-and-ai',
+      cover, early, paused, casualty, next, errors,
+    }, null, 2));
+    assert.equal(next.assemblyAt, early.assemblyAt, 'interval must not restart the next-wave countdown');
+    assert.deepEqual(errors, []);
+    console.log('Early wave preparation passed.');
   }
   if (process.env.WAVE_OBSERVATION_REVIEW_ONLY === '1') {
     const records = [await page.evaluate(() => retreatReview.waveFixtureStart())];
@@ -1315,7 +2174,8 @@ try {
     const records = [];
     records.push(await page.evaluate(() => retreatReview.waveFixtureStart()));
     assert.equal(records[0].wave.phase, 'main');
-    assert.deepEqual(records[0].wave.squads.map(squad => squad.length), [11, 11, 11, 11, 11]);
+    assert.deepEqual(records[0].wave.squads.map(squad => squad.length),
+      Array(SIHANG_RULES.retreatSquads).fill(SIHANG_RULES.squadMembers));
     records.push(await page.evaluate(() => retreatReview.waveFixtureCross()));
     assert.equal(records.at(-1).counterattack, true);
     assert.equal(records.at(-1).wave.phase, 'main');
@@ -1331,6 +2191,7 @@ try {
       assert.ok(records.at(-1).coverShots.some(shot => shot.shots > 0 && shot.target === records.at(-1).threatId),
         'the covering squad must actually observe and shoot the armed threat');
     }
+    await page.evaluate(() => retreatReview.waveFixtureBeginSpawnTracking());
     records.push(await page.evaluate(() => retreatReview.waveFixtureResolveMain()));
     assert.equal(records.at(-1).wave.phase, 'cover');
     assert.equal(records.at(-1).voice.active, 'wave-cover');
@@ -1339,17 +2200,19 @@ try {
     const reserve = records.at(-1).reserve;
     records.push(await page.evaluate(() => retreatReview.waveFixtureStep(4.9, true)));
     assert.equal(records.at(-1).wave.phase, 'interval');
-    assert.equal(records.at(-1).reserve, reserve);
+    assert.ok(records.at(-1).reserve <= reserve);
     records.push(await page.evaluate(() => retreatReview.waveFixtureStep(.2, true)));
     assert.equal(records.at(-1).wave, null);
     assert.ok(records.at(-1).reserve < reserve);
-    assert.equal(records.at(-1).generations.filter((generation, index) => generation > records[0].generations[index]).length, 1,
-      'only one squad may spawn when the five-second interval ends');
+    assert.ok(records.at(-1).spawnRecords.some(birth => birth.elapsed <= records.at(-3).elapsed),
+      'at least one squad must begin preparing during cover withdrawal');
     assert.equal(records.at(-1).total, records[0].total);
-    records.push(await page.evaluate(() => retreatReview.waveFixtureStep(8.2, true)));
+    records.push(await page.evaluate(seconds => retreatReview.waveFixtureStep(seconds, true),
+      (SIHANG_RULES.retreatSpawnInterval + .05) * (SIHANG_RULES.retreatSquads - 1) + .2));
     const births = records.at(-1).spawnRecords;
-    assert.equal(births.length, 5);
-    assert.equal(new Set(births.map(birth => birth.slot)).size, 5);
+    await writeFile(join(directory, 'wave-refill.json'), JSON.stringify({ records, errors }, null, 2));
+    assert.equal(births.length, SIHANG_RULES.retreatSquads);
+    assert.equal(new Set(births.map(birth => birth.slot)).size, SIHANG_RULES.retreatSquads);
     for (let index = 1; index < births.length; index++)
       assert.ok(births[index].time - births[index - 1].time >= SIHANG_RULES.retreatSpawnInterval - 1e-8,
         'successive squad spawns must be at least two simulation seconds apart');
@@ -1364,22 +2227,156 @@ try {
     assert.deepEqual(errors, []);
     console.log('Wave transitions passed.');
   }
+  if (process.env.BRIDGE_OBSTACLE_REVIEW_ONLY === '1') {
+    const records = [await page.evaluate(({ replay, wreck }) => retreatReview.bridgeProbeStart(replay, wreck),
+      { replay: process.env.BRIDGE_TRACE_REPLAY === '1', wreck: process.env.BRIDGE_WRECK_REPLAY === '1' })];
+    const graph = await page.evaluate(() => retreatReview.bridgeProbeGraph());
+    for (let i = 0; i < 10; i++) records.push(await page.evaluate(() => retreatReview.bridgeProbeStep(2)));
+    await writeFile(join(directory, 'bridge-obstacle.json'), JSON.stringify({
+      fixture: `production-map-manually-placed-soldier-and-held-${process.env.BRIDGE_WRECK_REPLAY === '1' ? 'zero-health-tank' : 'tank'}-infantry-disabled-friendly-health-raised`,
+      records, graph, errors }, null, 2));
+    console.log(JSON.stringify({ initial: records[0], final: records.at(-1) }));
+    assert.ok(records.some(record => sihangBridgeCoordinates({ x: record.position[0], z: record.position[2] }).along > SIHANG_BRIDGE.length),
+      'the soldier must actually cross the bridge without passing through the tank');
+    assert.equal(records.at(-1).overlaps, 0, 'the soldier must not overlap the tank while crossing');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.WAVE_LIMITED_RESERVE_REVIEW_ONLY === '1') {
+    const remaining = Number(process.env.WAVE_LIMITED_RESERVE);
+    if (![0, 7].includes(remaining)) throw new RangeError('Fixture needs zero or seven remaining reserves');
+    await page.evaluate(() => retreatReview.waveFixtureStart());
+    await page.evaluate(() => retreatReview.waveFixtureCross());
+    await page.evaluate(() => retreatReview.waveFixtureAttack());
+    const before = await page.evaluate(count => retreatReview.waveFixtureLimitReserve(count), remaining);
+    await page.evaluate(() => retreatReview.waveFixtureResolveMain());
+    await page.evaluate(() => retreatReview.waveFixtureStep(6, true));
+    const early = await page.evaluate(() => retreatReview.waveFixtureEarlyRefillSnapshot());
+    await page.evaluate(() => retreatReview.waveFixtureResolveCover());
+    await page.evaluate(() => retreatReview.waveFixtureStep(6, true));
+    await page.evaluate(() => retreatReview.waveFixtureAssembleNext());
+    const next = await page.evaluate(() => retreatReview.waveFixtureEarlyRefillSnapshot());
+    await writeFile(join(directory, 'wave-limited-reserve.json'), JSON.stringify({
+      fixture: 'manual-wave-losses-artificially-limited-reserve-enemy-fire-disabled-production-mission-and-ai',
+      before, early, next, errors }, null, 2));
+    assert.equal(early.wave?.phase, 'cover');
+    assert.equal(early.reserve, 0);
+    assert.equal(early.recruits.length, remaining, 'only the remaining real reserve may be spawned');
+    assert.ok(early.recruits.every(actor => actor.mode === 'sihang-assembly'));
+    assert.equal(Number.isFinite(early.assemblyAt), remaining > 0);
+    if (remaining) {
+      assert.equal(next.wave?.number, 2);
+      assert.deepEqual(new Set(next.wave.squads.flat()), new Set(early.recruits.map(actor => actor.id)),
+        'the last partial wave must contain exactly the actual replacement identities');
+    } else assert.equal(next.wave, null, 'no phantom wave can start after reserves are exhausted');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.SURROUNDED_REVIEW_ONLY === '1') {
+    const records = [await page.evaluate(() => retreatReview.surroundedStart())];
+    for (let i = 0; i < 8; i++) records.push(await page.evaluate(() => retreatReview.surroundedStep(1)));
+    const released = await page.evaluate(() => retreatReview.surroundedRelease());
+    const afterRelease = await page.evaluate(() => retreatReview.surroundedStep(4));
+    await writeFile(join(directory, 'surrounded.json'), JSON.stringify({
+      fixture: 'production-ai-manually-surrounded-held-enemies-raised-health-no-ranged-fire-then-enemies-removed',
+      records, released, afterRelease, errors }, null, 2));
+    assert.ok(records.at(-1).hits - records[0].hits >= 2,
+      'a soldier who remains trapped by observed nearby enemies must defend again');
+    assert.ok(Math.hypot(afterRelease.position[0] - released.position[0],
+      afterRelease.position[2] - released.position[2]) > .5,
+    'the soldier must resume retreat after the surrounding enemies are removed');
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.WAVE_COVER_APPROACH_REVIEW_ONLY === '1') {
+    const start = await page.evaluate(() => retreatReview.waveFixtureContactStart(true, 20));
+    const blocked = await page.evaluate(() => retreatReview.waveFixtureCoverBlock());
+    const whileBlocked = await page.evaluate(() => retreatReview.waveFixtureContactStep(.8, true));
+    const released = await page.evaluate(() => retreatReview.waveFixtureCoverRelease());
+    const result = await page.evaluate(() => retreatReview.waveFixtureContactStep(3, true));
+    const empty = await page.evaluate(() => retreatReview.waveFixtureCoverAmmo(0, 0));
+    const whileEmpty = await page.evaluate(() => retreatReview.waveFixtureContactStep(.5, true));
+    const hidden = await page.evaluate(() => retreatReview.waveFixtureCoverHideTarget());
+    await page.evaluate(() => retreatReview.waveFixtureCoverAmmo(3, 0));
+    const whileHidden = await page.evaluate(() => retreatReview.waveFixtureContactStep(.5, true));
+    await writeFile(join(directory, 'cover-approach.json'), JSON.stringify({
+      fixture: 'production-ai-manually-placed-cover-and-target-other-enemies-disabled-natural-sensing-held-friendly-blocker',
+      start, blocked, whileBlocked, released, result, empty, whileEmpty, hidden, whileHidden, errors,
+    }, null, 2));
+    assert.ok(start.coverGoalDistance > 2 && start.distance > 12 && start.clearShotLine);
+    assert.equal(blocked.clearShotLine, false, 'a friendly soldier must obstruct the real firing line');
+    assert.equal(whileBlocked.rifleShots, start.rifleShots, 'the covering soldier must not fire through the friendly blocker');
+    assert.equal(released.clearShotLine, true, 'the line must become clear when the blocker leaves');
+    assert.equal(result.threatId, start.target, 'covering soldier must actually observe the threat');
+    assert.ok(result.coverGoalDistance > 2, 'the soldier must still be away from the assigned position');
+    assert.ok(result.rifleShots > start.rifleShots,
+      `covering soldier must fire before reaching a distant assigned position: ${JSON.stringify({ start, result })}`);
+    assert.equal(whileEmpty.rifleShots, empty.rifleShots, 'an empty rifle must not fire');
+    assert.equal(whileEmpty.mode, 'sihang-wave-cover-position', 'an empty rifle must not hold the soldier in place');
+    assert.equal(hidden.visible, false, 'the target must actually be hidden by map geometry');
+    assert.equal(whileHidden.visible, false);
+    assert.equal(whileHidden.clearShotLine, false, 'the wall must obstruct the real firing line');
+    assert.equal(whileHidden.rifleShots, hidden.rifleShots, 'stale observation must not permit fire through a wall');
+    assert.equal(whileHidden.mode, 'sihang-wave-cover-position', 'the soldier must resume moving toward the cover position');
+    assert.deepEqual(errors, []);
+  }
   if (process.env.WAVE_PATH_REVIEW_ONLY === '1') {
     const liveCombat = process.env.WAVE_LIVE_COMBAT === '1';
     const contactStart = await page.evaluate(() => retreatReview.waveFixtureContactStart());
     const rangedContact = await page.evaluate(() => retreatReview.waveFixtureContactStep(2));
+    let meleeStart, closeContact;
     assert.ok(rangedContact.rifleShots > contactStart.rifleShots,
       `a clear observed threat within 12 metres should draw a retreating rifle shot: start=${JSON.stringify(contactStart)} end=${JSON.stringify(rangedContact)}`);
-    const meleeStart = await page.evaluate(() => retreatReview.waveFixtureContactSetDistance(6));
-    const closeContact = await page.evaluate(() => retreatReview.waveFixtureContactStep(8));
-    assert.equal(closeContact.dadaoSwings, meleeStart.dadaoSwings + 1,
-      `a retreating soldier should make one bounded Dadao attack before leaving the same close contact: ${JSON.stringify(closeContact)}`);
-    assert.ok(Math.hypot(closeContact.position[0] - meleeStart.position[0],
-      closeContact.position[2] - meleeStart.position[2]) > .1,
-      `the retreat should resume after the bounded close-contact attack: ${JSON.stringify(closeContact)}`);
-    console.log(JSON.stringify({ rangedContact, closeContact }));
-    assert.deepEqual(errors, []);
-    if (process.env.WAVE_CONTACT_ONLY !== '1') {
+    if (process.env.WAVE_SWITCH_REVIEW_ONLY === '1') {
+      await page.evaluate(() => retreatReview.waveFixtureContactSetDistance(10));
+      const switched = await page.evaluate(() => retreatReview.waveFixtureContactSwitchTarget());
+      const afterSwitch = await page.evaluate(() => retreatReview.waveFixtureContactStep(2, true));
+      await page.evaluate(() => retreatReview.waveFixtureContactSetDistance(10));
+      const switchedBack = await page.evaluate(() => retreatReview.waveFixtureContactSwitchTarget());
+      const afterReturn = await page.evaluate(() => retreatReview.waveFixtureContactStep(.8, true));
+      const gap = await page.evaluate(() => retreatReview.waveFixtureContactBreak());
+      const reappeared = await page.evaluate(() => retreatReview.waveFixtureContactReappear());
+      const afterGap = await page.evaluate(() => retreatReview.waveFixtureContactStep(2, true));
+      await writeFile(join(directory, 'contact-switch.json'), JSON.stringify({
+        fixture: 'production-ai-manually-placed-targets-natural-observation-enemy-fire-disabled-health-raised',
+        start: contactStart, rangedContact, switched, afterSwitch, switchedBack, afterReturn, gap, reappeared, afterGap, errors,
+      }, null, 2));
+      assert.notEqual(switched.contact?.targetId, switched.target,
+        'the new observed target must differ from the previous contact');
+      assert.equal(switched.nextFire, rangedContact.nextFire, 'switching target must not reset weapon cooldown');
+      assert.ok(switched.clearShotLine && switched.distance <= 12, 'the new target must be visible and in range');
+      assert.equal(afterSwitch.threatId, switched.target, 'production sensing must observe the replacement');
+      assert.equal(afterSwitch.threatSense, 'vision');
+      assert.ok(afterSwitch.rifleShots > switched.rifleShots,
+        `a new observed threat should not inherit the previous target's shot cooldown: ${JSON.stringify({ switched, afterSwitch })}`);
+      assert.equal(afterSwitch.contact?.targetId, switched.target);
+      assert.equal(switchedBack.target, contactStart.target);
+      assert.equal(switchedBack.nextFire, afterSwitch.nextFire, 'switching back must not reset weapon cooldown');
+      assert.equal(afterReturn.threatId, switchedBack.target, 'production sensing must observe the original target again');
+      assert.equal(afterReturn.threatSense, 'vision');
+      assert.equal(afterReturn.rifleShots, switchedBack.rifleShots,
+        `switching back to the same contact must not allow an unlimited new shot: ${JSON.stringify({ switchedBack, afterReturn })}`);
+      assert.equal(gap.contact, null, 'the contact ends when no living enemy is nearby');
+      assert.deepEqual(gap.cachedContacts, []);
+      assert.equal(reappeared.nextFire, gap.nextFire, 'reappearance must not reset weapon cooldown');
+      assert.ok(reappeared.clearShotLine && reappeared.distance <= 12);
+      assert.equal(afterGap.threatId, reappeared.target);
+      assert.equal(afterGap.threatSense, 'vision');
+      assert.ok(afterGap.rifleShots > reappeared.rifleShots,
+        'the same target can be engaged again after the previous encounter has ended');
+      assert.deepEqual(errors, []);
+    } else {
+      meleeStart = await page.evaluate(() => retreatReview.waveFixtureContactSetDistance(6));
+      closeContact = await page.evaluate(() => retreatReview.waveFixtureContactStep(8));
+      assert.equal(closeContact.dadaoSwings, meleeStart.dadaoSwings + 1,
+        `a retreating soldier should make one bounded Dadao attack before leaving the same close contact: ${JSON.stringify(closeContact)}`);
+      assert.ok(Math.hypot(closeContact.position[0] - meleeStart.position[0],
+        closeContact.position[2] - meleeStart.position[2]) > .1,
+        `the retreat should resume after the bounded close-contact attack: ${JSON.stringify(closeContact)}`);
+      console.log(JSON.stringify({ rangedContact, closeContact }));
+      assert.deepEqual(errors, []);
+    }
+    if (process.env.WAVE_CONTACT_ONLY !== '1' && process.env.WAVE_SWITCH_REVIEW_ONLY !== '1') {
+    await page.evaluate(() => retreatReview.restart());
+    await page.waitForFunction(() => document.querySelector('#loading').hidden &&
+      window.__battle?.state === 'playing', null, { timeout: 180000 });
     const records = [await page.evaluate(live => retreatReview.waveFixtureStart(live), liveCombat)];
     const steps = process.env.WAVE_EXTENDED_REVIEW === '1' ? 100 : 60;
     for (let step = 0; step < steps && records.at(-1).generations.every((generation, index) =>
@@ -1405,11 +2402,12 @@ try {
       'the covering squad must actually fire from its assigned defensive positions');
     }
     assert.ok(records.some(record => record.wave?.phase === 'cover'),
-      'the other four squads must actually cross before the covering squad can leave');
+      'the other squads must actually cross before the covering squad can leave');
     assert.ok(records.some(record => record.wave?.phase === 'interval' &&
-      (liveCombat || record.saved + record.lost === 55)),
+      (liveCombat || records[0].wave.squads.flat().every(id =>
+        record.savedIds.includes(id) || record.lostIds.includes(id)))),
       liveCombat ? 'every member must be evacuated or killed before the interval'
-        : 'all five squads must be evacuated or explicitly counted as losses before the interval');
+        : 'all original squads must be evacuated or explicitly counted as losses before the interval');
     assert.ok(records.at(-1).generations.some((generation, index) => generation > records[0].generations[index]),
       'the next wave must begin only after the completed interval');
     assert.deepEqual(errors, []);
@@ -1437,43 +2435,45 @@ try {
     console.log('Enemy regroup movement passed.');
   }
   if (process.env.REGROUP_REVIEW_ONLY === '1') {
-    const records = [await page.evaluate(() => retreatReview.regroupStart())];
+    const records = [await page.evaluate(() => retreatReview.regroupStart(false, true))];
     assert.equal(records[0].prepared, true);
     assert.equal(records[0].total, records[0].initialTotal);
     assert.equal(records[0].lost, 0);
     assert.equal(records[0].saved, 0);
-    assert.deepEqual(records[0].oldPresent, [records[0].keptAI]);
+    assert.deepEqual(records[0].oldPresent, records[0].originalAI);
     assert.deepEqual(records[0].playerEquipment, records[0].initialPlayerEquipment);
     const initialImage = await page.evaluate(() => retreatReview.capture([-64, 8, 8], [-40, 0, -4]));
     await writeFile(join(directory, 'west-spawn.png'), Buffer.from(initialImage, 'base64'));
     for (let step = 0; step < 60 && !records.at(-1).released; step++) {
-      records.push(await page.evaluate(() => retreatReview.regroupStep(5)));
+      records.push(await page.evaluate(() => retreatReview.regroupStep(5, true)));
       await writeFile(join(directory, 'regroup.json'), JSON.stringify({ fixture:
-        'production-call-path-manually-positioned-survivors-elevated-health', records, errors }, null, 2));
+        'production-call-path-original-survivor-positions-elevated-health-artificially-held-assembly-deadline',
+        records, errors }, null, 2));
       console.log(JSON.stringify({ time: records.at(-1).time, released: records.at(-1).released,
         sizes: records.at(-1).formations.map(f => f.size),
         pending: records.at(-1).formations.map(f => f.remaining.length) }));
     }
     const last = records.at(-1);
-    assert.equal(last.released, true, 'the first five squads must physically assemble');
+    assert.equal(last.released, true, 'the first ten squads must physically assemble');
     assert.equal(last.assemblyVoice?.active, 'assembled', 'real assembly release must trigger its voice');
-    assert.deepEqual(last.formations.filter(f => f.id !== 'friendly-0').map(f => f.size), [11, 11, 11, 11, 11]);
+    assert.deepEqual(last.formations.filter(f => f.id !== 'friendly-0').map(f => f.size), Array(10).fill(11));
     const blocks = last.formations.filter(f => f.id !== 'friendly-0');
     for (let slot = 1; slot < blocks.length; slot++) {
       const officer = blocks[slot - 1].positions.find(actor => actor.index === 2);
       const distance = Math.min(...blocks[slot].positions.filter(actor => actor.index !== 2).map(actor =>
         Math.hypot(actor.position[0] - officer.position[0], actor.position[2] - officer.position[2])));
-      assert.ok(Math.abs(distance - 2) <= 2 * SIHANG_ASSEMBLY_ARRIVAL + 1e-8,
-        'adjacent assembled blocks must keep the actual two-metre officer-to-soldier gap');
+      assert.ok(distance >= 2 - 2 * SIHANG_ASSEMBLY_ARRIVAL - 1e-8,
+        'adjacent assembled blocks must keep at least two metres between officer and soldier');
     }
-    assert.ok(last.births.length >= 54 && last.births.every(actor => actor.x < -36 && actor.z >= -8));
+    assert.ok(last.births.length >= 110 - records[0].originalAI.length &&
+      last.births.every(actor => actor.x < -36 && actor.z >= -8));
     assert.ok(last.births.some(actor => actor.maxX - actor.x > 10), 'new soldiers must walk east from the western spawn');
     assert.ok(last.births.some(actor => actor.ammo > 0), 'returned soldiers must respawn with refreshed equipment');
     assert.deepEqual(last.playerEquipment, last.initialPlayerEquipment);
     assert.ok(last.enemy.position[2] < -42, 'an enemy originally in the warehouse must physically withdraw north');
     assert.ok(last.stageElapsed < SIHANG_RULES.nightfallSeconds ? last.wave === null :
       last.wave?.number === 1 && last.wave.phase === 'main' && last.wave.squads.every(squad => squad.length === 11),
-    'the first wave must wait for nightfall and contain all five assembled squads');
+    'the first wave must wait for nightfall and contain all ten assembled squads');
     assert.deepEqual(errors, []);
     const image = await page.evaluate(() => retreatReview.capture([15, 5, 5], [-5, 1, -5]));
     await writeFile(join(directory, 'first-wave-assembled.png'), Buffer.from(image, 'base64'));
@@ -1507,7 +2507,8 @@ try {
       await writeFile(join(directory, 'regroup-partial.json'), JSON.stringify({ partial, errors }, null, 2));
     }
     assert.equal(partial.at(-1).released, true, 'a genuinely depleted roster must not block assembly');
-    assert.deepEqual(partial.at(-1).formations.filter(f => f.id !== 'friendly-0').map(f => f.size), [11, 7, 0, 0, 0]);
+    assert.deepEqual(partial.at(-1).formations.filter(f => f.id !== 'friendly-0').map(f => f.size),
+      [11, 7, ...Array(SIHANG_RULES.retreatSquads - 2).fill(0)]);
     assert.equal(partial.at(-1).lost, 0);
     assert.equal(partial.at(-1).saved, 0);
     assert.deepEqual(errors, []);
@@ -1577,14 +2578,22 @@ try {
     assert.deepEqual(errors, []);
     console.log('Native night ceasefire, three cover weapons, aircraft exit and flare cycles passed.');
   }
-  if (process.env.NIGHT_BOUNDARY_REVIEW_ONLY !== '1' && process.env.REGROUP_REVIEW_ONLY !== '1' &&
+  if (process.env.MASS_MECHANICAL_REVIEW_ONLY !== '1' &&
+    process.env.NIGHT_BOUNDARY_REVIEW_ONLY !== '1' && process.env.REGROUP_REVIEW_ONLY !== '1' &&
     process.env.ENEMY_REGROUP_REVIEW_ONLY !== '1' && process.env.WAVE_REVIEW_ONLY !== '1' &&
-    process.env.WAVE_OBSERVATION_REVIEW_ONLY !== '1' &&
-    process.env.WAVE_PATH_REVIEW_ONLY !== '1' && process.env.FOLLOW_REVIEW_ONLY !== '1' &&
-    process.env.WAVE_FOLLOW_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_OBSERVATION_REVIEW_ONLY !== '1' && process.env.WAVE_EARLY_REFILL_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_LIMITED_RESERVE_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_PATH_REVIEW_ONLY !== '1' && process.env.WAVE_COVER_APPROACH_REVIEW_ONLY !== '1' &&
+    process.env.SURROUNDED_REVIEW_ONLY !== '1' &&
+    process.env.BRIDGE_OBSTACLE_REVIEW_ONLY !== '1' && process.env.BRIDGE_ENGINEER_REVIEW_ONLY !== '1' &&
+    process.env.FOLLOW_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_FOLLOW_REVIEW_ONLY !== '1' && process.env.WAVE_COVER_SPACING_REVIEW_ONLY !== '1' &&
+    process.env.NATURAL_DEATH_REVIEW_ONLY !== '1' &&
     process.env.NATURAL_RETREAT_REVIEW_ONLY !== '1' &&
     process.env.PURSUIT_REVIEW_ONLY !== '1' && process.env.RETREAT_ENGINEER_REVIEW_ONLY !== '1' &&
-    process.env.NIGHT_FIRE_REVIEW_ONLY !== '1' && process.env.EMPLACEMENT_REVIEW_ONLY !== '1' &&
+    process.env.NIGHT_FIRE_REVIEW_ONLY !== '1' && process.env.BRIDGE_INTERCEPT_FIRE_REVIEW_ONLY !== '1' &&
+    process.env.ARMOR_INTERCEPT_REVIEW_ONLY !== '1' &&
+    process.env.EMPLACEMENT_REVIEW_ONLY !== '1' &&
     process.env.PLAYER_ASSEMBLY_SPAWN_REVIEW_ONLY !== '1' && process.env.PLAYER_SPAWN_UI_REVIEW_ONLY !== '1') {
   const restart = async () => {
     await page.evaluate(() => retreatReview.restart());

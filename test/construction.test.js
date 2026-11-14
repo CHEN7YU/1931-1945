@@ -67,6 +67,33 @@ test('live placement checks block and clear progress rather than allowing a HUD 
   advanceConstruction(state, input(), .1, () => null);
   assert.equal(state.progress, .1);
 });
+test('a configured temporary obstruction pauses only an existing held build and resumes without losing progress', () => {
+  const state = fixture(), data = input({ pauseOnReason: 'friendly occupant', buildSeconds: 6 });
+  advanceConstruction(state, data, 2, () => null);
+  advanceConstruction(state, data, 5, () => 'friendly occupant');
+  assert.equal(state.mode, 'building');
+  assert.equal(state.blockedReason, 'friendly occupant');
+  assert.equal(state.progress, 2);
+  assert.deepEqual(state.site, data.candidate);
+  assert.ok(advanceConstruction(state, data, 4, () => null).completed);
+
+  const released = fixture();
+  advanceConstruction(released, data, 2, () => null);
+  advanceConstruction(released, { ...data, holding: false }, 1, () => 'friendly occupant');
+  assert.equal(released.progress, 0);
+  assert.equal(released.site, null);
+
+  const otherBlock = fixture();
+  advanceConstruction(otherBlock, data, 2, () => null);
+  advanceConstruction(otherBlock, data, 1, () => 'enemy occupant');
+  assert.equal(otherBlock.progress, 0);
+  assert.equal(otherBlock.site, null);
+
+  const notStarted = fixture();
+  advanceConstruction(notStarted, data, 2, () => 'friendly occupant');
+  assert.equal(notStarted.mode, 'blocked');
+  assert.equal(notStarted.site, null);
+});
 test('another member or invalid construction context cannot inherit a previous engineer unfinished build', () => {
   const state = fixture();
   advanceConstruction(state, input(), 5.9, () => null);

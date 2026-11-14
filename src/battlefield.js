@@ -761,7 +761,7 @@ export function makeWorld(scene, surface, options = {}) {
   }
   const doorSystem = createDoorWorld(scene, town, obstacles, solids, timber, iron, doorTimber);
   sceneArt.doorLeaves = doorSystem.doors.length;
-  const buildingFire = createBuildingFire(scene, [...town.buildings, ...outskirts.buildings]);
+  const buildingFire = createBuildingFire(scene, [...town.buildings, ...outskirts.buildings], { flames: false });
   return { solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight, buildingFire,
     moveInfantry: walkSupport.move, bridgeSurfaces, riverSurfaces, town, outskirts, visibility, doorSystem, sceneArt,
     staticDamage: { craters: SHELL_CRATERS.map(crater => ({ ...crater })), ruinedShops: [...RUINED_SHOPS], wrecks } };

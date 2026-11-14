@@ -49,6 +49,26 @@ export function engineerObstacle(id, position, heading, profile = 'maxim24') {
     minY: position.y, height: position.y + 2 };
 }
 
+export function engineerConstructionReservations(actor, nearby) {
+  const reservations = [];
+  for (const builder of nearby) {
+    const equipment = builder.engineer, construction = equipment?.construction;
+    if (builder === actor || builder.team !== actor.team || builder.health <= 0 || builder.vehicleId ||
+      construction?.mode !== 'building' || !construction.site) continue;
+    const bounds = engineerObstacle(`construction-${builder.id}`, construction.site,
+      equipment.heading ?? builder.heading, equipment.selected);
+    bounds.nonSupporting = true;
+    // The construction occupancy check uses a .45 m body radius; movement uses .42 m.
+    bounds.hx += .05; bounds.hz += .05;
+    const x = Math.abs(bounds.cos) * bounds.hx + Math.abs(bounds.sin) * bounds.hz;
+    const z = Math.abs(bounds.sin) * bounds.hx + Math.abs(bounds.cos) * bounds.hz;
+    bounds.minX = bounds.cx - x; bounds.maxX = bounds.cx + x;
+    bounds.minZ = bounds.cz - z; bounds.maxZ = bounds.cz + z;
+    reservations.push(bounds);
+  }
+  return reservations;
+}
+
 export function engineerBuiltSpec(actor, position, heading) {
   if (!actor.engineer || !['friendly', 'enemy'].includes(actor.team)) throw new Error('A built weapon requires its engineer');
   return { id: `engineer-${actor.id}-${actor.engineer.selected}`, profile: actor.engineer.selected,

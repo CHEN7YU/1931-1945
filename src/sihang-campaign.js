@@ -2,7 +2,7 @@ import { sihangSouthBank } from './sihang-layout.js';
 
 export const SIHANG_RULES = Object.freeze({
   defenseSeconds: 240, troopLimit: 400, squadMembers: 11,
-  retreatSquads: 5, waveInterval: 5, retreatSpawnInterval: 2, coverRespawnSeconds: 10,
+  retreatSquads: 10, waveInterval: 5, retreatSpawnInterval: 2, assemblyTimeout: 30, coverRespawnSeconds: 10,
   flareSeconds: 24, flareInterval: 34, nightfallSeconds: 20,
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
@@ -15,11 +15,17 @@ export function createSihangCampaign() {
     retreatIds: [], aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [], northWallBreached: false,
     retreatTotal: 0, retreatRequired: 0, retreatReserve: 0, retreatLostIds: [],
     counterattack: false, counterattackAt: null, assemblyPrepared: false, assemblyReleased: false, coverRespawnAt: 0,
-    withdrawalWave: null, withdrawalWaveNumber: 0, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,
+    withdrawalWave: null, withdrawalWaveNumber: 0, waveAssemblyAt: null, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,
     demolition: { state: 'idle', operatorId: null, installProgress: 0,
       fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null, defuseInterruptedFor: 0,
       cooldownUntil: 0, installations: 0, disarmed: 0 },
   };
+}
+
+export function sihangWaveAssemblyRemaining(campaign) {
+  if (campaign.stage !== 'sihang-retreat' || campaign.waveAssemblyAt === null) return null;
+  return Math.max(0, campaign.waveAssemblyAt + SIHANG_RULES.assemblyTimeout - campaign.elapsed,
+    SIHANG_RULES.nightfallSeconds - campaign.stageElapsed);
 }
 
 export function startSihangWithdrawalWave(campaign, squads) {

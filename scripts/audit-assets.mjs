@@ -27,6 +27,7 @@ const groups = [
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/battle-endings/source.json', directory: 'audio/battle-endings', use: 'runtime', evidence: [] },
   { manifest: 'audio/sihang-voices/source.json', directory: 'audio/sihang-voices', use: 'runtime', evidence: [] },
+  { manifest: 'audio/sihang-assembly/source.json', directory: 'audio/sihang-assembly', use: 'runtime', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },
@@ -120,6 +121,17 @@ export async function auditAssets({ root, buildRoot } = {}) {
           !['Male', 'Female'].includes(file.gender))) throw new Error('Generated battle voice provenance requires review');
       permissions.push({ directory: group.directory, basis: metadata.license,
         limitation: 'Original dialogue synthesized with Azure stock voices; subject to the Azure agreement, not CC0 or historical recordings.' });
+    } else if (group.directory === 'audio/sihang-assembly') {
+      if (metadata.provider !== 'Qwen' || metadata.model !== 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice' ||
+        metadata.revision !== '85e237c12c027371202489a0ec509ded67b5e4b5' ||
+        metadata.source !== 'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice' ||
+        metadata.license !== 'Apache-2.0' || metadata.licenseUrl !== 'https://www.apache.org/licenses/LICENSE-2.0' ||
+        metadata.speaker !== 'Dylan' || metadata.language !== 'Chinese' ||
+        metadata.files.length !== 1 || metadata.files[0].file !== 'withdrawal.wav') {
+        throw new Error('Sihang assembly voice provenance requires review');
+      }
+      permissions.push({ directory: group.directory, basis: 'Apache-2.0 model',
+        limitation: 'Original dialogue generated using a Qwen stock voice; not a historical recording.' });
     } else if (group.directory === 'audio/tactical-feedback') {
       if (metadata.sourceKind !== 'reviewed-foley-and-procedural' || metadata.license !== 'Mixed-CC0-and-project-authored' ||
         metadata.files.length !== 10 || metadata.sources?.length !== 3 ||

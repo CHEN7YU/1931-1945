@@ -60,8 +60,8 @@ async function shoot(page, interrupt = null) {
         if (interrupt === 'pause') document.querySelector('#pause-button').click();
         else if (interrupt) {
           const code = interrupt === 'member' ? 'KeyY' : 'Digit2';
-          document.dispatchEvent(new KeyboardEvent('keydown', { code }));
-          document.dispatchEvent(new KeyboardEvent('keyup', { code }));
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+          document.body.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
         }
         resolve({ before: data.mechanicalAudio, after: window.__battle.mechanicalAudio, state: window.__battle.state });
         return;

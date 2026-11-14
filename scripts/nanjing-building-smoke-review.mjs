@@ -22,6 +22,18 @@ try {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.buildingSmokeReview = {
+        captureBuilding() {
+          setGameState('pause'); missionBriefing.hide();
+          graphics.setAutomaticLevel(2);
+          graphics.setEffect('smoke', true);
+          world.buildingFire.update(time, { smoke: true, low: true });
+          const source = world.buildingFire.sources[0];
+          camera.position.set(source.x + 5, source.y + 4, source.z + 5);
+          camera.lookAt(source.x, source.y + 1, source.z);
+          camera.updateMatrixWorld(true);
+          renderer.render(scene, camera);
+          return { image: renderer.domElement.toDataURL('image/png'), fire: world.buildingFire.snapshot };
+        },
         capturePair() {
           setGameState('pause'); missionBriefing.hide();
           graphics.setAutomaticLevel(2);
@@ -47,6 +59,12 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
+  const building = await page.evaluate(() => window.buildingSmokeReview.captureBuilding());
+  await writeFile(join(directory, 'nanjing-building-no-flames.png'),
+    Buffer.from(building.image.split(',')[1], 'base64'));
+  delete building.image;
+  assert.ok(building.fire.sources > 0 && building.fire.smoke > 0);
+  assert.equal(building.fire.flames, 0);
   const records = await page.evaluate(() => window.buildingSmokeReview.capturePair());
   for (const capture of records) {
     await writeFile(join(directory, capture.enabled ? 'smoke-on.png' : 'smoke-off.png'),
@@ -59,7 +77,7 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(join(directory, 'smoke-review.json'), JSON.stringify({
     fixture: 'Production Nanjing scene; paused; manually positioned diagnostic camera; fixed automatic quality level two; manual smoke off/on.',
-    records, errors }, null, 2));
+    building, records, errors }, null, 2));
   console.log('Nanjing reduced-quality skyline smoke review captured.');
 } finally {
   await browser.close();

@@ -264,7 +264,7 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     [4, 0, 12, 10], [5, 24, 12, 10], [6, 48, 12, 10], [7, 64, 12, 10], [8, 100, 12, 10],
   ])
     house(`concession-riverside-${i}`, x,
-      Math.max(sihangRiverBounds(x - w / 2).southZ, sihangRiverBounds(x + w / 2).southZ) + 13,
+      Math.max(sihangRiverBounds(x - w / 2 - 1).southZ, sihangRiverBounds(x + w / 2 + 1).southZ) + 13,
       w, d, true, i + 19);
 
   for (const [index, [x, z]] of [[-62, -49], [-42, -45], [-57, -3], [43, -15], [59, -45]].entries()) {

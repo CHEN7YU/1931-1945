@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createSihangCampaign, advanceSihangCampaign, SIHANG_RULES } from '../src/sihang-campaign.js';
-import { createSihangNight, sihangFlareState, sihangNightVisibility } from '../src/sihang-night.js';
+import { createSihangNight, sihangFlareState, sihangNightVisibility, SIHANG_VISUAL_NIGHTFALL_SECONDS } from '../src/sihang-night.js';
 import { sihangEnemyRayRange, sihangEnemyTargetAllowed, sihangSpawns, sihangEnemyRegroupPosts, SIHANG_EMPLACEMENTS } from '../src/sihang-roster.js';
 import { sihangBlastClearOfSouthBank, sihangRiverBounds, sihangNorthBank, SIHANG_WAREHOUSE, SIHANG_TANK_ORIGINS } from '../src/sihang-layout.js';
 import { SIHANG_SOUTH_BANK_LAMP_SPACING, sihangSouthBankStreetLampPositions } from '../src/sihang-city.js';
@@ -19,8 +19,12 @@ test('the south-bank follow row transitions continuously back to normal followin
   const desired = { x: 20, z: -6 }, actor = { index: 8 };
   const player = { index: 2, position: { x: 18, y: 0, z: -4 } };
   const row = sihangRetreatFollowPosition(actor, player, desired);
-  assert.deepEqual(row, { x: 10.8, z: -1.5 });
-  player.position.x = 26;
+  assert.deepEqual(row, { x: 10.8, z: -6.7 });
+  player.position.x = 22.74;
+  const chokeRow = sihangRetreatFollowPosition(actor, player, desired);
+  assert.ok(Math.abs(chokeRow.x - 15.54) < 1e-8);
+  assert.equal(chokeRow.z, -6.7);
+  player.position.x = 34;
   assert.deepEqual(sihangRetreatFollowPosition(actor, player, desired), desired);
   player.position.x = 18.001;
   const next = sihangRetreatFollowPosition(actor, player, desired);
@@ -152,12 +156,12 @@ test('nightfall and concession lights fade on simulation time without making the
   state.stageElapsed = 0; night.update(state);
   assert.equal(sun.intensity, 2); assert.equal(fill.intensity, 1);
   assert.equal(sihangNightVisibility(state, { x: 0, z: 0 }, { x: 70, z: 0 }), true);
-  state.stageElapsed = 10; night.update(state);
+  state.stageElapsed = 30; night.update(state);
   const halfway = sun.intensity;
   assert.ok(halfway > 0 && halfway < 2);
   const paused = night.snapshot; night.update(state);
   assert.deepEqual(night.snapshot, paused); assert.equal(sun.intensity, halfway);
-  state.stageElapsed = 20; night.update(state);
+  state.stageElapsed = SIHANG_VISUAL_NIGHTFALL_SECONDS; night.update(state);
   assert.equal(night.snapshot.transition, 1); assert.ok(sun.intensity > 0 && sun.intensity < halfway);
   assert.ok(fill.intensity >= 1 && scene.environmentIntensity >= .4);
   assert.equal(night.snapshot.visible, 0);
@@ -174,6 +178,25 @@ test('nightfall and concession lights fade on simulation time without making the
   assert.ok(world.concessionLighting.signIntensity > 0);
   world.setNightLighting(0);
   assert.equal(world.concessionLighting.streetLightIntensity, 0);
+});
+
+test('textured daytime sky remains continuous across sixty seconds while combat visibility retains its original timing', () => {
+  const scene = new THREE.Scene(), sun = new THREE.DirectionalLight(), fill = new THREE.HemisphereLight();
+  const background = new THREE.Texture();
+  scene.background = background;
+  const night = createSihangNight(scene, sun, fill), state = nightCampaign();
+  const sky = scene.getObjectByName('sihang-night-sky');
+  for (const [seconds, opacity] of [[0, 0], [30, .5], [60, 1]]) {
+    state.stageElapsed = seconds; night.update(state);
+    assert.equal(scene.background, background);
+    assert.equal(sky.material.uniforms.opacity.value, opacity);
+    assert.equal(sky.visible, seconds > 0);
+  }
+  state.stageElapsed = SIHANG_RULES.nightfallSeconds;
+  assert.equal(sihangNightVisibility(state, { x: 0, z: 0 }, { x: 25, z: 0 }), false);
+  night.update(createSihangCampaign());
+  assert.equal(sky.visible, false);
+  assert.equal(scene.background, background);
 });
 
 test('south-bank street lamps follow the curved quay at five-metre intervals', () => {
@@ -216,9 +239,9 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
   const playerSpawn = sihangSpawns().find(point => point.id === 'sihang-assembly-player');
   assert.equal(playerSpawn.playerOnly, true);
   assert.equal(playerSpawn.retreatOnly, true);
-  const ranks = Array.from({ length: 55 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
+  const ranks = Array.from({ length: 110 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
   assert.equal(formationPositions(playerSpawn, 11, world.obstacles, ranks).length, 11,
-    'player deployment must find real free positions even with five assembled squads');
+    'player deployment must find real free positions even with ten assembled squads');
   const simultaneous = [];
   for (const [slot, spawn] of sihangSpawns().filter(point => point.id.startsWith('sihang-retreat-')).entries()) {
     assert.ok(spawn.deploymentZone.maxX < SIHANG_WAREHOUSE.minX);
@@ -259,19 +282,25 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
   emplacementLook(aa, aa.heading, -.2); emplacementLook(roof, roof.heading, -.2);
   assert.equal(aa.pitch, -.2); assert.equal(roof.pitch, .05);
   assert.equal(emplacementCanAimAt(aa, { x: 44, y: 1, z: -55 }), true);
-  for (let slot = 0; slot < 6; slot++) for (let index = 0; index < 11; index++) {
+  for (let slot = 0; slot < 11; slot++) for (let index = 0; index < 11; index++) {
     const position = sihangAssemblyPosition(slot, index);
     assert.equal(circleBlocked(position.x, position.z, .42, world.obstacles, 0), false, `assembly ${slot}/${index}`);
     assert.equal(world.walkHeight(position.x, position.z, 0), 0);
   }
-  const slots = Array.from({ length: 66 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
+  const slots = Array.from({ length: 121 }, (_, i) => sihangAssemblyPosition(Math.floor(i / 11), i % 11));
   assert.ok(.75 - 2 * SIHANG_ASSEMBLY_ARRIVAL > .7,
     'two accepted rank positions must not obstruct each other at the assembly clearance');
+  for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++)
+    assert.ok(Math.hypot(slots[i].x - slots[j].x, slots[i].z - slots[j].z) > .7 + 2 * SIHANG_ASSEMBLY_ARRIVAL,
+      `assembly slots ${i} and ${j} must not overlap`);
   const westStart = { x: -52, y: 0, z: -4 };
   const westApproach = sihangAssemblyApproach(westStart, slots[10]);
   assert.equal(westApproach[0].x, westStart.x);
   assert.equal(westApproach[0].z, -1.1, 'western reinforcements enter the riverside aisle before reaching the ranks');
-  for (let slot = 0; slot < 5; slot++) {
+  const physicalOrder = Array.from({ length: SIHANG_RULES.retreatSquads + 1 }, (_, slot) => slot)
+    .sort((a, b) => sihangAssemblyPosition(a, 0).x - sihangAssemblyPosition(b, 0).x);
+  for (let order = 0; order < physicalOrder.length; order++) {
+    const slot = physicalOrder[order];
     const officer = sihangAssemblyPosition(slot, 2);
     const team = Array.from({ length: 11 }, (_, index) => sihangAssemblyPosition(slot, index));
     assert.ok(team.filter((_, index) => index !== 2).every(member => member.x < officer.x));
@@ -281,11 +310,14 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
       for (let index = 1; index < row.length; index++)
         assert.ok(Math.abs(row[index].z - row[index - 1].z - .75) < 1e-9);
     }
-    if (slot) {
-      const previousOfficer = sihangAssemblyPosition(slot - 1, 2);
+    if (order) {
+      const previousOfficer = sihangAssemblyPosition(physicalOrder[order - 1], 2);
       const nearestSoldier = Math.min(...team.filter((_, index) => index !== 2)
         .map(member => Math.hypot(member.x - previousOfficer.x, member.z - previousOfficer.z)));
-      assert.ok(Math.abs(nearestSoldier - 2) < 1e-9, 'adjacent blocks keep a two-metre officer-to-soldier gap');
+      assert.ok(nearestSoldier >= 2 - 1e-9, 'adjacent blocks keep at least a two-metre officer-to-soldier gap');
+      if (Math.abs(sihangAssemblyPosition(slot, 0).x -
+        sihangAssemblyPosition(physicalOrder[order - 1], 0).x - 5.2) < 1e-9)
+        assert.ok(Math.abs(nearestSoldier - 2) < 1e-9, 'closely spaced blocks retain their exact two-metre gap');
     }
   }
   const aislePath = world.elevatedPath({ x: 22, y: 0, z: -2.9 },
@@ -294,7 +326,7 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
   assert.ok(aislePath.every(point => Math.abs(point.z + 2.9) < .001),
     'the real path planner must preserve the rank aisle instead of snapping through a settled row');
   const besideStair = new THREE.Vector3(-34.71912664444806, 0, -32.09155838187848);
-  const stairExit = world.elevatedPath(besideStair, sihangAssemblyPosition(5, 10));
+  const stairExit = world.elevatedPath(besideStair, sihangAssemblyPosition(10, 10));
   assert.ok(stairExit.length, 'a real ground-level sidestep beside a stair must retain a walkable exit');
   for (const point of stairExit) {
     world.moveInfantry(besideStair, point.x - besideStair.x, point.z - besideStair.z);
@@ -302,7 +334,7 @@ test('all night spawn slots and bridgehead weapon operators use real dry collisi
       'escaping an artificial stair cutout must not cross masonry or unsupported steps');
   }
   const player = { x: 8, y: 0, z: -4 }, approachStart = { x: 7.5, y: 0, z: -5.2 };
-  const approach = sihangAssemblyApproach(approachStart, sihangAssemblyPosition(5, 4), [player]);
+  const approach = sihangAssemblyApproach(approachStart, sihangAssemblyPosition(10, 4), [player]);
   for (let i = 0; i < approach.length; i++)
     assert.ok(pointSegmentDistance(player, i ? approach[i - 1] : approachStart, approach[i]).distance >= .95,
       'a stationary player in one column aisle must not prevent use of the other actual aisle');

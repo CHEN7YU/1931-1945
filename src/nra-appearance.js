@@ -14,14 +14,15 @@ const faces = [
   { jaw: -.4, cheek: -.7, nose: .3, chin: .7, brow: -.4 },
 ];
 
-export function nraUniformForSquad(index) {
-  if (!Number.isInteger(index) || index < 0 || index >= 10) throw new Error('NRA uniform requires one of the ten squad slots');
+export function nraUniformForSquad(index, campaign) {
+  if (!Number.isInteger(index) || index < 0 || index >= 10 && !(campaign === 'sihang' && index === 10))
+    throw new Error('NRA uniform requires a valid squad slot');
   return index < 5 ? 'A' : 'B';
 }
 
 export function createNraAppearance(actor) {
   if (!actor?.id || !actor.unitId) throw new Error('Soldier appearance requires an owned identity');
-  const uniform = actor.formation ? nraUniformForSquad(actor.formation.index) : 'A';
+  const uniform = actor.formation ? nraUniformForSquad(actor.formation.index, actor.formation.campaign) : 'A';
   let seed = 2166136261;
   for (const letter of `${actor.unitId}:${actor.id}`) seed = Math.imul(seed ^ letter.charCodeAt(0), 16777619) >>> 0;
   const face = (seed >>> 8) % faces.length, complexion = seed % complexions.length, build = (seed >>> 16) % 3 - 1;
