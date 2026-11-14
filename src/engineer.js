@@ -73,7 +73,7 @@ export function engineerBuiltSpec(actor, position, heading) {
   if (!actor.engineer || !['friendly', 'enemy'].includes(actor.team)) throw new Error('A built weapon requires its engineer');
   return { id: `engineer-${actor.id}-${actor.engineer.selected}`, profile: actor.engineer.selected,
     x: position.x, z: position.z, altitude: position.y, heading, team: actor.team,
-    builderId: actor.id, builderUnitId: actor.unitId, engineerBuilt: true };
+    builderId: actor.id, builderUnitId: actor.unitId, builderTeam: actor.team, engineerBuilt: true };
 }
 
 export function engineerColliders(spec) {

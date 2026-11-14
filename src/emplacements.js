@@ -29,12 +29,22 @@ export function createEmplacement(spec) {
   const profile = standard?.antiAircraft && spec.retreatCover
     ? Object.freeze({ ...standard, minPitch: -.28 }) : standard;
   if (!profile || ![spec.x, spec.z, spec.heading].every(Number.isFinite)) throw new RangeError('Invalid fixed weapon position');
+  if (spec.engineerBuilt && !['friendly', 'enemy'].includes(spec.builderTeam))
+    throw new RangeError('Built weapon requires its original builder team');
   const health = spec.profile === 'bofors75' ? 240 : 160;
-  return { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
+  const point = { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
     yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
     recoil: 0, recoilShotAt: null,
     weapon: { type: profile.type, model: profile.model, ammo: profile.magazine, reserve: profile.reserve,
       nextShot: 0, reloadUntil: 0, settings: profile } };
+  if (spec.engineerBuilt) Object.defineProperty(point, 'builderTeam',
+    { value: spec.builderTeam, enumerable: true, writable: false, configurable: false });
+  return point;
+}
+
+export function canOperateEmplacement(point, actor) {
+  return actor.team !== 'friendly' || point.profile !== 'bofors75' ||
+    point.engineerBuilt === true && point.builderTeam === 'friendly';
 }
 
 export const ARTILLERY_MARCH = Object.freeze({

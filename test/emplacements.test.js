@@ -11,7 +11,7 @@ import { spawnBlockReason } from '../src/spawns.js';
 import { circleBlocked } from '../src/core.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
-test('bridge and dock each start with a usable shared-profile heavy machine gun and 75mm mountain gun', () => {
+test('bridge and dock each include a shared-profile heavy machine gun and 75mm mountain gun', () => {
   assert.equal(NANJING_EMPLACEMENTS.length, 7);
   assert.equal(NANJING_EMPLACEMENTS.find(point => point.id === 'gate-wall-mg').enclosed, true);
   for (const place of ['bridge', 'dock']) {

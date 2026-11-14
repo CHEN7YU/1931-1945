@@ -127,7 +127,7 @@ import { traceCivilianBullet } from './civilian-hits.js';
 import { NANJING_EMPLACEMENTS, EMPLACEMENT_PROFILES, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, aimEmplacement, emplacementCanAimAt,
   emplacementObstacles, moveArtillery, setArtilleryPosition, damageEmplacement, fireSupportPriority,
-  artilleryPositionTargets, emplacementCooldown } from './emplacements.js';
+  artilleryPositionTargets, emplacementCooldown, canOperateEmplacement } from './emplacements.js';
 import { createEmplacementModel } from './emplacement-model.js';
 import { KILL_COLUMNS, createBattleStats } from './battle-stats.js';
 import { campaignUnitName, campaignUnitDescription, soldierRoleLabel, friendlyAIFormationName } from './battle-units.js';
@@ -2809,6 +2809,9 @@ function focusEmplacement(actor) {
 function enterEmplacement(actor) {
   const point = focusEmplacement(actor);
   if (!point || actor.traversal.kind !== 'grounded' || actor.grenades.action) return false;
+  if (!canOperateEmplacement(point, actor)) {
+    toast('只能操作我军工兵建造的火炮'); return true;
+  }
   return occupyEmplacement(point, actor);
 }
 
@@ -2832,7 +2835,7 @@ function syncArtilleryCollision(point) {
 }
 
 function occupyEmplacement(point, actor) {
-  if (point.health <= 0) return false;
+  if (point.health <= 0 || !canOperateEmplacement(point, actor)) return false;
   if (point.weapon.settings.antiAircraft && actor !== controlledSoldier(entities) &&
     !(sihangCampaignMode && sihangCampaign.stage === 'sihang-defense' && actor.friendly && !actor.playerUnit &&
       sihangDefenseGoal(actor.formation.index, actor.index).stationId === point.id)) return false;
@@ -2901,6 +2904,7 @@ function operateAIEmplacement(actor, dt) {
     return false;
   }
   const usable = point => (!point.playerOnly || actor.playerUnit) && point.health > 0 &&
+    canOperateEmplacement(point, actor) &&
     (!point.weapon.settings.antiAircraft || sihangDuty?.stationId === point.id) &&
     (!sihangDuty || sihangDuty.stationId === point.id ||
       ['ground-intercept', 'ground-defense'].includes(sihangDuty.duty) &&
@@ -8536,7 +8540,8 @@ function updateDoorPrompt() {
   if (fixed && usable) {
     prompt.hidden = false;
     prompt.textContent = allies[current].emplacementId ? 'F 离开阵地 · R 装填 · 右键瞄准'
-      : `F 操作 ${EMPLACEMENT_PROFILES[fixed.profile].name}`;
+      : canOperateEmplacement(fixed, allies[current]) ? `F 操作 ${EMPLACEMENT_PROFILES[fixed.profile].name}`
+      : '只能操作我军工兵建造的火炮';
     return;
   }
   if (usable && nanjingCampaign?.stage === 'withdrawal-to-boats' && world.ferries.some(ferry =>

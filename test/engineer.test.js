@@ -4,7 +4,8 @@ import { createEngineerState, consumeEngineerMaterial, selectEngineerEquipment, 
   engineerFootprintBlocked, engineerConstructionReservations, ENGINEER, engineerBuiltSpec } from '../src/engineer.js';
 import { advanceConstruction, selectConstructionBlueprint } from '../src/construction.js';
 import { infantryEquipment } from '../src/battle-roster.js';
-import { createEmplacement, damageEmplacement, artilleryPositionTargets, fireEmplacement } from '../src/emplacements.js';
+import { createEmplacement, damageEmplacement, artilleryPositionTargets, fireEmplacement,
+  canOperateEmplacement } from '../src/emplacements.js';
 
 test('each whole infantry squad replaces one ordinary rifleman without changing dischargers, LMGs, sniper or demolition', () => {
   for (const team of ['friendly', 'enemy']) for (const count of [11, 14, 22]) {
@@ -93,11 +94,33 @@ test('built equipment keeps its engineer, squad, faction and original material i
     const spec = engineerBuiltSpec(actor, { x: 4, y: 0, z: 3 }, 1.2);
     assert.equal(spec.builderId, actor.id); assert.equal(spec.builderUnitId, actor.unitId);
     const point = createEmplacement(spec);
-    assert.equal(point.team, team); assert.equal(point.engineerBuilt, true);
+    assert.equal(point.team, team); assert.equal(point.builderTeam, team); assert.equal(point.engineerBuilt, true);
     assert.equal(point.weapon.ammo, 200);
     actor.engineer.selected = 'bofors75';
     assert.notEqual(engineerBuiltSpec(actor, { x: 4, y: 0, z: 3 }, 1.2).id, spec.id);
   }
+});
+
+test('friendly soldiers can operate only friendly-engineer field guns, even after capture', () => {
+  const friendly = { team: 'friendly' }, enemy = { team: 'enemy' };
+  const build = team => {
+    const actor = { id: `${team}-builder`, unitId: `${team}-unit`, team, engineer: createEngineerState() };
+    actor.engineer.selected = 'bofors75';
+    return createEmplacement(engineerBuiltSpec(actor, { x: 4, y: 0, z: 3 }, 0));
+  };
+  const ours = build('friendly'), theirs = build('enemy');
+  const preset = createEmplacement({ id: 'preset', profile: 'bofors75', x: 0, z: 0, heading: 0 });
+  const machineGun = createEmplacement({ id: 'mg', profile: 'maxim24', x: 0, z: 0, heading: 0, team: 'enemy' });
+  assert.equal(canOperateEmplacement(ours, friendly), true);
+  assert.equal(canOperateEmplacement(theirs, friendly), false);
+  assert.equal(canOperateEmplacement(preset, friendly), false);
+  assert.equal(canOperateEmplacement(machineGun, friendly), true);
+  assert.equal(canOperateEmplacement(theirs, enemy), true);
+  assert.equal(canOperateEmplacement(preset, enemy), true);
+  ours.team = 'enemy'; theirs.team = 'friendly';
+  assert.equal(canOperateEmplacement(ours, friendly), true);
+  assert.equal(canOperateEmplacement(theirs, friendly), false);
+  assert.throws(() => { theirs.builderTeam = 'friendly'; }, TypeError);
 });
 
 test('real artillery positions remain targets when unmanned and stop firing when actually destroyed', () => {
