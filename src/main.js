@@ -142,7 +142,7 @@ import { TRAVERSAL, findVault, findSillClimb, beginTraversal, advanceTraversal, 
 import { beginFatalFall, fatalFallExpired, fatalFallActionAllowed } from './fatal-fall.js';
 import { beginDying, dyingExpired, dyingActionAllowed, dyingMask, lastStandThrowable } from './dying.js';
 import { meleeEngagementRange, emptyMagazineMeleeCandidate } from './bayonet.js';
-import { beginBlastReaction, advanceBlastReaction, sampleBlastReaction, blastCasualty } from './blast-reaction.js';
+import { beginBlastReaction, advanceBlastReaction, sampleBlastReaction, sampleBlastBlur, blastCasualty } from './blast-reaction.js';
 import { deploymentMapPoint, deploymentMapView } from './deployment-map.js';
 import { WEAPON_MOUNT, mountCandidate, beginWeaponMount, releaseWeaponMount, advanceWeaponMount, mountedLook, mountStability } from './weapon-mount.js';
 import { createFatalReporter } from './fatal-report.js';
@@ -1088,6 +1088,7 @@ function setGameState(next) {
   if (!activeStates.has(state) || state === 'transferring') {
     grenadeBlastAudio?.reset(); blastFeedback.reset(); blastFeedbackTime = time;
     grenadeFlashUntil = grenadeFlashStrength = 0;
+    canvas.style.filter = '';
   }
   footstepAudio?.sync(entities.control.soldierId, state === 'playing' && !controlledSoldier(entities)?.vehicleId);
   syncMechanicalAudio();
@@ -2923,8 +2924,17 @@ function operateAIEmplacement(actor, dt) {
       : stage === 'gate-defense' ? !point.id.startsWith('dock-') : stage === 'dock-defense' && point.id.startsWith('dock-'));
   let point = emplacements.get(actor.emplacementId ?? actor.tactics.stationId);
   if (point && !usable(point)) { releaseEmplacement(actor, false); return false; }
+  const regroup = sihangCampaignMode && stage === 'sihang-retreat' && !sihangCampaign.counterattack && !actor.friendly;
+  const withinRegroupReach = point => {
+    const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
+    return Math.hypot(actor.position.x - pose.operator.x, actor.position.z - pose.operator.z) <= .6;
+  };
+  if (regroup && !actor.emplacementId && point && !withinRegroupReach(point)) {
+    releaseEmplacement(actor, false); point = null;
+  }
   if (!point) {
     point = [...emplacements.values()].filter(point => usable(point) && !point.operatorId && !point.crewId &&
+      (!regroup || withinRegroupReach(point)) &&
       Math.abs(actor.position.y - (point.altitude ?? world.groundHeight(point.x, point.z))) < 1 &&
       Math.hypot(actor.position.x - point.x, actor.position.z - point.z) < 25)
       .sort((a, b) => Math.hypot(actor.position.x - a.x, actor.position.z - a.z) -
@@ -3793,7 +3803,8 @@ function updateJapaneseArmor(transport, dt) {
   const protectedInfantry = sihangCampaignMode
     ? enemies.filter(actor => actor.tactics.sihangDemolitionReturned) : [];
   const shot = advanceChiHaAI(transport, dt, time, {
-    crew, canFire: Boolean(gunner) && !nightRegroup && !eastAssembly && !finalBoardingFireHeld(nanjingCampaign, time), targets: nightRegroup || eastAssembly ? [] : gateRegroup
+    crew, canFire: Boolean(gunner) && !eastAssembly && !finalBoardingFireHeld(nanjingCampaign, time), holdOnVisible: nightRegroup,
+    targets: eastAssembly ? [] : gateRegroup
       ? cannonTargets.filter(actor => actor.position.z > -12 && Math.hypot(actor.position.x, actor.position.z - 29) < 40)
       : cannonTargets, objective,
     destination: nightRegroup ? { x: (entities.units.get(transport.unitId).armorSlot === 0 ? -70 : 70), z: -55 }
@@ -3820,7 +3831,7 @@ function updateJapaneseArmor(transport, dt) {
   });
   transport.position.y = world.groundHeight(transport.position.x, transport.position.z);
   const machineGunShots = advanceChiHaMachineGuns(transport, dt, time, {
-    crew, targets: nightRegroup || eastAssembly || finalBoardingFireHeld(nanjingCampaign, time) ? [] : targets, busyCrewIds: shot ? [gunner.id] : [],
+    crew, targets: eastAssembly || finalBoardingFireHeld(nanjingCampaign, time) ? [] : targets, busyCrewIds: shot ? [gunner.id] : [],
     aimPoint: actor => ({ x: actor.position.x, y: actor.position.y +
       (actor.civilian?actor.aimHeight:soldierPostureHeight(actor,'aim')), z: actor.position.z }),
     visible: (from, to) => (!sihangCampaignMode || sihangNightVisibility(sihangCampaign, from, to)) &&
@@ -6058,23 +6069,8 @@ function updateAI(dt) {
       actor.tactics.mode = 'sihang-follow-withdrawal';
       continue;
     }
-    if (sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && !actor.vehicleId &&
-      !actor.friendly && !sihangCampaign.counterattack) {
-      actor.target = null; actor.tactics.lastSeen = null; actor.rifleReady = false;
-      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'night-regroup');
-      const post = sihangEnemyPosts[actor.formation.index * SIHANG_RULES.squadMembers + actor.index];
-      if (!post) throw new Error('四行仓库日军缺少整顿位置');
-      if (Math.hypot(actor.position.x - post.x, actor.position.z - post.z) > .65 || Math.abs(actor.position.y) > .3) {
-        actor.stance = 'standing'; actor.firingPose = null;
-        walkActor(actor, post, 3.5, dt, true);
-      } else {
-        stopLocomotion(actor.locomotion);
-        actor.stance = 'crouched'; actor.firingPose = 'crouched';
-        advanceAITurn(actor, Math.PI, dt);
-      }
-      actor.tactics.mode = 'sihang-regroup';
-      continue;
-    }
+    const sihangRegroup = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' &&
+      !actor.vehicleId && !actor.friendly && !sihangCampaign.counterattack;
     if (!(sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat') &&
       operateAIEngineer(actor, dt)) continue;
     if (operateAIEmplacement(actor, dt)) continue;
@@ -6295,7 +6291,7 @@ function updateAI(dt) {
       !actor.friendly && !actor.formation.sihangDemolition);
     const supportGoal = coveringSappers ? sihangSupportGoal(actor) ??
       { ...actor.spawnPosition, y: 0, transit: true } : null;
-    if (operateAIDischarger(actor, dt)) continue;
+    if (!sihangRegroup && operateAIDischarger(actor, dt)) continue;
     const eye = actor.nativeMotion ? soldierEyePosition(actor) : { x: position.x, y: position.y + 1.45, z: position.z };
     const from = new THREE.Vector3(eye.x, eye.y, eye.z);
     const directedPerson = actor.orderTarget?.kind === 'person'
@@ -6401,6 +6397,35 @@ function updateAI(dt) {
         {position:civilianPursuit.getWorldPosition(new THREE.Vector3())})) &&
       (!regroupGuard || actor.target.position.z > -12 &&
         Math.hypot(actor.target.position.x, actor.target.position.z - 27) < 40) ? actor.target : null;
+    if (sihangRegroup) {
+      if (actor.discharger) stowGrenadeDischarger(actor.discharger);
+      cancelAIMelee(actor);
+      const observed = target && tactics.threatSense === 'vision' && tactics.threatId === target.id &&
+        observeVisualThreat(tactics, target, time, point => hasLine(from, point, 75, target.vehicleId));
+      if (observed && actor.hasFirearm !== false) {
+        actor.path = []; actor.pathGoal = null; pathRequests.delete(tactics.id);
+        stopLocomotion(actor.locomotion);
+        tactics.mode = 'sihang-regroup-defense';
+        updateInfantryAimPitch(actor, targetAimPoint(target), soldierRifleMuzzle(actor), dt);
+        fightFromCover(actor, target, dt, null, true);
+      } else {
+        actor.target = null; tactics.lastSeen = null; actor.rifleReady = false;
+        resetAIRifleAim(actor.aiRifle, 'night-regroup');
+        const post = sihangEnemyPosts[actor.formation.index * SIHANG_RULES.squadMembers + actor.index];
+        if (!post) throw new Error('四行仓库日军缺少整顿位置');
+        if (Math.hypot(position.x - post.x, position.z - post.z) > .65 || Math.abs(position.y) > .3) {
+          actor.stance = 'standing'; actor.firingPose = null;
+          walkActor(actor, post, 3.5, dt, true);
+        } else {
+          stopLocomotion(actor.locomotion);
+          actor.stance = 'crouched'; actor.firingPose = 'crouched';
+          advanceAITurn(actor, Math.PI, dt);
+        }
+        tactics.mode = 'sihang-regroup';
+      }
+      settleActorSupport(actor);
+      continue;
+    }
     const retreatObservedTarget = actor.friendly && sihangCampaignMode &&
       sihangCampaign.stage === 'sihang-retreat' && tactics.threatSense === 'vision'
       ? entities.soldiers.get(tactics.threatId) : null;
@@ -8792,6 +8817,9 @@ function tickFrame(now) {
   performanceDiagnostics.measure('audio', presentRifleReports);
   const blastMotion = blastFeedback.update(Math.max(0, time - blastFeedbackTime), motionStrength);
   blastFeedbackTime = time;
+  const blur = state === 'playing' && preferenceValues.blastBlur && !controlledSoldier(entities)?.vehicleId
+    ? sampleBlastBlur(controlledSoldier(entities)) : 0;
+  canvas.style.filter = blur > 0 ? `blur(${blur.toFixed(3)}px)` : '';
   const unshakenPosition = camera.position.clone(), unshakenRotation = camera.quaternion.clone();
   camera.translateX(blastMotion.x); camera.translateY(blastMotion.y);
   camera.rotation.x += blastMotion.pitch; camera.rotation.y += blastMotion.yaw; camera.rotation.z += blastMotion.roll;
@@ -9036,6 +9064,7 @@ function syncPreferenceControls() {
   }
   for (const selector of document.querySelectorAll('[data-motion-strength]')) selector.value = String(motionStrength);
   for (const input of document.querySelectorAll('[data-tank-crushing]')) input.checked = preferenceValues.tankCrushing;
+  for (const input of document.querySelectorAll('[data-blast-blur]')) input.checked = preferenceValues.blastBlur;
   for (const element of document.querySelectorAll('[data-preferences-status]')) {
     element.textContent = preferences.status.problem ? preferences.status.message : '';
     element.hidden = !preferences.status.problem;
@@ -9059,6 +9088,10 @@ for (const button of document.querySelectorAll('[data-reset-controls]')) button.
 });
 for (const input of document.querySelectorAll('[data-tank-crushing]')) input.addEventListener('change', () => {
   preferences.update({ tankCrushing: input.checked });
+  syncPreferenceControls();
+});
+for (const input of document.querySelectorAll('[data-blast-blur]')) input.addEventListener('change', () => {
+  preferences.update({ blastBlur: input.checked });
   syncPreferenceControls();
 });
 for (const input of document.querySelectorAll('[data-audio-volume], [data-audio-mute]')) {

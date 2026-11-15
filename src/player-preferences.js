@@ -8,7 +8,7 @@ let sharedPreferences = null;
 export function getPlayerPreferences() { return sharedPreferences ??= createPlayerPreferences(); }
 const motionValues = [0, .35, 1];
 export function defaultPreferences() {
-  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, tankCrushing: true, resourceMode: 'auto',
+  return { mouseSensitivity: 1, aimSensitivity: 1, motionStrength: 1, blastBlur: true, tankCrushing: true, resourceMode: 'auto',
     startupQualityLevel: 0, startupQualityPolicy: 2, audio: defaultAudioSettings(),
     quality: { preset: 'low', effects: Object.fromEntries(QUALITY_EFFECTS.map(effect => [effect, true])) } };
 }
@@ -21,6 +21,7 @@ export function validatePreferences(value) {
     }
   }
   if (!motionValues.includes(value.motionStrength)) throw new RangeError('Invalid camera motion strength');
+  if (typeof value.blastBlur !== 'boolean') throw new TypeError('Invalid blast blur setting');
   if (typeof value.tankCrushing !== 'boolean') throw new TypeError('Invalid tank crushing setting');
   if (!RESOURCE_MODES.includes(value.resourceMode)) throw new RangeError('Invalid startup resource mode');
   if (!Number.isInteger(value.startupQualityLevel) || value.startupQualityLevel < 0 || value.startupQualityLevel > 3)
@@ -31,7 +32,7 @@ export function validatePreferences(value) {
     if (typeof value.quality.effects?.[effect] !== 'boolean') throw new TypeError(`Invalid saved graphics effect: ${effect}`);
   }
   return { mouseSensitivity: value.mouseSensitivity, aimSensitivity: value.aimSensitivity,
-    motionStrength: value.motionStrength, tankCrushing: value.tankCrushing, resourceMode: value.resourceMode,
+    motionStrength: value.motionStrength, blastBlur: value.blastBlur, tankCrushing: value.tankCrushing, resourceMode: value.resourceMode,
     startupQualityLevel: value.startupQualityLevel,
     startupQualityPolicy: value.startupQualityPolicy,
     audio: validateAudioSettings(value.audio), quality: { preset: value.quality.preset,
@@ -65,6 +66,7 @@ export function createPlayerPreferences({ storage = () => window.localStorage, w
           : record.settings.startupQualityLevel,
         startupQualityPolicy: record.settings?.startupQualityPolicy === undefined ? 2 : record.settings.startupQualityPolicy,
         tankCrushing: record.settings?.tankCrushing === undefined ? true : record.settings.tankCrushing,
+        blastBlur: record.settings?.blastBlur === undefined ? true : record.settings.blastBlur,
         audio: record.settings?.audio === undefined ? defaultAudioSettings() : record.settings.audio });
       status = '已恢复此浏览器保存的设置。';
     }

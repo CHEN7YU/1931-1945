@@ -218,6 +218,21 @@ test('a distant visible target does not park a tank at its maximum detection ran
   assert.deepEqual(vehicle.ai.goal, { x: 0, z: -80 });
 });
 
+test('regrouping armor stops for an observed target, fires, and resumes its assigned route when sight is lost', () => {
+  const { vehicle, crew } = fixture();
+  const ctx = context(crew, { holdOnVisible: true });
+  let shot;
+  for (let i = 0; i < 80 && !shot; i++) {
+    shot = advanceChiHaAI(vehicle, .1, i / 10, ctx);
+    assert.equal(vehicle.position.z, 0);
+  }
+  assert.equal(shot?.targetId, target.id);
+  ctx.visible = () => false;
+  for (let i = 80; i < 100; i++) advanceChiHaAI(vehicle, .1, i / 10, ctx);
+  assert.ok(vehicle.position.z < 0);
+  assert.deepEqual(vehicle.ai.goal, { x: 0, z: -80 });
+});
+
 test('a visible nearby enemy cannot replace the objective or keep a tank parked thirty metres away', () => {
   for (const extra of [{}, { safeToFire: () => false }, { canFire: false }]) {
     const { registry, vehicle, crew } = fixture(), planned = [];

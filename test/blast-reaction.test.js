@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beginBlastReaction, advanceBlastReaction, sampleBlastReaction, BLAST_REACTION, blastCasualty } from '../src/blast-reaction.js';
+import { beginBlastReaction, advanceBlastReaction, sampleBlastReaction, sampleBlastBlur, BLAST_REACTION, blastCasualty } from '../src/blast-reaction.js';
 const person = () => ({ id: 'soldier-5', health: 40, heading: 0, stance: 'standing',
   position: { x: 2, y: 0, z: 3 } });
 const motion = { weight: 0, speed: 0, prone: 0, postures: {}, headAim: null };
@@ -41,4 +41,22 @@ test('a later fatal blast can topple a recovered soldier during ordinary knockdo
   assert.equal(beginBlastReaction(actor, { x: 3, z: 3 }, 40, 4, motion), false);
   assert.equal(beginBlastReaction(actor, { x: 3, z: 3 }, 100, 4, motion, { force: true }), true);
   assert.ok(actor.blastReaction.direction.x < 0);
+});
+
+test('blast blur follows the same reaction clock, fades within two seconds and cannot be extended by repeated hits', () => {
+  const actor = person(), origin = { x: 0, z: 0 };
+  assert.equal(sampleBlastBlur(actor), 0);
+  assert.equal(beginBlastReaction(actor, origin, 50, 0, motion), true);
+  assert.equal(sampleBlastBlur(actor), 0);
+  advanceBlastReaction(actor, .12, () => {});
+  const peak = sampleBlastBlur(actor);
+  assert.ok(peak > 0 && peak <= 2.5);
+  assert.equal(beginBlastReaction(actor, origin, 80, .12, motion), false);
+  advanceBlastReaction(actor, .88, () => {});
+  assert.ok(sampleBlastBlur(actor) > 0 && sampleBlastBlur(actor) < peak);
+  const paused = sampleBlastBlur(actor);
+  advanceBlastReaction(actor, 0, () => assert.fail());
+  assert.equal(sampleBlastBlur(actor), paused);
+  advanceBlastReaction(actor, 1, () => {});
+  assert.equal(sampleBlastBlur(actor), 0);
 });

@@ -216,8 +216,9 @@ test('south-bank street lamps follow the curved quay at five-metre intervals', (
 
 test('the entire south bank remains a military ceasefire zone even after the counterattack', () => {
   const state = nightCampaign(), origin = { x: 90, z: -30 }, direction = { x: 0, z: 1 };
-  assert.equal(sihangEnemyTargetAllowed({ position: origin }, state), false);
-  assert.equal(sihangEnemyRayRange(origin, direction, 100, state), 0);
+  assert.equal(sihangEnemyTargetAllowed({ position: origin }, state), true);
+  assert.ok(sihangEnemyRayRange(origin, direction, 100, state) < 20);
+  assert.equal(sihangEnemyTargetAllowed({ position: { x: 90, z: 30 } }, state), false);
   state.counterattack = true;
   assert.equal(sihangEnemyTargetAllowed({ position: { x: 94, z: -9 } }, state), false);
   assert.equal(sihangEnemyTargetAllowed({ civilian: true, position: { x: 94, z: -9 } }, state), false);

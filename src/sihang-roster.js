@@ -107,13 +107,11 @@ export const SIHANG_EMPLACEMENTS = Object.freeze([
 ]);
 
 export function sihangEnemyTargetAllowed(actor, campaign = null) {
-  if (campaign?.stage === 'sihang-retreat' && !campaign.counterattack) return false;
   return Boolean(actor?.position && Number.isFinite(actor.position.x) &&
     Number.isFinite(actor.position.z) && !sihangSouthBank(actor.position));
 }
 
 export function sihangEnemyRayRange(origin, direction, range, campaign = null) {
-  if (campaign?.stage === 'sihang-retreat' && !campaign.counterattack) return 0;
   return sihangRiverRayRange(origin, direction, range);
 }
 

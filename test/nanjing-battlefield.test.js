@@ -23,6 +23,34 @@ function housePoint(home, x, z) {
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
 
+test('Nanjing wall slogans preserve their text without adding collision or shot blockers', () => {
+  const scene = new THREE.Scene();
+  const world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  const slogans = scene.children.filter(mesh => mesh.userData.nanjingFeature === 'wall-slogan');
+  assert.deepEqual(slogans.map(mesh => mesh.userData.text), [
+    '誓死保卫南京',
+    '地无分南北，年无分老幼，无论何人，皆有守土抗战之责',
+  ]);
+  scene.updateMatrixWorld(true);
+  for (const slogan of slogans) {
+    const { width, height } = slogan.geometry.parameters;
+    const wall = NANJING_CITY_WALLS.find(bounds =>
+      slogan.position.x - width / 2 >= bounds.minX &&
+      slogan.position.x + width / 2 <= bounds.maxX &&
+      Math.abs(slogan.position.z - bounds.maxZ) < .05);
+    assert.ok(wall, 'slogan is on the outside of its wall');
+    assert.ok(slogan.position.y - height / 2 > 0 && slogan.position.y + height / 2 < NANJING_WALL_WALK.height);
+    assert.equal(world.solids.includes(slogan), false);
+    const ray = new THREE.Raycaster(
+      new THREE.Vector3(slogan.position.x, slogan.position.y, slogan.position.z + 1),
+      new THREE.Vector3(0, 0, -1), 0, 2);
+    assert.ok(ray.intersectObjects(world.solids).some(hit => hit.object.userData.nanjingFeature === 'city-wall'),
+      'the existing wall still blocks shots');
+  }
+  for (const [x, z] of [[-30, 31], [49, 34], [55, 30], [66, 34]])
+    assert.equal(circleBlocked(x, z, .42, world.obstacles), false, 'the reviewed viewpoint is walkable');
+});
+
 test('Nanjing has physical shell holes and smoke without persistent building flames', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);

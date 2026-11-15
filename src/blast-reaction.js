@@ -3,6 +3,7 @@ import { createCasualtyState } from './casualties.js';
 export const BLAST_REACTION = Object.freeze({ stagger: .16, fall: .65, roll: 1.2,
   brace: 1.85, rise: 3.05, duration: 3.4, cooldown: 6, minimumDamage: 12 });
 export const BLAST_POSE_TIMES = Object.freeze([0, .16, .4, .65, 1.2, 1.85, 2.4, 3.05, 3.4]);
+export const BLAST_BLUR_SECONDS = 2;
 const clamp = value => Math.max(0, Math.min(1, value));
 const smooth = (from, to, value) => { const t = clamp((value - from) / (to - from)); return t * t * (3 - 2 * t); };
 
@@ -45,6 +46,14 @@ export function sampleBlastReaction(actor) {
     eyeHeight: (state.returnStance === 'prone' ? .45 : state.returnStance === 'crouched' ? 1.05 : 1.67) * (1 - fall) + .27 * fall,
     pitch: localZ * .92 * fall, roll: -localX * .92 * fall + .2 * rolled,
     yaw: state.casualty.yaw * fall };
+}
+
+export function sampleBlastBlur(actor) {
+  const state = actor?.blastReaction;
+  if (!state || state.elapsed >= BLAST_BLUR_SECONDS) return 0;
+  const onset = smooth(0, .12, state.elapsed);
+  const recovery = 1 - smooth(.12, BLAST_BLUR_SECONDS, state.elapsed);
+  return 2.5 * (.65 + .35 * state.strength) * onset * recovery;
 }
 
 export function advanceBlastReaction(actor, dt, move) {

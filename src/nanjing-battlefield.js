@@ -650,6 +650,58 @@ export function makeNanjingBattlefield(scene, surface) {
       merlon.userData.nanjingFeature = 'city-wall-merlon';
     }
   }
+  for (const spec of [
+    { text: '誓死保卫南京', lines: ['誓死保卫南京'], x: -30, width: 8, height: 2 },
+    { text: '地无分南北，年无分老幼，无论何人，皆有守土抗战之责',
+      lines: ['地无分南北，年无分老幼，', '无论何人，皆有守土抗战之责'], x: 55, width: 20, height: 5 },
+  ]) {
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, depthWrite: false, roughness: 1 });
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = spec.lines.length === 1 ? 1024 : 2048;
+      canvas.height = spec.lines.length === 1 ? 256 : 512;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Nanjing wall slogans require a working canvas');
+      context.fillStyle = '#d8d0bc';
+      const fontSize = spec.lines.length === 1 ? 180 : 140;
+      context.font = `bold ${fontSize}px KaiTi, STKaiti, SimSun, serif`;
+      context.textAlign = 'center'; context.textBaseline = 'middle';
+      let seed = spec.lines.length === 1 ? 1937 : 193712;
+      const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+      spec.lines.forEach((line, index) => {
+        const glyphs = [...line], widths = glyphs.map(glyph => context.measureText(glyph).width);
+        const total = widths.reduce((sum, width) => sum + width, 0);
+        context.save();
+        context.translate(canvas.width / 2, canvas.height * (spec.lines.length === 1 ? .5 : .34 + index * .32));
+        context.scale(Math.min(1, canvas.width * .96 / total), 1);
+        let x = -total / 2;
+        glyphs.forEach((glyph, i) => {
+          context.save();
+          context.translate(x + widths[i] / 2, (random() - .5) * fontSize * .1);
+          context.rotate((random() - .5) * .09);
+          context.scale(.97 + random() * .06, .96 + random() * .08);
+          context.globalAlpha = .82 + random() * .18;
+          context.fillText(glyph, 0, 0);
+          context.restore();
+          x += widths[i];
+        });
+        context.restore();
+      });
+      context.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < canvas.width * canvas.height / 60; i++) {
+        context.globalAlpha = .3 + random() * .6;
+        context.fillRect(random() * canvas.width, random() * canvas.height, 1 + random() * 13, .5 + random() * 3);
+      }
+      context.globalAlpha = 1; context.globalCompositeOperation = 'source-over';
+      material.map = new THREE.CanvasTexture(canvas);
+      material.map.colorSpace = THREE.SRGBColorSpace;
+    }
+    const slogan = new THREE.Mesh(new THREE.PlaneGeometry(spec.width, spec.height), material);
+    slogan.position.set(spec.x, 4.7, 20.43);
+    slogan.userData.nanjingFeature = 'wall-slogan'; slogan.userData.text = spec.text;
+    slogan.visible = Boolean(material.map);
+    scene.add(slogan);
+  }
   const barbicans = [];
   for (const side of [-1, 1]) {
     const x = side * (GATE_WIDTH / 2 - NANJING_RAMPART_THICKNESS / 2);

@@ -49,6 +49,17 @@ test('tank crushing defaults on, persists an explicit opt-out, and migrates olde
   assert.equal(f.create().snapshot.tankCrushing, false);
   assert.throws(() => settings.update({ tankCrushing: 'false' }), TypeError);
 });
+test('blast blur migrates old preferences and persists an explicit opt-out', () => {
+  const old = defaultPreferences(); delete old.blastBlur; old.mouseSensitivity = 1.5;
+  const f = fixture(JSON.stringify({ version: 1, settings: old })), settings = f.create();
+  assert.equal(settings.snapshot.blastBlur, true);
+  assert.equal(settings.snapshot.mouseSensitivity, 1.5);
+  assert.equal(settings.status.problem, false);
+  assert.equal(f.writes.length, 0);
+  settings.update({ blastBlur: false });
+  assert.equal(f.create().snapshot.blastBlur, false);
+  assert.throws(() => settings.update({ blastBlur: 'false' }), TypeError);
+});
 
 test('normal and aimed multipliers are independent, including scope and lower/upper bounds', () => {
   const settings = { mouseSensitivity: 3, aimSensitivity: .25 };

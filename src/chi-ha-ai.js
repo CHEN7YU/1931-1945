@@ -42,7 +42,7 @@ export function advanceChiHaAI(vehicle, dt, now, context) {
   }
   const distance = Math.hypot(goal.x - position.x, goal.z - position.z);
   ai.distanceToObjective = Math.hypot(objective.x - position.x, objective.z - position.z);
-  const arrived = distance <= CHI_HA.arrivalDistance;
+  const arrived = distance <= CHI_HA.arrivalDistance || Boolean(context.holdOnVisible && visible);
   if (arrived && visible) {
     vehicle.heading = turn(vehicle.heading,
       Math.atan2(position.x - target.position.x, position.z - target.position.z), CHI_HA.turnRate * dt);

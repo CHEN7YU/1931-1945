@@ -29,6 +29,15 @@ const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
 const launcherPreferences = getPlayerPreferences();
+const launcherBlastBlur = menu.querySelector('[data-blast-blur]');
+launcherBlastBlur.checked = launcherPreferences.snapshot.blastBlur;
+launcherBlastBlur.addEventListener('change', () => {
+  if (loaded) return;
+  launcherPreferences.update({ blastBlur: launcherBlastBlur.checked });
+  const status = menu.querySelector('[data-preferences-status]');
+  status.textContent = launcherPreferences.status.problem ? launcherPreferences.status.message : '';
+  status.hidden = !launcherPreferences.status.problem;
+});
 const lowMemoryRestart = document.getElementById('low-memory-restart');
 lowMemoryRestart.hidden = startupResourceProfile(params.get('resources') ??
   'auto', navigator.deviceMemory ?? null).lowMemory;
