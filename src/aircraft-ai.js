@@ -141,7 +141,7 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   const floor = groundHeight(p.x, p.z);
   if (!Number.isFinite(floor)) throw new RangeError('Aircraft AI requires a finite terrain height');
   if (state.phase !== 'egress' && (horizontal < 30 || p.y < floor + AIRCRAFT_AVOIDANCE.pullUpAltitude)) {
-    state.phase = 'egress'; state.until = now + 5;
+    state.phase = 'egress'; state.until = now + 2.5;
   }
   if (state.phase === 'egress' && now >= state.until) state.phase = 'approach';
   const edgeDistance = Math.max(Math.abs(p.x - patrolCenter.x), Math.abs(p.z - patrolCenter.z));

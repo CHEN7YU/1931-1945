@@ -4,15 +4,15 @@ import { DADAO_HAND_TO_BLADE } from './dadao-model.js';
 import { createEmplacement, emplacementObstacles } from './emplacements.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 
-export const ENGINEER = Object.freeze({ kits: 2, buildSeconds: 20, reach: 3.2,
-  profiles: Object.freeze(['maxim24', 'bofors75']) });
+export const ENGINEER = Object.freeze({ kits: 3, buildSeconds: 20, reach: 3.2,
+  profiles: Object.freeze(['maxim24', 'bofors75', 'maxim24aa']) });
 const toolWood = new THREE.MeshStandardMaterial({ color: 0x59422c, roughness: .85 });
 const toolSteel = new THREE.MeshStandardMaterial({ color: 0x51585a, roughness: .6, metalness: .7 });
 
 export function createEngineerState() {
-  return { materials: { maxim24: 1, bofors75: 1 }, selected: 'maxim24', construction: createConstructionState(),
+  return { materials: { maxim24: 1, bofors75: 1, maxim24aa: 1 }, selected: 'maxim24', construction: createConstructionState(),
     planAt: 0, site: null, heading: null, unfinished: [], built: [],
-    get kits() { return this.materials.maxim24 + this.materials.bofors75; } };
+    get kits() { return ENGINEER.profiles.reduce((total, profile) => total + this.materials[profile], 0); } };
 }
 
 export function rememberEngineerConstruction(state, construction = state.construction) {
@@ -53,7 +53,7 @@ export function cancelEngineer(state) {
 
 export function selectEngineerEquipment(state) {
   cancelEngineer(state);
-  state.selected = state.selected === 'maxim24' ? 'bofors75' : 'maxim24';
+  state.selected = ENGINEER.profiles[(ENGINEER.profiles.indexOf(state.selected) + 1) % ENGINEER.profiles.length];
 }
 
 export function consumeEngineerMaterial(state, profile, id) {
@@ -75,7 +75,8 @@ export function engineerObstacle(id, position, heading, profile = 'maxim24') {
   engineerPlacement(position, heading);
   if (!ENGINEER.profiles.includes(profile)) throw new RangeError('Unknown engineer equipment');
   const cos = Math.cos(heading), sin = Math.sin(heading);
-  const hx = profile === 'maxim24' ? 2 : 1.3, hz = profile === 'maxim24' ? 1.4 : 2.4;
+  const hx = profile === 'maxim24' ? 2 : profile === 'maxim24aa' ? 1.15 : 1.3;
+  const hz = profile === 'maxim24' ? 1.4 : profile === 'maxim24aa' ? 1.15 : 2.4;
   const x = Math.abs(cos) * hx + Math.abs(sin) * hz, z = Math.abs(sin) * hx + Math.abs(cos) * hz;
   return { id, oriented: true, cx: position.x, cz: position.z, cos, sin, hx, hz, angle: heading,
     minX: position.x - x, maxX: position.x + x, minZ: position.z - z, maxZ: position.z + z,

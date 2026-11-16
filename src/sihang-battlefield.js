@@ -10,7 +10,6 @@ import { accelerateCollisionMesh } from './solid-index.js';
 import { createSihangFlag } from './sihang-flag.js';
 import { createSihangCity } from './sihang-city.js';
 import { createWaterWaveClock } from './water-waves.js';
-import { createFloatingBodies } from './floating-bodies.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { createNorthWallMaterial, createNorthWallGeometry, northApertureSpan } from './sihang-north-facade.js';
 import {
@@ -653,11 +652,6 @@ export function makeSihangBattlefield(scene, surface) {
   doorSystem = createDoorWorld(scene, town, obstacles, solids, materials.wood, materials.iron);
   const movementLookup = obstacleLookup(obstacles, 3.5);
   const civiliansFactory = createCivilianCharacterFactory();
-  const floatingBodies = createFloatingBodies(scene, civiliansFactory, [
-    { x: 10, z: 15, waterLevel: R.waterY, heading: .5 },
-    { x: -19, z: 21, waterLevel: R.waterY, heading: -1.1 },
-    { x: 44, z: 12, waterLevel: R.waterY, heading: 1.8 },
-  ]);
   for (let i = 0; i < 36; i++) {
     const age = i % 9 === 0 ? 'child' : i % 9 === 1 ? 'elderly' : 'adult';
     const person = civiliansFactory.create(i, age, i % 2 ? 'man' : 'woman', 'none');
@@ -965,7 +959,6 @@ export function makeSihangBattlefield(scene, surface) {
     impactHeight: groundHeight, isDeepWater, riverBounds: sihangRiverBounds,
     updateWater(time) {
       waterWaves.update(time);
-      floatingBodies.update(time);
     },
     updateFlag: flagAnimation.update,
     setNightLighting: city.setNightLighting,

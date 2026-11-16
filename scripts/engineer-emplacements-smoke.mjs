@@ -41,6 +41,14 @@ window.__engineerObserve=()=>{
      id:point.id,profile:point.profile,team:point.team,health:point.health,x:point.x,z:point.z,
      ammo:point.weapon.ammo,shots:point.shots,operatorId:point.operatorId,ownerId:point.weapon.ownerId})),
    spawnIds:spawnPoints.map(point=>point.id)};
+};
+window.__engineerApproachAA=()=>{
+ const actor=entities.soldiers.get(window.__engineerFixtureId);
+ const point=[...emplacements.values()].find(item=>item.builderId===actor.id&&item.profile==='maxim24aa');
+ if(!point)throw new Error('Missing built AA emplacement');
+ actor.position.set(point.x,point.altitude,point.z+1.7);
+ actor.traversal.kind='grounded';stopLocomotion(actor.locomotion);
+ controlPose.yaw=actor.heading=0;updateCamera(0);
 };` });
   });
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5339/');
@@ -59,12 +67,13 @@ window.__engineerObserve=()=>{
   const snapshot = () => page.evaluate(() => __engineerObserve());
   const initial = await snapshot(); assert.equal(initial.role, 'engineer');
   const builds = [];
-  for (const profile of ['maxim24', 'bofors75']) {
+  for (const profile of ['maxim24', 'bofors75', 'maxim24aa']) {
     await page.keyboard.press('Digit2');
     if ((await snapshot()).selected !== profile) await page.keyboard.press('KeyR');
     await page.evaluate(() => __engineerFixturePlace());
     await page.waitForTimeout(300);
     const before = await snapshot();
+    assert.equal(await page.locator('#construction-title').textContent(), '工兵工事');
     await page.mouse.down();
     await page.waitForFunction(start => __engineerObserve().time >= start + 19, before.time, { timeout: 90000 });
     const unfinished = await snapshot();
@@ -80,8 +89,13 @@ window.__engineerObserve=()=>{
     await page.keyboard.press('Digit1');
   }
   const complete = await snapshot();
-  assert.deepEqual(complete.materials, { maxim24: 0, bofors75: 0 });
+  assert.deepEqual(complete.materials, { maxim24: 0, bofors75: 0, maxim24aa: 0 });
   assert.deepEqual(complete.spawnIds, initial.spawnIds, 'engineer builds must never create spawn points');
+  await page.evaluate(() => __engineerApproachAA());
+  await page.keyboard.press('KeyF');
+  const operated = await snapshot();
+  assert.equal(operated.points.find(point => point.profile === 'maxim24aa').operatorId, initial.controlledId);
+  await page.keyboard.press('KeyF');
   await page.keyboard.press('KeyY');
   for (let index = 0; index < 20 && (await snapshot()).controlledId !== initial.controlledId; index++)
     await page.keyboard.press('KeyY');
@@ -90,7 +104,7 @@ window.__engineerObserve=()=>{
   await page.keyboard.press('Digit2');
   await page.keyboard.press('KeyR');
   await page.mouse.down(); await page.waitForTimeout(1000); await page.mouse.up();
-  assert.equal((await snapshot()).points.length, 2, 'switching owner/tool cannot mint a third kit');
+  assert.equal((await snapshot()).points.length, 3, 'switching owner/tool cannot mint another kit');
   await writeFile(join(directory, 'engineer-builds.json'), JSON.stringify({ initial, builds, final: await snapshot(), errors,
     limitation: 'Real Y/1/2/R and held-mouse builds in the explicit infantry equipment fixture. Positions and hold orders are test setup, not normal gameplay or performance.' }, null, 2));
   assert.deepEqual(errors, []);

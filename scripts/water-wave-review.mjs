@@ -81,8 +81,7 @@ try {
   }
   assert.notEqual(frames[0], frames[1]);
   assert.notEqual(frames[1], frames[2]);
-  assert.equal(heights[0].length, 3);
-  assert.notDeepEqual(heights[0], heights[1]);
+  assert.equal(heights[0].length, 0);
   const close = await page.evaluate(() => window.waterWaveReview.capture(2.5, true));
   assert.equal(close.error, 0);
   await writeFile(join(directory, `${campaign}-floating-close.png`), Buffer.from(close.image.split(',')[1], 'base64'));

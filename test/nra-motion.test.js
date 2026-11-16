@@ -430,7 +430,7 @@ test('one soldier switches between charge, quick short steps and aimed slow move
   assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
   assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.25);
   assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
-  assert.ok(samples.jog.bodyLean >= .20 && samples.jog.bodyLean <= .22);
+  assert.ok(samples.jog.bodyLean >= .64 && samples.jog.bodyLean <= .66);
   assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .04);
   assert.ok(samples.sprint.runContact < samples.jog.runContact - .1);
   assert.ok(samples.aim.walkClearance < samples.jog.walkClearance * .5);
@@ -447,6 +447,25 @@ test('one soldier switches between charge, quick short steps and aimed slow move
   assert.ok(wrapped.runPhase >= 0 && wrapped.runPhase < 1 && wrapped.walkPhase >= 0 && wrapped.walkPhase < 1);
 });
 
+test('both factions use the approved travel lean while automatic chest fire blends to its reachable carry', () => {
+  for (const team of ['friendly', 'enemy']) for (const [speed, target] of [[2.7, .6108652382], [4.1, .7330382858]]) {
+    const person = actor();
+    Object.assign(person, { team, health: 100, stance: 'standing', rifleReady: false,
+      rifle: createRifleState(team === 'friendly' ? 'zb26' : 'type11'), locomotion: { speed, mode: 'sprint' } });
+    person.nativeMotion = createNraMotion({ ...createNativeGaitProfile(data.motion.idle), leanPivot: [0, 1, 0] }, person);
+    for (let frame = 0; frame < 180; frame++) {
+      person.position.z -= speed / 60; advanceNraMotion(person, 1 / 60);
+    }
+    assert.ok(Math.abs(person.nativeMotion.bodyLean - target) < .001);
+    person.rifleReady = true;
+    for (let frame = 0; frame < 180; frame++) {
+      person.position.z -= speed / 60; advanceNraMotion(person, 1 / 60);
+    }
+    assert.equal(person.nativeMotion.chestFire, 1);
+    assert.ok(person.nativeMotion.bodyLean < .28);
+  }
+});
+
 test('fast actual movement cannot retain an upright walk even when its mode label lags behind', () => {
   const person = actor();
   person.nativeMotion = createNraMotion({ ...createNativeGaitProfile(data.motion.idle), leanPivot: [0, 1, 0] }, person);
@@ -456,7 +475,7 @@ test('fast actual movement cannot retain an upright walk even when its mode labe
   }
   const fast = sampleNraMotion(person);
   assert.equal(fast.travelStyle, 'charge');
-  assert.ok(fast.bodyLean >= .25 && fast.bodyLean <= .27);
+  assert.ok(fast.bodyLean >= .73 && fast.bodyLean <= .74);
   assert.ok(fast.hipDrop >= .03 && fast.hipDrop <= .09);
   person.locomotion = { mode: 'walk', speed: 0 };
   for (let frame = 0; frame < 120; frame++) advanceNraMotion(person, 1 / 60);
@@ -480,7 +499,7 @@ test('real metres set running cadence at every timestep, even when requested loc
       'one complete left/right cycle covers exactly its visual stride');
     const stepsPerSecond = cycles * 2 / 3;
     assert.ok(speed === 3.15 ? stepsPerSecond > 3.7 && stepsPerSecond < 4.2 : stepsPerSecond > 4.2 && stepsPerSecond < 4.8);
-    assert.ok(pose.bodyLean >= (speed === 3.15 ? .20 : .25) && pose.bodyLean < .28);
+    assert.ok(pose.bodyLean >= (speed === 3.15 ? .64 : .73) && pose.bodyLean <= .74);
     const stopped = person.nativeMotion.gaitCycles;
     person.locomotion.speed = 4.8;
     for (let frame = 0; frame < fps; frame++) advanceNraMotion(person, 1 / fps);

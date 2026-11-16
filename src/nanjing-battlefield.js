@@ -15,7 +15,6 @@ import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
 import { createBuildingFire } from './building-fire.js';
 import { createWaterWaveClock } from './water-waves.js';
-import { createFloatingBodies } from './floating-bodies.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
@@ -1335,11 +1334,6 @@ export function makeNanjingBattlefield(scene, surface) {
   const dockRamp = new THREE.Mesh(rampGeometry, rampMaterial);
   scene.add(dockRamp); solids.push(dockRamp);
   const civilianCharacters = createCivilianCharacterFactory();
-  const floatingBodies = createFloatingBodies(scene, civilianCharacters, [
-    { x: 2, z: 51, waterLevel: SOUTH_RIVER_WATER, heading: .7 },
-    { x: 29, z: 54, waterLevel: SOUTH_RIVER_WATER, heading: -1.2 },
-    { x: -93, z: 12, waterLevel: -.28, heading: 2.1 },
-  ]);
   const makeFerry = createNanjingFerryFactory(timber), ferryRowers = [];
   const reeds = createShoreReeds(solids.filter(mesh => mesh.userData.nanjingFeature === 'river-stone-bank'));
   scene.add(reeds);
@@ -1791,7 +1785,6 @@ export function makeNanjingBattlefield(scene, surface) {
     updateWater(time) {
       waterWaves.update(time);
       waveTexture.offset.set(time * .004, time * -.003);
-      floatingBodies.update(time);
     },
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,

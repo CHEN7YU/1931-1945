@@ -17,6 +17,22 @@ try {
       const response = await route.fetch();
       await route.fulfill({ response, body: await response.text() + `
         window.artilleryOwnershipReview = {
+          actualBridge() {
+            const player = controlledSoldier(entities), point = emplacements.get('bridge-gun');
+            if (!point) throw new Error('Missing Nanjing bridge gun');
+            if (player.emplacementId) releaseEmplacement(player);
+            for (const id of [point.operatorId, point.crewId]) {
+              const occupant = entities.soldiers.get(id);
+              if (occupant) releaseEmplacement(occupant);
+            }
+            const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
+            player.position.set(pose.operator.x, pose.operator.y, pose.operator.z);
+            player.traversal.kind = 'grounded'; player.traversal.velocity = 0;
+            stopLocomotion(player.locomotion); controlPose.yaw = player.heading = point.yaw;
+            missionBriefing.hide(); updateCamera(0);
+            this.point = point;
+            return { id: point.id, focused: focusEmplacement(player)?.id };
+          },
           setup(kind) {
             const player = controlledSoldier(entities);
             if (player.emplacementId) releaseEmplacement(player);
@@ -25,7 +41,7 @@ try {
               scene.remove(this.point.view);
             }
             const builder = allForces.find(actor => actor.engineer && actor.team ===
-              (kind === 'enemy' ? 'enemy' : 'friendly'));
+              (kind.startsWith('enemy') ? 'enemy' : 'friendly'));
             if (!builder) throw new Error('Missing fixture engineer');
             let site = null;
             for (let z = battleArea.minZ + 10; z < battleArea.maxZ - 10 && !site; z += 5)
@@ -37,7 +53,7 @@ try {
               }
             if (!site) throw new Error('No clear fixture position');
             const old = builder.engineer.selected;
-            builder.engineer.selected = kind === 'machine-gun' ? 'maxim24' : 'bofors75';
+            builder.engineer.selected = kind.endsWith('machine-gun') ? 'maxim24' : kind === 'enemy-aa' ? 'maxim24aa' : 'bofors75';
             const spec = kind === 'preset'
               ? { id: 'review-preset', profile: 'bofors75', x: site.x, z: site.z, altitude: 0, heading: 0 }
               : { ...engineerBuiltSpec(builder, site, 0), id: 'review-' + kind };
@@ -77,17 +93,27 @@ try {
     if (campaign !== 'taierzhuang') url.searchParams.set('campaign', campaign);
     await page.goto(url.href); await deployFromMenu(page);
     await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
-    for (const kind of ['preset', 'enemy', 'friendly', 'machine-gun']) {
+    if (campaign === 'nanjing') {
+      const actual = await page.evaluate(() => artilleryOwnershipReview.actualBridge());
+      assert.equal(actual.focused, actual.id);
+      await page.keyboard.press('f');
+      const result = await page.evaluate(() => artilleryOwnershipReview.result());
+      assert.equal(result.playerPoint, actual.id, 'the real bridge gun must have an accessible operating position');
+      results.push({ campaign, kind: 'actual-bridge', initial: actual, result });
+      await page.keyboard.press('f');
+      await page.evaluate(() => { artilleryOwnershipReview.point = null; });
+    }
+    for (const kind of ['preset', 'enemy', 'friendly', 'machine-gun', 'enemy-machine-gun', 'enemy-aa']) {
       const initial = await page.evaluate(kind => artilleryOwnershipReview.setup(kind), kind);
-      if (['preset', 'enemy'].includes(kind)) {
-        assert.match(initial.prompt, /只能操作我军工兵建造的火炮/);
+      if (kind.startsWith('enemy')) {
+        assert.match(initial.prompt, /不能操作日军工兵建造的阵地/);
         const ai = await page.evaluate(() => artilleryOwnershipReview.aiDenied());
         assert.equal(ai.direct, false); assert.equal(ai.update, false);
         assert.equal(ai.stationId, null); assert.equal(ai.emplacementId, null);
       }
       await page.keyboard.press('f');
       const result = await page.evaluate(() => artilleryOwnershipReview.result());
-      assert.equal(result.playerPoint, ['preset', 'enemy'].includes(kind) ? null : initial.id);
+      assert.equal(result.playerPoint, kind.startsWith('enemy') ? null : initial.id);
       results.push({ campaign, kind, initial, result });
     }
     await page.close();

@@ -533,13 +533,13 @@ const ENGINEER_FRIENDLY_OCCUPIED = '队员占据建造空间';
 
 function engineerPlacementReason(actor, position) {
   const selected = actor.engineer.selected;
-  if (!actor.engineer.materials[selected]) return '此类阵地的材料已用完，按R切换另一类';
+  if (!actor.engineer.materials[selected]) return '此类阵地的材料已用完，按R切换建造类型';
   if (actor.traversal.kind !== 'grounded') return '落地后才能建造';
   const heading = actor.engineer.heading ?? actor.heading;
   const bounds = engineerObstacle('preview', position, heading, selected);
   if (sihangCampaignMode && Math.abs(position.y) > .025 &&
     !(sihangBridgeContains(position) && Math.abs(position.y - world.groundHeight(position.x, position.z)) <= .025))
-    return '四行仓库的机枪与火炮阵地只能在一楼或室外地面建造';
+    return '四行仓库的工兵阵地只能在一楼或室外地面建造';
   if (sihangCampaignMode && SIHANG_STAIRWELLS.some(stair =>
     bounds.minX < stair.maxX && bounds.maxX > stair.minX &&
     bounds.minZ < stair.maxZ && bounds.maxZ > stair.minZ)) return '楼梯及其出口不能设置阵地';
@@ -560,6 +560,7 @@ function engineerPlacementReason(actor, position) {
     candidates.add(reservation);
   if ([...candidates].some(obstacle => engineerFootprintBlocked(bounds, obstacle))) return '阵地所需空间受阻';
   const supports = selected === 'bofors75' ? [[-.95, 0], [.95, 0], [-.95, 1.9], [.95, 1.9], [0, -.65], [0, 1.02]]
+    : selected === 'maxim24aa' ? [[-.55, -.55], [.55, -.55], [-.55, .55], [.55, .55], [0, 0], [0, .68]]
     : [[-1.5, -.7], [0, -.7], [1.5, -.7], [-1.5, .7], [1.5, .7], [0, .76]];
   for (const [x, z] of supports) {
     const px = position.x + x * Math.cos(heading) + z * Math.sin(heading);
@@ -625,7 +626,7 @@ function updateEngineerConstruction(actor, dt, holding = held.primary, candidate
   if (actor === controlledSoldier(entities)) {
     playerInput.clearFire();
     for (const preview of engineerPreviews.values()) preview.model.visible = false;
-    toast(`${spec.profile === 'bofors75' ? '火炮' : '机枪'}阵地建成 · 按F操作，R切换另一类建造`);
+    toast(`${spec.profile === 'bofors75' ? '火炮' : spec.profile === 'maxim24aa' ? '高射机枪' : '机枪'}阵地建成 · 按F操作，R切换建造类型`);
   }
   const bounds = engineerObstacle(spec.id, result.completed.position, spec.heading, spec.profile);
   refreshEngineerObstacles(bounds);
@@ -710,7 +711,7 @@ function operateAIEngineer(actor, dt, combatTarget = null) {
   if (!equipment.site) {
     if (time < equipment.planAt || engineerPlanBudget <= 0) return false;
     engineerPlanBudget--; equipment.planAt = time + 2;
-    equipment.selected = equipment.materials.maxim24 ? 'maxim24' : 'bofors75';
+    equipment.selected = ENGINEER.profiles.find(profile => equipment.materials[profile]);
     equipment.heading = Math.atan2(actor.position.x - objective.x, actor.position.z - objective.z);
     const center = engineerPlacement(actor.position, equipment.heading);
     for (const offset of [0, 4.8, -4.8]) {
@@ -1732,7 +1733,7 @@ function updateControlHelp() {
         : actor.role === 'mortarman'
           ? '迫击炮手 · 1 步枪／收炮 · 2 迫击炮 · 站定后左键架设 · 鼠标左右调方向、上下调射程50–250米 · 架设后左键发射，自动装填 · 右键收起 · 5手榴弹 · 6炸药包 · Y换人'
           : actor.role === 'engineer'
-            ? '工兵 · 1步枪 · 2锤子 · R选择机枪／火炮 · 长按左键20秒建造 · 每类仅一份材料 · 5手雷 · 6炸药包 · Y换人'
+            ? '工兵 · 1步枪 · 2锤子 · R选择机枪／火炮／高射机枪 · 长按左键20秒建造 · 每类仅一份材料 · 5手雷 · 6炸药包 · Y换人'
           : 'WASD 慢跑 · C 慢走 · Shift 冲刺 · 左键 射击／挥刀 · 右键 瞄准 · R 装填 · F 交互 · Y 队员 · X 命令 · 1 主武器 · 3 大刀 · 5 手雷（G兼容选择） · 6 炸药包 · 左键准备／松开投掷';
   if (!transport) $('battle-controls').textContent += unit.type === 'infantry'
     ? ' · B 架枪／解除 · Space 跳跃／翻越低障碍（蹲卧时先起身）'
@@ -2401,12 +2402,13 @@ function showOverlay(kind = 'pause') {
   if (sihangCampaignMode) {
     $('overlay-kicker').textContent = ended ? kind === 'victory' ? '掩护撤离 / EVACUATED' : '历史铭记 / IN MEMORIAM'
       : dead ? '后备补充 / REINFORCEMENT' : '四行仓库 / SIHANG';
-    $('overlay-title').textContent = ended ? kind === 'victory' ? '守军已过桥，山河终有归期。' : '守军的牺牲，历史永远铭记。'
+    $('overlay-title').textContent = ended ? kind === 'victory' ? sihangRetreatStatus(sihangCampaign).unresolved
+      ? '撤离结束，山河终有归期。' : '守军已过桥，山河终有归期。' : '守军的牺牲，历史永远铭记。'
       : dead ? sihangDeploymentCount(sihangCampaign) ? '补充新班，继续掩护。' : '补充额度已尽，友军仍在坚守。' : '坚守仓库，掩护撤离。';
     $('overlay-description').hidden = false;
     $('overlay-description').textContent = ended
       ? `累计参战 ${sihangCampaign.deployed}/400 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
-      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。无撤退时限，全员去向确定后结算。';
+      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。少数士兵长时间滞留时将倒计时结算。';
     const retreat = sihangRetreatStatus(sihangCampaign);
     $('battle-summary').textContent = sihangCampaign.stage === 'sihang-retreat'
       ? `将士400人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`
@@ -2804,6 +2806,9 @@ function renderConstruction() {
   $('mortar-objective-sight').hidden = !visible || allies[current]?.mortar?.phase !== 'ready';
   if (!visible) return;
   const engineer = allies[current].engineer;
+  $('construction-title').textContent = engineer ? '工兵工事' : '轻型迫击炮 / 50–250米';
+  $('construction-help').textContent = engineer ? 'R切换类型 · 长按左键建造 · 1步枪'
+    : '左键架设／架设后左键发射 · 鼠标左右方向／上下射程 · 自动装填 · 右键收起 · 1步枪 · 2迫击炮';
   if (engineer) {
     $('mortar-objective-sight').hidden = true;
     const construction = engineer.construction;
@@ -2819,7 +2824,7 @@ function renderConstruction() {
       preview.model.position.y = position.y; preview.model.userData.update();
     }
     $('construction-status').textContent = construction.blockedReason ??
-      `${engineer.selected === 'maxim24' ? '机枪' : '火炮'}阵地 · ${unfinished ? '长按左键继续施工' : '长按左键20秒'} · R切换 · 材料 ${engineer.materials.maxim24}机枪／${engineer.materials.bofors75}火炮`;
+      `${engineer.selected === 'maxim24' ? '机枪' : engineer.selected === 'bofors75' ? '火炮' : '高射机枪'}阵地 · ${unfinished ? '长按左键继续施工' : '长按左键20秒'} · R切换 · 材料 ${engineer.materials.maxim24}机枪／${engineer.materials.bofors75}火炮／${engineer.materials.maxim24aa}高射`;
     $('construction-fill').style.width = `${(unfinished?.progress ?? construction.progress) / ENGINEER.buildSeconds * 100}%`;
     return;
   }
@@ -2911,7 +2916,7 @@ function enterEmplacement(actor) {
   const point = focusEmplacement(actor);
   if (!point || actor.traversal.kind !== 'grounded' || actor.grenades.action) return false;
   if (!canOperateEmplacement(point, actor)) {
-    toast('只能操作我军工兵建造的火炮或指定防御炮位'); return true;
+    toast('不能操作日军工兵建造的阵地'); return true;
   }
   return occupyEmplacement(point, actor);
 }
@@ -2937,7 +2942,7 @@ function syncArtilleryCollision(point) {
 
 function occupyEmplacement(point, actor) {
   if (point.health <= 0 || !canOperateEmplacement(point, actor)) return false;
-  if (point.weapon.settings.antiAircraft && actor !== controlledSoldier(entities) &&
+  if (point.weapon.settings.antiAircraft && !point.engineerBuilt && actor !== controlledSoldier(entities) &&
     !(sihangCampaignMode && sihangCampaign.stage === 'sihang-defense' && actor.friendly && !actor.playerUnit &&
       sihangDefenseGoal(actor.formation.index, actor.index).stationId === point.id)) return false;
   const entry = emplacementEntry(point, point.altitude ?? world.groundHeight(point.x, point.z),
@@ -3006,7 +3011,7 @@ function operateAIEmplacement(actor, dt) {
   }
   const usable = point => (!point.playerOnly || actor.playerUnit) && point.health > 0 &&
     canOperateEmplacement(point, actor) &&
-    (!point.weapon.settings.antiAircraft || sihangDuty?.stationId === point.id) &&
+    (!point.weapon.settings.antiAircraft || point.engineerBuilt || sihangDuty?.stationId === point.id) &&
     (!sihangDuty || sihangDuty.stationId === point.id ||
       ['ground-intercept', 'ground-defense'].includes(sihangDuty.duty) &&
       Math.abs(point.altitude ?? 0) < .3 &&
@@ -3061,7 +3066,7 @@ function operateAIEmplacement(actor, dt) {
   actor.rifleReady = false; stopLocomotion(actor.locomotion);
   actor.tactics.mode = antiAircraft ? 'operate-antiaircraft' : 'operate-fixed-weapon';
   const candidates = antiAircraft
-    ? [...entities.vehicles.values()].filter(vehicle => vehicle.team === 'enemy' && vehicle.type === 'plane' && vehicle.health > 0)
+    ? [...entities.vehicles.values()].filter(vehicle => vehicle.team !== actor.team && vehicle.type === 'plane' && vehicle.health > 0)
     : (actor.friendly ? enemies : sihangCampaignMode ? friendlyForces.filter(sihangEnemyTargetAllowed) :
       nanjingCampaignMode ? [...friendlyForces, ...nanjingCivilianCombatTargets()] : friendlyForces)
       .filter(enemy => enemy.health > 0 && enemy.targetKind !== 'aircraft' &&
@@ -3718,7 +3723,7 @@ function renderGrenades() {
     element.classList.toggle('selected', active); element.setAttribute('aria-current', String(active));
     if (slot === 2) {
       element.hidden = !actor?.mortar && !actor?.engineer;
-      element.title = actor?.engineer ? '工兵锤 · 按2选择，R切换机枪／火炮，长按左键20秒，每类仅一份材料'
+      element.title = actor?.engineer ? '工兵锤 · 按2选择，R切换机枪／火炮／高射机枪，长按左键20秒，每类仅一份材料'
         : '迫击炮 · 按2选择，左键架设，鼠标上下调射程，架设后左键发射';
       element.querySelector('.equipment-label').textContent = actor?.engineer ? '工' : '炮';
       element.setAttribute('aria-label', element.title);
@@ -7074,9 +7079,7 @@ function updateSihangMission(dt) {
     const inside = actor => actor.health > 0 && !actor.vehicleId && objectiveContainsPosition(point, actor.position);
     advanceCapture(point, dt, friendlyForces.some(inside), enemies.some(inside));
   }
-  advanceSihangCampaign(sihangCampaign, dt, { friendly: friendlyForces, playerSquad: allies,
-    settling: friendlyForces.filter(actor => actor !== player && actor.health > 0 &&
-      (actor.sihangParadeGoal || sihangSafePosition(actor.position))).length,
+  advanceSihangCampaign(sihangCampaign, dt, { friendly: friendlyForces, playerSquad: allies, player,
     captureLost: point.owner === 'enemy' });
   if (!previousRetreatOpen && sihangCampaign.playerRetreatOpen) sihangVoices?.play(audioContext, 'retreat-open');
   else if (!previousCounterattack && sihangCampaign.counterattack) sihangVoices?.play(audioContext, 'counterattack');
@@ -7113,6 +7116,20 @@ function updateSihangMission(dt) {
     toast('撤退命令 · 前往仓库南面，抵达后首批出发。南岸禁火。', 8);
     sihangVoices?.play(audioContext, 'withdrawal');
   }
+  const saved = new Set(sihangCampaign.evacuatedIds);
+  if (sihangCampaign.stage === 'sihang-retreat') for (const actor of friendlyForces) {
+    if (!saved.has(actor.id) || actor.sihangEvacuated) continue;
+    actor.sihangEvacuated = true;
+    releaseEmplacement(actor, false); actor.target = null; actor.tactics.cover = null;
+    if (actor === player) {
+      playerInput.clearFire(); held.primary = held.secondary = held.aiming = false;
+      if (!sihangCampaign.outcome) toast('已安全撤离 · 南岸禁止开火，等待其余守军撤离。', 5);
+    } else {
+      actor.sihangParadeSlot = sihangParadeSerial++;
+      actor.sihangParadeGoal = actor.sihangParadeSlot < 40
+        ? sihangParadePosition(actor.sihangParadeSlot) : sihangParadeExit(true);
+    }
+  }
   if (sihangCampaign.stage === 'sihang-retreat' && !sihangCampaign.outcome) {
     const inAssemblyPosition = position => position.x >= -34 && position.x <= 26 &&
       position.z >= -7.7 && position.z <= -.4 && Math.abs(position.y) < .4;
@@ -7139,20 +7156,8 @@ function updateSihangMission(dt) {
         obstructed.path = obstructed.pathGoal = null; pathRequests.delete(obstructed.tactics.id);
       }
     }
-    const saved = new Set(sihangCampaign.evacuatedIds), settled = [];
+    const settled = [];
     for (const actor of friendlyForces) if (saved.has(actor.id)) {
-      if (!actor.sihangEvacuated) {
-        actor.sihangEvacuated = true;
-        releaseEmplacement(actor, false); actor.target = null; actor.tactics.cover = null;
-        if (actor === player) {
-          playerInput.clearFire(); held.primary = held.secondary = held.aiming = false;
-          toast('已安全撤离 · 南岸禁止开火，等待其余守军撤离。', 5);
-        } else {
-          actor.sihangParadeSlot = sihangParadeSerial++;
-          actor.sihangParadeGoal = actor.sihangParadeSlot < 40
-            ? sihangParadePosition(actor.sihangParadeSlot) : sihangParadeExit(true);
-        }
-      }
       const goal = actor.sihangParadeGoal;
       if (actor !== player && goal && Math.abs(actor.position.y) < .3) {
         const passed = actor.sihangParadeSlot >= 40 && sihangParadePassage(actor.position, goal);
@@ -8447,6 +8452,8 @@ function updateHUD() {
           : sihangCampaign.northWallBreached ? '北墙已被炸开 · 日军正从缺口突入！守住一楼，继续坚持到撤退命令'
           : point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
             : '守住一楼 · 阻止北墙爆破 · 一楼出生，楼梯通往窗口与屋顶'
+      : sihangCampaign.strandedCountdownAt !== null
+        ? `仍有 ${retreat.unresolved} 人滞留北岸 · 结算倒计时 ${Math.max(0, Math.ceil(sihangCampaign.strandedCountdownAt + SIHANG_RULES.strandedCountdownSeconds - sihangCampaign.elapsed))}秒`
       : !sihangCampaign.assemblyReleased
         ? '前往仓库南面 · 抵达后首批撤退'
         : wave?.phase === 'interval'
@@ -8647,7 +8654,7 @@ function updateDoorPrompt() {
     prompt.hidden = false;
     prompt.textContent = allies[current].emplacementId ? 'F 离开阵地 · R 装填 · 右键瞄准'
       : canOperateEmplacement(fixed, allies[current]) ? `F 操作 ${EMPLACEMENT_PROFILES[fixed.profile].name}`
-      : '只能操作我军工兵建造的火炮或指定防御炮位';
+      : '不能操作日军工兵建造的阵地';
     return;
   }
   if (usable && nanjingCampaign?.stage === 'withdrawal-to-boats' && world.ferries.some(ferry =>

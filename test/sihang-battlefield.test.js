@@ -67,6 +67,12 @@ function horizontalHits(x, y, z, direction, length) {
 }
 
 describe('independent Sihang Warehouse battlefield', () => {
+  it('does not place decorative civilian remains on the river', () => {
+    assert.equal(scene.children.filter(child => child.name === 'floating-civilian-remains').length, 0);
+    world.updateWater(1);
+    assert.equal(scene.children.filter(child => child.name === 'floating-civilian-remains').length, 0);
+  });
+
   it('evacuees pass the actual parade tail and battle boundary instead of crowding one terminal coordinate', () => {
     const tail = sihangParadeExit(true), exit = sihangParadeExit();
     assert.equal(sihangParadePassage({ x: tail.x, y: 0, z: tail.z - .2 }, tail), true,

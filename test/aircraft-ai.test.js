@@ -99,6 +99,36 @@ test('Japanese aircraft turns, attacks visible enemies and retains ammo and simu
   assert.deepEqual(aircraft, before);
 });
 
+test('open-air strafing returns for repeated passes without changing gun cadence', () => {
+  for (const x of [0, 30]) {
+    const aircraft = plane(), times = [];
+    const player = { ...target, unitId: 'player-squad', position: { x, y: 0, z: 0 } };
+    for (let frame = 1; frame <= 60 * 45; frame++) {
+      const now = frame / 60;
+      if (advanceAircraftAI(aircraft, 1 / 60, now, {
+        targets: [player], preferredUnitId: player.unitId, canFire: true, visible: () => true,
+      })) times.push(now);
+    }
+    const passes = times.filter((time, index) => !index || time - times[index - 1] > 1);
+    assert.ok(passes.length >= 3, JSON.stringify({ x, passes }));
+    for (let index = 1; index < times.length; index++)
+      assert.ok(times[index] - times[index - 1] >= .1 - 1e-8);
+  }
+});
+
+test('changing the preferred squad replaces the previous target but retains visibility requirements', () => {
+  const aircraft = plane();
+  const a = { ...target, id: 'a', unitId: 'a', position: { x: 10, y: 0, z: 0 } };
+  const b = { ...target, id: 'b', unitId: 'b', position: { x: -10, y: 0, z: 0 } };
+  advanceAircraftAI(aircraft, .01, 1, { targets: [a, b], preferredUnitId: 'a', canFire: true, visible: () => true });
+  assert.equal(aircraft.aiFlight.targetId, 'a');
+  advanceAircraftAI(aircraft, .01, 2, { targets: [a, b], preferredUnitId: 'b', canFire: true, visible: () => true });
+  assert.equal(aircraft.aiFlight.targetId, 'b');
+  advanceAircraftAI(aircraft, .01, 3, { targets: [a, b], preferredUnitId: 'b', canFire: true,
+    visible: (_from, to) => to.x === 10 });
+  assert.equal(aircraft.aiFlight.targetId, 'a');
+});
+
 test('aircraft cannot spend ammunition on blocked targets, dead pilots or friendlies', () => {
   for (const facts of [{ targets: [target], canFire: false, visible: () => true },
     { targets: [target], canFire: true, visible: () => false },

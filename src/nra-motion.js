@@ -52,7 +52,11 @@ const smoothSpeed = (speed, start, end) => {
 export function nativeTravelLean(motion) {
   const jog = smoothSpeed(motion.speed, 1.5, 3.3), fast = smoothSpeed(motion.speed, 3.2, 4.8);
   const acceleration = Math.max(0, Math.min(1, (motion.acceleration ?? 0) / 4));
-  return (.045 + .17 * jog + .045 * fast + .055 * acceleration) * (1 - .82 * motion.gaitAim);
+  const firingLean = .045 + .17 * jog + .045 * fast + .055 * acceleration;
+  const travelLean = Math.min(.74, .045 + (.6108652382 - .045) * smoothSpeed(motion.speed, 1.5, 2.7) +
+    (.7330382858 - .6108652382) * smoothSpeed(motion.speed, 2.7, 4.1) + .055 * acceleration);
+  const chestFire = motion.chestFire ?? 0;
+  return (travelLean * (1 - chestFire) + firingLean * chestFire) * (1 - .82 * motion.gaitAim);
 }
 
 export function nativeGaitParameters(motion) {

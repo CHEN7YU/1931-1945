@@ -28,9 +28,9 @@ test('taking over existing AI preserves the troop budget and original withdrawal
 });
 
 test('a transferred soldier and remaining AI still resolve their original withdrawal wave', () => {
-  const state = createSihangCampaign(), player = soldier('taken'), child = soldier('stays-ai'), other = soldier('other');
+  const state = createSihangCampaign(), player = soldier('taken'), child = soldier('stays-ai'), other = soldier('other'), pending = soldier('pending');
   state.reserve = 0;
-  const friendly = [player, child, other];
+  const friendly = [player, child, other, pending];
   advanceSihangCampaign(state, 240, { friendly });
   state.assemblyReleased = true;
   const squads = [[player.id, child.id], [other.id], ...Array.from({ length: 8 }, () => [])];
@@ -43,12 +43,13 @@ test('a transferred soldier and remaining AI still resolve their original withdr
   assert.equal(advanceSihangWithdrawalWave(state), 'main');
   child.position.z = 40;
   other.health = 0;
-  advanceSihangCampaign(state, .1, { friendly, playerSquad: [player], settling: 1 });
+  advanceSihangCampaign(state, .1, { friendly, playerSquad: [player] });
   assert.equal(state.counterattack, true);
   assert.deepEqual(state.evacuatedIds, [player.id, child.id]);
   assert.deepEqual(state.retreatLostIds, [other.id]);
   assert.deepEqual(wave.squads, squads);
   assert.equal(advanceSihangWithdrawalWave(state), 'interval');
+  pending.position.z = 40;
   advanceSihangCampaign(state, .1, { friendly, playerSquad: [player] });
   assert.equal(state.outcome, 'evacuated');
 });
@@ -103,10 +104,9 @@ test('crossing before the assembly is released remains reversible and cannot pre
   advanceSihangCampaign(state, .1, { friendly });
   state.assemblyReleased = true;
   player.position.z = ai.position.z = 40;
-  advanceSihangCampaign(state, .1, { friendly, settling: 1 });
-  assert.deepEqual(state.evacuatedIds, ['p', 'ai']);
-  assert.equal(state.counterattack, true); assert.equal(state.outcome, null);
   advanceSihangCampaign(state, .1, { friendly });
+  assert.deepEqual(state.evacuatedIds, ['p', 'ai']);
+  assert.equal(state.counterattack, true);
   assert.equal(state.outcome, 'evacuated');
 });
 
@@ -241,7 +241,7 @@ test('without an attack the entire wave departs before the next-wave interval be
   assert.equal(advanceSihangWithdrawalWave(state), 'interval');
 });
 
-test('majority does not end the mission; the final identity and its physical parade walk must both be resolved', () => {
+test('majority does not end the mission; the final identity ends it without waiting for parade walking', () => {
   const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai'), survivor = soldier('s', true);
   state.reserve = 0;
   const others = [soldier('b'), soldier('c')], friendly = [player, survivor, ai, ...others];
@@ -257,10 +257,99 @@ test('majority does not end the mission; the final identity and its physical par
   assert.equal(state.retreatTotal, 5); assert.equal(state.retreatRequired, 3);
   survivor.position.z = 40;
   others[1].health = 0;
-  advanceSihangCampaign(state, .1, { friendly, settling: 1 });
-  assert.equal(state.outcome, null);
-  advanceSihangCampaign(state, .1, { friendly, settling: 0 });
+  advanceSihangCampaign(state, .1, { friendly });
   assert.equal(state.outcome, 'evacuated');
+});
+
+test('a stationary final northern AI starts a cancellable countdown without inventing casualties', () => {
+  const state = createSihangCampaign(), player = soldier('p', true), rescued = soldier('rescued'), stuck = soldier('stuck');
+  state.reserve = 0;
+  const friendly = [player, rescued, stuck];
+  advanceSihangCampaign(state, 240, { friendly });
+  state.assemblyReleased = true;
+  player.position.z = rescued.position.z = 40;
+  advanceSihangCampaign(state, .1, { friendly, player });
+  advanceSihangCampaign(state, 30, { friendly, player });
+  assert.equal(state.strandedCountdownAt, state.elapsed);
+  advanceSihangCampaign(state, 0, { friendly, player });
+  assert.equal(state.strandedCountdownAt, state.elapsed, 'paused time cannot consume the countdown');
+  stuck.position.x += .6;
+  advanceSihangCampaign(state, .1, { friendly, player });
+  assert.equal(state.strandedCountdownAt, null);
+  advanceSihangCampaign(state, 30, { friendly, player });
+  advanceSihangCampaign(state, 29.9, { friendly, player });
+  assert.equal(state.outcome, null);
+  advanceSihangCampaign(state, .1, { friendly, player });
+  assert.equal(state.outcome, 'evacuated');
+  assert.equal(stuck.health, 100);
+  assert.deepEqual(state.retreatLostIds, []);
+  assert.equal(sihangRetreatStatus(state).unresolved, 1);
+});
+
+test('the countdown never abandons the current player or soldiers still crossing', () => {
+  const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai');
+  state.reserve = 0;
+  const friendly = [player, ai];
+  advanceSihangCampaign(state, 240, { friendly });
+  state.assemblyReleased = true;
+  ai.position.z = 40;
+  advanceSihangCampaign(state, 100, { friendly, player });
+  assert.equal(state.outcome, null);
+  assert.equal(state.strandedCountdownAt, null);
+  player.position.z = 40;
+  ai.position.z = 40;
+  advanceSihangCampaign(state, .1, { friendly, player });
+  assert.equal(state.outcome, 'evacuated');
+
+  const crossing = createSihangCampaign(), p = soldier('p', true), onBridge = soldier('bridge');
+  crossing.reserve = 0;
+  advanceSihangCampaign(crossing, 240, { friendly: [p, onBridge] });
+  crossing.assemblyReleased = true; p.position.z = 40;
+  onBridge.position = { x: 83, y: 1.15, z: -22 };
+  advanceSihangCampaign(crossing, 100, { friendly: [p, onBridge], player: p });
+  advanceSihangCampaign(crossing, 100, { friendly: [p, onBridge], player: p });
+  assert.equal(crossing.outcome, null);
+  assert.equal(crossing.strandedCountdownAt, null);
+});
+
+test('only up to three stranded soldiers can start the countdown, never reinforcements or a whole squad', () => {
+  for (const count of [3, 4, 11]) {
+    const state = createSihangCampaign(), player = soldier('p', true);
+    const group = Array.from({ length: count }, (_, i) => soldier(`ai-${i}`));
+    state.reserve = 0;
+    const friendly = [player, ...group];
+    advanceSihangCampaign(state, 240, { friendly });
+    state.assemblyReleased = true; player.position.z = 40;
+    advanceSihangCampaign(state, .1, { friendly, player });
+    advanceSihangCampaign(state, 30, { friendly, player });
+    assert.equal(state.strandedCountdownAt === null, count > 3);
+    assert.equal(state.outcome, null);
+  }
+
+  const reserve = createSihangCampaign(), player = soldier('p', true), other = soldier('other');
+  player.position.z = 40;
+  reserve.reserve = 1;
+  advanceSihangCampaign(reserve, 240, { friendly: [player, other] });
+  reserve.assemblyReleased = true;
+  advanceSihangCampaign(reserve, 100, { friendly: [player, other], player });
+  advanceSihangCampaign(reserve, 100, { friendly: [player, other], player });
+  assert.equal(reserve.strandedCountdownAt, null);
+  assert.equal(reserve.outcome, null);
+});
+
+test('repeated movement near one point is not mistaken for being stationary', () => {
+  const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai');
+  state.reserve = 0;
+  const friendly = [player, ai];
+  advanceSihangCampaign(state, 240, { friendly });
+  state.assemblyReleased = true; player.position.z = 40;
+  advanceSihangCampaign(state, .1, { friendly, player });
+  for (let i = 0; i < 10; i++) {
+    ai.position.x = 48 + (i % 2 ? 0 : .3);
+    advanceSihangCampaign(state, 10, { friendly, player });
+  }
+  assert.equal(state.strandedCountdownAt, null);
+  assert.equal(state.outcome, null);
 });
 
 test('losses never lower the required majority and even a doomed evacuation continues until all fates are known', () => {
