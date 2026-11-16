@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion, casualtyResponse } from '../src/casualties.js';
 import { circleBlocked } from '../src/core.js';
+import { legacyPlaceCasualty } from '../scripts/fixtures/casualty-placement-legacy.js';
 
 function corpse(index, time = 0) {
   const actor = { id: `soldier-${index}`, health: 0, heading: .5, position: new Vector3(), deathTime: time };
@@ -67,6 +68,54 @@ test('falling body envelopes select a clear direction and bounded floor slide be
       assert.equal(blocked(point, .12, .75), false);
     }
     assert.deepEqual(actor.position, position, 'presentation correction does not move the registered death/hit location');
+  }
+});
+
+test('cached upright clearance preserves exhaustive placement across obstacles and avoids repeated searches', () => {
+  const footprint = Array.from({ length: 60 }, (_, i) => [-1.6 + (i % 20) * .16, -.25 + Math.floor(i / 20) * .25]);
+  const bounds = () => ({ min: [-1.6, 0, -.25], max: [1.5, .6, .25], footprint });
+  const scenes = [
+    [],
+    [{ minX: -.15, maxX: .15, minZ: -.15, maxZ: .15, height: 3 }],
+    [{ minX: -.8, maxX: -.5, minZ: -4, maxZ: 4, height: 3 },
+      { minX: .5, maxX: .8, minZ: -4, maxZ: 4, height: 3 }],
+    [{ minX: -4, maxX: 4, minZ: -4, maxZ: 4, height: 3 }],
+    [{ minX: -.5, maxX: .5, minZ: -.5, maxZ: .5, minY: 3, height: 5 }],
+    [{ minX: -1, maxX: 1, minZ: -1, maxZ: 1, circular: true, cx: 0, cz: 0, radius: .55, height: 2 }],
+    [{ minX: -1, maxX: 1, minZ: -1, maxZ: 1, oriented: true, cx: 0, cz: 0, hx: .4, hz: .8, angle: .7, height: 2 }],
+  ];
+  let oldCalls = 0, newCalls = 0;
+  for (const obstacles of scenes) for (const heading of [0, .3, -1.7]) for (const variant of [0, 2, 3]) {
+    const actor = corpse(variant); actor.heading = heading;
+    const blocked = (point, radius, height) => circleBlocked(point.x, point.z, radius, obstacles, point.y, height);
+    let before = 0, after = 0;
+    const expected = legacyPlaceCasualty(actor, actor.casualty, bounds, (...args) => { before++; return blocked(...args); });
+    const actual = placeCasualty(actor, actor.casualty, bounds, (...args) => { after++; return blocked(...args); });
+    assert.deepEqual(actual, expected);
+    if (obstacles.length && obstacles[0].height === 3 && obstacles[0].minX === -.15) {
+      oldCalls += before; newCalls += after;
+    }
+  }
+  assert.ok(newCalls < oldCalls * .7, `dense obstruction queries: ${newCalls} versus ${oldCalls}`);
+});
+
+test('placement stays identical for prone poses, different floors, map edges and unsampled footprints', () => {
+  const obstacles = [
+    { minX: -1, maxX: 1, minZ: -1, maxZ: 1, height: 2 },
+    { minX: -2, maxX: 2, minZ: -2, maxZ: 2, minY: 3, height: 5 },
+    { minX: -1, maxX: 1, minZ: -1, maxZ: 1, height: 2,
+      polygon: [{ x: -.8, z: -.8 }, { x: .8, z: -.8 }, { x: 0, z: .8 }] },
+  ];
+  const bounds = variant => variant < 2 ? { min: [-1, 0, -.3], max: [1, .6, .3] }
+    : { min: [-.3, 0, -1], max: [.3, .6, 1] };
+  for (const [x, y, z] of [[.25, 0, .1], [.25, 4, .1], [199.9, 0, 0], [3, 0, -1]]) {
+    for (const prone of [0, 1]) for (const retainGun of [false, true]) {
+      const actor = corpse(8); actor.position.set(x, y, z);
+      actor.heading = .43;
+      const casualty = Object.freeze({ ...actor.casualty, variant: prone ? 2 : 1, retainGun, motion: { prone } });
+      const blocked = (point, radius, height) => circleBlocked(point.x, point.z, radius, obstacles, point.y, height);
+      assert.deepEqual(placeCasualty(actor, casualty, bounds, blocked), legacyPlaceCasualty(actor, casualty, bounds, blocked));
+    }
   }
 });
 

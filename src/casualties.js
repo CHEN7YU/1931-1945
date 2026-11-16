@@ -6,6 +6,17 @@ import { casualtyJointDynamics } from './casualty-dynamics.js';
 export const CORPSE_RULES = Object.freeze({ minimumSeconds: 180, softLimit: 120, variants: 4 });
 export const CASUALTY_POSE_FRAMES = 5;
 const Y = new Vector3(0, 1, 0);
+const PLACEMENT_OFFSETS = Object.freeze([{ x: 0, z: 0 }, ...[.15, .3, .5, .75, 1, 1.5, 2].flatMap(radius =>
+  Array.from({ length: 8 }, (_, side) => Object.freeze({
+    x: Math.cos(side * Math.PI / 4) * radius, z: Math.sin(side * Math.PI / 4) * radius,
+  })))].map(Object.freeze));
+const PLACEMENT_RING = Object.freeze(Array.from({ length: 8 }, (_, index) => Object.freeze([
+  Math.cos(index * Math.PI / 4) * .22, Math.sin(index * Math.PI / 4) * .22,
+])));
+const PLACEMENT_PHASES = Object.freeze(Array.from({ length: 8 }, (_, index) => {
+  const progress = (index + 1) / 8, grow = Math.sin(progress * Math.PI / 2);
+  return Object.freeze({ progress, grow, slide: Math.sqrt(progress), height: 1.85 * (1 - grow) + .75 * grow });
+}));
 const smooth = (from, to, value) => {
   const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
   return t * t * (3 - 2 * t);
@@ -34,12 +45,11 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
   if (typeof boundsFor !== 'function' || typeof blocked !== 'function') throw new TypeError('Casualty placement needs body bounds and collision queries');
   const variants = [casualty.variant, ...[0, 1, 2, 3].filter(value => value !== casualty.variant)]
     .filter(value => !(casualty.motion?.prone > .5) || value === 2);
-  const offsets = [{ x: 0, z: 0 }];
-  for (const radius of [.15, .3, .5, .75, 1, 1.5, 2]) for (let side = 0; side < 8; side++) {
-    offsets.push({ x: Math.cos(side * Math.PI / 4) * radius, z: Math.sin(side * Math.PI / 4) * radius });
-  }
+  const offsets = PLACEMENT_OFFSETS;
   const cardinal = Math.round(actor.heading / (Math.PI / 2)) * Math.PI / 2;
   const headings = [actor.heading, cardinal, cardinal + Math.PI / 2];
+  // The collision snapshot is fixed for this synchronous search; the ring is independent of the body variant.
+  const ringClear = [];
   const shapes = new Map(variants.map(variant => {
     const bounds = boundsFor(variant, casualty.retainGun);
     if (!bounds || ![...bounds.min, ...bounds.max].every(Number.isFinite)) throw new Error('Casualty body bounds are invalid');
@@ -49,21 +59,31 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
     }
     return [variant, points];
   }));
-  for (const offset of offsets) for (const variant of variants) for (const heading of headings) {
+  for (let offsetIndex = 0; offsetIndex < offsets.length; offsetIndex++) for (const variant of variants) for (let headingIndex = 0; headingIndex < headings.length; headingIndex++) {
+    const offset = offsets[offsetIndex], heading = headings[headingIndex];
     const yaw = Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading));
     let clear = true;
-    for (let phase = 1; phase <= 8 && clear; phase++) {
-      const progress = phase / 8, grow = Math.sin(progress * Math.PI / 2);
+    for (let phase = 0; phase < PLACEMENT_PHASES.length && clear; phase++) {
+      const { progress, grow, slide, height } = PLACEMENT_PHASES[phase];
       const angle = actor.heading + yaw * progress, c = Math.cos(angle), s = Math.sin(angle);
       const points = shapes.get(variant);
-      for (let index = 0; index < points.length + 8; index++) {
-          const x = index < points.length ? points[index][0] * grow : Math.cos((index - points.length) * Math.PI / 4) * .22;
-          const z = index < points.length ? points[index][1] * grow : Math.sin((index - points.length) * Math.PI / 4) * .22;
-          const point = { x: actor.position.x + offset.x * Math.sqrt(progress) + x * c + z * s,
-            y: actor.position.y, z: actor.position.z + offset.z * Math.sqrt(progress) - x * s + z * c };
-          const hit = blocked(point, .13, 1.85 * (1 - grow) + .75 * grow);
+      const baseX = actor.position.x + offset.x * slide;
+      const baseZ = actor.position.z + offset.z * slide;
+      const ring = (ringClear[offsetIndex] ??= [])[headingIndex] ??= [];
+      if (ring[phase] === undefined) {
+        ring[phase] = true;
+        for (const [x, z] of PLACEMENT_RING) {
+          const hit = blocked({ x: baseX + x * c + z * s, y: actor.position.y, z: baseZ - x * s + z * c }, .13, height);
           if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
-          if (hit) { clear = false; break; }
+          if (hit) { ring[phase] = false; break; }
+        }
+      }
+      if (!ring[phase]) { clear = false; break; }
+      for (let index = 0; index < points.length; index++) {
+        const x = points[index][0] * grow, z = points[index][1] * grow;
+        const hit = blocked({ x: baseX + x * c + z * s, y: actor.position.y, z: baseZ - x * s + z * c }, .13, height);
+        if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
+        if (hit) { clear = false; break; }
       }
     }
     if (clear) return Object.freeze({ ...casualty, variant, yaw, offset: Object.freeze(offset), wallLimited: false });
@@ -71,21 +91,37 @@ export function placeCasualty(actor, casualty, boundsFor, blocked) {
   const variant = casualty.motion?.prone > .5 ? 2 : 3;
   const compact = boundsFor(variant, false);
   const points = compact.footprint ?? [[compact.min[0], compact.min[2]], [compact.max[0], compact.max[2]], [0, 0]];
+  const compactHeadings = [actor.heading, cardinal, cardinal + Math.PI / 2, cardinal + Math.PI, cardinal - Math.PI / 2];
+  const rotated = [];
   let best = null;
-  for (const offset of offsets) for (const heading of [actor.heading, cardinal, cardinal + Math.PI / 2, cardinal + Math.PI, cardinal - Math.PI / 2]) {
+  for (const offset of offsets) {
     const distance = Math.hypot(offset.x, offset.z);
     if (best && distance >= best.score) continue;
-    const c = Math.cos(heading), s = Math.sin(heading);
-    let contacts = 0;
-    for (const [x, z] of points) {
-      const hit = blocked({ x: actor.position.x + offset.x + x * c + z * s, y: actor.position.y,
-        z: actor.position.z + offset.z - x * s + z * c }, .13, .75);
-      if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
-      contacts += Number(hit);
-      if (best && contacts * 100 + distance >= best.score) break;
+    for (let headingIndex = 0; headingIndex < compactHeadings.length; headingIndex++) {
+      if (best && distance >= best.score) break;
+      const heading = compactHeadings[headingIndex];
+      if (!rotated[headingIndex]) {
+        // Keep the four products separate to preserve collision coordinates at rounding boundaries.
+        const c = Math.cos(heading), s = Math.sin(heading), values = new Float64Array(points.length * 4);
+        for (let index = 0; index < points.length; index++) {
+          const [x, z] = points[index], at = index * 4;
+          values[at] = x * c; values[at + 1] = z * s;
+          values[at + 2] = x * s; values[at + 3] = z * c;
+        }
+        rotated[headingIndex] = values;
+      }
+      const values = rotated[headingIndex], baseX = actor.position.x + offset.x, baseZ = actor.position.z + offset.z;
+      let contacts = 0;
+      for (let index = 0; index < values.length; index += 4) {
+        const hit = blocked({ x: baseX + values[index] + values[index + 1], y: actor.position.y,
+          z: baseZ - values[index + 2] + values[index + 3] }, .13, .75);
+        if (typeof hit !== 'boolean') throw new TypeError('Casualty collision query must return a boolean');
+        contacts += Number(hit);
+        if (best && contacts * 100 + distance >= best.score) break;
+      }
+      const score = contacts * 100 + distance;
+      if (!best || score < best.score) best = { score, contacts, offset, yaw: Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading)) };
     }
-    const score = contacts * 100 + distance;
-    if (!best || score < best.score) best = { score, contacts, offset, yaw: Math.atan2(Math.sin(heading - actor.heading), Math.cos(heading - actor.heading)) };
   }
   return Object.freeze({ ...casualty, variant, retainGun: false, yaw: best.yaw,
     offset: Object.freeze(best.offset), wallLimited: true });
