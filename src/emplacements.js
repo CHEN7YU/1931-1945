@@ -31,6 +31,9 @@ export function createEmplacement(spec) {
   if (!profile || ![spec.x, spec.z, spec.heading].every(Number.isFinite)) throw new RangeError('Invalid fixed weapon position');
   if (spec.engineerBuilt && !['friendly', 'enemy'].includes(spec.builderTeam))
     throw new RangeError('Built weapon requires its original builder team');
+  if (spec.friendlyPresetArtillery !== undefined && (spec.friendlyPresetArtillery !== true ||
+    spec.profile !== 'bofors75' || spec.team !== 'friendly' || spec.engineerBuilt))
+    throw new RangeError('Invalid friendly preset artillery');
   const health = spec.profile === 'bofors75' ? 240 : 160;
   const point = { ...spec, team: spec.team ?? 'friendly', health, maxHealth: health, lastDamage: null, position: 'gunner',
     yaw: spec.heading, pitch: Math.max(0, profile.minPitch), operatorId: null, crewId: null, heat: 0, overheated: false, shots: 0,
@@ -39,12 +42,14 @@ export function createEmplacement(spec) {
       nextShot: 0, reloadUntil: 0, settings: profile } };
   if (spec.engineerBuilt) Object.defineProperty(point, 'builderTeam',
     { value: spec.builderTeam, enumerable: true, writable: false, configurable: false });
+  if (spec.friendlyPresetArtillery) Object.defineProperty(point, 'friendlyPresetArtillery',
+    { value: true, enumerable: false, writable: false, configurable: false });
   return point;
 }
 
 export function canOperateEmplacement(point, actor) {
   return actor.team !== 'friendly' || point.profile !== 'bofors75' ||
-    point.engineerBuilt === true && point.builderTeam === 'friendly';
+    point.engineerBuilt === true && point.builderTeam === 'friendly' || point.friendlyPresetArtillery === true;
 }
 
 export const ARTILLERY_MARCH = Object.freeze({

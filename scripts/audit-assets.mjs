@@ -27,7 +27,7 @@ const groups = [
   { manifest: 'audio/civilian-voices/source.json', directory: 'audio/civilian-voices', use: 'runtime', evidence: [] },
   { manifest: 'audio/battle-endings/source.json', directory: 'audio/battle-endings', use: 'runtime', evidence: [] },
   { manifest: 'audio/sihang-voices/source.json', directory: 'audio/sihang-voices', use: 'runtime', evidence: [] },
-  { manifest: 'audio/sihang-assembly/source.json', directory: 'audio/sihang-assembly', use: 'runtime', evidence: [] },
+  { manifest: 'audio/sihang-assembly/source.json', directory: 'audio/sihang-assembly', use: 'diagnostic', evidence: [] },
   { manifest: 'characters/kenney-survivor/source.json', directory: 'characters/kenney-survivor', use: 'diagnostic', evidence: ['License.txt'] },
   { manifest: 'game/nra-88/source.json', directory: 'game/nra-88', use: 'runtime',
     evidence: ['PERMISSION.txt', 'Kenney-CC0.txt', 'KayKit-CC0.txt'] },

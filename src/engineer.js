@@ -11,12 +11,44 @@ const toolSteel = new THREE.MeshStandardMaterial({ color: 0x51585a, roughness: .
 
 export function createEngineerState() {
   return { materials: { maxim24: 1, bofors75: 1 }, selected: 'maxim24', construction: createConstructionState(),
-    planAt: 0, site: null, heading: null, built: [],
+    planAt: 0, site: null, heading: null, unfinished: [], built: [],
     get kits() { return this.materials.maxim24 + this.materials.bofors75; } };
 }
 
+export function rememberEngineerConstruction(state, construction = state.construction) {
+  if (!construction.site || !construction.anchor || construction.progress <= 0) return;
+  if (!construction.builderId || !Number.isFinite(state.heading))
+    throw new Error('Unfinished construction requires its builder and heading');
+  const saved = { builderId: construction.builderId, profile: state.selected, heading: state.heading,
+    site: { ...construction.site }, anchor: { ...construction.anchor }, progress: construction.progress };
+  const previous = state.unfinished.findIndex(item => item.builderId === saved.builderId &&
+    item.profile === saved.profile && Math.hypot(item.site.x - saved.site.x,
+      item.site.y - saved.site.y, item.site.z - saved.site.z) < .01);
+  if (previous < 0) state.unfinished.push(saved);
+  else state.unfinished[previous] = saved;
+}
+
+export function findEngineerConstruction(state, builderId, position, candidate) {
+  return state.unfinished.filter(item => item.builderId === builderId && item.profile === state.selected &&
+    Math.hypot(item.anchor.x - position.x, item.anchor.y - position.y, item.anchor.z - position.z) <= .7)
+    .sort((a, b) => Math.hypot(a.site.x - candidate.x, a.site.y - candidate.y, a.site.z - candidate.z) -
+      Math.hypot(b.site.x - candidate.x, b.site.y - candidate.y, b.site.z - candidate.z))[0];
+}
+
+export function resumeEngineerConstruction(state, builderId, position, candidate) {
+  if (!state.construction.blueprint || state.construction.builderId !== builderId || state.construction.site) return;
+  const saved = findEngineerConstruction(state, builderId, position, candidate);
+  if (!saved) return;
+  state.unfinished.splice(state.unfinished.indexOf(saved), 1);
+  state.heading = saved.heading;
+  Object.assign(state.construction, { site: { ...saved.site }, anchor: { ...saved.anchor }, progress: saved.progress });
+}
+
 export function cancelEngineer(state) {
-  if (state) { resetConstructionState(state.construction); state.site = null; state.heading = null; }
+  if (state) {
+    rememberEngineerConstruction(state);
+    resetConstructionState(state.construction); state.site = null; state.heading = null;
+  }
 }
 
 export function selectEngineerEquipment(state) {
@@ -28,6 +60,7 @@ export function consumeEngineerMaterial(state, profile, id) {
   if (!ENGINEER.profiles.includes(profile) || state.materials[profile] !== 1 || !id)
     throw new Error('Engineer construction requires its unspent material and a new position identity');
   state.materials[profile] = 0; state.built.push(id);
+  state.unfinished = state.unfinished.filter(item => item.profile !== profile);
 }
 
 export function engineerPlacement(position, heading) {

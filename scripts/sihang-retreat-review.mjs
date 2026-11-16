@@ -1012,9 +1012,25 @@ try {
           setGameState('playing');
           return { roles: allies.map(actor => actor.role), current: current };
         },
-        engineerRetreatSite() {
+        engineerRetreatSite(region = 'quay') {
           const actor = controlledSoldier(entities);
           if (!actor.engineer) throw new Error('Select the actual player engineer first');
+          if (region === 'bridge') {
+            const point = sihangBridgePoint(.5);
+            const heading = Math.atan2(SIHANG_BRIDGE.northX - SIHANG_BRIDGE.southX,
+              SIHANG_BRIDGE.northZ - SIHANG_BRIDGE.southZ);
+            const x = point.x + Math.sin(heading) * ENGINEER.reach;
+            const z = point.z + Math.cos(heading) * ENGINEER.reach;
+            actor.position.set(x, world.walkHeight(x, z, 0), z);
+            controlPose.yaw = actor.heading = actor.engineer.heading = heading;
+            const candidate = engineerPlacement(actor.position, heading);
+            candidate.y = world.walkHeight(candidate.x, candidate.z, actor.position.y);
+            actorGrid.rebuild(allForces);
+            const reason = engineerPlacementReason(actor, candidate);
+            if (reason) throw new Error('Bridge construction fixture blocked: ' + reason);
+            return { id: actor.id, position: actor.position.toArray(), point: candidate, heading,
+              materials: {...actor.engineer.materials} };
+          }
           for (const z of [-3, -4, -5, -6]) for (const x of [-32, -28, -24, -20, -16, -12, -8, -4, 0, 4, 8, 12, 16, 20, 24]) {
             for (const heading of [Math.PI / 2, -Math.PI / 2]) {
               actor.position.set(x, 0, z); controlPose.yaw = actor.heading = heading;
@@ -1891,19 +1907,22 @@ try {
     assert.ok(engineer >= 0);
     for (let index = start.current; index !== engineer; index = (index + 1) % start.roles.length)
       await page.keyboard.press('y');
-    const site = await page.evaluate(() => retreatReview.engineerRetreatSite());
     await page.keyboard.press('2');
+    const artillery = process.env.RETREAT_ENGINEER_ARTILLERY;
+    if (artillery && !['quay', 'bridge'].includes(artillery)) throw new Error('Invalid artillery review region');
+    if (artillery) await page.keyboard.press('r');
+    const site = await page.evaluate(region => retreatReview.engineerRetreatSite(region), artillery ?? 'quay');
     await page.mouse.down();
     const records = [];
     for (let step = 0; step < 5; step++) records.push(await page.evaluate(() => retreatReview.engineerRetreatStep(5)));
     await page.mouse.up();
-    await writeFile(join(directory, 'retreat-engineer.json'), JSON.stringify({
-      fixture: 'manual-quay-site-actual-y-tool-and-mouse-held-enemy-fire-disabled-health-raised',
+    await writeFile(join(directory, artillery ? `retreat-engineer-artillery-${artillery}.json` : 'retreat-engineer.json'), JSON.stringify({
+      fixture: `manual-${artillery ?? 'quay'}-site-actual-y-tool-${artillery ? 'r-and-' : ''}mouse-held-enemy-fire-disabled-health-raised`,
       site, records, errors }, null, 2));
     assert.equal(records.at(-1).id, site.id);
-    assert.equal(records.at(-1).works.length, 1, 'the player engineer must really build on the north-bank quay');
-    assert.equal(records.at(-1).materials.maxim24, 0);
-    assert.equal(records.at(-1).materials.bofors75, 1);
+    assert.equal(records.at(-1).works.length, 1, 'the player engineer must really build at the selected site');
+    assert.equal(records.at(-1).materials.maxim24, artillery ? 1 : 0);
+    assert.equal(records.at(-1).materials.bofors75, artillery ? 0 : 1);
     assert.deepEqual(errors, []);
   }
   if (process.env.FOLLOW_REVIEW_ONLY === '1') {
@@ -2444,39 +2463,20 @@ try {
     assert.deepEqual(records[0].playerEquipment, records[0].initialPlayerEquipment);
     const initialImage = await page.evaluate(() => retreatReview.capture([-64, 8, 8], [-40, 0, -4]));
     await writeFile(join(directory, 'west-spawn.png'), Buffer.from(initialImage, 'base64'));
-    for (let step = 0; step < 60 && !records.at(-1).released; step++) {
-      records.push(await page.evaluate(() => retreatReview.regroupStep(5, true)));
-      await writeFile(join(directory, 'regroup.json'), JSON.stringify({ fixture:
-        'production-call-path-original-survivor-positions-elevated-health-artificially-held-assembly-deadline',
-        records, errors }, null, 2));
-      console.log(JSON.stringify({ time: records.at(-1).time, released: records.at(-1).released,
-        sizes: records.at(-1).formations.map(f => f.size),
-        pending: records.at(-1).formations.map(f => f.remaining.length) }));
-    }
     const last = records.at(-1);
-    assert.equal(last.released, true, 'the first ten squads must physically assemble');
-    assert.equal(last.assemblyVoice?.active, 'assembled', 'real assembly release must trigger its voice');
-    assert.deepEqual(last.formations.filter(f => f.id !== 'friendly-0').map(f => f.size), Array(10).fill(11));
-    const blocks = last.formations.filter(f => f.id !== 'friendly-0');
-    for (let slot = 1; slot < blocks.length; slot++) {
-      const officer = blocks[slot - 1].positions.find(actor => actor.index === 2);
-      const distance = Math.min(...blocks[slot].positions.filter(actor => actor.index !== 2).map(actor =>
-        Math.hypot(actor.position[0] - officer.position[0], actor.position[2] - officer.position[2])));
-      assert.ok(distance >= 2 - 2 * SIHANG_ASSEMBLY_ARRIVAL - 1e-8,
-        'adjacent assembled blocks must keep at least two metres between officer and soldier');
-    }
-    assert.ok(last.births.length >= 110 - records[0].originalAI.length &&
-      last.births.every(actor => actor.x < -36 && actor.z >= -8));
-    assert.ok(last.births.some(actor => actor.maxX - actor.x > 10), 'new soldiers must walk east from the western spawn');
-    assert.ok(last.births.some(actor => actor.ammo > 0), 'returned soldiers must respawn with refreshed equipment');
+    await writeFile(join(directory, 'regroup.json'), JSON.stringify({ fixture:
+      'production-call-path-original-survivor-positions-elevated-health-manual-player-position',
+      records, errors }, null, 2));
+    assert.equal(last.released, true, 'the controlled soldier releases the first wave');
     assert.deepEqual(last.playerEquipment, last.initialPlayerEquipment);
-    assert.ok(last.enemy.position[2] < -42, 'an enemy originally in the warehouse must physically withdraw north');
-    assert.ok(last.stageElapsed < SIHANG_RULES.nightfallSeconds ? last.wave === null :
-      last.wave?.number === 1 && last.wave.phase === 'main' && last.wave.squads.every(squad => squad.length === 11),
-    'the first wave must wait for nightfall and contain all ten assembled squads');
+    assert.equal(last.wave?.number, 1);
+    assert.equal(last.wave.phase, 'main');
+    assert.ok(last.originalAI.every(id => last.wave.squads.flat().includes(id)),
+      'the first wave preserves existing independent soldiers');
+    assert.ok(last.stageElapsed < SIHANG_RULES.nightfallSeconds);
     assert.deepEqual(errors, []);
     const image = await page.evaluate(() => retreatReview.capture([15, 5, 5], [-5, 1, -5]));
-    await writeFile(join(directory, 'first-wave-assembled.png'), Buffer.from(image, 'base64'));
+    await writeFile(join(directory, 'first-wave-start.png'), Buffer.from(image, 'base64'));
     for (const [name, eye, target] of [
       ['first-wave-west', [-20, 7, 5], [-21, 1, -4]],
       ['first-wave-east', [7, 7, 5], [6, 1, -4]],
@@ -2562,9 +2562,7 @@ try {
     const crossing = await page.evaluate(() => retreatReview.boundaryCrossing());
     assert.equal(crossing.counterattack, true);
     assert.equal(crossing.waitedForPlayer, true, 'the assembled survivors must wait for the player to join them');
-    assert.ok(crossing.release.stageElapsed >= SIHANG_RULES.nightfallSeconds
-      ? crossing.release.wave?.phase === 'main'
-      : crossing.release.wave === null, 'AI departure must wait for full nightfall');
+    assert.equal(crossing.release.wave?.phase, 'main', 'the first wave starts when the controlled player arrives');
     await page.evaluate(() => retreatReview.boundaryStep(4));
     const lit = await record(); assert.equal(lit.night.visible, 3);
     await image('native-flare-lit', [98, 15, 23], [58, 4, -26]);

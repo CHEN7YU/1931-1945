@@ -94,18 +94,13 @@ export function troopFerryWaitPoint(actor, ferries, reservedFerryId = null) {
   return { x: -72.2, z: ferry.position.z, transit: true };
 }
 
-export function finalTroopDepartureReady(ferries, actors, player, campaign) {
-  if (!ferries.length || !player || player.health <= 0 ||
-    player.tactics.nanjingFerry?.phase !== 'aboard' ||
-    player.tactics.nanjingFerry.ferryId !== campaign.playerBoardingBoatId) return false;
-  return ferries.every(ferry => {
-    const boat = campaign.boats.find(candidate => candidate.id === ferry.userData.ferryId);
-    if (!boat) throw new Error('Troop ferry is missing its campaign boat');
-    return ferry.userData.state === 'docked' && !ferry.userData.boarding &&
-      !ferry.userData.troopBoarding && !boat.returning;
-  }) &&
-    actors.every(actor => actor.health <= 0 ||
-      ['aboard', 'evacuated'].includes(actor.tactics.nanjingFerry?.phase));
+export function playerTroopFerryReady(ferry, player, campaign) {
+  const data = ferry.userData;
+  return Boolean(player?.health > 0 && data.state === 'docked' && !data.boarding && !data.troopBoarding &&
+    campaign.playerBoardingBoatId === data.ferryId &&
+    player.tactics.nanjingFerry?.phase === 'aboard' &&
+    player.tactics.nanjingFerry.ferryId === data.ferryId &&
+    data.troopPassengers?.some(passenger => passenger.actor === player));
 }
 
 export function beginTroopFerryBoarding(ferry, actors, time, shorePath, allowPlayerUnit = false) {

@@ -3,10 +3,55 @@ import assert from 'node:assert/strict';
 import { createSihangCampaign, SIHANG_RULES, sihangDeploymentCount, registerSihangDeployment,
   advanceSihangCampaign, advanceSihangDemolition, sihangSafePosition, sihangEnemyMayAttack,
   sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus,
-  returnSihangRetreatSquadToReserve,
+  returnSihangRetreatSquadToReserve, transferSihangRetreatSquad,
   startSihangWithdrawalWave, advanceSihangWithdrawalWave, sihangWaveAssemblyRemaining } from '../src/sihang-campaign.js';
 
 const soldier = (id, playerUnit = false, z = -25) => ({ id, playerUnit, health: 100, position: { x: 48, y: 0, z } });
+
+test('taking over existing AI preserves the troop budget and original withdrawal identities', () => {
+  const state = createSihangCampaign(), ai = soldier('ai'), other = soldier('other');
+  registerSihangDeployment(state, 11);
+  advanceSihangCampaign(state, 240, { friendly: [ai, other] });
+  const budget = [state.reserve, state.retreatReserve, state.deployed, state.retreatTotal];
+  const identities = [...state.retreatIds];
+  transferSihangRetreatSquad(state, [ai]);
+  assert.deepEqual([state.reserve, state.retreatReserve, state.deployed, state.retreatTotal], budget);
+  assert.deepEqual(state.retreatIds, identities);
+  assert.deepEqual(state.aiRetreatIds, ['other']);
+  assert.throws(() => transferSihangRetreatSquad(state, [ai]), RangeError);
+  ai.playerUnit = true;
+  state.assemblyReleased = true;
+  ai.position = { x: 80, y: 0, z: 15 };
+  advanceSihangCampaign(state, .1, { friendly: [ai, other], playerSquad: [ai] });
+  assert.ok(state.evacuatedIds.includes(ai.id));
+  assert.equal(state.counterattack, false, 'a transferred player must not count as an AI crossing');
+});
+
+test('a transferred soldier and remaining AI still resolve their original withdrawal wave', () => {
+  const state = createSihangCampaign(), player = soldier('taken'), child = soldier('stays-ai'), other = soldier('other');
+  state.reserve = 0;
+  const friendly = [player, child, other];
+  advanceSihangCampaign(state, 240, { friendly });
+  state.assemblyReleased = true;
+  const squads = [[player.id, child.id], [other.id], ...Array.from({ length: 8 }, () => [])];
+  const wave = startSihangWithdrawalWave(state, squads);
+  transferSihangRetreatSquad(state, [player]);
+  player.playerUnit = true;
+  player.position.z = 40;
+  advanceSihangCampaign(state, .1, { friendly, playerSquad: [player] });
+  assert.equal(state.counterattack, false);
+  assert.equal(advanceSihangWithdrawalWave(state), 'main');
+  child.position.z = 40;
+  other.health = 0;
+  advanceSihangCampaign(state, .1, { friendly, playerSquad: [player], settling: 1 });
+  assert.equal(state.counterattack, true);
+  assert.deepEqual(state.evacuatedIds, [player.id, child.id]);
+  assert.deepEqual(state.retreatLostIds, [other.id]);
+  assert.deepEqual(wave.squads, squads);
+  assert.equal(advanceSihangWithdrawalWave(state), 'interval');
+  advanceSihangCampaign(state, .1, { friendly, playerSquad: [player] });
+  assert.equal(state.outcome, 'evacuated');
+});
 
 test('all four initial squads consume the same 400-person budget and the final replacement cannot overdraw', () => {
   const state = createSihangCampaign();
@@ -89,15 +134,12 @@ test('returning a living AI to reserve preserves the troop budget and does not c
   assert.equal(state.deployed, 2);
 });
 
-test('AI withdrawal waits for both assembly and nightfall', () => {
+test('AI withdrawal requires release but does not wait for nightfall', () => {
   const state = createSihangCampaign();
   advanceSihangCampaign(state, SIHANG_RULES.defenseSeconds, { friendly: [soldier('p', true)] });
   const squads = [['a'], ['b'], ['c'], ['d'], ['e'], ['f'], ['g'], ['h'], ['i'], ['j']];
   assert.throws(() => startSihangWithdrawalWave(state, squads), RangeError);
   state.assemblyReleased = true;
-  state.stageElapsed = SIHANG_RULES.nightfallSeconds - .01;
-  assert.throws(() => startSihangWithdrawalWave(state, squads), RangeError);
-  state.stageElapsed = SIHANG_RULES.nightfallSeconds;
   assert.equal(startSihangWithdrawalWave(state, squads).phase, 'main');
 });
 
@@ -141,12 +183,15 @@ test('successive ten-squad waves preserve the finite reserve and release the fin
   assert.equal(state.deployed, 400);
 });
 
-test('assembly countdown starts only after the player squad arrives and follows simulation time', () => {
+test('later-wave assembly countdown follows simulation time independently of nightfall', () => {
   const state = createSihangCampaign();
   advanceSihangCampaign(state, SIHANG_RULES.defenseSeconds, { friendly: [soldier('p', true)] });
   assert.equal(sihangWaveAssemblyRemaining(state), null);
   state.waveAssemblyAt = state.elapsed;
   assert.equal(sihangWaveAssemblyRemaining(state), SIHANG_RULES.assemblyTimeout);
+  state.elapsed += 5; state.stageElapsed += 5;
+  assert.equal(sihangWaveAssemblyRemaining(state), SIHANG_RULES.assemblyTimeout - 5);
+  state.elapsed -= 5; state.stageElapsed -= 5;
   state.elapsed += SIHANG_RULES.assemblyTimeout - .1;
   state.stageElapsed += SIHANG_RULES.assemblyTimeout - .1;
   assert.ok(Math.abs(sihangWaveAssemblyRemaining(state) - .1) < 1e-8);
@@ -161,8 +206,6 @@ test('a wave waits for the other squads, then the covering squad, then five simu
   advanceSihangCampaign(state, 240, { friendly: [soldier('p', true)] });
   state.assemblyReleased = true;
   const squads = [['a1', 'a2'], ['b'], ['c'], ['d'], ['e'], ['f'], ['g'], ['h'], ['i'], ['j']];
-  assert.throws(() => startSihangWithdrawalWave(state, squads), RangeError);
-  state.stageElapsed = 20;
   const wave = startSihangWithdrawalWave(state, squads);
   assert.equal(wave.coverSlot, 0);
   wave.covering = true;

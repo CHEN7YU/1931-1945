@@ -38,11 +38,10 @@ try {
           this.distant = distant;
           const original = { id: distant.id, position: distant.position.toArray(),
             health: distant.health, ammo: distant.rifle.ammo, nextFire: distant.nextFire };
-          for (const actor of allies.filter(actor => actor.health > 0)) {
-            const goal = sihangActorAssemblyGoal(actor);
-            actor.position.set(goal.x, goal.y, goal.z);
-            actor.stance = 'crouched'; actor.heading = -Math.PI / 2;
-          }
+          const player = controlledSoldier(entities);
+          const goal = sihangActorAssemblyGoal(player);
+          player.position.set(goal.x, goal.y, goal.z);
+          player.stance = 'crouched'; player.heading = -Math.PI / 2;
           updateSihangMission(.05);
           return { waiting, original, prepared: this.snapshot(), retained: {
             sameEntity: entities.soldiers.get(distant.id) === distant,
@@ -80,6 +79,7 @@ try {
           actor.sihangAssemblySlot = { slot: 8, index: 10 };
           actor.sihangAssemblyRoute = null;
           actor.path = actor.pathGoal = null;
+          actor.formation.retreatAssembled = false;
           actorGrid.rebuild(allForces);
           setGameState('playing'); aiDecisions.beginFrame(); advanceBattleStep(.05, time); setGameState('pause');
           return { position: actor.position.toArray(), goal: sihangActorAssemblyGoal(actor),
@@ -93,6 +93,7 @@ try {
           actor.path = actor.pathGoal = null;
           sihangCampaign.assemblyPrepared = false; sihangCampaign.assemblyReleased = false;
           sihangCampaign.waveAssemblyAt = null;
+          controlledSoldier(entities).position.set(0, 0, -25);
           this.cornerActor = actor;
           return this.playerCornerSnapshot();
         },
@@ -117,6 +118,8 @@ try {
           const player = controlledSoldier(entities), other = friendlyAI.find(actor => actor.health > 0);
           const oldPosition = player.position.clone(), oldPlayerSlot = player.sihangAssemblySlot;
           const oldOtherSlot = other.sihangAssemblySlot;
+          const released = sihangCampaign.assemblyReleased;
+          sihangCampaign.assemblyReleased = false;
           const slot = Array.from({ length: SIHANG_RULES.retreatSquads }, (_, index) => index)
             .find(index => sihangAssemblyPosition(index, 10).x > 26);
           if (slot === undefined) throw new Error('Expected an assembly position outside the player area');
@@ -129,6 +132,7 @@ try {
           player.position.copy(oldPosition);
           player.sihangAssemblySlot = oldPlayerSlot;
           other.sihangAssemblySlot = oldOtherSlot;
+          sihangCampaign.assemblyReleased = released;
           return { ...result, slot };
         },
         followOriginal(seconds) {
@@ -212,32 +216,27 @@ try {
       initial, full, errors }, null, 2));
     assert.equal(full.wave?.number, 1, JSON.stringify(full));
     assert.equal(full.wave.squads.length, 10);
-    assert.equal(full.wave.squads.flat().length, 110, JSON.stringify(full));
-    assert.equal(new Set(full.wave.squads.flat()).size, 110);
+    assert.ok(full.wave.squads.flat().includes(initial.original.id));
+    assert.equal(new Set(full.wave.squads.flat()).size, full.wave.squads.flat().length);
     assert.deepEqual(errors, []);
-    console.log('Full 110-person withdrawal wave passed.');
+    console.log('Immediate first withdrawal wave passed.');
   } else {
-    const before = await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
-    const first = await page.evaluate(() => assemblyTimeoutReview.deadline());
     const movement = await page.evaluate(seconds => assemblyTimeoutReview.followOriginal(seconds), high ? 60 : 10);
     const next = await page.evaluate(() => assemblyTimeoutReview.nextWave());
     const secondBefore = await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
     const second = await page.evaluate(() => assemblyTimeoutReview.deadline());
     await writeFile(join(directory, 'assembly-timeout.json'), JSON.stringify({
-      fixture: 'manual-positions-and-advanced-clocks-normal-mission-and-ai-calls', initial, before, first, movement,
+      fixture: 'manual-positions-and-advanced-clocks-normal-mission-and-ai-calls', initial, movement,
       next, secondBefore, second, errors,
     }, null, 2));
     assert.equal(initial.waiting.prepared, false);
     assert.equal(initial.waiting.remaining, null);
-    assert.match(initial.waiting.help, /本队全部存活队员/);
+    assert.match(initial.waiting.help, /前往仓库南面/);
     assert.equal(initial.prepared.prepared, true);
-    assert.match(initial.prepared.help, /最迟30秒/);
-    assert.equal(before.released, false);
-    assert.equal(before.wave, null);
-    assert.equal(first.started.released, true);
-    assert.equal(first.started.wave.number, 1);
-    assert.ok(first.started.wave.squads.flat().includes(initial.original.id),
-      'the original distant soldier must remain in the timed-out withdrawal wave');
+    assert.equal(initial.prepared.released, true);
+    assert.equal(initial.prepared.wave.number, 1);
+    assert.ok(initial.prepared.wave.squads.flat().includes(initial.original.id),
+      'the original distant soldier must remain in the immediate withdrawal wave');
     assert.equal(movement.sameEntity, true);
     assert.ok(Math.hypot(movement.position[0] - initial.original.position[0],
       movement.position[2] - initial.original.position[2]) > 1,
@@ -245,13 +244,11 @@ try {
     if (high) assert.equal(movement.reachedGroundAlive, true,
       `the original rooftop soldier must actually descend alive: ${JSON.stringify(movement)}`);
     if (high) assert.ok(movement.maxStep < .5, 'the original soldier must not teleport while descending');
-    assert.ok(first.started.actors.length && first.started.actors.every(actor => actor.assembled));
-    assert.ok(first.stepped.actors.every(actor => actor.mode !== 'sihang-assembly'));
     assert.equal(next.interval.wave.phase, 'interval');
-    assert.equal(next.interval.remaining, 30);
+    assert.ok(Math.abs(next.interval.remaining - 30) < 1e-8);
     assert.equal(next.refill.wave, null);
-    assert.equal(next.refill.remaining, 25);
-    assert.match(next.refill.help, /最迟25秒/);
+    assert.ok(Math.abs(next.refill.remaining - 25) < 1e-8);
+    assert.match(next.refill.help, new RegExp(`最迟${Math.ceil(next.refill.remaining)}秒`));
     assert.equal(secondBefore.wave, null);
     assert.equal(second.started.wave.number, 2);
     assert.ok(second.stepped.actors.every(actor => actor.mode !== 'sihang-assembly'));

@@ -29,16 +29,20 @@ try {
           const retreatReason = engineerPlacementReason(actor, candidate);
           const retreatLanes = ['sihang-defense', 'sihang-retreat'].flatMap(stage => {
             sihangCampaign.stage = stage;
-            return SIHANG_RESERVED_LANES.filter(lane => lane.id.startsWith('retreat-')).map(lane => {
-              const reasons = new Set(); let valid = 0;
-              for (let z = lane.minZ + .5; z < lane.maxZ; z += 1)
-                for (let x = lane.minX + .5; x < lane.maxX; x += 1) {
-                  const reason = engineerPlacementReason(actor, { x, y: world.walkHeight(x, z, 0), z });
-                  if (reason) reasons.add(reason); else valid++;
-                }
-              return { stage, id: lane.id, valid, reasons: [...reasons] };
+            return ['maxim24', 'bofors75'].flatMap(profile => {
+              actor.engineer.selected = profile;
+              return SIHANG_RESERVED_LANES.filter(lane => lane.id.startsWith('retreat-')).map(lane => {
+                const reasons = new Set(); let valid = 0;
+                for (let z = lane.minZ + .5; z < lane.maxZ; z += 1)
+                  for (let x = lane.minX + .5; x < lane.maxX; x += 1) {
+                    const reason = engineerPlacementReason(actor, { x, y: world.walkHeight(x, z, 0), z });
+                    if (reason) reasons.add(reason); else valid++;
+                  }
+                return { stage, profile, id: lane.id, valid, reasons: [...reasons] };
+              });
             });
           });
+          actor.engineer.selected = 'maxim24';
           const armorReason = engineerPlacementReason(actor, { x: -70, y: 0, z: -60 });
           const bridgeHeading = Math.atan2(SIHANG_BRIDGE.northX - SIHANG_BRIDGE.southX,
             SIHANG_BRIDGE.northZ - SIHANG_BRIDGE.southZ);
@@ -87,7 +91,7 @@ try {
   url.searchParams.set('campaign', 'sihang');
   url.searchParams.set('resources', 'low-memory');
   if (process.env.GAME_CHARACTER === 'procedural') url.searchParams.set('character', 'procedural');
-  await page.goto(url.href);
+  await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   await page.keyboard.down('Tab');

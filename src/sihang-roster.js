@@ -87,11 +87,11 @@ export function sihangObjectives() {
 
 export const SIHANG_EMPLACEMENTS = Object.freeze([
   Object.freeze({ id: 'sihang-cover-gun', team: 'friendly', profile: 'bofors75', playerOnly: true,
-    retreatCover: true, x: 53, z: -38, altitude: 0, heading: 1.16 }),
+    retreatCover: true, friendlyPresetArtillery: true, x: 53, z: -38, altitude: 0, heading: 1.16 }),
   Object.freeze({ id: 'sihang-cover-mg', team: 'friendly', profile: 'maxim24', playerOnly: true,
     retreatCover: true, x: 62, z: -39, altitude: 0, heading: .2 }),
   Object.freeze({ id: 'sihang-cover-gun-east', team: 'friendly', profile: 'bofors75', playerOnly: true,
-    retreatCover: true, x: 69, z: -45, altitude: 0, heading: .39 }),
+    retreatCover: true, friendlyPresetArtillery: true, x: 69, z: -45, altitude: 0, heading: .39 }),
   Object.freeze({ id: 'sihang-cover-mg-east', team: 'friendly', profile: 'maxim24', playerOnly: true,
     retreatCover: true, x: 76, z: -49, altitude: 0, heading: 0 }),
   Object.freeze({ id: 'sihang-cover-aa', team: 'friendly', profile: 'maxim24aa', playerOnly: true,

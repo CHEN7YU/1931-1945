@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEngineerState, consumeEngineerMaterial, selectEngineerEquipment, engineerObstacle,
-  engineerFootprintBlocked, engineerConstructionReservations, ENGINEER, engineerBuiltSpec } from '../src/engineer.js';
+  engineerFootprintBlocked, engineerConstructionReservations, ENGINEER, engineerBuiltSpec, cancelEngineer,
+  findEngineerConstruction, resumeEngineerConstruction } from '../src/engineer.js';
 import { advanceConstruction, selectConstructionBlueprint } from '../src/construction.js';
 import { infantryEquipment } from '../src/battle-roster.js';
 import { createEmplacement, damageEmplacement, artilleryPositionTargets, fireEmplacement,
@@ -24,7 +25,7 @@ test('each whole infantry squad replaces one ordinary rifleman without changing 
     assert.equal(infantryEquipment('enemy', index, 'infantry', { sihangDemolition: true }).unarmed, true);
 });
 
-test('an engineer needs twenty continuous simulation seconds and pause never spends materials', () => {
+test('an engineer needs twenty simulation seconds and pause never spends materials', () => {
   const engineer = createEngineerState();
   selectConstructionBlueprint(engineer.construction, 'builder');
   const input = { builderId: 'builder', position: { x: 0, y: 0, z: 0 }, candidate: { x: 0, y: 0, z: -3.2 },
@@ -58,6 +59,31 @@ test('construction interruption and another owner cannot inherit the first engin
   advanceConstruction(state, input, 19, () => null);
   const result = advanceConstruction(state, { ...input, builderId: 'another-builder' }, 1, () => null);
   assert.equal(result.completed, null); assert.equal(state.progress, 0);
+});
+
+test('unfinished work stays with its engineer, location and equipment across cancellation and switching', () => {
+  const engineer = createEngineerState(), state = engineer.construction;
+  const position = { x: 0, y: 0, z: 0 }, candidate = { x: 0, y: 0, z: -3.2 };
+  const input = { builderId: 'builder', position, candidate, holding: true, allowed: true, buildSeconds: 20 };
+  engineer.heading = 0;
+  selectConstructionBlueprint(state, 'builder');
+  advanceConstruction(state, input, 8, () => null);
+  cancelEngineer(engineer);
+  assert.equal(engineer.unfinished[0].progress, 8);
+  assert.equal(findEngineerConstruction(engineer, 'another', position, candidate), undefined);
+  assert.equal(findEngineerConstruction(engineer, 'builder', { ...position, x: 2 }, candidate), undefined);
+  assert.ok(findEngineerConstruction(engineer, 'builder', position, { x: 0, y: 0, z: 3.2 }));
+  selectEngineerEquipment(engineer);
+  assert.equal(findEngineerConstruction(engineer, 'builder', position, candidate), undefined);
+  selectEngineerEquipment(engineer);
+  selectConstructionBlueprint(state, 'builder');
+  resumeEngineerConstruction(engineer, 'builder', position, candidate);
+  assert.equal(state.progress, 8);
+  assert.equal(engineer.heading, 0);
+  assert.equal(advanceConstruction(state, input, 11.99, () => null).completed, null);
+  assert.ok(advanceConstruction(state, input, .01, () => null).completed);
+  consumeEngineerMaterial(engineer, 'maxim24', 'completed');
+  assert.deepEqual(engineer.unfinished, []);
 });
 
 test('active construction reserves its footprint only against the builders teammates', () => {
@@ -101,7 +127,7 @@ test('built equipment keeps its engineer, squad, faction and original material i
   }
 });
 
-test('friendly soldiers can operate only friendly-engineer field guns, even after capture', () => {
+test('friendly soldiers can operate friendly-engineer and specifically assigned bridge guns, even after capture', () => {
   const friendly = { team: 'friendly' }, enemy = { team: 'enemy' };
   const build = team => {
     const actor = { id: `${team}-builder`, unitId: `${team}-unit`, team, engineer: createEngineerState() };
@@ -121,6 +147,27 @@ test('friendly soldiers can operate only friendly-engineer field guns, even afte
   assert.equal(canOperateEmplacement(ours, friendly), true);
   assert.equal(canOperateEmplacement(theirs, friendly), false);
   assert.throws(() => { theirs.builderTeam = 'friendly'; }, TypeError);
+});
+
+test('only explicitly assigned friendly preset artillery retains permission through a reset', async () => {
+  const { SIHANG_EMPLACEMENTS } = await import('../src/sihang-roster.js');
+  const guns = SIHANG_EMPLACEMENTS.filter(spec => spec.profile === 'bofors75');
+  assert.equal(guns.length, 2);
+  for (const spec of guns) {
+    const point = createEmplacement(spec);
+    assert.equal(canOperateEmplacement(point, { team: 'friendly' }), true);
+    point.team = 'enemy';
+    assert.equal(canOperateEmplacement(point, { team: 'friendly' }), true);
+    assert.throws(() => { point.friendlyPresetArtillery = false; }, TypeError);
+    Object.assign(point, createEmplacement(spec));
+    assert.equal(canOperateEmplacement(point, { team: 'friendly' }), true);
+  }
+  for (const invalid of [
+    { team: 'enemy', profile: 'bofors75' },
+    { team: 'friendly', profile: 'maxim24' },
+    { team: 'friendly', profile: 'bofors75', engineerBuilt: true, builderTeam: 'enemy' },
+  ]) assert.throws(() => createEmplacement({ id: 'invalid', x: 0, z: 0, heading: 0,
+    friendlyPresetArtillery: true, ...invalid }), RangeError);
 });
 
 test('real artillery positions remain targets when unmanned and stop firing when actually destroyed', () => {

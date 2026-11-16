@@ -9,6 +9,7 @@ import { createFullscreenControls } from './fullscreen.js';
 import { createCampaignPresentation } from './campaign-presentation.js';
 import { createPlayerIdentityControls } from './player-identity.js';
 import { getPlayerPreferences } from './player-preferences.js';
+import { getPreferenceControls } from './preference-controls.js';
 import { startupResourceProfile } from './startup-resources.js';
 import { getMenuMusic } from './menu-music.js';
 import { getEndingMusic } from './ending-music.js';
@@ -29,15 +30,6 @@ const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
 let loaded = false, pending = false;
 const launcherPreferences = getPlayerPreferences();
-const launcherBlastBlur = menu.querySelector('[data-blast-blur]');
-launcherBlastBlur.checked = launcherPreferences.snapshot.blastBlur;
-launcherBlastBlur.addEventListener('change', () => {
-  if (loaded) return;
-  launcherPreferences.update({ blastBlur: launcherBlastBlur.checked });
-  const status = menu.querySelector('[data-preferences-status]');
-  status.textContent = launcherPreferences.status.problem ? launcherPreferences.status.message : '';
-  status.hidden = !launcherPreferences.status.problem;
-});
 const lowMemoryRestart = document.getElementById('low-memory-restart');
 lowMemoryRestart.hidden = startupResourceProfile(params.get('resources') ??
   'auto', navigator.deviceMemory ?? null).lowMemory;
@@ -48,6 +40,7 @@ lowMemoryRestart.addEventListener('click', () => {
 });
 const menuMusic = getMenuMusic();
 const endingMusic = getEndingMusic();
+getPreferenceControls();
 const activateMusic = event => {
   if (!(event.target instanceof Element && event.target.closest('[data-menu-music-toggle]'))) {
     void menuMusic.activate(); void endingMusic.activate();

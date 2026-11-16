@@ -29,14 +29,14 @@ test('Sihang scene voices require valid clips and do not invent playback before 
   assert.throws(() => voices.play(null, 'unknown'), RangeError);
 });
 
-test('the actual loader uses the separately sourced assembly recording for withdrawal', async () => {
+test('the actual loader uses the withdrawal order without requiring the whole squad', async () => {
   const previousAudio = globalThis.OfflineAudioContext, previousFetch = globalThis.fetch, requests = [];
   globalThis.OfflineAudioContext = class { async decodeAudioData() { return { duration: 2 }; } };
   globalThis.fetch = async url => { requests.push(url); return new Response(new Uint8Array([0])); };
   try {
     await loadSihangVoices();
-    assert.ok(requests.includes('/assets/audio/sihang-assembly/withdrawal.wav?v=b20162b7'));
-    assert.ok(!requests.some(url => url.includes('/sihang-voices/withdrawal.mp3')));
+    assert.ok(requests.includes('/assets/audio/sihang-voices/withdrawal.mp3?v=sihang-regroup-v1'));
+    assert.ok(!requests.some(url => url.includes('/sihang-assembly/withdrawal.wav')));
     assert.ok(requests.some(url => url.includes('/sihang-voices/assembled.mp3')));
   } finally { globalThis.fetch = previousFetch; globalThis.OfflineAudioContext = previousAudio; }
 });

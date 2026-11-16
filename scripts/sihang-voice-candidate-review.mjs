@@ -12,7 +12,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  if (bytes) await page.route('**/assets/audio/sihang-assembly/withdrawal.wav*', route =>
+  if (bytes) await page.route('**/assets/audio/sihang-voices/withdrawal.mp3*', route =>
     route.fulfill({ status: 200, contentType: 'audio/wav', body: bytes }));
   await page.route('**/src/main.js*', async route => {
     const response = await route.fetch();

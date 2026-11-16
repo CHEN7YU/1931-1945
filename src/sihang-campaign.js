@@ -24,13 +24,12 @@ export function createSihangCampaign() {
 
 export function sihangWaveAssemblyRemaining(campaign) {
   if (campaign.stage !== 'sihang-retreat' || campaign.waveAssemblyAt === null) return null;
-  return Math.max(0, campaign.waveAssemblyAt + SIHANG_RULES.assemblyTimeout - campaign.elapsed,
-    SIHANG_RULES.nightfallSeconds - campaign.stageElapsed);
+  return Math.max(0, campaign.waveAssemblyAt + SIHANG_RULES.assemblyTimeout - campaign.elapsed);
 }
 
 export function startSihangWithdrawalWave(campaign, squads) {
   if (campaign.stage !== 'sihang-retreat' || campaign.outcome || !campaign.assemblyReleased ||
-    campaign.stageElapsed < SIHANG_RULES.nightfallSeconds || campaign.withdrawalWave ||
+    campaign.withdrawalWave ||
     !Array.isArray(squads) || squads.length !== SIHANG_RULES.retreatSquads ||
     squads.some(squad => !Array.isArray(squad) || squad.some(id => typeof id !== 'string')) ||
     new Set(squads.flat()).size !== squads.flat().length || !squads.some(squad => squad.length))
@@ -102,6 +101,17 @@ export function registerSihangRetreatSquad(campaign, actors) {
   campaign.reserve -= actors.length; campaign.deployed += actors.length;
   campaign.aiRetreatIds.push(...actors.map(actor => actor.id));
   campaign.retreatIds.push(...actors.map(actor => actor.id));
+}
+
+export function transferSihangRetreatSquad(campaign, actors) {
+  if (campaign.stage !== 'sihang-retreat' || campaign.outcome || !Array.isArray(actors) || !actors.length ||
+    new Set(actors.map(actor => actor.id)).size !== actors.length ||
+    actors.some(actor => actor.playerUnit || actor.health <= 0 ||
+      !campaign.aiRetreatIds.includes(actor.id) || !campaign.retreatIds.includes(actor.id) ||
+      campaign.evacuatedIds.includes(actor.id) || campaign.retreatLostIds.includes(actor.id)))
+    throw new RangeError('Only active living AI retreat soldiers can be transferred to the player');
+  const ids = new Set(actors.map(actor => actor.id));
+  campaign.aiRetreatIds = campaign.aiRetreatIds.filter(id => !ids.has(id));
 }
 
 export function sihangRetreatStatus(campaign) {

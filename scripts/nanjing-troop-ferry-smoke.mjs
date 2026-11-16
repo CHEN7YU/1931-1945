@@ -30,6 +30,19 @@ try {
         if(allies[current].nativeMotion)allies[current].nativeMotion.position={x:-72.2,z:ferry.position.z};
         setGameState('playing');bindControlInput();
       },
+      delayOtherBoat() {
+        const boat = world.ferries.find(ferry => ferry.userData.ferryId !== nanjingCampaign.playerBoardingBoatId &&
+          ferry.userData.state === 'docked' && !ferry.userData.troopBoarding &&
+          !(ferry.userData.troopPassengers?.length));
+        if (!boat) throw new Error('No empty other boat for departure regression');
+        boat.position.x = -100; boat.userData.state = 'inbound'; boat.userData.gangplank.visible = false;
+        nanjingCampaign.boats[boat.userData.ferryId].returning = true;
+        const teammate = allies.find(actor => actor !== controlledSoldier(entities) && actor.health > 0);
+        if (!teammate) throw new Error('No living teammate for departure regression');
+        teammate.position.set(-45, .36, -45);
+        stopLocomotion(teammate.locomotion);
+        return boat.userData.ferryId;
+      },
       observeDock() {
         camera.position.set(-65,2.1,-80);camera.lookAt(-91,.8,-80);camera.updateMatrixWorld(true);
       },
@@ -149,18 +162,21 @@ try {
     }
   }
   assert.equal(final.boarded, final.required);
-  async function boardAndExit(start, count) {
+  async function boardAndExit(start, count, delayOtherBoat = false) {
     await page.evaluate(() => troopFerryReview.readyForF());
     await page.keyboard.press('f');
     let snapshot = await page.evaluate(() => troopFerryReview.step(0));
     assert.notEqual(snapshot.personalBoatId, null);
     assert.equal(snapshot.playerEscaped, false, 'F begins physical boarding, not instant victory');
     const boatId = snapshot.personalBoatId;
+    const delayedBoatId = delayOtherBoat ? await page.evaluate(() => troopFerryReview.delayOtherBoat()) : null;
     // A 68m crossing, six-second turnaround and return take over 54 simulation seconds.
     for (let chunk = 0; chunk < 1000 && !snapshot.playerEscaped; chunk++) {
       snapshot = await page.evaluate(() => troopFerryReview.step(5)); checkSeats(snapshot);
       const boat = snapshot.boats[boatId];
       if (boat.ownPassengers.length) assert.equal(boat.ownPassengers[0], start.playerId, 'the player must board before their own AI on the selected boat');
+      if (snapshot.ownActors.find(actor => actor.id === start.playerId)?.phase === 'aboard')
+        assert.equal(boat.state, 'outbound', 'the player boat leaves in the same step as boarding');
       if (!seen.outgoing && snapshot.boats.some(item => item.state === 'outbound' && item.troops > 0 && item.x < -80)) {
         seen.outgoing = true;
         if (process.env.ARTIFACT_DIR) {
@@ -169,8 +185,11 @@ try {
           await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'troops-moving-aligned.png') });
         }
       }
-      if (boat.state === 'outbound') assert.ok(snapshot.ownActors.every(actor =>
-        ['aboard', 'evacuated'].includes(actor.phase)), 'the player boat cannot leave while a living squadmate is still ashore');
+      if (boat.state === 'outbound') {
+        assert.ok(boat.ownPassengers.includes(start.playerId), 'the player must actually be aboard before departure');
+        if (delayedBoatId !== null) assert.equal(snapshot.boats[delayedBoatId].state, 'inbound',
+          'the player boat must not wait for another boat to return');
+      }
     }
     if (!snapshot.playerEscaped) {
       if (process.env.ARTIFACT_DIR) {
@@ -183,11 +202,9 @@ try {
     const boat = snapshot.boats[boatId];
     assert.ok(boat.state === 'outbound' && boat.x <= -77);
     assert.equal(snapshot.civilianEvacuated, start.civilianEvacuated);
-    assert.ok(snapshot.boats.every(item => item.state === 'outbound' && item.x <= -77),
-      'all five boats and their rowers must physically leave before victory');
-    assert.ok(snapshot.ownActors.every(actor => ['aboard', 'evacuated'].includes(actor.phase)));
-    if (count === 11) assert.ok(new Set(snapshot.ownActors.map(actor => actor.ferryId)).size >= 2,
-      'eleven living squad members must actually board multiple ten-seat boats');
+    assert.ok(snapshot.ownActors.some(actor => actor.id === start.playerId && actor.phase === 'aboard'));
+    if (delayOtherBoat) assert.ok(snapshot.ownActors.some(actor => actor.id !== start.playerId &&
+      actor.phase === 'waiting'), 'departure must not wait for a living teammate still ashore');
     results.push({ ownSurvivors: count, final: snapshot });
     return snapshot;
   }
@@ -201,7 +218,7 @@ try {
   }
   assert.equal(small.boarded, small.required);
   smallStart.playerId = await page.evaluate(() => troopFerryReview.playerId);
-  await boardAndExit(smallStart, 3);
+  await boardAndExit(smallStart, 3, true);
   const fullArmyStart = await page.evaluate(() => troopFerryReview.restart(11,11));
   assert.equal(fullArmyStart.alive, 44, 'also cover all four complete eleven-person AI squads');
   let fullArmy = fullArmyStart;
@@ -222,5 +239,5 @@ try {
     limitation: 'Controlled empty-enemy dock fixtures covering both 12 surviving AI and all 44 full-strength AI, plus 11/3 own survivors. Complete production simulation includes grounding, movement, boarding, ferries and victory; not a natural battle or FPS benchmark.' };
   if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'troop-ferries.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify({ passed: true, aiSquadsBoarded: final.boarded, playerBoardsFirst: true,
-    fullAndSmallSquadExit: true, allFiveBoatsLeave: true, movingSeatsAligned: true }));
+    fullAndSmallSquadExit: true, playerLeavesWithoutOtherBoat: true, movingSeatsAligned: true }));
 } finally { await browser.close(); }
