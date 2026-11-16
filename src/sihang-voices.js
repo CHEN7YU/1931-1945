@@ -11,6 +11,7 @@ export const SIHANG_VOICE_LINES = Object.freeze({
   'wave-cover': '掩护队，撤退！',
   counterattack: '日军反扑！掩护弟兄们过桥！',
   'retreat-open': '过半弟兄已撤离！带上你的弟兄，过桥！',
+  'final-retreat': '部队完成撤退，你已经完成掩护任务，立刻撤退到南岸。',
   cheer1: '弟兄们，挺住啊！',
   cheer2: '中国军人，好样的！',
   cheer3: '弟兄们，保重啊！',

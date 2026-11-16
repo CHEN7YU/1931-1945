@@ -5,16 +5,16 @@
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
   "provenance": "Original fictional Sihang game orders and civilian encouragement. Stock neural voices; not historical recordings, cloned soldiers or CC0.",
-  "generatedAt": "2026-11-11T16:41:31.859Z",
+  "generatedAt": "2026-11-16T10:34:49.817Z",
   "requestedBudgetUSD": 50,
   "requestSSMLCharacterLimit": 200000,
   "budgetPerPhaseUSD": {
     "sihang": 50
   },
   "budgetBasis": "200,000 SSML characters per phase, including retries. Standard S1 Neural retail meter in Sweden Central: USD 15 per million characters (2026-11-02). Counting full XML overestimates billable text; this is a synthesis guard, not an Azure subscription spending cap or invoice.",
-  "attemptedSSMLCharacters": 5404,
+  "attemptedSSMLCharacters": 5732,
   "attemptedCharactersByPhase": {
-    "sihang": 5404
+    "sihang": 5732
   },
   "files": [
     {
@@ -206,6 +206,25 @@
       "bytes": 27936,
       "sha256": "c70c3d6eaf8baacb1cb8d2175ca348922dc46a04ca560945fb3046f67edd5719",
       "synthesisHash": "50938665660c0f0830036d9e39e332e42c1d5bbef391bae8c4aa0f9ecfd6690a"
+    },
+    {
+      "id": "sihang-final-retreat",
+      "file": "final-retreat.mp3",
+      "cue": "final-retreat",
+      "text": "部队完成撤退，你已经完成掩护任务，立刻撤退到南岸。",
+      "phase": "sihang",
+      "voice": "zh-CN-YunjianNeural",
+      "locale": "zh-CN",
+      "gender": "Male",
+      "style": "serious",
+      "styledegree": "1.4",
+      "rate": "-3%",
+      "pitch": "-3%",
+      "volume": "loud",
+      "audioRevision": "sihang-1937-v1",
+      "bytes": 33408,
+      "sha256": "b533f23c0c43efff8796071fbe8e6f6aeaa668277cf6b682642fd0ca53215836",
+      "synthesisHash": "9b90486df0e52e9f0e3dda362d2fbff19e7adb3fdd2bbf9ed74125fed26d9c9f"
     },
     {
       "id": "sihang-cheer1",

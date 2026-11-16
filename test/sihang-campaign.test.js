@@ -261,24 +261,27 @@ test('majority does not end the mission; the final identity ends it without wait
   assert.equal(state.outcome, 'evacuated');
 });
 
-test('a stationary final northern AI starts a cancellable countdown without inventing casualties', () => {
+test('a stationary northern AI prompts the player after 15 seconds and the player must reach the south bank', () => {
   const state = createSihangCampaign(), player = soldier('p', true), rescued = soldier('rescued'), stuck = soldier('stuck');
   state.reserve = 0;
   const friendly = [player, rescued, stuck];
   advanceSihangCampaign(state, 240, { friendly });
   state.assemblyReleased = true;
-  player.position.z = rescued.position.z = 40;
+  rescued.position.z = 40;
   advanceSihangCampaign(state, .1, { friendly, player });
-  advanceSihangCampaign(state, 30, { friendly, player });
-  assert.equal(state.strandedCountdownAt, state.elapsed);
+  advanceSihangCampaign(state, 14.9, { friendly, player });
+  assert.equal(state.finalRetreatOrdered, false);
   advanceSihangCampaign(state, 0, { friendly, player });
-  assert.equal(state.strandedCountdownAt, state.elapsed, 'paused time cannot consume the countdown');
+  assert.equal(state.finalRetreatOrdered, false);
   stuck.position.x += .6;
   advanceSihangCampaign(state, .1, { friendly, player });
-  assert.equal(state.strandedCountdownAt, null);
-  advanceSihangCampaign(state, 30, { friendly, player });
-  advanceSihangCampaign(state, 29.9, { friendly, player });
+  advanceSihangCampaign(state, 15, { friendly, player });
+  assert.equal(state.finalRetreatOrdered, true);
+  stuck.position.x += 1;
+  advanceSihangCampaign(state, 100, { friendly, player });
+  assert.equal(state.finalRetreatOrdered, true, 'the final order remains active after the soldier moves');
   assert.equal(state.outcome, null);
+  player.position.z = 40;
   advanceSihangCampaign(state, .1, { friendly, player });
   assert.equal(state.outcome, 'evacuated');
   assert.equal(stuck.health, 100);
@@ -286,7 +289,7 @@ test('a stationary final northern AI starts a cancellable countdown without inve
   assert.equal(sihangRetreatStatus(state).unresolved, 1);
 });
 
-test('the countdown never abandons the current player or soldiers still crossing', () => {
+test('the last player receives the order, while a soldier still crossing is not treated as stranded', () => {
   const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai');
   state.reserve = 0;
   const friendly = [player, ai];
@@ -295,7 +298,7 @@ test('the countdown never abandons the current player or soldiers still crossing
   ai.position.z = 40;
   advanceSihangCampaign(state, 100, { friendly, player });
   assert.equal(state.outcome, null);
-  assert.equal(state.strandedCountdownAt, null);
+  assert.equal(state.finalRetreatOrdered, true);
   player.position.z = 40;
   ai.position.z = 40;
   advanceSihangCampaign(state, .1, { friendly, player });
@@ -309,11 +312,11 @@ test('the countdown never abandons the current player or soldiers still crossing
   advanceSihangCampaign(crossing, 100, { friendly: [p, onBridge], player: p });
   advanceSihangCampaign(crossing, 100, { friendly: [p, onBridge], player: p });
   assert.equal(crossing.outcome, null);
-  assert.equal(crossing.strandedCountdownAt, null);
+  assert.equal(crossing.finalRetreatOrdered, false);
 });
 
-test('only up to three stranded soldiers can start the countdown, never reinforcements or a whole squad', () => {
-  for (const count of [3, 4, 11]) {
+test('only up to ten stranded soldiers prompt final retreat; reinforcements prevent it', () => {
+  for (const count of [10, 11]) {
     const state = createSihangCampaign(), player = soldier('p', true);
     const group = Array.from({ length: count }, (_, i) => soldier(`ai-${i}`));
     state.reserve = 0;
@@ -321,9 +324,9 @@ test('only up to three stranded soldiers can start the countdown, never reinforc
     advanceSihangCampaign(state, 240, { friendly });
     state.assemblyReleased = true; player.position.z = 40;
     advanceSihangCampaign(state, .1, { friendly, player });
-    advanceSihangCampaign(state, 30, { friendly, player });
-    assert.equal(state.strandedCountdownAt === null, count > 3);
-    assert.equal(state.outcome, null);
+    advanceSihangCampaign(state, 15, { friendly, player });
+    assert.equal(state.finalRetreatOrdered, count <= 10);
+    assert.equal(state.outcome, count <= 10 ? 'retreat-losses' : null);
   }
 
   const reserve = createSihangCampaign(), player = soldier('p', true), other = soldier('other');
@@ -333,7 +336,7 @@ test('only up to three stranded soldiers can start the countdown, never reinforc
   reserve.assemblyReleased = true;
   advanceSihangCampaign(reserve, 100, { friendly: [player, other], player });
   advanceSihangCampaign(reserve, 100, { friendly: [player, other], player });
-  assert.equal(reserve.strandedCountdownAt, null);
+  assert.equal(reserve.finalRetreatOrdered, false);
   assert.equal(reserve.outcome, null);
 });
 
@@ -348,7 +351,7 @@ test('repeated movement near one point is not mistaken for being stationary', ()
     ai.position.x = 48 + (i % 2 ? 0 : .3);
     advanceSihangCampaign(state, 10, { friendly, player });
   }
-  assert.equal(state.strandedCountdownAt, null);
+  assert.equal(state.finalRetreatOrdered, false);
   assert.equal(state.outcome, null);
 });
 

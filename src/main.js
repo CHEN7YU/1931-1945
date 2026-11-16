@@ -2408,7 +2408,7 @@ function showOverlay(kind = 'pause') {
     $('overlay-description').hidden = false;
     $('overlay-description').textContent = ended
       ? `累计参战 ${sihangCampaign.deployed}/400 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
-      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。少数士兵长时间滞留时将倒计时结算。';
+      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     const retreat = sihangRetreatStatus(sihangCampaign);
     $('battle-summary').textContent = sihangCampaign.stage === 'sihang-retreat'
       ? `将士400人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`
@@ -2565,7 +2565,7 @@ function refreshDeployment() {
     $('overlay-title').textContent = noSihangReserve ? '后备兵力已耗尽。' : '补充新班，继续掩护。';
     $('overlay-description').textContent = noSihangReserve
       ? '无法补充新兵；可接管战场上的存活友军小队，或等待剩余守军撤离。'
-      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。无撤退时限，全员去向确定后结算。';
+      : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     if (sihangCampaign.stage === 'sihang-retreat') {
       const retreat = sihangRetreatStatus(sihangCampaign);
       $('battle-summary').textContent = `将士400人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`;
@@ -7075,6 +7075,7 @@ function sihangAssemblyFocusAvailable(actor) {
 function updateSihangMission(dt) {
   const point = objectives[0], previousStage = sihangCampaign.stage, player = controlledSoldier(entities);
   const previousCounterattack = sihangCampaign.counterattack, previousRetreatOpen = sihangCampaign.playerRetreatOpen;
+  const previousFinalRetreat = sihangCampaign.finalRetreatOrdered;
   if (sihangCampaign.stage === 'sihang-defense' && !sihangCampaign.outcome) {
     const inside = actor => actor.health > 0 && !actor.vehicleId && objectiveContainsPosition(point, actor.position);
     advanceCapture(point, dt, friendlyForces.some(inside), enemies.some(inside));
@@ -7260,6 +7261,10 @@ function updateSihangMission(dt) {
         if (wave.number > 1) sihangVoices?.play(audioContext, 'wave-start');
       }
     }
+  }
+  if (!previousFinalRetreat && sihangCampaign.finalRetreatOrdered && !sihangCampaign.outcome) {
+    toast('部队完成撤退 · 立刻撤退到苏州河南岸', 8);
+    sihangVoices?.play(audioContext, 'final-retreat');
   }
   if (sihangCampaign.outcome && !battleEnding.fading && !battleEnding.complete) {
     showOverlay(sihangCampaign.outcome === 'evacuated' ? 'victory' : 'defeat');
@@ -8452,8 +8457,8 @@ function updateHUD() {
           : sihangCampaign.northWallBreached ? '北墙已被炸开 · 日军正从缺口突入！守住一楼，继续坚持到撤退命令'
           : point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
             : '守住一楼 · 阻止北墙爆破 · 一楼出生，楼梯通往窗口与屋顶'
-      : sihangCampaign.strandedCountdownAt !== null
-        ? `仍有 ${retreat.unresolved} 人滞留北岸 · 结算倒计时 ${Math.max(0, Math.ceil(sihangCampaign.strandedCountdownAt + SIHANG_RULES.strandedCountdownSeconds - sihangCampaign.elapsed))}秒`
+      : sihangCampaign.finalRetreatOrdered
+        ? '掩护任务结束 · 立刻撤退到苏州河南岸'
       : !sihangCampaign.assemblyReleased
         ? '前往仓库南面 · 抵达后首批撤退'
         : wave?.phase === 'interval'

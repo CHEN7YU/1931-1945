@@ -3,7 +3,7 @@ import { sihangNorthBank, sihangSouthBank } from './sihang-layout.js';
 export const SIHANG_RULES = Object.freeze({
   defenseSeconds: 240, troopLimit: 400, squadMembers: 11,
   retreatSquads: 10, waveInterval: 5, retreatSpawnInterval: 2, assemblyTimeout: 30, coverRespawnSeconds: 10,
-  strandedLimit: 3, strandedStillSeconds: 30, strandedCountdownSeconds: 30,
+  strandedLimit: 10, strandedStillSeconds: 15,
   flareSeconds: 24, flareInterval: 34, nightfallSeconds: 20,
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
@@ -17,7 +17,7 @@ export function createSihangCampaign() {
     retreatTotal: 0, retreatRequired: 0, retreatReserve: 0, retreatLostIds: [],
     counterattack: false, counterattackAt: null, assemblyPrepared: false, assemblyReleased: false, coverRespawnAt: 0,
     withdrawalWave: null, withdrawalWaveNumber: 0, waveAssemblyAt: null, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,
-    strandedWatch: null, strandedCountdownAt: null,
+    strandedWatch: null, finalRetreatOrdered: false,
     demolition: { state: 'idle', operatorId: null, installProgress: 0,
       fuseRemaining: SIHANG_RULES.fuseSeconds, defuseProgress: 0, defuserId: null, defuseInterruptedFor: 0,
       cooldownUntil: 0, installations: 0, disarmed: 0 },
@@ -237,16 +237,22 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], playerSquad
     campaign.playerRetreatOpen = status.saved >= status.required;
     if (!status.unresolved) {
       campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
-      campaign.strandedWatch = null; campaign.strandedCountdownAt = null;
+      campaign.strandedWatch = null;
+    } else if (campaign.finalRetreatOrdered) {
+      if (player && saved.has(player.id) && sihangSafePosition(player.position))
+        campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
     } else {
-      const remaining = campaign.assemblyReleased && !campaign.retreatReserve &&
-        status.unresolved <= SIHANG_RULES.strandedLimit
-        ? campaign.retreatIds.filter(id => !saved.has(id) && !lost.has(id)).map(id => observed.get(id)) : [];
-      const eligible = remaining.length === status.unresolved &&
-        remaining.every(actor => actor && actor !== player && sihangNorthBank(actor.position) &&
+      const unresolvedIds = campaign.retreatIds.filter(id => !saved.has(id) && !lost.has(id));
+      const remaining = unresolvedIds.filter(id => id !== player?.id).map(id => observed.get(id));
+      const eligible = player && alive(player) && campaign.assemblyReleased && !campaign.retreatReserve &&
+        remaining.length <= SIHANG_RULES.strandedLimit &&
+        unresolvedIds.length === status.unresolved &&
+        remaining.every(actor => actor && sihangNorthBank(actor.position) &&
           ['x', 'y', 'z'].every(axis => Number.isFinite(actor.position[axis])));
       if (!eligible) {
-        campaign.strandedWatch = null; campaign.strandedCountdownAt = null;
+        campaign.strandedWatch = null;
+      } else if (!remaining.length) {
+        campaign.finalRetreatOrdered = true;
       } else {
         const watch = campaign.strandedWatch;
         let moved = !watch || remaining.length !== watch.positions.size ||
@@ -263,15 +269,11 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], playerSquad
             positions: new Map(remaining.map(actor => [actor.id, {
               x: actor.position.x, y: actor.position.y, z: actor.position.z, distance: 0,
             }])) };
-          campaign.strandedCountdownAt = null;
-        } else if (campaign.strandedCountdownAt === null &&
-          campaign.elapsed - watch.since >= SIHANG_RULES.strandedStillSeconds) {
-          campaign.strandedCountdownAt = campaign.elapsed;
-        }
-        if (campaign.strandedCountdownAt !== null &&
-          campaign.elapsed - campaign.strandedCountdownAt >= SIHANG_RULES.strandedCountdownSeconds)
-          campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
+        } else if (campaign.elapsed - watch.since >= SIHANG_RULES.strandedStillSeconds)
+          campaign.finalRetreatOrdered = true;
       }
+      if (campaign.finalRetreatOrdered && saved.has(player.id) && sihangSafePosition(player.position))
+        campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
     }
   }
   return campaign.outcome;
