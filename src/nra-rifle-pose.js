@@ -130,7 +130,7 @@ export function createNraRiflePose(root, bones, gun) {
     return { ...solved, palmError: palmPosition(side).distanceTo(palm), target };
   }
   return {
-    update(carry) {
+    update(carry, visualElbowFollow = true) {
       root.updateWorldMatrix(true, false);
       fingerError = 0;
       bone('LeftShoulder').quaternion.copy(leftShoulderRest);
@@ -165,7 +165,14 @@ export function createNraRiflePose(root, bones, gun) {
         rightTarget.add(rightPalmGoal.clone().sub(position(triggerPalm)));
       }
       const bracing = machineGun ? (reload?.supportWeight ?? 0) * (1 - (carry.prone ?? 0)) : 0;
+      const sprintFollow = visualElbowFollow && carry.intent === 'travel' && !carry.weaponBlocked && !carry.bayonet &&
+        !carry.grenade && !carry.dadao && !operation && !reload?.handWeight &&
+        Number.isFinite(carry.runPhase) && Number.isFinite(carry.gaitCharge)
+        ? Math.max(0, Math.min(1, (carry.gaitCharge - .25) / .35)) *
+          carry.weight * carry.upright * carry.lowReady * (1 - carry.gaitAim) : 0;
+      const follow = sprintFollow ? Math.sin(carry.runPhase * Math.PI * 2) * sprintFollow : 0;
       const rightPole = new THREE.Vector3(.7, -.7, .1).lerp(new THREE.Vector3(.12, -1, .05), bracing);
+      rightPole.z += .10 * follow;
       right = placeHand('Right', rightPalmGoal, rightTarget, rightPole.applyQuaternion(bodyFacing),
         new THREE.Vector3(-1, 0, 0).applyQuaternion(facing), carry.weaponBlocked ? 16 : carry.bayonet ? 8 : 4,
         carry.weaponBlocked ? .5 : 1);
@@ -182,7 +189,8 @@ export function createNraRiflePose(root, bones, gun) {
       const forward = reloadWeight > 0 ? {
         direction: new THREE.Vector3(0, 1, 0).applyQuaternion(handFrame).applyQuaternion(facing), weight: reloadWeight,
       } : null;
-      left = placeHand('Left', position(grip), seed, new THREE.Vector3(-.9, -.6, .1).applyQuaternion(bodyFacing),
+      const leftPole = new THREE.Vector3(-.9, -.6, .1 + .07 * follow);
+      left = placeHand('Left', position(grip), seed, leftPole.applyQuaternion(bodyFacing),
         normal, carry.weaponBlocked ? 16 : reloadWeight > 0 ? 12 : carry.bayonet ? 8 : 4,
         carry.weaponBlocked ? .5 : 1, forward);
       if (reloadWeight > 0) for (const [joint, rest] of fingers) {

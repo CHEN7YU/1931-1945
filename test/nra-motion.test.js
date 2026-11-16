@@ -76,8 +76,11 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
   for (const speed of [1.75, 2.7, 4.1]) {
     const person = { health: 100, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
       locomotion: { speed, mode: speed > 3 ? 'sprint' : speed > 2 ? 'jog' : 'walk' } };
-    person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
-    Object.assign(person.nativeMotion, { speed, weight: 1, gaitAim: 0, gaitCharge: speed > 3 ? 1 : 0 });
+    const profile = { ...createNativeGaitProfile(data.motion.idle),
+      rifleContacts: Object.fromEntries(['standing', ...Object.keys(FIRING_POSES)].map(name => [name, [.15, 1.5, 0]])) };
+    person.nativeMotion = createNraMotion(profile, person);
+    Object.assign(person.nativeMotion, { speed, weight: 1, gaitAim: 0, gaitCharge: speed > 3 ? 1 : 0,
+      travelCarryBlend: 1 });
     const samples = [];
     for (let i = 0; i < 16; i++) {
       person.nativeMotion.gaitCycles = i / 16;
@@ -90,18 +93,44 @@ test('native walking and running coordinate shoulder and carried-weapon motion, 
       const values = samples.map(s => s.upperBody[name]);
       assert.ok(Math.max(...values) - Math.min(...values) > .022, 'walking includes visible upper-body translation');
     }
+    const weaponX = samples.map(sample => sample.weaponPosition[0]);
+    const weaponY = samples.map(sample => sample.weaponPosition[1]);
+    const weaponZ = samples.map(sample => sample.weaponPosition[2]);
+    assert.ok(Math.max(...weaponX) - Math.min(...weaponX) > .005, 'the rifle moves laterally with each stride');
+    assert.ok(Math.max(...weaponY) - Math.min(...weaponY) > .003, 'the rifle follows the vertical running rhythm');
+    assert.ok(Math.max(...weaponZ) - Math.min(...weaponZ) > .004, 'the rifle rocks forward and back with each stride');
+    for (const sample of samples) {
+      const stock = new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(new Quaternion(...sample.weaponQuaternion))
+        .add(new Vector3(...sample.weaponPosition));
+      assert.ok(stock.distanceTo(new Vector3(...sample.stockContact)) < 1e-8,
+        'the stock remains anchored to the shoulder as the hands follow the carried rifle');
+    }
     assert.notDeepEqual(samples[4].weaponQuaternion, samples[12].weaponQuaternion);
     const before = JSON.stringify(person.nativeMotion);
     assert.deepEqual(sampleNraMotion(person), sampleNraMotion(person), 'sampling/pause cannot advance the gait');
     assert.equal(JSON.stringify(person.nativeMotion), before);
     const aiming = sampleNraMotion({ ...person, rifleReady: true, nativeMotion: { ...person.nativeMotion, lowReady: 0 } });
     assert.ok(Math.abs(aiming.upperBody.yaw) < .03);
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const aimingPose = (travelCarryBlend, lowReady) => sampleNraMotion({ ...person, rifleReady: true,
+        nativeMotion: { ...person.nativeMotion, gaitCycles: cycle / 4, travelCarryBlend, lowReady } });
+      assert.deepEqual(aimingPose(1, 0).weaponPosition, aimingPose(0, 0).weaponPosition,
+        'travel carry sway stops once the rifle is raised to aim');
+    }
     for (const patch of [{ emplacementId: 'gun' },
       { discharger: { presentationActive: true } }, { health: 0 }]) {
       const stable = sampleNraMotion({ ...person, ...patch });
       assert.deepEqual(stable.upperBody, { yaw: 0, pitch: 0, roll: 0, lift: 0, lateral: 0 });
     }
   }
+});
+
+test('sprint strides grow to a longer full-speed cycle without changing the speed-derived cadence', () => {
+  const motion = { profile: { walkStrideMeters: 1.25 }, speed: 4.1, gaitAim: 0, strideScale: 1 };
+  const strideAt = charge => nativeGaitParameters({ ...motion, gaitCharge: charge }).runStride;
+  assert.equal(strideAt(0), 1.6);
+  assert.ok(Math.abs(strideAt(.6) - 2.104) < 1e-10);
+  assert.equal(strideAt(1), 2.3);
 });
 
 test('rifle action body blend matches its distant samples and excludes support equipment', () => {
@@ -428,7 +457,9 @@ test('one soldier switches between charge, quick short steps and aimed slow move
     samples[mode] = sampleNraMotion(person);
   }
   assert.equal(samples.sprint.travelStyle, 'charge'); assert.equal(samples.jog.travelStyle, 'short'); assert.equal(samples.aim.travelStyle, 'aim');
-  assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.25);
+  assert.ok(samples.sprint.runStride >= 2.29 * samples.sprint.strideScale &&
+    samples.sprint.runStride <= 2.3 * samples.sprint.strideScale);
+  assert.ok(samples.sprint.runStride > samples.jog.runStride * 1.42);
   assert.ok(samples.sprint.heelHeight > samples.jog.heelHeight + .09);
   assert.ok(samples.jog.bodyLean >= .64 && samples.jog.bodyLean <= .66);
   assert.ok(samples.sprint.bodyLean > samples.jog.bodyLean + .04);
@@ -498,7 +529,9 @@ test('real metres set running cadence at every timestep, even when requested loc
     assert.ok(Math.abs((person.nativeMotion.distance - initialDistance) / cycles - pose.runStride) < .002,
       'one complete left/right cycle covers exactly its visual stride');
     const stepsPerSecond = cycles * 2 / 3;
-    assert.ok(speed === 3.15 ? stepsPerSecond > 3.7 && stepsPerSecond < 4.2 : stepsPerSecond > 4.2 && stepsPerSecond < 4.8);
+    assert.ok(Math.abs(stepsPerSecond - 2 * speed / pose.runStride) < .01,
+      'larger strides reduce cadence while preserving the measured travel speed');
+    assert.ok(stepsPerSecond > 3.6 && stepsPerSecond < 4.35);
     assert.ok(pose.bodyLean >= (speed === 3.15 ? .64 : .73) && pose.bodyLean <= .74);
     const stopped = person.nativeMotion.gaitCycles;
     person.locomotion.speed = 4.8;

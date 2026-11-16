@@ -238,8 +238,9 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       applyNativeUpperBody(root, canonical, motion);
       syncWorldWeapon(gun, actor.rifle, motion.automaticReload);
       const engineering = nativeEngineerPresentation(actor);
+      // The visual-only elbow experiment must not move anatomical hit proxies.
       if (!motion.dadao) riflePose.update(engineering ? { ...motion, rifleOperation: null } :
-        rifleOperation === undefined ? motion : { ...motion, rifleOperation });
+        rifleOperation === undefined ? motion : { ...motion, rifleOperation }, !collision);
       engineerTools.visible = engineering;
       engineerTools.position.copy(gun.position); engineerTools.quaternion.copy(gun.quaternion);
       if (motion.dadao && !dadaoPose) dadaoPose = createNraDadaoPose(root, canonical, getDadaoGrip(), dadaoChestRest);

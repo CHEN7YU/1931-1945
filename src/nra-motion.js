@@ -65,7 +65,7 @@ export function nativeGaitParameters(motion) {
   const transition = Math.max(0, Math.min(1, (motion.speed - 2.1) / .9));
   const jog = transition * transition * (3 - 2 * transition) * (1 - aimed);
   return { jog, charge, aimed, style: aimed > .5 ? 'aim' : jog > .5 ? charge > .5 ? 'charge' : 'short' : 'walk',
-    runStride: (1.6 + .55 * charge) * motion.strideScale,
+    runStride: (1.6 + .7 * charge + .35 * charge * (1 - charge)) * motion.strideScale,
     walkStride: profile.walkStrideMeters * (1 - .25 * aimed) * motion.strideScale,
     runContact: .40 - .13 * charge, walkContact: .52 + .10 * aimed,
     heelHeight: .10 + .025 * motion.legLift + .12 * charge,
@@ -398,6 +398,7 @@ export function sampleNraMotion(actor, includeHead = true, rifleOperationOverrid
   }
   const torsoYaw = profile.rifleContacts && profile.leanPivot ? -.55 * (1 - lowReady) * (1 - (motion.posture.prone ?? 0)) *
     (1 - .5 * ((motion.posture.wallLeft ?? 0) + (motion.posture.wallRight ?? 0))) * (1 - .65 * motion.chestFire) : 0;
+  const travelSway = new Vector3();
   if (lowReady) {
     const carry = motion.travelCarryBlend * upright * lowReady;
     const diagonal = motion.travelCarryStyle === 1 ? carry : 0;
@@ -410,6 +411,17 @@ export function sampleNraMotion(actor, includeHead = true, rifleOperationOverrid
     quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (.25 + .12 * diagonal - .10 * compact) * lowReady))
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -angle * lowReady))
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -.12 * diagonal + .10 * compact));
+    const sway = carry * (1 - motion.gaitAim);
+    if (sway > .001) {
+      const effort = .18 + .52 * jog + .3 * motion.gaitCharge;
+      const phase = runTime / profile.run.duration * Math.PI * 2;
+      travelSway.set(
+        Math.sin(phase) * .01 * effort,
+        Math.cos(phase * 2) * .007 * effort,
+        Math.cos(phase) * .007 * effort,
+      ).multiplyScalar(sway);
+      if (!profile.rifleContacts) blendedPosition.add(travelSway);
+    }
   }
   const automaticReload = actor.health > 0 && !dadao && !bayonet && actor.rifle?.action === 'reload' &&
     infantryWeaponProfile(actor.rifle).automatic ? machineGunReloadPose(actor.rifle,
@@ -455,6 +467,7 @@ export function sampleNraMotion(actor, includeHead = true, rifleOperationOverrid
         .applyAxisAngle(new Vector3(0, 0, 1), upperBody.roll).add(pivot);
     }
     contact.x += upperBody.lateral; contact.y += upperBody.lift;
+    contact.add(travelSway);
     stockContact = contact.toArray();
     blendedPosition.copy(contact).sub(new Vector3(...RIFLE_CONTACTS.stock).applyQuaternion(quaternion));
   }

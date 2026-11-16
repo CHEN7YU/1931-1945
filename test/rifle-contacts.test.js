@@ -32,9 +32,10 @@ function fixture(ready) {
   actor.nativeMotion = createNraMotion(profile, actor);
   if (!ready) { actor.nativeMotion.speed = 3.15; actor.nativeMotion.weight = 1; }
   const feet = Object.fromEntries(['Left', 'Right'].map(side => [side, bones.get(`${side}Foot`).getWorldPosition(new T.Vector3())]));
+  const rest = [...bones.values()].map(bone => ({ bone, position: bone.position.clone(), rotation: bone.quaternion.clone() }));
   applyNativeFootCycle(root, bones, sampleNraMotion(actor), feet, () => 0);
   applyNativeBodyLean(root, bones, sampleNraMotion(actor));
-  return { root, actor, bones, pose: createNraRiflePose(root, bones, rifleWorldModel()) };
+  return { root, actor, bones, feet, rest, pose: createNraRiflePose(root, bones, rifleWorldModel()) };
 }
 
 test('real native hands contact the stock with neutral wrist alignment, deterministically on repeated sampling', () => {
@@ -57,4 +58,61 @@ test('real native hands contact the stock with neutral wrist alignment, determin
     }
     ['LeftForeArm', 'LeftHand', 'RightForeArm', 'RightHand'].forEach((name, i) => assert.deepEqual(bones.get(name).position, lengths[i]));
   }
+});
+
+test('sprint elbow follow changes only the bend plane while keeping real rifle contacts stable', () => {
+  const { root, actor, bones, feet, rest, pose } = fixture(false);
+  actor.health = 100;
+  Object.assign(actor.nativeMotion, { speed: 4.1, weight: 1, gaitAim: 0, gaitCharge: .59326171875,
+    lowReady: 1, travelCarryBlend: 1, bodyLean: .7330382858 });
+  const lengths = ['LeftForeArm', 'LeftHand', 'RightForeArm', 'RightHand'].map(name => bones.get(name).position.clone());
+  const offsets = { left: [], right: [] };
+  let previous = null;
+  for (let i = 0; i <= 32; i++) {
+    actor.nativeMotion.gaitCycles = i / 32;
+    const carry = sampleNraMotion(actor, false);
+    for (const item of rest) { item.bone.position.copy(item.position); item.bone.quaternion.copy(item.rotation); }
+    root.updateMatrixWorld(true);
+    applyNativeFootCycle(root, bones, carry, feet, () => 0);
+    applyNativeBodyLean(root, bones, carry);
+    pose.update({ ...carry, gaitCharge: 0 });
+    const baseline = pose.snapshot;
+    pose.update(carry, false);
+    const collision = pose.snapshot;
+    for (const side of ['left', 'right'])
+      assert.ok(new T.Vector3(...collision[`${side}Elbow`]).distanceTo(
+        new T.Vector3(...baseline[`${side}Elbow`])) < 1e-7, `${side} collision bend must remain unchanged`);
+    pose.update(carry);
+    const candidate = pose.snapshot;
+    assert.equal(pose.issue, null);
+    for (const key of ['muzzle', 'stock', 'rightPalmTarget', 'leftPalmTarget']) {
+      assert.ok(new T.Vector3(...baseline[key]).distanceTo(new T.Vector3(...candidate[key])) < 1e-8, key);
+    }
+    for (const side of ['left', 'right']) {
+      assert.ok(candidate[side].reachable && candidate[side].error < 1e-5);
+      assert.ok(candidate[side].palmError < .005);
+      const elbow = new T.Vector3(...candidate[`${side}Elbow`]);
+      const correction = elbow.sub(new T.Vector3(...baseline[`${side}Elbow`]));
+      offsets[side].push(correction.length());
+      if (previous) assert.ok(correction.distanceTo(previous[side]) < .005,
+        `${side} elbow correction jumps at ${i}/32`);
+    }
+    previous = Object.fromEntries(['left', 'right'].map(side =>
+      [side, new T.Vector3(...candidate[`${side}Elbow`]).sub(new T.Vector3(...baseline[`${side}Elbow`]))]));
+    for (const patch of [{ intent: 'aim' }, { gaitCharge: .25 }, { weight: 0 }, { lowReady: 0 }, { gaitAim: 1 }, { upright: 0 },
+      { rifleOperation: { hand: 0 } }]) {
+      pose.update({ ...carry, ...patch });
+      const excluded = pose.snapshot;
+      pose.update({ ...carry, ...patch, gaitCharge: 0 });
+      const reference = pose.snapshot;
+      for (const side of ['left', 'right'])
+        assert.ok(new T.Vector3(...excluded[`${side}Elbow`]).distanceTo(
+          new T.Vector3(...reference[`${side}Elbow`])) < 1e-7, `${side} ${JSON.stringify(patch)}`);
+    }
+  }
+  for (const side of ['left', 'right']) {
+    assert.ok(Math.max(...offsets[side]) > .001, `${side} bend plane must move`);
+    assert.ok(Math.max(...offsets[side]) < .03, `${side} bend plane must remain restrained`);
+  }
+  ['LeftForeArm', 'LeftHand', 'RightForeArm', 'RightHand'].forEach((name, i) => assert.deepEqual(bones.get(name).position, lengths[i]));
 });
