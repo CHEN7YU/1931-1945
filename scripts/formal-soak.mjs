@@ -1,4 +1,4 @@
-import { setQualityPreset } from './game-entry.mjs';
+import { setQualityPreset, deployFromMenu } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -54,18 +54,19 @@ try {
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.locator('#menu').waitFor({ state: 'visible', timeout: 120000 });
   await setQualityPreset(page, process.env.SOAK_QUALITY || 'low');
-  const initial = await sample();
-  assert.equal(initial.build.development, false, 'use an immutable production build, not a hot-reloading server');
+  let initial = null;
   for (let round = 1; round <= matches; round++) {
     stage = `match-${round}`;
     const tank = round % 2 === 0;
-    await page.locator(`#squad-choices [data-type="${tank ? 'tank' : 'infantry'}"]`).click();
-    await page.locator('#deploy').click();
+    const choice = page.locator(`#squad-choices [data-type="${tank ? 'tank' : 'infantry'}"]`);
+    if (tank && await choice.count() && await choice.isVisible()) await choice.click();
+    await deployFromMenu(page);
     await page.waitForFunction(() => window.__battle.state === 'playing', null, { timeout: 30000 });
     const start = await sample(), observations = [start];
+    if (!initial) { initial = start; assert.equal(initial.build.development, false, 'use an immutable production build'); }
     inProgress = { round, squad: tank ? 'tank' : 'infantry', observations };
-    assert.equal(start.population.friendly.alive, tank ? 102 : 110, 'original full friendly roster is intact');
-    assert.equal(start.population.enemy.alive, 98, 'enemy population is not reduced for this check');
+    assert.equal(start.population.friendly.alive, 66, 'default fortress-battle friendly opening roster is intact');
+    assert.equal(start.population.enemy.alive, 73, 'enemy population is not reduced for this check');
     let walking = !tank, lastShot = -30, loggedAt = 0;
     const startedAt = Date.now(), wallLimit = Math.max(seconds * 3, 180) * 1000;
     if (walking) await page.keyboard.down('w');

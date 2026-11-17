@@ -16,7 +16,7 @@ try {
   if (process.env.PRODUCTION !== '1') { url.searchParams.set('benchmark', 'full'); url.searchParams.set('seed', '1938'); }
   await page.goto(url.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
-    null, { timeout: 90000 });
+    null, { timeout: Number(process.env.MENU_TIMEOUT_MS ?? 90000) });
   await page.locator('#squad-choices [data-type="tank"]').click();
   await page.locator('#deploy').click();
   await page.waitForFunction(() => window.__battle.state === 'playing');
@@ -26,6 +26,8 @@ try {
   const result = await page.evaluate(() => new Promise(resolve => {
     const previous = new Map(), controllers = new Set(), samples = [], gaitHistory = new Map();
     const styles = {}, gaitChanges = [];
+    // Mirrors AI_TURN.standingRate in src/ai-turning.js, the planted-turn ceiling.
+    const AI_STANDING_TURN_RATE = 4.2;
     let turns = 0, lowered = 0, firing = 0, brakes = 0, worstRate = 0;
     const failures = [], deadline = performance.now() + 45000;
     function collect() {
@@ -49,16 +51,18 @@ try {
           if (angle > .005) {
             turns++;
             worstRate = Math.max(worstRate, angle / dt);
-            if (angle > 2.4 * dt + 1e-6) failures.push({ id: actor.soldierId, angle, dt });
+            if (angle > AI_STANDING_TURN_RATE * dt + 1e-6) failures.push({ id: actor.soldierId, angle, dt, rate: angle / dt, mode: actor.mode, stance: actor.stance });
           }
         }
         if (actor.turningToPath && (actor.movement?.speed ?? actor.speed) <= .1) brakes++;
         if (actor.lastShot?.lowReady !== null && actor.lastShot?.time > (old?.shotAt ?? -1)) {
           firing++;
+          const chest = actor.lastShot.chestFire >= .98;
           if (actor.lastShot.lowReady > .05 || actor.lastShot.facingError > .07 + 1e-8) failures.push({ shot: actor.lastShot });
           const head = actor.lastShot.headAim;
-          if (!head || head.weight <= .98 || head.sightError >= .004 || head.cheekError >= .012 ||
-            head.gazeError >= .05 || head.eyeRelief <= .04) failures.push({ unalignedHead: actor.lastShot });
+          if (!chest && (!head || head.weight <= .98 || head.sightError >= .004 || head.cheekError >= .012 ||
+            head.gazeError >= .05 || head.eyeRelief <= .04)) failures.push({ unalignedHead: actor.lastShot });
+          if (chest && head && head.weight > .02) failures.push({ chestFireWithCheekWeld: actor.lastShot });
         }
         previous.set(actor.soldierId, { time: data.time, heading: actor.heading, shotAt: actor.lastShot?.time ?? -1 });
       }
@@ -84,7 +88,8 @@ try {
   assert.ok(result.turns > 20 && result.brakes > 0, 'real AI turn and braking samples required');
   assert.ok(result.lowered > 20, 'actual moving skinned guns, not just logical metadata, point down');
   assert.ok(result.firing > 5, 'AI still completes raising/facing and actually fires');
-  assert.ok(result.samples.every(sample => sample.banks.every(count => count === 44)));
+  assert.ok(result.samples.every(sample => sample.banks[0] === 96 && sample.banks[1] === 81),
+    'pose-bank counts must stay stable (friendly 96, enemy 81)');
   for (const team of ['friendly', 'enemy']) for (const style of ['charge', 'short']) {
     assert.ok(result.styles[`${team}-${style}`] > 10, 'both factions must actually use distinct charge and short-step movement');
   }

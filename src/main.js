@@ -737,7 +737,7 @@ function operateAIEngineer(actor, dt, combatTarget = null) {
   }
   stopLocomotion(actor.locomotion);
   actor.stance = 'crouched'; actor.firingPose = 'kneeling';
-  actor.heading = equipment.heading;
+  advanceAITurn(actor, equipment.heading, dt);
   if (!equipment.construction.blueprint) selectConstructionBlueprint(equipment.construction, actor.id);
   updateEngineerConstruction(actor, dt, true, { ...site });
   return true;
@@ -5367,7 +5367,7 @@ function fightFromCover(actor, target, dt, tankCover = null, stationary = false)
     ? actor.rifle.shots % 3 === 0 ? .8 : infantryWeaponProfile(actor.rifle).cycleSeconds
     : rifleAIFireDelay(distance, suppressed, battleRandom()));
   t.lastShot = { time, previousTime: t.lastShot?.time ?? null, mode: t.mode, stance: actor.stance, firingPose: ownedFiringPose(actor),
-      heading: actor.heading, lowReady: actor.nativeMotion?.lowReady ?? null,
+      heading: actor.heading, lowReady: actor.nativeMotion?.lowReady ?? null, chestFire: actor.nativeMotion?.chestFire ?? 0,
       headAim: actor.nativeMotion ? sampleNraMotion(actor).headAim ?? null : null,
       facingError: Math.abs(headingError(actor.heading, Math.atan2(position.x - threat.x, position.z - threat.z))),
       coverId: t.cover?.id ?? t.wallContact?.wallId ?? null, completedShotMoves: t.completedShotMoves ?? 0,
