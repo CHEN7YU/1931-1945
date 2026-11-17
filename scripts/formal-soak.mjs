@@ -32,7 +32,7 @@ async function sample() {
   return page.evaluate(() => {
     const b = window.__battle;
     const inventory = window.__battleResourceInventory;
-    return { build: b.build, state: b.state, time: b.time, remaining: b.remaining, position: b.position,
+    return { build: b.build, state: b.state, type: b.type, time: b.time, remaining: b.remaining, position: b.position,
       resources: b.resources, entities: b.entityCounts, clock: b.simulationClock,
       population: { friendly: b.population.friendly, enemy: b.population.enemy },
       shots: b.combatStats.aiRifleShots, corpseCount: b.corpses.count,
@@ -58,11 +58,10 @@ try {
   for (let round = 1; round <= matches; round++) {
     stage = `match-${round}`;
     const tank = round % 2 === 0;
-    const choice = page.locator(`#squad-choices [data-type="${tank ? 'tank' : 'infantry'}"]`);
-    if (tank && await choice.count() && await choice.isVisible()) await choice.click();
-    await deployFromMenu(page);
+    await deployFromMenu(page, { squadType: tank ? 'tank' : 'infantry' });
     await page.waitForFunction(() => window.__battle.state === 'playing', null, { timeout: 30000 });
     const start = await sample(), observations = [start];
+    assert.equal(start.type, tank ? 'tank' : 'infantry', 'requested squad must be deployed');
     if (!initial) { initial = start; assert.equal(initial.build.development, false, 'use an immutable production build'); }
     inProgress = { round, squad: tank ? 'tank' : 'infantry', observations };
     assert.equal(start.population.friendly.alive, 66, 'default fortress-battle friendly opening roster is intact');
