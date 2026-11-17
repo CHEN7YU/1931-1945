@@ -8,7 +8,9 @@ import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.j
 
 const map = process.env.PERFORMANCE_MAP ?? 'sihang';
 assert.ok(['sihang', 'nanjing'].includes(map), 'PERFORMANCE_MAP must be sihang or nanjing');
-const target = map === 'sihang' ? 'sihang-defense' : 'dock-defense';
+const fullSihang = process.env.PROFILE_SIHANG_END === '1';
+assert.ok(!fullSihang || map === 'sihang', 'PROFILE_SIHANG_END requires sihang');
+const target = map === 'sihang' ? fullSihang ? 'sihang-retreat' : 'sihang-defense' : 'dock-defense';
 const wallSeconds = Number(process.env.PROFILE_WALL_SECONDS ?? 1200);
 const targetSeconds = Number(process.env.PROFILE_TARGET_SECONDS ?? 120);
 const walkToDock = process.env.PROFILE_NANJING_WALK === '1';
@@ -29,18 +31,44 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [], batches = [], observations = [], actions = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+page.on('framenavigated', frame => {
+  if (frame === page.mainFrame()) actions.push({ action: 'page-navigation', url: frame.url(), wall: Date.now() });
+});
 await page.route('**/api/performance', async route => {
   const batch = route.request().postDataJSON();
   batches.push(batch);
   await route.fulfill({ status: 201, json: { id: batch.id, saved: true } });
 });
+if (walkToDock && map === 'nanjing' || fullSihang) {
+  await page.route('**/src/main.js*', async route => {
+    const response = await route.fetch();
+    const body = await response.text();
+    assert.ok(body.includes('const navigate = createNavigator('), 'Route guidance requires the development source');
+    await route.fulfill({ response, body: `${body}
+window.__profileRoute = goal => {
+  const actor = controlledSoldier(entities);
+  if (!actor || actor.health <= 0 || state !== 'playing') return { points: [], reason: 'control-transition' };
+  const position = actor.position;
+  if (nanjingCampaignMode) {
+    const exit = nanjingWallExitWaypoint(position);
+    if (exit) return { points: [exit], reason: 'wall-exit' };
+    if (position.y > .25) return { points: [], reason: 'unsupported-height' };
+  }
+  const elevated = sihangCampaignMode ? world.elevatedPath(position, goal) : null;
+  if (elevated?.length) return { points: elevated, reason: 'elevated-path' };
+  if (sihangCampaignMode && position.y > .25) return { points: [], reason: 'no-elevated-path' };
+  const points = navigate(position, goal);
+  return { points, reason: navigate.stats.reason };
+};` });
+  });
+}
 let status = 'starting', targetStarted = null, profile = null, profiling = false, environment = null;
-let walkGoal = null, bestDistance = Infinity, lastWalkProgress = null;
-let detour = null, detourUsed = false;
+let walkAnchor = null, lastWalkProgress = null;
+let lastRouteGoal = null, lastDestination = null;
 const cdp = await page.context().newCDPSession(page);
 const save = async () => writeFile(join(directory, 'natural-battle.json'), JSON.stringify({
   map, target, status, commit, dirty, url: url.href, environment, observations, actions, batches, errors,
-  limitations: 'Headless local browser; diagnostic collection and CDP sampling add overhead. Automated player inputs are listed in actions; no forced phase or actor mutations. Not a real player, GPU timing, whole-match acceptance, or a controlled before/after comparison. Scope timings may be nested. Corpse-distance pairs are not geometry intersections.',
+  limitations: 'Headless local browser; diagnostic collection and CDP sampling add overhead. Automated player inputs are listed in actions; optional development-only route guidance queries the game navigator and adds overhead. No forced phase or actor mutations. Not a real player, GPU timing, whole-match acceptance, or a controlled before/after comparison. Scope timings may be nested. Corpse-distance pairs are not geometry intersections.',
 }, null, 2));
 try {
   const settings = defaultPreferences();
@@ -69,6 +97,7 @@ try {
   while (Date.now() - started < wallSeconds * 1000) {
     const sample = await page.evaluate(() => {
       const b = window.__battle;
+      if (!b) throw new Error(`Battle snapshot unavailable at ${location.href}`);
       const bodies = b.corpses.members;
       let near01 = 0, near05 = 0;
       for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
@@ -85,6 +114,10 @@ try {
         stage: b.campaign?.stage, stageRemaining: b.campaign?.stageRemaining,
         population: b.population, clock: b.simulationClock, corpses: bodies.length,
         nearbyCorpsePairs: { within01m: near01, within05m: near05 }, type: b.type, position: b.position, look: b.look,
+        sihang: b.campaign && b.campaign.stage?.startsWith('sihang-') ? {
+          outcome: b.campaign.outcome, assemblyReleased: b.campaign.assemblyReleased,
+          finalRetreatOrdered: b.campaign.finalRetreatOrdered, playerRetreatOpen: b.campaign.playerRetreatOpen,
+          retreat: b.campaign.retreat, voices: b.sihangVoices, ending: b.battleEnding } : null,
         fatal: !document.querySelector('#fatal').hidden };
     });
     observations.push(sample);
@@ -93,10 +126,13 @@ try {
       targetStarted = Date.now();
       await cdp.send('Profiler.start'); profiling = true;
     }
-    if (targetStarted !== null && sample.stage !== target) { status = 'target-ended-early'; break; }
+    if (!fullSihang && targetStarted !== null && sample.stage !== target) { status = 'target-ended-early'; break; }
     if (targetStarted !== null && Date.now() - targetStarted >= targetSeconds * 1000) {
-      status = 'target-observed';
-      break;
+      if (!fullSihang) { status = 'target-observed'; break; }
+      if (profiling) {
+        profile = (await cdp.send('Profiler.stop')).profile; profiling = false;
+        await writeFile(join(directory, 'cpu-profile.json'), JSON.stringify(profile));
+      }
     }
     if (['victory', 'defeat', 'draw'].includes(sample.state)) { status = 'battle-ended'; break; }
     if (sample.state === 'dead') {
@@ -111,32 +147,58 @@ try {
       console.log(`${map}: wall=${Math.round((Date.now() - started) / 1000)} sim=${sample.time.toFixed(1)} stage=${sample.stage} corpses=${sample.corpses}`);
       await save();
     }
-    if (walkToDock && map === 'nanjing' && sample.state === 'playing' &&
-      sample.stage === 'withdrawal' && sample.position) {
+    const sihangAssembly = fullSihang && sample.stage === 'sihang-retreat' && !sample.sihang?.assemblyReleased &&
+      !(sample.position?.x >= -34 && sample.position?.x <= 26 &&
+        sample.position?.z >= -7.7 && sample.position?.z <= -.4 && Math.abs(sample.position?.y) < .4);
+    const sihangExit = fullSihang && sample.stage === 'sihang-retreat' &&
+      sample.sihang?.finalRetreatOrdered && !sample.sihang?.outcome;
+    if (sample.state === 'playing' && sample.position &&
+      (walkToDock && map === 'nanjing' && sample.stage === 'withdrawal' || sihangAssembly || sihangExit)) {
       const { x, z } = sample.position;
-      if (detour && Math.hypot(detour.x - x, detour.z - z) < 4) detour = null;
-      const goal = detour ?? (z > -20 ? { x: 0, z: -25 } : { x: -66, z: -80 });
-      const dx = goal.x - x, dz = goal.z - z, yaw = sample.look.yaw;
-      const goalKey = `${goal.x},${goal.z}`, distance = Math.hypot(dx, dz);
-      if (goalKey !== walkGoal || distance < bestDistance - .5) {
-        walkGoal = goalKey; bestDistance = distance; lastWalkProgress = Date.now();
+      if (!walkAnchor || Math.hypot(x - walkAnchor.x, z - walkAnchor.z) > 1) {
+        walkAnchor = { x, z }; lastWalkProgress = Date.now();
       } else if (Date.now() - lastWalkProgress > 30000) {
-        if (detourUsed) { status = 'walk-blocked'; break; }
-        detour = { x: x + 3, z: -80 };
-        detourUsed = true;
-        actions.push({ time: sample.time, action: 'try-detour', position: sample.position, goal: detour });
+        status = 'walk-blocked'; break;
+      }
+      const destination = sihangAssembly ? { x: 0, y: 0, z: -4 }
+        : sihangExit ? { x: 90, y: 0, z: 4 } : { x: -66, y: 0, z: -80 };
+      const destinationKey = `${destination.x},${destination.z}`;
+      if (destinationKey !== lastDestination) { lastRouteGoal = null; lastDestination = destinationKey; }
+      const route = await page.evaluate(goal => window.__profileRoute(goal), destination);
+      if (route.reason === 'control-transition') {
+        actions.push({ time: sample.time, action: 'control-transition' });
+        walkAnchor = null; lastRouteGoal = null; lastDestination = null;
+        await page.waitForTimeout(500);
         continue;
       }
+      let goal = route.points.find(point => Math.hypot(point.x - x, point.z - z) > .6);
+      if (!goal && lastRouteGoal && Math.hypot(lastRouteGoal.x - x, lastRouteGoal.z - z) > .6) {
+        goal = lastRouteGoal; route.reason = 'previous-waypoint';
+      }
+      if (!goal) {
+        status = 'route-unavailable';
+        actions.push({ time: sample.time, action: 'route-unavailable', position: sample.position, reason: route.reason });
+        break;
+      }
+      lastRouteGoal = goal;
+      const dx = goal.x - x, dz = goal.z - z, yaw = sample.look.yaw;
       const forward = -Math.sin(yaw) * dx - Math.cos(yaw) * dz;
       const side = Math.cos(yaw) * dx - Math.sin(yaw) * dz;
-      const keys = [];
-      if (Math.abs(forward) > 2) keys.push(forward > 0 ? 'w' : 's');
-      if (Math.abs(side) > 2) keys.push(side > 0 ? 'd' : 'a');
+      const angle = Math.atan2(side, forward);
+      const stalledSeconds = (Date.now() - lastWalkProgress) / 1000;
+      const offsets = [1, -1, 2, -2, 3, -3, 4];
+      const offset = stalledSeconds < 3 ? 0 : offsets[Math.floor((stalledSeconds - 3) / 2) % offsets.length];
+      const sector = ((Math.round(angle / (Math.PI / 4)) + offset) % 8 + 8) % 8;
+      const keys = [['w'], ['w', 'd'], ['d'], ['s', 'd'], ['s'],
+        ['s', 'a'], ['a'], ['w', 'a']][sector];
       for (const key of keys) await page.keyboard.down(key);
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(Math.max(100, Math.min(600, Math.round(Math.hypot(dx, dz) * 200))));
       for (const key of keys) await page.keyboard.up(key);
-      actions.push({ time: sample.time, action: 'walk-to-dock', position: sample.position, keys });
-    } else await page.waitForTimeout(10000);
+      actions.push({ time: sample.time, action: 'walk', position: sample.position, destination, goal, reason: route.reason, offset, keys });
+    } else {
+      walkAnchor = null; lastRouteGoal = null; lastDestination = null;
+      await page.waitForTimeout(fullSihang ? 5000 : 10000);
+    }
   }
   if (status === 'running') status = 'wall-limit';
   if (profiling) { profile = (await cdp.send('Profiler.stop')).profile; profiling = false; }
@@ -145,8 +207,12 @@ try {
   await page.waitForTimeout(1500);
   await save();
   assert.deepEqual(errors, [], 'Browser errors were recorded');
-  if (status !== 'target-observed') process.exitCode = 2;
+  if (status !== (fullSihang ? 'battle-ended' : 'target-observed')) process.exitCode = 2;
   console.log(JSON.stringify({ map, status, observations: observations.length, batches: batches.length, errors }));
+} catch (error) {
+  status = 'failed';
+  errors.push(error.message);
+  throw error;
 } finally {
   if (profiling) {
     profile = (await cdp.send('Profiler.stop')).profile;

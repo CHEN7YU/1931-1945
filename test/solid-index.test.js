@@ -54,6 +54,20 @@ test('collision indexing updates new mesh and ancestor transforms before the fir
     'an unrendered wall must block gunfire at its real world position');
 });
 
+test('removing a static solid preserves other solids in shared negative grid cells', () => {
+  const material = new THREE.MeshBasicMaterial();
+  const a = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 10), material);
+  const b = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 10), material);
+  a.position.set(-8, 1.5, -8); b.position.set(-10, 1.5, -10);
+  const index = createSolidIndex([a, b]);
+  const origin = new THREE.Vector3(-15, 1, -8), direction = new THREE.Vector3(1, 0, 0);
+  assert.deepEqual(index.candidates(origin, direction, 16), [a, b]);
+  index.synchronize([b]);
+  assert.deepEqual(index.candidates(origin, direction, 16), [b]);
+  index.synchronize([a, b]);
+  assert.deepEqual(new Set(index.candidates(origin, direction, 16)), new Set([a, b]));
+});
+
 test('indexed ray queries agree with the original physical meshes, including diagonal cells', () => {
   const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
   const solids = Array.from({ length: 50 }, (_, index) => {

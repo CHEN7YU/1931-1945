@@ -38,11 +38,15 @@ export function createSolidIndex(solids, size = 8) {
     const minX = Math.floor(bounds.min.x / size), maxX = Math.floor(bounds.max.x / size);
     const minZ = Math.floor(bounds.min.z / size), maxZ = Math.floor(bounds.max.z / size);
     if ((maxX - minX + 1) * (maxZ - minZ + 1) > 256) { global.push(entry); return; }
-    for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
-      const key = `${x},${z}`;
-      entry.keys.push(key);
-      if (!cells.has(key)) cells.set(key, []);
-      cells.get(key).push(entry);
+    for (let z = minZ; z <= maxZ; z++) {
+      let row = cells.get(z);
+      if (!row) { row = new Map(); cells.set(z, row); }
+      for (let x = minX; x <= maxX; x++) {
+        entry.keys.push([x, z]);
+        let bucket = row.get(x);
+        if (!bucket) { bucket = []; row.set(x, bucket); }
+        bucket.push(entry);
+      }
     }
   };
   for (const object of solids) {
@@ -55,10 +59,11 @@ export function createSolidIndex(solids, size = 8) {
     synchronize(solids) {
       const present = new Set(solids);
       for (const [object, entry] of entries) if (!present.has(object)) {
-        if (entry.keys.length) for (const key of entry.keys) {
-          const bucket = cells.get(key), index = bucket.indexOf(entry);
+        if (entry.keys.length) for (const [x, z] of entry.keys) {
+          const row = cells.get(z), bucket = row.get(x), index = bucket.indexOf(entry);
           if (index >= 0) bucket.splice(index, 1);
-          if (!bucket.length) cells.delete(key);
+          if (!bucket.length) row.delete(x);
+          if (!row.size) cells.delete(z);
         } else global.splice(global.indexOf(entry), 1);
         if (entry.accelerated) { acceleration.meshes--; acceleration.triangles -= entry.triangles; }
         entries.delete(object);
@@ -93,7 +98,7 @@ export function createSolidIndex(solids, size = 8) {
       if (!Number.isSafeInteger(count) || count > 100000) throw new RangeError('Swept solid query exceeds the spatial grid range');
       const entries = new Set(global), result = [...dynamic];
       for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++)
-        for (const entry of cells.get(`${x},${z}`) ?? []) entries.add(entry);
+        for (const entry of cells.get(z)?.get(x) ?? []) entries.add(entry);
       for (const entry of entries) if (bounds.intersectsBox(entry.bounds)) result.push(entry.object);
       return result;
     },
@@ -110,7 +115,7 @@ export function createSolidIndex(solids, size = 8) {
       let nextX = sx ? ((x + (sx > 0 ? 1 : 0)) * size - origin.x) / dx : Infinity;
       let nextZ = sz ? ((z + (sz > 0 ? 1 : 0)) * size - origin.z) / dz : Infinity;
       const stepX = sx ? size / Math.abs(dx) : Infinity, stepZ = sz ? size / Math.abs(dz) : Infinity;
-      const collect = (x, z) => { for (const entry of cells.get(`${x},${z}`) || []) entries.add(entry); };
+      const collect = (x, z) => { for (const entry of cells.get(z)?.get(x) || []) entries.add(entry); };
       const maximumCrossings = Math.abs(tx - x) + Math.abs(tz - z) + 4;
       if (!Number.isSafeInteger(maximumCrossings)) throw new RangeError('Solid query segment exceeds the grid traversal range');
       collect(x, z);
