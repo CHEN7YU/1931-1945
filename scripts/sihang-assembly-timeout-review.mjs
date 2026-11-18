@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { SIHANG_RULES } from '../src/sihang-campaign.js';
 import { deployFromMenu } from './game-entry.mjs';
 
 const directory = process.env.ARTIFACT_DIR;
@@ -156,14 +157,12 @@ try {
             mode: actor?.tactics.mode, health: actor?.health, lowestAlive, reachedGroundAlive, firstGround, maxStep };
         },
         nextWave() {
-          for (const id of sihangCampaign.withdrawalWave.squads.flat()) {
+          for (const id of sihangCampaign.withdrawalWave?.squads.flat() ?? []) {
             const actor = entities.soldiers.get(id);
             if (actor) actor.health = 0;
           }
           updateSihangMission(.05);
-          const interval = this.snapshot();
-          time += SIHANG_RULES.waveInterval; updateSihangMission(SIHANG_RULES.waveInterval);
-          return { interval, refill: this.snapshot() };
+          return { immediate: this.snapshot() };
         },
         snapshot() {
           updateHUD();
@@ -221,22 +220,23 @@ try {
     assert.deepEqual(errors, []);
     console.log('Immediate first withdrawal wave passed.');
   } else {
+    const firstBefore = await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
+    const first = await page.evaluate(() => assemblyTimeoutReview.deadline());
     const movement = await page.evaluate(seconds => assemblyTimeoutReview.followOriginal(seconds), high ? 60 : 10);
     const next = await page.evaluate(() => assemblyTimeoutReview.nextWave());
-    const secondBefore = await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
+    const secondBefore = next.immediate.wave?.number === 2 ? next.immediate
+      : await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
     const second = await page.evaluate(() => assemblyTimeoutReview.deadline());
     await writeFile(join(directory, 'assembly-timeout.json'), JSON.stringify({
       fixture: 'manual-positions-and-advanced-clocks-normal-mission-and-ai-calls', initial, movement,
-      next, secondBefore, second, errors,
+      firstBefore, first, next, secondBefore, second, errors,
     }, null, 2));
     assert.equal(initial.waiting.prepared, false);
     assert.equal(initial.waiting.remaining, null);
     assert.match(initial.waiting.help, /前往仓库南面/);
     assert.equal(initial.prepared.prepared, true);
     assert.equal(initial.prepared.released, true);
-    assert.equal(initial.prepared.wave.number, 1);
-    assert.ok(initial.prepared.wave.squads.flat().includes(initial.original.id),
-      'the original distant soldier must remain in the immediate withdrawal wave');
+    assert.equal(initial.prepared.wave, null);
     assert.equal(movement.sameEntity, true);
     assert.ok(Math.hypot(movement.position[0] - initial.original.position[0],
       movement.position[2] - initial.original.position[2]) > 1,
@@ -244,12 +244,11 @@ try {
     if (high) assert.equal(movement.reachedGroundAlive, true,
       `the original rooftop soldier must actually descend alive: ${JSON.stringify(movement)}`);
     if (high) assert.ok(movement.maxStep < .5, 'the original soldier must not teleport while descending');
-    assert.equal(next.interval.wave.phase, 'interval');
-    assert.ok(Math.abs(next.interval.remaining - 30) < 1e-8);
-    assert.equal(next.refill.wave, null);
-    assert.ok(Math.abs(next.refill.remaining - 25) < 1e-8);
-    assert.match(next.refill.help, new RegExp(`最迟${Math.ceil(next.refill.remaining)}秒`));
-    assert.equal(secondBefore.wave, null);
+    assert.equal(first.started.wave.number, 1);
+    assert.equal(first.started.wave.squads.flat().length, SIHANG_RULES.retreatWaveLimit);
+    assert.ok(!next.immediate.wave || next.immediate.wave.number === 2);
+    assert.ok(next.immediate.remaining === null || next.immediate.remaining <= SIHANG_RULES.assemblyTimeout);
+    if (!next.immediate.wave) assert.equal(secondBefore.wave, null);
     assert.equal(second.started.wave.number, 2);
     assert.ok(second.stepped.actors.every(actor => actor.mode !== 'sihang-assembly'));
     assert.deepEqual(errors, []);

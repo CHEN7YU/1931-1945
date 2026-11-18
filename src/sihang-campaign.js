@@ -1,13 +1,27 @@
 import { sihangNorthBank, sihangSouthBank } from './sihang-layout.js';
 
 export const SIHANG_RULES = Object.freeze({
-  defenseSeconds: 240, troopLimit: 400, squadMembers: 11,
-  retreatSquads: 10, waveInterval: 5, retreatSpawnInterval: 2, assemblyTimeout: 30, coverRespawnSeconds: 10,
+  defenseSeconds: 180, troopLimit: 260, squadMembers: 11,
+  retreatSquads: 10, retreatWaveLimit: 50, retreatSpawnInterval: 2, assemblyTimeout: 30, coverRespawnSeconds: 10,
   strandedLimit: 10, strandedStillSeconds: 15,
   flareSeconds: 24, flareInterval: 34, nightfallSeconds: 20,
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
 });
+export function sihangWithdrawalBatch(squads, reserved = 0) {
+  if (!Array.isArray(squads) || squads.length !== SIHANG_RULES.retreatSquads ||
+    !Number.isInteger(reserved) || reserved < 0 || reserved > SIHANG_RULES.retreatWaveLimit ||
+    squads.some(squad => !Array.isArray(squad) || squad.some(id => typeof id !== 'string')) ||
+    new Set(squads.flat()).size !== squads.flat().length)
+    throw new RangeError('Invalid Sihang withdrawal batch');
+  let remaining = SIHANG_RULES.retreatWaveLimit - reserved;
+  return squads.map(squad => {
+    const selected = squad.slice(0, remaining);
+    remaining -= selected.length;
+    return selected;
+  });
+}
+
 
 export function createSihangCampaign() {
   return {
@@ -34,11 +48,12 @@ export function startSihangWithdrawalWave(campaign, squads) {
     campaign.withdrawalWave ||
     !Array.isArray(squads) || squads.length !== SIHANG_RULES.retreatSquads ||
     squads.some(squad => !Array.isArray(squad) || squad.some(id => typeof id !== 'string')) ||
-    new Set(squads.flat()).size !== squads.flat().length || !squads.some(squad => squad.length))
+    new Set(squads.flat()).size !== squads.flat().length || squads.flat().length > SIHANG_RULES.retreatWaveLimit ||
+    !squads.some(squad => squad.length))
     throw new RangeError('Invalid Sihang withdrawal wave');
   const coverSlot = squads.findIndex(squad => squad.length);
   campaign.withdrawalWave = { number: ++campaign.withdrawalWaveNumber, phase: 'main', coverSlot, covering: false,
-    squads: squads.map(squad => [...squad]), completedAt: null };
+    squads: squads.map(squad => [...squad]) };
   return campaign.withdrawalWave;
 }
 
@@ -49,15 +64,11 @@ export function advanceSihangWithdrawalWave(campaign) {
   const completed = ids => ids.every(id => resolved.has(id));
   if (wave.phase === 'main' && wave.covering &&
     wave.squads.every((ids, slot) => slot === wave.coverSlot || completed(ids))) wave.phase = 'cover';
-  if (wave.phase === 'main' && !wave.covering && wave.squads.every(completed)) {
-    wave.phase = 'interval';
-    wave.completedAt = campaign.elapsed;
-  }
   if (wave.phase === 'cover' && completed(wave.squads[wave.coverSlot])) {
-    wave.phase = 'interval';
-    wave.completedAt = campaign.elapsed;
+    campaign.withdrawalWave = null;
+    return 'refill';
   }
-  if (wave.phase === 'interval' && campaign.elapsed >= wave.completedAt + SIHANG_RULES.waveInterval) {
+  if (wave.phase === 'main' && !wave.covering && wave.squads.every(completed)) {
     campaign.withdrawalWave = null;
     return 'refill';
   }

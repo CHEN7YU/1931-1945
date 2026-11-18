@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { deployFromMenu, setQualityPreset } from './game-entry.mjs';
+import { SIHANG_RULES } from '../src/sihang-campaign.js';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 import { SIHANG_WAREHOUSE } from '../src/sihang-layout.js';
 import { sihangVoiceClips } from '../src/sihang-voices.js';
@@ -69,7 +70,7 @@ try {
         updateCamera(0);return this.snapshot();
       },
       retreat() {
-        showOverlay('pause');sihangCampaign.stageElapsed=239.95;
+        showOverlay('pause');sihangCampaign.stageElapsed=SIHANG_RULES.defenseSeconds-.05;
         updateSihangMission(.1);
         allies[current].position.set(48,0,45);
         if(allies[current].nativeMotion)allies[current].nativeMotion.position={x:48,z:45};
@@ -105,7 +106,7 @@ try {
   await writeFile(join(root, 'initial.json'), JSON.stringify({ initial, errors }, null, 2));
   assert.equal(initial.troops.filter(f => f.team === 'friendly').reduce((n, f) => n + f.members, 0), 44);
   assert.equal(initial.troops.filter(f => f.team === 'enemy').reduce((n, f) => n + f.members, 0), 97);
-  assert.equal(initial.campaign.reserve, 356);
+  assert.equal(initial.campaign.reserve, SIHANG_RULES.troopLimit - 44);
   assert.equal(initial.position[1], SIHANG_WAREHOUSE.floorHeight);
   assert.equal(initial.voices.clips, sihangVoiceClips().length - 1);
   assert.equal(initial.narration, true);

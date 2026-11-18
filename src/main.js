@@ -7,7 +7,7 @@ import { campaignLayout } from './campaign-layout.js';
 import { campaignById } from './campaigns.js';
 import { createSihangCampaign, advanceSihangCampaign, sihangDeploymentCount, registerSihangDeployment,
   sihangRetreatDeploymentCount, registerSihangRetreatSquad, transferSihangRetreatSquad, sihangRetreatStatus, sihangSafePosition, SIHANG_RULES,
-  startSihangWithdrawalWave, advanceSihangWithdrawalWave,
+  startSihangWithdrawalWave, advanceSihangWithdrawalWave, sihangWithdrawalBatch,
   sihangWaveAssemblyRemaining } from './sihang-campaign.js';
 import { createSihangNight, sihangNightVisibility } from './sihang-night.js';
 import { addSihangBridgeDefenses } from './sihang-bridge-defenses.js';
@@ -537,14 +537,15 @@ function engineerPlacementReason(actor, position) {
   if (actor.traversal.kind !== 'grounded') return '落地后才能建造';
   const heading = actor.engineer.heading ?? actor.heading;
   const bounds = engineerObstacle('preview', position, heading, selected);
-  if (sihangCampaignMode && Math.abs(position.y) > .025 &&
+  const restrictedSihangAreas = !actor.playerUnit;
+  if (sihangCampaignMode && restrictedSihangAreas && Math.abs(position.y) > .025 &&
     !(sihangBridgeContains(position) && Math.abs(position.y - world.groundHeight(position.x, position.z)) <= .025))
     return '四行仓库的工兵阵地只能在一楼或室外地面建造';
-  if (sihangCampaignMode && SIHANG_STAIRWELLS.some(stair =>
+  if (sihangCampaignMode && restrictedSihangAreas && SIHANG_STAIRWELLS.some(stair =>
     bounds.minX < stair.maxX && bounds.maxX > stair.minX &&
     bounds.minZ < stair.maxZ && bounds.maxZ > stair.minZ)) return '楼梯及其出口不能设置阵地';
-  if (sihangCampaignMode && sihangSouthBank(position)) return '南岸租界不设置战斗工事';
-  if (sihangCampaignMode && SIHANG_RESERVED_LANES.some(lane =>
+  if (sihangCampaignMode && restrictedSihangAreas && sihangSouthBank(position)) return '南岸租界不设置战斗工事';
+  if (sihangCampaignMode && restrictedSihangAreas && SIHANG_RESERVED_LANES.some(lane =>
     lane.id !== 'warehouse-south-quay' && !lane.id.startsWith('retreat-') &&
     bounds.minX < lane.maxX && bounds.maxX > lane.minX && bounds.minZ < lane.maxZ && bounds.maxZ > lane.minZ))
     return '装甲或爆破通路不能设置阵地';
@@ -1812,14 +1813,17 @@ function resetSpawns() {
   spawnEvents = [];
 }
 
-function spawnFormation(formation, initial = false, retreatTopUp = false) {
+function spawnFormation(formation, initial = false, retreatTopUp = false, retreatTopUpCount = null) {
   if (formation.active === false || formation.respawnEnabled === false) return false;
   const retreatWave = sihangCampaignMode && formation.team === 'friendly' && sihangCampaign.stage === 'sihang-retreat';
   const existing = retreatTopUp && retreatWave ? formation.members.filter(actor => actor.health > 0) : [];
   const remainingSlots = SIHANG_RULES.squadMembers - existing.length;
-  if (retreatTopUp && (!retreatWave || !remainingSlots)) return false;
+  if (retreatTopUp && (!retreatWave || !remainingSlots ||
+    retreatTopUpCount !== null && (!Number.isInteger(retreatTopUpCount) || retreatTopUpCount < 1 ||
+      retreatTopUpCount > remainingSlots))) return false;
   const memberCount = sihangCampaignMode && formation.team === 'friendly'
-    ? retreatWave ? sihangRetreatDeploymentCount(sihangCampaign, retreatTopUp ? remainingSlots : SIHANG_RULES.squadMembers)
+    ? retreatWave ? sihangRetreatDeploymentCount(sihangCampaign,
+      retreatTopUp ? Math.min(remainingSlots, retreatTopUpCount ?? remainingSlots) : SIHANG_RULES.squadMembers)
       : sihangDeploymentCount(sihangCampaign)
     : formation.memberCount || BATTLE_RULES.infantryMembers;
   if (!memberCount) return false;
@@ -2155,7 +2159,7 @@ function deploy(squadId, spawnId = null, prepare = false) {
     toast(`掩护队补充中 · ${Math.ceil(sihangCampaign.coverRespawnAt - time)}秒`); return;
   }
   if (sihangCampaignMode && (squadId !== 'infantry' || !sihangDeploymentCount(sihangCampaign))) {
-    toast(sihangCampaign.outcome ? '本次战斗已结束' : '400人兵力池已用尽，等待其余守军撤离');
+    toast(sihangCampaign.outcome ? '本次战斗已结束' : `${SIHANG_RULES.troopLimit}人兵力池已用尽，等待其余守军撤离`);
     return;
   }
   const type = SQUADS[squadId]?.type;
@@ -2264,7 +2268,7 @@ function deploy(squadId, spawnId = null, prepare = false) {
   $('aim-label').hidden = type !== 'mortar';
   $('squad-hint').textContent = type === 'plane' ? '单机出击 · 飞机损失后换队' : type === 'infantry' ? '' : 'Y 切换队员 · 整队阵亡后换队';
   if (sihangCampaignMode && memberCount < 11)
-    $('squad-hint').textContent = `最后 ${memberCount} 人补充 · 全军累计400人已全部投入 · Y换人`;
+    $('squad-hint').textContent = `最后 ${memberCount} 人补充 · 全军累计${SIHANG_RULES.troopLimit}人已全部投入 · Y换人`;
   $('squad-hint').hidden = !$('squad-hint').textContent;
   updateControlHelp();
   allies.forEach(actor => { actor.order = 'follow'; });
@@ -2407,12 +2411,12 @@ function showOverlay(kind = 'pause') {
       : dead ? sihangDeploymentCount(sihangCampaign) ? '补充新班，继续掩护。' : '补充额度已尽，友军仍在坚守。' : '坚守仓库，掩护撤离。';
     $('overlay-description').hidden = false;
     $('overlay-description').textContent = ended
-      ? `累计参战 ${sihangCampaign.deployed}/400 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
+      ? `累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit} 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
       : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     const retreat = sihangRetreatStatus(sihangCampaign);
     $('battle-summary').textContent = sihangCampaign.stage === 'sihang-retreat'
-      ? `将士400人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`
-      : `个人击倒 ${kills}　友军击倒 ${teamKills}　累计参战 ${sihangCampaign.deployed}/400　后备 ${sihangCampaign.reserve}`;
+      ? `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`
+      : `个人击倒 ${kills}　友军击倒 ${teamKills}　累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit}　后备 ${sihangCampaign.reserve}`;
   }
 }
 
@@ -2568,7 +2572,7 @@ function refreshDeployment() {
       : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     if (sihangCampaign.stage === 'sihang-retreat') {
       const retreat = sihangRetreatStatus(sihangCampaign);
-      $('battle-summary').textContent = `将士400人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`;
+      $('battle-summary').textContent = `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`;
     }
   }
   if (!pendingSquad) chooseDeploymentSquad('infantry');
@@ -2582,7 +2586,7 @@ function refreshDeployment() {
     button.querySelector('small').textContent = reason || `${sihangCampaignMode ? sihangDeploymentCount(sihangCampaign) : TYPES[type].members} 人 · 新小队可出击`;
   }
   $('deployment-objective').textContent = sihangCampaignMode
-    ? `四行仓库 · ${sihangCampaign.stage === 'sihang-defense' ? `一楼集结 · 后备 ${sihangCampaign.reserve}/400`
+    ? `四行仓库 · ${sihangCampaign.stage === 'sihang-defense' ? `一楼集结 · 后备 ${sihangCampaign.reserve}/${SIHANG_RULES.troopLimit}`
       : `仓库南面补充 · 剩余兵力 ${sihangCampaign.reserve}`}`
     : state === 'menu' ? '首次出击 · 初始阵地' : nanjingCampaignMode
     ? ({ 'gate-defense': '第一阶段 · 中华门第二道门内阵地防守', withdrawal: '撤往上新河渡口 · 第二阶段即将开始',
@@ -4976,7 +4980,7 @@ function walkActor(actor, target, speed, dt, sprint = false, urgentConstrainedJo
   const backwards = actor.formation.sihangDemolition && target.backwards === true;
   const shieldFacing = actor.formation.sihangDemolition && Number.isFinite(target.facing);
   const turn = advanceAITurn(actor, shieldFacing ? target.facing :
-    Math.atan2(-steering.x, -steering.z) + (backwards ? Math.PI : 0), dt, true);
+    Math.atan2(-steering.x, -steering.z) + (backwards ? Math.PI : 0), dt, true, !shieldFacing);
   actor.turningThisStep = true;
   if (!turn.mayMove) {
     actor.locomotion.mode = 'turn';
@@ -5938,6 +5942,23 @@ function sihangTrafficYield(actor, player, wave, cover) {
   return goal;
 }
 
+function idleThreatHeading(actor) {
+  const tactics = actor.tactics;
+  if (Number.isFinite(tactics.idleThreatHeading) && time < tactics.idleThreatHeadingUntil)
+    return tactics.idleThreatHeading;
+  const nearest = actorGrid.near(actor.position.x, actor.position.z, 90)
+    .filter(other => other !== actor && other.health > 0 && !other.vehicleId && other.team && other.team !== actor.team)
+    .sort((a, b) => actor.position.distanceToSquared(a.position) - actor.position.distanceToSquared(b.position))[0];
+  const fallback = spawnPoints.filter(point => point.team && point.team !== actor.team && point.kind !== 'plane')
+    .sort((a, b) => Math.hypot(a.x - actor.position.x, a.z - actor.position.z) -
+      Math.hypot(b.x - actor.position.x, b.z - actor.position.z))[0];
+  const threat = nearest?.position ?? fallback ?? objectives[0];
+  if (!threat) return actor.heading;
+  tactics.idleThreatHeading = Math.atan2(actor.position.x - threat.x, actor.position.z - threat.z);
+  tactics.idleThreatHeadingUntil = time + 1.5;
+  return tactics.idleThreatHeading;
+}
+
 function updateAI(dt) {
   dischargerQueryBudget = 2;
   engineerPlanBudget = 2;
@@ -6142,7 +6163,7 @@ function updateAI(dt) {
     if (sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && actor.friendly &&
       !sihangAssemblyFocusAvailable(actor) &&
       (!sihangCampaign.assemblyReleased || !actor.playerUnit && !waveCover &&
-        (!actor.formation.retreatAssembled || !withdrawalWave || withdrawalWave.phase === 'interval' ||
+        (!actor.formation.retreatAssembled || !withdrawalWave ||
           !withdrawalWave.squads[actor.formation.sihangSlot]?.includes(actor.id)))) {
       if (actor.engineer && (actor.engineer.construction.mode === 'building' || actor.engineer.site))
         cancelEngineer(actor.engineer);
@@ -6235,7 +6256,7 @@ function updateAI(dt) {
       tactics.mode = 'bridge-rearguard';
       const post = { x: -24 + (actor.index % 11 ? 1.5 : -1.5), y: 0, z: 79 + actor.formation.index * 1.6 };
       if (actor.position.distanceTo(post) > .7) walkActor(actor, post, 3, dt);
-      else advanceAITurn(actor, 0, dt);
+      else advanceAITurn(actor, idleThreatHeading(actor), dt);
       continue;
     }
     if (nanjingCampaignMode && !actor.friendly && nanjingCampaign.stage === 'withdrawal') {
@@ -6534,7 +6555,7 @@ function updateAI(dt) {
         } else {
           stopLocomotion(actor.locomotion);
           actor.stance = 'crouched'; actor.firingPose = 'crouched';
-          advanceAITurn(actor, Math.PI, dt);
+          advanceAITurn(actor, idleThreatHeading(actor), dt);
         }
         tactics.mode = 'sihang-regroup';
       }
@@ -6625,7 +6646,7 @@ function updateAI(dt) {
         fightFromCover(actor, target, dt, null, true);
       } else {
         cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'gate-guard');
-        advanceAITurn(actor, 0, dt);
+        advanceAITurn(actor, idleThreatHeading(actor), dt);
         actor.stance = 'crouched'; actor.firingPose = 'crouched';
       }
       continue;
@@ -6958,7 +6979,7 @@ function updateAI(dt) {
           sweeping && Math.abs(position.y - goal.y) > .3) walkActor(actor, goal, 3, dt);
         else if (gateDefender) {
           tactics.mode = 'guard';
-          advanceAITurn(actor, Math.PI, dt);
+          advanceAITurn(actor, idleThreatHeading(actor), dt);
         }
       } else {
         const guard = followGuardAction(actor, player, assaultObjective);
@@ -7007,6 +7028,9 @@ function updateAI(dt) {
         }
       }
     }
+    if (!target && !tactics.lastSeen && actor.locomotion.speed < .1 && !actor.path?.length &&
+      !(actor.playerUnit && actor.order === 'hold'))
+      advanceAITurn(actor, idleThreatHeading(actor), dt);
     settleActorSupport(actor);
     if (!['playing', 'transferring', 'dead'].includes(state)) break;
   }
@@ -7201,16 +7225,23 @@ function updateSihangMission(dt) {
       sihangCampaign.assemblyPrepared = true;
       sihangCampaign.assemblyReleased = true;
     }
-    const refillOrder = formations.filter(item => item.team === 'friendly' && !item.player)
+    const aiUnits = formations.filter(item => item.team === 'friendly' && !item.player)
+      .sort((a, b) => a.sihangSlot - b.sihangSlot);
+    const refillOrder = [...aiUnits]
       .sort((a, b) => (a.sihangSlot - sihangCampaign.retreatNextSpawnSlot + SIHANG_RULES.retreatSquads) % SIHANG_RULES.retreatSquads -
         (b.sihangSlot - sihangCampaign.retreatNextSpawnSlot + SIHANG_RULES.retreatSquads) % SIHANG_RULES.retreatSquads);
     const resolved = new Set([...sihangCampaign.evacuatedIds, ...sihangCampaign.retreatLostIds]);
     const activeWave = sihangCampaign.withdrawalWave;
-    const earlyPreparation = activeWave && (['cover', 'interval'].includes(activeWave.phase) ||
+    const earlyPreparation = activeWave && (activeWave.phase === 'cover' ||
       activeWave.phase === 'main' && activeWave.squads.filter(ids =>
         ids.some(id => !resolved.has(id))).length <= 1);
     if (earlyPreparation && sihangRetreatDeploymentCount(sihangCampaign))
       sihangCampaign.waveAssemblyAt ??= sihangCampaign.elapsed;
+    if (!activeWave && sihangCampaign.assemblyPrepared)
+      sihangCampaign.waveAssemblyAt ??= sihangCampaign.elapsed;
+    const nextWaveIds = new Set(activeWave?.squads.flat() ?? []);
+    const stagedCount = () => aiUnits.reduce((total, formation) => total + formation.members.filter(actor =>
+      actor.health > 0 && !saved.has(actor.id) && !nextWaveIds.has(actor.id)).length, 0);
     for (const formation of refillOrder) {
       formation.members = formation.members.filter(actor => !saved.has(actor.id));
       if (!sihangCampaign.assemblyPrepared) continue;
@@ -7219,10 +7250,11 @@ function updateSihangMission(dt) {
         wave.squads[formation.sihangSlot].every(id => resolved.has(id));
       if (!sihangCampaign.assemblyReleased || !wave || earlyRefill) {
         const count = formation.members.filter(actor => actor.health > 0).length;
-        if (count < SIHANG_RULES.squadMembers && sihangRetreatDeploymentCount(sihangCampaign) &&
-          time >= sihangCampaign.retreatNextSpawnAt) {
+        const topUpCount = Math.min(SIHANG_RULES.squadMembers - count,
+          SIHANG_RULES.retreatWaveLimit - stagedCount(), sihangRetreatDeploymentCount(sihangCampaign));
+        if (topUpCount > 0 && time >= sihangCampaign.retreatNextSpawnAt) {
           formation.respawnAt ??= time;
-          if (time >= formation.respawnAt && spawnFormation(formation, false, count > 0)) {
+          if (time >= formation.respawnAt && spawnFormation(formation, false, count > 0, topUpCount)) {
             sihangCampaign.retreatNextSpawnAt = time + SIHANG_RULES.retreatSpawnInterval;
             sihangCampaign.retreatNextSpawnSlot = (formation.sihangSlot + 1) % SIHANG_RULES.retreatSquads;
           }
@@ -7245,14 +7277,15 @@ function updateSihangMission(dt) {
       }
     }
     const assemblyTimedOut = sihangWaveAssemblyRemaining(sihangCampaign) === 0;
-    const aiUnits = friendlyUnits.filter(formation => !formation.player).sort((a, b) => a.sihangSlot - b.sihangSlot);
     if (sihangCampaign.assemblyReleased && !sihangCampaign.withdrawalWave &&
-      (sihangCampaign.withdrawalWaveNumber === 0 || assemblyTimedOut ||
-        (!sihangRetreatDeploymentCount(sihangCampaign) || aiUnits.every(formation =>
-        formation.members.filter(actor => actor.health > 0).length === SIHANG_RULES.squadMembers)) &&
-        aiUnits.every(formation => formation.retreatAssembled || !formation.members.some(actor => actor.health > 0)))) {
-      const squads = aiUnits.map(formation => formation.members.filter(actor => actor.health > 0).map(actor => actor.id));
-      if (squads.some(squad => squad.length)) {
+      (stagedCount() >= SIHANG_RULES.retreatWaveLimit || !sihangRetreatDeploymentCount(sihangCampaign) || assemblyTimedOut)) {
+      const candidates = aiUnits.map(formation => formation.members.filter(actor =>
+        actor.health > 0 && !saved.has(actor.id)).map(actor => actor.id));
+      const squads = sihangWithdrawalBatch(candidates);
+      const selected = new Set(squads.flat());
+      const ready = aiUnits.every(formation => formation.retreatAssembled ||
+        !formation.members.some(actor => selected.has(actor.id)));
+      if ((assemblyTimedOut || ready) && squads.some(squad => squad.length)) {
         const wave = startSihangWithdrawalWave(sihangCampaign, squads);
         for (const formation of aiUnits) if (formation.members.some(actor => actor.health > 0))
           formation.retreatAssembled = true;
@@ -8442,8 +8475,8 @@ function updateHUD() {
     $('encirclement-warning').hidden = true;
     const retreat = sihangRetreatStatus(sihangCampaign);
     const assemblyRemaining = sihangWaveAssemblyRemaining(sihangCampaign);
-    $('objectives').textContent = defense ? `四行仓库 · 参战 ${sihangCampaign.deployed}/400 · 后备 ${sihangCampaign.reserve}`
-      : `将士400 · 牺牲 ${retreat.casualties} · 撤离 ${retreat.saved} · 尚未撤离 ${retreat.unresolved}`;
+    $('objectives').textContent = defense ? `四行仓库 · 参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit} · 后备 ${sihangCampaign.reserve}`
+      : `将士${SIHANG_RULES.troopLimit} · 牺牲 ${retreat.casualties} · 撤离 ${retreat.saved} · 尚未撤离 ${retreat.unresolved}`;
     $('objective-title').textContent = defense ? '第一阶段 · 坚守仓库' : wave
       ? `第${wave.number}批 · ${waveIds.length}人 · 已撤${waveSaved} · 阵亡${waveLost}`
       : '第二阶段 · 掩护过桥撤离';
@@ -8461,9 +8494,7 @@ function updateHUD() {
         ? '掩护任务结束 · 立刻撤退到苏州河南岸'
       : !sihangCampaign.assemblyReleased
         ? '前往仓库南面 · 抵达后首批撤退'
-        : wave?.phase === 'interval'
-          ? `本批结束 · 间隔 ${Math.max(0, Math.ceil(wave.completedAt + SIHANG_RULES.waveInterval - sihangCampaign.elapsed))}秒 · 下一批集结${assemblyRemaining === null ? '' : ` ${Math.ceil(assemblyRemaining)}秒`}`
-          : wave?.phase === 'main'
+        : wave?.phase === 'main'
             ? assemblyRemaining !== null
               ? `本批撤退 · 下一批集结倒计时 ${Math.ceil(assemblyRemaining)}秒 · 待本批结束后出发`
               : wave.covering ? '其他队过桥 · 掩护队留守 · 南岸禁火' : '本批共同撤退 · 南岸禁火'

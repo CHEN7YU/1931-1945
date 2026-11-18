@@ -42,7 +42,8 @@ try {
               }
           if (!selected) throw new Error('No constrained but clear retreat route');
           actor.position.set(selected.position.x, 0, selected.position.z);
-          actor.heading = selected.heading; actor.stance = 'standing'; actor.firingPose = null;
+          actor.heading = selected.heading + Math.PI / 4; actor.turningToPath = false;
+          actor.stance = 'standing'; actor.firingPose = null;
           actor.tactics.lastSeen = null; actor.tactics.movementSpace = null;
           actor.locomotion.stamina = 1; actor.locomotion.exhausted = false;
           actor.nativeMotion.position = { x: actor.position.x, z: actor.position.z };
@@ -57,6 +58,9 @@ try {
             time += .05; trafficReservations.clear();
             walkActor(this.actor, this.selected.target, 3.5, .05, true, ${!baseline});
             advanceNraMotion(this.actor, .05);
+              heading: this.actor.heading, turning: this.actor.turningToPath,
+              distance: Math.hypot(this.actor.position.x - this.selected.position.x,
+                this.actor.position.z - this.selected.position.z),
             this.samples.push({ speed: this.actor.locomotion.speed, pace: this.actor.locomotion.mode,
               constrained: this.actor.tactics.movementSpace?.constrained,
               position: this.actor.position.toArray() });
@@ -88,6 +92,8 @@ try {
   }, null, 2));
   assert.ok(result.samples.some(sample => sample.constrained && (baseline
     ? sample.pace === 'walk' && sample.speed > 1.6 && sample.speed < 1.9
+  if (!baseline) assert.ok(result.samples[0].turning && result.samples[0].distance > .01,
+    'a soldier must keep moving while turning along a clear path');
     : sample.pace === 'jog' && sample.speed > 2.4)));
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ setup: fixture, samples: result.samples.filter(sample => sample.constrained).length,

@@ -15,6 +15,15 @@ try {
         run() {
           setGameState('pause'); missionBriefing.hide();
           const actor = friendlyForces.find(item => item.engineer && !item.playerUnit && item.health > 0);
+          const threat = enemies.find(item => item.health > 0 && !item.vehicleId);
+          if (!threat) throw new Error('Expected a living opposing soldier');
+          const actorPosition = actor.position.clone(), threatPosition = threat.position.clone();
+          actor.position.set(0, 0, 0); threat.position.set(0, 0, -10);
+          actorGrid.rebuild(allForces);
+          actor.tactics.idleThreatHeadingUntil = 0;
+          const idleFacing = idleThreatHeading(actor);
+          actor.position.copy(actorPosition); threat.position.copy(threatPosition);
+          actorGrid.rebuild(allForces);
           if (!actor) throw new Error('Expected a living AI engineer');
           actor.engineer.heading = 0;
           let candidate = null;
@@ -60,6 +69,25 @@ try {
           const before = engineerWorks.length;
           for (let step = 0; step < 1000 && engineerWorks.length === before; step++)
             updateEngineerConstruction(actor, .05, true, { ...candidate });
+          actor.playerUnit = true;
+          actor.engineer.selected = 'bofors75';
+          let playerEastCandidate = null;
+          for (let z = -28.5; z <= -21 && !playerEastCandidate; z += .75)
+            for (let x = 30.5; x <= 74 && !playerEastCandidate; x += .75) {
+              const point = { x, y: world.walkHeight(x, z, 0), z };
+              if (!engineerPlacementReason(actor, point)) playerEastCandidate = point;
+            }
+          if (!playerEastCandidate) throw new Error('No physically valid player construction position in the warehouse east flank');
+          const playerEastReason = engineerPlacementReason(actor, playerEastCandidate);
+          actor.position.set(playerEastCandidate.x, playerEastCandidate.y, playerEastCandidate.z - 3);
+          selectConstructionBlueprint(actor.engineer.construction, actor.id);
+          const beforePlayerEast = engineerWorks.length;
+          for (let step = 0; step < 1000 && engineerWorks.length === beforePlayerEast; step++)
+            updateEngineerConstruction(actor, .05, true, { ...playerEastCandidate });
+          const playerEastBuilt = engineerWorks.length === beforePlayerEast + 1;
+          const eastWork = playerEastBuilt ? engineerWorks.at(-1).point : null;
+          const playerEastSpec = eastWork ? { x: eastWork.x, y: eastWork.altitude, z: eastWork.z, id: eastWork.id } : null;
+          actor.playerUnit = false;
           const built = engineerWorks.length === before + 1;
           const bridgeActor = friendlyForces.find(item => item !== actor && item.engineer &&
             !item.playerUnit && item.health > 0 && item.engineer.materials.maxim24);
@@ -76,13 +104,22 @@ try {
           const point = bridgeBuilt ? engineerWorks.at(-1).point : null;
           const bridgeSpec = point ? { x: point.x, y: point.altitude, z: point.z, id: point.id } : null;
           return { candidate, defenseReason, retreatReason, retreatLanes, armorReason, bridgeCandidate, bridgeReason,
-            elevatedReason, artilleryBridgeReason, built, bridgeBuilt, bridgeSpec,
+            elevatedReason, artilleryBridgeReason, built, playerEastCandidate, playerEastReason, playerEastBuilt, bridgeBuilt, bridgeSpec,
+            playerEastSpec, idleFacing,
             blocked: bridgeActor.engineer.construction.blockedReason };
         },
         viewBridge() {
           camera.position.set(88, 7, -13);
           camera.lookAt(83, 1, -22);
           camera.updateMatrixWorld(true);
+        },
+        viewEast() {
+          const point = engineerWorks.find(work => work.point.x >= 30 && work.point.z >= -29 && work.point.z <= -21)?.point;
+          if (!point) throw new Error('Missing built player emplacement on the east flank');
+          camera.position.set(point.x + 12, point.altitude + 8, point.z - 14);
+          camera.lookAt(point.x, point.altitude + 1, point.z);
+          camera.updateMatrixWorld(true);
+          renderer.render(scene, camera);
           renderer.render(scene, camera);
         }
       };` });
@@ -109,11 +146,18 @@ try {
   assert.ok(result.retreatLanes.filter(lane => lane.id !== 'retreat-bridge').every(lane => lane.valid > 0),
     `exit and approach need physically valid build locations: ${JSON.stringify(result.retreatLanes)}`);
   assert.ok(result.retreatLanes.every(lane => lane.reasons.every(reason => !reason.includes('撤退、'))));
+  assert.ok(result.playerEastCandidate.x >= 30 && result.playerEastCandidate.x <= 74);
+  assert.ok(result.playerEastCandidate.z >= -29 && result.playerEastCandidate.z <= -21);
+  assert.equal(result.playerEastReason, null, JSON.stringify(result.playerEastCandidate));
+  assert.equal(result.playerEastBuilt, true, JSON.stringify(result));
+  assert.ok(Math.abs(result.idleFacing) < .001, `a soldier north of the actor should face north: ${result.idleFacing}`);
   assert.equal(result.built, true, JSON.stringify(result));
   assert.equal(result.bridgeBuilt, true, JSON.stringify(result));
   assert.ok(Math.abs(result.bridgeSpec.y - result.bridgeCandidate.y) < .001);
   assert.deepEqual(errors, []);
   if (process.env.ARTIFACT_DIR) {
+    await page.evaluate(() => engineerLaneReview.viewEast());
+    await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, 'east-player-emplacement.png') });
     await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
     await page.evaluate(() => engineerLaneReview.viewBridge());
     await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, 'bridge-built.png') });

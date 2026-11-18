@@ -37,6 +37,15 @@ test('turning crosses the wrap boundary by the short route and brakes until a pa
   assert.equal(actor.turningToPath, false);
   assert.ok(Math.abs(headingError(actor.heading, Math.PI)) <= AI_TURN.resumeAngle);
 });
+test('a path-following soldier may move through a turn when its swept route is clear', () => {
+  const actor = { heading: 0 };
+  const turn = advanceAITurn(actor, Math.PI, .05, true, true);
+  assert.equal(turn.mayMove, true);
+  assert.ok(turn.moveScale > 0);
+  assert.ok(Math.abs(turn.direction.x) > 0);
+  assert.equal(actor.turningToPath, true);
+});
+
 
 test('zero time and invalid turning inputs cannot advance orientation', () => {
   const actor = { heading: .5, turningToPath: true }, before = structuredClone(actor);
