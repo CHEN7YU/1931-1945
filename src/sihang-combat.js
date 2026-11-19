@@ -96,12 +96,14 @@ export function createSihangCombat(scene, world) {
   const shieldSlots = Array.from({ length: SIHANG_RULES.demolitionMembers }, () => {
     const mesh = new THREE.Mesh(geometries.front, material);
     attachSihangShieldGrips(mesh);
-    mesh.userData.dynamicCollision = true; mesh.userData.impactMaterial = 'generic';
+    mesh.userData.dynamicCollision = true; mesh.userData.sihangShieldPlate = true;
+    mesh.userData.impactMaterial = 'generic';
     const raycast = mesh.raycast;
     mesh.raycast = function (ray, hits) { if (this.visible) raycast.call(this, ray, hits); };
     mesh.visible = false; mesh.castShadow = mesh.receiveShadow = true;
+    const entry = { mesh, actorId: null, actor: null, knockedUntil: 0, broken: false };
     scene.add(mesh); world.solids.push(mesh);
-    return { mesh, actorId: null, knockedUntil: 0 };
+    return entry;
   });
   const charge = new THREE.Mesh(new THREE.BoxGeometry(.58, .38, .32),
     new THREE.MeshStandardMaterial({ color: 0x6a5941, roughness: .95 }));
@@ -128,6 +130,14 @@ export function createSihangCombat(scene, world) {
   };
   return {
     defuseAvailable,
+    breakShield(mesh) {
+      const entry = shieldSlots.find(slot => slot.mesh === mesh);
+      if (!entry || !entry.mesh.visible || entry.broken) return false;
+      entry.broken = true;
+      entry.mesh.visible = false;
+      if (entry.actor?.sihangShield) entry.actor.sihangShield.active = false;
+      return true;
+    },
     goalFor(actor, campaign) { return sihangBreachGoal(actor, campaign) ??
       (actor.formation?.sihangDemolition ? goals.get(actor.id) ?? null : null); },
     prompt(campaign, player) {
@@ -195,10 +205,10 @@ export function createSihangCombat(scene, world) {
       for (let index = 0; index < shieldSlots.length; index++) {
         const entry = shieldSlots[index], actor = assigned[index];
         if (!actor) {
-          entry.mesh.visible = false; if (actor) delete actor.sihangShield; continue;
+          entry.mesh.visible = false; entry.actor = null; continue;
         }
         const rebound = entry.actorId !== actor.id;
-        if (rebound) { entry.actorId = actor.id; entry.knockedUntil = 0; }
+        if (rebound) { entry.actorId = actor.id; entry.actor = actor; entry.knockedUntil = 0; entry.broken = false; }
         const pose = sihangShieldLayout(index, squad.length, sideBias);
         entry.mesh.geometry = geometries[pose.mode];
         goals.set(actor.id, { x: anchor.x + pose.x, y: 0, z: anchor.z + pose.z, transit: true,
@@ -212,7 +222,7 @@ export function createSihangCombat(scene, world) {
         }
         const knocked = now < entry.knockedUntil;
         const gaitDrop = nativeGaitDrop(actor);
-        entry.mesh.visible = !knocked;
+        entry.mesh.visible = !knocked && !entry.broken;
         const placing = campaign.stage === 'sihang-defense' &&
           campaign.demolition.operatorId === actor.id && campaign.demolition.state === 'installing';
         desiredPosition.set(pose.offsetX, placing ? .12 : pose.height - gaitDrop, placing ? -.7 : pose.offsetZ)
@@ -224,7 +234,7 @@ export function createSihangCombat(scene, world) {
         actorFrame.position.copy(actor.position); actorFrame.rotation.set(0, actor.heading, 0);
         actorFrame.updateMatrixWorld(true);
         const targets = supportWeaponTargets(entry.mesh, actorFrame);
-        actor.sihangShield = { active: !knocked, mode: pose.mode, role: pose.role, slot: index,
+        actor.sihangShield = { active: !knocked && !entry.broken, mode: pose.mode, role: pose.role, slot: index,
           targets, handTarget: targets.left.wrist, backwards: phase === 'withdraw', installing: placing };
         bindings.add(actor);
       }
@@ -265,7 +275,9 @@ export function createSihangCombat(scene, world) {
       defuser = null;
       for (const actor of bindings) delete actor.sihangShield;
       bindings.clear(); goals.clear();
-      for (const slot of shieldSlots) { slot.mesh.visible = false; slot.actorId = null; slot.knockedUntil = 0; }
+      for (const slot of shieldSlots) {
+        slot.mesh.visible = false; slot.actorId = null; slot.actor = null; slot.knockedUntil = 0; slot.broken = false;
+      }
       charge.visible = false; anchor = home = path = lastPlayer = null; nextPathAt = readyAt = 0;
       mode = 'turtle'; phase = 'advance'; living = []; assigned = []; sideBias = 'left'; formed = false;
     },

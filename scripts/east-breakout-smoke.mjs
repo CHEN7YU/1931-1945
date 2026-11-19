@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
+import { EAST_BREAKOUT } from '../src/encirclement.js';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = [];
@@ -48,6 +49,32 @@ try {
           updateObjectives(0);
           for(const point of objectives)Object.assign(point,{owner:'enemy',control:-1,progress:0,enemyProgress:1,captured:false});
           return encirclement.breakout.strength;
+        },
+        restoreComposition() {
+          setGameState('menu');beginMatch();
+          const player=controlledSoldier(entities);
+          const survivors=enemies.filter(actor=>actor.health>0&&!actor.vehicleId).slice(0,9);
+          const keep=new Set(survivors);
+          for(const actor of allForces)if(actor!==player&&!keep.has(actor))actor.health=0;
+          for(const formation of formations)formation.respawnEnabled=false;
+          player.position.set(-80,0,40);
+          for(const actor of survivors) {
+            actor.target=null;actor.tactics.lastSeen=null;actor.tactics.cover=null;
+            actor.position.set(36+actor.index%3*1.5,0,3+(actor.index%5-2)*1.5);
+            actor.path=actor.pathGoal=null;resetAIRifleAim(actor.aiRifle,'fixture');
+          }
+          for(const point of objectives)Object.assign(point,{owner:'friendly',control:1,progress:1,enemyProgress:0,captured:true});
+          updateObjectives(0);
+          for(let index=0;encirclement.breakout?.reinforcing&&index<40;index++) {
+            time+=.35;restoreBreakoutForces();
+          }
+          const base=spawnPoints.find(point=>point.id==='china-base');
+          return {phase:encirclement.phase,reinforcing:encirclement.breakout?.reinforcing,
+            restoration:encirclement.breakout?.restoration,
+            base:{name:base.name,x:base.x,z:base.z},
+            formations:formations.filter(unit=>unit.team==='enemy'&&unit.active)
+              .map(({id,index,type})=>({id,index,type})),
+            planes:[...entities.vehicles.values()].filter(vehicle=>vehicle.team==='enemy'&&vehicle.type==='plane').length};
         },
         escape() {
           let steps=0;
@@ -102,30 +129,45 @@ try {
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
-  const range = await page.evaluate(() => eastBreakoutReview.range());
-  assert.deepEqual(range, { first: '50 m', second: '60 m', visible: true });
-  assert.equal(await page.evaluate(() => eastBreakoutReview.prepare()), 9);
-  const escape = await page.evaluate(() => eastBreakoutReview.escape());
-  console.log(JSON.stringify({ range, escape }));
-  assert.equal(escape.phase, 2);
-  assert.equal(escape.breakout.strength, 9);
-  assert.ok(escape.breakout.escapedIds.length > 0, 'survivors must physically pass the real C gate');
-  assert.equal(escape.breakout.killed, 0, 'leaving the map never masquerades as a kill');
-  assert.equal(escape.grace, 0);
-  assert.ok(escape.owners.every(owner => owner === 'enemy'), 'phase two does not capture or recapture points');
-  assert.match(escape.task, /东门/);
-  if (process.env.ARTIFACT_DIR) {
-    await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
-    await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'east-gate.png') });
+  if (process.env.PHASE_TWO_COMPOSITION_ONLY === '1') {
+    const restoration = await page.evaluate(() => eastBreakoutReview.restoreComposition());
+    assert.equal(restoration.phase, 2);
+    assert.equal(restoration.reinforcing, false);
+    assert.deepEqual(restoration.base, { name: 'C点南侧集结地',
+      x: EAST_BREAKOUT.friendlySpawn.x, z: EAST_BREAKOUT.friendlySpawn.z });
+    assert.equal(restoration.formations.filter(unit => unit.type === 'infantry').length, 8);
+    assert.equal(restoration.formations.filter(unit => unit.type === 'tank').length, 1);
+    assert.equal(restoration.formations.filter(unit => unit.type === 'plane').length, 1);
+    assert.equal(restoration.planes, 3);
+    if (process.env.ARTIFACT_DIR)
+      await writeFile(join(process.env.ARTIFACT_DIR, 'east-breakout.json'), JSON.stringify({ restoration, errors }, null, 2));
+    console.log(JSON.stringify({ passed: true, phase: 2, infantrySquads: 8, tankSquads: 1, aircraft: restoration.planes, base: restoration.base }));
+  } else {
+    const range = await page.evaluate(() => eastBreakoutReview.range());
+    assert.deepEqual(range, { first: '50 m', second: '60 m', visible: true });
+    assert.equal(await page.evaluate(() => eastBreakoutReview.prepare()), 9);
+    const escape = await page.evaluate(() => eastBreakoutReview.escape());
+    console.log(JSON.stringify({ range, escape }));
+    assert.equal(escape.phase, 2);
+    assert.equal(escape.breakout.strength, 9);
+    assert.ok(escape.breakout.escapedIds.length > 0, 'survivors must physically pass the real C gate');
+    assert.equal(escape.breakout.killed, 0, 'leaving the map never masquerades as a kill');
+    assert.equal(escape.grace, 0);
+    assert.ok(escape.owners.every(owner => owner === 'enemy'), 'phase two does not capture or recapture points');
+    assert.match(escape.task, /东门/);
+    if (process.env.ARTIFACT_DIR) {
+      await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
+      await page.screenshot({ path: join(process.env.ARTIFACT_DIR, 'east-gate.png') });
+    }
+    const win = await page.evaluate(() => eastBreakoutReview.win());
+    const lose = await page.evaluate(() => eastBreakoutReview.lose());
+    assert.equal(win.thresholdState,'playing');assert.equal(win.objectiveStatus,'achieved');
+    assert.equal(lose.thresholdState,'playing');assert.equal(lose.objectiveStatus,'failed');
+    assert.equal(win.state, 'victory'); assert.equal(win.breakout.killed, 8);
+    assert.equal(lose.state, 'defeat'); assert.equal(lose.breakout.escapedIds.length, 4);
+    if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'east-breakout.json'),
+      JSON.stringify({ range, escape, win, lose, errors }, null, 2));
   }
-  const win = await page.evaluate(() => eastBreakoutReview.win());
-  const lose = await page.evaluate(() => eastBreakoutReview.lose());
-  assert.equal(win.thresholdState,'playing');assert.equal(win.objectiveStatus,'achieved');
-  assert.equal(lose.thresholdState,'playing');assert.equal(lose.objectiveStatus,'failed');
-  assert.equal(win.state, 'victory'); assert.equal(win.breakout.killed, 8);
-  assert.equal(lose.state, 'defeat'); assert.equal(lose.breakout.escapedIds.length, 4);
-  if (process.env.ARTIFACT_DIR) await writeFile(join(process.env.ARTIFACT_DIR, 'east-breakout.json'),
-    JSON.stringify({ range, escape, win, lose, errors }, null, 2));
   assert.deepEqual(errors, []);
 } catch (error) {
   console.error(JSON.stringify({ errors, loading: await page.locator('#loading').textContent(),

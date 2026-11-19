@@ -43,7 +43,7 @@ export function createEmplacement(spec) {
 }
 
 export function canOperateEmplacement(point, actor) {
-  return actor.team !== 'friendly' || point.engineerBuilt !== true || point.builderTeam !== 'enemy';
+  return point.engineerBuilt !== true || point.builderTeam === actor?.team;
 }
 
 export const ARTILLERY_MARCH = Object.freeze({

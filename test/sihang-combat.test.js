@@ -180,3 +180,20 @@ test('individual steel plates block hits while the formed turtle retains gaps at
     assert.equal(ray.intersectObjects(f.world.solids, false).length > 0, hits);
   }
 });
+
+test('a cannon-broken steel plate stays hidden and stops protecting its assigned sapper', () => {
+  const f = fixture();
+  f.combat.update(.05, 0, f);
+  const plate = f.world.solids.find(mesh => mesh.visible);
+  const slot = f.world.solids.indexOf(plate);
+  const actor = f.actors.find(candidate => candidate.sihangShield?.slot === slot);
+  assert.ok(plate && actor?.sihangShield?.active);
+  assert.equal(f.combat.breakShield(plate), true);
+  assert.equal(plate.visible, false);
+  assert.equal(actor.sihangShield.active, false);
+  f.combat.update(.05, .05, f);
+  assert.equal(plate.visible, false);
+  assert.equal(actor.sihangShield.active, false);
+  assert.equal(f.combat.snapshot.shields, 19);
+  assert.equal(f.combat.breakShield(plate), false);
+});

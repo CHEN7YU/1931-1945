@@ -5,7 +5,8 @@ import { armySummary, battleSpawn, reinforcementDue, formationPositions, validat
 import { supportsSquad, spawnBlockReason } from '../src/spawns.js';
 import { encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
   createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport,
-  scheduleEncirclementRespawn, ENCIRCLEMENT_RULES, REAR_SPAWNS } from '../src/encirclement.js';
+  scheduleEncirclementRespawn, ENCIRCLEMENT_RULES, REAR_SPAWNS, EAST_BREAKOUT,
+  moveChinaBaseToEastBreakout } from '../src/encirclement.js';
 import { PREVIEW_OBJECTIVES, makeTownPreviewLayout } from '../src/town-preview-layout.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
 import { CHI_HA_SEATS, japaneseArmorSpawns } from '../src/chi-ha.js';
@@ -413,6 +414,23 @@ test('aircraft-only enemies do not bypass the initial encirclement requirement a
   pilot.members[0].vehicleId = pilot.id;
   assert.equal(advanceEncirclement(match, points, roster), 'friendly');
   assert.equal(pilot.members[0].health, 100);
+});
+
+test('the second-stage friendly base moves south of C onto clear ground', () => {
+  const spawns = encirclementSpawns();
+  const otherSpawns = spawns.filter(point => point.id !== 'china-base')
+    .map(({ id, x, z }) => ({ id, x, z }));
+  const base = moveChinaBaseToEastBreakout(spawns);
+  const obstacles = makeTownPreviewLayout().obstacles;
+
+  assert.equal(base.name, 'C点南侧集结地');
+  assert.deepEqual({ x: base.x, z: base.z }, EAST_BREAKOUT.friendlySpawn);
+  assert.equal(base.x, PREVIEW_OBJECTIVES.find(point => point.id === 'C').x);
+  assert.ok(base.z > PREVIEW_OBJECTIVES.find(point => point.id === 'C').z);
+  assert.equal(spawnBlockReason(base, 'infantry', [], obstacles), null);
+  assert.equal(formationPositions(base, 11, obstacles).length, 11);
+  assert.deepEqual(spawns.filter(point => point.id !== 'china-base')
+    .map(({ id, x, z }) => ({ id, x, z })), otherSpawns);
 });
 
 test('enemy presence cannot seal permanent player or AI spawns, but physical clearance remains', () => {

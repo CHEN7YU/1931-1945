@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSihangCampaign, SIHANG_RULES, sihangDeploymentCount, registerSihangDeployment,
   advanceSihangCampaign, advanceSihangDemolition, sihangSafePosition, sihangEnemyMayAttack,
+  reopenSihangPlayerEvacuation,
   sihangRetreatDeploymentCount, registerSihangRetreatSquad, sihangRetreatStatus,
   returnSihangRetreatSquadToReserve, transferSihangRetreatSquad,
   startSihangWithdrawalWave, advanceSihangWithdrawalWave, sihangWaveAssemblyRemaining,
@@ -36,7 +37,7 @@ test('a transferred soldier and remaining AI still resolve their original withdr
   state.assemblyReleased = true;
   const squads = [[player.id, child.id], [other.id], ...Array.from({ length: 8 }, () => [])];
   const originalAi = [...state.aiRetreatIds];
-  assert.throws(() => transferSihangRetreatSquad(state, [player, child]), RangeError);
+  assert.throws(() => transferSihangRetreatSquad(state, [player, player]), RangeError);
   assert.deepEqual(state.aiRetreatIds, originalAi);
   const wave = startSihangWithdrawalWave(state, squads);
   transferSihangRetreatSquad(state, [player]);
@@ -171,14 +172,14 @@ test('successive ten-squad waves preserve the finite reserve and release the fin
   state.assemblyReleased = true; state.stageElapsed = SIHANG_RULES.nightfallSeconds;
   let serial = 0;
   const sizes = [];
-    let remaining = SIHANG_RULES.retreatWaveLimit;
   while (state.retreatReserve) {
+    let remaining = SIHANG_RULES.retreatWaveLimit;
     const squads = Array.from({ length: 10 }, () => {
       const count = Math.min(remaining, SIHANG_RULES.squadMembers, sihangRetreatDeploymentCount(state));
       if (!count) return [];
       const members = Array.from({ length: count }, () => soldier(`wave-${serial++}`));
-      remaining -= count;
       registerSihangRetreatSquad(state, members);
+      remaining -= count;
       return members.map(member => member.id);
     });
     const wave = startSihangWithdrawalWave(state, squads);
@@ -292,6 +293,35 @@ test('a stationary northern AI prompts the player after 15 seconds and the playe
   assert.equal(stuck.health, 100);
   assert.deepEqual(state.retreatLostIds, []);
   assert.equal(sihangRetreatStatus(state).unresolved, 1);
+});
+
+test('a player can return north after reaching the evacuation bank and rejoin the unresolved retreat', () => {
+  const state = createSihangCampaign(), player = soldier('p', true), ai = soldier('ai');
+  state.stage = 'sihang-retreat';
+  state.assemblyReleased = true;
+  state.retreatIds = ['p', 'ai'];
+  state.evacuatedIds = ['p'];
+  state.retreatTotal = 2;
+  state.retreatRequired = 2;
+  player.position.z = 40;
+  player.sihangEvacuated = true;
+  player.position.z = -5;
+
+  assert.equal(reopenSihangPlayerEvacuation(state, player), true);
+  assert.equal(player.sihangEvacuated, false);
+  assert.deepEqual(state.evacuatedIds, []);
+  advanceSihangCampaign(state, .1, { friendly: [player, ai], player });
+  assert.equal(state.outcome, null);
+  assert.equal(state.playerRetreatOpen, false);
+  assert.equal(sihangRetreatStatus(state).unresolved, 2);
+
+  player.position.z = 40;
+  player.sihangEvacuated = true;
+  state.evacuatedIds.push(player.id);
+  assert.equal(reopenSihangPlayerEvacuation(state, player), false, 'a player still on the south bank stays evacuated');
+  state.outcome = 'evacuated';
+  player.position.z = -5;
+  assert.equal(reopenSihangPlayerEvacuation(state, player), false, 'terminal outcomes remain terminal');
 });
 
 test('the last player receives the order, while a soldier still crossing is not treated as stranded', () => {

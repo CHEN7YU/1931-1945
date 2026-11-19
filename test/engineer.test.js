@@ -132,7 +132,7 @@ test('built equipment keeps its engineer, squad, faction and original material i
   }
 });
 
-test('friendly soldiers can use preset and friendly-built positions, but not enemy-built ones even after capture', () => {
+test('only the engineer-built positions of the opposing team are restricted, even after capture', () => {
   const friendly = { team: 'friendly' }, enemy = { team: 'enemy' };
   const build = team => {
     const actor = { id: `${team}-builder`, unitId: `${team}-unit`, team, engineer: createEngineerState() };
@@ -146,11 +146,14 @@ test('friendly soldiers can use preset and friendly-built positions, but not ene
   assert.equal(canOperateEmplacement(theirs, friendly), false);
   assert.equal(canOperateEmplacement(preset, friendly), true);
   assert.equal(canOperateEmplacement(machineGun, friendly), true);
+  assert.equal(canOperateEmplacement(ours, enemy), false);
   assert.equal(canOperateEmplacement(theirs, enemy), true);
   assert.equal(canOperateEmplacement(preset, enemy), true);
   ours.team = 'enemy'; theirs.team = 'friendly';
   assert.equal(canOperateEmplacement(ours, friendly), true);
   assert.equal(canOperateEmplacement(theirs, friendly), false);
+  assert.equal(canOperateEmplacement(ours, enemy), false);
+  assert.equal(canOperateEmplacement(theirs, enemy), true);
   assert.throws(() => { theirs.builderTeam = 'friendly'; }, TypeError);
   for (const profile of ['maxim24', 'maxim24aa']) {
     const builder = { id: 'enemy-builder', unitId: 'enemy-unit', team: 'enemy', engineer: createEngineerState() };
@@ -159,6 +162,8 @@ test('friendly soldiers can use preset and friendly-built positions, but not ene
     point.team = 'friendly';
     assert.equal(canOperateEmplacement(point, friendly), false);
     assert.equal(canOperateEmplacement(point, enemy), true);
+    assert.equal(canOperateEmplacement(point, { team: 'friendly' }), false);
+    assert.equal(canOperateEmplacement(point, { team: 'enemy' }), true);
   }
 });
 

@@ -54,6 +54,7 @@ export function createSoldierRenderer(scene, camera, capacity = 330) {
       for (const group of groups.values()) group.count = 0;
       summary = { visible: 0, near: 0, far: 0, melee: 0, batches: 0 };
       for (const actor of actors) {
+        if (actor.corpseRemoved) { actor.model.visible = false; continue; }
         syncSoldierModelPose(actor, now);
         actor.model.visible = !actor.vehicleId && actor.id !== controlledId;
         if (actor.id === separateViewId || separateViewId instanceof Set && separateViewId.has(actor.id)) continue;

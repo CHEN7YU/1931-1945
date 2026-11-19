@@ -856,7 +856,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
         if (!actor.nativeMotion) continue;
         if (actor.team !== team) throw new Error(`A ${actor.team} identity cannot use the ${team} uniform renderer`);
         excludedIds.add(actor.id); summary.assigned++;
-        if (actor.vehicleId || actor.id === controlledId) {
+        if (actor.corpseRemoved || actor.vehicleId || actor.id === controlledId) {
           tiers.set(actor.id, 'hidden'); summary.hidden++; continue;
         }
         sphere.center.copy(actor.position); sphere.center.y += .9;

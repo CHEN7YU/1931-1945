@@ -7,6 +7,7 @@ import { campaignLayout } from './campaign-layout.js';
 import { campaignById } from './campaigns.js';
 import { createSihangCampaign, advanceSihangCampaign, sihangDeploymentCount, registerSihangDeployment,
   sihangRetreatDeploymentCount, registerSihangRetreatSquad, transferSihangRetreatSquad, sihangRetreatStatus, sihangSafePosition, SIHANG_RULES,
+  reopenSihangPlayerEvacuation,
   startSihangWithdrawalWave, advanceSihangWithdrawalWave, sihangWithdrawalBatch,
   sihangWaveAssemblyRemaining } from './sihang-campaign.js';
 import { createSihangNight, sihangNightVisibility } from './sihang-night.js';
@@ -26,7 +27,7 @@ import { SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
 import { ENCIRCLEMENT_RULES, encirclementRoster, encirclementSpawns, encirclementObjectives, supplyGarrisonPositions,
   createEncirclement, captureEncirclement, advanceEncirclement, advanceEncirclementSupport, scheduleEncirclementRespawn,
-  encirclementGroundEnemies, EAST_BREAKOUT, recordEncirclementEscape } from './encirclement.js';
+  encirclementGroundEnemies, EAST_BREAKOUT, moveChinaBaseToEastBreakout, recordEncirclementEscape } from './encirclement.js';
 import { createEncirclementVoiceTracker } from './encirclement-voices.js';
 import { loadSceneMaterials } from './materials.js';
 import { TYPES, MATCH_SECONDS, DOMINATION_SECONDS, makeObjectives, objectiveContainsPosition, advanceCapture, createConquest, advanceConquest, moveGround, circleBlocked, segmentClear, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState } from './core.js';
@@ -2920,7 +2921,7 @@ function enterEmplacement(actor) {
   const point = focusEmplacement(actor);
   if (!point || actor.traversal.kind !== 'grounded' || actor.grenades.action) return false;
   if (!canOperateEmplacement(point, actor)) {
-    toast('不能操作日军工兵建造的阵地'); return true;
+    toast('不能操作敌方工兵建造的阵地'); return true;
   }
   return occupyEmplacement(point, actor);
 }
@@ -3335,22 +3336,31 @@ function finishActorDeath(actor, source) {
       const ferry = nanjingCampaignMode && world.ferries.find(ferry =>
         ferry.userData.ferryId === actor.tactics.nanjingFerry?.ferryId);
       const onFerry = ferry && retainTroopFerryCasualty(ferry, actor);
-      if (!onFerry) actor.position.y = world.walkHeight(actor.position.x, actor.position.z, actor.position.y);
-      const dropSide = actor.tactics.id % 2 ? .65 : -.65, c = Math.cos(actor.heading), s = Math.sin(actor.heading);
-      const drop = circleBlocked(actor.position.x + dropSide * c, actor.position.z - dropSide * s, .12,
-        movementObstacles(actor.position.x, actor.position.z)) ? [0, .05, 0] : [dropSide, .05, 0];
-      const falling = blastCasualty(actor);
-      actor.casualty = falling ? Object.freeze({ ...falling, time: time + falling.time, retainGun: false }) :
-        createCasualtyState(actor, time, actor.nativeMotion ? sampleNraMotion(actor) : null,
-        { retainGun: false, drop: onFerry ? [0, .05, 0] : drop, ...(onFerry ? { variant: 3 } : {}) });
-      if (onFerry) actor.casualty = Object.freeze({ ...actor.casualty, wallLimited: true });
-      const factory = actor.team === 'friendly' ? nraCharacter : ijaCharacter;
-      if (factory && actor.nativeMotion && !onFerry && !falling) {
-        actor.casualty = placeActorCasualty(actor, actor.casualty, factory);
-        if (actor.casualty.wallLimited) console.warn(`No fully clear falling path for ${actor.id}; using a bounded compact collapse`);
+      const submerged = !onFerry && world.isDeepWater?.(actor.position.x, actor.position.z);
+      if (submerged) {
+        actor.corpseRemoved = true;
+        actor.casualty = createCasualtyState(actor, time,
+          actor.nativeMotion ? sampleNraMotion(actor) : null, { retainGun: false });
+        actor.blastReaction = null;
+        corpses.set(actor.id, actor);
+      } else {
+        if (!onFerry) actor.position.y = world.walkHeight(actor.position.x, actor.position.z, actor.position.y);
+        const dropSide = actor.tactics.id % 2 ? .65 : -.65, c = Math.cos(actor.heading), s = Math.sin(actor.heading);
+        const drop = circleBlocked(actor.position.x + dropSide * c, actor.position.z - dropSide * s, .12,
+          movementObstacles(actor.position.x, actor.position.z)) ? [0, .05, 0] : [dropSide, .05, 0];
+        const falling = blastCasualty(actor);
+        actor.casualty = falling ? Object.freeze({ ...falling, time: time + falling.time, retainGun: false }) :
+          createCasualtyState(actor, time, actor.nativeMotion ? sampleNraMotion(actor) : null,
+          { retainGun: false, drop: onFerry ? [0, .05, 0] : drop, ...(onFerry ? { variant: 3 } : {}) });
+        if (onFerry) actor.casualty = Object.freeze({ ...actor.casualty, wallLimited: true });
+        const factory = actor.team === 'friendly' ? nraCharacter : ijaCharacter;
+        if (factory && actor.nativeMotion && !onFerry && !falling) {
+          actor.casualty = placeActorCasualty(actor, actor.casualty, factory);
+          if (actor.casualty.wallLimited) console.warn(`No fully clear falling path for ${actor.id}; using a bounded compact collapse`);
+        }
+        corpses.set(actor.id, actor);
+        actor.blastReaction = null;
       }
-      corpses.set(actor.id, actor);
-      actor.blastReaction = null;
     }
     if (!actor.friendly) {
       const credit = source?.credit ?? source;
@@ -3847,6 +3857,7 @@ function fire() {
       }
     }
     if (unit.type === 'tank') {
+      if (hit && sihangCampaignMode) sihangCombat.breakShield(hit.object);
       if (hit?.object.userData.actor) hurt(hit.object.userData.actor, TYPES.tank.damage, source, 'cannon');
       if (shellSurface) explode(end, TYPES.tank.damage, 11, source, 'explosion', shellSurface);
     } else if (hit) {
@@ -4484,9 +4495,7 @@ function updatePlayer(dt) {
         (!dadaoEquipped && unit.type === 'infantry' && actor.rifle.action !== 'idle') ||
         dadaoEquipped && actor.dadao.startedAt !== null || toolEquipped || fireRequested,
     }, infantryMovementObstacles(actor, position.x, position.z), dt,
-    actor.sihangEvacuated ? (p, dx, dz, ...rest) => {
-      if (sihangSafePosition({ x: p.x + dx, y: p.y, z: p.z + dz })) moveInfantry(p, dx, dz, ...rest);
-    } : traversal.kind !== 'grounded' ? moveAirborne : moveInfantry);
+    traversal.kind !== 'grounded' ? moveAirborne : moveInfantry);
     for (let i = 0; i < steps; i++) emitFootstep(position, motion.speed);
   }
   if (!actor.vehicleId) {
@@ -5645,9 +5654,12 @@ function restoreBreakoutForces() {
   if(!task){registerBreakoutStrength(encirclement,[],true);return;}
   let formation=formations.find(unit=>unit.id===task.id);
   if(!formation){
-    formation={id:task.id,index:10+breakout.restoration.indexOf(task),team:'enemy',type:'plane',
-      members:[],memberCount:AIRCRAFT_SQUAD_SIZE,aircraftCount:AIRCRAFT_SQUAD_SIZE,
-      spawnId:'japan-air',generation:0,active:true,respawnEnabled:true,player:false};
+    const aircraft=task.type==='plane', index=task.index??10+breakout.restoration.indexOf(task);
+    formation={id:task.id,index,team:'enemy',type:task.type,
+      members:[],memberCount:aircraft?AIRCRAFT_SQUAD_SIZE:BREAKOUT_FORCE.infantryMembers,
+      ...(aircraft?{aircraftCount:AIRCRAFT_SQUAD_SIZE}:{}),
+      spawnId:aircraft?'japan-air':`enemy-staging-${index}`,generation:0,active:true,
+      respawnEnabled:aircraft,player:false};
     formations.push(formation);registerUnit(entities,formation);registerBattleScore(formation);
   }
   const player=controlledSoldier(entities);
@@ -6201,8 +6213,7 @@ function updateAI(dt) {
       if (clearSihangConstruction(actor, constructionBuilders, dt)) continue;
       actor.target = null; actor.rifleReady = false; actor.stance = 'standing'; actor.firingPose = null;
       cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'leader-evacuated');
-      walkActor(actor, sihangRetreatGoal(actor), 3, dt, false);
-      actor.tactics.mode = 'sihang-follow-withdrawal';
+      actor.tactics.mode = 'sihang-evacuated';
       continue;
     }
     const sihangRegroup = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' &&
@@ -7100,6 +7111,7 @@ function updateSihangMission(dt) {
   const point = objectives[0], previousStage = sihangCampaign.stage, player = controlledSoldier(entities);
   const previousCounterattack = sihangCampaign.counterattack, previousRetreatOpen = sihangCampaign.playerRetreatOpen;
   const previousFinalRetreat = sihangCampaign.finalRetreatOrdered;
+  reopenSihangPlayerEvacuation(sihangCampaign, player);
   if (sihangCampaign.stage === 'sihang-defense' && !sihangCampaign.outcome) {
     const inside = actor => actor.health > 0 && !actor.vehicleId && objectiveContainsPosition(point, actor.position);
     advanceCapture(point, dt, friendlyForces.some(inside), enemies.some(inside));
@@ -7361,6 +7373,8 @@ function updateObjectives(dt) {
       : '日军夺回A点 · 补给恢复，增援间隔17秒', 6);
   }
   if (encirclementMode && phase !== encirclement.phase) {
+    const movedSpawn=moveChinaBaseToEastBreakout(spawnPoints);
+    baseSpawnViews.get(movedSpawn.id)?.position.set(movedSpawn.x,movedSpawn.altitude??0,movedSpawn.z);
     assaultAssignmentAt = Infinity;
     for (const formation of formations.filter(unit => unit.team === 'friendly'))
       formation.breakoutDuty = 'intercept';
@@ -8035,6 +8049,8 @@ function updateProjectiles(dt) {
       const hit = ray.intersectObjects([...solidIndex.candidates(origin, direction, travel)
         .filter(object => !shell.emplacementId || object.userData.emplacementId !== shell.emplacementId ||
           object.userData.emplacementCover), ...vehicleSolids(shell.source.vehicleId), ...people], true)[0];
+      if (hit && sihangCampaignMode && ['field-gun', 'tank'].includes(shell.source.weaponClass))
+        sihangCombat.breakShield(hit.object);
       ray.far = Infinity;
       return hit?.point || null;
     });
@@ -8503,7 +8519,7 @@ function updateHUD() {
                     ? `掩护队撤离 · 下一批集结倒计时 ${Math.ceil(assemblyRemaining)}秒 · 南岸禁火`
                     : '掩护队撤离 · 南岸禁火'
               : sihangCampaign.withdrawalWaveNumber === 0
-                ? '等待友军补充 · 首批人员就绪后撤退 · 南岸禁火'
+                ? '等待友军补充至50人左右 · 首批就绪后撤退 · 南岸禁火'
               : assemblyRemaining !== null && assemblyRemaining > 0
                 ? `下一批集结 · 最迟${Math.ceil(assemblyRemaining)}秒后撤退 · 后备 ${retreat.waiting}`
                 : `下一批集结 · 等待队员补充 · 后备 ${retreat.waiting} · 南岸禁火`;
@@ -8690,7 +8706,7 @@ function updateDoorPrompt() {
     prompt.hidden = false;
     prompt.textContent = allies[current].emplacementId ? 'F 离开阵地 · R 装填 · 右键瞄准'
       : canOperateEmplacement(fixed, allies[current]) ? `F 操作 ${EMPLACEMENT_PROFILES[fixed.profile].name}`
-      : '不能操作日军工兵建造的阵地';
+      : '不能操作敌方工兵建造的阵地';
     return;
   }
   if (usable && nanjingCampaign?.stage === 'withdrawal-to-boats' && world.ferries.some(ferry =>

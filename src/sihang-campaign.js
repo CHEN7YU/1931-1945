@@ -154,6 +154,16 @@ export function sihangSafePosition(position) {
   return Boolean(position && Number.isFinite(position.y) && position.y >= -.25 && sihangSouthBank(position, 4));
 }
 
+export function reopenSihangPlayerEvacuation(campaign, player) {
+  if (campaign.stage !== 'sihang-retreat' || campaign.outcome || !player?.playerUnit ||
+    !player.sihangEvacuated || sihangSafePosition(player.position)) return false;
+  const index = campaign.evacuatedIds.indexOf(player.id);
+  if (index < 0) return false;
+  campaign.evacuatedIds.splice(index, 1);
+  player.sihangEvacuated = false;
+  return true;
+}
+
 export function sihangEnemyMayAttack(position) {
   return Boolean(position && Number.isFinite(position.x) && Number.isFinite(position.z) && !sihangSouthBank(position));
 }

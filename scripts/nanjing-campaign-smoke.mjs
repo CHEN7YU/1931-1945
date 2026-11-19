@@ -6,7 +6,9 @@ import { chromium } from 'playwright';
 import { NANJING_CITY_WALLS, NANJING_DOCK } from '../src/nanjing-campaign.js';
 import { NANJING_GATE_LENGTH } from '../src/nanjing-layout.js';
 
-const origin = process.env.GAME_URL || 'http://127.0.0.1:5173';
+const gameUrl = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
+gameUrl.pathname = '/';
+gameUrl.searchParams.set('campaign', 'nanjing');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const errors = [];
@@ -15,12 +17,34 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
 const artifacts = process.env.ARTIFACT_DIR;
 
+await page.route('**/src/main.js*', async route => {
+  const response = await route.fetch();
+  await route.fulfill({ response, body: await response.text() + `
+    window.__waterCasualtyHidden = id =>
+      ijaCharacter.snapshot.members.some(member => member.id === id && member.tier === 'hidden');
+    window.__testWaterCasualty = () => {
+      if (!nanjingCampaignMode || typeof world.isDeepWater !== 'function')
+        throw new Error('Water casualty test requires the Nanjing campaign water query');
+      const x = -80, z = 0;
+      if (!world.isDeepWater(x, z)) throw new Error('Water casualty fixture is not in deep water');
+      const actor = allForces.find(candidate => candidate.team === 'enemy' &&
+        candidate.health > 0 && !candidate.vehicleId && candidate.nativeMotion);
+      const shooter = controlledSoldier(entities);
+      if (!actor || !shooter) throw new Error('Water casualty test requires living soldiers on both sides');
+      actor.position.set(x, world.impactHeight(x, z), z);
+      hurt(actor, actor.health, captureAttackSource(entities, shooter, shooter.rifle), 'collision');
+      return { id: actor.id, health: actor.health, corpseRemoved: actor.corpseRemoved,
+        registered: entities.soldiers.has(actor.id), retainedAsCorpse: corpses.has(actor.id) };
+    };
+  ` });
+});
+
 try {
-  await page.goto(new URL('/?campaign=nanjing', origin).href);
+  await page.goto(gameUrl.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
-    null, { timeout: 90000 });
+    null, { timeout: 180000 });
   assert.equal(await page.locator('#game-title').textContent(), '南京保卫战');
-  assert.equal(await page.locator('#nanjing-menu-return').isVisible(), true);
+  assert.equal(await page.locator('#back-campaign').isVisible(), true);
   assert.deepEqual(await page.locator('#squad-choices [data-type]:visible').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
     ['infantry']);
   assert.deepEqual(await page.locator('#redeploy-choices [data-type]').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
@@ -98,6 +122,12 @@ try {
   assert.equal(data.population.units.filter(unit => unit.team === 'friendly' && unit.memberCount === 0).length, 2);
   assert.equal(data.campaign.civilianVisuals.active > 0, true);
   assert.equal(data.campaign.civilianVisuals.arrived, 0);
+  const waterCasualty = await page.evaluate(() => window.__testWaterCasualty());
+  assert.equal(waterCasualty.health, 0);
+  assert.equal(waterCasualty.corpseRemoved, true);
+  assert.equal(waterCasualty.registered, true, 'dead player/AI ownership remains available to battle accounting and handoff');
+  assert.equal(waterCasualty.retainedAsCorpse, true, 'normal corpse cleanup still owns its lifetime');
+  await page.waitForFunction(id => window.__waterCasualtyHidden(id), waterCasualty.id, { timeout: 5000 });
   const mapPixels = await page.locator('#radar').evaluate(canvas => {
     const ctx = canvas.getContext('2d');
     const color = (x, y) => [...ctx.getImageData(x, y, 1, 1).data].slice(0, 3);

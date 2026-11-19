@@ -2,16 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {breakoutRestorationPlan,hiddenBreakoutPositions} from '../src/breakout-restoration.js';
 
-test('breakout restoration preserves living remnants and restores exactly six infantry, one tank and three air units',()=>{
+test('breakout restoration preserves living remnants and restores eight infantry, one tank and one air squad',()=>{
   const formations=Array.from({length:6},(_,index)=>({id:`enemy-${index}`,index,team:'enemy',type:'infantry',
     members:Array.from({length:index},()=>({health:100}))}));
   formations.push({id:'tank',team:'enemy',type:'tank',members:[{health:0}]},
     {id:'air',team:'enemy',type:'plane',members:[{health:100,vehicleId:'aircraft'}]});
   const before=JSON.stringify(formations),plan=breakoutRestorationPlan(formations);
-  assert.equal(plan.filter(unit=>unit.type==='infantry').length,6);
+  assert.equal(plan.filter(unit=>unit.type==='infantry').length,8);
   assert.equal(plan.filter(unit=>unit.type==='tank').length,1);
-  assert.equal(plan.filter(unit=>unit.type==='plane').length,3);
+  assert.equal(plan.filter(unit=>unit.type==='plane').length,1);
   for(let index=0;index<6;index++)assert.equal(plan[index].required,11-index);
+  assert.deepEqual(plan.slice(6,8).map(unit=>({id:unit.id,index:unit.index,required:unit.required})),
+    [{id:'enemy-6',index:6,required:11},{id:'enemy-7',index:7,required:11}]);
   assert.equal(plan.find(unit=>unit.id==='air').required,0);
   assert.equal(JSON.stringify(formations),before);
 });

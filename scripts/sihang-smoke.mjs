@@ -3,9 +3,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { deployFromMenu, setQualityPreset } from './game-entry.mjs';
-import { SIHANG_RULES } from '../src/sihang-campaign.js';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
-import { SIHANG_WAREHOUSE } from '../src/sihang-layout.js';
+import { SIHANG_RULES } from '../src/sihang-campaign.js';
+import { SIHANG_LEVELS } from '../src/sihang-layout.js';
 import { sihangVoiceClips } from '../src/sihang-voices.js';
 
 const root = resolve(process.env.ARTIFACT_DIR ?? 'asset-research', 'sihang');
@@ -53,6 +53,41 @@ try {
         sihangCombat.update(.05,time,{campaign:sihangCampaign,actors:allForces,player:allies[current],keys,shots:[]});
         return this.snapshot();
       },
+      cannonShield() {
+        this.arrange();
+        const plates=world.solids.filter(mesh=>mesh.visible&&mesh.userData.sihangShieldPlate);
+        const directions=[new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1),
+          new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),
+          new THREE.Vector3(0,1,0),new THREE.Vector3(0,-1,0)];
+        let shot=null;
+        for(const plate of plates){
+          const center=plate.getWorldPosition(new THREE.Vector3());
+          for(const direction of directions){
+            const origin=center.clone().addScaledVector(direction,5);
+            const ray=new THREE.Raycaster(origin,direction.clone().negate(),0,10);
+            const hit=ray.intersectObjects(world.solids.filter(mesh=>mesh.visible),false)[0];
+            if(hit?.object===plate){shot={plate,origin,target:origin.clone().addScaledVector(direction,-10)};break;}
+          }
+          if(shot)break;
+        }
+        if(!shot)throw new Error('Cannot find a clear cannon path through a live steel plate');
+        const player=controlledSoldier(entities);
+        const source=Object.freeze({credit:'player',team:'friendly',soldierId:player.id,unitId:player.unitId,
+          squadId:player.unitId,unitName:player.unitId,
+          weaponId:'sihang-review-field-gun',weaponClass:'field-gun'});
+        solidIndex.synchronize(world.solids);
+        const shell=createProjectile({id:\`sihang-review-shell-\${++projectileSerial}\`,source,
+          start:shot.origin,target:shot.target,firedAt:time,duration:.1,damage:0,radius:3});
+        shell.arcHeight=0;shell.blastKind='explosion';
+        const view=new THREE.Mesh(projectileGeometry,shellMaterial);
+        view.position.copy(shell.position);scene.add(view);shellViews.set(shell.id,view);shells.push(shell);
+        const before=plates.length;
+        updateProjectiles(.1);
+        const result={before,after:world.solids.filter(mesh=>mesh.userData.sihangShieldPlate&&mesh.visible).length,
+          collided:projectileImpacts.at(-1)?.collided===true,plateHidden:!shot.plate.visible};
+        sihangCombat.reset();this.arrange();
+        return result;
+      },
       view(kind) {
         missionBriefing.hide();
         $('overlay').hidden=true;if(weapon)weapon.visible=false;
@@ -72,8 +107,19 @@ try {
       retreat() {
         showOverlay('pause');sihangCampaign.stageElapsed=SIHANG_RULES.defenseSeconds-.05;
         updateSihangMission(.1);
+        allies[current].position.set(-4,0,-4);
+        updateSihangMission(.05);
+        if(!sihangCampaign.assemblyReleased)throw new Error('Assembly must release before the retreat fixture crosses');
         allies[current].position.set(48,0,45);
         if(allies[current].nativeMotion)allies[current].nativeMotion.position={x:48,z:45};
+        updateSihangMission(.05);
+        const player=allies[current];
+        if(!player.sihangEvacuated)throw new Error('The south bank should count the player as evacuated');
+        player.position.set(-4,0,-4);
+        updateSihangMission(.05);
+        if(player.sihangEvacuated||sihangCampaign.evacuatedIds.includes(player.id))
+          throw new Error('Returning north must reopen the player evacuation');
+        player.position.set(48,0,45);
         updateSihangMission(.05);
         return this.snapshot();
       },
@@ -107,11 +153,15 @@ try {
   assert.equal(initial.troops.filter(f => f.team === 'friendly').reduce((n, f) => n + f.members, 0), 44);
   assert.equal(initial.troops.filter(f => f.team === 'enemy').reduce((n, f) => n + f.members, 0), 97);
   assert.equal(initial.campaign.reserve, SIHANG_RULES.troopLimit - 44);
-  assert.equal(initial.position[1], SIHANG_WAREHOUSE.floorHeight);
+  assert.equal(initial.position[1], SIHANG_LEVELS[0]);
   assert.equal(initial.voices.clips, sihangVoiceClips().length - 1);
   assert.equal(initial.narration, true);
   const arranged = await page.evaluate(() => sihangReview.arrange());
   assert.equal(arranged.shields.shields, 20);
+  const cannon = await page.evaluate(() => sihangReview.cannonShield());
+  assert.equal(cannon.collided, true);
+  assert.equal(cannon.plateHidden, true);
+  assert.equal(cannon.after, cannon.before - 1);
   await setQualityPreset(page, 'high');
   await page.evaluate(() => sihangReview.view('warehouse'));
   await page.waitForTimeout(150);

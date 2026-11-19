@@ -8,7 +8,17 @@ export const ENCIRCLEMENT_RULES = Object.freeze({ initialFriendly: 6, enemySquad
   reinforcementTimes: Object.freeze([45, 90]), normalEnemyDelay: BATTLE_RULES.respawnSeconds,
   cutEnemyDelay: 35, supplyObjective: 'A', supplyGuardSquads: 2, defeatGraceSeconds: 90 });
 export const EAST_BREAKOUT = Object.freeze({ x: 56, z: 3, halfWidth: 3.2, exitX: 62,
+  friendlySpawn: Object.freeze({ x: PREVIEW_OBJECTIVES.find(point => point.id === 'C').x,
+    z: PREVIEW_OBJECTIVES.find(point => point.id === 'C').z + 29 }),
   regroupSeconds: 20, announcementInterval: 25, announcements: 3 });
+export function moveChinaBaseToEastBreakout(spawns) {
+  const base = spawns.find(point => point.id === 'china-base');
+  if (!base) throw new Error('Second-stage breakout requires the Chinese base spawn');
+  base.x = EAST_BREAKOUT.friendlySpawn.x;
+  base.z = EAST_BREAKOUT.friendlySpawn.z;
+  base.name = 'C点南侧集结地';
+  return base;
+}
 export function crossedEastGate(from,to) {
   if(!from||![from.x,from.y,from.z,to.x,to.y,to.z].every(Number.isFinite))return false;
   if(from.x>=EAST_BREAKOUT.x||to.x<EAST_BREAKOUT.x)return false;
