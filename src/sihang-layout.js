@@ -92,6 +92,24 @@ export const SIHANG_RESERVED_LANES = Object.freeze([
   { id: 'south-parade-approach', minX: 80, maxX: 98, minZ: 0, maxZ: 44 },
   { id: 'south-parade-square', minX: 54, maxX: 84, minZ: 34, maxZ: 68 },
 ].map(Object.freeze));
+
+const withdrawalConstructionLanes = [
+  ...SIHANG_RESERVED_LANES.filter(lane => lane.id === 'warehouse-south-quay' || lane.id.startsWith('retreat-')),
+  { minX: -48, maxX: SIHANG_WAREHOUSE.minX, minZ: -12, maxZ: 5 },
+  { minX: SIHANG_WAREHOUSE.maxX, maxX: 36, minZ: -8, maxZ: 0 },
+];
+
+export function sihangWithdrawalConstructionBlocked(bounds) {
+  // Protect the quay and west-side queue as well as the curved riverside branch.
+  const minX = Math.max(bounds.minX - .05, SIHANG_WAREHOUSE.maxX);
+  const maxX = Math.min(bounds.maxX + .05, SIHANG_BRIDGE.northX);
+  if (minX < maxX && bounds.maxZ + .05 > sihangRiverBounds(maxX).northZ - 6 &&
+    bounds.minZ - .05 < sihangRiverBounds(minX).northZ) return true;
+  return withdrawalConstructionLanes.some(lane =>
+    bounds.minX - .05 < lane.maxX && bounds.maxX + .05 > lane.minX &&
+    bounds.minZ - .05 < lane.maxZ && bounds.maxZ + .05 > lane.minZ);
+}
+
 export const SIHANG_BRIDGE = Object.freeze({ name: '西藏路桥', x: 83, z: -22, width: 8,
   northX: 76, southX: 90, northZ: -28, southZ: -16, length: Math.hypot(14, 12) });
 export function sihangBridgeCoordinates(position) {
@@ -172,6 +190,9 @@ export const SIHANG_ENEMY_APPROACHES = Object.freeze([
 ].map(Object.freeze));
 export const SIHANG_TANK_ORIGINS = Object.freeze([
   { x: -70, y: 0, z: -90 }, { x: 70, y: 0, z: -90 },
+].map(Object.freeze));
+export const SIHANG_RETREAT_TANK_ORIGINS = Object.freeze([
+  { x: -88, z: -88 }, { x: -78, z: -88 },
 ].map(Object.freeze));
 export const SIHANG_LEVELS = Object.freeze(Array.from({ length: 4 }, (_, floor) => floor * floorHeight));
 export const SIHANG_STAIRWELLS = Object.freeze([-32, -2, 24].map((x, index) => Object.freeze({

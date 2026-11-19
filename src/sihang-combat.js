@@ -9,6 +9,7 @@ import { sihangBreachGoal } from './sihang-tactics.js';
 import { circleBlocked } from './core.js';
 import { FormationPlacementError } from './battle-roster.js';
 import { SPAWN_RULES } from './spawns.js';
+import { FOOT_SPEEDS } from './locomotion.js';
 
 export function sihangShieldLayout(slot, count, sideBias = 'left') {
   if (!Number.isInteger(count) || count < 1 || !Number.isInteger(slot) || slot < 0 || slot >= count || count > 20)
@@ -175,7 +176,10 @@ export function createSihangCombat(scene, world) {
         const result = squad.length ? assignShieldSlots(squad, anchor) : { assigned: [], sideBias: 'left' };
         assigned = result.assigned; sideBias = result.sideBias;
       }
-      if (campaign.northWallBreached || campaign.demolition.state === 'armed' || campaign.stage === 'sihang-retreat') phase = 'withdraw';
+      if (phase !== 'withdraw' &&
+        (campaign.northWallBreached || campaign.demolition.state === 'armed' || campaign.stage === 'sihang-retreat')) {
+        phase = 'withdraw'; path = null; nextPathAt = now;
+      }
       if (phase === 'withdraw' && home && Math.hypot(anchor.x - home.x, anchor.z - home.z) < .5 &&
         !campaign.northWallBreached && campaign.stage === 'sihang-defense' &&
         campaign.demolition.state === 'idle' && now >= campaign.demolition.cooldownUntil) {
@@ -196,9 +200,11 @@ export function createSihangCombat(scene, world) {
         while (path?.length && Math.hypot(path[0].x - anchor.x, path[0].z - anchor.z) < .25) path.shift();
         const target = path?.[0];
         formed = lag < .18;
-        if (target && formed && campaign.demolition.state !== 'installing') {
+        const regroupScale = Math.max(0, Math.min(1, (1.05 - lag) / .75));
+        if (target && regroupScale > 0 &&
+          (campaign.demolition.state !== 'installing' || phase === 'withdraw')) {
           const dx = target.x - anchor.x, dz = target.z - anchor.z, distance = Math.hypot(dx, dz);
-          const step = Math.min(distance, dt * .65);
+          const step = Math.min(distance, dt * FOOT_SPEEDS.infantry.jog * regroupScale);
           if (distance > .01) world.moveInfantry(anchor, dx / distance * step, dz / distance * step, .6);
         }
       }
@@ -225,11 +231,15 @@ export function createSihangCombat(scene, world) {
         entry.mesh.visible = !knocked && !entry.broken;
         const placing = campaign.stage === 'sihang-defense' &&
           campaign.demolition.operatorId === actor.id && campaign.demolition.state === 'installing';
-        desiredPosition.set(pose.offsetX, placing ? .12 : pose.height - gaitDrop, placing ? -.7 : pose.offsetZ)
+        const stride = actor.walkPhase ?? 0;
+        const running = Math.min(1, (actor.locomotion?.speed ?? 0) / FOOT_SPEEDS.infantry.jog);
+        const bob = Math.sin(stride * 2) * .022 * running;
+        const roll = Math.sin(stride) * .028 * running;
+        desiredPosition.set(pose.offsetX, placing ? .12 : pose.height - gaitDrop + bob, placing ? -.7 : pose.offsetZ)
           .applyAxisAngle(vertical, actor.heading).add(actor.position);
-        desiredRotation.setFromEuler(new THREE.Euler(placing ? 0 : pose.rotationX, actor.heading, pose.rotationZ, 'YXZ'));
-        const blend = rebound ? 1 : 1 - Math.exp(-dt * 8);
-        entry.mesh.position.lerp(desiredPosition, blend); entry.mesh.quaternion.slerp(desiredRotation, blend);
+        desiredRotation.setFromEuler(new THREE.Euler(placing ? 0 : pose.rotationX, actor.heading, placing ? 0 : pose.rotationZ + roll, 'YXZ'));
+        const blend = rebound ? 1 : 1 - Math.exp(-dt * 18);
+        entry.mesh.position.copy(desiredPosition); entry.mesh.quaternion.slerp(desiredRotation, blend);
         entry.mesh.updateWorldMatrix(true, false);
         actorFrame.position.copy(actor.position); actorFrame.rotation.set(0, actor.heading, 0);
         actorFrame.updateMatrixWorld(true);
@@ -261,11 +271,12 @@ export function createSihangCombat(scene, world) {
         if (actor.sihangShield.installing) goals.set(actor.id, { x: actor.position.x,
           y: actor.position.y, z: actor.position.z, transit: true });
       }
-      charge.visible = ['installing', 'armed'].includes(campaign.demolition.state);
+      charge.visible = campaign.stage === 'sihang-defense' && ['installing', 'armed'].includes(campaign.demolition.state);
       charge.scale.setScalar(campaign.demolition.state === 'installing' ? .4 + .6 *
         campaign.demolition.installProgress / SIHANG_RULES.installSeconds : 1);
-      light.visible = campaign.demolition.state === 'armed' && Math.sin(now * 12) > 0;
-      if (campaign.northWallBreached && home && Math.hypot(anchor.x - home.x, anchor.z - home.z) < .3 &&
+      light.visible = charge.visible && campaign.demolition.state === 'armed' && Math.sin(now * 12) > 0;
+      if (squad.length && (campaign.northWallBreached || campaign.stage === 'sihang-retreat') &&
+        home && Math.hypot(anchor.x - home.x, anchor.z - home.z) < .3 &&
         squad.every(actor => { const goal = goals.get(actor.id);
           return Math.hypot(actor.position.x - goal.x, actor.position.z - goal.z) < .4; })) return 'withdrawn';
       return event;

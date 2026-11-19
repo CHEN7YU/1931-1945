@@ -21,7 +21,8 @@ import { createAdaptiveStepBudget } from './adaptive-step-budget.js';
 import { createStaticSceneBatchRescue } from './static-scene-batches.js';
 import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS,
   sihangEnemyTargetAllowed as sihangTargetRule, sihangEnemyRayRange as sihangRayRule, sihangRetreatGoal, sihangRetreatVehicleBypass, sihangPursuitGoal,
-  replaceSihangDemolition, sihangRetreatFormation, sihangEnemyRegroupPosts, sihangArmorInterceptObjective } from './sihang-roster.js';
+  replaceSihangDemolition, sihangRetreatFormation, assignSihangRetreatArmorSpawns,
+  sihangEnemyRegroupPosts, sihangArmorInterceptObjective } from './sihang-roster.js';
 import { SIHANG_RIVER, SIHANG_BRIDGE, SIHANG_WAREHOUSE,
   SIHANG_EVACUATION, SIHANG_DEMOLITION_POINT, SIHANG_STAIRWELLS, SIHANG_LEVELS, SIHANG_MAP_BOUNDS, SIHANG_BATTLE_AREA, sihangBridgePoint, sihangBridgeCoordinates, sihangBridgeContains, sihangRiverBounds,
   sihangNorthBank, sihangSouthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js';
@@ -50,7 +51,7 @@ import { createOcclusionQuery, createClosestHitQuery } from './occlusion-query.j
 import { createGrenadeSupport } from './grenade-support.js';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, visibleTargetPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement, followGuardAction } from './tactics.js';
+  assignAssaultObjectives, assaultDestination, formationAssaultAction, resetObjectiveMovement, followGuardAction, followsPlayerSprint } from './tactics.js';
 import { createQualitySettings, QUALITY_EFFECTS } from './quality.js';
 import { canWeaponDamageTarget, canRiflemanTrackTarget, damageForTarget, rifleArmorResponse, rifleAIFireDelay, rifleAIHitChance } from './combat-targets.js';
 import { createDaylight, configureSunShadow } from './lighting.js';
@@ -83,7 +84,8 @@ import { createEntityRegistry, registerUnit, registerSoldier, registerWeapon, cr
   soldierRifleMuzzle, SOLDIER_FIRE_HEIGHT, soldierPostureHeight, soldierEyePosition } from './entities.js';
 import { FIRING_POSES, chooseCombatPosture, postureReady, ownedFiringPose, wallFiringContact,
   chooseAdvancePace, chooseShotRelocation } from './combat-posture.js';
-import { createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer } from './control-transition.js';
+import { createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer,
+  nearbyDeathTransferMember } from './control-transition.js';
 import { createControlInput } from './control-input.js';
 import { createControlEvents } from './control-events.js';
 import { createProjectile, advanceProjectile, PROJECTILE_LIMIT } from './projectiles.js';
@@ -165,7 +167,7 @@ import { drawFacingSector, drawMissionMarker } from './minimap-view.js';
 import { missionTargets } from './mission-targets.js';
 import { soldierRoleIcon } from './soldier-role-icons.js';
 import { advanceConstruction, selectConstructionBlueprint } from './construction.js';
-import { SIHANG_RESERVED_LANES } from './sihang-layout.js';
+import { SIHANG_RESERVED_LANES, sihangWithdrawalConstructionBlocked } from './sihang-layout.js';
 import { ENGINEER, createEngineerState, cancelEngineer, engineerPlacement, engineerObstacle,
   engineerBuiltSpec, engineerColliders, engineerFootprintBlocked, engineerConstructionReservations, selectEngineerEquipment,
   consumeEngineerMaterial, createEngineerTool, updateEngineerTool, rememberEngineerConstruction,
@@ -540,6 +542,8 @@ function engineerPlacementReason(actor, position) {
   if (actor.traversal.kind !== 'grounded') return '落地后才能建造';
   const heading = actor.engineer.heading ?? actor.heading;
   const bounds = engineerObstacle('preview', position, heading, selected);
+  if (sihangCampaignMode && actor !== controlledSoldier(entities) && sihangWithdrawalConstructionBlocked(bounds))
+    return '撤离通道仅限玩家手动建造';
   const restrictedSihangAreas = !actor.playerUnit;
   if (sihangCampaignMode && restrictedSihangAreas && Math.abs(position.y) > .025 &&
     !(sihangBridgeContains(position) && Math.abs(position.y - world.groundHeight(position.x, position.z)) <= .025))
@@ -1388,6 +1392,11 @@ function nextDeathTransferMember() {
     const onboard = allies.findIndex(actor => actor.health > 0 &&
       actor.tactics.nanjingFerry?.phase === 'aboard' && actor.tactics.nanjingFerry.ferryId === ferry.userData.ferryId);
     if (onboard >= 0) return onboard;
+  }
+  if (unit?.type === 'infantry' || unit?.type === 'mortar') {
+    const nearest = nearbyDeathTransferMember(allies, current, actor =>
+      !actor.vehicleId && !actor.sihangEvacuated && actor.tactics.nanjingFerry?.phase !== 'evacuated');
+    if (nearest >= 0) return nearest;
   }
   return nextControllableMember();
 }
@@ -4814,7 +4823,7 @@ function personalDestination(actor, target) {
     state.personalSlot = null;
     return target;
   }
-  const enabled = ['formation-advance', 'assault', 'advance-to-objective', 'follow', 'hold', 'advance'].includes(state.mode);
+  const enabled = ['formation-advance', 'assault', 'advance-to-objective', 'follow', 'follow-sprint', 'hold', 'advance'].includes(state.mode);
   if (!enabled) return target;
   const floor = target.y ?? world.groundHeight(target.x, target.z);
   const cached = state.personalSlot;
@@ -4987,7 +4996,7 @@ function walkActor(actor, target, speed, dt, sprint = false, urgentConstrainedJo
   }
   sprint = pace === 'sprint';
   speed = Math.hypot(target.x - pos.x, target.z - pos.z) > 1.3 ? profile[pace] : Math.min(speed, profile[pace]);
-  if (actor.formation.sihangDemolition) { speed = Math.min(speed, 1); sprint = false; }
+  if (actor.formation.sihangDemolition) { pace = 'jog'; speed = profile.jog + .65; sprint = false; }
   const inCaptureArea = objectives.some(point => objectiveContainsPosition(point, pos));
   const withdrawalCoverEgress = sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' &&
     actor.friendly && !actor.playerUnit && sihangCampaign.withdrawalWave?.phase === 'cover' &&
@@ -6228,6 +6237,20 @@ function updateAI(dt) {
       actor.tactics.mode = 'sihang-demolition-returned';
       continue;
     }
+    if (sihangCampaignMode && actor.formation.sihangDemolition) {
+      const goal = sihangCombat.goalFor(actor, sihangCampaign);
+      actor.target = null; actor.rifleReady = false;
+      if (goal && Math.hypot(actor.position.x - goal.x, actor.position.z - goal.z) > .035) {
+        walkActor(actor, goal, 3.5, dt);
+      } else {
+        stopLocomotion(actor.locomotion);
+        actor.stance = actor.sihangShield?.installing ? 'crouched' : 'standing';
+        actor.firingPose = actor.sihangShield?.installing ? 'kneeling' : null;
+        if (Number.isFinite(goal?.facing)) advanceAITurn(actor, goal.facing, dt);
+      }
+      actor.tactics.mode = sihangCampaign.stage === 'sihang-retreat' ? 'sihang-demolition-withdraw' : 'sihang-demolition';
+      continue;
+    }
     if (sihangCampaignMode && actor.sihangEvacuated && actor.sihangParadeGoal) {
       actor.target = null; actor.rifleReady = false; actor.stance = 'standing'; actor.firingPose = null;
       cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'evacuated');
@@ -6338,6 +6361,21 @@ function updateAI(dt) {
       tactics.mode = actor.friendly ? 'east-gate-defense-assembly' : 'east-breakout-assembly';
       const goal = breakoutDestination(actor);
       if (Math.hypot(actor.position.x - goal.x, actor.position.z - goal.z) > .6) walkActor(actor, goal, 3.5, dt);
+      continue;
+    }
+    if (followsPlayerSprint(actor, player)) {
+      tactics.mode = 'follow-sprint';
+      tactics.followGuard = null;
+      if (tactics.cover) coverClaims.delete(tactics.cover.id);
+      tactics.cover = null; tactics.enteredCover = false;
+      cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'follow-sprint');
+      actor.stance = 'standing'; actor.firingPose = null;
+      const { position } = actor;
+      const goal = playerOrderDestination(actor, player);
+      if (Math.hypot(position.x - goal.x, position.z - goal.z) > .65 ||
+        Math.abs(position.y - (goal.y ?? position.y)) > .4)
+        walkActor(actor, goal, player.locomotion.speed, dt, true, true);
+      settleActorSupport(actor);
       continue;
     }
     if (nanjingCampaignMode && !actor.friendly && !actor.vehicleId &&
@@ -7158,6 +7196,8 @@ function updateAI(dt) {
         continue;
       }
       if (formation.members.some(actor => actor.health > 0)) continue;
+      if (sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && formation.sihangDemolition)
+        replaceSihangDemolition(formation);
       if (nanjingCampaignMode && formation.team === 'friendly' && nanjingCampaign.stage === 'withdrawal-to-boats') continue;
       if (encirclementMode && formation.team === 'enemy') scheduleEncirclementRespawn(encirclement, formation, time);
       else if (formation.variant !== CHI_HA.id) formation.respawnAt ??= time + BATTLE_RULES.respawnSeconds;
@@ -7188,6 +7228,19 @@ function sihangAssemblyFocusAvailable(actor) {
   return Boolean(visibleTargetPoint(target, point => from.distanceTo(point) <= 75 && hasLine(from, point, 75)));
 }
 
+function retireSihangSappers(formation) {
+  const retired = new Set(formation.members.filter(actor => actor.tactics.sihangDemolitionReturned));
+  if (!retired.size) return;
+  for (const actor of retired) {
+    if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
+    pathRequests.delete(actor.tactics.id);
+  }
+  clearActors([...retired], true);
+  formation.members = formation.members.filter(actor => !retired.has(actor));
+  enemies = enemies.filter(actor => !retired.has(actor));
+  rebuildForces();
+}
+
 function updateSihangMission(dt) {
   const point = objectives[0], previousStage = sihangCampaign.stage, player = controlledSoldier(entities);
   const previousCounterattack = sihangCampaign.counterattack;
@@ -7202,7 +7255,11 @@ function updateSihangMission(dt) {
   if (!previousCounterattack && sihangCampaign.counterattack) sihangVoices?.play(audioContext, 'counterattack');
   remaining = sihangCampaign.stageRemaining ?? 0;
   if (previousStage !== sihangCampaign.stage) {
+    for (const formation of formations) {
+      if (formation.demolitionCompleted) retireSihangSappers(formation);
+    }
     sihangEnemyPosts = sihangEnemyRegroupPosts(world.obstacles);
+    assignSihangRetreatArmorSpawns(formations);
     for (let index = 4; index <= SIHANG_RULES.retreatSquads; index++) {
       const formation = sihangRetreatFormation(index);
       formations.push(formation); registerUnit(entities, formation); registerBattleScore(formation);
@@ -8876,6 +8933,7 @@ function advanceBattleStep(dt, presentationTime) {
       for (const formation of formations.filter(item => item.sihangDemolition)) {
         for (const actor of formation.members) actor.tactics.sihangDemolitionReturned = true;
         replaceSihangDemolition(formation);
+        if (sihangCampaign.stage === 'sihang-retreat') retireSihangSappers(formation);
       }
       sihangCombat.update(0, time, { campaign: sihangCampaign, actors: allForces, player, keys: defuseKeys });
     } else if (event) {

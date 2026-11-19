@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTactics, rememberThreat, expireThreat, peekTurn, selectCover, advancePosition, pointSegmentDistance,
   friendlyCoverAction, targetAimPoint, observeVisualThreat, objectiveDestination, objectiveAdvanceRequired,
-  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement, followGuardAction, coverPeeks } from '../src/tactics.js';
+  assignAssaultObjectives, assaultDestination, enemyAssaultAction, formationAssaultAction, resetObjectiveMovement,
+  followGuardAction, followsPlayerSprint, coverPeeks } from '../src/tactics.js';
 import { makeObjectives, advanceCapture } from '../src/core.js';
 import { battleRoster } from '../src/battle-roster.js';
 
@@ -31,6 +32,20 @@ function followingPair(range = 3, speed = 0) {
     objective: { x: 0, z: -50 },
   };
 }
+
+test('only unassigned followers of the sprinting player run with the squad', () => {
+  const { actor, player } = followingPair(2, 4.1);
+  actor.formation = player.formation = {};
+  player.health = 100;
+  player.locomotion.sprinting = true;
+  assert.equal(followsPlayerSprint(actor, player), true);
+  for (const change of [{ order: 'hold' }, { order: 'advance' }, { orderTarget: { id: 'target' } },
+    { formation: {} }, { vehicleId: 'tank' }, { grenades: { action: {} } }])
+    assert.equal(followsPlayerSprint({ ...actor, ...change }, player), false);
+  assert.equal(followsPlayerSprint(actor, { ...player, emplacementId: 'gun' }), false);
+  player.locomotion.sprinting = false;
+  assert.equal(followsPlayerSprint(actor, player), false);
+});
 
 test('followers within three metres guard even while the player moves, with stable sectors and stances', () => {
   const { actor, player, objective } = followingPair(3, 2);

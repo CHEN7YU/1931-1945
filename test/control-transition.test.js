@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEATH_TRANSFER, createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask, resetDeathTransfer } from '../src/control-transition.js';
+import { DEATH_TRANSFER, createDeathTransfer, startDeathTransfer, advanceDeathTransfer, deathTransferMask,
+  resetDeathTransfer, nearbyDeathTransferMember } from '../src/control-transition.js';
 import { nextAlive } from '../src/core.js';
 
 test('death feedback precedes handoff and the next member cannot play until the transition ends', () => {
@@ -56,4 +57,15 @@ test('30/60/144Hz use the same transfer duration with only frame-quantization di
     assert.ok(handoffAt >= DEATH_TRANSFER.handoffSeconds && handoffAt <= DEATH_TRANSFER.handoffSeconds + 1 / fps + 1e-9);
     assert.ok(completeAt >= DEATH_TRANSFER.durationSeconds && completeAt <= DEATH_TRANSFER.durationSeconds + 1 / fps + 1e-9);
   }
+});
+
+test('automatic foot-squad handoff favors a nearby survivor on the same level', () => {
+  const member = (x, y, health = 100, excluded = false) => ({ position: { x, y, z: 0 }, health, excluded });
+  const members = [member(0, 0, 0), member(30, 0), member(1, 7.2), member(1, 0, 0),
+    member(1, 0, 100, true), member(4, 0)];
+  const eligible = actor => !actor.excluded;
+  assert.equal(nearbyDeathTransferMember(members, 0, eligible), 5);
+  members[5].health = 0;
+  assert.equal(nearbyDeathTransferMember(members, 0, eligible), 2);
+  assert.equal(nearbyDeathTransferMember(members, 0, () => false), -1);
 });

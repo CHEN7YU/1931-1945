@@ -8,6 +8,12 @@ export function createTactics(id, squad, slot) {
     observedAt: null, engagementPoint: null, lastSightCheck: null, forgetAt: 0, suppressedUntil: 0, cover: null, decisionAt: 0, arrivedAt: 0, enteredCover: false, blockedBy: null, followGuard: null };
 }
 
+export function followsPlayerSprint(actor, player) {
+  return actor !== player && actor.friendly && actor.playerUnit && actor.formation === player?.formation &&
+    actor.order === 'follow' && !actor.orderTarget && !actor.vehicleId && !actor.grenades?.action &&
+    player.health > 0 && !player.vehicleId && !player.emplacementId && player.locomotion.sprinting;
+}
+
 export function followGuardAction(actor, player, objective) {
   if (!actor?.tactics || !validPoint(actor.position) || !validPoint(player?.position) ||
     ![actor.position.y, player.position.y, player.heading, player.locomotion?.speed].every(Number.isFinite) ||

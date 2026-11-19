@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { sihangPursuitGoal, sihangArmorInterceptObjective, SIHANG_EMPLACEMENTS, sihangSpawns } from '../src/sihang-roster.js';
+import { sihangPursuitGoal, sihangArmorInterceptObjective, SIHANG_EMPLACEMENTS, sihangSpawns,
+  sihangBattleRoster, assignSihangRetreatArmorSpawns } from '../src/sihang-roster.js';
+import { battleSpawn, reinforcementDue } from '../src/battle-roster.js';
+import { spawnBlockReason } from '../src/spawns.js';
 import { SIHANG_BRIDGE, SIHANG_WAREHOUSE as W, sihangNorthBank } from '../src/sihang-layout.js';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
 import { circleBlocked, segmentClear } from '../src/core.js';
@@ -134,6 +137,43 @@ test('both armor interception destinations are reachable from their regroup posi
   assert.ok(Math.hypot(stuck.position.x - goal.x, stuck.position.z - goal.z) <= CHI_HA.arrivalDistance ||
     path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= CHI_HA.arrivalDistance,
     JSON.stringify({ goal, path, stats: navigation.stats(stuck) }));
+});
+
+test('destroyed armor replacements enter from two navigable northwest positions during the retreat', () => {
+  const scene = new THREE.Scene();
+  const world = makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color }));
+  addSihangBridgeDefenses(scene, world, SIHANG_EMPLACEMENTS.filter(spec => spec.retreatCover));
+  const roster = sihangBattleRoster(), spawns = sihangSpawns(), obstacles = world.obstacles;
+  const tanks = roster.filter(formation => formation.variant === CHI_HA.id);
+  const otherAssignments = roster.filter(formation => !tanks.includes(formation)).map(formation => formation.spawnId);
+  const opening = tanks.map(formation => battleSpawn(formation, spawns, [], obstacles, true));
+  assert.ok(opening[0].x < 0 && opening[1].x > 0, 'opening tanks still enter from separate flanks');
+  for (const tank of tanks) tank.members = [{ health: 100 }];
+
+  assignSihangRetreatArmorSpawns(roster);
+  assert.deepEqual(roster.filter(formation => !tanks.includes(formation)).map(formation => formation.spawnId), otherAssignments);
+  assert.ok(tanks.every(tank => !reinforcementDue(tank, 180)), 'living crews are not replaced at transition');
+  for (const tank of tanks) tank.members[0].health = 0;
+  assert.ok(tanks.every(tank => reinforcementDue(tank, 181)));
+  const replacements = tanks.map(tank => battleSpawn(tank, spawns, [], obstacles));
+  const bridgeDistance = point => Math.hypot(point.x - SIHANG_BRIDGE.northX, point.z - SIHANG_BRIDGE.northZ);
+  assert.notEqual(replacements[0].id, replacements[1].id);
+  const navigation = createTankNavigation(obstacles);
+  const vehicles = replacements.map((point, slot) => ({ id: tanks[slot].id, type: 'tank', variant: CHI_HA.id,
+    health: 280, heading: Math.PI, ai: { mode: 'hold' }, position: new THREE.Vector3(point.x, 0, point.z) }));
+  replacements.forEach((point, slot) => {
+    assert.ok(point.x < -70 && point.z < -80 && bridgeDistance(point) > 160);
+    assert.ok(bridgeDistance(point) > bridgeDistance(opening[slot]));
+    assert.equal(spawnBlockReason(point, 'tank', [], obstacles), null);
+    const vehicle = vehicles[slot];
+    assert.ok(navigation.canSpawn(point, vehicles.filter(other => other !== vehicle)));
+    const regroup = { x: slot === 0 ? -70 : 70, z: -55 };
+    for (const goal of [regroup, chiHaObjectiveDestination(slot, sihangArmorInterceptObjective())]) {
+      const path = navigation.pathTo(vehicle, goal, vehicles);
+      assert.ok(path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) <= CHI_HA.arrivalDistance);
+      assert.ok(path.every(step => sihangNorthBank(step, 3)));
+    }
+  });
 });
 
 test('warehouse surroundings have real adjacent buildings while most of the exposed river facade remains masonry', () => {

@@ -2,6 +2,7 @@ import { CHI_HA } from './chi-ha.js';
 import { circleBlocked } from './core.js';
 import { SIHANG_RULES } from './sihang-campaign.js';
 import { SIHANG_CAPTURE_AREA, SIHANG_WAREHOUSE, SIHANG_SQUAD_ORIGINS, SIHANG_ENEMY_APPROACHES, SIHANG_TANK_ORIGINS,
+  SIHANG_RETREAT_TANK_ORIGINS,
   SIHANG_BRIDGE, SIHANG_EVACUATION, sihangBridgePoint, sihangBridgeCoordinates,
   sihangSouthBank, sihangRiverBounds, sihangRiverRayRange } from './sihang-layout.js';
 
@@ -36,6 +37,15 @@ export function sihangRetreatFormation(index) {
     spawnId: `sihang-retreat-${index - 1}` };
 }
 
+const retreatArmorSpawnId = slot => `sihang-armor-retreat-${slot}`;
+
+export function assignSihangRetreatArmorSpawns(formations) {
+  for (const formation of formations) {
+    if (formation.team === 'enemy' && formation.variant === CHI_HA.id)
+      formation.spawnId = retreatArmorSpawnId(formation.armorSlot);
+  }
+}
+
 export function sihangSpawns() {
   return [
     ...SIHANG_SQUAD_ORIGINS.map((point, index) => ({
@@ -64,6 +74,10 @@ export function sihangSpawns() {
     ...SIHANG_TANK_ORIGINS.map((point, index) => ({
       id: `sihang-enemy-${index + 6}`, name: `日军装甲集结区 ${index + 1}`, team: 'enemy',
       kind: 'garage', aiOnly: true, altitude: 0, x: point.x, z: point.z,
+    })),
+    ...SIHANG_RETREAT_TANK_ORIGINS.map((point, index) => ({
+      id: retreatArmorSpawnId(index), name: `日军西北装甲补充点 ${index + 1}`, team: 'enemy',
+      kind: 'garage', aiOnly: true, altitude: 0, ...point,
     })),
     { id: 'sihang-enemy-8', name: '日军航空入场', team: 'enemy', kind: 'air', aiOnly: true, x: -24, z: -112, altitude: 45 },
     { id: 'sihang-enemy-9', name: '日军爆破队集结区', team: 'enemy', kind: 'base', aiOnly: true, x: 0, z: -72, altitude: 0 },

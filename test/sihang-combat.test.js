@@ -87,12 +87,13 @@ test('sappers retain individually carried turtle plates while advancing, install
     assert.equal(f.actors.filter(actor => actor.sihangShield.mode === 'roof').length, 4);
     for (const actor of f.actors) {
       const goal = f.combat.goalFor(actor), dx = goal.x - actor.position.x, dz = goal.z - actor.position.z;
-      const distance = Math.hypot(dx, dz), step = Math.min(.05, distance);
+      const distance = Math.hypot(dx, dz), step = Math.min(.05 * 3.35, distance);
       if (distance) f.world.moveInfantry(actor.position, dx / distance * step, dz / distance * step);
     }
     if (event === 'armed') armedAt = now;
   }
   assert.notEqual(armedAt, null);
+  assert.ok(armedAt < 25, `the squad must run to the wall, then finish installation: ${armedAt}s`);
   assert.equal(f.combat.snapshot.phase, 'withdraw');
   const installed = f.combat.snapshot.anchor.z;
   for (let index = 1; index <= 40; index++) {
@@ -101,8 +102,8 @@ test('sappers retain individually carried turtle plates while advancing, install
       const goal = f.combat.goalFor(actor);
       assert.equal(goal.backwards, true);
       const distance = Math.hypot(goal.x - actor.position.x, goal.z - actor.position.z);
-      if (distance) f.world.moveInfantry(actor.position, (goal.x - actor.position.x) / distance * Math.min(.05, distance),
-        (goal.z - actor.position.z) / distance * Math.min(.05, distance));
+      if (distance) f.world.moveInfantry(actor.position, (goal.x - actor.position.x) / distance * Math.min(.05 * 3.35, distance),
+        (goal.z - actor.position.z) / distance * Math.min(.05 * 3.35, distance));
     }
   }
   assert.equal(f.combat.snapshot.mode, 'turtle');
@@ -112,6 +113,34 @@ test('sappers retain individually carried turtle plates while advancing, install
   assert.equal(f.combat.snapshot.shields, 19);
   assert.equal(f.actors[0].sihangShield, undefined);
   assert.equal(f.world.solids.length, 20, 'replacement and death must not grow the mesh pool');
+});
+
+test('stage two reverses an in-progress advance and waits for physical return even without a breach', () => {
+  const f = fixture();
+  f.combat.update(.05, 0, f);
+  const followGoals = () => {
+    for (const actor of f.actors) {
+      const goal = f.combat.goalFor(actor);
+      actor.position.set(goal.x, goal.y, goal.z);
+    }
+  };
+  for (let frame = 1; frame <= 60; frame++) {
+    f.combat.update(.05, frame * .05, f);
+    followGoals();
+  }
+  const start = f.combat.snapshot.anchor.z;
+  f.campaign.stage = 'sihang-retreat';
+  f.campaign.demolition.state = 'installing';
+  assert.equal(f.combat.update(.05, 3.05, f), null);
+  assert.ok(f.combat.snapshot.anchor.z < start, 'discard the old advance path immediately');
+  assert.equal(f.combat.snapshot.chargeVisible, false);
+  let event;
+  for (let frame = 62; frame < 150 && event !== 'withdrawn'; frame++) {
+    followGoals();
+    event = f.combat.update(.05, frame * .05, f);
+  }
+  assert.equal(event, 'withdrawn');
+  assert.equal(f.campaign.northWallBreached, false);
 });
 
 test('dynamic shields block real rays, disappear on reset, and require a real nearby living operator to install', () => {

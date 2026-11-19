@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import { chromium } from 'playwright';
 import { deployFromMenu } from './game-entry.mjs';
 
@@ -11,117 +9,60 @@ try {
   await page.route('**/src/main.js*', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
-      window.engineerLaneReview = {
-        run() {
-          setGameState('pause'); missionBriefing.hide();
-          const actor = friendlyForces.find(item => item.engineer && !item.playerUnit && item.health > 0);
-          const threat = enemies.find(item => item.health > 0 && !item.vehicleId);
-          if (!threat) throw new Error('Expected a living opposing soldier');
-          const actorPosition = actor.position.clone(), threatPosition = threat.position.clone();
-          actor.position.set(0, 0, 0); threat.position.set(0, 0, -10);
-          actorGrid.rebuild(allForces);
-          actor.tactics.idleThreatHeadingUntil = 0;
-          const idleFacing = idleThreatHeading(actor);
-          actor.position.copy(actorPosition); threat.position.copy(threatPosition);
-          actorGrid.rebuild(allForces);
-          if (!actor) throw new Error('Expected a living AI engineer');
-          actor.engineer.heading = 0;
-          let candidate = null;
-          for (let z = -7; z <= -1 && !candidate; z += 1)
-            for (let x = -34; x <= 26; x += 1) {
-              const point = { x, y: 0, z };
-              if (!engineerPlacementReason(actor, point)) { candidate = point; break; }
-            }
-          if (!candidate) throw new Error('No physically valid construction position in the south quay');
-          const defenseReason = engineerPlacementReason(actor, candidate);
-          sihangCampaign.stage = 'sihang-retreat';
-          const retreatReason = engineerPlacementReason(actor, candidate);
-          const retreatLanes = ['sihang-defense', 'sihang-retreat'].flatMap(stage => {
-            sihangCampaign.stage = stage;
-            return ['maxim24', 'bofors75'].flatMap(profile => {
-              actor.engineer.selected = profile;
-              return SIHANG_RESERVED_LANES.filter(lane => lane.id.startsWith('retreat-')).map(lane => {
-                const reasons = new Set(); let valid = 0;
-                for (let z = lane.minZ + .5; z < lane.maxZ; z += 1)
-                  for (let x = lane.minX + .5; x < lane.maxX; x += 1) {
-                    const reason = engineerPlacementReason(actor, { x, y: world.walkHeight(x, z, 0), z });
-                    if (reason) reasons.add(reason); else valid++;
-                  }
-                return { stage, profile, id: lane.id, valid, reasons: [...reasons] };
-              });
-            });
+      window.engineerLaneReview = () => {
+        const ai = friendlyForces.find(actor => actor.engineer && !actor.playerUnit && actor.health > 0);
+        const playerIndex = allies.findIndex(actor => actor.engineer && actor.health > 0);
+        if (!ai || playerIndex < 0) throw new Error('Expected player and AI engineers');
+        changeMember(playerIndex);
+        const player = controlledSoldier(entities);
+        if (player !== allies[playerIndex]) throw new Error('Could not take control of the engineer');
+        equipTool(true);
+        const at = (x, z) => ({ x, y: world.walkHeight(x, z, 0), z });
+        const candidate = at(-36.016, -3.919);
+        const bridge = sihangBridgePoint(.5);
+        const points = [candidate, at(-23, -4), at(35, -21), at(60, sihangRiverBounds(60).northZ - 3),
+          at(bridge.x, bridge.z)];
+        const reasons = ['sihang-defense', 'sihang-retreat'].map(stage => {
+          sihangCampaign.stage = stage;
+          return ENGINEER.profiles.map(profile => {
+            ai.engineer.selected = profile;
+            ai.engineer.heading = 0;
+            return points.map(point => engineerPlacementReason(ai, point));
           });
-          actor.engineer.selected = 'maxim24';
-          const armorReason = engineerPlacementReason(actor, { x: -70, y: 0, z: -60 });
-          const bridgeHeading = Math.atan2(SIHANG_BRIDGE.northX - SIHANG_BRIDGE.southX,
-            SIHANG_BRIDGE.northZ - SIHANG_BRIDGE.southZ);
-          actor.engineer.heading = bridgeHeading;
-          const bridgePoint = sihangBridgePoint(.5);
-          const bridgeCandidate = { ...bridgePoint, y: world.walkHeight(bridgePoint.x, bridgePoint.z, 0) };
-          const bridgeReason = engineerPlacementReason(actor, bridgeCandidate);
-          const elevatedReason = engineerPlacementReason(actor, { ...bridgeCandidate, y: bridgeCandidate.y + 7.2 });
-          actor.engineer.selected = 'bofors75';
-          const artilleryBridgeReason = engineerPlacementReason(actor, bridgeCandidate);
-          actor.engineer.selected = 'maxim24';
+        });
+        const edgeReason = engineerPlacementReason(ai, at(-49, -4));
+        ai.engineer.selected = 'maxim24';
+        const armorReason = engineerPlacementReason(ai, at(-70, -60));
+        const build = (actor, point) => {
+          actor.position.set(point.x, point.y, point.z + ENGINEER.reach);
           actor.engineer.heading = 0;
-          actor.position.set(candidate.x, 0, candidate.z - 3);
           selectConstructionBlueprint(actor.engineer.construction, actor.id);
           const before = engineerWorks.length;
-          for (let step = 0; step < 1000 && engineerWorks.length === before; step++)
-            updateEngineerConstruction(actor, .05, true, { ...candidate });
-          actor.playerUnit = true;
-          actor.engineer.selected = 'bofors75';
-          let playerEastCandidate = null;
-          for (let z = -28.5; z <= -21 && !playerEastCandidate; z += .75)
-            for (let x = 30.5; x <= 74 && !playerEastCandidate; x += .75) {
-              const point = { x, y: world.walkHeight(x, z, 0), z };
-              if (!engineerPlacementReason(actor, point)) playerEastCandidate = point;
-            }
-          if (!playerEastCandidate) throw new Error('No physically valid player construction position in the warehouse east flank');
-          const playerEastReason = engineerPlacementReason(actor, playerEastCandidate);
-          actor.position.set(playerEastCandidate.x, playerEastCandidate.y, playerEastCandidate.z - 3);
-          selectConstructionBlueprint(actor.engineer.construction, actor.id);
-          const beforePlayerEast = engineerWorks.length;
-          for (let step = 0; step < 1000 && engineerWorks.length === beforePlayerEast; step++)
-            updateEngineerConstruction(actor, .05, true, { ...playerEastCandidate });
-          const playerEastBuilt = engineerWorks.length === beforePlayerEast + 1;
-          const eastWork = playerEastBuilt ? engineerWorks.at(-1).point : null;
-          const playerEastSpec = eastWork ? { x: eastWork.x, y: eastWork.altitude, z: eastWork.z, id: eastWork.id } : null;
-          actor.playerUnit = false;
-          const built = engineerWorks.length === before + 1;
-          const bridgeActor = friendlyForces.find(item => item !== actor && item.engineer &&
-            !item.playerUnit && item.health > 0 && item.engineer.materials.maxim24);
-          if (!bridgeActor) throw new Error('Expected a second living AI engineer');
-          bridgeActor.engineer.heading = bridgeHeading;
-          const bx = bridgeCandidate.x + Math.sin(bridgeHeading) * ENGINEER.reach;
-          const bz = bridgeCandidate.z + Math.cos(bridgeHeading) * ENGINEER.reach;
-          bridgeActor.position.set(bx, world.walkHeight(bx, bz, 0), bz);
-          selectConstructionBlueprint(bridgeActor.engineer.construction, bridgeActor.id);
-          const beforeBridge = engineerWorks.length;
-          for (let step = 0; step < 1000 && engineerWorks.length === beforeBridge; step++)
-            updateEngineerConstruction(bridgeActor, .05, true);
-          const bridgeBuilt = engineerWorks.length === beforeBridge + 1;
-          const point = bridgeBuilt ? engineerWorks.at(-1).point : null;
-          const bridgeSpec = point ? { x: point.x, y: point.altitude, z: point.z, id: point.id } : null;
-          return { candidate, defenseReason, retreatReason, retreatLanes, armorReason, bridgeCandidate, bridgeReason,
-            elevatedReason, artilleryBridgeReason, built, playerEastCandidate, playerEastReason, playerEastBuilt, bridgeBuilt, bridgeSpec,
-            playerEastSpec, idleFacing,
-            blocked: bridgeActor.engineer.construction.blockedReason };
-        },
-        viewBridge() {
-          camera.position.set(88, 7, -13);
-          camera.lookAt(83, 1, -22);
-          camera.updateMatrixWorld(true);
-        },
-        viewEast() {
-          const point = engineerWorks.find(work => work.point.x >= 30 && work.point.z >= -29 && work.point.z <= -21)?.point;
-          if (!point) throw new Error('Missing built player emplacement on the east flank');
-          camera.position.set(point.x + 12, point.altitude + 8, point.z - 14);
-          camera.lookAt(point.x, point.altitude + 1, point.z);
-          camera.updateMatrixWorld(true);
-          renderer.render(scene, camera);
-          renderer.render(scene, camera);
-        }
+          for (let step = 0; step < 450 && engineerWorks.length === before; step++)
+            updateEngineerConstruction(actor, .05, true, { ...point });
+          return { built: engineerWorks.length > before, reason: actor.engineer.construction.blockedReason,
+            material: actor.engineer.materials[actor.engineer.selected] };
+        };
+        const teammate = allies.find(actor => actor !== player && actor.engineer);
+        const attached = teammate ?? allies.find(actor => actor !== player && actor.health > 0);
+        attached.engineer ??= createEngineerState();
+        const teammateBuild = build(attached, candidate);
+        const aiBuild = build(ai, candidate);
+        const clearSite = (actor, minX, maxX, minZ, maxZ) => {
+          actor.engineer.heading = 0;
+          for (let z = minZ; z <= maxZ; z += .5) for (let x = minX; x <= maxX; x += .5) {
+            const point = at(x, z);
+            if (!engineerPlacementReason(actor, point)) return point;
+          }
+          throw new Error('No valid construction site in the fixture');
+        };
+        const playerBuild = build(player, clearSite(player, -39, -31, -7, -2));
+        player.engineer.selected = 'bofors75';
+        const eastBuild = build(player, clearSite(player, 31, 74, -28, -21));
+        sihangCampaign.stage = 'sihang-defense';
+        const offRouteBuild = build(ai, clearSite(ai, -65, -38, -52, -30));
+        setGameState('pause');
+        return { reasons, edgeReason, armorReason, aiBuild, teammateBuild, playerBuild, eastBuild, offRouteBuild };
       };` });
   });
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5353');
@@ -136,33 +77,18 @@ try {
   await page.keyboard.up('Tab');
   assert.ok(labels.some(label => label.includes('上海海军陆战队')));
   assert.ok(labels.every(label => !label.includes('游戏')));
-  const result = await page.evaluate(() => engineerLaneReview.run());
-  assert.equal(result.defenseReason, null);
-  assert.equal(result.retreatReason, null);
+  const result = await page.evaluate(() => engineerLaneReview());
+  const prohibited = '撤离通道仅限玩家手动建造';
+  for (const stage of result.reasons) for (const profile of stage)
+    for (const reason of profile) assert.equal(reason, prohibited);
+  assert.equal(result.edgeReason, prohibited);
   assert.match(result.armorReason, /装甲或爆破通路/);
-  assert.equal(result.bridgeReason, null, JSON.stringify(result.bridgeCandidate));
-  assert.match(result.elevatedReason, /只能在一楼或室外地面/);
-  assert.equal(result.artilleryBridgeReason, null);
-  assert.ok(result.retreatLanes.filter(lane => lane.id !== 'retreat-bridge').every(lane => lane.valid > 0),
-    `exit and approach need physically valid build locations: ${JSON.stringify(result.retreatLanes)}`);
-  assert.ok(result.retreatLanes.every(lane => lane.reasons.every(reason => !reason.includes('撤退、'))));
-  assert.ok(result.playerEastCandidate.x >= 30 && result.playerEastCandidate.x <= 74);
-  assert.ok(result.playerEastCandidate.z >= -29 && result.playerEastCandidate.z <= -21);
-  assert.equal(result.playerEastReason, null, JSON.stringify(result.playerEastCandidate));
-  assert.equal(result.playerEastBuilt, true, JSON.stringify(result));
-  assert.ok(Math.abs(result.idleFacing) < .001, `a soldier north of the actor should face north: ${result.idleFacing}`);
-  assert.equal(result.built, true, JSON.stringify(result));
-  assert.equal(result.bridgeBuilt, true, JSON.stringify(result));
-  assert.ok(Math.abs(result.bridgeSpec.y - result.bridgeCandidate.y) < .001);
+  for (const attempt of [result.aiBuild, result.teammateBuild])
+    assert.deepEqual(attempt, { built: false, reason: prohibited, material: 1 });
+  for (const attempt of [result.playerBuild, result.eastBuild, result.offRouteBuild])
+    assert.deepEqual(attempt, { built: true, reason: null, material: 0 });
   assert.deepEqual(errors, []);
-  if (process.env.ARTIFACT_DIR) {
-    await page.evaluate(() => engineerLaneReview.viewEast());
-    await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, 'east-player-emplacement.png') });
-    await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
-    await page.evaluate(() => engineerLaneReview.viewBridge());
-    await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, 'bridge-built.png') });
-  }
-  console.log(JSON.stringify({ labels, ...result }));
+  console.log(JSON.stringify(result));
 } finally {
   await browser.close();
 }

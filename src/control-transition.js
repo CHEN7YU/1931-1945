@@ -1,4 +1,19 @@
 export const DEATH_TRANSFER = Object.freeze({ handoffSeconds: .6, durationSeconds: .9 });
+
+export function nearbyDeathTransferMember(members, current, eligible) {
+  const origin = members[current]?.position;
+  if (!origin) return -1;
+  let best = -1, distance = Infinity;
+  for (let offset = 1; offset < members.length; offset++) {
+    const index = (current + offset) % members.length, actor = members[index];
+    if (actor.health <= 0 || !actor.position || !eligible(actor)) continue;
+    const gap = Math.hypot(actor.position.x - origin.x, actor.position.z - origin.z,
+      (actor.position.y - origin.y) * 3);
+    if (gap < distance) { best = index; distance = gap; }
+  }
+  return best;
+}
+
 export function createDeathTransfer() { return { active: false, fromId: null, reason: null, elapsed: 0, handedOff: false }; }
 export function startDeathTransfer(state, fromId, reason) {
   if (state.active && state.fromId === fromId) return false;
