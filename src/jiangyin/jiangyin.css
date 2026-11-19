@@ -19,7 +19,7 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 #jy-toast { position: absolute; top: 86px; left: 50%; transform: translateX(-50%); font-size: 1rem;
   text-shadow: 0 1px 3px #000; transition: opacity .3s; opacity: 0; }
 #jy-toast.show { opacity: 1; } #jy-toast.alert { color: #ffb08f; }
-#jy-posts { position: absolute; left: 18px; bottom: 18px; margin: 0; padding: 10px 12px; list-style: none;
+#jy-posts { position: absolute; left: 20px; bottom: 176px; margin: 0; padding: 10px 12px; list-style: none;
   background: rgba(14, 17, 15, .62); min-width: 230px; }
 #jy-posts li { display: grid; grid-template-columns: 22px 1fr 70px; gap: 8px; align-items: center; font-size: .86rem; padding: 3px 0; }
 #jy-posts li.current { color: #f0d397; } #jy-posts li.down { opacity: .38; text-decoration: line-through; }
@@ -29,8 +29,9 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 .jy-weapon strong { display: block; } #jy-ammo { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
 .jy-bar { height: 4px; background: #2a2f2a; margin: 6px 0; } #jy-reload { height: 100%; width: 0; background: #cfb278; }
 #jy-help { display: block; opacity: .7; font-size: .72rem; }
-#jy-radar { position: absolute; right: 18px; top: 18px; background: rgba(14, 17, 15, .55); border: 1px solid #4b544a; transition: all .2s; }
-#jy-radar.large { width: min(70vh, 640px); height: min(70vh, 640px); right: 50%; top: 50%; transform: translate(50%, -50%); }
+#jy-radar { position: absolute; left: 20px; bottom: 20px; width: clamp(112px, 9vw, 140px); height: auto; aspect-ratio: 1;   /* 与其他战役的 #minimap 一致 */
+  box-sizing: border-box; padding: 3px; background: rgba(11, 19, 14, .84); border: 1px solid rgba(246, 224, 169, .28); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+#jy-radar.large { width: 310px; left: 50%; bottom: 50%; transform: translate(-50%, 50%); }
 .jy-overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 10, 9, .72); }
 .jy-overlay[hidden] { display: none; }
 .jy-dialog { max-width: 560px; padding: 32px 36px; background: #171c19; border-top: 3px solid #cfb278; }
@@ -42,3 +43,11 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 
 #jy-posts li.locked { opacity: .45; }
 #jy-top-0.alert, #jy-top-1.alert, #jy-top-2.alert { color: #e9876d; }
+
+/* 敌军标记（红点）与屏幕边缘指示 */
+#jy-interact { position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); font-size: .9rem; color: #f0d397;
+  text-shadow: 0 1px 3px #000; }
+#jy-hurt { position: absolute; inset: 0; opacity: 0; transition: opacity .5s; background: radial-gradient(ellipse at center, transparent 55%, rgba(150, 10, 0, .55)); }
+#jy-hurt.show { opacity: 1; transition: none; }
+#jy-posts kbd.none { border-color: transparent; opacity: .5; }
+#jy-crosshair.scoped { width: 60px; height: 60px; } #jy-crosshair.scoped i:first-child { top: 29px; } #jy-crosshair.scoped i:last-child { left: 29px; }

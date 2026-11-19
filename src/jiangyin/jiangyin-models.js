@@ -23,18 +23,20 @@ const SURFACE_STYLES = {
   sandbag: { map: 'burlap', detail: .9, tile: .55, mottle: .12, bump: .9 },
   earth: { map: 'earth', detail: .9, tile: 3, mottle: .15, bump: .7, macro: .4 },
   gun: { map: 'plaster', detail: .1, tile: 1.4, mottle: .12, streaks: .35, bump: .1, rough: .3 },
+  steel: { detail: 0, tile: 1.4, mottle: .04, streaks: .12, bump: .03, rough: .15 },   // 涂装钢板：无石材纹理，仅轻微斑驳与雨痕
   roof: { map: 'tiles', detail: .9, tile: 1.3, mottle: .15, bump: .8 },
   plaster: { map: 'weathered-plaster', detail: .9, tile: 2.4, mottle: .14, streaks: .6, bump: .4 },
 };
 const STYLE_OF = { 'ijn-hull': 'paint', 'ijn-light': 'paint', 'roc-hull': 'paint', 'roc-light': 'paint', 'hull-vc': 'hull',
   daihatsu: 'paint', rust: 'rust', rust2: 'rust', 'ijn-deck': 'deck', 'roc-deck': 'deck', wood: 'deck', 'daihatsu-floor': 'deck',
   stake: 'deck', trunk: 'deck', concrete: 'concrete', 'concrete-dark': 'concrete', sandbag: 'sandbag', earth: 'earth',
-  'earth-bank': 'earth', trench: 'earth', 'gun-green': 'gun', 'gun-dark': 'gun', dark: 'gun', 'house-wall': 'plaster', 'house-roof': 'roof' };
+  'earth-bank': 'earth', trench: 'earth', 'gun-green': 'gun', 'gun-dark': 'gun', dark: 'gun', 'house-wall': 'plaster', 'house-roof': 'roof',
+  masonry: 'concrete', 'turret-grey': 'steel', 'flak-grey': 'steel' };
 export function mat(key, color, roughness = .8, metalness = .15, extra = {}) {
   if (!materials.has(key)) {
     const material = new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
     const style = SURFACE_STYLES[STYLE_OF[key]];
-    if (style) patchSurface(material, { ...style, map: surfaceMap(style.map) });
+    if (style) patchSurface(material, { ...style, map: style.map ? surfaceMap(style.map) : null });
     materials.set(key, material);
   }
   return materials.get(key);
@@ -598,17 +600,30 @@ export function createCoastalGunModel(point) {
   const C = M.concrete(), CD = M.concreteDark(), G = mat(`coastal-green-${point.id}`, 0x4f5944, .7, .35), GD = M.gunDark();
   // 圆形炮台：前 240° 胸墙（外侧斜坡护坡）、炮台底板、座圈、待发弹壁龛
   add(base, new THREE.CylinderGeometry(6.2, 6.6, .8, 40), C, 0, -.38, 0);
-  const wall = new THREE.LatheGeometry([new THREE.Vector2(8.6, -1.6), new THREE.Vector2(7.6, .2), new THREE.Vector2(6.5, 1.25),
-    new THREE.Vector2(5.55, 1.3), new THREE.Vector2(5.3, 1.05), new THREE.Vector2(5.3, -.1)], 40, Math.PI - 2.15, 4.3);
+  // 胸墙：全封闭炮塔自带装甲，按照片只做低矮的混凝土炮台边沿（约 0.4 米），让炮塔整体露出；开放式高射炮仍用高胸墙
+  const wall = flak ? new THREE.LatheGeometry([new THREE.Vector2(8.6, -1.6), new THREE.Vector2(7.6, .2), new THREE.Vector2(6.5, 1.25),
+    new THREE.Vector2(5.55, 1.3), new THREE.Vector2(5.3, 1.05), new THREE.Vector2(5.3, -.1)], 40, Math.PI - 2.15, 4.3)
+    : new THREE.LatheGeometry([new THREE.Vector2(8.2, -1.6), new THREE.Vector2(7.2, .1), new THREE.Vector2(6.6, .4),
+      new THREE.Vector2(5.9, .42), new THREE.Vector2(5.7, -.1)], 40, Math.PI - 2.15, 4.3);
   add(base, wall, C);
-  const earth = new THREE.LatheGeometry([new THREE.Vector2(12, -2.6), new THREE.Vector2(9.8, -.6), new THREE.Vector2(7.4, .3)], 32, Math.PI - 2.05, 4.1);
+  const earth = new THREE.LatheGeometry(flak ? [new THREE.Vector2(12, -2.6), new THREE.Vector2(9.8, -.6), new THREE.Vector2(7.4, .3)]
+    : [new THREE.Vector2(11, -2.6), new THREE.Vector2(9, -.8), new THREE.Vector2(7.1, .05)], 32, Math.PI - 2.05, 4.1);
   add(base, earth, mat('battery-turf', 0x5d6844, 1, 0));
   add(base, new THREE.TorusGeometry(3.4, .07, 4, 48), GD, 0, .02, 0).rotation.x = Math.PI / 2;
   cyl(base, 1.5, 1.8, .9, 0, .45, 0, CD, 24);
-  for (const a of [-1.3, -.45, .45, 1.3]) {
+  if (flak) for (const a of [-1.3, -.45, .45, 1.3]) {
     const x = Math.sin(Math.PI + a) * 5.25, z = Math.cos(Math.PI + a) * 5.25;
     const niche = box(base, 1.1, .8, .35, x, .55, z, M.black()); niche.rotation.y = a;
     for (let k = 0; k < 3; k++) { const shell = cyl(base, .09, .09, .62, x + Math.cos(a) * (k - 1) * .25, .55, z - Math.sin(a) * (k - 1) * .25 + .05, M.brass(), 8); shell.userData.keep = false; }
+  }
+  if (!flak) {   // 炮位两侧与后方的块石护墙（参照照片中的毛石挡土墙）
+    const stone = mat('masonry', 0xa79a82, .98, 0);
+    let seed = 17; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    // 后半圈（炮塔两侧后方至后方）弧形毛石墙，半径约 7.6 米、高约 1.5 米，正面射界不受遮挡
+    for (let row = 0; row < 4; row++) for (let a = 1.75; a < TAU - 1.75; a += .075 + rnd() * .04) {
+      const r = 7.6 + (rnd() - .5) * .1, b = box(base, .55 + rnd() * .3, .34 + rnd() * .1, .5, Math.sin(Math.PI + a) * r, .2 + row * .38, Math.cos(Math.PI + a) * r, stone);
+      b.rotation.y = a + (rnd() - .5) * .1;
+    }
   }
   // 炮台后方：通往弹药库的台阶与掩蔽部入口（半埋混凝土，覆土）
   box(base, 3.6, .2, 3, 0, -.1, 6.9, CD);
@@ -636,29 +651,40 @@ export function createCoastalGunModel(point) {
     for (const sign of [1, -1]) { rod(barrel, [sign * .35, -.2, .7], [sign * .35, .6, -.4], .07, G); }   // 平衡机
     rod(barrel, [-.6, 0, 0], [.6, 0, 0], .12, GD);
   } else {
-  // 炮塔：前倾正面装甲 + 侧板 + 顶板，前方开观瞄窗；后部开敞
-  box(swivel, 1.6, 1.1, 1.4, 0, -1.55, .2, GD);                               // 上架
-  const frontLower = box(swivel, 3.6, 1.7, .18, 0, -.95, -1.45, G); frontLower.rotation.x = -.12;
-  for (const sign of [1, -1]) box(swivel, .45, 1.25, .18, sign * 1.58, .38, -1.4, G); // 窗框立柱
-  const visor = box(swivel, 3.7, .32, .2, 0, 1.12, -1.35, G); visor.rotation.x = .25;
-  box(swivel, 3.7, .12, 3.4, 0, 1.25, .25, G);                                 // 顶板
-  for (const sign of [1, -1]) {
-    const side = box(swivel, .16, 3.1, 3.2, sign * 1.84, -.3, .2, G);
-    box(swivel, .18, .1, 2.8, sign * 1.84, .9, .25, GD);                       // 铆接压条
-    box(swivel, .18, .2, .5, sign * 1.84, .3, -.4, M.black());                 // 侧观察孔
-    side.userData.sideArmor = true;
+  // 全封闭装甲炮塔（参照江阴要塞遗存岸防炮照片）：圆角箱形炮室，正面近乎竖直，中央竖向炮门，左前方拱形观瞄窗，表面铆接吊耳
+  const T = mat('turret-grey', 0x3f4443, .72, .18);   // 哑光深灰涂装钢板（金属度低，避免映出天空发白）
+  const profile = new THREE.Shape();   // 侧视轮廓：x = 向前距离，y = 高度（相对耳轴）
+  profile.moveTo(-2.15, -1.95); profile.lineTo(1.75, -1.95); profile.lineTo(1.95, -.6); profile.lineTo(1.85, .75);
+  profile.quadraticCurveTo(1.7, 1.25, 1.1, 1.3); profile.lineTo(-1.5, 1.3); profile.quadraticCurveTo(-2.2, 1.25, -2.25, .5); profile.lineTo(-2.15, -1.95);
+  const width = 3.0, house = new THREE.ExtrudeGeometry(profile, { depth: width, bevelEnabled: true, bevelThickness: .28, bevelSize: .28, bevelSegments: 4, curveSegments: 10 });
+  house.translate(0, 0, -width / 2); house.rotateY(Math.PI / 2);   // 轮廓 x（向前）→ 世界 -z；挤出方向 → 世界 x
+  add(swivel, house, T);
+  const front = -2.2;                                              // 炮室正面（-z）
+  box(swivel, .62, 1.55, .5, 0, .05, front - .02, M.black());       // 竖向炮门
+  for (const sign of [1, -1]) box(swivel, .14, 1.75, .3, sign * .42, .05, front - .1, T);   // 炮门两侧加强框
+  // 左前方拱形观瞄窗（窗框 + 黑色窗洞）
+  const arch = new THREE.Shape(); arch.moveTo(-.28, -.55); arch.lineTo(.28, -.55); arch.lineTo(.28, .25); arch.absarc(0, .25, .28, 0, Math.PI, false); arch.lineTo(-.28, -.55);
+  const archGeo = new THREE.ExtrudeGeometry(arch, { depth: .3, bevelEnabled: true, bevelThickness: .06, bevelSize: .06, bevelSegments: 2 });
+  add(swivel, archGeo, T, -.95, .35, front - .28);
+  const hole = new THREE.Shape(); hole.moveTo(-.18, -.42); hole.lineTo(.18, -.42); hole.lineTo(.18, .22); hole.absarc(0, .22, .18, 0, Math.PI, false); hole.lineTo(-.18, -.42);
+  add(swivel, new THREE.ShapeGeometry(hole), M.black(), -.95, .35, front - .3).rotation.y = Math.PI;
+  // 吊耳、铰链与铆接压条（正面与侧面）
+  for (const [x, y] of [[-1.25, .95], [1.15, .95], [-1.25, -.2], [1.15, -.2], [-1.25, -1.2], [1.15, -1.2], [-.5, -1.25], [.5, -1.25]]) {
+    box(swivel, .22, .1, .12, x, y, front - .06, T); box(swivel, .06, .16, .14, x, y - .1, front - .07, T);
   }
-  box(swivel, .5, .4, .7, -1.1, 1.5, -.6, G); box(swivel, .44, .12, .04, -1.1, 1.5, -.96, M.black()); // 炮长观瞄罩
-  for (let i = 0; i < 6; i++) { const r = cyl(swivel, .05, .05, .03, -1.6 + i * .64, -1.75, -1.55, GD, 6); r.rotation.x = Math.PI / 2; } // 铆钉
-  // 炮身：耳轴、摇架、驻退复进机、炮管（炮口加厚）、炮闩
-  tubeZ(barrel, .13, .22, s.barrel, 0, 0, 0, GD, 16);
-  tubeZ(barrel, .2, .2, .35, 0, 0, -s.barrel + .35, GD, 16);
-  tubeZ(barrel, .32, .32, 1.6, 0, 0, .6, G, 16);                                // 炮尾/身管加强段
-  box(barrel, .5, .5, .7, 0, 0, 1.1, GD);                                       // 炮闩
-  for (const y of [.34, -.34]) tubeZ(barrel, .1, .1, 2.6, 0, y, .9, G, 10);    // 驻退复进机
-  box(barrel, .8, .9, 1.6, 0, 0, .2, G);                                        // 摇架
-  rod(barrel, [-.6, 0, 0], [.6, 0, 0], .14, GD);                                // 耳轴
-  rod(barrel, [.45, -.1, 1.3], [.45, -.1, 1.75], .04, M.wood());                // 闩柄
+  for (const sign of [1, -1]) {
+    for (const y of [.9, -.1, -1.1]) box(swivel, .12, .1, 2.6, sign * (width / 2 + .3), y, -.1, T);       // 侧面压条
+    box(swivel, .1, 1.5, .9, sign * (width / 2 + .32), -.25, .9, M.black());                            // 侧门缝
+    box(swivel, .12, .14, .3, sign * (width / 2 + .38), -.2, .55, T);                                   // 门把手
+  }
+  for (let i = 0; i < 7; i++) { const r = cyl(swivel, .045, .045, .04, -1.3 + i * .43, 1.62, -1.6 + (i % 2) * .2, GD, 6); }   // 顶部铆钉
+  box(swivel, .9, .22, .5, .7, 1.66, .5, T);                                                            // 顶部通风罩
+  // 炮身：炮门内的防盾套箍 + 细长身管（炮口略加厚）
+  tubeZ(barrel, .3, .3, .45, 0, 0, -2.05, T, 18);                   // 炮门处套箍
+  tubeZ(barrel, .17, .24, 1.6, 0, 0, -2.45, GD, 18);                 // 身管加粗段
+  tubeZ(barrel, .12, .17, s.barrel - 4.4, 0, 0, -4.05, GD, 18);      // 细长身管（照片中约为炮塔长度的 2.5 倍）
+  tubeZ(barrel, .155, .155, .35, 0, 0, -s.barrel + .35, GD, 18);     // 炮口加厚环
+  rod(barrel, [-.5, 0, 0], [.5, 0, 0], .14, GD);                    // 耳轴
   }
   // 炮手（随炮塔转动）：装填手抱弹、瞄准手
   for (const [x, z, rifle] of [[.9, 2.4, false], [-1.2, 1.9, false]]) {
@@ -676,6 +702,78 @@ export function createCoastalGunModel(point) {
   root.userData.destroy = () => {
     swivel.rotation.z = .18; barrel.rotation.x = -.22; swivel.position.y = mh - .35;
     G.color.setHex(0x2a2924);
+    root.userData.update = () => { root.position.x = point.x; root.position.z = point.z; root.updateMatrixWorld(true); };
+  };
+  root.userData.update();
+  return root;
+}
+
+// 德制 8.8 cm Flak 18/36 高射炮：十字形炮座（Kreuzlafette）+ 四个调平支脚、中央立柱、上架两侧板、
+// 摇架与细长身管（L/56）、身管上方的驻退复进机、两侧平衡机、方向/高低手轮与引信测合机，开放式（无防盾）。外围为圆形土石掩体与沙袋。
+export function createFlak88Model(point) {
+  const s = point.weapon.settings, mh = s.muzzleHeight, root = new THREE.Group();
+  const base = group(root), swivel = group(root, 0, mh, 0), barrel = group(swivel);
+  swivel.userData.dynamic = true; barrel.userData.dynamic = true;
+  const F = mat('flak-grey', 0x55594f, .66, .25), FD = M.gunDark(), E = mat('battery-turf', 0x5d6844, 1, 0);
+  // 掩体：圆形土墙 + 沙袋胸墙，后方留出入口
+  const ring = new THREE.LatheGeometry([new THREE.Vector2(9.5, -.8), new THREE.Vector2(7.6, .9), new THREE.Vector2(6.6, 1.0), new THREE.Vector2(6.3, -.2)], 32, .5, TAU - 1);
+  add(base, ring, E).rotation.y = Math.PI;
+  for (let k = 0; k < 26; k++) { const a = Math.PI + .3 + k / 26 * (TAU - .9), r = 6.5;
+    const bag = box(base, 1, .34, .55, Math.sin(a) * r, 1.15, Math.cos(a) * r, M.sand()); bag.rotation.y = a; }
+  // 十字形炮座（Kreuzlafette）：前后主梁较长、左右支腿较短，梁身为向外收窄的箱形梁；四端为带调平丝杠的圆形座盘
+  const beam = (length, angle) => {
+    const shape = new THREE.Shape(); shape.moveTo(0, -.28); shape.lineTo(length, -.16); shape.lineTo(length, .16); shape.lineTo(0, .28); shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: .32, bevelEnabled: true, bevelThickness: .03, bevelSize: .03, bevelSegments: 1 });
+    geometry.rotateX(Math.PI / 2); geometry.translate(0, .16, 0);
+    const mesh = add(base, geometry, F, 0, .42, 0); mesh.rotation.y = angle; return mesh;
+  };
+  for (const [length, angle] of [[3.4, 0], [3.4, Math.PI], [2.7, Math.PI / 2], [2.7, -Math.PI / 2]]) {
+    beam(length, angle);
+    const x = Math.cos(angle) * (length - .1), z = -Math.sin(angle) * (length - .1);
+    cyl(base, .34, .4, .12, x, .06, z, FD, 14);                          // 座盘
+    cyl(base, .06, .06, .55, x, .38, z, FD, 8);                          // 调平丝杠
+    cyl(base, .14, .14, .22, x, .5, z, F, 10);                           // 丝杠套筒
+    const crank = add(base, new THREE.TorusGeometry(.12, .02, 4, 12), FD, x, .68, z); crank.rotation.x = Math.PI / 2;
+  }
+  cyl(base, .55, .62, .3, 0, .55, 0, F, 20);                            // 底座板
+  cyl(base, .42, .55, mh - 1.15, 0, .7 + (mh - 1.15) / 2, 0, F, 20);     // 中央立柱（锥形）
+  // 上架：转盘、两块高大的耳轴支板、炮手座椅、方向/高低手轮、引信测合机、两侧平衡机
+  cyl(swivel, .85, .85, .16, 0, -mh + 1.2, 0, FD, 24);
+  const bracket = new THREE.Shape(); bracket.moveTo(-.75, 0); bracket.lineTo(.65, 0); bracket.lineTo(.3, mh - .95); bracket.lineTo(-.35, mh - .95); bracket.closePath();
+  for (const sign of [1, -1]) {
+    const geometry = new THREE.ExtrudeGeometry(bracket, { depth: .1, bevelEnabled: false }); geometry.rotateY(Math.PI / 2);
+    add(swivel, geometry, F, sign * .42 - .05, -mh + 1.25, 0);
+    // 平衡机：上架前下方斜向摇架的粗圆筒（照片中最显眼的两根竖筒）
+    rod(swivel, [sign * .62, -mh + 1.35, -.55], [sign * .5, -.15, -.85], .14, F, 12);
+    rod(swivel, [sign * .5, -.15, -.85], [sign * .45, .02, -1.0], .07, FD, 8);
+  }
+  for (const [x, z] of [[.95, .55], [-.95, .55]]) { cyl(swivel, .2, .2, .06, x, -.6, z, FD, 10); rod(swivel, [x * .55, -.75, z], [x, -.6, z], .035, FD); }
+  for (const [x, y, z] of [[.78, -.35, .1], [-.78, -.35, .1]]) {
+    const wheel = add(swivel, new THREE.TorusGeometry(.2, .025, 4, 18), FD, x, y, z); wheel.rotation.y = Math.PI / 2;
+    for (let k = 0; k < 3; k++) { const spoke = rod(swivel, [x, y, z], [x, y + Math.sin(k * 2.1) * .19, z + Math.cos(k * 2.1) * .19], .012, FD, 4); }
+  }
+  box(swivel, .42, .75, .5, -.95, -.55, -.35, F); box(swivel, .3, .12, .3, -.95, -.12, -.35, FD);   // 引信测合机
+  // 身管：L/56 细长炮管（略带锥度）、炮口、炮尾/炮闩、方形摇架、身管上方两根驻退复进筒
+  box(barrel, .5, .46, 2.1, 0, 0, .25, F);                              // 摇架
+  tubeZ(barrel, .085, .12, s.barrel - .3, 0, 0, -.8, FD, 16);
+  tubeZ(barrel, .1, .1, .3, 0, 0, -s.barrel - .25, FD, 14);             // 炮口
+  tubeZ(barrel, .16, .16, .7, 0, 0, -.6, FD, 16);                       // 身管根部
+  box(barrel, .46, .5, .75, 0, 0, 1.45, FD);                            // 炮尾
+  box(barrel, .56, .14, .5, 0, -.3, 1.45, F);                           // 闩座
+  tubeZ(barrel, .11, .11, 2.7, 0, .33, 1.2, F, 12);                     // 驻退机
+  tubeZ(barrel, .085, .085, 2.3, 0, .52, 1.0, F, 12);                   // 复进机
+  for (const z of [-.6, .3, 1.0]) box(barrel, .24, .5, .1, 0, .32, z, F);   // 箍带
+  rod(barrel, [-.5, 0, 0], [.5, 0, 0], .1, FD);                         // 耳轴
+  for (const [x, z] of [[1.1, 1.4], [-1.2, 1.2]]) { const man = crewMember(false); man.position.set(x, -mh, z); man.rotation.y = Math.PI * .92; swivel.add(man); }
+  mergeStatic(base); mergeStatic(swivel); mergeStatic(barrel);
+  root.userData.update = () => {
+    root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
+    swivel.rotation.y = point.yaw - point.heading; barrel.rotation.x = point.pitch;
+    barrel.position.z = (point.recoil ?? 0) * 1.2;
+    root.updateMatrixWorld(true);
+  };
+  root.userData.destroy = () => {
+    swivel.rotation.z = .25; barrel.rotation.x = -.3; F.color.setHex(0x2b2a26);
     root.userData.update = () => { root.position.x = point.x; root.position.z = point.z; root.updateMatrixWorld(true); };
   };
   root.userData.update();
@@ -815,6 +913,7 @@ export function createBlockshipModel({ kind = 'merchant', length = 46, beam = 8,
 // 统一入口：按点位 mount 选择模型（coastal / deck / nest），其余交给项目原有模型
 export function createJiangyinGunModel(point, createProjectModel) {
   const mount = point.weapon.settings.mount;
+  if (mount === 'coastal' && point.weapon.settings.variant === 'flak88') return createFlak88Model(point);
   if (mount === 'coastal') return createCoastalGunModel(point);
   if (mount === 'deck') return createDeckGunModel(point);
   if (mount === 'shipTurret') return createShipTurretModel(point);

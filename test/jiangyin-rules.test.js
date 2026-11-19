@@ -20,7 +20,8 @@ test('the scuttled blockships close the whole river at its narrowest point; the 
   for (let z = -RIVER_HALF + 6; z <= RIVER_HALF - 6; z += 3) assert.ok([-6, 0, 6].some(x => insideWreck(x, z, 0, zones)), `barrier closes z=${z}`);
   for (const ship of BLOCKSHIPS) {
     assert.ok(groundHeight(...ship.slot.slice(0, 2)) < 0, `${ship.id} sinks in the river`);
-    assert.ok(ship.start[0] > ship.slot[0] + 40 && ship.hold[0] > ship.slot[0], `${ship.id} waits downstream and sails upstream to the narrows`);
+    assert.ok(ship.start[0] < ship.slot[0] - 40 && ship.hold[0] < ship.slot[0], `${ship.id} waits upstream (west) and sails down to the narrows`);
+    assert.ok(groundHeight(...ship.start) < -3 && groundHeight(...ship.hold) < -3, `${ship.id} anchors in navigable water`);
   }
   const flagship = BLOCKSHIPS.at(-1);
   assert.ok(flagship.flagship && BLOCKSHIPS.filter(ship => ship.flagship).length === 1);
@@ -40,6 +41,8 @@ test('shore posts sit on land and face the river', () => {
     assert.ok(towardRiver < 0, `${post.id} faces the river`);
   }
   assert.equal(jiangyinObjectives().length, JIANGYIN_POSTS.filter(post => post.kind === 'battery').length);
+  for (const post of JIANGYIN_POSTS.filter(post => post.kind === 'battery'))
+    assert.ok(groundHeight(post.x, post.z) > 40, `${post.id} sits on a hilltop, not at the foot of the slope`);
 });
 
 test('three friendly warships fight phase one; the phase ends only when all are fully sunk', () => {
@@ -81,12 +84,12 @@ test('possession switching skips destroyed posts in both directions and reports 
   assert.throws(() => nextPostId(posts, 'a', 2), RangeError);
 });
 
-test('enemy attacks by water, land and air: 6 infantry squads, 2 tank platoons, 1 air section, spawned upstream out of sight', async () => {
-  const { LAND_SPAWNS, AIR_SPAWN, riverCenter } = await import('../src/jiangyin/jiangyin-rules.js');
+test('enemy attacks by water, land and air: 6 infantry squads, 2 tank platoons, 3 air sections, spawned downstream out of sight', async () => {
+  const { LAND_SPAWNS, AIR_SPAWN, riverCenter, JIANGYIN_ADVANCE_GUARD } = await import('../src/jiangyin/jiangyin-rules.js');
   const total = key => JIANGYIN_WAVES.reduce((sum, wave) => sum + (Array.isArray(wave[key]) ? wave[key].length : wave[key]), 0);
-  assert.equal(total('infantry'), 6);
+  assert.equal(total('infantry') + JIANGYIN_ADVANCE_GUARD.infantry.length, 6);
   assert.equal(total('tanks'), 2);
-  assert.equal(total('air'), 1);
+  assert.equal(total('air'), 3);
   for (const spawn of Object.values(LAND_SPAWNS)) {
     assert.ok(groundHeight(spawn.x, spawn.z) > 15, 'land units start on the bank plateau');
     for (const post of JIANGYIN_POSTS) assert.ok(spawn.x - post.x > 250, 'land spawns are far upstream of every player post');
@@ -94,4 +97,29 @@ test('enemy attacks by water, land and air: 6 infantry squads, 2 tank platoons, 
   assert.ok(AIR_SPAWN.x > JIANGYIN_RULES.spawnX && AIR_SPAWN.y > 100);
   assert.ok(riverCenter(JIANGYIN_RULES.spawnX) > 100, 'the river bends so ships appear behind the bend');
   for (const post of JIANGYIN_POSTS) assert.ok(post.x < JIANGYIN_RULES.spawnX - 250, 'player posts are downstream of the enemy');
+});
+
+test('phase one deployment runs west to east: blockships, then our three ships, then the Japanese fleet', async () => {
+  const { JIANGYIN_MOUNTS, JIANGYIN_SQUAD } = await import('../src/jiangyin/jiangyin-rules.js');
+  const ours = JIANGYIN_POSTS.filter(post => post.kind === 'ship');
+  const westmostShip = Math.min(...ours.map(post => post.x)), eastmostShip = Math.max(...ours.map(post => post.x));
+  for (const ship of BLOCKSHIPS) assert.ok(ship.start[0] < westmostShip, `${ship.id} anchors west of our warships`);
+  assert.ok(shipRoute(0)[0].x > eastmostShip + 1000, 'the Japanese fleet enters from the east');
+  for (const post of ours) assert.ok(Math.abs(post.heading + Math.PI / 2) < 1e-9, `${post.id} starts bow-east toward the enemy`);
+  for (const mount of ['shipTurret', 'coastal', 'flak88']) assert.equal(JIANGYIN_MOUNTS[mount].reserve, 75, `${mount} carries 75 shells`);
+  assert.equal(JIANGYIN_SQUAD.members, 11, 'phase two uses the default 11-man infantry squad');
+  assert.equal(JIANGYIN_SQUAD.deployAfter, 10, 'the player watches the scuttling for 10 seconds before landing');
+});
+
+test('trenches in front of the batteries and MG nests are dug a full man deep into the hill', async () => {
+  const rules = await import('../src/jiangyin/jiangyin-rules.js');
+  const trenches = rules.jiangyinTrenches();
+  assert.ok(trenches.length >= 5, 'one trench per coastal battery and MG nest');
+  for (const trench of trenches) {
+    let deepest = 0;
+    for (const [x, z] of trench.points) {
+      deepest = Math.max(deepest, rules.naturalGroundHeight(x, z) - rules.groundHeight(x, z));
+    }
+    assert.ok(deepest >= 1.6, `trench at ${trench.postId} only ${deepest.toFixed(2)} m deep`);
+  }
 });

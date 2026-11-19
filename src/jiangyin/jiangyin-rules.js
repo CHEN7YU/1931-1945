@@ -30,22 +30,26 @@ export const NAVAL_WAVES = Object.freeze([
 
 // 第二阶段（死守两岸）：at 为第二阶段开始后的秒数，5 分钟内依次投入。
 // ships：水面舰艇；landing：登陆艇靠岸方向；infantry：从下游陆路来袭的步兵小队（共 6 个）；
-// tanks：坦克小队（共 2 个，每队 3 辆）；air：航空小队（共 1 个，3 架，被击落前反复来袭）。
+// tanks：坦克小队（共 2 个，每队 3 辆）；air：航空小队（共 3 个，每队 3 架，被击落前反复来袭）。
+// 日军的目标是摧毁我军两岸阵地：5 个阵地全部被毁即失败。
 export const JIANGYIN_WAVES = Object.freeze([
-  { at: 0, ships: [], landing: ['south', 'north'], infantry: ['south'] },
+  { at: 0, ships: [], landing: ['south', 'north'] },
   { at: 40, ships: ['gunboat'], landing: ['south', 'south'], infantry: ['north'], air: 1 },
   { at: 80, ships: [], landing: ['north'], infantry: ['south'], tanks: ['south'] },
-  { at: 125, ships: ['gunboat'], landing: ['north', 'south', 'south'], infantry: ['north'] },
+  { at: 125, ships: ['gunboat'], landing: ['north', 'south', 'south'], infantry: ['north'], air: 1 },
   { at: 170, ships: [], landing: ['north', 'south'], infantry: ['south'], tanks: ['north'] },
-  { at: 215, ships: ['destroyer'], landing: ['south'], infantry: ['north'] },
+  { at: 215, ships: ['destroyer'], landing: ['south'], infantry: ['north'], air: 1 },
   { at: 255, ships: [], landing: ['north', 'south', 'south'] },
 ].map(wave => Object.freeze({ ...wave, ships: Object.freeze(wave.ships), landing: Object.freeze(wave.landing),
   infantry: Object.freeze(wave.infantry ?? []), tanks: Object.freeze(wave.tanks ?? []), air: wave.air ?? 0 })));
 
+// 日军陆军先头部队：玩家在自沉演出中登岸时即从下游陆路出发，约在第二阶段开始时抵达（计入 6 个步兵小队）
+export const JIANGYIN_ADVANCE_GUARD = Object.freeze({ infantry: Object.freeze(['south']) });
+
 // 陆路/空中出生点：下游两岸台地，位于弯道与山丘之后，玩家阵地看不到
 export const LAND_SPAWNS = Object.freeze({
-  south: Object.freeze({ x: 940, z: RIVER_HALF + 300 }),
-  north: Object.freeze({ x: 900, z: -(RIVER_HALF + 240) }),
+  south: Object.freeze({ x: 1000, z: RIVER_HALF + 520 }),   // 巫山南麓背后
+  north: Object.freeze({ x: 960, z: -(RIVER_HALF + 380) }),
 });
 export const AIR_SPAWN = Object.freeze({ x: 2800, y: 260, z: 0 });
 
@@ -60,26 +64,38 @@ export const ENEMY_TYPES = Object.freeze({
   tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
     shellDamage: 40, shellRadius: 4, dispersion: 4, radius: 2.4 }),
   aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),
-  landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 11, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
-  infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 3.2, attackRange: 5, attackInterval: 2.5, attackDamage: 25 }),
+  landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
+  infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 3.8, attackRange: 5, attackInterval: 2.5, attackDamage: 25,
+    shootRange: 140, shootInterval: 2.8, shootDamage: 34 }),   // 遇到我军步兵时就地射击
 });
+
+// 第二阶段玩家步兵小队（与其他地图的默认步兵班一致：11 人，中正式步枪，第 2 人为捷克式轻机枪手，每人 2 枚手榴弹）
+export const JIANGYIN_SQUAD = Object.freeze({ members: 11, walk: 2.7, run: 5.2, aimWalk: 1.4, eye: 1.62, health: 100,
+  reserve: Object.freeze({ rifle: 60, zb26: 200 }), grenades: 2, rifleDamage: 100, rifleRange: 180,
+  grenade: Object.freeze({ speed: 17, fuse: 3.4, radius: 7, damage: 160 }), interactRange: 6, respawnSeconds: 6,
+  deployAfter: 10 });   // 自沉开始 10 秒后，玩家以步兵小队在炮台附近复生
 
 // 我方可接管的火力点。profile 复用 src/emplacements.js 中的 EMPLACEMENT_PROFILES。
 // bank 为 null 表示江面炮艇；altitude 由地形函数计算。
 export const JIANGYIN_POSTS = Object.freeze([
   // 第一阶段：我军三艘水面舰艇（AI 航行，玩家只操作艏主炮塔）。length/beam 为实舰主尺度（米）。
-  { id: 'pinghai', name: '平海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -300, z: -220, heading: -Math.PI / 2, bank: null,
+  // 部署（自西向东）：上游锚地的阻塞船 → 江心我军三舰 → 下游日军舰队。舰首朝东迎敌。
+  { id: 'pinghai', name: '平海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -420, z: -200, heading: -Math.PI / 2, bank: null,
     health: 1150, key: '1', length: 109, beam: 11.9 },
-  { id: 'ninghai', name: '宁海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -560, z: 240, heading: -Math.PI / 2, bank: null,
+  { id: 'ninghai', name: '宁海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -620, z: 230, heading: -Math.PI / 2, bank: null,
     health: 1150, key: '2', length: 109, beam: 11.9 },
-  { id: 'yixian', name: '逸仙舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -80, z: 60, heading: -Math.PI / 2, bank: null,
+  { id: 'yixian', name: '逸仙舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -250, z: 60, heading: -Math.PI / 2, bank: null,
     health: 850, key: '3', length: 82, beam: 10.4 },
-  // 两岸阵地：两个阶段都由炮手据守；第二阶段起玩家在此复生
-  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 460, z: RIVER_HALF + 40, bank: 'south', key: '4', health: 760 },
-  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -320, z: RIVER_HALF + 40, bank: 'south', key: '5', health: 760 },
-  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -220, z: -(RIVER_HALF + 38), bank: 'north', key: '6', health: 680 },
-  { id: 'south-mg', name: '南岸崖顶机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 640, z: RIVER_HALF + 38, heading: -1.28, bank: 'south', key: '7', health: 480 },
-  { id: 'north-mg', name: '北岸江堤机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 430, z: -(RIVER_HALF + 36), heading: -1.86, bank: 'north', key: '8', health: 480 },
+  // 两岸阵地：岸防炮与机枪堡都设在山顶（南岸黄山、肖山、长山；北岸江边土岗），两个阶段都由炮手据守；第二阶段玩家以步兵小队在附近复生
+  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 250, bank: 'south', key: '4', health: 760 },
+  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -380, z: RIVER_HALF + 250, bank: 'south', key: '5', health: 760 },
+  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -260, z: -(RIVER_HALF + 230), bank: 'north', key: '6', health: 680 },
+  // 每座岸防炮台旁配置一门德制 8.8 cm Flak 18/36 高射炮（高平两用，主要对空）
+  { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 262, bank: 'south', key: '', health: 520 },
+  { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 262, bank: 'south', key: '', health: 520 },
+  { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 242), bank: 'north', key: '', health: 480 },
+  { id: 'south-mg', name: '肖山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 120, z: RIVER_HALF + 220, bank: 'south', key: '7', health: 480 },
+  { id: 'north-mg', name: '北岸土岗机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 200), bank: 'north', key: '8', health: 480 },
 ].map(Object.freeze));
 
 // 岸防火力在本关允许更大俯角/射程（江面在炮位下方），只覆盖本关点位，不改动全局 EMPLACEMENT_PROFILES。
@@ -92,20 +108,21 @@ export const JIANGYIN_PROFILE_OVERRIDES = Object.freeze({
 // coastal：钢筋混凝土圆形炮台上的装甲防盾岸防炮；deck：炮艇艇首炮；nest：滩头钢筋混凝土机枪堡。
 // 口径/型号为游戏化设定，不对应某一门具体史实火炮。
 export const JIANGYIN_MOUNTS = Object.freeze({
-  coastal: Object.freeze({ mount: 'coastal', name: '德制150毫米加农炮', muzzleHeight: 2.1, barrel: 5.6, damage: 220, radius: 10, aiInterval: 11,
-    reload: 6, reserve: 30, traverse: 1.45, minPitch: -.55, maxPitch: .3, range: 3200, shellSpeed: 520,
+  coastal: Object.freeze({ mount: 'coastal', name: '德制150毫米加农炮', muzzleHeight: 2.1, barrel: 7.6, damage: 220, radius: 10, aiInterval: 11,
+    reload: 6, reserve: 75, traverse: 1.45, minPitch: -.55, maxPitch: .3, range: 3200, shellSpeed: 520,
     view: Object.freeze({ first: Object.freeze({ back: -1.75, up: .8 }), third: Object.freeze({ back: 11, up: 4.2 }) }) }),
   // 据记载，1937 年江阴要塞配有德制 88 毫米炮 8 门、德制 150 毫米加农炮 4 门及各型旧式榴弹炮；具体部署到哪座炮台为游戏改编。
-  flak88: Object.freeze({ mount: 'coastal', variant: 'flak88', name: '德制88毫米炮', muzzleHeight: 1.75, barrel: 5.2, damage: 150, radius: 7, aiInterval: 7,
-    reload: 3.2, reserve: 50, traverse: 1.6, minPitch: -.5, maxPitch: 1.25, range: 3200, shellSpeed: 640,   // 高平两用
+  flak88: Object.freeze({ mount: 'coastal', variant: 'flak88', name: '8.8 cm Flak 18/36 高射炮', muzzleHeight: 2.05, barrel: 4.9, damage: 150, radius: 7, aiInterval: 7,
+    reload: 3.2, reserve: 75, traverse: 1.6, minPitch: -.5, maxPitch: 1.25, range: 3200, shellSpeed: 640,   // 高平两用
     view: Object.freeze({ first: Object.freeze({ back: 1.6, up: 1.05 }), third: Object.freeze({ back: 10, up: 4 }) }) }),
   // 平海/宁海舰艏为双联 140 毫米主炮塔（逸仙艏炮口径不同，游戏中统一处理）
   shipTurret: Object.freeze({ mount: 'shipTurret', name: '舰艏双联主炮', muzzleHeight: 1.7, barrel: 7, damage: 210, radius: 9, aiInterval: 6.5,
-    reload: 5, reserve: 80, traverse: 2.5, minPitch: -.15, maxPitch: .45, range: 3200, shellSpeed: 600,
+    reload: 5, reserve: 75, traverse: 2.5, minPitch: -.15, maxPitch: .45, range: 3200, shellSpeed: 600,
     view: Object.freeze({ first: Object.freeze({ back: -1.2, up: 1.35 }), third: Object.freeze({ back: 52, up: 20 }) }) }),   // 第一人称：炮塔前部观瞄位，炮管在视野下方
   deck: Object.freeze({ mount: 'deck', name: '76毫米艇首炮', muzzleHeight: 1.25, barrel: 3, reserve: 40, shellSpeed: 300,
     view: Object.freeze({ first: Object.freeze({ back: 1.35, up: .78 }), third: Object.freeze({ back: 24, up: 10.5 }) }) }),
-  nest: Object.freeze({ mount: 'nest', view: Object.freeze({ third: Object.freeze({ back: 6, up: 2.4 }) }) }),
+  // 山顶环形机枪堡：可全向射击（日军步兵会沿江岸从侧面迂回）
+  nest: Object.freeze({ mount: 'nest', traverse: Math.PI, view: Object.freeze({ third: Object.freeze({ back: 6, up: 2.4 }) }) }),
 });
 
 // 战术图/开场字幕使用的地名（据江阴海战示意图的相对顺序，按史实方向：上游（西）为江阴城、黄山、肖山，堵塞线在长山一线，下游（东）为巫山；北岸为八圩港、天生港）
@@ -145,13 +162,70 @@ export function terrainFbm(x, z, octaves = 4) {
 const smooth = (a, b, t) => { const k = Math.max(0, Math.min(1, (t - a) / (b - a))); return k * k * (3 - 2 * k); };
 let postPads = null;
 function padWeight(x, z) {
+  if (Math.abs(Math.abs(z) - RIVER_HALF) > 420) return 1;
   postPads ??= JIANGYIN_POSTS.filter(post => post.kind === 'battery').map(post => [post.x, post.z]);
   let w = 1;
   for (const [px, pz] of postPads) w = Math.min(w, smooth(9, 20, Math.hypot(x - px, z - pz)));
   return w;
 }
-export function groundHeight(x, z) {
+// 自然地表（不含人工挖掘的战壕），供战壕护壁、沙袋等摆放
+export function naturalGroundHeight(x, z) {
   return baseGroundHeight(x, z) + terrainDetail(x, z);
+}
+export function groundHeight(x, z) {
+  return naturalGroundHeight(x, z) + trenchOffset(x, z);
+}
+
+// ---------- 阵地前沿战壕（已挖好，约一人深） ----------
+// 每座岸防炮与机枪堡前方（面向江面）一道折线主壕，两端各接一条折向后方的交通壕，交通壕末端缓坡出地面。
+// 壕深 1.8 米、壕底宽约 1 米、上口宽约 1.6 米（木板护壁，近乎竖直）；江面一侧堆起约 0.5 米的胸墙。
+export const TRENCH = Object.freeze({ depth: 1.8, floorHalf: .5, topHalf: .8, parapet: .55, ramp: 7 });
+function buildTrenches() {
+  return JIANGYIN_POSTS.filter(post => post.kind === 'battery' && post.mount !== 'flak88').map(post => {
+    const h = postFacing(post), fx = -Math.sin(h), fz = -Math.cos(h), rx = -fz, rz = fx;
+    const nest = post.mount === 'nest', reach = nest ? 14 : 20, half = nest ? 12 : 20;
+    const front = [];
+    for (let u = -half; u <= half + 1e-6; u += 4) {
+      const zig = Math.round(u / 4) % 2 ? 1.6 : -1.6;   // 折线：避免敌弹沿壕纵射
+      front.push([post.x + fx * (reach + zig) + rx * u, post.z + fz * (reach + zig) + rz * u]);
+    }
+    const tail = sign => { const [x, z] = front[sign < 0 ? 0 : front.length - 1];
+      return [[x - fx * 6 + rx * sign * 2, z - fz * 6 + rz * sign * 2], [x - fx * 13 + rx * sign * 3, z - fz * 13 + rz * sign * 3]]; };
+    const points = [...tail(-1).reverse(), ...front, ...tail(1)];
+    const lengths = [0];
+    for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
+    const xs = points.map(p => p[0]), zs = points.map(p => p[1]), pad = 4;
+    return Object.freeze({ postId: post.id, fx, fz, points: Object.freeze(points.map(p => Object.freeze(p))), lengths: Object.freeze(lengths),
+      total: lengths.at(-1), bounds: Object.freeze({ minX: Math.min(...xs) - pad, maxX: Math.max(...xs) + pad, minZ: Math.min(...zs) - pad, maxZ: Math.max(...zs) + pad }) });
+  });
+}
+let trenches = null;
+export function jiangyinTrenches() { return trenches ??= buildTrenches(); }
+// 到战壕中线的最近距离、沿线位置与该处是否在江面一侧
+export function trenchProbe(x, z) {
+  let best = null;
+  for (const trench of jiangyinTrenches()) {
+    const b = trench.bounds;
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    const p = trench.points;
+    for (let i = 0; i < p.length - 1; i++) {
+      const ax = p[i][0], az = p[i][1], dx = p[i + 1][0] - ax, dz = p[i + 1][1] - az, len2 = dx * dx + dz * dz;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
+      const px = ax + dx * t, pz = az + dz * t, d = Math.hypot(x - px, z - pz);
+      if (!best || d < best.d) best = { d, s: trench.lengths[i] + t * Math.sqrt(len2), trench, front: (x - px) * trench.fx + (z - pz) * trench.fz > 0 };
+    }
+  }
+  return best;
+}
+function trenchOffset(x, z) {
+  if (!trenches && !JIANGYIN_POSTS.length) return 0;
+  const probe = trenchProbe(x, z);
+  if (!probe || probe.d > 3.2) return 0;
+  const { d, s, trench, front } = probe;
+  const ramp = Math.min(1, s / TRENCH.ramp, (trench.total - s) / TRENCH.ramp);   // 交通壕末端缓坡出地面
+  const cut = TRENCH.depth * ramp * smooth(TRENCH.topHalf, TRENCH.floorHalf, d);
+  const bank = (front ? TRENCH.parapet : TRENCH.parapet * .45) * ramp * Math.sin(Math.PI * Math.max(0, Math.min(1, (d - TRENCH.topHalf) / 2.2)));
+  return -cut + bank;
 }
 function terrainDetail(x, z) {
   const a = Math.abs(z - riverCenter(x)) - SHORE_OFFSET;
@@ -187,7 +261,8 @@ function baseGroundHeight(x, z) {
   let hills = 0;
   if (z > 0) hills += hill(x, zw, -380, R + 250, 430, 170, 68) + hill(x, zw, 120, R + 220, 200, 130, 36) + hill(x, zw, 560, R + 250, 260, 150, 52)
     + hill(x, zw, 1180, R + 280, 300, 170, 48) + hill(x, zw, -1050, R + 300, 260, 160, 30) + hill(x, zw, 1560, 1220, 280, 200, 58);
-  else hills += hill(x, zw, -700, -(R + 300), 220, 120, 10) + hill(x, zw, 1600, -600, 300, 180, 45);   // 北岸弯道处土岗：遮挡下游出生点
+  else hills += hill(x, zw, -700, -(R + 300), 220, 120, 10) + hill(x, zw, 1600, -600, 300, 180, 45)   // 北岸弯道处土岗：遮挡下游出生点
+    + hill(x, zw, -260, -(R + 230), 200, 130, 30) + hill(x, zw, 380, -(R + 200), 140, 100, 20);        // 八圩港炮台、北岸机枪堡所在土岗
   h += hills * onLand;
   return h;
 }
@@ -201,7 +276,7 @@ export function insideWreck(x, z, margin = 0, extra = []) {
   return [...JIANGYIN_WRECK_ZONES, ...extra].some(r => x > r.minX - margin && x < r.maxX + margin && z > r.minZ - margin && z < r.maxZ + margin);
 }
 
-// 自沉封江：我军阻塞船先停泊在堵塞点下游（东侧）两岸锚地，开始后四散开来，再一艘接一艘逆流驶向最窄处（x≈0）就位、引爆自沉，
+// 自沉封江：我军阻塞船先停泊在堵塞点上游（西侧）两岸锚地，开始后四散开来，再一艘接一艘顺流驶向最窄处（x≈0）就位、引爆自沉，
 // 堵住日舰逆流而上的航道。
 // 史载 1937 年 8 月中国海军在江阴自沉“通济”“大同”“自强”“德胜”“威胜”“武胜”等旧舰及征用商轮构筑阻塞线；
 // 本关将其改编为第一、二阶段之间的演出，顺序与站位为游戏设定。旗舰“通济”最后自沉，只露出桅顶与烟囱顶。
@@ -228,7 +303,9 @@ function buildBlockships() {
   let cursor = -RIVER_HALF - 5;
   const placed = ordered.map(([id, name, kind, length, beam], index) => {
     const z = cursor + length / 2; cursor += length - overlap;
-    const x = (index % 2 ? 7 : -7) + (rnd() - .5) * 3, heading = (index % 2 ? 0 : Math.PI) + (rnd() - .5) * .08;
+    const x = (index % 2 ? 7 : -7) + (rnd() - .5) * 3;
+    // 船首指向较近的一岸：每艘船都从江心一侧转入就位点，按船首方向航行，不横移
+    const heading = (z < 0 ? 0 : Math.PI) + (rnd() - .5) * .08;
     const depth = kind === 'flagship' ? 11.5 : 5 + rnd() * 1.5;
     return { id, name, kind, length, beam, slot: [Math.round(x * 10) / 10, Math.round(z * 10) / 10, heading], depth, flagship: kind === 'flagship' || undefined };
   });
@@ -238,12 +315,12 @@ function buildBlockships() {
   const northSide = rest.filter(ship => ship.slot[1] < 0), southSide = rest.filter(ship => ship.slot[1] >= 0);
   while (northSide.length || southSide.length) { if (northSide.length) order.push(northSide.shift()); if (southSide.length) order.push(southSide.shift()); }
   order.push(placed.find(ship => ship.flagship));
-  // 锚地：堵塞点下游两岸浅水区，每岸两列；四散等待位置在锚地上游、江心两侧
+  // 锚地：堵塞点上游（西侧，君山方向）两岸浅水区，每岸两列；开始后四散到锚地与堵塞线之间的江面等待，再依次顺流驶向最窄处
   const count = { north: 0, south: 0 };
   return order.map(ship => {
     const side = ship.slot[1] < 0 ? -1 : 1, key = side < 0 ? 'north' : 'south', k = ship.flagship ? 0 : count[key]++;
-    const start = ship.flagship ? [300, 0] : [260 + (k % 7) * 95, side * (RIVER_HALF - 150 - Math.floor(k / 7) * 110)];
-    const hold = ship.flagship ? [220, 0] : [140 + ((k * 53) % 260), side * (90 + ((k * 97) % 430))];
+    const start = ship.flagship ? [-900, 0] : [-1060 + (k % 7) * 45, side * (RIVER_HALF - 170 - Math.floor(k / 7) * 110)];
+    const hold = ship.flagship ? [-560, 0] : [-640 + ((k * 53) % 200), side * (90 + ((k * 97) % 430))];
     return { ...ship, start, hold };
   });
 }
