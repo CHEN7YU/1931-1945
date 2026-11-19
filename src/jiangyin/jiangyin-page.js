@@ -11,7 +11,9 @@ export const JIANGYIN_MARKUP = `
     <div><small id="jy-top-1-label">我舰尚存</small><strong id="jy-top-1">3/3</strong></div>
     <div><small id="jy-top-2-label">在场日舰</small><strong id="jy-top-2">0</strong></div>
   </div>
+  <div id="jy-hurt"></div>
   <div id="jy-crosshair"><i></i><i></i></div>
+  <div id="jy-interact"></div>
   <div id="jy-range"></div>
   <div id="jy-toast" role="status"></div>
   <ol id="jy-posts" aria-label="可接管阵位"></ol>
@@ -21,16 +23,16 @@ export const JIANGYIN_MARKUP = `
     <div class="jy-bar"><div id="jy-reload"></div></div>
     <small id="jy-help">鼠标瞄准 · 左键开火 · V 第一/第三人称 · Q/E 或 1–8 切换阵位 · M 地图 · Esc 暂停</small>
   </div>
-  <canvas id="jy-radar" width="200" height="200" aria-label="战术简图"></canvas>
+  <canvas id="jy-radar" width="352" height="352" aria-label="战术小地图"></canvas>
 </div>
 <section id="jy-overlay" class="jy-overlay">
   <div class="jy-dialog">
     <span class="jy-kicker" id="jy-kicker">1937 · 江阴</span>
     <h1 id="jy-title">江阴要塞阻击战</h1>
-    <p id="jy-text">第一阶段：日军舰队自下游（吴淞方向）逆流而上，我军“平海”“宁海”“逸仙”三舰迎战。舰艇由 AI 航行，你可在任一舰上复生并操纵舰艏主炮塔。<br />
-三舰全部沉没后，下游锚地的阻塞船依次驶向江面最窄处自沉，堵住日舰去路。<br />第二阶段：死守两岸炮台阵地，抵御日军海陆空进攻 5 分钟。</p>
+    <p id="jy-text">日军舰队自下游（吴淞方向）逆流而上，企图摧毁江阴要塞。你随“平海”“宁海”“逸仙”三舰出战：舰艇由 AI 航行，你可在任一舰上操纵舰艏主炮塔。<br />
+鼠标瞄准 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图 · Esc 暂停</p>
     <div id="jy-stats"></div>
-    <button id="jy-start" class="jy-primary" disabled>正在加载战场…</button>
+    <button id="jy-start" class="jy-primary" disabled>进入战场 ↗</button>
     <a class="jy-link" id="jy-lobby" href="/">返回作战大厅</a>
   </div>
 </section>

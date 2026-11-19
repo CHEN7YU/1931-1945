@@ -5,7 +5,8 @@
 // - 植被：近景复用项目 woodland.js 的落叶树枝干；远景十字面片树林（落叶树/马尾松/常绿阔叶）；成片枯草。
 // - 烟：舰船烟囱煤烟、沉船燃烧烟柱（软粒子）。
 import * as THREE from 'three';
-import { JIANGYIN_RULES, JIANGYIN_POSTS, groundHeight, riverCenter, terrainFbm, RIVER_HALF, postFacing } from './jiangyin-rules.js';
+import { JIANGYIN_RULES, JIANGYIN_POSTS, groundHeight, riverCenter, terrainFbm, RIVER_HALF, postFacing,
+  jiangyinTrenches, naturalGroundHeight, TRENCH } from './jiangyin-rules.js';
 const SO = RIVER_HALF - 70;   // 岸线剖面外移量（与 jiangyin-rules 一致）
 const FLOW = JIANGYIN_RULES.flowSpeed ?? 1.6;   // 江水向东（+x）流动
 import { createWreckModel, mergeStatic, mat } from './jiangyin-models.js';
@@ -89,7 +90,10 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   const terrainGeometry = new THREE.BufferGeometry();
   { const pos = new Float32Array(xs.length * zs.length * 3), index = [];
     let o = 0;
-    for (const z of zs) for (const x of xs) { pos[o++] = x; pos[o++] = groundHeight(x, z); pos[o++] = z; }
+    // 战壕一带由高精度地形块单独绘制（见下），主地形网格在此处压低，避免粗网格盖住壕沟
+    const sunken = jiangyinTrenches().map(t => t.bounds);
+    const under = (x, z) => sunken.some(b => x > b.minX - 1.5 && x < b.maxX + 1.5 && z > b.minZ - 1.5 && z < b.maxZ + 1.5);
+    for (const z of zs) for (const x of xs) { pos[o++] = x; pos[o++] = groundHeight(x, z) - (under(x, z) ? 6 : 0); pos[o++] = z; }
     for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) {
       const a0 = j * xs.length + i, b0 = a0 + 1, c0 = a0 + xs.length, d0 = c0 + 1;
       index.push(a0, c0, b0, b0, c0, d0);
@@ -97,9 +101,6 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
     terrainGeometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     terrainGeometry.setIndex(pos.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(index, 1) : index);
   }
-  const positions = terrainGeometry.attributes.position;
-  terrainGeometry.computeVertexNormals();
-  const normals = terrainGeometry.attributes.normal, colors = [], splat = [];
   const C = hex => new THREE.Color(hex);
   const P = {   // 冬季江南色板（线性空间由 THREE.Color 自动换算）
     mudWet: C(0x4f4636), mud: C(0x6e6149), silt: C(0x9a8a6c), scree: C(0x7f7464), loess: C(0x977f60), rock: C(0x77706a), rockDark: C(0x5c5750),
@@ -113,36 +114,73 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   };
   const forestMask = (x, z) => smoothstep(.52, .66, terrainFbm(x * .012 + 50, z * .012 - 20, 3));
   const color = new THREE.Color();
-  for (let i = 0; i < positions.count; i++) {
-    const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i), ny = normals.getY(i);
-    const a = Math.abs(z - riverCenter(x)) - SO, n1 = terrainFbm(x * .015, z * .015, 3), n2 = terrainFbm(x * .07 + 9, z * .07, 3);
-    let s = 0;
-    if (y < .15) { color.copy(P.mudWet).lerp(P.mud, smoothstep(-1.2, .15, y)); s = 1; }
-    else if (y < 2.8 && ny > .84) { color.copy(P.mud).lerp(P.silt, smoothstep(.15, 1.2, y)).lerp(P.scree, n2 * .35); s = .85; }
-    else if (ny < .78) {
-      const band = Math.abs(Math.sin(y * 1.3 + n2 * 4));
-      color.copy(P.loess).lerp(P.rock, n1).lerp(P.rockDark, band * .35 + smoothstep(.6, .3, ny) * .25);
-      if (ny > .62) color.lerp(P.scree, .35).lerp(P.scrub, smoothstep(.62, .78, ny) * .4);
-      s = .3;
-    } else if (a > 420) {
-      color.copy(P.farHill).lerp(P.scrub, n1).lerp(P.straw, smoothstep(.65, .9, n2) * .3);
-    } else {
-      color.copy(P.straw).lerp(P.strawDark, n2 * .6).lerp(P.turf, smoothstep(.45, .75, n1) * .55);
-      const field = fieldCell(x, z), farm = y < 34 && a > 112 && (nearVillage(x, z, 150) || n1 > .5 || z < 0);
-      if (farm && field.edge > .03) color.lerp(field.id < .38 ? P.wheat : field.id < .7 ? P.fallow : P.strawDark, .78);
-      else if (farm) color.lerp(P.path, .5);
-      color.lerp(P.litter, forestMask(x, z) * smoothstep(26, 40, y) * .55);
-      if (y > 36) color.lerp(P.scrub, smoothstep(36, 55, y) * .6);
+  function paintTerrain(geometry) {
+    const positions = geometry.attributes.position;
+    geometry.computeVertexNormals();
+    const normals = geometry.attributes.normal, colors = [], splat = [];
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i), ny = normals.getY(i);
+      const a = Math.abs(z - riverCenter(x)) - SO, n1 = terrainFbm(x * .015, z * .015, 3), n2 = terrainFbm(x * .07 + 9, z * .07, 3);
+      let s = 0;
+      if (y < .15) { color.copy(P.mudWet).lerp(P.mud, smoothstep(-1.2, .15, y)); s = 1; }
+      else if (y < 2.8 && ny > .84) { color.copy(P.mud).lerp(P.silt, smoothstep(.15, 1.2, y)).lerp(P.scree, n2 * .35); s = .85; }
+      else if (ny < .78) {
+        const band = Math.abs(Math.sin(y * 1.3 + n2 * 4));
+        color.copy(P.loess).lerp(P.rock, n1).lerp(P.rockDark, band * .35 + smoothstep(.6, .3, ny) * .25);
+        if (ny > .62) color.lerp(P.scree, .35).lerp(P.scrub, smoothstep(.62, .78, ny) * .4);
+        s = .3;
+      } else if (a > 420) {
+        color.copy(P.farHill).lerp(P.scrub, n1).lerp(P.straw, smoothstep(.65, .9, n2) * .3);
+      } else {
+        color.copy(P.straw).lerp(P.strawDark, n2 * .6).lerp(P.turf, smoothstep(.45, .75, n1) * .55);
+        const field = fieldCell(x, z), farm = y < 34 && a > 112 && (nearVillage(x, z, 150) || n1 > .5 || z < 0);
+        if (farm && field.edge > .03) color.lerp(field.id < .38 ? P.wheat : field.id < .7 ? P.fallow : P.strawDark, .78);
+        else if (farm) color.lerp(P.path, .5);
+        color.lerp(P.litter, forestMask(x, z) * smoothstep(26, 40, y) * .55);
+        if (y > 36) color.lerp(P.scrub, smoothstep(36, 55, y) * .6);
+      }
+      colors.push(color.r, color.g, color.b); splat.push(s);
     }
-    colors.push(color.r, color.g, color.b); splat.push(s);
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setAttribute('surfSplat', new THREE.Float32BufferAttribute(splat, 1));
   }
-  terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  terrainGeometry.setAttribute('surfSplat', new THREE.Float32BufferAttribute(splat, 1));
-  const terrainMaterial = patchSurface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, metalness: 0 }),
+  paintTerrain(terrainGeometry);
+  const makeTerrainMaterial = (extra = {}) => patchSurface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, metalness: 0, ...extra }),
     { map: surfaceMap('earth'), map2: surfaceMap('dry-silt'), splatAttribute: true, tile: 3.2, macro: .45, detail: .85, mottle: .08, bump: 1.1, rough: .1 });
+  const terrainMaterial = makeTerrainMaterial();
+  // 战壕地形块与主地形在边缘重叠：略向镜头偏移，避免两层网格闪烁
+  const patchMaterial = makeTerrainMaterial({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true; terrain.castShadow = true;
   scene.add(terrain);
+  // 战壕高精度地形块：0.3 米网格，壕壁、壕底、胸墙都在地形里真实挖出（士兵可下到壕里，壕沟能挡子弹）
+  const trenchPatches = [];
+  for (const trench of jiangyinTrenches()) {
+    const b = trench.bounds, m = 8, step = low ? .45 : .3;
+    const px = span(b.minX - m, b.maxX + m, () => step), pz = span(b.minZ - m, b.maxZ + m, () => step);
+    const geometry = new THREE.BufferGeometry(), pos = new Float32Array(px.length * pz.length * 3), index = [];
+    let o = 0;
+    for (const z of pz) for (const x of px) { pos[o++] = x; pos[o++] = groundHeight(x, z); pos[o++] = z; }
+    for (let j = 0; j < pz.length - 1; j++) for (let i = 0; i < px.length - 1; i++) {
+      const a0 = j * px.length + i, b0 = a0 + 1, c0 = a0 + px.length, d0 = c0 + 1;
+      index.push(a0, c0, b0, b0, c0, d0);
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geometry.setIndex(new THREE.Uint32BufferAttribute(index, 1));
+    paintTerrain(geometry);
+    // 壕内与新翻出的土：深褐湿土；胸墙：黄褐翻土
+    const col = geometry.attributes.color, c = new THREE.Color();
+    for (let i = 0; i < col.count; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2], dug = naturalGroundHeight(x, z) - y;
+      if (dug > .15) c.setHex(0x4a3f31).lerp(new THREE.Color(0x3a3127), Math.min(1, dug / TRENCH.depth));
+      else if (dug < -.08) c.setRGB(col.getX(i), col.getY(i), col.getZ(i)).lerp(new THREE.Color(0x7c6a4e), Math.min(.85, -dug * 2.2));
+      else continue;
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    const patch = new THREE.Mesh(geometry, patchMaterial);
+    patch.receiveShadow = patch.castShadow = true;
+    scene.add(patch); trenchPatches.push(patch);
+  }
 
   // ---------- 江水 ----------
   const waterGeometry = new THREE.PlaneGeometry(9000, 2600, low ? 450 : 750, low ? 130 : 220);   // 东西 9 公里、覆盖弯道
@@ -411,18 +449,40 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
       const stake = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 3.4, 5), wood);
       stake.position.set(x, groundHeight(x, z) + 1.2, z); stake.rotation.set((rand() - .5) * .4, 0, sign * -.35); decor.add(stake);
     }
-    // 崖顶交通壕：沿崖顶的折线浅壕（深色条带）+ 胸墙土埂
-    for (let x = -700; x < 900; x += 14) {
-      const z = sign * (SO + 106 + Math.sin(x * .05) * 3), y = groundHeight(x, z);
-      if (nearPost(x, z, 14)) continue;
-      const trench = new THREE.Mesh(new THREE.BoxGeometry(14.5, .25, 1.6), mat('trench', 0x3f372b, 1, 0));
-      trench.position.set(x, y + .05, z); trench.rotation.y = Math.sin(x) * .25; decor.add(trench);
-      const parapet = new THREE.Mesh(new THREE.BoxGeometry(14.5, .6, 1), mat('earth-bank', 0x6b5e45, 1, 0));
-      parapet.position.set(x, y + .3, z - sign * 1.2); parapet.rotation.y = trench.rotation.y; decor.add(parapet);
+  }
+  // 战壕细部（壕沟本身已挖进地形）：木板护壁与立柱、壕底踏板、江面一侧胸墙上的沙袋射击位
+  const plank = mat('stake', 0x5b4a36, 1, 0), duck = mat('wood', 0x7a6347, .95, 0), sandbag = mat('sandbag', 0x9a8763, 1, 0);
+  for (const trench of jiangyinTrenches()) {
+    const p = trench.points;
+    for (let i = 0; i < p.length - 1; i++) {
+      const [x0, z0] = p[i], [x1, z1] = p[i + 1], len = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+      const nx = -uz, nz = ux, yaw = Math.atan2(-uz, ux), frontSign = Math.sign(nx * trench.fx + nz * trench.fz) || 1;
+      const mainLine = i >= 2 && i < p.length - 3;
+      for (let t = .4; t < len - .2; t += .8) {
+        const x = x0 + ux * t, z = z0 + uz * t, floor = groundHeight(x, z), lip = naturalGroundHeight(x, z), deep = lip - floor;
+        if (deep < .3) continue;
+        for (const side of [-1, 1]) {   // 护壁木板（竖直贴壕壁）
+          const wall = new THREE.Mesh(new THREE.BoxGeometry(.82, deep + .1, .05), plank);
+          wall.position.set(x + nx * side * (TRENCH.floorHalf + .05), floor + (deep + .1) / 2, z + nz * side * (TRENCH.floorHalf + .05));
+          wall.rotation.y = yaw; decor.add(wall);
+          if (Math.round(t / .8) % 2) {
+            const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .06, deep + .35, 5), plank);
+            stake.position.set(x + nx * side * (TRENCH.floorHalf + .02), floor + (deep + .35) / 2, z + nz * side * (TRENCH.floorHalf + .02)); decor.add(stake);
+          }
+        }
+        const board = new THREE.Mesh(new THREE.BoxGeometry(.75, .05, .6), duck);   // 壕底踏板
+        board.position.set(x, floor + .04, z); board.rotation.y = yaw; decor.add(board);
+        if (mainLine && Math.round(t / .8) % 3 !== 1) {   // 胸墙沙袋，留出射击缺口
+          const bag = new THREE.Mesh(new THREE.BoxGeometry(.78, .3, .5), sandbag);
+          const bx = x + nx * frontSign * 1.05, bz = z + nz * frontSign * 1.05;
+          bag.position.set(bx, naturalGroundHeight(bx, bz) + .2 + (rand() - .5) * .04, bz); bag.rotation.set(0, yaw + (rand() - .5) * .12, (rand() - .5) * .06);
+          decor.add(bag);
+        }
+      }
     }
   }
   // 要塞指挥所与旗杆（黄山顶）
-  const hqX = -380, hqZ = R + 250, hqY = groundHeight(hqX, hqZ);
+  const hqX = -430, hqZ = R + 300, hqY = groundHeight(hqX, hqZ);   // 黄山炮台后方约 70 米的山脊上（不与炮位重叠）
   const hq = new THREE.Mesh(new THREE.BoxGeometry(10, 3.4, 7), mat('concrete', 0x99958a, .97, 0)); hq.position.set(hqX, hqY + 1.2, hqZ); decor.add(hq);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 12, 6), mat('dark', 0x232526, .65, .4)); pole.position.set(hqX + 7, hqY + 6, hqZ); decor.add(pole);
   mergeStatic(decor);

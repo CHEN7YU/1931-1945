@@ -13,10 +13,8 @@ export async function loadJiangyinCharacters({ scene, camera, renderer, walkHeig
   onProgress('加载我军士兵与人物动作…');
   const { loadNraCharacter } = await import('../nra-character.js');
   const { createNraForceRendererAsync } = await import('../nra-force-renderer.js');
-  // The shared renderer bakes melee poses even when Jiangyin actors do not equip dadao.
   await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy());
   const nraTemplate = await loadNraCharacter(walkHeight);
-  // Jiangyin crews and infantry do not use the shared portable support weapons.
   const friendly = await createNraForceRendererAsync(scene, camera, { ...nraTemplate, supportWeaponPoses: false }, capacity, {
     onProgress: ({ completed, total }) => onProgress(`准备我军人物动作 ${completed}/${total}…`) });
   onProgress('加载日军士兵与人物动作…');
@@ -49,7 +47,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
     const actor = { id: `jiangyin-${team}-${++serial}`, team, unitId: `jiangyin-${team}`, friendly: team === 'friendly',
       position: position.clone(), heading, walkPhase: Math.random() * 6, health: 100, deathTime: 0, vehicleId: null,
       groundType: 'infantry', stance: 'standing', firingPose: null, rifleReady: false, target: null,
-      locomotion: { speed: 0, mode: 'walk' }, rifle: { ...createRifleState(weapon === 'type11' ? 'type11' : 'rifle') } };
+      locomotion: { speed: 0, mode: 'walk' }, rifle: { ...createRifleState(['type11', 'zb26'].includes(weapon) ? weapon : 'rifle') } };
     actor.rifle.id = `${actor.id}:rifle`;
     actor.nativeMotion = createNraMotion((team === 'friendly' ? friendly : enemy).motionProfile, actor);
     return actor;
@@ -57,7 +55,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
 
   function trackCrew(anchor) { crews.add(anchor); return anchor; }
 
-  // troops：jiangyin-game 的步兵记录 { id, x, z, dead, attacking, model }；model 为 createAnchor 返回的定位节点。
+  // troops：jiangyin-game 的步兵记录 { id, x, z, dead, attacking, hidden, model }（日军步兵与玩家步兵小队）；model 为 createAnchor 返回的定位节点。
   function sync(troops, now, dt, preset = 'high', controlledId = null) {
     const live = { friendly: [], enemy: [] }, seen = new Set();
     for (const troop of troops) {
@@ -70,6 +68,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
         actor.health = 0; actor.deathTime = now; actor.locomotion.speed = 0; actor.rifleReady = false;
         actor.casualty = createCasualtyState(actor, now, sampleNraMotion(actor), { retainGun: false });
       } else if (actor.health > 0) {
+        actor.vehicleId = troop.hidden ? 'hidden' : null;   // 玩家第一人称操纵的队员不绘制本体
         const step = Math.hypot(anchor.position.x - actor.position.x, anchor.position.z - actor.position.z);
         actor.locomotion.speed = dt > 0 ? Math.min(6, step / dt) : 0;
         actor.locomotion.mode = actor.locomotion.speed > 2.4 ? 'jog' : 'walk';
