@@ -1,3 +1,4 @@
+import './jiangyin/jiangyin-launcher.js';
 import './style.css';
 import './loading-screen.css';
 import { createPhotoWall } from './loading-screen.js';
