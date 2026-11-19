@@ -10,6 +10,9 @@ import { CHI_HA, CHI_HA_MG, chiHaMuzzle, chiHaMachineGunPose } from '../chi-ha.j
 import { createWarshipModel, createLandingCraftModel, createInfantryModel,
   createCruiserModel, createBlockshipModel } from './jiangyin-models.js';
 import { createJiangyinWorld } from './jiangyin-world.js';
+import { TYPES } from '../core.js';
+import { advanceAircraftAI, AIRCRAFT_GUN } from '../aircraft-ai.js';
+import { AIR_BOMB, createAirBombs, createEnemyAirFlight } from '../air-support.js';
 
 const GRAVITY = 9.81;
 const SHELL_SPEED = 260;          // 我方 75mm 炮弹初速（玩法值）
@@ -95,7 +98,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   // ---------- 敌军 ----------
   const ships = [], landings = [], troops = [], shells = [];
   // 坦克与飞机按项目 vehicle-renderer.js 需要的记录格式保存，由页面层交给 createVehicleRenderer 渲染
-  const vehicles = [], bombs = [];
+  const vehicles = [], bombs = createAirBombs(scene);
   const makeSoldier = (team, weapon) => createSoldierModel ? createSoldierModel(team, weapon) : createInfantryModel();
   const shipSerial = {};
   function spawnShip(type) {
@@ -169,12 +172,16 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     emit({ type: 'toast', text: `日军坦克小队（${ENEMY_TYPES.tank.platoon}辆九七式中战车）沿${bank === 'south' ? '南' : '北'}岸逼近`, alert: true });
   }
   function spawnAirFlight() {
+    const entry = nearestPost(AIR_SPAWN.x, AIR_SPAWN.z);
+    if (!entry) return;
     for (let i = 0; i < ENEMY_TYPES.aircraft.flight; i++) {
       const position = new THREE.Vector3(AIR_SPAWN.x + i * 26, AIR_SPAWN.y + i * 6, AIR_SPAWN.z + (i - 1) * 22);
       vehicles.push({ id: `plane-${++serial}`, type: 'plane', variant: null, team: 'enemy', position,
-        velocity: new THREE.Vector3(-ENEMY_TYPES.aircraft.speed, 0, 0), heading: Math.PI / 2, pitch: 0, roll: 0,
+        velocity: new THREE.Vector3(-TYPES.plane.speed, 0, 0), heading: Math.PI / 2, pitch: 0, roll: 0,
         turretYaw: 0, turretPitch: 0, health: ENEMY_TYPES.aircraft.health, maxHealth: ENEMY_TYPES.aircraft.health,
-        flight: { phase: 'inbound', until: 0, target: null, slot: i }, fall: null, destroyedAt: null });
+        aiFlight: createEnemyAirFlight(now, i), patrolPostId: entry.id,
+        weapon: { type: 'plane', ammo: TYPES.plane.magazine, nextShot: 0, reloadUntil: 0 },
+        fall: null, destroyedAt: null });
     }
     emit({ type: 'toast', text: `日军航空小队（${ENEMY_TYPES.aircraft.flight}架）来袭！`, alert: true });
   }
@@ -244,10 +251,21 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     return true;
   }
 
-  // 飞机：编队进入 → 俯冲投弹 → 拉起 → 盘旋返航，被击落前反复来袭
-  const steer = new THREE.Vector3();
+  function airTerrainHit(from, to, clearance = 0) {
+    const path = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
+    const length = path.length();
+    if (length <= 0) return null;
+    path.multiplyScalar(1 / length);
+    const start = new THREE.Vector3(from.x, from.y - clearance, from.z);
+    const distance = rayTerrain(start, path, length);
+    if (distance === null && to.y - clearance > surfaceHeight(to.x, to.z)) return null;
+    const position = start.addScaledVector(path, distance ?? length);
+    position.y = surfaceHeight(position.x, position.z) + clearance;
+    return { position };
+  }
+
   function advancePlane(plane, dt) {
-    const cfg = ENEMY_TYPES.aircraft, flight = plane.flight;
+    if (dt === 0) return true;
     if (plane.health <= 0) {
       if (!plane.fall.grounded) {
         plane.velocity.y -= GRAVITY * dt; plane.velocity.multiplyScalar(1 - .15 * dt);
@@ -263,56 +281,47 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       return now - plane.destroyedAt < 45;
     }
-    if (!flight.target || !alive(flight.target)) flight.target = nearestPost(plane.position.x, plane.position.z);
-    const target = flight.target;
-    let goal;
-    if (!target) goal = new THREE.Vector3(AIR_SPAWN.x, AIR_SPAWN.y, AIR_SPAWN.z);
-    else if (flight.phase === 'inbound') {
-      goal = new THREE.Vector3(target.point.x + 420 + flight.slot * 30, cfg.cruise, target.point.z + (flight.slot - 1) * 30);
-      if (plane.position.distanceTo(goal) < 40) flight.phase = 'dive';
-    } else if (flight.phase === 'dive') {
-      goal = new THREE.Vector3(target.point.x, target.floor + 30, target.point.z);
-      const horizontal = Math.hypot(plane.position.x - target.point.x, plane.position.z - target.point.z);
-      if (horizontal < 34) {
-        bombs.push({ x: plane.position.x, y: plane.position.y - 1.5, z: plane.position.z,
-          vx: plane.velocity.x, vy: plane.velocity.y, vz: plane.velocity.z, mesh: null });
-        flight.phase = 'climb'; flight.until = now + 6;
-        emit({ type: 'toast', text: '日机俯冲投弹！', alert: target.id === controlledId });
-      }
-    } else if (flight.phase === 'climb') {
-      goal = plane.position.clone().addScaledVector(plane.velocity.clone().setY(0).normalize(), 200).setY(cfg.cruise + 30);
-      if (now > flight.until) { flight.phase = 'loiter'; flight.until = now + cfg.returnSeconds; }
-    } else {
-      const angle = now * .25 + flight.slot * 2.1;
-      goal = new THREE.Vector3(AIR_SPAWN.x - 700 + Math.cos(angle) * 450, cfg.cruise + 30, Math.sin(angle) * 450);
-      if (now > flight.until) { flight.phase = 'inbound'; flight.target = null; }
+    let patrol = postById(plane.patrolPostId);
+    if (patrol && !alive(patrol)) {
+      patrol = nearestPost(plane.position.x, plane.position.z);
+      if (patrol) plane.patrolPostId = patrol.id;
     }
-    steer.subVectors(goal, plane.position).normalize().multiplyScalar(cfg.speed);
-    plane.velocity.lerp(steer, Math.min(1, dt * (flight.phase === 'dive' ? 1.1 : .7))).setLength(cfg.speed);
-    plane.position.addScaledVector(plane.velocity, dt);
-    plane.position.y = Math.max(plane.position.y, Math.max(0, groundHeight(plane.position.x, plane.position.z)) + 18);
-    const heading = Math.atan2(-plane.velocity.x, -plane.velocity.z);
-    plane.roll = Math.max(-.9, Math.min(.9, wrap(heading - plane.heading) / Math.max(dt, 1e-3) * -.25));
-    plane.heading = heading;
-    plane.pitch = Math.asin(Math.max(-1, Math.min(1, plane.velocity.y / cfg.speed)));
+    const targets = eligiblePosts().filter(post => alive(post) && post.point.operatorId)
+      .map(post => ({ id: post.id, unitId: post.id, team: 'friendly', health: post.point.health,
+        position: { x: post.point.x, y: post.floor, z: post.point.z } }));
+    const visible = (from, to) => !airTerrainHit(from, to);
+    const previous = plane.position.clone();
+    const shot = advanceAircraftAI(plane, dt, now, { targets, canFire: true, visible, groundHeight: surfaceHeight,
+      patrolCenter: patrol?.point ?? plane.position, preferredUnitId: controlledId });
+    plane.velocity.copy(plane.position).sub(previous).multiplyScalar(1 / dt);
+    if (shot) {
+      const yaw = plane.heading + (random() * 2 - 1) * AIRCRAFT_GUN.spread;
+      const pitch = plane.pitch + (random() * 2 - 1) * AIRCRAFT_GUN.spread;
+      const dir = aimDirection({ yaw, pitch });
+      let nearest = null, distance = rayTerrain(shot.start, dir, AIRCRAFT_GUN.range) ?? AIRCRAFT_GUN.range;
+      for (const target of targets) {
+        const hit = raySphere({ ...target.position, y: target.position.y + 1.2 }, 1.2, shot.start, dir, distance);
+        if (hit !== null && hit < distance) { nearest = target; distance = hit; }
+      }
+      if (nearest) damageEmplacement(postById(nearest.id).point, TYPES.plane.damage, { team: 'enemy' }, now);
+      effects?.muzzle?.(shot.start, dir);
+      emit({ type: 'sound', name: 'mg', position: shot.start });
+    }
+    const end = bombs.drop(plane, now, targets, { allowed: () => true, visible, groundHeight: surfaceHeight,
+      source: () => ({ team: 'enemy' }) });
+    const playerPost = postById(controlledId);
+    if (end && playerPost && Math.hypot(end.x - playerPost.point.x, end.z - playerPost.point.z) < 40)
+      emit({ type: 'toast', text: '敌机投弹！寻找掩护', alert: true });
     return true;
   }
-  const bombGeometry = new THREE.CapsuleGeometry(.18, .8, 2, 6), bombMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2b28 });
   function advanceBombs(dt) {
-    for (let i = bombs.length - 1; i >= 0; i--) {
-      const bomb = bombs[i];
-      if (!bomb.mesh) { bomb.mesh = new THREE.Mesh(bombGeometry, bombMaterial); scene.add(bomb.mesh); }
-      bomb.vy -= GRAVITY * dt; bomb.x += bomb.vx * dt; bomb.y += bomb.vy * dt; bomb.z += bomb.vz * dt;
-      bomb.mesh.position.set(bomb.x, bomb.y, bomb.z);
-      bomb.mesh.rotation.set(Math.atan2(bomb.vy, Math.hypot(bomb.vx, bomb.vz)) + Math.PI / 2, Math.atan2(-bomb.vx, -bomb.vz), 0, 'YXZ');
-      const ground = groundHeight(bomb.x, bomb.z);
-      if (bomb.y <= Math.max(0, ground)) {
-        const p = { x: bomb.x, y: Math.max(0, ground), z: bomb.z };
-        blast(p, ENEMY_TYPES.aircraft.bombRadius, ENEMY_TYPES.aircraft.bombDamage, 'enemy');
-        explosion(p, 2, ground < 0);
-        scene.remove(bomb.mesh); bombs.splice(i, 1);
-      }
-    }
+    bombs.update(dt, airTerrainHit, (point, source) => {
+      blast(point, AIR_BOMB.radius, AIR_BOMB.damage, source.team);
+      if (effects) {
+        effects.explosion(point, AIR_BOMB.radius, 'aircraft-bomb');
+        emit({ type: 'sound', name: 'boom', position: point });
+      } else explosion(point, 5, groundHeight(point.x, point.z) < 0);
+    });
   }
 
   // ---------- 特效（对象池） ----------
@@ -1097,7 +1106,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       const outcome = state.phase === 'hold'
         ? evaluateOutcome({ elapsed: state.elapsed, shoreAlive, wavesRemaining: JIANGYIN_WAVES.length - state.waveIndex, enemiesAlive })
         : shoreAlive <= 0 ? { result: 'defeat', reason: 'batteries' } : null;
-      if (outcome) { state.outcome = outcome; state.phase = 'ended'; emit({ type: 'ended', outcome, stats: { ...state.stats } }); }
+      if (outcome) { bombs.clear(); state.outcome = outcome; state.phase = 'ended'; emit({ type: 'ended', outcome, stats: { ...state.stats } }); }
       updateCamera(dt);
     }
   }

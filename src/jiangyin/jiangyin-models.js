@@ -584,7 +584,6 @@ export function createAircraftModel() {
   for (const sign of [1, -1]) { rod(root, [sign * .5, -.4, -2.2], [sign * .9, -1.6, -2.2], .07, dark); const spat = add(root, new THREE.SphereGeometry(.28, 8, 6), skin, sign * .9, -1.75, -2.2); spat.scale.z = 1.8; }
   box(root, 3.6, .1, 1.1, 0, .25, 4.2, skin); box(root, .1, 1.3, 1.1, 0, .9, 4.3, skin);
   box(root, .7, .4, 2.2, 0, .65, .4, M.glass());
-  const bomb = add(root, new THREE.CapsuleGeometry(.16, .9, 4, 8), dark, 0, -.85, -.6); bomb.rotation.x = Math.PI / 2;
   mergeStatic(root);
   return root;
 }

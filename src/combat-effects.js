@@ -228,7 +228,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     },
     explosion(position, time, radius = 7, style = 'default', surface = null) {
       const visible = (Boolean(blastProfile(style)) || settings.effects.hitParticles) &&
-        camera.position.distanceTo(position) <= (style === 'aircraft-hit' ? 600 : style === 'tank-shell' ? 200 : 140);
+        camera.position.distanceTo(position) <= (style === 'aircraft-hit' ? 600 : style === 'aircraft-bomb' ? 280 : style === 'tank-shell' ? 200 : 140);
       lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
         surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };
       if (!visible) return;

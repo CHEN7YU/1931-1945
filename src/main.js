@@ -172,6 +172,7 @@ import { ENGINEER, createEngineerState, cancelEngineer, engineerPlacement, engin
   findEngineerConstruction, resumeEngineerConstruction } from './engineer.js';
 import { getPlayerIdentity } from './player-identity.js';
 import { advanceAircraftAI, AIRCRAFT_GUN, createAircraftObstacleLookup } from './aircraft-ai.js';
+import { AIR_BOMB, createAirBombs, createEnemyAirFlight } from './air-support.js';
 import { deploymentCards, deploymentMarker, deploymentMarkerPositions } from './deployment-view.js';
 import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
 import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks } from './aircraft-wreck.js';
@@ -374,6 +375,7 @@ const recordRecoveredFailure = (error, context) => {
 };
 const dadaoViewRecovery = createPresentationRecovery(recordRecoveredFailure);
 const scene = new THREE.Scene();
+const airBombs = createAirBombs(scene);
 scene.fog = new THREE.FogExp2(0xb7b6af, .0035);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .07, 650);
 camera.rotation.order = 'YXZ';
@@ -1625,7 +1627,7 @@ function presentCombatEvents(bornAt = time) {
       else renderImpact(position(event.position), bornAt);
     } else if (event.type === 'explosion') {
       combatEffects.explosion(position(event.position), bornAt, event.radius, event.style, event.surface ?? null);
-      if (event.sound && ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger'].includes(event.style)) {
+      if (event.sound && ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger', 'aircraft-bomb'].includes(event.style)) {
         const listener = battleAudioListener(), point = position(event.position);
         grenadeBlastAudio?.play(point, listener, event.style);
         blastFeedback.trigger(point, listener.position, event.style);
@@ -1923,7 +1925,7 @@ function spawnJapaneseAircraft(formation) {
       unitId: formation.id, type: 'plane', team: 'enemy',
       position: new THREE.Vector3(spawn.x + index * 24, spawn.altitude + index * 4, spawn.z + index * 18) });
     transport.heading = Math.PI;
-    transport.aiFlight = { phase: 'approach', until: 0, targetId: null, nextSense: index * 1.5, returningToArea: false };
+    transport.aiFlight = createEnemyAirFlight(time, index);
     const actor = actorAt(false, spawn.x, spawn.z, index, spawn, formation);
     actor.role = 'pilot';
     const reason = seatSoldier(entities, actor, transport, transport.seats[0].id);
@@ -1973,6 +1975,7 @@ function clearActors(list, preserveCorpses = false) {
 }
 
 function clearTransient() {
+  airBombs.clear();
   sihangParade?.reset(); sihangParadeSerial = 0;
   clearEngineerWorks();
   grenadeBlastAudio?.reset(); grenadeFlashUntil = grenadeFlashStrength = 0;
@@ -3476,7 +3479,7 @@ function renderDeathFeedback() {
 
 function explode(position, damage, radius, source, weaponKind = 'explosion', surface = null) {
   combatEvents.publish('explosion', { position, source, sound: true, radius,
-    style: ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger'].includes(weaponKind) ? weaponKind
+    style: ['grenade', 'explosive-pack', 'mortar', 'grenade-discharger', 'aircraft-bomb'].includes(weaponKind) ? weaponKind
       : ['tank', 'field-gun'].includes(source.weaponClass) ? 'tank-shell' : 'default',
     ...(surface ? { surface } : {}) }, time);
   combatSounds.push({ id: ++soundSerial, friendly: source.team === 'friendly',
@@ -4073,7 +4076,15 @@ function fireAutomaticShot(transport, shot, source, start, yaw, pitch, aircraft 
   if (vehicle && vehicle.team !== transport.team) damageVehicle(vehicle, settings.damage, source, damageKind);
 }
 
+const airBlastAllowed = (point, radius) => !sihangCampaignMode || sihangBlastClearOfSouthBank(point, radius);
+
 function updateVehicles(dt) {
+  airBombs.update(dt, (from, to, radius, planeId) => traceGrenade(from, to, radius, false, planeId, true),
+    (point, source, hit) => {
+      if (airBlastAllowed(point, AIR_BOMB.radius))
+        explode(point, AIR_BOMB.damage, AIR_BOMB.radius, source, 'aircraft-bomb', hit
+          ? { normal: hit.normal, kind: hit.surfaceKind === 'ground' ? 'soil' : 'generic' } : null);
+    });
   for (const actor of allForces) {
     const point = emplacements.get(actor.emplacementId);
     actor.artilleryThreat = Boolean(point?.profile === 'bofors75' && point.health > 0 && point.operatorId === actor.id);
@@ -4138,20 +4149,29 @@ function updateVehicles(dt) {
     if (transport.type === 'plane' && transport.team === 'enemy') {
       const pilot = transport.seats.map(seat => entities.soldiers.get(seat.occupantId)).find(actor => actor?.health > 0);
       const eastAirSupport=encirclementMode&&encirclement.phase===2;
-      const shot = advanceAircraftAI(transport, dt, time, { targets: eastAirSupport
+      const targets = eastAirSupport
         ? friendlyForces.filter(actor=>actor.unitId===controlledSoldier(entities)?.unitId ||
           Math.hypot(actor.position.x-EAST_BREAKOUT.x,actor.position.z-EAST_BREAKOUT.z)<75)
-        : sihangCampaignMode ? friendlyForces.filter(sihangEnemyTargetAllowed) : nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces,
-        preferredUnitId: controlledSoldier(entities)?.unitId,
-        canFire: Boolean(pilot) && !finalBoardingFireHeld(nanjingCampaign, time) &&
+        : sihangCampaignMode ? friendlyForces.filter(sihangEnemyTargetAllowed) : nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces;
+      const canFire = Boolean(pilot) && !finalBoardingFireHeld(nanjingCampaign, time) &&
           (!eastAirSupport || encirclement.breakout?.stage === 'breakout') &&
-          (!nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal' && !nanjingCampaign.outcome),
+          (!nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal' && !nanjingCampaign.outcome);
+      const visible = (from, to) => (!sihangCampaignMode || !sihangSouthBank(to)) &&
+        hasLine(new THREE.Vector3(from.x, from.y, from.z), new THREE.Vector3(to.x, to.y, to.z), 225, transport.id);
+      const shot = advanceAircraftAI(transport, dt, time, { targets,
+        preferredUnitId: controlledSoldier(entities)?.unitId, canFire,
         obstacles: world.obstacles, collisionLookup: aircraftCollision, groundHeight: world.groundHeight,
         patrolCenter: nanjingCampaignMode ? objectives.find(point => point.id === (nanjingCampaign.dockActivated ? 'dock' : 'gate'))
           : eastAirSupport ? EAST_BREAKOUT : undefined,
-        visible: (from, to) => (!sihangCampaignMode || !sihangSouthBank(to)) && hasLine(new THREE.Vector3(from.x, from.y, from.z),
-          new THREE.Vector3(to.x, to.y, to.z), 225, transport.id) });
+        visible });
       if (shot) fireAircraftGun(transport, pilot, shot.start);
+      if (canFire && !sihangCampaign?.outcome && transport.aiFlight.bombAvailable) {
+        const end = airBombs.drop(transport, time, targets, {
+          allowed: airBlastAllowed, visible, groundHeight: world.groundHeight,
+          source: () => captureAttackSource(entities, pilot, transport.weapon),
+        });
+        if (end && controlledSoldier(entities)?.position.distanceTo(end) < 40) toast('敌机投弹！寻找掩护', 2);
+      }
       for (const seat of transport.seats) {
         const occupant = entities.soldiers.get(seat.occupantId);
         if (occupant) { occupant.position.copy(transport.position); occupant.heading = transport.heading; }

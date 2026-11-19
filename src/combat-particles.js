@@ -120,7 +120,7 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
       vx: shell ? drift.x + n.x * .5 : Math.cos(angle) * (dust ? 1.1 : .15) * scale,
       vy: (dust ? .12 : .55 + random() * .3) * scale + (shell ? drift.y + n.y * .3 : 0),
       vz: shell ? drift.z + n.z * .5 : Math.sin(angle) * (dust ? 1.1 : .15) * scale, age: 0,
-      life: dust ? (shell ? .85 : 1.1) + random() * .5 : (tank ? 5 : shell ? 2.1 : heavy ? 2.5 : 1.8) + random() * .6,
+      life: dust ? (shell ? .85 : 1.1) + random() * .5 : (tank || style === 'aircraft-bomb' ? 5 : shell ? 2.1 : heavy ? 2.5 : 1.8) + random() * .6,
       size: (dust ? shell ? 1 : grenade ? .8 : .55 : tank ? 1 : shell ? .95 : grenade ? .85 : .65) * scale,
       kind: dust ? 'blast-dust' : tank ? 'blast-soot' : 'blast-smoke', rotation: random() * 6.28, bornAt: time });
   }

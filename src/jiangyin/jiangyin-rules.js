@@ -59,8 +59,7 @@ export const ENEMY_TYPES = Object.freeze({
   squad: Object.freeze({ name: '日军步兵小队', size: 8 }),
   tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
     shellDamage: 40, shellRadius: 4, dispersion: 4, radius: 2.4 }),
-  aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, speed: 55, cruise: 220, bombDamage: 150, bombRadius: 9,
-    radius: 4, returnSeconds: 22 }),
+  aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),
   landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 11, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
   infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 3.2, attackRange: 5, attackInterval: 2.5, attackDamage: 25 }),
 });
