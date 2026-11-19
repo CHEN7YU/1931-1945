@@ -16,7 +16,7 @@ try {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
 window.__sihangFeedbackSetup = stage => {
- sihangCampaign.stage=stage;sihangCampaign.stageElapsed=0;sihangCampaign.stageRemaining=240;sihangCampaign.playerRetreatOpen=false;
+ sihangCampaign.stage=stage;sihangCampaign.stageElapsed=0;sihangCampaign.stageRemaining=240;
  sihangCampaign.aiRetreatIds=friendlyForces.filter(a=>!a.playerUnit&&a.health>0).map(a=>a.id);
  const player=controlledSoldier(entities);player.position.set(18,0,-2);player.heading=-.9;player.lookPitch=-.65;
  stopLocomotion(player.locomotion);player.nativeMotion.position={x:18,z:-2};

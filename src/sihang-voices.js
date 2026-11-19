@@ -31,7 +31,7 @@ export function sihangVoiceClips() {
 }
 
 export function createSihangVoices(buffers) {
-  const clips = sihangVoiceClips().filter(clip => clip.cue !== 'memorial');
+  const clips = sihangVoiceClips().filter(clip => !['memorial', 'retreat-open'].includes(clip.cue));
   for (const clip of clips)
     if (!buffers[clip.cue] || buffers[clip.cue].duration <= .1 || buffers[clip.cue].duration > 20)
       throw new Error(`Missing or invalid Sihang voice: ${clip.cue}`);
@@ -81,7 +81,7 @@ export async function loadSihangVoices() {
   const Audio = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!Audio) throw new Error('Browser does not provide Sihang voice decoding');
   const context = new Audio(1, 1, 24000), buffers = {};
-  await Promise.all(sihangVoiceClips().filter(clip => clip.cue !== 'memorial').map(async clip => {
+  await Promise.all(sihangVoiceClips().filter(clip => !['memorial', 'retreat-open'].includes(clip.cue)).map(async clip => {
     const url = `/assets/audio/sihang-voices/${clip.file}?v=${clip.audioRevision}`;
     const response = await fetch(url,
       { signal: AbortSignal.timeout(15000) });

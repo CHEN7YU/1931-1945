@@ -82,7 +82,7 @@ try {
           }
           setGameState('playing');dispatchControlCommand('interact');updateNanjingMission(0);
           return{pendingHUD,partialDeparture,civilianSeconds:steps*.05,civilians,maxCivilianStep,
-            aiTravel:travel,evacuated:nanjingCampaign.evacuatedSquads,state,outcome:nanjingCampaign.outcome,
+            aiTravel:travel,evacuated:nanjingCampaign.evacuatedSquads,ending:battleEnding.snapshot,outcome:nanjingCampaign.outcome,
             toast:$('toast').textContent};
         },
         respawn(){
@@ -137,7 +137,8 @@ try {
   assert.equal(finale.civilians.evacuated, 3);
   assert.ok(finale.maxCivilianStep <= .27 && finale.aiTravel > 3);
   assert.equal(finale.evacuated.filter(squad => !squad.isPlayer).length, 1);
-  assert.equal(finale.outcome, 'evacuated'); assert.equal(finale.state, 'victory');
+  assert.equal(finale.outcome, 'evacuated');
+  assert.equal(finale.ending.result, 'commemoration');
   const respawn = await page.evaluate(() => nanjingFinaleReview.respawn());
   console.log(JSON.stringify({ respawn }));
   assert.ok(respawn.enabled); assert.equal(respawn.state, 'playing'); assert.equal(respawn.count, 11);

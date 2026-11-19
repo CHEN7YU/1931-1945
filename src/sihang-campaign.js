@@ -27,8 +27,8 @@ export function createSihangCampaign() {
   return {
     stage: 'sihang-defense', stageElapsed: 0, stageRemaining: SIHANG_RULES.defenseSeconds,
     elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, retreatDeployed: 0, outcome: null,
-    retreatIds: [], aiRetreatIds: [], evacuatedIds: [], playerRetreatOpen: false, warnings: [], northWallBreached: false,
-    retreatTotal: 0, retreatRequired: 0, retreatReserve: 0, retreatLostIds: [],
+    retreatIds: [], aiRetreatIds: [], evacuatedIds: [], warnings: [], northWallBreached: false,
+    retreatTotal: 0, retreatReserve: 0, retreatLostIds: [],
     counterattack: false, counterattackAt: null, assemblyPrepared: false, assemblyReleased: false, coverRespawnAt: 0,
     withdrawalWave: null, withdrawalWaveNumber: 0, waveAssemblyAt: null, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,
     strandedWatch: null, finalRetreatOrdered: false,
@@ -129,12 +129,10 @@ export function transferSihangRetreatSquad(campaign, actors) {
 
 export function sihangRetreatStatus(campaign) {
   const saved = campaign.evacuatedIds.length, lost = campaign.retreatLostIds.length;
-  return { total: campaign.retreatTotal, required: campaign.retreatRequired, saved, lost,
+  return { total: campaign.retreatTotal, saved, lost,
     waiting: campaign.retreatReserve, active: campaign.retreatTotal - saved - lost - campaign.retreatReserve,
     possible: campaign.retreatTotal - lost, casualties: SIHANG_RULES.troopLimit - campaign.retreatTotal + lost,
-    unresolved: campaign.retreatTotal - saved - lost,
-    grade: campaign.retreatTotal > 0 && saved === campaign.retreatTotal ? '全员撤离' : saved >= Math.ceil(campaign.retreatTotal * .75)
-      ? '出色掩护' : saved >= campaign.retreatRequired ? '完成任务' : '未达目标' };
+    unresolved: campaign.retreatTotal - saved - lost };
 }
 
 export function registerSihangDeployment(campaign, count, actors = []) {
@@ -235,7 +233,6 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], playerSquad
       campaign.aiRetreatIds = friendly.filter(actor => !actor.playerUnit && alive(actor)).map(actor => actor.id);
       campaign.retreatReserve = campaign.reserve;
       campaign.retreatTotal = campaign.retreatReserve + campaign.retreatIds.length;
-      campaign.retreatRequired = Math.floor(campaign.retreatTotal / 2) + 1;
       Object.assign(campaign.demolition, { state: 'idle', installProgress: 0,
         operatorId: null, defuseProgress: 0, defuserId: null });
     }
@@ -255,14 +252,10 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], playerSquad
       campaign.counterattack = true; campaign.counterattackAt = campaign.elapsed;
     }
     const status = sihangRetreatStatus(campaign);
-    campaign.playerRetreatOpen = status.saved >= status.required;
     if (!status.unresolved) {
-      campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
+      campaign.outcome = 'withdrawal-ended';
       campaign.strandedWatch = null;
-    } else if (campaign.finalRetreatOrdered) {
-      if (player && saved.has(player.id) && sihangSafePosition(player.position))
-        campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
-    } else {
+    } else if (!campaign.finalRetreatOrdered) {
       const unresolvedIds = campaign.retreatIds.filter(id => !saved.has(id) && !lost.has(id));
       const remaining = unresolvedIds.filter(id => id !== player?.id).map(id => observed.get(id));
       const eligible = player && alive(player) && campaign.assemblyReleased && !campaign.retreatReserve &&
@@ -293,9 +286,9 @@ export function advanceSihangCampaign(campaign, dt, { friendly = [], playerSquad
         } else if (campaign.elapsed - watch.since >= SIHANG_RULES.strandedStillSeconds)
           campaign.finalRetreatOrdered = true;
       }
-      if (campaign.finalRetreatOrdered && saved.has(player.id) && sihangSafePosition(player.position))
-        campaign.outcome = campaign.playerRetreatOpen ? 'evacuated' : 'retreat-losses';
     }
+    if (campaign.finalRetreatOrdered && player && saved.has(player.id) && sihangSafePosition(player.position))
+      campaign.outcome = 'withdrawal-ended';
   }
   return campaign.outcome;
 }

@@ -134,7 +134,7 @@ try {
         await writeFile(join(directory, 'cpu-profile.json'), JSON.stringify(profile));
       }
     }
-    if (['victory', 'defeat', 'draw'].includes(sample.state)) { status = 'battle-ended'; break; }
+    if (['victory', 'defeat', 'draw', 'commemoration'].includes(sample.state)) { status = 'battle-ended'; break; }
     if (sample.state === 'dead') {
       const button = page.locator('#redeploy-choices [data-type]:not([disabled])').first();
       if (await button.isVisible()) {

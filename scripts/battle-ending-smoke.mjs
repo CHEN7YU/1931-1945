@@ -10,7 +10,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const observations = [];
 try {
   for (const scenario of [{ map: 'taierzhuang-fort', result: 'victory' },
-    { map: 'nanjing', result: 'victory', boat: true }, { map: 'nanjing', result: 'defeat' }]) {
+    { map: 'nanjing', result: 'commemoration', boat: true }, { map: 'nanjing', result: 'commemoration' }]) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/src/main.js*', async route => {
@@ -25,15 +25,23 @@ try {
           controlPose.pitch=.45;held.primary=false;weaponObstruction=obstructionBlend=0;
           if(boat) {
             for(const person of world.civilians){person.userData.dead=true;person.visible=false;}
-            Object.assign(nanjingCampaign,{stage:'withdrawal-to-boats',dockActivated:true,outcome:'evacuated',overlayShown:true});
-            const ferry=world.ferries[0];ferry.position.x=-78;ferry.userData.state='outbound';
+            Object.assign(nanjingCampaign,{stage:'withdrawal-to-boats',dockActivated:true});
+            for(const ally of friendlyAI) if (ally.health>0) ally.tactics.nanjingFerry={phase:'aboard'};
+            const ferry=world.ferries[0];ferry.userData.state='docked';
             nanjingCampaign.playerBoardingBoatId=ferry.userData.ferryId;
             actor.tactics.nanjingFerry={phase:'aboard',ferryId:ferry.userData.ferryId,speed:0};
             ferry.userData.troopPassengers=[{actor,seat:0,local:new THREE.Vector3(-1.8,NANJING_FERRY_FLOOR,-.4)}];
+            updateNanjingMission(0);
+            if (nanjingCampaign.outcome || battleEnding.fading) throw Error('Ending started before the ferry departed');
+            ferry.position.x=NANJING_DOCK.ferryX-2;ferry.userData.state='outbound';
             ferry.updateWorldMatrix(true,false);syncTroopFerryPassengers(ferry);
             controlPose.yaw=-Math.PI/2;
-          }
-          updateCamera(0);showOverlay(kind);
+            updateNanjingMission(0);
+          } else if (nanjingCampaignMode) {
+            nanjingCampaign.outcome='gate-overrun';
+            updateNanjingMission(0);
+          } else showOverlay(kind);
+          updateCamera(0);
           return this.snapshot();
         },
         snapshot(){const actor=allies[current],ferry=nanjingPlayerFerry();return{state,ending:battleEnding.snapshot,time,
@@ -45,8 +53,8 @@ try {
     });
     const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5333/');
     url.searchParams.set('campaign', scenario.map);
+    if (process.env.GAME_CHARACTER) url.searchParams.set('character', process.env.GAME_CHARACTER);
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
-    if (scenario.map !== 'nanjing') await page.locator('#confirm-campaign').click();
     await deployFromMenu(page);
     await page.waitForFunction(kind => window.endingReview && __battle.state === 'playing' && endingReview.ready(kind),
       scenario.result, { timeout: 180000 });
@@ -83,7 +91,7 @@ try {
     await page.waitForFunction(() => __battle.battleEnding.canContinue);
     const text = await page.locator('#battle-ending-page').textContent();
     if (scenario.map === 'nanjing') { assert.ok(text.includes('中华门')); assert.ok(text.includes('上新河')); }
-    await page.screenshot({ path: join(directory, `${scenario.map}-${scenario.result}.png`) });
+    await page.screenshot({ path: join(directory, `${scenario.map}-${scenario.boat ? 'departed' : scenario.result}.png`) });
     await page.setViewportSize({ width: 1280, height: 559 });
     await page.waitForTimeout(100);
     const bounds = await page.locator('#battle-ending-page').boundingBox();
@@ -91,6 +99,11 @@ try {
       `${scenario.map}: the complete historical page must fit a short laptop viewport`);
     await page.locator('#battle-ending-continue').click();
     await page.waitForFunction(result => __battle.state === result && !document.getElementById('battle-results').hidden, scenario.result);
+    if (scenario.map === 'nanjing') {
+      assert.match(await page.locator('#overlay-kicker').textContent(), /历史铭记/);
+      assert.match(await page.locator('#overlay-title').textContent(), scenario.boat ? /你已登船/ : /铭记南京/);
+      assert.doesNotMatch(await page.locator('#overlay-description').textContent(), /胜利|失利|平局/);
+    }
     assert.deepEqual(errors, []);
     observations.push({ scenario, before, moved, black, text, errors });
     await writeFile(join(directory, 'ending-sequences.json'), JSON.stringify(observations, null, 2));

@@ -105,7 +105,7 @@ import { warmBattleRendering } from './battle-render-warmup.js';
 import { createAdaptiveQuality } from './adaptive-quality.js';
 import { advanceCivilianFlight } from './civilian-refugees.js';
 import './battle-ending.css';
-import { BATTLE_HISTORY, createBattleEnding, loadEndingNarration, playEndingNarration } from './battle-ending.js';
+import { BATTLE_END_STATES, BATTLE_HISTORY, createBattleEnding, loadEndingNarration, playEndingNarration } from './battle-ending.js';
 import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { tankSweptContact, chooseTankEvasion as planTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
@@ -317,7 +317,7 @@ const boundaryStates = new Map();
 const simulationClock = createSimulationClock(performance.now());
 const stepWorkBudget = createAdaptiveStepBudget();
 const activeStates = new Set(['playing', 'transferring', 'dead']);
-const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', 'victory', 'defeat', 'draw']);
+const gameStates = new Set(['menu', 'playing', 'transferring', 'dead', 'pause', ...BATTLE_END_STATES]);
 let pausedFrom = 'playing';
 let battleRandom = benchmark ? seededRandom(benchmark.seed) : Math.random;
 
@@ -845,7 +845,7 @@ const battleEnding = createBattleEnding({
   },
   onFinish(kind) { $('battle-ending').hidden = true; showOverlay(kind); },
 });
-for (const outcome of ['victory', 'defeat', 'draw'])
+for (const outcome of sihangCampaignMode || nanjingCampaignMode ? ['commemoration'] : ['victory', 'defeat', 'draw'])
   void loadEndingNarration(endingCampaign, outcome).then(buffer => { endingNarration[outcome] = buffer; }).catch(error => {
     endingNarrationFailures[outcome] = error.message;
     console.warn(`战役结尾${outcome}旁白暂不可用：`, error);
@@ -1093,11 +1093,12 @@ function setGameState(next) {
     endingVoice?.stop(); endingVoice = null; battleEnding.reset();
     $('battle-ending').hidden = true;
   }
-  if (['menu', 'victory', 'defeat', 'draw'].includes(next)) automaticQuality.leaveBattle();
+  const ended = BATTLE_END_STATES.includes(next);
+  if (next === 'menu' || ended) automaticQuality.leaveBattle();
   getEndingMusic().setState(next);
   getMenuMusic().setState(next);
-  if (['pause', 'menu', 'victory', 'defeat', 'draw'].includes(next)) {
-    performanceDiagnostics.flush(['victory', 'defeat', 'draw'].includes(next) ? 'ended' : 'pause');
+  if (next === 'pause' || next === 'menu' || ended) {
+    performanceDiagnostics.flush(ended ? 'ended' : 'pause');
   }
   battleVoices?.sync(['playing', 'transferring', 'dead', 'victory', 'defeat', 'draw'].includes(state));
   civilianVoices?.sync(['playing', 'transferring'].includes(state));
@@ -2309,10 +2310,13 @@ function showOverlay(kind = 'pause') {
     sihangCampaign.coverRespawnAt = Math.max(sihangCampaign.coverRespawnAt, time + SIHANG_RULES.coverRespawnSeconds);
   if (kind === 'dead' && sihangCampaignMode && sihangCampaign.outcome) {
     if (battleEnding.fading || battleEnding.complete) return;
-    kind = sihangCampaign.outcome === 'evacuated' ? 'victory' : 'defeat';
+    kind = 'commemoration';
   }
-  if (['victory', 'defeat', 'draw'].includes(kind) && !battleEnding.complete) {
-    if (battleEnding.start(kind, performance.now(), endingNarration[kind]?.duration ?? 0)) {
+  const ended = BATTLE_END_STATES.includes(kind);
+  if (ended && !battleEnding.complete) {
+    const narrationExpected = !(kind === 'commemoration' && nanjingCampaignMode && !nanjingCampaign.playerEscaped);
+    const narration = narrationExpected ? endingNarration[kind] : null;
+    if (battleEnding.start(kind, performance.now(), narration?.duration ?? 0)) {
       $('battle-ending').hidden = false;
       $('battle-ending').style.opacity = '0';
       $('battle-ending').dataset.phase = 'fade';
@@ -2320,12 +2324,12 @@ function showOverlay(kind = 'pause') {
       $('battle-ending-continue').hidden = true;
       $('battle-ending-warning').hidden = true;
       battleVoices?.sync(false); civilianVoices?.sync(false); sihangVoices?.sync(false); battleSignals?.sync(false);
-      if (endingNarration[kind] && audioContext?.state === 'running')
-        endingVoice = playEndingNarration(audioContext, endingNarration[kind], audioMixer.output('voices'));
-      else {
+      if (narration && audioContext?.state === 'running')
+        endingVoice = playEndingNarration(audioContext, narration, audioMixer.output('voices'));
+      else if (narrationExpected) {
         $('battle-ending-warning').textContent = `结尾旁白暂不可用：${endingNarrationFailures[kind] ?? '音效尚未启用或未加载完成'}`;
         $('battle-ending-warning').hidden = false;
-        battleVoiceEvent(kind, { eventKey: `match:${kind}` });
+        if (kind !== 'commemoration') battleVoiceEvent(kind, { eventKey: `match:${kind}` });
       }
     }
     return;
@@ -2344,8 +2348,6 @@ function showOverlay(kind = 'pause') {
   $('overlay').hidden = false;
   $('battle-summary').hidden = false;
   $('back-menu').textContent = '返回作战大厅';
-  const ended = ['victory', 'defeat', 'draw'].includes(kind);
-  if (ended && !battleEnding.complete) battleVoiceEvent(kind, { eventKey: `match:${kind}` });
   const dead = kind === 'dead';
   if (ended || dead) missionBriefing.hide();
   $('battle-results').hidden = !ended;
@@ -2362,13 +2364,12 @@ function showOverlay(kind = 'pause') {
   $('encirclement-controls').hidden = !encirclementMode;
   $('deployment-help').open = !dead && !ended;
   $('overlay').querySelector('[data-build-version]').hidden = ended || kind === 'pause';
-  $('overlay-description').hidden = kind === 'victory' && !nanjingCampaignMode;
+  $('overlay-description').hidden = kind === 'victory';
   resetConstruction();
   renderConstruction();
-  $('overlay-kicker').textContent = kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? nanjingCampaignMode ? '守土尽忠 / IN MEMORIAM' : '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
-  $('overlay-title').textContent = nanjingCampaignMode && kind === 'victory' ? '你已登船，撤离南京。'
-    : nanjingCampaignMode && kind === 'defeat' ? '为国捐躯，山河永记。'
-      : kind === 'victory' ? encirclementMode ? '城东阻击告捷。' : '阵地已夺，山河犹在。' : kind === 'defeat' ? encirclementMode && encirclement.phase === 2 ? '敌军突破东门，阻击失利。' : '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
+  $('overlay-kicker').textContent = kind === 'commemoration' ? '历史铭记 / IN MEMORIAM'
+    : kind === 'victory' ? '作战胜利 / VICTORY' : kind === 'defeat' ? '作战失利 / DEFEAT' : kind === 'draw' ? '战局持平 / DRAW' : dead ? '整队阵亡 / REDEPLOY' : '作战暂停 / PAUSED';
+  $('overlay-title').textContent = kind === 'victory' ? encirclementMode ? '城东阻击告捷。' : '阵地已夺，山河犹在。' : kind === 'defeat' ? encirclementMode && encirclement.phase === 2 ? '敌军突破东门，阻击失利。' : '阵地失守，战线未竟。' : kind === 'draw' ? '时间耗尽，双方未分胜负。' : dead ? '重整队伍，再出发。' : '下一步，由你指挥。';
   const victoryRule = encirclementMode ? encirclement.phase === 2
     ? `本阶段地面敌军已全部被歼或逃脱。合围残敌${encirclement.breakout?.strength ?? 0}人，已歼${encirclement.breakout?.killed ?? 0}人、逃出${encirclement.breakout?.escapedIds.length ?? 0}人；歼灭至少2/3且逃出不超过1/3获胜。`
     : kind === 'defeat' ? '日军连续控制三个据点90秒，反夺宽限耗尽，我方合围失败。'
@@ -2376,7 +2377,7 @@ function showOverlay(kind = 'pause') {
     : conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。';
   $('overlay-description').textContent = ended ? victoryRule : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。' : encirclementMode ? '第一阶段占领三个据点形成合围；第二阶段在C点周围布防，20秒后阻击日军穿过东门。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
   if (nanjingCampaignMode) $('overlay-description').textContent = ended
-    ? `已掩护 ${nanjingCampaign.civiliansArrived} 名百姓到达上新河渡口，其中 ${nanjingCampaign.civiliansEvacuated} 名已撤离南京，免于日军屠刀。${kind === 'defeat' ? nanjingCampaign.outcome === 'gate-overrun' ? '中华门第二道门内阵地失守，城市入口被突破，守军战至最后。' : '渡口失守，守军战至最后。' : '你是最后一批撤离的守军。'}`
+    ? `已掩护 ${nanjingCampaign.civiliansArrived} 名百姓到达上新河渡口，其中 ${nanjingCampaign.civiliansEvacuated} 名已渡江。${nanjingCampaign.playerEscaped ? '你已登船离岸。' : nanjingCampaign.outcome === 'gate-overrun' ? '中华门第二道门内阵地被突破。' : '上新河渡口失守。'}`
     : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。'
       : '守住中华门防线，随后撤往上新河渡口掩护百姓登船，最后撤离。';
   else if (encirclementMode && !ended && !dead) $('overlay-description').textContent =
@@ -2405,19 +2406,22 @@ function showOverlay(kind = 'pause') {
   if (encirclementMode && encirclement.breakout) $('battle-summary').textContent =
     `个人击倒 ${kills}　友军击倒 ${teamKills}　合围残敌 ${encirclement.breakout.strength}　已歼 ${encirclement.breakout.killed}　逃脱 ${encirclement.breakout.escapedIds.length}/${encirclement.breakout.escapeLimit}`;
   if (sihangCampaignMode) {
-    $('overlay-kicker').textContent = ended ? kind === 'victory' ? '掩护撤离 / EVACUATED' : '历史铭记 / IN MEMORIAM'
+    $('overlay-kicker').textContent = ended ? '历史铭记 / IN MEMORIAM'
       : dead ? '后备补充 / REINFORCEMENT' : '四行仓库 / SIHANG';
-    $('overlay-title').textContent = ended ? kind === 'victory' ? sihangRetreatStatus(sihangCampaign).unresolved
-      ? '撤离结束，山河终有归期。' : '守军已过桥，山河终有归期。' : '守军的牺牲，历史永远铭记。'
+    $('overlay-title').textContent = ended ? sihangCampaign.outcome === 'withdrawal-ended'
+      ? '撤退结束，铭记四行仓库。' : '铭记四行仓库的坚守。'
       : dead ? sihangDeploymentCount(sihangCampaign) ? '补充新班，继续掩护。' : '补充额度已尽，友军仍在坚守。' : '坚守仓库，掩护撤离。';
     $('overlay-description').hidden = false;
     $('overlay-description').textContent = ended
-      ? `累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit} 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'timeout' ? '撤离时限已尽。' : ''}铭记每一位守军与对岸守望的百姓。`
+      ? `累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit} 人。${sihangCampaign.outcome === 'occupied' ? '一楼阵地被日军占领。' : sihangCampaign.outcome === 'exhausted' ? '守军已无后备兵力。' : ''}铭记每一位守军与对岸守望的百姓。`
       : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     const retreat = sihangRetreatStatus(sihangCampaign);
     $('battle-summary').textContent = sihangCampaign.stage === 'sihang-retreat'
-      ? `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`
+      ? `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}`
       : `个人击倒 ${kills}　友军击倒 ${teamKills}　累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit}　后备 ${sihangCampaign.reserve}`;
+  }
+  if (kind === 'commemoration' && nanjingCampaignMode) {
+    $('overlay-title').textContent = nanjingCampaign.playerEscaped ? '你已登船，撤离南京。' : '铭记南京的守军与百姓。';
   }
 }
 
@@ -2573,7 +2577,7 @@ function refreshDeployment() {
       : '前往仓库南面，抵达后首批出发。玩家可留在北岸掩护或提前过桥；南岸禁火。接到最后撤退命令后过河结算。';
     if (sihangCampaign.stage === 'sihang-retreat') {
       const retreat = sihangRetreatStatus(sihangCampaign);
-      $('battle-summary').textContent = `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}　${retreat.grade}`;
+      $('battle-summary').textContent = `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}`;
     }
   }
   if (!pendingSquad) chooseDeploymentSquad('infantry');
@@ -7131,7 +7135,7 @@ function sihangAssemblyFocusAvailable(actor) {
 
 function updateSihangMission(dt) {
   const point = objectives[0], previousStage = sihangCampaign.stage, player = controlledSoldier(entities);
-  const previousCounterattack = sihangCampaign.counterattack, previousRetreatOpen = sihangCampaign.playerRetreatOpen;
+  const previousCounterattack = sihangCampaign.counterattack;
   const previousFinalRetreat = sihangCampaign.finalRetreatOrdered;
   reopenSihangPlayerEvacuation(sihangCampaign, player);
   if (sihangCampaign.stage === 'sihang-defense' && !sihangCampaign.outcome) {
@@ -7140,8 +7144,7 @@ function updateSihangMission(dt) {
   }
   advanceSihangCampaign(sihangCampaign, dt, { friendly: friendlyForces, playerSquad: allies, player,
     captureLost: point.owner === 'enemy' });
-  if (!previousRetreatOpen && sihangCampaign.playerRetreatOpen) sihangVoices?.play(audioContext, 'retreat-open');
-  else if (!previousCounterattack && sihangCampaign.counterattack) sihangVoices?.play(audioContext, 'counterattack');
+  if (!previousCounterattack && sihangCampaign.counterattack) sihangVoices?.play(audioContext, 'counterattack');
   remaining = sihangCampaign.stageRemaining ?? 0;
   if (previousStage !== sihangCampaign.stage) {
     sihangEnemyPosts = sihangEnemyRegroupPosts(world.obstacles);
@@ -7334,7 +7337,7 @@ function updateSihangMission(dt) {
     sihangVoices?.play(audioContext, 'final-retreat');
   }
   if (sihangCampaign.outcome && !battleEnding.fading && !battleEnding.complete) {
-    showOverlay(sihangCampaign.outcome === 'evacuated' ? 'victory' : 'defeat');
+    showOverlay('commemoration');
   }
 }
 
@@ -7580,7 +7583,7 @@ function updateNanjingMission(dt) {
 
   if (nanjingCampaign.outcome && !nanjingCampaign.overlayShown) {
     nanjingCampaign.overlayShown = true;
-    showOverlay(nanjingCampaign.outcome === 'evacuated' ? 'victory' : 'defeat');
+    showOverlay('commemoration');
   }
 }
 
@@ -8932,7 +8935,7 @@ function tickFrame(now) {
     if (battleEnding.black)
       $('battle-ending-page').style.transform = `translate(-50%, -50%) translateY(${(innerHeight + endingPageHeight) * .5 * (1 - ending.pageProgress)}px)`;
   }
-  if (battleEnding.black || battleEnding.complete && ['victory', 'defeat', 'draw'].includes(state)) {
+  if (battleEnding.black || battleEnding.complete && BATTLE_END_STATES.includes(state)) {
     renderSimulationStatus();
     lastFrame = now; return;
   }

@@ -3,7 +3,7 @@ import { getPlayerPreferences } from './player-preferences.js';
 
 export function createEndingMusic(options) {
   return createMenuMusic({ ...options, startSeconds: 0, resumeTime: 0,
-    playStates: ['history', 'victory', 'defeat', 'draw'], loopOnEnd: false });
+    playStates: ['history', 'victory', 'defeat', 'draw', 'commemoration'], loopOnEnd: false });
 }
 
 let shared = null;

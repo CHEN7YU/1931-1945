@@ -33,7 +33,7 @@ try {
         troops:formations.map(f=>({id:f.id,team:f.team,type:f.type,members:f.members.length,
           alive:f.members.filter(a=>a.health>0).length,generation:f.generation})),
         shields:sihangCombat.snapshot,ending:battleEnding.snapshot,
-        voices:sihangVoices?.snapshot,narration:!!endingNarration.victory&&!!endingNarration.defeat}; },
+        voices:sihangVoices?.snapshot,narration:!!endingNarration.commemoration}; },
       arrange() {
         showOverlay('pause');combatEvents.clear();
         for(const f of formations.filter(f=>f.team==='enemy')){
@@ -154,7 +154,7 @@ try {
   assert.equal(initial.troops.filter(f => f.team === 'enemy').reduce((n, f) => n + f.members, 0), 97);
   assert.equal(initial.campaign.reserve, SIHANG_RULES.troopLimit - 44);
   assert.equal(initial.position[1], SIHANG_LEVELS[0]);
-  assert.equal(initial.voices.clips, sihangVoiceClips().length - 1);
+  assert.equal(initial.voices.clips, sihangVoiceClips().length - 2);
   assert.equal(initial.narration, true);
   const arranged = await page.evaluate(() => sihangReview.arrange());
   assert.equal(arranged.shields.shields, 20);
@@ -185,7 +185,6 @@ try {
   const retreat = await page.evaluate(() => sihangReview.retreat());
   assert.equal(retreat.campaign.stage, 'sihang-retreat');
   assert.equal(retreat.campaign.outcome, null, 'early player crossing cannot bypass other AI survivors');
-  assert.equal(retreat.campaign.playerRetreatOpen, false);
   await page.locator('#resume').click();
   const retreatProgress = [];
   for (let index = 0; index < 36; index++) {
@@ -195,7 +194,7 @@ try {
     if (progress.campaign.outcome) break;
     await page.waitForTimeout(5000);
   }
-  assert.equal(retreatProgress.at(-1).campaign.outcome, 'evacuated',
+  assert.equal(retreatProgress.at(-1).campaign.outcome, 'withdrawal-ended',
     'all real AI survivors must complete the warehouse-to-concession route');
   const victory = await page.evaluate(() => sihangReview.snapshot());
   assert.equal(victory.campaign.evacuatedIds.filter(id => victory.campaign.aiRetreatIds.includes(id)).length,
@@ -206,7 +205,7 @@ try {
   assert.equal(await page.locator('#menu-music').evaluate(audio => audio.paused), true);
   await page.screenshot({ path: join(root, 'historical-page.png') });
   await page.locator('#battle-ending-continue').click();
-  await page.waitForFunction(() => __battle.state === 'victory');
+  await page.waitForFunction(() => __battle.state === 'commemoration');
   const endingAfter = await page.locator('#ending-music').evaluate(audio => audio.currentTime);
   assert.ok(endingAfter >= endingBefore.time, 'history-to-results must not restart the ending song');
   const destroyed = await page.evaluate(() => sihangReview.explode());

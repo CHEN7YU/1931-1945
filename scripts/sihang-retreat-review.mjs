@@ -1730,7 +1730,7 @@ try {
         },
         snapshot() {
           return { fixture: 'full-finite-roster-real-walking-no-enemy-interference', time, stage: sihangCampaign.stage, outcome: sihangCampaign.outcome,
-            open: sihangCampaign.playerRetreatOpen, evacuated: sihangCampaign.evacuatedIds.length,
+            evacuated: sihangCampaign.evacuatedIds.length,
             total: sihangCampaign.retreatTotal, reserve: sihangCampaign.reserve, released: sihangCampaign.assemblyReleased,
             counterattack: sihangCampaign.counterattack, static: sihangParade.count,
             maximumStatic: this.maximumStatic, faded: this.exitedIds?.size ?? 0,
@@ -2767,7 +2767,7 @@ try {
   const last = frames.at(-1);
   await save();
   console.log(JSON.stringify(last, null, 2));
-  assert.equal(last.outcome, 'evacuated', 'every original identity must physically reach safety');
+  assert.equal(last.outcome, 'withdrawal-ended', 'every original identity must physically reach safety');
   assert.equal(last.evacuated, last.total);
   assert.ok(last.static <= Math.min(40, last.total - 1), 'the environmental formation is limited to forty evacuees');
   assert.equal(last.reserve, 0);

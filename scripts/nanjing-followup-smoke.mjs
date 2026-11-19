@@ -122,7 +122,13 @@ try {
           $('hud').hidden=false;
           $('scoreboard').hidden=false;updateHUD();renderSquadScores();
           const tabWidth=$('scoreboard').getBoundingClientRect().width;
-          showOverlay('victory');return{tabWidth};
+          Object.assign(nanjingCampaign,{outcome:'evacuated',playerEscaped:true});
+          showOverlay('commemoration');
+          const endingAt=performance.now()+31000;
+          battleEnding.update(endingAt);
+          battleEnding.update(endingAt+6000);
+          if(!battleEnding.finish())throw Error('Could not open Nanjing contribution results');
+          return{tabWidth};
         }
       };` });
   });

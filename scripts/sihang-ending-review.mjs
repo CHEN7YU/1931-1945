@@ -32,7 +32,7 @@ try {
           sihangCampaign = createSihangCampaign();
           Object.assign(sihangCampaign, {
             stage: 'sihang-retreat', stageRemaining: null, reserve: 0, retreatReserve: 0,
-            retreatTotal: 3, retreatRequired: 2, deployed: 400,
+            retreatTotal: 3, deployed: SIHANG_RULES.troopLimit,
             assemblyPrepared: true, assemblyReleased: true, withdrawalWaveNumber: 1,
             retreatIds: [player.id, rescued.id, stuck.id], aiRetreatIds: [rescued.id, stuck.id],
             withdrawalWave: { number: 1, phase: 'main', coverSlot: 0, covering: false,
@@ -59,6 +59,7 @@ try {
         },
         moveStuck(x, z) { this.stuck.position.set(x, 0, z); },
         movePlayer(x, z) { this.player.position.set(x, 0, z); },
+        resumeEnding() { setGameState('playing'); },
       };` });
   });
   const url = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5353');
@@ -89,7 +90,8 @@ try {
   assert.equal(waiting.outcome, null);
   await page.evaluate(() => sihangEndingReview.movePlayer(83, 40));
   const crossed = await page.evaluate(() => sihangEndingReview.step(.1));
-  assert.equal(crossed.outcome, 'evacuated');
+  assert.equal(crossed.outcome, 'withdrawal-ended');
+  assert.equal(crossed.ending.result, 'commemoration');
   assert.equal(crossed.ending.phase, 'fade');
   assert.equal(crossed.retreat.unresolved, 1);
   assert.equal(crossed.stuckHealth, 100);
@@ -101,8 +103,16 @@ try {
   const complete = await page.evaluate(() => sihangEndingReview.step(.1));
   assert.equal(complete.retreat.unresolved, 0);
   assert.equal(complete.ending.phase, 'fade');
-  assert.equal(complete.outcome, 'evacuated');
+  assert.equal(complete.outcome, 'withdrawal-ended');
+  assert.equal(complete.ending.result, 'commemoration');
   assert.equal(complete.stuckEvacuated, true);
+  await page.evaluate(() => sihangEndingReview.resumeEnding());
+  await page.waitForFunction(() => __battle.battleEnding.canContinue, null, { timeout: 45000 });
+  assert.match(await page.locator('#battle-ending-page').textContent(), /历时约三个月的淞沪会战/);
+  await page.locator('#battle-ending-continue').click();
+  await page.waitForFunction(() => __battle.state === 'commemoration' && !document.getElementById('battle-results').hidden);
+  assert.match(await page.locator('#overlay-title').textContent(), /撤退结束/);
+  assert.doesNotMatch(await page.locator('#battle-summary').textContent(), /未达目标|出色掩护|完成任务/);
   assert.deepEqual(errors, []);
   await writeFile(join(directory, 'observations.json'), JSON.stringify({
     fixture: 'Production mission and HUD calls with manually positioned real actors and manually advanced simulation time; not natural play.',

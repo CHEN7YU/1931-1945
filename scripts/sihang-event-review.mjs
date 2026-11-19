@@ -89,13 +89,8 @@ try {
           crossing.position.set(88, 0, 30);
           updateSihangMission(.05);
           const counterattack = { ...sihangVoices?.snapshot };
-          const needed = sihangCampaign.retreatRequired - sihangCampaign.evacuatedIds.length;
-          sihangCampaign.evacuatedIds.push(...sihangCampaign.retreatIds
-            .filter(id => !sihangCampaign.evacuatedIds.includes(id)).slice(0, needed));
-          updateSihangMission(.05);
-          const retreatOpen = { ...sihangVoices?.snapshot };
           setGameState('pause');
-          return { withdrawal, counterattack, retreatOpen };
+          return { withdrawal, counterattack };
         }
       };` });
   });
@@ -140,7 +135,6 @@ try {
   await writeFile(join(directory, 'events.json'), JSON.stringify(report, null, 2));
   assert.equal(voices.withdrawal.active, 'withdrawal');
   assert.equal(voices.counterattack.active, 'counterattack');
-  assert.equal(voices.retreatOpen.active, 'retreat-open');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ demolition, effects: effects.map(({ style, milliseconds, programsBefore, programsAfter }) =>
     ({ style, milliseconds, programsBefore, programsAfter })) }, null, 2));

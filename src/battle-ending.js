@@ -1,3 +1,5 @@
+export const BATTLE_END_STATES = Object.freeze(['victory', 'defeat', 'draw', 'commemoration']);
+
 export const ENDING_NARRATION = Object.freeze({
   'taierzhuang-fort': '感谢有你，我们第一次在正面战场围歼了日军！',
   nanjing: '感谢你在城外拖延日军，感谢你在渡口掩护百姓和友军撤退，唐司令命令我们撤离南京，我们会再打回来了！',
@@ -18,9 +20,10 @@ export const BATTLE_HISTORY = Object.freeze({
     sections: [
       ['四百余人，八百壮士', '淞沪会战后期，谢晋元率第88师第262旅第524团四百余名官兵坚守四行仓库，掩护主力后撤。守军对外号称八百人，“八百壮士”由此成为中国军民不屈抗争的象征。'],
       ['隔河相望的坚守', '守军与日军激战四昼夜。新华社相关报道记述其打退十余次进攻、毙伤日军二百余人。南岸百姓声援，运送旗帜、食物和药品。守军的牺牲和普通人的苦难，不应被缩减为游戏里的数字。'],
-      ['铭记，而不遗忘', '10月31日凌晨，守军奉命撤入公共租界。坚守为后撤争得了时间，也向世界表达了中国人民抗战到底的决心。本关的九分钟战斗、钢板阵战术及北墙爆破缺口是游戏化演绎，不是对历史过程的逐项复刻。'],
+      ['淞沪会战：为抗战争取时间', '10月31日凌晨，四行守军奉命撤入公共租界。历时约三个月的淞沪会战伤亡惨重，上海最终失陷，但中国军民的抵抗挫败了日军企图在三个月内迫使中国屈服的图谋。四行仓库的坚守是这场抵抗的一部分。本关的战斗与撤退流程为游戏化演绎。'],
     ],
-    sources: [['新华社：孤军浴血守四行', 'https://www.xinhuanet.com/politics/20250624/dbf2a07cbf3f43e9857ff7377e4b768f/c.html'],
+    sources: [['人民日报：淞沪会战', 'https://politics.people.com.cn/n1/2018/1031/c1001-30372286.html'],
+      ['新华社：孤军浴血守四行', 'https://www.xinhuanet.com/politics/20250624/dbf2a07cbf3f43e9857ff7377e4b768f/c.html'],
       ['国防部转载新华社：谢晋元等八百壮士', 'http://www.mod.gov.cn/2018gfbztlbmb/2018-12/22/content_4832662.htm']],
   },
   'taierzhuang-fort': {
@@ -50,7 +53,7 @@ export function createBattleEnding({ onBlack = () => {}, onFinish = () => {} } =
   let phase = 'idle', result = null, elapsed = 0, lastAt = null, fadeSeconds = 8;
   return {
     start(outcome, now, narrationSeconds = 0) {
-      if (!['victory', 'defeat', 'draw'].includes(outcome) || !Number.isFinite(now) ||
+      if (!BATTLE_END_STATES.includes(outcome) || !Number.isFinite(now) ||
         !Number.isFinite(narrationSeconds) || narrationSeconds < 0) throw new RangeError('Invalid battle ending');
       if (phase !== 'idle') return false;
       phase = 'fade'; result = outcome; elapsed = 0; lastAt = now;
@@ -84,11 +87,11 @@ export function createBattleEnding({ onBlack = () => {}, onFinish = () => {} } =
 }
 
 export async function loadEndingNarration(campaign, outcome = 'victory') {
-  if (!['victory', 'defeat', 'draw'].includes(outcome)) throw new RangeError('Invalid narration outcome');
+  if (!BATTLE_END_STATES.includes(outcome)) throw new RangeError('Invalid narration outcome');
   const clip = endingVoiceClips().find(clip => clip.campaign === campaign);
   if (!clip) throw new RangeError('No ending narration for this campaign');
   const file = outcome !== 'victory' && campaign === 'sihang' ? '/assets/audio/sihang-voices/memorial.mp3'
-    : outcome === 'victory' ? `/assets/audio/battle-endings/${clip.file}`
+    : outcome === 'victory' || outcome === 'commemoration' ? `/assets/audio/battle-endings/${clip.file}`
     : `/assets/audio/battle-voices/friendly-0-${outcome}-1.mp3`;
   const response = await fetch(file, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`Ending narration: HTTP ${response.status}`);

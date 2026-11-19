@@ -136,11 +136,11 @@ try {
             count: allies.length, state, retreatDeployed: sihangCampaign.retreatDeployed };
           for (const actor of friendlyAI) actor.position.set(92, 0, 4);
           updateSihangMission(.05);
-          const open = sihangCampaign.playerRetreatOpen;
+          const beforeLoss = sihangCampaign.outcome;
           hurt(replacement, 200, { credit: 'environment', cause: 'fall', subjectId: replacement.id }, 'fall');
           updateSihangMission(.05);
           setGameState('pause');
-          return { before, spawned, open, after: sihangCampaign.outcome };
+          return { before, spawned, beforeLoss, after: sihangCampaign.outcome };
         },
       };
     ` });
@@ -189,7 +189,7 @@ try {
   assert.equal(results.retreat.spawned.count, 11); assert.equal(results.retreat.spawned.health, 100);
   assert.equal(results.retreat.spawned.p[1], 0);
   assert.ok(results.retreat.spawned.p[2] > -8 && results.retreat.spawned.p[2] < 0);
-  assert.equal(results.retreat.open, true); assert.equal(results.retreat.after, 'squad-lost');
+  assert.equal(results.retreat.beforeLoss, null); assert.equal(results.retreat.after, 'withdrawal-ended');
   assert.deepEqual(errors, []);
   await writeFile(join(directory, 'corrections.json'), JSON.stringify({ ...results, errors }, null, 2));
   console.log('Sihang feedback corrections passed');

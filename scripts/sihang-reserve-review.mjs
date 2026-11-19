@@ -112,7 +112,6 @@ try {
             throw new Error('Expected the excluded child to remain in the AI retreat');
           for (const actor of friendlyForces) if (actor !== player && actor !== child) actor.health = 0;
           sihangCampaign.retreatTotal = sihangCampaign.retreatIds.length + sihangCampaign.retreatReserve;
-          sihangCampaign.retreatRequired = Math.floor(sihangCampaign.retreatTotal / 2) + 1;
           player.position.set(80, 0, 15);
           updateSihangMission(.05);
           const playerCrossing = { saved: sihangCampaign.evacuatedIds.includes(player.id),
@@ -225,7 +224,7 @@ try {
   assert.equal(finish.aiCrossing.outcome, null);
   assert.equal(finish.childRemoved, true);
   assert.equal(finish.unresolved, 0);
-  assert.ok(['evacuated', 'retreat-losses'].includes(finish.outcome));
+  assert.equal(finish.outcome, 'withdrawal-ended');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ fixture: 'artificial-reserve-and-player-deaths-actual-ai-spawn-and-deployment-refresh',
     before, consumed, after, original, transferred, stepped, unavailable, second, finish }));
