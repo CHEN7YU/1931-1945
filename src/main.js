@@ -8968,9 +8968,10 @@ function tickFrame(now) {
   world.buildingFire.update(time, { smoke: graphics.snapshot.effects.smoke, low: graphics.snapshot.preset === 'low' });
   for (const puff of world.smoke) {
     if (!puff.visible) continue;
-    const phase = (now * .000025 + puff.userData.phase) % 1;
-    puff.position.set(puff.userData.originX + phase * 8, (puff.userData.originY ?? 4) + phase * 27, puff.userData.originZ);
-    puff.scale.setScalar(5 + phase * 16);
+    const { originX, originY = 4, originZ, phase: offset, rise = 27, drift = 8, size = 5, spread = 16 } = puff.userData;
+    const phase = (now * .000025 + offset) % 1;
+    puff.position.set(originX + phase * drift, originY + phase * rise, originZ);
+    puff.scale.setScalar(size + phase * spread);
   }
   if (sihangCampaignMode) {
     if (sihangCampaign.stage === 'sihang-defense') daylight.setEnabled(graphics.snapshot.effects.overcast);

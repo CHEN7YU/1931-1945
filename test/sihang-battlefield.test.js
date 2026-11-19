@@ -687,6 +687,11 @@ describe('independent Sihang Warehouse battlefield', () => {
     assert.ok(world.sceneArt.city.vegetationTriangles < 4000);
     assert.equal(world.sceneArt.city.signDrawCalls, 1);
     assert.equal(world.sceneArt.city.trees, 7, 'rear-row trees are removed with the cropped blocks');
+    const branches = scene.children.find(object => object.userData.sihangFeature === 'leafless-branches');
+    assert.ok(branches?.isInstancedMesh);
+    assert.ok(branches.boundingSphere.radius > 90, 'bare branches still span the south-bank row');
+    assert.ok(!scene.children.some(object => object.isInstancedMesh && object.geometry.type === 'IcosahedronGeometry'),
+      'south-bank trees no longer render solid green crowns');
     assert.equal(world.town.fortifications.filter(point => point.id.startsWith('warehouse-ground-sandbags')).length, 6);
     for (const x of [-28, -12]) {
       assert.equal(world.town.fortifications.some(point => point.id === `north-gate-sandbags-${x}`), false);

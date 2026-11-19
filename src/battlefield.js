@@ -6,7 +6,7 @@ import { OBJECTIVES } from './core.js';
 import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
 import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
 import { createDoorWorld } from './door-world.js';
-import { staticGeometryBatches, STATIC_BATCH_CELL_SIZE } from './static-scene-batches.js';
+import { staticGeometryBatches } from './static-scene-batches.js';
 import { SHELL_CRATERS, CRATER_EDGE, RUINED_SHOPS } from './war-damage-layout.js';
 import { damagedSurfaceGeometry, craterGeometry, addStaticWrecks } from './war-damage.js';
 import { makeOutskirtsLayout, outskirtsObstacles } from './outskirts-layout.js';
@@ -629,28 +629,24 @@ export function makeWorld(scene, surface, options = {}) {
     material.vertexColors = true;
     return [kind, material];
   }));
-  const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .92 });
-  leaves.userData.spatialBatch = true;
   const treeContact = surface('root-litter', 0xd5c8b4);
   treeContact.alphaMap = woodlandGroundContactMask();
   treeContact.alphaMap.channel = 1;
   Object.assign(treeContact, { transparent: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  const trees = woodlandLayout(outskirts.buildings), treeMaterials = new Map();
+  const trees = woodlandLayout(outskirts.buildings).map(tree => ({ ...tree, dead: true })), treeMaterials = new Map();
   for (const tree of trees) {
     // Separate stands retain frustum culling after static material batching.
     const stand = `${tree.x < 0 ? 'west' : 'east'}-${tree.z < 0 ? 'north' : 'south'}`;
-    if (!treeMaterials.has(stand)) treeMaterials.set(stand, { bark: new Map(), leaves: leaves.clone() });
+    if (!treeMaterials.has(stand)) treeMaterials.set(stand, { bark: new Map() });
     const materials = treeMaterials.get(stand);
     if (!materials.bark.has(tree.species)) materials.bark.set(tree.species, bark[tree.species].clone());
     const geometry = woodlandTreeGeometry(tree), y = groundHeight(tree.x, tree.z);
     mesh(geometry.bark, materials.bark.get(tree.species), tree.x, y, tree.z, true).userData.keepUV = true;
-    if (geometry.foliage) mesh(geometry.foliage, materials.leaves, tree.x, y, tree.z);
     mesh(woodlandGroundContactGeometry(tree), treeContact, 0, 0, 0).castShadow = false;
     obstacle(tree.x, tree.z, tree.radius * 2, tree.radius * 2, tree.height * .8);
   }
-  sceneArt.woodland = { trees: trees.length, stands: treeMaterials.size, leafStyle: 'individual-folded-leaves',
-    leafBatches: 0, leafCellMeters: STATIC_BATCH_CELL_SIZE,
+  sceneArt.woodland = { trees: trees.length, stands: treeMaterials.size, leafStyle: 'bare-branches',
     barkBatches: [...treeMaterials.values()].reduce((sum, materials) => sum + materials.bark.size, 0),
     barkSources: Object.fromEntries(species.map(kind => [kind, bark[kind].userData.source])),
     groundContact: treeContact.userData.source,
@@ -724,7 +720,6 @@ export function makeWorld(scene, surface, options = {}) {
     for (const [cell, geometries] of cells) {
       const combined = new THREE.Mesh(mergeGeometries(geometries), mat);
       combined.userData.staticCell = cell;
-      if (mat.userData.spatialBatch) sceneArt.woodland.leafBatches++;
       combined.geometry.computeBoundingBox();
       combined.geometry.computeBoundingSphere();
       combined.castShadow = !mat.transparent;

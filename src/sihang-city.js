@@ -331,22 +331,39 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
   }
   budget.smokeSprites = smoke.length;
 
-  // Three opaque instanced vegetation submissions avoid leaf-card alpha overdraw.
-  const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x526748, roughness: 1 });
+  const reedMaterial = new THREE.MeshStandardMaterial({ color: 0x82734d, roughness: 1 });
   const treePositions = [];
   for (const x of [-99, -75, -51, -27, 3, 78, 101]) {
     treePositions.push({ x, z: 52 });
   }
   const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.13, .25, 3.8, 6), materials.wood, treePositions.length + 5);
-  const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), foliageMaterial, treePositions.length * 2);
+  const branches = new THREE.InstancedMesh(new THREE.CylinderGeometry(.026, .095, 1, 5), materials.wood, treePositions.length * 9);
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3();
+  const setBranch = (index, from, to, width) => {
+    direction.subVectors(to, from);
+    const length = direction.length();
+    quaternion.setFromUnitVectors(up, direction.divideScalar(length));
+    matrix.compose(from.clone().lerp(to, .5), quaternion, new THREE.Vector3(width, length, width));
+    branches.setMatrixAt(index, matrix);
+  };
   for (const [i, p] of treePositions.entries()) {
+    quaternion.identity();
     matrix.compose(new THREE.Vector3(p.x, 1.9, p.z), quaternion, new THREE.Vector3(1, 1, 1)); trunks.setMatrixAt(i, matrix);
-    for (let crown = 0; crown < 2; crown++) {
-      matrix.compose(new THREE.Vector3(p.x + crown * .7, 4 + crown * .65, p.z),
-        quaternion, new THREE.Vector3(1.6, 1.45, 1.55)); crowns.setMatrixAt(i * 2 + crown, matrix);
+    for (let j = 0; j < 3; j++) {
+      const angle = i * 1.8 + j * 2.4, dx = Math.cos(angle), dz = Math.sin(angle);
+      const base = new THREE.Vector3(p.x, 2.15 + j * .45, p.z);
+      const elbow = base.clone().add(new THREE.Vector3(dx * .72, .68, dz * .72));
+      const tip = elbow.clone().add(new THREE.Vector3(dx * .58, .77 + .25 * Math.sin(i + j), dz * .58));
+      const twig = elbow.clone().add(new THREE.Vector3(dx * .32 - dz * .44, .53, dz * .32 + dx * .44));
+      const index = i * 9 + j * 3;
+      setBranch(index, base, elbow, 1);
+      setBranch(index + 1, elbow, tip, .53);
+      setBranch(index + 2, elbow, twig, .34);
     }
   }
+  quaternion.identity();
+  branches.userData.sihangFeature = 'leafless-branches';
   budget.trees = treePositions.length;
   for (const [i, x] of [-98, -84, -54, 20, 84].entries()) {
     matrix.compose(new THREE.Vector3(x, 1.2, -51), quaternion, new THREE.Vector3(.9, .6, .9));
@@ -358,16 +375,17 @@ export function createSihangCity({ scene, box: makeBox, town, materials, surface
     const bounds = sihangRiverBounds(x);
     for (const z of [bounds.northZ + .8, bounds.southZ - .8]) reedPositions.push({ x, z });
   }
-  const reeds = new THREE.InstancedMesh(reedGeometry, foliageMaterial, reedPositions.length);
+  const reeds = new THREE.InstancedMesh(reedGeometry, reedMaterial, reedPositions.length);
   for (const [i, p] of reedPositions.entries()) {
     matrix.compose(new THREE.Vector3(p.x, -.6, p.z), quaternion, new THREE.Vector3(1, .7 + i % 3 * .15, 1));
     reeds.setMatrixAt(i, matrix);
   }
   budget.reedClumps = reedPositions.length;
-  for (const mesh of [trunks, crowns, reeds]) {
+  for (const mesh of [trunks, branches, reeds]) {
     mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
   }
-  budget.vegetationTriangles = trunks.count * 24 + crowns.count * 80 + reeds.count * 6;
+  budget.vegetationTriangles = [trunks, branches, reeds]
+    .reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0);
   budget.signTriangles = signs.length * 2;
   budget.staticBatches = materialRegions.size;
   budget.totalTriangles = budget.staticTriangles + budget.vegetationTriangles + budget.signTriangles + budget.sootTriangles;

@@ -13,6 +13,7 @@ import { AIR_SUPPORT, createAirSupport } from './air-support.js';
 import { AIRCRAFT_GUN } from './aircraft-ai.js';
 import { TYPES } from './core.js';
 import { batchStaticScene } from './static-scene-batches.js';
+import { NANJING_WALL_PLUMES, nanjingDamagedWallGeometry, nanjingWallNotch } from './nanjing-wall-damage.js';
 import { createBuildingFire } from './building-fire.js';
 import { createWaterWaveClock } from './water-waves.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
@@ -189,7 +190,7 @@ export function makeNanjingBattlefield(scene, surface) {
     return mesh;
   }
 
-  function shellPocks(x, y, z, radius, seed) {
+  function shellPocks(x, y, z, radius, seed, face = -1) {
     const vertices = [], colors = [], sectors = 9;
     x += Math.sin(seed * 19.17) * .17;
     y += Math.cos(seed * 7.31) * .14;
@@ -200,7 +201,7 @@ export function makeNanjingBattlefield(scene, surface) {
         const r = ring === 0 ? 0 : radius * (ring === 1 ? .5 : 1) *
           (1 + .2 * Math.sin(corner * 3.7 + seed));
         vertices.push(x + Math.cos(angle) * r, y + Math.sin(angle) * r,
-          z - .008);
+          z + face * .008);
         colors.push(.012, .009, .006, ring === 0 ? .95 : ring === 1 ? .8 : 0);
       }
     }
@@ -547,6 +548,13 @@ export function makeNanjingBattlefield(scene, surface) {
     if (main) {
       const plaque = makePlaque('中華門', 0, archCrown + .95, z + depth / 2 + .10, 3.2, 1, true);
       plaque.userData.nanjingFeature = 'gate-name-plaque';
+      const front = z + depth / 2;
+      for (const [index, [x, y, radius]] of [
+        [-4.6, 2.45, .76], [-5.4, 3.1, .32], [-3.9, 1.65, .25],
+        [-7.2, 4.65, .41], [-8.1, 4.2, .22], [-5.8, 5.85, .27],
+        [3.65, 3.45, .54], [4.1, 2.55, .28], [5.0, 3.85, .34],
+        [8.2, 5.2, .63], [9.05, 4.65, .26], [7.6, 5.8, .21],
+      ].entries()) shellPocks(x, y, front, radius, 105 + index, 1);
     }
     const merlons = [];
     for (let x = -width / 2 + 2 * DETAIL_SCALE; x <= width / 2 - 2 * DETAIL_SCALE; x += 4 * DETAIL_SCALE) {
@@ -575,8 +583,10 @@ export function makeNanjingBattlefield(scene, surface) {
       }
       for (let index = 0; index < 22; index++) {
         const rubbleHeight = (.3 + index % 3 * .14) * DETAIL_SCALE;
-        const rubble = addBox((-8 + index % 16) * DETAIL_SCALE, rubbleHeight / 2,
-          z + (4 + index % 5) * DETAIL_SCALE, (.45 + index % 3 * .15) * DETAIL_SCALE,
+        const side = index % 2 ? 1 : -1;
+        const x = side * (3.15 + index % 7 * .29 + Math.sin(index * 2.7) * .34);
+        const rubble = addBox(x, rubbleHeight / 2,
+          z + depth / 2 + .22 + index % 5 * .25, (.45 + index % 3 * .15) * DETAIL_SCALE,
           rubbleHeight, (.5 + index % 4 * .12) * DETAIL_SCALE, index % 3 ? brick : stone);
         rubble.rotation.y = index * .73;
         rubble.userData.nanjingFeature = 'gate-rubble';
@@ -613,9 +623,34 @@ export function makeNanjingBattlefield(scene, surface) {
   }
 
   const gateways = STONE_WALLS.map(z => makeGate(z, z === NANJING_GATE_Z));
+  const damagedWallBrick = brick.clone();
+  damagedWallBrick.onBeforeCompile = brick.onBeforeCompile;
+  damagedWallBrick.customProgramCacheKey = brick.customProgramCacheKey;
+  damagedWallBrick.vertexColors = true;
+  const damagedWallFaces = [];
+  function applyWallDamage(wall, side) {
+    const rotated = side === 'west';
+    const { x, z } = wall.position;
+    const { x: width, y: height, z: depth } = wall.scale;
+    const center = rotated ? -z : x, length = rotated ? depth : width, thickness = rotated ? width : depth;
+    const face = new THREE.Mesh(nanjingDamagedWallGeometry(side, center - length / 2, center + length / 2,
+      height, thickness, brick.userData.metersPerTile ?? 2.4), damagedWallBrick);
+    face.position.copy(wall.position);
+    face.scale.set(length, height, thickness);
+    if (rotated) face.rotation.y = Math.PI / 2;
+    face.castShadow = face.receiveShadow = true;
+    scene.add(face);
+    damagedWallFaces.push(face);
+    wall.userData.nanjingBattleDamage = side;
+    wall.updateMatrixWorld(true);
+    scene.remove(wall);
+  }
+  const damagedMerlon = (side, x) => [-.65, -.3, 0, .3, .65].some(dx => nanjingWallNotch(side, x + dx) > .025);
   const northernWall = addBox(16, 5, -113, 180, 10, 4.4, brick);
   northernWall.userData.nanjingFeature = 'northern-city-wall';
+  applyWallDamage(northernWall, 'north');
   for (let x = -73; x <= 105; x += 2.4) {
+    if (damagedMerlon('north', x)) continue;
     const merlon = addBox(x, 10.55, -111.2, 1.3, 1.1, .6, brick);
     merlon.userData.nanjingFeature = 'northern-city-wall-merlon';
   }
@@ -629,6 +664,7 @@ export function makeNanjingBattlefield(scene, surface) {
       const wall = addBox((section.minX + section.maxX) / 2, WALL_WALK.height / 2, z,
         section.maxX - section.minX, WALL_WALK.height, depth, brick, true, true);
       wall.userData.nanjingFeature = 'city-wall';
+      applyWallDamage(wall, width > depth ? 'south' : 'west');
       flankWalkSupports.push({ ...section, height: WALL_WALK.height });
     }
     if (breach) {
@@ -643,12 +679,35 @@ export function makeNanjingBattlefield(scene, surface) {
     for (let offset = 1; offset < length; offset += 2.2) {
       if (breach && bounds.minX + offset > breach.minX - .6 &&
         bounds.minX + offset < breach.maxX + .6) continue;
+      if (damagedMerlon(horizontal ? 'south' : 'west',
+        horizontal ? bounds.minX + offset : -(bounds.minZ + offset))) continue;
       const merlon = addBox(horizontal ? bounds.minX + offset : bounds.minX + .4,
         WALL_WALK.height + .4, horizontal ? bounds.maxZ - .4 : bounds.minZ + offset,
         horizontal ? 1.2 : .8, .8, horizontal ? .8 : 1.2, stone, true);
       merlon.userData.nanjingFeature = 'city-wall-merlon';
     }
   }
+  const fallenBrick = new THREE.InstancedMesh(boxGeometry, brick, NANJING_WALL_PLUMES.length * 38);
+  const fallenPose = new THREE.Object3D();
+  for (const [side, { x, z, heading }] of NANJING_WALL_PLUMES.entries()) {
+    for (let i = 0; i < 38; i++) {
+      const scatter = i * .618034 % 1;
+      const height = .14 + (1 - scatter) ** 2 * (.29 + i % 5 * .09);
+      const along = Math.sin(i * 3.87) * (.7 + scatter * 4.4);
+      const outward = .46 + scatter ** 1.5 * 3.6 + (i % 3) * .26;
+      fallenPose.position.set(x + Math.cos(heading) * along + Math.sin(heading) * outward,
+        height * .37, z - Math.sin(heading) * along + Math.cos(heading) * outward);
+      fallenPose.rotation.set(i * .83 % .57, i * 2.04, i * .62 % .54);
+      fallenPose.scale.set(height * (1.4 + (i % 3) * .55), height, height * 1.36);
+      fallenPose.updateMatrix();
+      const index = side * 38 + i;
+      fallenBrick.setMatrixAt(index, fallenPose.matrix);
+      fallenBrick.setColorAt(index, new THREE.Color().setRGB(.55 + scatter * .36, .51 + scatter * .38, .44 + scatter * .42));
+    }
+  }
+  fallenBrick.receiveShadow = true;
+  fallenBrick.userData.nanjingFeature = 'wall-foot-rubble';
+  scene.add(fallenBrick);
   for (const spec of [
     { text: '誓死保卫南京', lines: ['誓死保卫南京'], x: -30, width: 8, height: 2 },
     { text: '地无分南北，年无分老幼，无论何人，皆有守土抗战之责',
@@ -1439,6 +1498,21 @@ export function makeNanjingBattlefield(scene, surface) {
     scorch.userData.nanjingFeature = 'burned-house-soot';
     scene.add(scorch);
   }
+  for (const [index, { x, z, wall, heading }] of NANJING_WALL_PLUMES.entries()) {
+    const originY = (wall === 'north' ? 10 : WALL_WALK.height) - .65;
+    const originX = x - Math.sin(heading) * .22, originZ = z - Math.cos(heading) * .22;
+    const first = Math.floor(index * smoke.length / NANJING_WALL_PLUMES.length / 5) * 5;
+    for (let layer = 0; layer < 5; layer++) {
+      const phase = layer / 5;
+      const puff = new THREE.Sprite(smokeMaterial);
+      puff.userData = { originX, originY, originZ,
+        phase, homeId: `wall-damage-${index}`, rise: 10, drift: 3, size: 3.1, spread: 4 };
+      puff.position.set(originX + phase * 3, originY + phase * 10, originZ);
+      puff.scale.setScalar(3.1 + phase * 4);
+      scene.add(puff);
+      smoke.splice(first + layer, 0, puff);
+    }
+  }
 
   for (const point of NANJING_OBJECTIVES.filter(objective => objective.capturePoint)) {
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, 6, 8), timber);
@@ -1477,8 +1551,6 @@ export function makeNanjingBattlefield(scene, surface) {
     material.vertexColors = true;
     return [species, material];
   }));
-  const treeLeaves = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .92 });
-  treeLeaves.userData.spatialBatch = true;
   const candidates = [
     ...[-100, -54, -34, -14, 8, 28, 76].map(z => [-67, z]),
     ...[-81, -61, -41, -21, 9].flatMap(z => [-56, -43, -33, -23, -13, 17, 29, 41, 51, 61, 83, 95].map(x => [x, z])),
@@ -1502,25 +1574,20 @@ export function makeNanjingBattlefield(scene, surface) {
     const species = x < -64 ? 'willow' : index % 4 === 0 ? 'poplar' : 'elm';
     const profile = WOODLAND_SPECIES[species], height = 5 + (Math.sin(index * 8.31) + 1) * 1.6;
     const tree = { x, z, species, height, radius: height * profile.girth, seed: 1937 + index,
-      age: index % 7 === 0 ? 'sapling' : 'adult', dead: index % 13 === 4,
+      age: index % 7 === 0 ? 'sapling' : 'adult', dead: true,
       sparse: index % 5 === 0, heading: index * 2.39 };
-    const geometry = woodlandTreeGeometry(tree);
-    for (const [part, material] of [[geometry.bark, treeBark[species]], [geometry.foliage, treeLeaves]]) {
-      if (!part) continue;
-      const mesh = new THREE.Mesh(part, material);
-      mesh.position.set(x, -.16, z);
-      mesh.castShadow = material !== treeLeaves;
-      mesh.receiveShadow = true;
-      mesh.userData.nanjingFeature = 'city-tree';
-      mesh.userData.keepUV = true;
-      scene.add(mesh); solids.push(mesh);
-    }
+    const mesh = new THREE.Mesh(woodlandTreeGeometry(tree).bark, treeBark[species]);
+    mesh.position.set(x, -.16, z);
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.nanjingFeature = 'city-tree';
+    mesh.userData.keepUV = true;
+    scene.add(mesh); solids.push(mesh);
     obstacles.push({ minX: x - tree.radius, maxX: x + tree.radius,
       minZ: z - tree.radius, maxZ: z + tree.radius, height: height * .8,
       circular: true, cx: x, cz: z, radius: tree.radius });
     trees.push(tree);
   }
-  sceneArt.woodland = { trees: trees.length, leafStyle: 'individual-folded-leaves',
+  sceneArt.woodland = { trees: trees.length, leafStyle: 'bare-branches',
     species: Object.fromEntries(Object.keys(WOODLAND_SPECIES).map(species =>
       [species, trees.filter(tree => tree.species === species).length])) };
   obstacles.push(...NANJING_EMPLACEMENTS.flatMap(emplacementObstacles));
@@ -1761,8 +1828,9 @@ export function makeNanjingBattlefield(scene, surface) {
   }));
   craterSupport = addBattlefieldCraters(scene, terrainSurfaces, solids, shellCraters, ground);
   const buildingFire = createBuildingFire(scene, residentialBuildings, { flames: false });
-  const masonryMeshes = solids.filter(mesh => mesh.isMesh && masonryFeatures.has(mesh.userData.nanjingFeature) &&
-    !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent);
+  const masonryMeshes = [...damagedWallFaces, ...solids.filter(mesh => mesh.isMesh &&
+    masonryFeatures.has(mesh.userData.nanjingFeature) && !mesh.userData.nanjingBattleDamage &&
+    !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent)];
   const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
   staticRendering.masonrySources = masonryMeshes.length;
   sceneArt.staticRendering = staticRendering;

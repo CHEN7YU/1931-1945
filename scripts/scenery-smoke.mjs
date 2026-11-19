@@ -46,8 +46,8 @@ try {
       camera.position.set(...eye); camera.lookAt(...target);
       renderer.render(scene, camera);
     };
-    const trees = woodlandLayout(world.outskirts.buildings);
-    const tree = trees.find(tree => !tree.dead && tree.x < 0 && tree.z < -25 && tree.z > -60);
+    const trees = woodlandLayout(world.outskirts.buildings).map(tree => ({ ...tree, dead: true }));
+    const tree = trees.find(tree => tree.x < 0 && tree.z < -25 && tree.z > -60);
     const treeView = (tree, aspect = 1440 / 900) => {
       camera.aspect = aspect; camera.updateProjectionMatrix();
       const target = new THREE.Vector3(tree.x, tree.height * .5, tree.z);
@@ -67,7 +67,7 @@ try {
       river: () => { camera.aspect = 1440 / 900; camera.updateProjectionMatrix(); render([-63, 2.1, -11.8], [-15, -.4, -16]); },
       trees: () => treeView(tree),
       roots: () => {
-        const sample = trees.find(tree => tree.species === 'elm' && !tree.dead && tree.age === 'adult');
+        const sample = trees.find(tree => tree.species === 'elm' && tree.age === 'adult');
         if (!sample) throw new Error('Missing adult elm for ground-contact close-up');
         treeView(sample);
         const offset = camera.position.clone().sub(new THREE.Vector3(sample.x, 0, sample.z));
@@ -79,22 +79,19 @@ try {
         study.background = new THREE.Color(0xa6afa4); study.environment = scene.environment;
         study.environmentIntensity = scene.environmentIntensity;
         study.add(hemisphere.clone(), sun.clone());
-        const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .92 });
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 90),
           new THREE.MeshStandardMaterial({ color: 0x8d8979, roughness: 1 }));
         floor.rotation.x = -Math.PI / 2; floor.position.y = -.035; floor.receiveShadow = true; study.add(floor);
         const species = ['elm', 'poplar', 'willow'], names = ['榆树型：横向展开', '杨树型：高耸窄冠', '柳树型：低冠垂枝'];
         for (const [index, kind] of species.entries()) {
-          const sample = trees.find(tree => tree.species === kind && !tree.dead && !tree.sparse && tree.age === 'adult');
+          const sample = trees.find(tree => tree.species === kind && tree.age === 'adult');
           if (!sample) throw new Error(`Missing adult ${kind} in actual woodland`);
           const geometry = woodlandTreeGeometry(sample);
           const bark = surface(`bark-${kind}`);
           bark.vertexColors = true;
-          for (const [part, material] of [[geometry.bark, bark], [geometry.foliage, leaves]]) {
-            const object = new THREE.Mesh(part, material);
-            object.position.x = (index - 1) * 8;
-            object.castShadow = object.receiveShadow = true; study.add(object);
-          }
+          const object = new THREE.Mesh(geometry.bark, bark);
+          object.position.x = (index - 1) * 8;
+          object.castShadow = object.receiveShadow = true; study.add(object);
           const label = document.createElement('div');
           label.textContent = names[index];
           label.style.cssText = `position:fixed;top:20px;left:${720 + (index - 1) * 1440 * 8 / 28}px;transform:translateX(-50%);padding:8px 12px;background:#20251ee0;color:#e5dfcd;font:18px sans-serif`;
@@ -136,7 +133,7 @@ try {
   assert.ok(result.dryRiver.siltPatches > 15);
   assert.ok(result.woodland.trees >= 24);
   assert.equal(result.woodland.stands, 4);
-  assert.equal(result.woodland.leafStyle, 'individual-folded-leaves');
+  assert.equal(result.woodland.leafStyle, 'bare-branches');
   assert.equal(result.woodland.groundedTrees, result.woodland.trees);
   assert.equal(result.woodland.groundContact, 'root-litter');
   assert.equal(result.dryRiver.material, 'dry-silt');
@@ -154,7 +151,8 @@ try {
   assert.equal(result.contactMask.maxBorder, 0);
   assert.ok(result.contactMask.center > 160 && result.contactMask.center < 235, 'litter is visible at the root but never fully opaque');
   for (const species of ['elm', 'poplar', 'willow']) assert.ok(result.woodland.species[species] >= 3);
-  assert.ok(result.woodland.saplings > 0 && result.woodland.deadTrees > 0);
+  assert.ok(result.woodland.saplings > 0);
+  assert.equal(result.woodland.deadTrees, result.woodland.trees);
   assert.ok(result.woodland.maxHeight / result.woodland.minHeight > 3);
   const views = [];
   for (const view of ['river', 'trees', 'roots']) {
@@ -174,7 +172,7 @@ try {
   if (out) await page.screenshot({ path: join(out, 'scenery-varieties.png') });
   assert.deepEqual(errors, [], 'no terrain, geometry, material or shader errors');
   if (out) await writeFile(join(out, 'scenery.json'), JSON.stringify({ ...result, views }, null, 2));
-  console.log(`PASS: dry river and individual-leaf woodland render with local PBR materials; ${JSON.stringify(views)}. Isolated visual fixture, not a combat performance benchmark.`);
+  console.log(`PASS: dry river and bare woodland render with local PBR materials; ${JSON.stringify(views)}. Isolated visual fixture, not a combat performance benchmark.`);
 } finally {
   await browser.close();
 }
