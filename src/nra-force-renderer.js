@@ -50,6 +50,7 @@ let nextPoseVertexId = 1;
 function* poseVertexIdsWork(geometry) {
   if (poseVertexIds.has(geometry)) return poseVertexIds.get(geometry);
   const attributes = ['position', 'uv', 'skinIndex', 'skinWeight'].map(name => geometry.attributes[name]).filter(Boolean);
+  attributes.push(...(geometry.morphAttributes.position ?? []), ...(geometry.morphAttributes.normal ?? []));
   const values = new Float32Array(geometry.attributes.position.count), lookup = new Map();
   for (let vertex = 0; vertex < values.length; vertex++) {
     let key = '';
@@ -70,6 +71,17 @@ function* poseVertexIdsWork(geometry) {
 function* bakeNraGeometryWork(mesh, preservePoseIdentity = false) {
   const geometry = mesh.geometry.clone(), source = mesh.geometry.attributes;
   const point = new THREE.Vector3(), normal = new THREE.Vector3(), temporary = new THREE.Vector3();
+  const morphPoint = new THREE.Vector3(), morphNormal = new THREE.Vector3(), morphValue = new THREE.Vector3();
+  const positionTargets = mesh.geometry.morphAttributes.position ?? [];
+  const normalTargets = mesh.geometry.morphAttributes.normal ?? [];
+  const influences = mesh.morphTargetInfluences;
+  const morphed = positionTargets.length > 0 || normalTargets.length > 0;
+  if ((positionTargets.length || normalTargets.length) &&
+    (!influences || influences.length < Math.max(positionTargets.length, normalTargets.length)))
+    throw new Error('Native pose morph targets lack influences');
+  if ([...positionTargets, ...normalTargets].some(target => target.count !== source.position.count) ||
+    influences?.some(influence => !Number.isFinite(influence)))
+    throw new Error('Invalid native pose morph targets');
   const indices = new THREE.Vector4(), weights = new THREE.Vector4();
   const palettes = mesh.isSkinnedMesh ? mesh.skeleton.bones.map((bone, index) => {
     const matrix = new THREE.Matrix4().multiplyMatrices(mesh.bindMatrixInverse, bone.matrixWorld)
@@ -77,6 +89,24 @@ function* bakeNraGeometryWork(mesh, preservePoseIdentity = false) {
     return { position: matrix, normal: new THREE.Matrix3().setFromMatrix4(matrix) };
   }) : null;
   for (let index = 0; index < source.position.count; index++) {
+    if (morphed) {
+      morphPoint.fromBufferAttribute(source.position, index);
+      morphNormal.fromBufferAttribute(source.normal, index);
+      for (let target = 0; target < positionTargets.length; target++) {
+        const influence = influences[target];
+        if (!influence) continue;
+        morphValue.fromBufferAttribute(positionTargets[target], index);
+        if (!mesh.geometry.morphTargetsRelative) morphValue.sub(temporary.fromBufferAttribute(source.position, index));
+        morphPoint.addScaledVector(morphValue, influence);
+      }
+      for (let target = 0; target < normalTargets.length; target++) {
+        const influence = influences[target];
+        if (!influence) continue;
+        morphValue.fromBufferAttribute(normalTargets[target], index);
+        if (!mesh.geometry.morphTargetsRelative) morphValue.sub(temporary.fromBufferAttribute(source.normal, index));
+        morphNormal.addScaledVector(morphValue, influence);
+      }
+    }
     if (palettes) {
       indices.fromBufferAttribute(source.skinIndex, index); weights.fromBufferAttribute(source.skinWeight, index);
       point.set(0, 0, 0); normal.set(0, 0, 0);
@@ -84,17 +114,24 @@ function* bakeNraGeometryWork(mesh, preservePoseIdentity = false) {
         const weight = weights.getComponent(influence);
         if (!weight) continue;
         const palette = palettes[indices.getComponent(influence)];
-        point.addScaledVector(temporary.fromBufferAttribute(source.position, index).applyMatrix4(palette.position), weight);
-        normal.addScaledVector(temporary.fromBufferAttribute(source.normal, index).applyMatrix3(palette.normal), weight);
+        if (morphed) {
+          point.addScaledVector(temporary.copy(morphPoint).applyMatrix4(palette.position), weight);
+          normal.addScaledVector(temporary.copy(morphNormal).applyMatrix3(palette.normal), weight);
+        } else {
+          point.addScaledVector(temporary.fromBufferAttribute(source.position, index).applyMatrix4(palette.position), weight);
+          normal.addScaledVector(temporary.fromBufferAttribute(source.normal, index).applyMatrix3(palette.normal), weight);
+        }
       }
     } else {
-      point.fromBufferAttribute(source.position, index); normal.fromBufferAttribute(source.normal, index);
+      if (morphed) { point.copy(morphPoint); normal.copy(morphNormal); }
+      else { point.fromBufferAttribute(source.position, index); normal.fromBufferAttribute(source.normal, index); }
     }
     geometry.attributes.position.setXYZ(index, point.x, point.y, point.z);
     normal.normalize(); geometry.attributes.normal.setXYZ(index, normal.x, normal.y, normal.z);
     if ((index + 1) % 512 === 0) yield;
   }
   geometry.deleteAttribute('skinIndex'); geometry.deleteAttribute('skinWeight');
+  delete geometry.morphAttributes.position; delete geometry.morphAttributes.normal;
   if (preservePoseIdentity) geometry.setAttribute('nraPoseVertex', yield* poseVertexIdsWork(mesh.geometry));
   geometry.setAttribute('nativeOfficerRegion', mesh.userData.officerTeam
     ? nativeOfficerRegions(mesh, mesh.userData.officerTeam).clone()

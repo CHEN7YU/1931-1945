@@ -82,6 +82,68 @@ test('distant shared geometry preserves actual transformed skin vertices, normal
   baked.dispose(); geometry.dispose(); mesh.material.dispose();
 });
 
+for (const relative of [false, true]) test(`distant baking includes ${relative ? 'relative' : 'absolute'} posed morphs before skinning`, () => {
+  const geometry = new THREE.BoxGeometry(1, 1, 1), count = geometry.attributes.position.count;
+  const indices = new Uint16Array(count * 4), weights = new Float32Array(count * 4);
+  for (let index = 0; index < count; index++) weights[index * 4] = 1;
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+  geometry.morphTargetsRelative = relative;
+  for (const [name, offset] of [['position', new THREE.Vector3(.2, -.1, .05)],
+    ['normal', new THREE.Vector3(.1, .2, -.05)]]) {
+    geometry.morphAttributes[name] = [geometry.attributes[name].clone()];
+    const target = geometry.morphAttributes[name][0];
+    for (let index = 0; index < count; index++) {
+      const point = relative ? offset : new THREE.Vector3().fromBufferAttribute(geometry.attributes[name], index).add(offset);
+      target.setXYZ(index, point.x, point.y, point.z);
+    }
+  }
+  const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial()), bone = new THREE.Bone();
+  mesh.add(bone); mesh.bind(new THREE.Skeleton([bone]));
+  mesh.morphTargetInfluences[0] = .65;
+  bone.position.y = .3; bone.rotation.z = .2; mesh.position.set(1, 2, 3); mesh.updateMatrixWorld(true);
+  const baked = bakeNraGeometry(mesh);
+  assert.equal(baked.morphAttributes.position, undefined);
+  assert.equal(baked.morphAttributes.normal, undefined);
+  for (let index = 0; index < count; index++) {
+    const expected = mesh.localToWorld(mesh.getVertexPosition(index, new THREE.Vector3()));
+    assert.ok(expected.distanceTo(new THREE.Vector3().fromBufferAttribute(baked.attributes.position, index)) < 1e-6);
+    const normal = new THREE.Vector3().fromBufferAttribute(geometry.attributes.normal, index)
+      .addScaledVector(new THREE.Vector3(.1, .2, -.05), .65).applyQuaternion(bone.quaternion).normalize();
+    assert.ok(normal.distanceTo(new THREE.Vector3().fromBufferAttribute(baked.attributes.normal, index)) < 1e-6);
+  }
+  baked.dispose(); geometry.dispose(); mesh.material.dispose();
+});
+
+test('force renderer bakes the template corrective into its shared body banks', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
+  const track = { duration: 1, times: [0, 1], positions: [0, 0, 0, 0, 0, 0], quaternions: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const profile = createNativeGaitProfile(track), geometry = new THREE.BoxGeometry(.4, 1.7, .3);
+  const material = new THREE.MeshStandardMaterial(), offset = new THREE.Vector3(0, 1, 0);
+  const target = geometry.attributes.position.clone();
+  for (let index = 0; index < target.count; index++) target.setXYZ(index, offset.x, offset.y, offset.z);
+  geometry.morphTargetsRelative = true; geometry.morphAttributes.position = [target];
+  function view() {
+    const root = new THREE.Group(), body = new THREE.Mesh(geometry, material), gun = new THREE.Group();
+    root.add(body, gun); gun.userData.personalWeapon = true;
+    return { root, motionProfile: profile, drawBatches: 1, createView: view, issue: null, bind() {},
+      update(actor) {
+        body.morphTargetInfluences[0] = 1;
+        root.position.copy(actor.position); root.updateMatrixWorld(true);
+      } };
+  }
+  const force = createNraForceRenderer(scene, camera, view(), 1);
+  const bodies = force.root.children.filter(mesh => mesh.isInstancedMesh && mesh.geometry.attributes.nraSkinTint);
+  assert.ok(bodies.length);
+  for (const body of bodies) {
+    const positions = body.geometry.attributes.position;
+    for (let vertex = 0; vertex < positions.count; vertex++)
+      assert.ok(positions.getY(vertex) >= .149999, 'shared body bank omitted the template corrective');
+  }
+  for (const mesh of force.root.children) if (mesh.isInstancedMesh) { mesh.geometry.dispose(); mesh.dispose(); }
+  geometry.dispose(); material.dispose();
+});
+
 for (const team of ['enemy', 'friendly']) test(`phase-only selection and empty-batch visibility preserve ${team} body, weapon and flag instances across transitions and casualties`, async () => {
   if (team === 'friendly') await loadDadaoSurfaces(1, { async loadAsync() { return new THREE.Texture({ width: 1, height: 1 }); } });
   const moduleUrl = new URL('../src/nra-force-renderer.js', import.meta.url);
