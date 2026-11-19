@@ -3035,6 +3035,9 @@ function operateAIEmplacement(actor, dt) {
   let point = emplacements.get(actor.emplacementId ?? actor.tactics.stationId);
   if (point && !usable(point)) { releaseEmplacement(actor, false); return false; }
   const regroup = sihangCampaignMode && stage === 'sihang-retreat' && !sihangCampaign.counterattack && !actor.friendly;
+  const coverWave = sihangWaveCover(actor) ? sihangCampaign.withdrawalWave : null;
+  const failedStations = actor.tactics.unreachableSihangStations?.wave === coverWave?.number
+    ? actor.tactics.unreachableSihangStations?.ids : null;
   const withinRegroupReach = point => {
     const pose = emplacementPose(point, point.altitude ?? world.groundHeight(point.x, point.z));
     return Math.hypot(actor.position.x - pose.operator.x, actor.position.z - pose.operator.z) <= .6;
@@ -3044,6 +3047,7 @@ function operateAIEmplacement(actor, dt) {
   }
   if (!point) {
     point = [...emplacements.values()].filter(point => usable(point) && !point.operatorId && !point.crewId &&
+      !failedStations?.has(point.id) &&
       (!regroup || withinRegroupReach(point)) &&
       Math.abs(actor.position.y - (point.altitude ?? world.groundHeight(point.x, point.z))) < 1 &&
       Math.hypot(actor.position.x - point.x, actor.position.z - point.z) < 25)
@@ -3054,13 +3058,23 @@ function operateAIEmplacement(actor, dt) {
   }
   const floor = point.altitude ?? world.groundHeight(point.x, point.z);
   const pose = emplacementPose(point, floor);
+  if (coverWave && !actor.emplacementId && actor.pathGoal?.stationId === point.id &&
+    actor.tactics.pathReason === 'blocked-start' && !actor.path?.length) {
+    const ids = failedStations ?? new Set();
+    ids.add(point.id);
+    actor.tactics.unreachableSihangStations = { wave: coverWave.number, ids };
+    releaseEmplacement(actor, false);
+    actor.pathGoal = null;
+    pathRequests.delete(actor.tactics.id);
+    return false;
+  }
   cancelAIMelee(actor); resetAIRifleAim(actor.aiRifle, 'fixed-weapon');
   if (!actor.emplacementId) {
     if (actor.tactics.cover) coverClaims.delete(actor.tactics.cover.id);
     actor.tactics.cover = actor.target = null; actor.tactics.lastSeen = null;
     actor.stance = 'standing'; actor.firingPose = null; actor.tactics.mode = 'fixed-weapon-approach';
     if (Math.hypot(actor.position.x - pose.operator.x, actor.position.z - pose.operator.z) > .6)
-      walkActor(actor, { ...pose.operator, transit: true }, 3, dt);
+      walkActor(actor, { ...pose.operator, transit: true, ...(coverWave && { stationId: point.id }) }, 3, dt);
     else occupyEmplacement(point, actor);
     return true;
   }
@@ -6220,7 +6234,15 @@ function updateAI(dt) {
       !actor.vehicleId && !actor.friendly && !sihangCampaign.counterattack;
     if (!(sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat') &&
       operateAIEngineer(actor, dt)) continue;
-    if (operateAIEmplacement(actor, dt)) continue;
+    const stationYield = waveCover && (actor.emplacementId || actor.tactics.stationId)
+      ? sihangTrafficYield(actor, player, withdrawalWave, true) : null;
+    if (stationYield) {
+      releaseEmplacement(actor, false);
+      actor.tactics.sihangTrafficYield.clearedStation = true;
+      actor.tactics.stationCooldownUntil = actor.tactics.sihangTrafficYield.until;
+      actor.path = actor.pathGoal = null;
+      pathRequests.delete(actor.tactics.id);
+    } else if (operateAIEmplacement(actor, dt)) continue;
     if (actor.traversal.kind !== 'grounded') {
       cancelAIMelee(actor);
       actor.tactics.traffic = actor.tactics.followGuard = null;
@@ -6682,7 +6704,7 @@ function updateAI(dt) {
       const withdrawing = actor.friendly && sihangCampaign.stage === 'sihang-retreat';
       const defending = actor.friendly && !actor.playerUnit && sihangCampaign.stage === 'sihang-defense';
       const pursuingRetreat = !actor.friendly && sihangCampaign.stage === 'sihang-retreat';
-      const trafficYield = withdrawing ? sihangTrafficYield(actor, player, withdrawalWave, waveCover) : null;
+      const trafficYield = stationYield ?? (withdrawing ? sihangTrafficYield(actor, player, withdrawalWave, waveCover) : null);
       const retreatContact = withdrawing && retreatTarget &&
         tactics.threatSense === 'vision' && tactics.threatId === retreatTarget.id &&
         Math.hypot(position.x - retreatTarget.position.x, position.z - retreatTarget.position.z) <= 12 &&
@@ -6770,7 +6792,7 @@ function updateAI(dt) {
         settleActorSupport(actor);
         continue;
       }
-      if (trafficYield && !waveCover) {
+      if (trafficYield && (!waveCover || tactics.sihangTrafficYield?.clearedStation)) {
         stopLocomotion(actor.locomotion); tactics.mode = 'sihang-traffic-yield';
         if (target && actor.hasFirearm !== false && !sihangCeasefire(actor)) {
           updateInfantryAimPitch(actor, targetAimPoint(target), soldierRifleMuzzle(actor), dt);

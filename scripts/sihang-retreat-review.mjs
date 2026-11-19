@@ -1156,14 +1156,23 @@ try {
             } : {}),
             enemyAlive: enemies.filter(actor => actor.health > 0).length };
         },
-        waveFixturePlayerYieldStart() {
-          this.waveFixtureStart(true);
+        waveFixturePlayerYieldStart(mounted = false, unreachable = false) {
+          if (mounted) {
+            this.regroupStart();
+            sihangCampaign.assemblyPrepared = sihangCampaign.assemblyReleased = true;
+            const squads = Array.from({ length: SIHANG_RULES.retreatSquads }, (_, slot) => formations
+              .find(formation => formation.team === 'friendly' && !formation.player && formation.sihangSlot === slot)
+              ?.members.filter(actor => actor.health > 0).slice(0, 3).map(actor => actor.id) ?? []);
+            startSihangWithdrawalWave(sihangCampaign, squads);
+            for (const formation of formations) if (formation.team === 'friendly') formation.retreatAssembled = true;
+          } else this.waveFixtureStart(true);
           const player = controlledSoldier(entities), wave = sihangCampaign.withdrawalWave;
-          const follower = allies.find(actor => actor !== player && actor.health > 0);
+          const follower = mounted ? wave.squads[wave.coverSlot].map(id => entities.soldiers.get(id))
+            .find(actor => actor?.health > 0) : allies.find(actor => actor !== player && actor.health > 0);
           const waitingId = wave.squads.find((ids, slot) => slot !== wave.coverSlot)?.find(id =>
             entities.soldiers.get(id)?.health > 0);
           const waiting = entities.soldiers.get(waitingId);
-          const blockers = wave.squads.flat().filter(id => id !== waitingId).map(id =>
+          const blockers = wave.squads.flat().filter(id => id !== waitingId && id !== follower?.id).map(id =>
             entities.soldiers.get(id)).filter(actor => actor && actor.health > 0).slice(0, 3);
           if (!player || !follower || !waiting || blockers.length !== 3)
             throw new Error('Player-yield fixture requires a living player squad and retreat wave');
@@ -1182,7 +1191,44 @@ try {
           follower.tactics.sihangTrafficYield = null;
           player.position.set(50, world.walkHeight(50, -25, 0), -25);
           player.locomotion.speed = 0;
-          follower.order = 'follow';
+          let station = null, secondStation = null;
+          const blockStationPath = point => {
+            follower.path = [];
+            follower.pathGoal = { ...emplacementPose(point, point.altitude ?? 0).operator, stationId: point.id };
+            follower.tactics.pathReason = 'blocked-start';
+            pathRequests.delete(follower.tactics.id);
+          };
+          if (mounted) {
+            wave.covering = true;
+            station = emplacements.get('sihang-cover-mg');
+            if (!station) throw new Error('Station-yield fixture requires an unmanned friendly emplacement');
+            station.playerOnly = false; station.engineerBuilt = true; station.builderTeam = follower.team;
+            if (unreachable) {
+              waiting.tactics.blockedBy = null;
+              for (const id of wave.squads[wave.coverSlot]) {
+                const teammate = entities.soldiers.get(id);
+                if (teammate && teammate !== follower) teammate.tactics.stationCooldownUntil = time + 10;
+              }
+              secondStation = emplacements.get('sihang-cover-mg-east');
+              if (!secondStation) throw new Error('Station-blocked fixture requires a second emplacement');
+              for (const [point, offset] of [[station, 4], [secondStation, 8]]) {
+                point.playerOnly = false;
+                point.engineerBuilt = true;
+                point.builderTeam = follower.team;
+                point.x = follower.position.x + offset;
+                point.z = follower.position.z;
+                point.altitude = follower.position.y;
+              }
+              station.crewId = follower.id;
+              follower.tactics.stationId = station.id;
+              blockStationPath(station);
+            } else {
+              station.operatorId = station.weapon.ownerId = follower.id;
+              station.crewId = null;
+              follower.emplacementId = station.id;
+              follower.emplacementWeaponId = station.weapon.id;
+            }
+          } else follower.order = 'follow';
           for (const enemy of enemies) enemy.health = 0;
           const before = follower.position.clone();
           const runAI = phase => {
@@ -1201,6 +1247,19 @@ try {
             }
           };
           setGameState('playing');
+          if (unreachable) {
+            const state = point => ({ crew: point.crewId, held: follower.tactics.stationId, mode: follower.tactics.mode });
+            runAI('first blocked station approach');
+            const firstReleased = state(station);
+            runAI('alternative station approach');
+            const secondApproach = state(secondStation);
+            blockStationPath(secondStation);
+            runAI('second blocked station approach');
+            const secondReleased = state(secondStation);
+            runAI('after both blocked station approaches');
+            return { firstReleased, secondApproach, secondReleased, after: state(station),
+              secondId: secondStation.id, follower: follower.id };
+          }
           let frames = 0;
           while (frames < 120 && Math.hypot(follower.position.x - before.x,
             follower.position.z - before.z) <= .01) {
@@ -1214,6 +1273,7 @@ try {
           this.waveYieldFollowerId = follower.id;
           return { follower: follower.id, order: follower.order, waiting: waiting.id,
             goal: state?.goal, state, mode, before: before.toArray(), after, frames,
+            station: station && { operator: station.operatorId, crew: station.crewId, held: follower.emplacementId },
             stage: sihangCampaign.stage, assemblyReleased: sihangCampaign.assemblyReleased,
             playerUnit: follower.playerUnit, formationPlayer: follower.formation.player,
             formationAssembled: follower.formation.retreatAssembled, scheduler,
@@ -1988,6 +2048,25 @@ try {
     assert.deepEqual(errors, []);
     console.log('Wave follow yielding passed.');
   }
+  if (process.env.WAVE_STATION_YIELD_REVIEW_ONLY === '1') {
+    const result = await page.evaluate(() => retreatReview.waveFixturePlayerYieldStart(true));
+    await writeFile(join(directory, 'wave-station-yield.json'), JSON.stringify({ result, errors }, null, 2));
+    assert.ok(result.goal, 'a mounted cover soldier must find a clear sidestep for the blocked wave member');
+    assert.ok(Math.hypot(result.after[0] - result.before[0], result.after[2] - result.before[2]) > .01,
+      'the mounted cover soldier must actually move during the production AI update');
+    assert.deepEqual(result.station, { operator: null, crew: null, held: null });
+    assert.deepEqual(errors, []);
+  }
+  if (process.env.WAVE_STATION_BLOCKED_REVIEW_ONLY === '1') {
+    const result = await page.evaluate(() => retreatReview.waveFixturePlayerYieldStart(true, true));
+    await writeFile(join(directory, 'wave-station-blocked.json'), JSON.stringify({ result, errors }, null, 2));
+    assert.deepEqual(result.firstReleased, { crew: null, held: null, mode: 'sihang-wave-cover-position' });
+    assert.deepEqual(result.secondApproach, { crew: result.follower, held: result.secondId, mode: 'fixed-weapon-approach' });
+    assert.deepEqual(result.secondReleased, result.firstReleased);
+    assert.notEqual(result.after.crew, result.follower, 'the first station must stay excluded after the second fails');
+    assert.equal(result.after.held, null, 'the actor must not cycle between unreachable stations');
+    assert.deepEqual(errors, []);
+  }
   if (process.env.WAVE_COVER_SPACING_REVIEW_ONLY === '1') {
     const result = await page.evaluate(() => retreatReview.waveFixtureCoverSpacing());
     await writeFile(join(directory, 'wave-cover-spacing.json'), JSON.stringify({
@@ -2586,7 +2665,9 @@ try {
     process.env.SURROUNDED_REVIEW_ONLY !== '1' &&
     process.env.BRIDGE_OBSTACLE_REVIEW_ONLY !== '1' && process.env.BRIDGE_ENGINEER_REVIEW_ONLY !== '1' &&
     process.env.FOLLOW_REVIEW_ONLY !== '1' &&
-    process.env.WAVE_FOLLOW_REVIEW_ONLY !== '1' && process.env.WAVE_COVER_SPACING_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_FOLLOW_REVIEW_ONLY !== '1' && process.env.WAVE_STATION_YIELD_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_STATION_BLOCKED_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_COVER_SPACING_REVIEW_ONLY !== '1' &&
     process.env.NATURAL_DEATH_REVIEW_ONLY !== '1' &&
     process.env.NATURAL_RETREAT_REVIEW_ONLY !== '1' &&
     process.env.PURSUIT_REVIEW_ONLY !== '1' && process.env.RETREAT_ENGINEER_REVIEW_ONLY !== '1' &&
