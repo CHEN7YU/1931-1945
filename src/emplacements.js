@@ -229,8 +229,12 @@ export function fireSupportPriority(target) {
   return target.artilleryThreat === true ? 0 : 1;
 }
 
-export function artilleryPositionTargets(points, heightAt) {
-  return [...points].filter(point => point.profile === 'bofors75' && point.health > 0)
+export function artilleryPositionTargets(points, heightAt, soldiers) {
+  return [...points].filter(point => {
+    if (point.profile !== 'bofors75' || point.health <= 0 || !point.operatorId) return false;
+    const operator = soldiers.get(point.operatorId);
+    return operator?.health > 0 && operator.emplacementId === point.id && operator.team === point.team;
+  })
     .map(point => ({ id: `emplacement:${point.id}`, emplacementPositionId: point.id, artilleryThreat: true,
       health: point.health, team: point.team, targetKind: 'emplacement', aimHeight: .95,
       position: { x: point.x, y: point.altitude ?? heightAt(point.x, point.z), z: point.z } }));

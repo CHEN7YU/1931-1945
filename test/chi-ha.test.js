@@ -5,6 +5,7 @@ import { CHI_HA, CHI_HA_MG, CHI_HA_MG_MOUNTS, japaneseArmorRoster, japaneseArmor
   chiHaMuzzle, chiHaMachineGunPose, chiHaObjectiveDestination } from '../src/chi-ha.js';
 import { chiHaModel, animateChiHa } from '../src/chi-ha-model.js';
 import { advanceChiHaAI } from '../src/chi-ha-ai.js';
+import { artilleryPositionTargets, createEmplacement } from '../src/emplacements.js';
 import { advanceChiHaMachineGuns } from '../src/chi-ha-machine-guns.js';
 import { battleRoster, validateRoster, battleSpawn, armySummary, reinforcementDue } from '../src/battle-roster.js';
 import { createEntityRegistry, registerUnit, registerSoldier, createVehicleEntity, seatSoldier,
@@ -51,6 +52,21 @@ test('a visible artillery position outranks closer infantry, but occlusion and d
   vehicle.ai.scanAt = 0; cannon.health = 0;
   advanceChiHaAI(vehicle, .05, 3, context(crew, { targets: [near, cannon] }));
   assert.equal(vehicle.ai.targetId, near.id);
+});
+
+test('the tank stops engaging a gun as soon as its operator leaves, even between scans', () => {
+  const { vehicle, crew } = fixture();
+  const gun = createEmplacement({ id: 'cannon', profile: 'bofors75', team: 'friendly', x: 0, z: -35, heading: 0 });
+  const soldiers = new Map([['operator', { team: 'friendly', health: 100, emplacementId: gun.id }]]);
+  const step = now => advanceChiHaAI(vehicle, .1, now, context(crew, {
+    targets: artilleryPositionTargets([gun], () => 0, soldiers), objective: { x: 0, z: 0 },
+  }));
+  gun.operatorId = 'operator';
+  assert.equal(step(0)?.targetId, 'emplacement:cannon');
+  gun.operatorId = null;
+  vehicle.weapon.nextShot = 0;
+  assert.equal(step(.1), null);
+  assert.equal(vehicle.ai.mode, 'hold');
 });
 
 test('one tank, one aircraft and eight infantry squads occupy exactly ten Japanese formation slots', () => {

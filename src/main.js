@@ -3923,7 +3923,7 @@ function updateJapaneseArmor(transport, dt) {
   const navigation = dockLimited ? dockArmorNavigate : armorNavigate;
   const vehicles = [...entities.vehicles.values()];
   const targets=sihangCampaignMode ? friendlyForces.filter(sihangEnemyTargetAllowed) : nanjingCampaignMode?[...friendlyForces,...nanjingCivilianCombatTargets()]:friendlyForces;
-  const artillery = artilleryPositionTargets(emplacements.values(), world.groundHeight)
+  const artillery = artilleryPositionTargets(emplacements.values(), world.groundHeight, entities.soldiers)
     .filter(target => target.team !== transport.team &&
       (!sihangCampaignMode || !sihangProtectedSouthBank(target.position)));
   const cannonTargets = [...targets, ...artillery];

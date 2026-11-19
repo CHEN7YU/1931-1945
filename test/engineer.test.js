@@ -181,16 +181,27 @@ test('preset artillery retains permission through a reset without per-map owners
   }
 });
 
-test('real artillery positions remain targets when unmanned and stop firing when actually destroyed', () => {
+test('only actively manned artillery is a direct tank target, but unmanned guns can take blast damage', () => {
   const point = createEmplacement({ id: 'cannon', profile: 'bofors75', x: 0, z: 20, heading: 0 });
-  assert.equal(artilleryPositionTargets([point], () => 0).length, 1);
+  const operator = { health: 100, team: point.team, emplacementId: point.id };
+  const soldiers = new Map([['crew', operator]]);
+  const targets = () => artilleryPositionTargets([point], () => 0, soldiers);
+  point.crewId = 'crew';
+  assert.equal(targets().length, 0, 'a reservation is not an operator');
   const source = { team: 'enemy', soldierId: 'gunner', weaponId: 'tank-gun' };
   assert.equal(damageEmplacement(point, 180, source, 1), 180);
   assert.equal(point.health, 60);
+  point.operatorId = 'crew';
+  assert.equal(targets().length, 1);
+  operator.emplacementId = null;
+  assert.equal(targets().length, 0, 'a stale operator link is not enough');
+  operator.emplacementId = point.id;
+  operator.health = 0;
+  assert.equal(targets().length, 0);
+  operator.health = 100;
   assert.equal(damageEmplacement(point, 180, { team: 'friendly' }, 1), 0);
   assert.equal(damageEmplacement(point, 180, source, 2), 60);
-  assert.equal(artilleryPositionTargets([point], () => 0).length, 0);
-  point.operatorId = 'crew';
+  assert.equal(targets().length, 0);
   assert.equal(fireEmplacement(point, 3), false);
   assert.equal(point.lastDamage.source.weaponId, source.weaponId);
 });
