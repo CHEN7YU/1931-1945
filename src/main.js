@@ -5939,14 +5939,28 @@ function operateAIDischarger(actor, dt) {
 
 function sihangTrafficYield(actor, player, wave, cover) {
   const leavingCover = wave?.phase === 'cover' && wave.squads[wave.coverSlot]?.includes(actor.id);
+  const stalledRiverside = !actor.playerUnit && !cover &&
+    actor.pathGoal?.routeGroup?.startsWith('sihang-river-') &&
+    wave?.squads[actor.formation.sihangSlot]?.includes(actor.id) &&
+    actor.tactics.traffic?.reason === 'no-yield-space' && !actor.tactics.blockedBy &&
+    actor.tactics.traffic.waitSeconds >= 2.5;
+  const selfYield = actor.tactics.sihangTrafficYield?.riversideRecovery &&
+    wave?.squads[actor.formation.sihangSlot]?.includes(actor.id);
   const eligible = sihangCampaign.assemblyReleased && ['main', 'cover'].includes(wave?.phase) &&
-    (cover || leavingCover || actor.playerUnit && actor.order === 'follow' && player?.locomotion.speed < .2);
+    (cover || leavingCover || stalledRiverside || selfYield ||
+      actor.playerUnit && actor.order === 'follow' && player?.locomotion.speed < .2);
   if (!eligible) { actor.tactics.sihangTrafficYield = null; return null; }
   const state = actor.tactics.sihangTrafficYield;
   const waiting = state && entities.soldiers.get(state.waitingId);
   if (state && time < state.until && waiting?.health > 0 &&
+    (!state.riversideRecovery || Math.hypot(state.goal.x - actor.position.x, state.goal.z - actor.position.z) > .3) &&
     Math.hypot(waiting.position.x - actor.position.x, waiting.position.z - actor.position.z) < 3)
     return state.goal;
+  if (state?.riversideRecovery) {
+    actor.path = actor.pathGoal = null;
+    actor.nextPath = 0;
+    pathRequests.delete(actor.tactics.id);
+  }
   actor.tactics.sihangTrafficYield = null;
   if (time < (actor.tactics.sihangYieldRetryAt ?? 0)) return null;
   const neighbors = trafficGrid.near(actor.position.x, actor.position.z, 3.8);
@@ -5955,20 +5969,41 @@ function sihangTrafficYield(actor, player, wave, cover) {
     wave.squads.some(ids => ids.includes(other.id)) &&
     ['wait-for-spacing', 'turn-to-path'].includes(other.tactics.mode) &&
     other.tactics.blockedBy === actor.id && other.tactics.traffic?.waitSeconds >= 2.5);
-  const stalled = !blocked && leavingCover && actor.tactics.traffic?.reason === 'no-yield-space' &&
-    actor.tactics.traffic.waitSeconds >= 2.5;
+  const stalled = !blocked && (stalledRiverside || leavingCover &&
+    actor.tactics.traffic?.reason === 'no-yield-space' && actor.tactics.traffic.waitSeconds >= 2.5);
   if (!blocked && !stalled) return null;
   actor.tactics.sihangYieldRetryAt = time + 3;
-  const goal = sihangRetreatYieldPosition(actor, blocked ?? actor, destination =>
+  const clear = destination =>
     sampledRouteClear(actor.position, destination, (x, z) =>
       !infantryNavigationBlocked({ x, z }, actor.position, .43, actor) &&
       Math.abs(world.walkHeight(x, z, actor.position.y) - actor.position.y) <= .3 &&
       neighbors.every(other => other.id === actor.id || other.health <= 0 || other.vehicleId ||
         Math.abs(other.position.y - actor.position.y) >= 1.5 ||
         Math.hypot(x - other.position.x, z - other.position.z) >=
-          Math.min(.9, Math.hypot(actor.position.x - other.position.x, actor.position.z - other.position.z) - .01))));
+          Math.min(.9, Math.hypot(actor.position.x - other.position.x, actor.position.z - other.position.z) - .01)));
+  const riversideRecovery = stalledRiverside && stalled;
+  let goal;
+  if (riversideRecovery) {
+    const position = actor.position, waypoint = actor.path?.[0] ?? actor.pathGoal;
+    for (const radius of [1.2, .65]) {
+      const candidates = Array.from({ length: 16 }, (_, index) => {
+        const angle = index * Math.PI / 8;
+        return { x: position.x + Math.cos(angle) * radius, z: position.z + Math.sin(angle) * radius,
+          y: position.y, transit: true };
+      });
+      goal = candidates.sort((a, b) => Math.hypot(a.x - waypoint.x, a.z - waypoint.z) -
+        Math.hypot(b.x - waypoint.x, b.z - waypoint.z)).find(clear);
+      if (goal) break;
+    }
+  } else goal = sihangRetreatYieldPosition(actor, blocked ?? actor, clear);
   if (!goal) return null;
-  actor.tactics.sihangTrafficYield = { goal, waitingId: blocked?.id ?? actor.id, until: time + (blocked ? 8 : 3) };
+  if (riversideRecovery) {
+    // Drop the stale approach so the recovery step is not steered back into it.
+    actor.path = [{ ...goal }]; actor.pathGoal = goal;
+    pathRequests.delete(actor.tactics.id);
+  }
+  actor.tactics.sihangTrafficYield = { goal, waitingId: blocked?.id ?? actor.id, until: time + (blocked ? 8 : 3),
+    riversideRecovery };
   return goal;
 }
 

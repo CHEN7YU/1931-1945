@@ -1279,6 +1279,41 @@ try {
             formationAssembled: follower.formation.retreatAssembled, scheduler,
             playerBefore: player.position.toArray() };
         },
+        riversideStallFixture() {
+          this.regroupStart();
+          sihangCampaign.assemblyPrepared = sihangCampaign.assemblyReleased = true;
+          const formation = formations.find(item => item.team === 'friendly' && !item.player && item.sihangSlot === 1);
+          const actor = formation.members.find(item => item.index === 9 && item.health > 0) ??
+            formation.members.find(item => item.health > 0);
+          const squads = Array.from({ length: SIHANG_RULES.retreatSquads }, (_, slot) => slot === 1 ? [actor.id] : []);
+          startSihangWithdrawalWave(sihangCampaign, squads);
+          for (const team of formations) if (team.team === 'friendly') team.retreatAssembled = true;
+          for (const enemy of enemies) enemy.health = 0;
+          actor.position.set(-17.117472325336855, 0, -4.722213794206886);
+          actor.heading = -2.72281408543102;
+          const heading = -.7464532303884127;
+          const spec = { id: 'riverside-stall-emplacement', profile: 'maxim24', altitude: 0, heading,
+            x: -17.036613839899406 - Math.sin(heading) * .76,
+            z: -3.8374520969768104 - Math.cos(heading) * .76,
+            team: 'friendly', builderTeam: 'friendly', engineerBuilt: true };
+          world.obstacles.push(...engineerColliders(spec));
+          refreshEngineerObstacles(engineerObstacle(spec.id, { x: spec.x, y: 0, z: spec.z }, heading, spec.profile));
+          actor.tactics.sihangRiversideWaypoint = 3;
+          actor.pathGoal = { x: -12, y: 0, z: -3.2, transit: true, routeGroup: 'sihang-river-1' };
+          actor.path = [{ x: -18, y: 0, z: -3 }, { x: -15, y: 0, z: -1 }, { x: -12, y: 0, z: -3.2 }];
+          const snapshot = () => ({ position: actor.position.toArray(), mode: actor.tactics.mode,
+            path: actor.path?.slice(), traffic: structuredClone(actor.tactics.traffic), reason: actor.tactics.pathReason });
+          const before = snapshot();
+          setGameState('playing');
+          const trace = [];
+          for (let frame = 0; frame < 240 && actor.position.x < -11; frame++) {
+            aiCursor = allForces.indexOf(actor);
+            aiDecisions.beginFrame(); advanceBattleStep(.05, time + .05);
+            if (frame % 20 === 0) trace.push(snapshot());
+          }
+          setGameState('pause');
+          return { before, after: snapshot(), trace };
+        },
         waveFixturePlayerYieldSnapshot() {
           const follower = entities.soldiers.get(this.waveYieldFollowerId), player = controlledSoldier(entities);
           return { follower: follower.id, order: follower.order,
@@ -2057,6 +2092,12 @@ try {
     assert.deepEqual(result.station, { operator: null, crew: null, held: null });
     assert.deepEqual(errors, []);
   }
+  if (process.env.RIVERSIDE_STALL_REVIEW_ONLY === '1') {
+    const result = await page.evaluate(() => retreatReview.riversideStallFixture());
+    await writeFile(join(directory, 'riverside-stall.json'), JSON.stringify({ result, errors }, null, 2));
+    assert.deepEqual(errors, []);
+    assert.ok(result.after.position[0] >= -11, 'the soldier must resume the riverside route past the obstruction');
+  }
   if (process.env.WAVE_STATION_BLOCKED_REVIEW_ONLY === '1') {
     const result = await page.evaluate(() => retreatReview.waveFixturePlayerYieldStart(true, true));
     await writeFile(join(directory, 'wave-station-blocked.json'), JSON.stringify({ result, errors }, null, 2));
@@ -2666,7 +2707,7 @@ try {
     process.env.BRIDGE_OBSTACLE_REVIEW_ONLY !== '1' && process.env.BRIDGE_ENGINEER_REVIEW_ONLY !== '1' &&
     process.env.FOLLOW_REVIEW_ONLY !== '1' &&
     process.env.WAVE_FOLLOW_REVIEW_ONLY !== '1' && process.env.WAVE_STATION_YIELD_REVIEW_ONLY !== '1' &&
-    process.env.WAVE_STATION_BLOCKED_REVIEW_ONLY !== '1' &&
+    process.env.WAVE_STATION_BLOCKED_REVIEW_ONLY !== '1' && process.env.RIVERSIDE_STALL_REVIEW_ONLY !== '1' &&
     process.env.WAVE_COVER_SPACING_REVIEW_ONLY !== '1' &&
     process.env.NATURAL_DEATH_REVIEW_ONLY !== '1' &&
     process.env.NATURAL_RETREAT_REVIEW_ONLY !== '1' &&

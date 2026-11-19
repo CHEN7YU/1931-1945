@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { sihangBattleRoster, sihangSpawns, sihangObjectives, SIHANG_EMPLACEMENTS, sihangEnemyTargetAllowed, sihangEnemyRayRange, sihangRetreatGoal } from '../src/sihang-roster.js';
-import { createSihangCampaign, registerSihangDeployment, sihangDeploymentCount, advanceSihangCampaign } from '../src/sihang-campaign.js';
+import { SIHANG_RULES, createSihangCampaign, registerSihangDeployment, sihangDeploymentCount, advanceSihangCampaign } from '../src/sihang-campaign.js';
 import { createPlayerIdentityStore, PLAYER_IDENTITY_KEY, playerUnitOptions } from '../src/player-identity.js';
 import { campaignById, SELECTABLE_CAMPAIGNS } from '../src/campaigns.js';
 import { campaignLayout } from '../src/campaign-layout.js';
@@ -32,17 +32,18 @@ test('Sihang deploys four eleven-person squads and ten distinct enemy units with
   assert.match(friendlyAIFormationName('sihang', playerUnitOptions('sihang')[0].name, 1), /524团/);
 });
 
-test('the 400-person ceiling includes all 44 opening soldiers and the last genuine partial replacement', () => {
+test('the 260-person ceiling includes all 44 opening soldiers and the last partial replacement', () => {
   const campaign = createSihangCampaign();
   for (let i = 0; i < 4; i++) registerSihangDeployment(campaign, 11);
-  assert.equal(campaign.reserve, 356);
-  while (campaign.reserve > 11) registerSihangDeployment(campaign, sihangDeploymentCount(campaign));
-  assert.equal(campaign.reserve, 4);
+  assert.equal(campaign.reserve, 216);
+  while (campaign.reserve > SIHANG_RULES.squadMembers) registerSihangDeployment(campaign, sihangDeploymentCount(campaign));
+  assert.equal(sihangDeploymentCount(campaign), 7);
   registerSihangDeployment(campaign, sihangDeploymentCount(campaign));
-  assert.equal(campaign.deployed, 400); assert.equal(sihangDeploymentCount(campaign), 0);
+  assert.equal(campaign.deployed, 260); assert.equal(sihangDeploymentCount(campaign), 0);
   assert.throws(() => registerSihangDeployment(campaign, 1), /budget/);
   const retreat = createSihangCampaign();
-  advanceSihangCampaign(retreat, 240);
+  advanceSihangCampaign(retreat, SIHANG_RULES.defenseSeconds);
+  assert.equal(retreat.stage, 'sihang-retreat');
   assert.equal(sihangDeploymentCount(retreat), 11);
 });
 
