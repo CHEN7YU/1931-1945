@@ -36,7 +36,7 @@ export function indexedAnimatedSource(source) {
       working.setAttribute(key, attribute); morphNames.push({ key, name });
     });
   }
-  const indexed = mergeVertices(working, 1e-6); working.dispose();
+  const indexed = indexPoseVertices(working); working.dispose();
   if (source.attributes.nraPoseVertex) {
     indexed.computeVertexNormals();
     indexed.morphAttributes.normal = indexed.morphAttributes.position.map(position => {
@@ -52,6 +52,57 @@ export function indexedAnimatedSource(source) {
   indexed.boundingBox = source.boundingBox?.clone() ?? null;
   indexed.boundingSphere = source.boundingSphere?.clone() ?? null;
   return indexed;
+}
+
+function indexPoseVertices(source) {
+  const attributes = Object.entries(source.attributes);
+  const isPlain = a => a.array instanceof Float32Array && !a.normalized && !a.isInterleavedBufferAttribute;
+  if ([...attributes.map(([, a]) => a), ...Object.values(source.morphAttributes).flat()].some(a => !isPlain(a)))
+    return mergeVertices(source, 1e-6);
+  const count = source.attributes.position.count;
+  const stride = attributes.reduce((sum, [, a]) => sum + a.itemSize, 0);
+  const keys = new Int32Array(count * stride);
+  let column = 0;
+  for (const [, { array, itemSize }] of attributes) {
+    for (let vertex = 0; vertex < count; vertex++) for (let i = 0; i < itemSize; i++)
+      // Same signed truncation and tolerance as Three's mergeVertices.
+      keys[vertex * stride + column + i] = (array[vertex * itemSize + i] * 1e6 + .5) | 0;
+    column += itemSize;
+  }
+  const indices = new Uint32Array(count);
+  const representatives = [], next = new Uint32Array(count), buckets = new Map();
+  for (let vertex = 0; vertex < count; vertex++) {
+    const offset = vertex * stride;
+    let hash = 2166136261;
+    for (let j = 0; j < stride; j++) hash = Math.imul(hash ^ keys[offset + j], 16777619);
+    const head = buckets.get(hash) ?? 0;
+    let match = head;
+    while (match) {
+      const other = representatives[match - 1] * stride;
+      let j = 0;
+      while (j < stride && keys[offset + j] === keys[other + j]) j++;
+      if (j === stride) break;
+      match = next[match - 1];
+    }
+    if (!match) {
+      next[representatives.length] = head;
+      match = representatives.push(vertex);
+      buckets.set(hash, match);
+    }
+    indices[vertex] = match - 1;
+  }
+  const compact = attribute => {
+    const { array, itemSize } = attribute;
+    const output = new array.constructor(representatives.length * itemSize);
+    for (let vertex = 0; vertex < representatives.length; vertex++)
+      for (let i = 0; i < itemSize; i++) output[vertex * itemSize + i] = array[representatives[vertex] * itemSize + i];
+    return new BufferAttribute(output, itemSize, attribute.normalized);
+  };
+  const result = new BufferGeometry();
+  for (const [name, attribute] of attributes) result.setAttribute(name, compact(attribute));
+  for (const [name, frames] of Object.entries(source.morphAttributes)) result.morphAttributes[name] = frames.map(compact);
+  result.setIndex(new BufferAttribute(representatives.length <= 65535 ? new Uint16Array(indices) : indices, 1));
+  return result;
 }
 
 export function createDistantWeaponGeometry(source) {

@@ -28,10 +28,16 @@ try {
         body: JSON.stringify(invalid ? { error: invalid } : { id: batch.id, saved: true }) });
     });
     await page.addInitScript(() => {
-      const probe = window.__startupProbe = { progress: [], gaps: [], longTasks: [], ticks: 0 };
+      const probe = window.__startupProbe = { progress: [], gaps: [], longTasks: [], ticks: 0, timings: {} };
+      document.addEventListener('click', event => {
+        if (event.target.closest('#confirm-deploy')) probe.timings.deployRequestedMs = performance.now();
+      }, true);
       let previous = performance.now(), percent = -1;
       const interval = setInterval(() => {
         const now = performance.now(), next = Number.parseInt(document.getElementById('loading-percentage')?.textContent);
+        const step = document.getElementById('overlay')?.dataset.deploymentStep;
+        if (step === 'squad' && window.__battle?.state === 'menu' && document.getElementById('loading').hidden)
+          probe.timings.squadMenuMs ??= now;
         if (Number.isFinite(next) && next !== percent) {
           percent = next; probe.progress.push({ percent, time: now,
             message: document.getElementById('loading-message')?.textContent });
@@ -48,16 +54,16 @@ try {
     const cdp = await context.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate });
     const url = new URL(base);
-    url.searchParams.set('campaign', map); url.searchParams.set('diagnostics', '1');
-    const started = Date.now();
+    url.searchParams.delete('campaign'); url.searchParams.set('diagnostics', '1');
+    const navigationStart = Date.now();
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
-    if (map === 'nanjing') await page.waitForFunction(() =>
-      document.getElementById('overlay').dataset.deploymentStep === 'identity' ||
-      !document.getElementById('fatal').hidden, null, { timeout: 600000 });
-    else {
-      await page.locator('#confirm-campaign').click();
-    }
-    await page.locator('#confirm-identity').click();
+    const confirmCampaign = page.locator('#confirm-campaign');
+    await confirmCampaign.waitFor({ state: 'visible' });
+    const entryMenuMs = Date.now() - navigationStart;
+    await page.locator('#campaign-choice').selectOption(map);
+    const campaignRequestedAt = Date.now();
+    await confirmCampaign.click();
+    await page.locator('#confirm-identity').click({ timeout: 600000 });
     await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad' ||
       !document.getElementById('fatal').hidden, null, { timeout: 600000 });
     assert.equal(await page.locator('#fatal').isVisible(), false);
@@ -65,10 +71,11 @@ try {
       null, { timeout: 600000 });
     const result = await page.evaluate(() => {
       const probe = window.__startupProbe;
-      probe.stop();
+      probe.timings.squadMenuMs ??= performance.now();
       const poseGaps = probe.gaps.filter(item => item.percent >= 62 && item.percent <= 78 ||
         item.percent >= 81 && item.percent <= 89);
-      return { progress: probe.progress, ticks: probe.ticks,
+      return { squadMenuAt: performance.timeOrigin + probe.timings.squadMenuMs,
+        progress: [...probe.progress], ticks: probe.ticks,
         maximumGapMs: Math.max(...probe.gaps.map(item => item.ms)),
         maximumPoseGapMs: Math.max(0, ...poseGaps.map(item => item.ms)),
         longTasks: probe.longTasks,
@@ -83,7 +90,6 @@ try {
     assert.ok(result.progress.some(item => item.percent > 62 && item.percent < 78), 'friendly progress reflects completed banks');
     assert.ok(result.progress.some(item => item.percent > 81 && item.percent < 89), 'enemy progress reflects completed banks');
     assert.ok(result.ticks > 30, 'browser tasks must continue throughout initialization');
-    assert.ok(result.maximumPoseGapMs < 1000, `pose work must remain responsive: ${result.maximumPoseGapMs}ms`);
     const stages = batches.flatMap(batch => batch.windows.filter(window => window.context.state === 'loading')
       .map(window => window.context.stage));
     assert.ok(stages.includes('friendly-poses') && stages.includes('enemy-poses') && stages.includes('ready'),
@@ -91,6 +97,13 @@ try {
     assert.ok(batches.every(batch => batch.windows.every(window => window.frames === 0)));
     await deployFromMenu(page);
     await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 30000 });
+    const timings = await page.evaluate(() => {
+      const probe = window.__startupProbe;
+      probe.stop();
+      return { deployMs: performance.now() - probe.timings.deployRequestedMs };
+    });
+    Object.assign(timings, { entryMenuMs, campaignToSquadMenuMs: result.squadMenuAt - campaignRequestedAt });
+    assert.ok(timings.campaignToSquadMenuMs > 0 && timings.deployMs >= 0);
     const population = await page.evaluate(() => ({ friendly: window.__battle.population.friendly.alive,
       enemy: window.__battle.population.enemy.alive,
       assigned: window.__battle.historicalForce.assigned, enemyAssigned: window.__battle.enemyHistoricalForce.assigned }));
@@ -98,11 +111,12 @@ try {
     assert.equal(population.enemyAssigned, population.enemy);
     assert.ok(population.friendly > 20 && population.enemy > 40);
     assert.deepEqual(errors, []);
-    results.push({ map, rate, elapsedMs: Date.now() - started, ...result, stages, population });
+    results.push({ map, rate, timings, ...result, stages, population });
     await writeFile(join(directory, 'startup.json'), JSON.stringify(results, null, 2));
-    console.log(JSON.stringify({ map, rate, maximumGapMs: result.maximumGapMs,
+    console.log(JSON.stringify({ map, rate, timings, maximumGapMs: result.maximumGapMs,
       maximumPoseGapMs: result.maximumPoseGapMs, ticks: result.ticks,
       poseBanks: [result.friendly.poseBanks, result.enemy.poseBanks], population }));
+    assert.ok(result.maximumPoseGapMs < 1000, `pose work must remain responsive: ${result.maximumPoseGapMs}ms`);
     await context.close();
   }
 } finally {
