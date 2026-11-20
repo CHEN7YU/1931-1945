@@ -91,7 +91,7 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   const manifest = JSON.parse(await readFile(new URL('source.json', base), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
-  assert.equal(manifest.files.length, 368);
+  assert.equal(manifest.files.length, 386);
   const fortressBatch = manifest.generationBatches.find(batch => batch.requests.some(request =>
     request.file === 'friendly-0-cleanup-orders-1.mp3'));
   assert.equal(fortressBatch.authorizedUsd, 50);
