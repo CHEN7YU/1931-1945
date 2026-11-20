@@ -85,6 +85,14 @@ test('new battle clears pending feedback, history and counts, while crash source
   assert.deepEqual(events.snapshot, { pending: 0, history: [], published: emptyCounts(), presented: emptyCounts() });
   assert.equal(events.publish('shot', shot(), 0).id, 1);
 });
+test('voluntary squad abandonment keeps an explicit environment casualty source', () => {
+  const events = createCombatEvents(), abandoned = { credit: 'environment', cause: 'abandoned-squad', subjectId: 's1' };
+  const event = events.publish('casualty', { source: abandoned,
+    target: { kind: 'soldier', id: 's1', unitId: 'alpha', team: 'friendly' }, health: 0 }, 1);
+  assert.deepEqual(event.source, abandoned);
+  assert.throws(() => events.publish('casualty', { source: { ...abandoned, subjectId: '' },
+    target: { kind: 'soldier', id: 's2', unitId: 'alpha', team: 'friendly' }, health: 0 }, 1), /original attack source/);
+});
 test('explosion events preserve presentation styles without altering their gameplay radius or ownership', () => {
   const events = createCombatEvents();
   for (const style of ['default', 'explosive-pack', 'tank-destruction']) {

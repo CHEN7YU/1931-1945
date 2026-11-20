@@ -8,7 +8,8 @@ const point = value => {
   return Object.freeze({ x: value.x, y: value.y, z: value.z });
 };
 const copySource = value => {
-  if (value?.credit === 'environment' && ['boundary', 'fall'].includes(value.cause) && typeof value.subjectId === 'string' && value.subjectId) {
+  if (value?.credit === 'environment' && ['abandoned-squad', 'boundary', 'fall'].includes(value.cause) &&
+    typeof value.subjectId === 'string' && value.subjectId) {
     return Object.freeze({ credit: 'environment', cause: value.cause, subjectId: value.subjectId });
   }
   if (value?.credit === 'environment' && ['crash', 'tank-crush'].includes(value.cause) && typeof value.vehicleId === 'string' && value.vehicleId) {

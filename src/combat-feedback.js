@@ -1,7 +1,8 @@
 import { KILL_COLUMNS } from './battle-stats.js';
 
 const creditNames = { player: '你', ally: '友军', enemy: '日军', environment: '事故' };
-const causeNames = { fall: '高处坠落', crash: '坠毁', boundary: '脱离战区', 'tank-crush': '坦克碾压' };
+const causeNames = { fall: '高处坠落', crash: '坠毁', boundary: '脱离战区',
+  'tank-crush': '坦克碾压', 'abandoned-squad': '放弃小队' };
 
 function casualtyFeedEntry(event) {
   const source = event.source, attacker = creditNames[source.credit];
@@ -17,9 +18,10 @@ function casualtyFeedEntry(event) {
 }
 
 export function attackSourceLabel(source) {
-  if (source.credit === 'environment' && source.cause === 'fall') return '高处坠落';
   const credit = creditNames[source.credit];
   if (!credit) throw new RangeError('Unknown attack credit');
+  if (source.credit === 'environment' && source.cause === 'abandoned-squad') return '放弃小队';
+  if (source.credit === 'environment' && source.cause === 'fall') return '高处坠落';
   const weapon = source.cause === 'tank-crush' ? '坦克碾压' : source.weaponClass === 'tank' ? '坦克主炮'
     : KILL_COLUMNS.find(([id]) => id === source.weaponClass)?.[1];
   return weapon ? `${credit}·${weapon}` : credit;

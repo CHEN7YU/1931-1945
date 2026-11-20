@@ -2317,6 +2317,27 @@ function deploy(squadId, spawnId = null, prepare = false) {
   updateHUD();
 }
 
+function canAbandonPlayerSquad() {
+  return encirclementMode && state === 'pause' && pausedFrom === 'playing' &&
+    unit?.type === 'infantry' && controlledSoldier(entities)?.health > 0 &&
+    allies.some(actor => actor.health > 0) && !battleEnding.fading && !battleEnding.complete;
+}
+
+function abandonPlayerSquad() {
+  if (!canAbandonPlayerSquad()) return;
+  clearControlInputs();
+  setGameState('playing');
+  for (const actor of [...allies]) {
+    if (actor.health <= 0) continue;
+    actor.dying = null;
+    actor.fatalFall = null;
+    hurt(actor, actor.health, { credit: 'environment', cause: 'abandoned-squad', subjectId: actor.id }, 'fall');
+  }
+  resetDeathTransfer(deathTransfer);
+  showOverlay('dead');
+  toast('已放弃当前小队 · 选择新小队和出生点', 5);
+}
+
 function showOverlay(kind = 'pause') {
   $('end-civilian-wait').hidden = true;
   if (kind === 'dead' && sihangCampaignMode && sihangCampaign.stage === 'sihang-retreat' && !sihangCampaign.outcome)
@@ -2409,6 +2430,8 @@ function showOverlay(kind = 'pause') {
   $('deployment-options').hidden = !dead;
   $('pause-settings').hidden = kind !== 'pause';
   $('pause-settings').open = false;
+  $('abandon-squad').hidden = !canAbandonPlayerSquad();
+  $('abandon-confirmation').hidden = true;
   $('motion-settings').hidden = kind !== 'pause';
   $('control-settings').hidden = kind !== 'pause';
   $('audio-settings').hidden = kind !== 'pause';
@@ -9265,6 +9288,16 @@ $('resume').addEventListener('click', () => {
   bindControlInput();
   $('overlay').hidden = true;
   lockMouse();
+});
+$('abandon-squad').addEventListener('click', () => {
+  if (!canAbandonPlayerSquad()) return;
+  $('abandon-squad').hidden = true;
+  $('abandon-confirmation').hidden = false;
+});
+$('confirm-abandon-squad').addEventListener('click', abandonPlayerSquad);
+$('cancel-abandon-squad').addEventListener('click', () => {
+  $('abandon-confirmation').hidden = true;
+  $('abandon-squad').hidden = !canAbandonPlayerSquad();
 });
 $('end-civilian-wait').addEventListener('click', () => {
   if (state !== 'pause' || !nanjingCampaignMode || nanjingCampaign.stage !== 'withdrawal-to-boats') return;

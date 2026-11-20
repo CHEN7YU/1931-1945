@@ -237,6 +237,12 @@
         <button id="confirm-deploy" class="primary-button" hidden disabled>选择小队后出击 <span>↗</span></button>
         <button id="takeover-sihang-squad" class="primary-button" hidden>接管战场上的友军小队 <span>↗</span></button>
         <button id="resume" class="primary-button">继续作战 <span>↗</span></button>
+        <button id="abandon-squad" type="button" class="text-button" hidden>卡住了？放弃当前小队并重部署</button>
+        <div id="abandon-confirmation" hidden>
+          <p>确认后，当前小队所有存活队员都将计为阵亡；战局继续，可选择其他小队和出生点。</p>
+          <button id="confirm-abandon-squad" type="button" class="text-button">确认放弃当前小队</button>
+          <button id="cancel-abandon-squad" type="button" class="text-button">取消</button>
+        </div>
         <button id="end-civilian-wait" type="button" class="text-button" hidden>结束等待</button>
         <details id="pause-settings" class="pause-settings">
           <summary>设置 · 操作、声音与画面</summary>

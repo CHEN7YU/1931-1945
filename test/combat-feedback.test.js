@@ -31,6 +31,7 @@ test('friendly casualties identify the actual weapon instead of hiding their cau
     assert.equal(entry.targetTeam, 'friendly');
   }
   assert.equal(attackSourceLabel({ credit: 'environment' }), '事故');
+  assert.equal(attackSourceLabel({ credit: 'environment', cause: 'abandoned-squad' }), '放弃小队');
   assert.throws(() => attackSourceLabel({ credit: 'unknown' }), /Unknown attack credit/);
 });
 
