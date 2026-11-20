@@ -23,7 +23,8 @@ test('the mounted page provides every element the Jiangyin battle reads', () => 
   const ids = new Set([...main.matchAll(/\$\('([\w-]+)'\)/g)].map(match => match[1]));
   for (const id of ids) assert.ok(JIANGYIN_MARKUP.includes(`id="${id}"`), `missing #${id}`);
   for (const index of [0, 1, 2]) for (const id of [`jy-top-${index}`, `jy-top-${index}-label`]) assert.ok(JIANGYIN_MARKUP.includes(`id="${id}"`));
-  assert.ok(JIANGYIN_MARKUP.includes('class="jy-weapon"'));
+  assert.ok(/class="[^"]*\bjy-weapon\b/.test(JIANGYIN_MARKUP));
+  for (const id of ['jy-members', 'jy-squad-status', 'jy-minimap', 'jy-flash', 'jy-fade', 'jy-equipment']) assert.ok(JIANGYIN_MARKUP.includes(`id="${id}"`), `missing #${id}`);
 });
 
 test('the installer adds exactly one launcher import and is idempotent', async () => {
@@ -39,7 +40,8 @@ test('the installer adds exactly one launcher import and is idempotent', async (
       'jiangyin-vegetation.js', 'jiangyin.css']) await writeFile(join(root, 'src/jiangyin', file), '');
     for (const file of ['emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
       'materials.js', 'woodland.js', 'nra-motion.js', 'rifle-action.js', 'casualties.js', 'nra-character.js', 'nra-force-renderer.js',
-      'ija-character.js']) await writeFile(join(root, 'src', file), '');
+      'ija-character.js', 'blast-feedback.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js',
+      'terrain-gait.js']) await writeFile(join(root, 'src', file), '');
     await writeFile(join(root, 'src/menu-music.js'), 'setState(next) {} prepareNavigation() {}');
     await writeFile(join(root, 'src/entry.js'), "import './style.css';\n");
     await writeFile(join(root, 'index.html'), ['campaign-choice', 'confirm-campaign', 'campaign-description', 'campaign-history',

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import './jiangyin.css';
 import { createEmplacementModel } from '../emplacement-model.js';
 import { createJiangyinGame } from './jiangyin-game.js';
-import { JIANGYIN_RULES, JIANGYIN_LANDMARKS, riverCenter, groundHeight, RIVER_HALF } from './jiangyin-rules.js';
+import { JIANGYIN_RULES, JIANGYIN_LANDMARKS, riverCenter, groundHeight, RIVER_HALF, JIANGYIN_VOICE_LINES, JIANGYIN_VOICE_FILE } from './jiangyin-rules.js';
 import { createJiangyinGunModel, setCrewFactory } from './jiangyin-models.js';
 // —— 复用项目现有模块：士兵与枪械、坦克/飞机渲染（含残骸与燃烧）、爆炸/烟尘/枪口焰 ——
 import { soldierModel, weaponModel, setModelSurfaces } from '../world.js';
@@ -18,6 +18,10 @@ import { loadSceneMaterials } from '../materials.js';
 import { setSceneSurfaces } from './jiangyin-surfaces.js';
 import { mountJiangyinPage } from './jiangyin-page.js';
 import { getMenuMusic } from '../menu-music.js';
+// 与其他战役统一：爆炸/开炮的镜头余震与闪光（blast-feedback）、近距爆炸耳鸣（blast-tinnitus）、录音枪声（rifle-audio）
+import { createBlastFeedback } from '../blast-feedback.js';
+import { createBlastTinnitus } from '../blast-tinnitus.js';
+import { loadRifleAudio } from '../rifle-audio.js';
 
 mountJiangyinPage();
 // 大厅背景音乐：加载期间继续，进入战斗淡出，暂停时按主游戏规则处理
@@ -41,21 +45,112 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
 });
 
-// ---------- 合成音效（无外部资源；正式版可替换为项目现有录音） ----------
-let audio = null;
-function sound(name, position) {
+// ---------- 声音 ----------
+// 步枪/轻机枪/机枪：使用项目的录音枪声（rifle-audio.js，与其他战役同一套声音与距离衰减）；加载失败时退回合成音。
+// 大口径舰炮/岸防炮/爆炸：合成的多层炮声——尖锐的炮口爆音 + 低频冲击 + 长尾隆隆声 + 江面山谷回声，经压缩器避免削波。
+let audio = null, master = null, rifleAudio = null, tinnitus = null, shotSerial = 0;
+const blastFeedback = createBlastFeedback();
+function ensureAudio() {
+  if (audio) return;
+  audio = new AudioContext();
+  const compressor = audio.createDynamicsCompressor();
+  compressor.threshold.value = -16; compressor.knee.value = 12; compressor.ratio.value = 4; compressor.attack.value = .003; compressor.release.value = .25;
+  master = audio.createGain(); master.gain.value = 1;
+  master.connect(compressor).connect(audio.destination);
+  try { tinnitus = createBlastTinnitus(audio, master); } catch (error) { console.warn('[江阴] 耳鸣效果不可用', error); }
+  loadRifleAudio().then(mixer => { rifleAudio = mixer; mixer.setOutput(master); })
+    .catch(error => console.warn('[江阴] 录音枪声加载失败，改用合成音', error));
+}
+// 战场语音：按 cue 懒加载 Azure 生成的 mp3（见 JIANGYIN_VOICE_LINES）；文件不存在时静默跳过，只保留文字提示
+const voiceCache = new Map(), voiceHeard = new Map();
+let voiceBusyUntil = 0;
+function playVoice(cue, urgent = false) {
+  if (!audio || !JIANGYIN_VOICE_LINES.some(line => line.cue === cue)) return;
+  const now = audio.currentTime;
+  if (!urgent && (now < voiceBusyUntil || now - (voiceHeard.get(cue) ?? -1e9) < 25)) return;   // 不叠播；同一句 25 秒内不重复
+  voiceHeard.set(cue, now);
+  if (!voiceCache.has(cue)) voiceCache.set(cue, fetch(JIANGYIN_VOICE_FILE(cue))
+    .then(response => response.ok ? response.arrayBuffer() : null)
+    .then(data => data ? audio.decodeAudioData(data) : null)
+    .catch(() => null));
+  voiceCache.get(cue).then(buffer => {
+    if (!buffer || !audio) return;
+    const source = audio.createBufferSource(), amp = audio.createGain(), radio = audio.createBiquadFilter();
+    radio.type = 'highpass'; radio.frequency.value = 160; amp.gain.value = 1.15;
+    source.buffer = buffer; source.connect(radio).connect(amp).connect(master);
+    const at = Math.max(audio.currentTime, voiceBusyUntil);
+    voiceBusyUntil = at + buffer.duration + .25; source.start(at);
+  });
+}
+const noiseCache = new Map();
+function noiseBuffer(seconds) {
+  const key = Math.round(seconds * 10);
+  if (noiseCache.has(key)) return noiseCache.get(key);
+  const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * seconds), audio.sampleRate), data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  noiseCache.set(key, buffer); return buffer;
+}
+function burst(at, { seconds, cutoff, gain, decay = 3, type = 'lowpass', q = .7, pan = 0, delay = 0, to = master }) {
+  const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), amp = audio.createGain(), panner = audio.createStereoPanner();
+  source.buffer = noiseBuffer(seconds); filter.type = type; filter.frequency.value = cutoff; filter.Q.value = q; panner.pan.value = pan;
+  amp.gain.setValueAtTime(0, at + delay); amp.gain.linearRampToValueAtTime(gain, at + delay + .004);
+  amp.gain.setTargetAtTime(0, at + delay + .01, seconds / decay);
+  source.connect(filter).connect(amp).connect(panner).connect(to); source.start(at + delay); source.stop(at + delay + seconds);
+}
+function thump(at, { from, toHz, seconds, gain, delay = 0 }) {
+  const osc = audio.createOscillator(), amp = audio.createGain();
+  osc.type = 'sine'; osc.frequency.setValueAtTime(from, at + delay); osc.frequency.exponentialRampToValueAtTime(toHz, at + delay + seconds * .7);
+  amp.gain.setValueAtTime(0, at + delay); amp.gain.linearRampToValueAtTime(gain, at + delay + .006); amp.gain.setTargetAtTime(0, at + delay + .02, seconds / 4);
+  osc.connect(amp).connect(master); osc.start(at + delay); osc.stop(at + delay + seconds);
+}
+const listenerRight = new THREE.Vector3();
+function panOf(position) {
+  if (!position) return 0;
+  listenerRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  const dx = position.x - camera.position.x, dz = position.z - camera.position.z, d = Math.hypot(dx, dz) || 1;
+  return Math.max(-.85, Math.min(.85, (dx * listenerRight.x + dz * listenerRight.z) / d));
+}
+function heavyGun(position, own, scale = 1) {
+  const at = audio.currentTime, d = position ? camera.position.distanceTo(new THREE.Vector3(position.x, position.y, position.z)) : 0;
+  const near = own ? 1 : Math.max(.04, Math.min(1, 60 / (d + 40)));
+  const delay = own ? 0 : Math.min(3, d / 340);                      // 远处炮声随距离延迟（声速）
+  const pan = own ? 0 : panOf(position), bright = own ? 1 : Math.max(.15, 1 - d / 1800);
+  burst(at, { seconds: .12, cutoff: 5200 * bright, gain: 1.1 * near * scale, decay: 6, pan, delay });            // 炮口爆音
+  thump(at, { from: 95, toHz: 32, seconds: 1.3, gain: 1.25 * near * scale, delay });                              // 低频冲击
+  burst(at, { seconds: 2.8 * scale, cutoff: 260, gain: .9 * near * scale, decay: 2.2, pan, delay: delay + .02 });   // 隆隆长尾
+  burst(at, { seconds: 2.2, cutoff: 420, gain: .32 * near * scale, decay: 2, pan: -pan * .6, delay: delay + .55 + Math.random() * .25 });   // 江面与两岸山谷回声
+  burst(at, { seconds: 1.8, cutoff: 300, gain: .18 * near * scale, decay: 2, pan: pan * .4, delay: delay + 1.3 + Math.random() * .3 });
+}
+function sound(name, position, event = {}) {
   if (!audio) return;
+  const own = Boolean(event.player);
+  if (['rifle', 'lmg', 'enemy-rifle', 'mg'].includes(name) && rifleAudio && position) {
+    listenerRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    const owned = own && name !== 'mg';
+    const shot = { id: ++shotSerial, start: { x: position.x, y: position.y, z: position.z }, automatic: name === 'lmg' || name === 'mg',
+      weaponType: name === 'mg' ? 'machine-gun' : 'rifle',
+      source: { soldierId: owned ? 'player' : `jy-${name}-${shotSerial % 13}`, weaponId: owned ? 'player-weapon' : `jy-${name}-gun`,
+        team: name === 'enemy-rifle' ? 'enemy' : 'friendly', credit: name === 'enemy-rifle' ? 'enemy' : 'friendly',
+        weaponClass: name === 'rifle' ? 'rifle' : name === 'enemy-rifle' ? 'rifle' : 'machine-gun' } };
+    const listener = { position: camera.position, right: listenerRight, soldierId: 'player', weaponId: 'player-weapon' };
+    try { rifleAudio.play(audio, shot, listener, owned); return; } catch (error) { console.warn('[江阴] 枪声播放失败', error); }
+  }
+  if (name === 'gun') { heavyGun(position, own, event.heavy ? 1.2 : 1); return; }
+  if (name === 'enemy-gun') { heavyGun(position, false, .8); return; }
+  if (name === 'boom') { heavyGun(position, false, event.heavy ? 1.4 : 1); return; }
   const distance = position ? camera.position.distanceTo(new THREE.Vector3(position.x, position.y, position.z)) : 0;
   const gain = Math.max(.03, Math.min(1, 40 / (distance + 20)));
-  const spec = { gun: [.5, 900, .9], 'enemy-gun': [.45, 700, .7], boom: [.9, 420, .8], splash: [.6, 1400, .4], mg: [.07, 2600, .25],
-    rifle: [.18, 2200, .5], lmg: [.08, 2400, .35], 'enemy-rifle': [.16, 1900, .3], throw: [.12, 900, .15] }[name];
+  const spec = { splash: [.9, 900, .5], mg: [.07, 2600, .25], rifle: [.18, 2200, .5], lmg: [.08, 2400, .35], 'enemy-rifle': [.16, 1900, .3], throw: [.12, 900, .15] }[name];
   if (!spec) return;
-  const [length, cutoff, volume] = spec, rate = audio.sampleRate, buffer = audio.createBuffer(1, rate * length, rate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2.5;
-  const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), amp = audio.createGain();
-  source.buffer = buffer; filter.type = 'lowpass'; filter.frequency.value = cutoff; amp.gain.value = volume * gain;
-  source.connect(filter).connect(amp).connect(audio.destination); source.start();
+  burst(audio.currentTime, { seconds: spec[0], cutoff: spec[1], gain: spec[2] * gain, decay: 3, pan: panOf(position) });
+}
+// 镜头余震：开炮与近处爆炸都会触发（与其他战役同一套 blast-feedback 参数）
+function blastNear(position, style) {
+  if (!position) return;
+  try {
+    const exposure = blastFeedback.trigger(position, camera.position, style);
+    if (tinnitus && audio && exposure.strength >= .25) tinnitus.play(position, { position: camera.position }, style);
+  } catch (error) { console.warn('[江阴] 余震效果', error); }
 }
 
 // ---------- 游戏 ----------
@@ -125,8 +220,13 @@ const soldierFor = (team, weapon) => {
 };
 const game = createJiangyinGame({ scene, camera, createGunModel: point => createJiangyinGunModel(point, createEmplacementModel),
   createSoldierModel: soldierFor, effects, quality: new URLSearchParams(location.search).get('quality') === 'low' ? 'low' : 'high', onEvent(event) {
-  if (event.type === 'toast') toast(event.text, event.alert);
-  else if (event.type === 'sound') sound(event.name, event.position);
+  if (event.type === 'toast') { toast(event.text, event.alert); if (event.voice) playVoice(event.voice); }
+  else if (event.type === 'sound') {
+    sound(event.name, event.position, event);
+    if (event.name === 'gun' && event.player) blastNear(event.position, 'explosive-pack');          // 自己开炮：强烈余震
+    else if (event.name === 'boom') blastNear(event.position, event.heavy ? 'aircraft-bomb' : 'explosive-pack');
+    else if (event.name === 'gun' || event.name === 'enemy-gun') blastNear(event.position, 'mortar');
+  }
   else if (event.type === 'hit') { $('jy-crosshair').classList.add('hit'); clearTimeout(hitTimer);
     hitTimer = setTimeout(() => $('jy-crosshair').classList.remove('hit'), 160); }
   else if (event.type === 'transfer' && event.reason !== 'start')
@@ -134,10 +234,10 @@ const game = createJiangyinGame({ scene, camera, createGunModel: point => create
   else if (event.type === 'phase') { $('jy-caption').hidden = true; $('jy-hud').hidden = false;
     $('jy-crosshair').hidden = event.phase === 'scuttle'; $('jy-posts').hidden = event.phase === 'scuttle';
     document.querySelector('.jy-weapon').hidden = event.phase === 'scuttle'; $('jy-range').hidden = event.phase === 'scuttle'; }
-  else if (event.type === 'deploy') { for (const id of ['jy-crosshair', 'jy-posts', 'jy-range']) $(id).hidden = false;
+  else if (event.type === 'deploy') { const fade = $('jy-fade'); fade.classList.remove('out'); void fade.offsetWidth; fade.classList.add('out'); for (const id of ['jy-crosshair', 'jy-posts', 'jy-range']) $(id).hidden = false;
     document.querySelector('.jy-weapon').hidden = false; $('jy-hud').hidden = false; }
   else if (event.type === 'hurt') { $('jy-hurt').classList.add('show'); clearTimeout(hurtTimer); hurtTimer = setTimeout(() => $('jy-hurt').classList.remove('show'), 120); }
-  else if (event.type === 'ended') showEnd(event.outcome, event.stats);
+  else if (event.type === 'ended') { playVoice(event.outcome?.result === 'victory' ? 'jiangyin-victory' : 'jiangyin-defeat', true); showEnd(event.outcome, event.stats); }
 } });
 
 // ---------- 输入 ----------
@@ -162,7 +262,7 @@ addEventListener('keydown', event => {
   if (!running || event.repeat) return;
   keys.add(event.code);
   if (['Space', 'Enter'].includes(event.code) && ['intro', 'scuttle'].includes(game.state.phase) && !game.deployed) input.skipIntro = true;
-  if (event.code === 'KeyM') $('jy-radar').classList.toggle('large');
+  if (event.code === 'KeyM') $('jy-minimap').classList.toggle('large');
   if (event.code === 'KeyV') input.toggleView = true;
   if (event.code === 'Tab') event.preventDefault();
   const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
@@ -190,7 +290,7 @@ document.addEventListener('pointerlockchange', () => {
 });
 $('jy-start').addEventListener('click', () => {
   if (game.state.phase === 'ended') { location.reload(); return; }
-  audio ??= new AudioContext(); void audio.resume();
+  ensureAudio(); void audio.resume();
   running = true; paused = false; $('jy-overlay').hidden = true; menuMusic.setState('playing');
   if (game.state.phase === 'intro') $('jy-caption').hidden = false;
   canvas.requestPointerLock();
@@ -224,19 +324,50 @@ function renderHud() {
     return item;
   }));
   $('jy-interact').textContent = hud.interact ?? '';
+  // 左下：小队成员概况（与其他战役一样的成员格：编号 + 兵种，存活/阵亡/当前操纵）
+  const squadBox = $('jy-squad-status');
+  squadBox.hidden = !hud.squad;
+  if (hud.squad) {
+    $('jy-unit-title').textContent = hud.squad.respawnIn !== null ? `步兵小队 · ${Math.ceil(hud.squad.respawnIn)} 秒后集结` : `步兵小队 ${hud.squad.alive}/${hud.squad.total}`;
+    const key = hud.squad.members.map(m => `${m.index}${m.alive ? 1 : 0}${m.active ? 1 : 0}${m.hurt ? 1 : 0}`).join('');
+    if (squadBox.dataset.key !== key) {
+      squadBox.dataset.key = key;
+      $('jy-members').replaceChildren(...hud.squad.members.map(m => {
+        const chip = document.createElement('span');
+        chip.className = `member${m.active ? ' active' : ''}${m.alive ? '' : ' dead'}${m.hurt ? ' hurt' : ''}`;
+        chip.title = `${m.index + 1} · ${m.role}${m.alive ? '' : '（阵亡）'}`;
+        chip.innerHTML = `${m.role === '轻机枪手' ? '机' : m.role === '班长' ? '班' : '步'}<b>${m.index + 1}</b>`;
+        return chip;
+      }));
+    }
+  }
+  // 右下：武器、弹药、装备栏、生命（与其他战役相同的排布）
+  const equip = $('jy-equipment');
   if (hud.infantry) {
     const w = hud.infantry;
-    $('jy-weapon-name').textContent = `${hud.squad.member} · ${w.name}`;
-    $('jy-ammo').textContent = w.weapon === 'grenade' ? `× ${w.ammo}` : `${w.ammo} / ${w.reserve}`;
+    $('jy-weapon-name').textContent = w.weapon === 'grenade' ? '二十四年式木柄手榴弹' : w.name;
+    $('jy-ammo').textContent = w.weapon === 'grenade' ? String(w.ammo) : String(w.ammo);
+    $('jy-ammo-max').textContent = w.weapon === 'grenade' ? '' : `/ ${w.reserve}`;
     $('jy-reload').style.width = `${w.reload !== null ? w.reload * 100 : 100}%`;
-    $('jy-help').textContent = `WASD 移动 · Shift 奔跑 · Ctrl/C 蹲下 · 左键开火 · 右键瞄准 · R 换弹 · 1 主武器 · 5/G 手榴弹（剩 ${w.grenades}）· F 进出炮位 · Y 切换队员 · M 地图`;
+    $('jy-pace').textContent = w.dead ? '阵亡' : w.reloading ? '换弹' : w.crouch ? '蹲姿' : w.speed > 4 ? '奔跑' : w.speed > .3 ? '行进' : '站定';
+    equip.innerHTML = `<span class="${w.weapon === 'primary' ? 'selected' : ''}"><b>1</b>主</span><span class="${w.weapon === 'grenade' ? 'selected' : ''}"><b>5</b>雷 ${w.grenades}</span>`;
+    $('jy-health-fill').style.width = `${Math.max(0, hud.squad?.health ?? 0)}%`;
+    $('jy-health-text').textContent = `生命 ${Math.max(0, Math.round(hud.squad?.health ?? 0))}`;
+    $('jy-help').textContent = 'WASD 移动 · Shift 奔跑 · Ctrl/C 蹲下 · 右键瞄准 · R 换弹 · 1/5 武器 · F 进出炮位 · Y 换人 · M 地图';
   } else if (hud.weapon) {
     $('jy-weapon-name').textContent = hud.weapon.name;
-    $('jy-ammo').textContent = hud.weapon.cannon ? `${hud.weapon.ammo} / ${hud.weapon.reserve}` : `${hud.weapon.ammo} / ${hud.weapon.reserve}`;
+    $('jy-ammo').textContent = String(hud.weapon.ammo);
+    $('jy-ammo-max').textContent = `/ ${hud.weapon.reserve}`;
     const cooldown = hud.weapon.cooldown;
     $('jy-reload').style.width = `${cooldown ? cooldown.progress * 100 : 100}%`;
-    $('jy-help').textContent = hud.weapon.ship ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· 鼠标操纵艏主炮塔 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
-      : cooldown?.mode === 'cooling' ? '枪管过热冷却中…' : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · F 离开炮位 · M 地图';
+    $('jy-pace').textContent = cooldown?.mode === 'cooling' ? '枪管冷却' : cooldown && cooldown.progress < 1 ? '装填中' : '待发';
+    equip.innerHTML = '';
+    const post = hud.posts.find(p => p.controlled);
+    const integrity = post ? Math.round(100 * post.health / post.maxHealth) : 100;
+    $('jy-health-fill').style.width = `${integrity}%`;
+    $('jy-health-text').textContent = `${hud.weapon.ship ? '舰体' : '阵位'} ${integrity}%`;
+    $('jy-help').textContent = hud.weapon.ship ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
+      : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · F 离开炮位 · M 地图';
   }
   $('jy-range').textContent = hud.range ? `${Math.round(hud.range)} m` : '';
   drawRadar();
@@ -281,7 +412,7 @@ function drawRadar() {
     c.moveTo(x + Math.cos(a) * 4.5, y + Math.sin(a) * 4.5); c.lineTo(x + Math.cos(a + 2.5) * 3, y + Math.sin(a + 2.5) * 3);
     c.lineTo(x + Math.cos(a - 2.5) * 3, y + Math.sin(a - 2.5) * 3); c.fill(); }
   if (data.player) { c.fillStyle = '#f6e0a9'; c.strokeStyle = '#151a16'; c.lineWidth = 1.2; c.beginPath(); c.arc(sx(data.player.x), sz(data.player.z), 3, 0, Math.PI * 2); c.fill(); c.stroke(); }
-  if (radar.classList.contains('large')) {   // 展开时才标注地名，平时保持简洁
+  if ($('jy-minimap').classList.contains('large')) {   // 展开时才标注地名，平时保持简洁
     c.fillStyle = 'rgba(235,228,205,.8)'; c.font = '6px serif'; c.textAlign = 'center';
     const placed = [];
     for (const mark of JIANGYIN_LANDMARKS) {
@@ -347,6 +478,7 @@ renderer.setAnimationLoop(time => {
     hudClock += dt;
     if (hudClock > .1) { hudClock = 0; renderHud(); }
   } else if (game.state.phase !== 'ended') game.step(0, {});
+  if (rifleAudio && audio) { try { listenerRight.set(1, 0, 0).applyQuaternion(camera.quaternion); rifleAudio.beginBatch(); rifleAudio.update({ position: camera.position, right: listenerRight, soldierId: 'player', weaponId: 'player-weapon' }); } catch {} }
   clockTime += dt;   // 表现层时钟单调递增（combat-effects 要求粒子时钟单调）
   vehicleRenderer.update(game.vehicles, clockTime);
   // 人物渲染出错时只跳过人物，不让整个画面卡死；第一次出错时在屏幕上提示错误内容，便于反馈
@@ -359,6 +491,13 @@ renderer.setAnimationLoop(time => {
   const fov = BASE_FOV / zoom;
   if (Math.abs(camera.fov - fov) > .01) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix(); }
   $('jy-crosshair').classList.toggle('scoped', zoom > 1.5);
+  // 余震：在本帧渲染前叠加镜头抖动（下一帧战局会重新设定镜头，不会漂移），并显示爆炸闪光
+  const shake = blastFeedback.update(dt, 1);
+  if (shake.strength > 0) {
+    camera.translateX(shake.x); camera.translateY(shake.y);
+    camera.rotateX(shake.pitch); camera.rotateY(shake.yaw); camera.rotateZ(shake.roll);
+  }
+  $('jy-flash').style.opacity = String(Math.min(.55, shake.flash));
   renderer.render(scene, camera);
   updateViewWeapon(dt);
 });

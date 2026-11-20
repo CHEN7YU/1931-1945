@@ -6,7 +6,7 @@
 // - 烟：舰船烟囱煤烟、沉船燃烧烟柱（软粒子）。
 import * as THREE from 'three';
 import { JIANGYIN_RULES, JIANGYIN_POSTS, groundHeight, riverCenter, terrainFbm, RIVER_HALF, postFacing,
-  jiangyinTrenches, naturalGroundHeight, TRENCH } from './jiangyin-rules.js';
+  jiangyinTrenches, naturalGroundHeight, TRENCH, jiangyinRoads, roadProbe, ROAD } from './jiangyin-rules.js';
 const SO = RIVER_HALF - 70;   // 岸线剖面外移量（与 jiangyin-rules 一致）
 const FLOW = JIANGYIN_RULES.flowSpeed ?? 1.6;   // 江水向东（+x）流动
 import { createWreckModel, mergeStatic, mat } from './jiangyin-models.js';
@@ -139,6 +139,8 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
         color.lerp(P.litter, forestMask(x, z) * smoothstep(26, 40, y) * .55);
         if (y > 36) color.lerp(P.scrub, smoothstep(36, 55, y) * .6);
       }
+      const road = y > .5 ? roadProbe(x, z) : null;   // 公路两侧的路肩与路堑边坡：压实的黄土色
+      if (road && road.d < ROAD.half + ROAD.shoulder) color.lerp(P.path, (1 - smoothstep(ROAD.half, ROAD.half + ROAD.shoulder, road.d)) * .7);
       colors.push(color.r, color.g, color.b); splat.push(s);
     }
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -450,6 +452,37 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
       stake.position.set(x, groundHeight(x, z) + 1.2, z); stake.rotation.set((rand() - .5) * .4, 0, sign * -.35); decor.add(stake);
     }
   }
+  // ---------- 军用公路路面：沿中心线铺一条带车辙的土路网格（略高于地形，避免粗网格穿插），路边立里程木桩 ----------
+  {
+    const roadMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    patchSurface(roadMaterial, { map: surfaceMap('dry-silt'), detail: .8, tile: 3, mottle: .14, bump: .5, world: true });
+    for (const road of jiangyinRoads()) {
+      const across = [-1, -.62, -.38, -.14, .14, .38, .62, 1], positions = [], colors = [], index = [];
+      const dirt = new THREE.Color(0x8a7656), rut = new THREE.Color(0x5e4e3a), verge = new THREE.Color(0x7b7350);
+      road.points.forEach(([x, z], i) => {
+        const [x2, z2] = road.points[Math.min(i + 1, road.points.length - 1)], [x0, z0] = road.points[Math.max(i - 1, 0)];
+        const tx = x2 - x0, tz = z2 - z0, len = Math.hypot(tx, tz) || 1, nx = -tz / len, nz = tx / len;
+        across.forEach(u => {
+          const w = u * (ROAD.half + .4), px = x + nx * w, pz = z + nz * w;
+          positions.push(px, Math.max(road.heights[i], groundHeight(px, pz)) + .14 - Math.abs(u) * .06, pz);
+          const c = Math.abs(Math.abs(u) - .5) < .14 ? rut : Math.abs(u) > .9 ? verge : dirt;
+          const n = terrainFbm(px * .2, pz * .2, 2); colors.push(c.r * (.86 + n * .28), c.g * (.86 + n * .28), c.b * (.86 + n * .28));
+        });
+        if (i) { const a = (i - 1) * across.length, b = i * across.length;
+          for (let k = 0; k < across.length - 1; k++) index.push(a + k, b + k, a + k + 1, a + k + 1, b + k, b + k + 1); }
+      });
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.setIndex(index); geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(geometry, roadMaterial); mesh.receiveShadow = true; mesh.userData.keep = true; decor.add(mesh);
+      for (let s = 50; s < road.lengths.at(-1); s += 100) {   // 每百米一根里程桩
+        const i = road.lengths.findIndex(l => l >= s), [x, z] = road.points[i], [x2, z2] = road.points[Math.min(i + 1, road.points.length - 1)];
+        const len = Math.hypot(x2 - x, z2 - z) || 1, px = x - (z2 - z) / len * (ROAD.half + 1), pz = z + (x2 - x) / len * (ROAD.half + 1);
+        const post = new THREE.Mesh(new THREE.BoxGeometry(.18, 1, .18), mat('stake', 0x5b4a36, 1, 0)); post.position.set(px, groundHeight(px, pz) + .5, pz); decor.add(post);
+      }
+    }
+  }
   // 战壕细部（壕沟本身已挖进地形）：木板护壁与立柱、壕底踏板、江面一侧胸墙上的沙袋射击位
   const plank = mat('stake', 0x5b4a36, 1, 0), duck = mat('wood', 0x7a6347, .95, 0), sandbag = mat('sandbag', 0x9a8763, 1, 0);
   for (const trench of jiangyinTrenches()) {
@@ -585,14 +618,14 @@ function createSmoke(scene, capacity = 1800) {
   const local = new THREE.Vector3(), wind = new THREE.Vector3(1.5, 0, .6);   // 冬季西北风，烟向东南飘
   return {
     // 一次性烟团：炮口硝烟（灰白、缓慢飘散）、落地爆炸的尘土（黄褐）
-    puff(at, { count = 8, radius = 1, shade = .7, life = 6, rise = .8, grow = 1.4, dir = null, speed = 0 } = {}) {
+    puff(at, { count = 8, radius = 1, shade = .7, life = 6, rise = .8, grow = 1.4, dir = null, speed = 0, fire = 0, spread = 1 } = {}) {
       for (let n = 0; n < count; n++) {
         const p = particles[cursor], k = n / Math.max(1, count - 1);
         position.set([at.x + (Math.random() - .5) * radius, at.y + (Math.random() - .5) * radius * .5, at.z + (Math.random() - .5) * radius], cursor * 3);
         const v = speed * (.3 + k * .9);
-        Object.assign(p, { age: 0, life: life * (.7 + Math.random() * .6), vx: (dir?.x ?? 0) * v + (Math.random() - .5) * radius,
-          vy: rise * (.5 + Math.random()) + (dir?.y ?? 0) * v, vz: (dir?.z ?? 0) * v + (Math.random() - .5) * radius,
-          base: radius * (1.2 + Math.random()), grow, shade: shade * (.85 + Math.random() * .3), fire: 0, drag: speed ? 1.6 : 0 });
+        Object.assign(p, { age: 0, life: life * (.7 + Math.random() * .6), vx: (dir?.x ?? 0) * v + (Math.random() - .5) * radius * spread,
+          vy: rise * (.5 + Math.random()) + (dir?.y ?? 0) * v, vz: (dir?.z ?? 0) * v + (Math.random() - .5) * radius * spread,
+          base: radius * (1.2 + Math.random()), grow, shade: shade * (.85 + Math.random() * .3), fire: fire * (1 - k * .7), drag: speed ? 1.6 : 0 });
         cursor = (cursor + 1) % capacity;
       }
     },

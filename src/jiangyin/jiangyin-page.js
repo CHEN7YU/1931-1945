@@ -17,14 +17,26 @@ export const JIANGYIN_MARKUP = `
   <div id="jy-range"></div>
   <div id="jy-toast" role="status"></div>
   <ol id="jy-posts" aria-label="可接管阵位"></ol>
-  <div class="jy-weapon">
-    <strong id="jy-weapon-name"></strong>
-    <span id="jy-ammo"></span>
-    <div class="jy-bar"><div id="jy-reload"></div></div>
-    <small id="jy-help">鼠标瞄准 · 左键开火 · V 第一/第三人称 · Q/E 或 1–8 切换阵位 · M 地图 · Esc 暂停</small>
+  <!-- 底部 HUD：与其他战役（index.html 的 .hud-bottom / .squad-status / .weapon-status / #minimap）同样的布局与样式 -->
+  <div class="jy-hud-bottom">
+    <div class="jy-squad-status" id="jy-squad-status" hidden>
+      <div class="jy-squad-heading"><span id="jy-unit-title">步兵小队</span><kbd>Y</kbd></div>
+      <div id="jy-members"></div>
+    </div>
+    <div class="jy-weapon-status jy-weapon">
+      <div id="jy-movement"><span id="jy-pace">站定</span></div>
+      <div class="jy-reload-track"><div id="jy-reload"></div></div>
+      <div class="jy-hud-label" id="jy-weapon-name"></div>
+      <div class="jy-ammo"><span id="jy-ammo"></span><small id="jy-ammo-max"></small></div>
+      <div id="jy-equipment" aria-label="装备栏"></div>
+      <div class="jy-health-track"><div id="jy-health-fill"></div></div><span id="jy-health-text"></span>
+      <small id="jy-help">鼠标瞄准 · 左键开火 · V 第一/第三人称 · Q/E 或 1–8 切换阵位 · M 地图 · Esc 暂停</small>
+    </div>
   </div>
-  <canvas id="jy-radar" width="352" height="352" aria-label="战术小地图"></canvas>
+  <div id="jy-minimap"><canvas id="jy-radar" width="352" height="352" aria-label="战术简图"></canvas><span>N ↑ / 战术简图</span></div>
 </div>
+<div id="jy-flash" aria-hidden="true"></div>
+<div id="jy-fade" aria-hidden="true"></div>
 <section id="jy-overlay" class="jy-overlay">
   <div class="jy-dialog">
     <span class="jy-kicker" id="jy-kicker">1937 · 江阴</span>

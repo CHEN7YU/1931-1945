@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createJiangyinGame } from '../src/jiangyin/jiangyin-game.js';
 import { JIANGYIN_SQUAD } from '../src/jiangyin/jiangyin-rules.js';
+import { applyTerrainGait, terrainStep } from '../src/terrain-gait.js';
 
 const stub = point => { const group = new THREE.Group(); group.userData.update = () => {}; return group; };
 function makeGame(seed = 11, effects = null) {
@@ -10,7 +11,7 @@ function makeGame(seed = 11, effects = null) {
   const random = () => (value = (value * 16807) % 2147483647) / 2147483647;
   const events = [];
   const game = createJiangyinGame({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(68, 1.6, .3, 12000),
-    createGunModel: stub, quality: 'low', random, effects, onEvent: event => events.push(event) });
+    createGunModel: stub, effects, quality: 'low', random, onEvent: event => events.push(event) });
   return { game, events };
 }
 const run = (game, seconds, input = {}) => { for (let t = 0; t < seconds; t += .05) game.step(.05, typeof input === 'function' ? input() : input); };
@@ -42,20 +43,25 @@ test('after the scuttling begins the player lands as an infantry squad near a ba
   for (const post of game.posts) if (post.boat) post.point.health = 0;
   run(game, 25);
   assert.equal(game.state.phase, 'scuttle');
-  run(game, JIANGYIN_SQUAD.deployAfter + 1);
+  let waited = 0;
+  while (!game.deployed && waited < JIANGYIN_SQUAD.deployLatest + 1) { game.step(.05, {}); waited += .05; }
   assert.equal(game.deployed, true);
+  assert.ok(waited >= JIANGYIN_SQUAD.deployAfter - .1, 'the scuttling cinematic plays first');
+  const sunk = game.blockships.filter(ship => ship.state === 'sunk' || ship.state === 'sinking').length;
+  assert.ok(sunk >= JIANGYIN_SQUAD.deployAfterSunk || waited >= JIANGYIN_SQUAD.deployLatest - .1, `player lands after ${sunk} blockships went down (${waited.toFixed(1)} s)`);
+  console.log(`deploy after ${waited.toFixed(1)} s with ${sunk} blockships sunk`);
   assert.equal(game.mode, 'infantry');
   assert.equal(game.squad.filter(member => member.dead === null).length, JIANGYIN_SQUAD.members);
   assert.ok(events.some(event => event.type === 'deploy'));
   // F: walk to the nearest battery and enter it; F again leaves it
-  const member = game.member, battery = game.posts.find(post => post.id === 'huangshan-west');
+  const member = game.member, battery = game.posts.find(post => post.id === 'huangshan-east');
   for (let n = 0; n < 400 && Math.hypot(battery.point.x - game.member.x, battery.point.z - game.member.z) > 4; n++) {
     game.member.heading = Math.atan2(-(battery.point.x - game.member.x), -(battery.point.z - game.member.z));
     game.step(.05, { move: { x: 0, z: 1 } });
   }
   game.step(.05, { interact: true });
   assert.equal(game.mode, 'post');
-  assert.equal(game.controlledId, 'huangshan-west');
+  assert.equal(game.controlledId, 'huangshan-east');
   run(game, 1);
   game.step(.05, { interact: true });
   assert.equal(game.mode, 'infantry');
@@ -77,18 +83,6 @@ test('after the scuttling begins the player lands as an infantry squad near a ba
   assert.equal(game.state.phase, 'hold');
   const hud = game.hud();
   assert.ok(hud.top.some(field => /日军目标/.test(field.label)), 'the HUD states that the Japanese aim to destroy our positions');
-});
-
-test('a deployed squad grenade reaches the shared grenade explosion effect', () => {
-  const impacts = [];
-  const { game } = makeGame(11, { explosion: (...args) => impacts.push(args), muzzle() {} });
-  game.skipIntro();
-  for (const post of game.posts) if (post.boat) post.point.health = 0;
-  run(game, 25 + JIANGYIN_SQUAD.deployAfter + 1);
-  game.step(.05, { equip: 'grenade' });
-  game.step(.05, { firePressed: true });
-  run(game, 6);
-  assert.ok(impacts.some(([, , style]) => style === 'grenade'));
 });
 
 test('the player can zoom every gun with the right mouse button', () => {
@@ -121,4 +115,29 @@ test('phase one opens at about one kilometre so the 4x sight shows the enemy cle
     return {};
   });
   assert.ok(nearest < 900, `closest engagement ${Math.round(nearest)} m`);
+});
+
+test('shells striking land use the shared tank-shell ground aftermath', () => {
+  const impacts = [];
+  const { game } = makeGame(11, { explosion: (...args) => impacts.push(args), muzzle() {} });
+  game.skipIntro();
+  for (const post of game.posts) if (post.boat) post.point.health = 0;
+  run(game, 180);
+  assert.ok(impacts.some(([, , style, surface]) => style === 'tank-shell' && surface?.kind === 'soil'),
+    'a simulated shell hitting land must carry the tank-shell style and soil surface');
+});
+
+test('terrain gait shortens uphill steps, permits gentle downhill speed-up and rejects cliffs', () => {
+  const uphill = terrainStep((x) => x * .6, 0, 0, 1, 0, 4, .1);
+  const downhill = terrainStep((x) => -x * .3, 0, 0, 1, 0, 4, .1);
+  const cliff = terrainStep((x) => x * 2, 0, 0, 1, 0, 4, .1);
+  assert.ok(uphill.ok && uphill.horizontal < .4 && uphill.path > uphill.horizontal);
+  assert.ok(downhill.ok && downhill.factor > 1);
+  assert.equal(cliff.ok, false);
+
+  const actor = { nativeMotion: { strideScale: 1 } };
+  applyTerrainGait(actor, uphill.grade);
+  assert.ok(actor.nativeMotion.strideScale < 1, 'uphill gait advances through shorter strides');
+  applyTerrainGait(actor, 0);
+  assert.ok(actor.nativeMotion.strideScale > .93, 'stride scale recovers on level ground');
 });

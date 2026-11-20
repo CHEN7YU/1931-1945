@@ -12,7 +12,7 @@ const REQUIRED_FILES = ['jiangyin-launcher.js', 'jiangyin-campaign.js', 'jiangyi
   'jiangyin-rules.js', 'jiangyin-world.js', 'jiangyin-models.js', 'jiangyin-soldiers.js', 'jiangyin-surfaces.js',
   'jiangyin-vegetation.js', 'jiangyin.css'];
 // 本关复用的项目模块与大厅元素；缺失说明仓库结构已变化，需要人工核对。
-const REUSED_MODULES = ['emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
+const REUSED_MODULES = ['blast-feedback.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js', 'emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
   'materials.js', 'woodland.js', 'nra-motion.js', 'rifle-action.js', 'casualties.js', 'nra-character.js', 'nra-force-renderer.js',
   'ija-character.js', 'menu-music.js', 'entry.js'];
 const LOBBY_IDS = ['campaign-choice', 'confirm-campaign', 'campaign-description', 'campaign-history', 'campaign-goals', 'menu', 'loading'];
@@ -27,6 +27,7 @@ export async function installJiangyin(root, { check = false } = {}) {
   const problems = [];
   const exists = async path => access(path).then(() => true, () => false);
   for (const file of REQUIRED_FILES) if (!await exists(resolve(root, 'src/jiangyin', file))) problems.push(`缺少 src/jiangyin/${file}（请先复制本关文件夹）`);
+  if (!await exists(resolve(root, 'src/terrain-gait.js'))) problems.push('缺少 src/terrain-gait.js（本包新增的通用坡地步态模块，请一并复制）');
   for (const file of REUSED_MODULES) if (!await exists(resolve(root, 'src', file))) problems.push(`仓库缺少 src/${file}`);
   const index = await readFile(resolve(root, 'index.html'), 'utf8').catch(() => '');
   for (const id of LOBBY_IDS) if (!new RegExp(`id\\s*=\\s*["']${id}["']`).test(index)) problems.push(`index.html 未找到 id="${id}"`);

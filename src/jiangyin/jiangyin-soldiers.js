@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { createNraMotion, advanceNraMotion, sampleNraMotion } from '../nra-motion.js';
 import { createRifleState } from '../rifle-action.js';
 import { createCasualtyState } from '../casualties.js';
+import { applyTerrainGait } from '../terrain-gait.js';
 
 // 与 main.js 相同的加载顺序：国军模板 → 国军队伍渲染器 → 日军模板 → 日军队伍渲染器 → 预编译。
 export async function loadJiangyinCharacters({ scene, camera, renderer, walkHeight, capacity = 160, onProgress = () => {} }) {
@@ -122,6 +123,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
         const attacking = Boolean(troop.attacking);
         actor.rifleReady = attacking;
         actor.stance = attacking ? 'crouched' : 'standing'; actor.firingPose = attacking ? 'kneeling' : null;
+        if (dt > 0) applyTerrainGait(actor, troop.grade ?? 0);   // 坡地：按沿坡面的路程缩短步幅，避免“平移”上坡
         advance(actor, dt);
       }
       live[actor.team].push(actor);

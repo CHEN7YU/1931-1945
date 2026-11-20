@@ -49,10 +49,12 @@ test('three friendly warships fight phase one; the phase ends only when all are 
   assert.deepEqual(JIANGYIN_POSTS.filter(post => post.kind === 'ship').map(post => post.id), ['pinghai', 'ninghai', 'yixian']);
   assert.equal(navalPhaseOver(1), false);
   assert.equal(navalPhaseOver(0), true);
-  assert.ok(NAVAL_WAVES.every(wave => wave.ships.length && !wave.landing && !wave.infantry), 'phase one is a purely naval battle');
+  assert.ok(NAVAL_WAVES.every(wave => (wave.ships.length || wave.air) && !wave.landing && !wave.infantry), 'phase one is a naval and air battle (no landings yet)');
+  assert.ok(NAVAL_WAVES[0].ships.length >= 4, 'the Japanese fleet opens with superior numbers');
+  assert.ok(NAVAL_WAVES.some(wave => wave.air), 'Japanese aircraft attack our warships in phase one');
   const state = createJiangyinState();
   state.navalTime = 30;
-  assert.equal(dueNavalWaves(state).length, 2);
+  assert.equal(dueNavalWaves(state).length, 3);
   assert.equal(dueNavalWaves(state).length, 0);
   assert.equal(JIANGYIN_RULES.durationSeconds, 300, 'phase two lasts five minutes');
 });
@@ -84,11 +86,11 @@ test('possession switching skips destroyed posts in both directions and reports 
   assert.throws(() => nextPostId(posts, 'a', 2), RangeError);
 });
 
-test('enemy attacks by water, land and air: 6 infantry squads, 2 tank platoons, 3 air sections, spawned downstream out of sight', async () => {
+test('enemy attacks by water, land and air: 10 infantry squads, 3 tank platoons, 3 air sections, spawned downstream out of sight', async () => {
   const { LAND_SPAWNS, AIR_SPAWN, riverCenter, JIANGYIN_ADVANCE_GUARD } = await import('../src/jiangyin/jiangyin-rules.js');
   const total = key => JIANGYIN_WAVES.reduce((sum, wave) => sum + (Array.isArray(wave[key]) ? wave[key].length : wave[key]), 0);
-  assert.equal(total('infantry') + JIANGYIN_ADVANCE_GUARD.infantry.length, 6);
-  assert.equal(total('tanks'), 2);
+  assert.equal(total('infantry') + JIANGYIN_ADVANCE_GUARD.infantry.length, 10);
+  assert.equal(total('tanks'), 3);
   assert.equal(total('air'), 3);
   for (const spawn of Object.values(LAND_SPAWNS)) {
     assert.ok(groundHeight(spawn.x, spawn.z) > 15, 'land units start on the bank plateau');
@@ -122,4 +124,50 @@ test('trenches in front of the batteries and MG nests are dug a full man deep in
     }
     assert.ok(deepest >= 1.6, `trench at ${trench.postId} only ${deepest.toFixed(2)} m deep`);
   }
+});
+
+test('graded military roads lead from the downstream beach up to every shore position', async () => {
+  const { jiangyinRoads, ROAD, naturalGroundHeight } = await import('../src/jiangyin/jiangyin-rules.js');
+  const roads = jiangyinRoads();
+  assert.equal(roads.length, 2);
+  for (const road of roads) {
+    assert.ok(road.heights[0] < 4, `${road.id} starts on the beach`);
+    for (let i = 1; i < road.points.length; i++) assert.ok(Math.abs(road.heights[i] - road.heights[i - 1]) / ROAD.sample < .14, `${road.id} grade at ${i}`);
+    for (const post of JIANGYIN_POSTS.filter(p => p.kind === 'battery' && p.bank === road.bank && p.mount !== 'flak88')) {
+      const d = Math.min(...road.points.map(([x, z]) => Math.hypot(x - post.x, z - post.z)));
+      assert.ok(d < 25, `${road.id} reaches ${post.id} (${Math.round(d)} m)`);
+    }
+    const [x, z] = road.points[Math.floor(road.points.length / 2)];
+    assert.ok(Math.abs(groundHeight(x, z) - road.heights[Math.floor(road.points.length / 2)]) < .05, 'terrain follows the road surface');
+    assert.ok(Number.isFinite(naturalGroundHeight(x, z)));
+  }
+});
+
+test('south batteries sit on the river-facing brow and overlook the water in front of them', () => {
+  for (const post of JIANGYIN_POSTS.filter(p => p.kind === 'battery' && p.mount === 'coastal' && p.bank === 'south')) {
+    const eye = groundHeight(post.x, post.z) + 5;
+    for (const dx of [-300, 0, 300]) {
+      const tx = post.x + dx, tz = RIVER_HALF - 150, d = Math.hypot(tx - post.x, tz - post.z);
+      let clear = true;
+      for (let t = 12; t < d - 5; t += 2) { const x = post.x + (tx - post.x) * t / d, z = post.z + (tz - post.z) * t / d; if (groundHeight(x, z) > eye * (1 - t / d)) { clear = false; break; } }
+      assert.ok(clear, `${post.id} sees the river at dx=${dx}`);
+    }
+  }
+});
+
+test('every Jiangyin voice cue raised by the game has a scripted line and a battle-voices file name', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { JIANGYIN_VOICE_LINES, JIANGYIN_VOICE_FILE } = await import('../src/jiangyin/jiangyin-rules.js');
+  const cues = new Set(JIANGYIN_VOICE_LINES.map(line => line.cue));
+  assert.equal(cues.size, JIANGYIN_VOICE_LINES.length);
+  for (const line of JIANGYIN_VOICE_LINES) {
+    assert.match(line.cue, /^jiangyin-[a-z-]+$/);
+    assert.ok(line.text.length >= 4 && line.text.length <= 40);
+    assert.equal(JIANGYIN_VOICE_FILE(line.cue), `/assets/audio/battle-voices/friendly-0-${line.cue}.mp3`);
+  }
+  const game = await readFile(new URL('../src/jiangyin/jiangyin-game.js', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src/jiangyin/jiangyin-main.js', import.meta.url), 'utf8');
+  const used = [...`${game}\n${main}`.matchAll(/'(jiangyin-[a-z]+(?:-[a-z]+)*)'/g)].map(m => m[1])
+    .concat(['jiangyin-landing-south', 'jiangyin-landing-north']);
+  for (const cue of used) if (!/^jiangyin-(map|game|rules|main)/.test(cue)) assert.ok(cues.has(cue), `missing voice line ${cue}`);
 });

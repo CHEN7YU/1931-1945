@@ -981,20 +981,94 @@ export function createShipTurretModel(point) {
   return root;
 }
 
+// 木质盐船 / 帆船（征用民船）：方艏、高艉楼、木船体、两三面竹撑篾帆
+function createJunkModel({ length = 24, beam = 6, r = Math.random, name = '' }) {
+  const root = new THREE.Group(), L = length, B = beam;
+  const wood = mat('junk-wood', [0x5a4632, 0x6b5238, 0x4b3a2a][Math.floor(r() * 3)], .95, 0), dark = mat('junk-dark', 0x2e241b, .95, 0);
+  const sail = mat('junk-sail', [0x8a5a3a, 0x9b7a52, 0x6e5440][Math.floor(r() * 3)], 1, 0, { side: THREE.DoubleSide });
+  const hull = loftHull(root, { length: L, beam: B, draft: 1.2, rake: .2, transom: .85, bowFine: .12, sternTaper: .7, flare: .1,
+    hullColor: 0x5c4733, bootColor: 0x3a2d21, bottomColor: 0x2b231c,
+    deck: s => 1.6 + (1 - Math.min(1, s / .15)) ** 2 * .7 + (Math.max(0, s - .75) / .25) ** 2 * 2.2, deckMaterial: wood });
+  box(root, B * .95, .5, .3, 0, hull.deck(.02) + .1, -L / 2 + .4, dark);                              // 方艏横板
+  box(root, B * .8, 1.6, L * .2, 0, hull.deck(.9) + .3, L * .36, wood);                                 // 艉楼
+  box(root, B * .86, .1, L * .22, 0, hull.deck(.9) + 1.15, L * .36, dark);
+  for (const z of [-.2, 0, .18]) { const cover = add(root, new THREE.CylinderGeometry(B * .42, B * .42, L * .12, 10, 1, true, Math.PI / 2, Math.PI), mat('junk-mat', 0x7a6a4c, 1, 0, { side: THREE.DoubleSide }), 0, hull.deck(.5) + .2, L * z); cover.rotation.x = Math.PI / 2; }   // 船篷
+  const masts = L > 26 ? [[-.25, 13], [.05, 16]] : [[-.1, 11]];
+  for (const [z, h] of masts) {
+    const y0 = hull.deck(.4);
+    rod(root, [0, y0, L * z], [0, y0 + h, L * z - .4], .14, dark, 8);
+    const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(-B * .9, h * .08); shape.lineTo(-B * 1.05, h * .9); shape.lineTo(.1, h * .95); shape.closePath();
+    const sheet = add(root, new THREE.ShapeGeometry(shape), sail, 0, y0 + h * .05, L * z + .3); sheet.rotation.y = Math.PI / 2 + (r() - .5) * .5;
+    for (let k = 1; k < 6; k++) rod(root, [0, y0 + h * .05 + h * .17 * k, L * z + .3], [0, y0 + h * .05 + h * .17 * k + h * .015, L * z + .3 + B * .95], .04, dark, 4);   // 竹撑
+  }
+  rod(root, [0, hull.deck(.98), L / 2], [0, hull.deck(.98) - 1.6, L / 2 + 1.4], .1, dark, 6);           // 舵杆
+  addWake(root, L, B, .5);
+  mergeStatic(root);
+  root.name = name;
+  root.userData = { ...root.userData, length: L, beam: B, kind: 'merchant' };
+  return root;
+}
+
 // ---------- 自沉阻塞船：旧式军舰（通济练习舰、大同/自强/德胜/威胜/武胜）与征用商轮 ----------
 // kind：'flagship' 通济（三桅帆装练习舰）、'gunboat' 旧式炮舰、'merchant' 商轮
-export function createBlockshipModel({ kind = 'merchant', length = 46, beam = 8, seed = 1, name = '' } = {}) {
+export function createBlockshipModel({ kind = 'merchant', variant = 'steamer', length = 46, beam = 8, seed = 1, name = '' } = {}) {
   let r0 = seed; const r = () => (r0 = (r0 * 16807) % 2147483647) / 2147483647;
   const root = new THREE.Group(), rails = [], L = length, B = beam;
   const merchant = kind === 'merchant', flagship = kind === 'flagship';
-  const hullColor = merchant ? [0x2f2c29, 0x3b3631, 0x433a30][Math.floor(r() * 3)] : flagship ? 0x8d918c : 0x7f847f;
-  const top = merchant ? mat('merchant-house', 0xc9c1ad, .8, .1) : M.rocLight(), hullM = merchant ? mat('merchant-hull', hullColor, .7, .25) : M.rocHull();
-  const hull = loftHull(root, { length: L, beam: B, draft: merchant ? 2.6 : 2.2, rake: merchant ? .8 : flagship ? 3.4 : 1.2, transom: .55,
-    hullColor, bootColor: 0x1d1d1c, bottomColor: 0x6a2c22, breaks: merchant ? [.22, .78] : [],
-    deck: s => merchant ? (s < .22 ? 4.6 : s > .78 ? 4.4 : 3.6) : 3.4 + (s < .2 ? (1 - s / .2) * .8 : 0),
+  const v = merchant ? variant : kind;
+  if (v === 'junk') return createJunkModel({ length, beam, r, name });
+  // 船体颜色：货轮黑/锈红/灰，江轮白，客轮黑白相间
+  const hullColor = v === 'river' ? 0xd9d5c8 : v === 'liner' ? 0x26282a : merchant ? [0x2f2c29, 0x4a2f24, 0x55595a, 0x3b3631][Math.floor(r() * 4)] : flagship ? 0x8d918c : 0x7f847f;
+  const houseColor = v === 'river' ? 0xe6e2d6 : [0xc9c1ad, 0xb9ab8e, 0xd5cdb8, 0x8b6f4e][Math.floor(r() * 4)];
+  const top = merchant ? mat(`merchant-house-${houseColor.toString(16)}`, houseColor, .8, .1) : M.rocLight();
+  const hullM = merchant ? mat(`merchant-hull-${hullColor.toString(16)}`, hullColor, .7, .25) : M.rocHull();
+  const sheer = merchant ? .4 + r() * 1.2 : 0;   // 舷弧：首尾翘起程度各不相同
+  const freeboard = v === 'river' ? 2.4 : v === 'coaster' ? 3.1 : v === 'liner' ? 4.6 : 3.6;
+  const hull = loftHull(root, { length: L, beam: B, draft: v === 'river' ? 1.6 : merchant ? 2.6 : 2.2,
+    rake: v === 'liner' ? 2.4 : v === 'river' ? .4 : merchant ? .6 + r() * .8 : flagship ? 3.4 : 1.2, transom: v === 'river' ? .8 : .45 + r() * .2,
+    hullColor, bootColor: v === 'river' ? 0x2e2a24 : 0x1d1d1c, bottomColor: [0x6a2c22, 0x51342a, 0x3c2c26][Math.floor(r() * 3)],
+    breaks: v === 'steamer' ? [.22, .78] : v === 'coaster' ? [.18] : [],
+    deck: s => {
+      const curve = sheer * ((1 - Math.min(1, s / .25)) ** 2 + (Math.max(0, s - .8) / .2) ** 2);
+      if (v === 'steamer') return (s < .22 ? freeboard + 1 : s > .78 ? freeboard + .8 : freeboard) + curve;
+      if (v === 'coaster') return (s < .18 ? freeboard + 1.1 : freeboard) + curve;
+      if (merchant) return freeboard + curve;
+      return 3.4 + (s < .2 ? (1 - s / .2) * .8 : 0);
+    },
     deckMaterial: mat('roc-deck', 0x6f6352, .95, 0) });
   hull.rails(rails);
-  if (merchant) {
+  if (v === 'coaster') {   // 尾机近海货船：船楼与烟囱都在船尾，前甲板一根吊杆桅
+    const sz = L * .32;
+    box(root, B * .78, 2.4, L * .2, 0, hull.deck(.82) + 1.2, sz, top);
+    wheelhouse(root, B * .6, 1.7, L * .08, 0, hull.deck(.82) + 2.4, sz - L * .05, top);
+    funnel(root, 0, hull.deck(.82) + 2.4, sz + L * .05, { r: .7 + r() * .3, h: 4 + r() * 2, rake: .12, color: mat('coaster-funnel', [0x1c1c1c, 0x6b2a22, 0x8a8a7a][Math.floor(r() * 3)], .7, .1), cap: M.black() });
+    pole(root, 0, hull.deck(.3), -L * .18, 8 + r() * 3, { yard: 2.6, rake: .05 });
+    rod(root, [0, hull.deck(.3) + 1.5, -L * .18], [0, hull.deck(.3) + .6, -L * .02], .08, M.dark());
+    for (const z of [-.3, -.08, .1]) box(root, B * .5, .55, L * .1, 0, hull.deck(.5) + .28, L * z, mat('hatch', 0x4a3f33, .9, 0));
+    lifeboat(root, B * .4, hull.deck(.82) + 2.5, sz + L * .02, 3.4, 1);
+  } else if (v === 'river') {   // 白色多层江轮：低干舷、两层通长客舱、顶层驾驶室、细高烟囱
+    const deck = hull.deck(.5);
+    box(root, B * .92, 2.4, L * .74, 0, deck + 1.2, L * .02, top);
+    box(root, B * 1.04, .12, L * .78, 0, deck + 2.45, L * .02, top);
+    box(root, B * .8, 2.2, L * .56, 0, deck + 3.55, L * .05, top);
+    box(root, B * .9, .12, L * .6, 0, deck + 4.7, L * .05, top);
+    for (const [y, len] of [[deck + 1.4, .74], [deck + 3.7, .56]]) for (const sign of [1, -1]) box(root, .04, .5, L * len * .96, sign * B * (y > deck + 2 ? .405 : .465), y, L * .03, M.glass());   // 窗带
+    wheelhouse(root, B * .5, 1.6, L * .08, 0, deck + 4.8, -L * .2, top);
+    funnel(root, 0, deck + 4.8, L * .08, { r: .65 + r() * .25, h: 6 + r() * 2.5, rake: .05, oval: .9, color: M.black(), cap: M.black(),
+      bands: [[2.4, mat('river-band', [0xb23a2a, 0x2e4f86, 0xd0b04a][Math.floor(r() * 3)], .7, 0)]] });
+    pole(root, 0, deck + 4.8, -L * .28, 6, { yard: 2 });
+    for (const z of [-.2, .25]) { lifeboat(root, B * .44, deck + 4.9, L * z, 3.6, 1); lifeboat(root, -B * .44, deck + 4.9, L * z, 3.6, -1); }
+  } else if (v === 'liner') {   // 双烟囱旧客轮：长船楼、两根烟囱、两根桅
+    const deck = hull.deck(.5);
+    box(root, B * .82, 2.6, L * .46, 0, deck + 1.3, 0, top);
+    box(root, B * .7, 2.2, L * .3, 0, deck + 3.7, -L * .02, top);
+    for (const sign of [1, -1]) box(root, .04, .4, L * .44, sign * B * .412, deck + 1.6, 0, M.glass());
+    wheelhouse(root, B * .55, 1.7, L * .06, 0, deck + 4.8, -L * .14, top);
+    const color = mat('liner-funnel', [0xb89a52, 0x1d1d1d, 0x8a3326][Math.floor(r() * 3)], .7, .05);
+    for (const z of [-.04, .1]) funnel(root, 0, deck + 4.8, L * z, { r: 1.1, h: 7.5, rake: .1, color, cap: M.black() });
+    for (const z of [-.36, .34]) pole(root, 0, hull.deck(.5), L * z, 15 + r() * 3, { yard: 3.6, rake: .06 });
+    for (const z of [-.1, .05, .18]) { lifeboat(root, B * .44, deck + 5, L * z, 4.6, 1); lifeboat(root, -B * .44, deck + 5, L * z, 4.6, -1); }
+  } else if (merchant) {   // 中部船楼远洋货轮
     box(root, B * .7, 2.6, L * .16, 0, hull.deck(.5) + 1.3, 0, top);                   // 中部船楼
     wheelhouse(root, B * .55, 1.8, L * .07, 0, hull.deck(.5) + 2.6, -L * .03, top);
     funnel(root, 0, hull.deck(.5) + 2.6, L * .05, { r: .9 + r() * .4, h: 6 + r() * 3, rake: .06, color: M.black(), cap: M.black(),
