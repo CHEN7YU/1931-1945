@@ -35,9 +35,9 @@ try {
       return total / (640 * 360 * 3);
     };
     const baseline = brightness(), tiers = [];
-    for (const style of ['grenade', 'mortar', 'grenade-discharger', 'explosive-pack']) {
+    for (const style of ['grenade', 'mortar', 'grenade-discharger', 'explosive-pack', 'tank-shell']) {
       effects.clear(); effects.configure(settings);
-      effects.explosion(new THREE.Vector3(0, .1, -18), 0, BLAST_PROFILES[style].radius, style);
+      effects.explosion(new THREE.Vector3(0, .1, -18), 0, BLAST_PROFILES[style]?.radius ?? 11, style);
       effects.render(.06);
       tiers.push({ style, brightness: brightness(), snapshot: effects.snapshot });
     }
@@ -46,6 +46,8 @@ try {
     effects.explosion(new THREE.Vector3(0, .1, -18), 0, 9, 'explosive-pack');
     effects.render(.06);
     const low = { brightness: brightness(), snapshot: effects.snapshot };
+    for (let i = 0; i < 12; i++) effects.explosion(new THREE.Vector3(0, .1, -18), .06, 9, 'explosive-pack');
+    effects.render(.06); brightness();
     const geometryCount = renderer.info.memory.geometries;
     for (let i = 0; i < 80; i++) effects.explosion(new THREE.Vector3(0, .1, -18), .06, 9, 'explosive-pack');
     effects.render(.06); brightness();
@@ -79,8 +81,10 @@ try {
     assert.ok(tier.snapshot.fragments <= 96 && tier.snapshot.clouds <= 18);
   }
   assert.ok(result.tiers[0].brightness < result.tiers[1].brightness);
-  assert.equal(result.tiers[1].brightness, result.tiers[2].brightness);
-  assert.ok(result.tiers[2].brightness < result.tiers[3].brightness);
+  assert.ok(result.tiers[0].brightness < result.tiers[2].brightness);
+  assert.ok(result.tiers[2].brightness < result.tiers[1].brightness);
+  assert.ok(result.tiers[1].brightness < result.tiers[3].brightness);
+  assert.ok(result.tiers[3].brightness < result.tiers[4].brightness);
   assert.ok(result.low.brightness > result.baseline + 1);
   assert.equal(result.low.snapshot.fragments, 0);
   assert.equal(result.low.snapshot.visibleLights, 0);

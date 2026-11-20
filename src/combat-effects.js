@@ -37,7 +37,7 @@ export function captureImpact(hit, incoming) {
     normal: { x: normal.x, y: normal.y, z: normal.z } };
 }
 
-export function createCombatEffects(scene, camera, groundHeight) {
+export function createCombatEffects(scene, camera, groundHeight, isGround = () => true) {
   const state = createParticleState(), transform = new THREE.Object3D();
   const view = createPresentationView(camera);
   const fragments = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0),
@@ -235,7 +235,11 @@ export function createCombatEffects(scene, camera, groundHeight) {
         camera.position.distanceTo(position) <= (style === 'aircraft-hit' ? 600 : style === 'aircraft-bomb' ? 280 : style === 'tank-shell' ? 200 : 140);
       lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
         surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };
-      if (style === 'aircraft-bomb' && surface?.kind === 'soil') bombAftermath.add(position, time, radius);
+      const aftermath = ['aircraft-bomb', 'tank-shell', 'explosive-pack', 'mortar', 'grenade-discharger', 'grenade'].includes(style);
+      if (aftermath && (surface ? surface.kind === 'soil'
+        : Math.abs(position.y - groundHeight(position.x, position.z)) <= .4) && isGround(position.x, position.z)) {
+        bombAftermath.add(position, time, style);
+      }
       if (!visible) return;
       emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style,
         debris: settings.effects.hitParticles,

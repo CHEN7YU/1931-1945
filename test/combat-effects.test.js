@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createCombatEffects } from '../src/combat-effects.js';
 
 const settings = { preset: 'high', effects: { muzzle: true, muzzleLight: true, hitParticles: true } };
-function fixture() {
+function fixture(isGround) {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => ({ getContext: () => ({
     createRadialGradient: () => ({ addColorStop() {} }), fillRect() {},
@@ -12,7 +12,7 @@ function fixture() {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(72, 1, .07, 650);
   camera.position.y = 1.67;
   let queries = 0, effects;
-  try { effects = createCombatEffects(scene, camera, () => { queries++; return 0; }); }
+  try { effects = createCombatEffects(scene, camera, () => { queries++; return 0; }, isGround); }
   finally {
     if (previous === undefined) delete globalThis.document;
     else globalThis.document = previous;
@@ -77,12 +77,12 @@ test('a ground bomb leaves dark smoke and a longer-lived mark even when the init
   assert.deepEqual(effects.snapshot.bombAftermath, { marks: 0, visibleMarks: 0, visiblePuffs: 0 });
 });
 
-test('only ground bombs leave scorch marks, and repeated hits reuse a bounded pool', () => {
+test('only ground impacts leave scorch marks, and repeated hits reuse a bounded pool', () => {
   const { effects, scene } = fixture();
   const point = new THREE.Vector3(0, .22, -20), normal = { x: 0, y: 1, z: 0 };
-  effects.explosion(point, 0, 17, 'aircraft-bomb');
+  effects.explosion(new THREE.Vector3(0, 4, -20), 0, 17, 'aircraft-bomb');
   effects.explosion(point, 0, 17, 'aircraft-bomb', { kind: 'generic', normal });
-  effects.explosion(point, 0, 7, 'mortar', { kind: 'soil', normal });
+  effects.explosion(point, 0, 7, 'default', { kind: 'soil', normal });
   effects.render(0);
   assert.equal(effects.snapshot.bombAftermath.marks, 0);
   const objectCount = scene.children.length;
@@ -91,6 +91,34 @@ test('only ground bombs leave scorch marks, and repeated hits reuse a bounded po
   assert.equal(scene.children.length, objectCount);
   assert.ok(effects.snapshot.bombAftermath.marks < 30);
   effects.render(56);
+  assert.equal(effects.snapshot.bombAftermath.marks, 0);
+});
+
+test('ground impacts leave progressively larger marks for stronger weapons', () => {
+  const { effects, scene } = fixture();
+  const marks = scene.children.filter(item => item.isMesh && item.material.map?.isDataTexture);
+  const styles = ['grenade', 'grenade-discharger', 'mortar', 'explosive-pack', 'tank-shell', 'aircraft-bomb'];
+  const sizes = [];
+  for (const style of styles) {
+    effects.clear();
+    effects.explosion(new THREE.Vector3(0, .1, -20), 0, 8, style);
+    effects.render(2);
+    assert.equal(effects.snapshot.bombAftermath.marks, 1, style);
+    assert.ok(effects.snapshot.bombAftermath.visiblePuffs > 0, style);
+    sizes.push(marks.find(mark => mark.visible).geometry.boundingSphere.radius);
+  }
+  for (let i = 1; i < sizes.length; i++) assert.ok(sizes[i] > sizes[i - 1], `${styles[i]} > ${styles[i - 1]}`);
+});
+
+test('water and explicit non-ground impacts never leave ground scorch marks', () => {
+  const { effects } = fixture((x) => x !== 1);
+  const normal = { x: 0, y: 1, z: 0 };
+  for (const style of ['tank-shell', 'explosive-pack', 'mortar', 'grenade-discharger', 'grenade']) {
+    effects.explosion(new THREE.Vector3(1, .1, -20), 0, 8, style, { kind: 'soil', normal });
+    effects.explosion(new THREE.Vector3(0, .1, -20), 0, 8, style, { kind: 'stone', normal });
+    effects.explosion(new THREE.Vector3(0, 4, -20), 0, 8, style);
+  }
+  effects.render(0);
   assert.equal(effects.snapshot.bombAftermath.marks, 0);
 });
 

@@ -772,7 +772,7 @@ const civilianCrowdPlanner = createCivilianCrowdPlanner();
 const civilianNavigationLookup = nanjingCampaignMode ? obstacleLookup(world.civilianNavigationObstacles, .8) : null;
 const movementCollision = createMovementObstacles(groundCollision, entities.vehicles, vehicleCollider);
 const daylight = createDaylight(scene, sun, hemisphere, scene.fog);
-const combatEffects = createCombatEffects(scene, camera, world.groundHeight);
+const combatEffects = createCombatEffects(scene, camera, world.groundHeight, (x, z) => !world.isDeepWater?.(x, z));
 const grenadeRenderer = createGrenadeRenderer(scene, camera, nraCharacter?.createGrenadeHand);
 const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHand) : null;
 const supportViewHands = nraCharacter ? createSupportViewHands(nraCharacter.createWeaponHand, {

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { valueNoise2D } from './value-noise.js';
 
 const MARK_LIMIT = 12, MARK_LIFE = 55, SMOKE_LIFE = 12, PUFF_LIFE = 4;
+const SIZES = Object.freeze({ 'aircraft-bomb': 8.16, 'tank-shell': 6,
+  'explosive-pack': 4.7, mortar: 3.6, 'grenade-discharger': 2.7, grenade: 1.8 });
 
 function scorchTexture() {
   const size = 64, pixels = new Uint8Array(size * size * 4);
@@ -36,11 +38,11 @@ export function createBombAftermath(scene, view, groundHeight, smokeTexture) {
   });
   let serial = 0, activeMarks = 0, visibleMarks = 0, visiblePuffs = 0;
   return {
-    add(point, time, radius) {
+    add(point, time, style) {
       const slot = slots[serial % MARK_LIMIT];
       slot.angle = ++serial * 2.399963;
       slot.born = time;
-      slot.radius = THREE.MathUtils.clamp(radius * .48, 3, 10);
+      slot.radius = SIZES[style];
       const { mark, grid } = slot, positions = mark.geometry.attributes.position;
       const cos = Math.cos(slot.angle), sin = Math.sin(slot.angle);
       const height = groundHeight(point.x, point.z);

@@ -54,7 +54,7 @@ test('all blast tiers retain flash, flame, dust, wave and bounded original parti
       advanceCombatParticles(state, 8, () => 0, 8);
       assert.equal(state.fragments.length + state.clouds.length + state.lights.length, 0);
     }
-    assert.ok(flashes[0] < flashes[1] && flashes[1] === flashes[2] && flashes[2] < flashes[3]);
+    assert.ok(flashes[0] < flashes[2] && flashes[2] < flashes[1] && flashes[1] < flashes[3]);
   }
 });
 

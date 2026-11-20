@@ -107,7 +107,8 @@ setCrewFactory(characters ? () => characters.trackCrew(createAnchor('friendly', 
   : () => soldierModel(true, 'near', 'unarmed'));
 const vehicleRenderer = createVehicleRenderer(scene);
 let clockTime = 0;
-const combatEffects = createCombatEffects(scene, camera, (x, z) => Math.max(0, groundHeight(x, z)));
+const combatEffects = createCombatEffects(scene, camera, (x, z) => Math.max(0, groundHeight(x, z)),
+  (x, z) => groundHeight(x, z) >= 0);
 combatEffects.configure({ preset: 'high', effects: { muzzle: true, muzzleLight: true, hitParticles: true } });
 // 表现层出错不应打断战斗模拟：记录一次警告后跳过该特效
 const safely = (name, run) => { try { run(); } catch (error) { if (!safely[name]) console.warn(`combat effect skipped: ${name}`, error); safely[name] = true; } };

@@ -363,14 +363,14 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     if (fxItems.length > 160) recycle(fxItems.shift());
   }
   function recycle(item) { item.mesh.visible = false; pool.push(item); }
-  function explosion(position, size = 1, water = false) {
+  function explosion(position, size = 1, water = false, impactStyle = null, surface = null) {
     if (water) world.puff?.({ x: position.x, y: 2, z: position.z }, { count: 6, radius: 3 * size, shade: .68, life: 5, rise: 1.2, grow: 2.2 });
     else world.puff?.({ x: position.x, y: position.y + 1, z: position.z }, { count: 8, radius: 1.6 * size, shade: .48, life: 8, rise: 1.6, grow: 1.8 * size });
     if (water) {
       effect('splash', { x: position.x, y: 0, z: position.z }, 4.5 * size, 1.8, 0xdfe5e0, 0, 1.4);      // 大口径炮弹落水：十余米高的水柱
       effect('smoke', { x: position.x, y: 3, z: position.z }, 4 * size, 2.4, 0xcfd6d2, 6, 2);
     } else if (effects) {
-      effects.explosion(position, 3 + size * 3, size >= 2 ? 'explosive-pack' : size >= 1 ? 'mortar' : 'grenade');
+      effects.explosion(position, 3 + size * 3, impactStyle ?? (size >= 2 ? 'explosive-pack' : size >= 1 ? 'mortar' : 'grenade'), surface);
     } else {
       effect('flash', position, 2.2 * size, .25, 0xffb050, 0, 2.5);
       effect('smoke', { x: position.x, y: position.y + 1, z: position.z }, 2 * size, 3.5, 0x4a4743, 2.4, 2.2);
@@ -548,7 +548,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
         if (p.y <= Math.max(0, ground)) {
           const water = ground < 0;
           blast(p, shell.radius * (water ? .7 : 1), shell.damage, shell.team, shell.byPlayer);
-          explosion(p, 1, water); done = true;
+          explosion(p, 1, water, 'tank-shell', water ? null : { kind: 'soil', normal: { x: 0, y: 1, z: 0 } }); done = true;
         }
         if (shell.life <= 0) done = true;
       }

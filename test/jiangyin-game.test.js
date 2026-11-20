@@ -5,12 +5,12 @@ import { createJiangyinGame } from '../src/jiangyin/jiangyin-game.js';
 import { JIANGYIN_SQUAD } from '../src/jiangyin/jiangyin-rules.js';
 
 const stub = point => { const group = new THREE.Group(); group.userData.update = () => {}; return group; };
-function makeGame(seed = 11) {
+function makeGame(seed = 11, effects = null) {
   let value = seed;
   const random = () => (value = (value * 16807) % 2147483647) / 2147483647;
   const events = [];
   const game = createJiangyinGame({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(68, 1.6, .3, 12000),
-    createGunModel: stub, quality: 'low', random, onEvent: event => events.push(event) });
+    createGunModel: stub, quality: 'low', random, effects, onEvent: event => events.push(event) });
   return { game, events };
 }
 const run = (game, seconds, input = {}) => { for (let t = 0; t < seconds; t += .05) game.step(.05, typeof input === 'function' ? input() : input); };
@@ -77,6 +77,18 @@ test('after the scuttling begins the player lands as an infantry squad near a ba
   assert.equal(game.state.phase, 'hold');
   const hud = game.hud();
   assert.ok(hud.top.some(field => /日军目标/.test(field.label)), 'the HUD states that the Japanese aim to destroy our positions');
+});
+
+test('a deployed squad grenade reaches the shared grenade explosion effect', () => {
+  const impacts = [];
+  const { game } = makeGame(11, { explosion: (...args) => impacts.push(args), muzzle() {} });
+  game.skipIntro();
+  for (const post of game.posts) if (post.boat) post.point.health = 0;
+  run(game, 25 + JIANGYIN_SQUAD.deployAfter + 1);
+  game.step(.05, { equip: 'grenade' });
+  game.step(.05, { firePressed: true });
+  run(game, 6);
+  assert.ok(impacts.some(([, , style]) => style === 'grenade'));
 });
 
 test('the player can zoom every gun with the right mouse button', () => {

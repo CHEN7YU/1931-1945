@@ -92,8 +92,9 @@ export function emitExplosionParticles(state, position, time, { low = false, rad
   const heavy = style !== 'default' && !grenade;
   const impact = position, createdClouds = [];
   if (shell) position = { x: position.x + n.x * .1, y: position.y + n.y * .1, z: position.z + n.z * .1 };
-  const scale = profile ? profile.scale * Math.min(1.15, Math.max(.85, radius / profile.radius))
-    : Math.min(1.7, Math.max(.7, radius / 7)) * (tank ? 2 : shell ? 1.4 : 1);
+  const scale = shell ? 3.6 : profile ? (style === 'grenade-discharger' ? 1.9 : profile.scale) *
+    Math.min(1.15, Math.max(.85, radius / profile.radius))
+    : Math.min(1.7, Math.max(.7, radius / 7)) * (tank ? 2 : 1);
   const fragmentLimit = low ? 32 : PARTICLE_LIMITS.fragments;
   const cloudLimit = low ? 6 : PARTICLE_LIMITS.clouds;
   const takeCloud = () => {
