@@ -1692,7 +1692,8 @@ function presentRifleReports() {
     const eye = soldierEyePosition(observer);
     return Boolean(visibleTargetPoint(target, point => hasLine(new THREE.Vector3(eye.x, eye.y, eye.z), point, 75, target.vehicleId)));
   });
-  battleReactions?.update(audioContext, allForces, listener, time, sihangPriority || (battleVoices?.priorityActive ?? false), chatterEnabled);
+  battleReactions?.update(audioContext, allForces, listener, time,
+    sihangPriority || (battleVoices?.priorityActive ?? false), chatterEnabled);
   if (nanjingCampaignMode) civilianVoices?.update(audioContext, world.civilians, listener, nanjingCampaign.stage,
     time, ['playing', 'transferring'].includes(state) && !battleEnding.fading &&
       (nanjingCampaign.stage === 'gate-defense' || world.civilianFlight.encounterAt !== null ||
@@ -2401,6 +2402,9 @@ function showOverlay(kind = 'pause') {
   $('end-civilian-wait').dataset.confirm = '';
   $('end-civilian-wait').textContent = `结束等待 · 将卡住的 ${stranded} 人记为未救出`;
   if (kind === 'victory') $('overlay-description').textContent = '';
+  if (kind === 'commemoration' && nanjingCampaignMode) {
+    $('overlay-title').textContent = nanjingCampaign.playerEscaped ? '你已登船，撤离南京。' : '铭记南京的守军与百姓。';
+  }
   $('redeploy-choices').hidden = !canDeploySquad(kind, allies);
   $('deployment-options').hidden = !dead;
   $('pause-settings').hidden = kind !== 'pause';
@@ -2431,9 +2435,6 @@ function showOverlay(kind = 'pause') {
     $('battle-summary').textContent = sihangCampaign.stage === 'sihang-retreat'
       ? `将士${SIHANG_RULES.troopLimit}人　牺牲 ${retreat.casualties}　安全撤离 ${retreat.saved}　尚未撤离 ${retreat.unresolved}`
       : `个人击倒 ${kills}　友军击倒 ${teamKills}　累计参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit}　后备 ${sihangCampaign.reserve}`;
-  }
-  if (kind === 'commemoration' && nanjingCampaignMode) {
-    $('overlay-title').textContent = nanjingCampaign.playerEscaped ? '你已登船，撤离南京。' : '铭记南京的守军与百姓。';
   }
 }
 
@@ -2523,7 +2524,7 @@ function sihangTakeoverCandidate() {
   let gunner = null;
   for (const formation of formations) {
     if (formation.team !== 'friendly' || formation.player || formation.type !== 'infantry') continue;
-    const members = formation.members.filter(actor => friendlyAI.includes(actor) && actor.health > 0 && !actor.youngSoldier &&
+    const members = formation.members.filter(actor => friendlyAI.includes(actor) && actor.health > 0 &&
       !actor.grenades.action &&
       !actor.vehicleId && !actor.sihangEvacuated && !saved.has(actor.id) && !lost.has(actor.id) &&
       !(sihangCampaign.stage === 'sihang-retreat' && sihangCampaign.assemblyReleased && sihangSafePosition(actor.position)) &&
@@ -8795,6 +8796,10 @@ function updateHUD() {
     : `${sihangVoicesFailure ? '四行仓库指挥与百姓语音不可用（文字警报保留）　' : ''}${tacticalAudioFailure ? '弹道与接触音效未加载　' : ''}${vehicleAudioFailure ? '载具引擎未加载　' : ''}${battleSignalsFailure ? '日军进攻哨声未加载　' : ''}${rifleAudioFailure ? '步枪录音未加载（原合成声）　' : ''}${footstepAudioFailure ? '脚步录音未加载（原合成声）　' : ''}${mechanicalAudioFailure ? '步枪机械录音未加载（原合成声）　' : ''}${battleVoicesFailure ? '战场语音不可用　' : ''}${battleReactionsFailure ? '真人战斗反应不可用　' : ''}`;
   $('hud-notice').hidden = !audioLabel && !diagnosticLabel;
   $('hud-notice').textContent = audioLabel + diagnosticLabel;
+  $('hud-notice').title = [
+    ['战场语音', battleVoicesFailure], ['真人战斗反应', battleReactionsFailure],
+    ['日军进攻哨声', battleSignalsFailure], ['弹道与接触音效', tacticalAudioFailure],
+  ].filter(([, error]) => error).map(([label, error]) => `${label}：${error}`).join('\n');
   if (!$('scoreboard').hidden) {
     $('scoreboard-clock').textContent = $('timer').textContent;
     const points = $('scoreboard-objectives'); points.replaceChildren();

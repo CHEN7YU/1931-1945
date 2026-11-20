@@ -8,6 +8,7 @@ export const SIHANG_RULES = Object.freeze({
   demolitionMembers: 20, installSeconds: 10, fuseSeconds: 25, defuseSeconds: 4,
   defuseGraceSeconds: 3, demolitionCooldownSeconds: 35,
 });
+
 export function sihangWithdrawalBatch(squads, reserved = 0) {
   if (!Array.isArray(squads) || squads.length !== SIHANG_RULES.retreatSquads ||
     !Number.isInteger(reserved) || reserved < 0 || reserved > SIHANG_RULES.retreatWaveLimit ||
@@ -21,7 +22,6 @@ export function sihangWithdrawalBatch(squads, reserved = 0) {
     return selected;
   });
 }
-
 
 export function createSihangCampaign() {
   return {

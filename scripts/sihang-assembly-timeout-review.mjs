@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { SIHANG_RULES } from '../src/sihang-campaign.js';
 import { deployFromMenu } from './game-entry.mjs';
+import { SIHANG_RULES } from '../src/sihang-campaign.js';
 
 const directory = process.env.ARTIFACT_DIR;
 if (!directory) throw new Error('ARTIFACT_DIR is required');
@@ -220,9 +220,9 @@ try {
     assert.deepEqual(errors, []);
     console.log('Immediate first withdrawal wave passed.');
   } else {
+    const movement = await page.evaluate(seconds => assemblyTimeoutReview.followOriginal(seconds), high ? 60 : 10);
     const firstBefore = await page.evaluate(() => assemblyTimeoutReview.nearDeadline());
     const first = await page.evaluate(() => assemblyTimeoutReview.deadline());
-    const movement = await page.evaluate(seconds => assemblyTimeoutReview.followOriginal(seconds), high ? 60 : 10);
     const next = await page.evaluate(() => assemblyTimeoutReview.nextWave());
     const secondBefore = next.immediate.wave?.number === 2 ? next.immediate
       : await page.evaluate(() => assemblyTimeoutReview.nearDeadline());

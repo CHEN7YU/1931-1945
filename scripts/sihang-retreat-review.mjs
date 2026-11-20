@@ -1117,6 +1117,7 @@ try {
             stage: sihangCampaign.stage, stageElapsed: sihangCampaign.stageElapsed,
             assemblyReleased: sihangCampaign.assemblyReleased, counterattack: sihangCampaign.counterattack,
             assemblyPrepared: sihangCampaign.assemblyPrepared, outcome: sihangCampaign.outcome,
+            withdrawalWaveNumber: sihangCampaign.withdrawalWaveNumber,
             saved: sihangCampaign.evacuatedIds.length, lost: sihangCampaign.retreatLostIds.length,
             savedIds: [...sihangCampaign.evacuatedIds], lostIds: [...sihangCampaign.retreatLostIds],
             reserve: sihangCampaign.retreatReserve,
@@ -2193,7 +2194,8 @@ try {
         if (appearanceOnly && latest.nativeNraLoaded &&
           latest.formations.some(formation => formation.id === 'friendly-10' && formation.appearances.includes('B')) ||
           assemblyOnly && latest.assemblyPrepared ||
-          latest.wave?.number >= naturalWaves && latest.wave?.phase === 'interval' || latest.outcome) break;
+          latest.withdrawalWaveNumber >= naturalWaves &&
+            (!latest.wave || latest.wave.number > naturalWaves) || latest.outcome) break;
       }
     }
     if (process.env.NATURAL_CAPTURE_CROWD === '1')
@@ -2234,13 +2236,17 @@ try {
           'the player and living squad must reach the assembly area within the diagnostic window');
       } else {
         assert.ok(records.some(record => record.assemblyReleased), 'the player squad must actually reach the assembly area');
-        assert.ok(records.some(record => record.wave?.number >= naturalWaves && record.wave.phase === 'interval'),
-          `withdrawal wave ${naturalWaves} must complete without changing positions or health`);
+        assert.ok(records.some(record => record.withdrawalWaveNumber >= naturalWaves &&
+          (!record.wave || record.wave.number > naturalWaves)),
+        `withdrawal wave ${naturalWaves} must resolve before the next wave`);
         for (let number = 1; number <= naturalWaves; number++) {
-          const wave = records.find(record => record.wave?.number === number && record.wave.phase === 'interval');
-          assert.ok(wave, `withdrawal wave ${number} must reach its interval`);
+          const startedAt = records.findIndex(record => record.wave?.number === number);
+          assert.notEqual(startedAt, -1, `withdrawal wave ${number} must start`);
+          const wave = records.slice(startedAt + 1).find(record =>
+            record.withdrawalWaveNumber > number || !record.wave && record.withdrawalWaveNumber >= number);
+          assert.ok(wave, `withdrawal wave ${number} must resolve`);
           const resolved = new Set([...wave.savedIds, ...wave.lostIds]);
-          assert.ok(wave.wave.squads.flat().every(id => resolved.has(id)),
+          assert.ok(records[startedAt].wave.squads.flat().every(id => resolved.has(id)),
             `every original member of withdrawal wave ${number} must be evacuated or killed`);
         }
         if (process.env.NATURAL_FOLLOW_WALL_REVIEW === '1') {

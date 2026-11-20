@@ -58,10 +58,10 @@ try {
             time += .05; trafficReservations.clear();
             walkActor(this.actor, this.selected.target, 3.5, .05, true, ${!baseline});
             advanceNraMotion(this.actor, .05);
+            this.samples.push({ speed: this.actor.locomotion.speed, pace: this.actor.locomotion.mode,
               heading: this.actor.heading, turning: this.actor.turningToPath,
               distance: Math.hypot(this.actor.position.x - this.selected.position.x,
                 this.actor.position.z - this.selected.position.z),
-            this.samples.push({ speed: this.actor.locomotion.speed, pace: this.actor.locomotion.mode,
               constrained: this.actor.tactics.movementSpace?.constrained,
               position: this.actor.position.toArray() });
           }
@@ -92,9 +92,9 @@ try {
   }, null, 2));
   assert.ok(result.samples.some(sample => sample.constrained && (baseline
     ? sample.pace === 'walk' && sample.speed > 1.6 && sample.speed < 1.9
+    : sample.pace === 'jog' && sample.speed > 2.4)));
   if (!baseline) assert.ok(result.samples[0].turning && result.samples[0].distance > .01,
     'a soldier must keep moving while turning along a clear path');
-    : sample.pace === 'jog' && sample.speed > 2.4)));
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ setup: fixture, samples: result.samples.filter(sample => sample.constrained).length,
     maxSpeed: Math.max(...result.samples.map(sample => sample.speed)),

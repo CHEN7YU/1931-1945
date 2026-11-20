@@ -54,6 +54,10 @@ try {
 
   const data = await page.evaluate(() => window.__battle);
   assert.equal(data.campaign.stage, 'gate-defense');
+  assert.equal(data.battleVoices.status, 'ready', data.battleVoices.error);
+  assert.equal(data.battleReactions.status, 'recorded', data.battleReactions.error);
+  assert.ok(Array.isArray(data.battleSignals.history), data.battleSignals.error);
+  assert.ok(data.tacticalAudio.available.includes('flyby'), data.tacticalAudio.error);
   const gate = data.objectives.find(point => point.id === 'gate');
   assert.equal(gate.name, '中华门第二道门内西侧');
   assert.ok(gate.x < 0 && Math.abs(gate.z) < .1);

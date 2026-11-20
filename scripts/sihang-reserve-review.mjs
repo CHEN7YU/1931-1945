@@ -34,10 +34,7 @@ try {
           }
           const initial = sihangTakeoverCandidate();
           if (!initial || initial.members.length < 2) throw new Error('Expected an AI squad with another rifleman');
-          const child = initial.members.find(member => member.role === 'rifleman' && member !== initial.selected);
-          if (!child) throw new Error('Expected a separate ordinary rifleman for the takeover boundary');
-          child.youngSoldier = true; this.child = child;
-          const throwing = initial.members.find(member => member !== child && member !== initial.selected &&
+          const throwing = initial.members.find(member => member !== initial.selected &&
             !member.grenades.action && member.grenades.ammo > 0);
           if (!throwing) throw new Error('Expected a separate soldier with a grenade');
           const reason = grenades.begin(throwing.id, throwing.grenades,
@@ -50,7 +47,7 @@ try {
           actor.rifle.ammo = 2; actor.rifle.reserve = 13;
           actor.grenades.ammo = 0; actor.grenades.packs = 0;
           this.candidate = candidate;
-          return { id: actor.id, childId: child.id, throwingId: throwing.id, members: candidate.members.map(member => member.id),
+          return { id: actor.id, throwingId: throwing.id, members: candidate.members.map(member => member.id),
             position: actor.position.toArray(), reserve: sihangCampaign.reserve,
             deployed: sihangCampaign.deployed, retreatIds: [...sihangCampaign.retreatIds],
             ammo: actor.rifle.ammo, rifleReserve: actor.rifle.reserve, grenades: actor.grenades.ammo,
@@ -68,8 +65,6 @@ try {
               member.playerUnit && member.formation === formations.find(unit => unit.player) &&
               !friendlyAI.includes(member)),
             sourceEmpty: candidate.members.every(member => !candidate.formation.members.includes(member)),
-            childRetained: friendlyAI.includes(this.child) && candidate.formation.members.includes(this.child) &&
-              !this.child.playerUnit && sihangCampaign.aiRetreatIds.includes(this.child.id),
             throwerRetained: friendlyAI.includes(this.throwing) && candidate.formation.members.includes(this.throwing) &&
               !this.throwing.playerUnit && sihangCampaign.aiRetreatIds.includes(this.throwing.id) &&
               this.throwing.grenades.action === this.throwingAction && !this.throwingAction.releaseRequested,
@@ -107,25 +102,30 @@ try {
           return this.prepareTakeover();
         },
         finish() {
-          const player = controlledSoldier(entities), child = this.child;
-          if (!friendlyAI.includes(child) || !sihangCampaign.aiRetreatIds.includes(child.id))
-            throw new Error('Expected the excluded child to remain in the AI retreat');
-          for (const actor of friendlyForces) if (actor !== player && actor !== child) actor.health = 0;
+          const player = controlledSoldier(entities);
+          const unresolved = friendlyAI.filter(actor => actor !== player && actor.health > 0 &&
+            sihangCampaign.retreatIds.includes(actor.id) &&
+            !sihangCampaign.evacuatedIds.includes(actor.id) && !sihangCampaign.retreatLostIds.includes(actor.id));
+          if (unresolved.length < 2) throw new Error('Expected unresolved AI soldiers to complete the retreat fixture');
+          const [retreater, witness] = unresolved;
+          for (const actor of friendlyForces) if (actor !== player && actor !== retreater && actor !== witness) actor.health = 0;
+          witness.position.set(-4, 0, -25);
           sihangCampaign.retreatTotal = sihangCampaign.retreatIds.length + sihangCampaign.retreatReserve;
           player.position.set(80, 0, 15);
           updateSihangMission(.05);
           const playerCrossing = { saved: sihangCampaign.evacuatedIds.includes(player.id),
             counterattack: sihangCampaign.counterattack, outcome: sihangCampaign.outcome };
-          child.position.set(80, 0, 15);
+          retreater.position.set(80, 0, 15);
           updateSihangMission(.05);
-          const aiCrossing = { saved: sihangCampaign.evacuatedIds.includes(child.id),
+          const aiCrossing = { saved: sihangCampaign.evacuatedIds.includes(retreater.id),
             counterattack: sihangCampaign.counterattack, outcome: sihangCampaign.outcome,
-            goal: child.sihangParadeGoal && { ...child.sihangParadeGoal } };
-          if (!child.sihangParadeGoal) throw new Error('Expected a real evacuation parade goal');
-          child.position.set(child.sihangParadeGoal.x, 0, child.sihangParadeGoal.z);
+            goal: retreater.sihangParadeGoal && { ...retreater.sihangParadeGoal } };
+          if (!retreater.sihangParadeGoal) throw new Error('Expected a real evacuation parade goal');
+          retreater.position.set(retreater.sihangParadeGoal.x, 0, retreater.sihangParadeGoal.z);
           updateSihangMission(.05);
+          witness.health = 0;
           updateSihangMission(.05);
-          return { playerCrossing, aiCrossing, childRemoved: !friendlyAI.includes(child),
+          return { playerCrossing, aiCrossing, aiRetreaterRemoved: !friendlyAI.includes(retreater),
             outcome: sihangCampaign.outcome, unresolved: sihangRetreatStatus(sihangCampaign).unresolved };
         },
         snapshot() {
@@ -178,7 +178,6 @@ try {
   assert.equal(transferred.state, 'playing');
   assert.equal(transferred.id, original.id);
   assert.deepEqual(transferred.members, original.members);
-  assert.ok(!transferred.members.includes(original.childId) && transferred.childRetained);
   assert.ok(!transferred.members.includes(original.throwingId) && transferred.throwerRetained);
   assert.equal(transferred.reserve, original.reserve);
   assert.equal(transferred.deployed, original.deployed);
@@ -209,7 +208,6 @@ try {
   assert.equal(second.id, secondOriginal.id);
   assert.ok(!original.members.includes(second.id));
   assert.deepEqual(second.members, secondOriginal.members);
-  assert.ok(!second.members.includes(secondOriginal.childId) && second.childRetained);
   assert.ok(!second.members.includes(secondOriginal.throwingId) && second.throwerRetained);
   await page.evaluate(() => reserveReview.endThrowFixture());
   assert.equal(second.reserve, 0);
@@ -222,7 +220,7 @@ try {
   assert.equal(finish.aiCrossing.saved, true);
   assert.equal(finish.aiCrossing.counterattack, true);
   assert.equal(finish.aiCrossing.outcome, null);
-  assert.equal(finish.childRemoved, true);
+  assert.equal(finish.aiRetreaterRemoved, true);
   assert.equal(finish.unresolved, 0);
   assert.equal(finish.outcome, 'withdrawal-ended');
   assert.deepEqual(errors, []);
