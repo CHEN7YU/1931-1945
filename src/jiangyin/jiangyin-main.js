@@ -84,13 +84,14 @@ else await configureRifleMaterials(renderer.capabilities.getMaxAnisotropy()).cat
 // 人物：默认与主游戏相同，使用项目的带骨骼原生人物（国军 nra-88 / 日军 ija-1938）；
 // 地址加 ?character=procedural 时与主游戏一样退回 world.js 的程序化士兵（仅用于低配或排查）。
 const proceduralCharacters = new URLSearchParams(location.search).get('character') === 'procedural';
-let characters = null;
+let characters = null, characterErrorShown = false, stepErrorShown = false;
 if (!proceduralCharacters) {
   const button = $('jy-start'), label = button.textContent;
+  button.disabled = true;
   try {
     characters = await loadJiangyinCharacters({ scene, camera, renderer, walkHeight: (x, z) => groundHeight(x, z),
       onProgress: text => { button.textContent = text; } });
-    button.textContent = label;
+    button.textContent = label; button.disabled = false;
   } catch (error) {
     // 必要资源缺失须明确提示，不伪装成可正常继续
     console.error(error);
@@ -193,7 +194,6 @@ $('jy-start').addEventListener('click', () => {
   if (game.state.phase === 'intro') $('jy-caption').hidden = false;
   canvas.requestPointerLock();
 });
-$('jy-start').disabled = false;
 
 function showEnd(outcome, stats) {
   running = false; document.exitPointerLock?.();
@@ -339,7 +339,8 @@ renderer.setAnimationLoop(time => {
     input.move = { x: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), z: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0) };
     input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     input.sensitivity = camera.fov / BASE_FOV;                  // 放大时降低鼠标灵敏度
-    game.step(dt, input);
+    try { game.step(dt, input); }
+    catch (error) { console.error('[江阴] 战局更新', error); if (!stepErrorShown) { stepErrorShown = true; toast(`战局更新出错：${error.message}`, true); } }
     input.lookDX = input.lookDY = 0; input.firePressed = false; input.skipIntro = false; input.switchPost = null; input.toggleView = false;
     input.interact = input.cycleMember = input.reload = input.crouch = false; input.equip = null;
     hudClock += dt;
@@ -347,8 +348,11 @@ renderer.setAnimationLoop(time => {
   } else if (game.state.phase !== 'ended') game.step(0, {});
   clockTime += dt;   // 表现层时钟单调递增（combat-effects 要求粒子时钟单调）
   vehicleRenderer.update(game.vehicles, clockTime);
-  characters?.sync([...game.troops, ...game.squad], clockTime, running && !paused ? dt : 0);
-  combatEffects.update(dt, clockTime, game.vehicles);
+  // 人物渲染出错时只跳过人物，不让整个画面卡死；第一次出错时在屏幕上提示错误内容，便于反馈
+  try { characters?.sync([...game.troops, ...game.squad], clockTime, running && !paused ? dt : 0); }
+  catch (error) { characters.errors?.push(String(error?.message ?? error)); console.error('[江阴] 人物同步', error); }
+  if (characters?.errors?.length && !characterErrorShown) { characterErrorShown = true; toast(`人物显示出错（已跳过，战斗继续）：${characters.errors[0]}`, true); }
+  safely('effects-update', () => combatEffects.update(dt, clockTime, game.vehicles));
   // 右键放大：火炮约 4 倍、机枪 2 倍、步枪机瞄
   const zoom = running && !paused && input.aiming && lastHud && game.state.phase !== 'ended' ? lastHud.zoom ?? 1 : 1;
   const fov = BASE_FOV / zoom;

@@ -85,3 +85,28 @@ test('the player can zoom every gun with the right mouse button', () => {
   game.step(.05, {});
   assert.ok(game.hud().zoom >= 4, 'ship turret zoom');
 });
+
+test('a sinking warship carries its bow turret: the turret lists and settles with the hull', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  const post = game.posts.find(p => p.boat);
+  post.point.health = 0;
+  run(game, 8);
+  const hull = post.boat.hull, model = post.model;
+  assert.ok(post.boat.sinking > .2, 'ship is sinking');
+  assert.ok(Math.abs(hull.rotation.z) > .05, 'hull has a list');
+  assert.ok(model.quaternion.angleTo(hull.quaternion) < 1e-6, 'turret shares the hull attitude');
+  assert.ok(model.visible, 'turret stays visible until the ship is fully under');
+});
+
+test('phase one opens at about one kilometre so the 4x sight shows the enemy clearly', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  let nearest = Infinity;
+  run(game, 45, () => {
+    const ours = game.posts.filter(p => p.boat && p.point.health > 0), seen = game.ships.filter(s => s.sinking === null && s.x < 1350);
+    for (const p of ours) for (const s of seen) nearest = Math.min(nearest, Math.hypot(s.x - p.boat.x, s.z - p.boat.z));
+    return {};
+  });
+  assert.ok(nearest < 900, `closest engagement ${Math.round(nearest)} m`);
+});

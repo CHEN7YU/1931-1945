@@ -63,7 +63,7 @@ export const ENEMY_TYPES = Object.freeze({
   squad: Object.freeze({ name: '日军步兵小队', size: 8 }),
   tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
     shellDamage: 40, shellRadius: 4, dispersion: 4, radius: 2.4 }),
-  aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),
+  aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),   // 飞行、机枪与投弹沿用项目共用的 aircraft-ai.js / air-support.js
   landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
   infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 3.8, attackRange: 5, attackInterval: 2.5, attackDamage: 25,
     shootRange: 140, shootInterval: 2.8, shootDamage: 34 }),   // 遇到我军步兵时就地射击
@@ -79,12 +79,13 @@ export const JIANGYIN_SQUAD = Object.freeze({ members: 11, walk: 2.7, run: 5.2, 
 // bank 为 null 表示江面炮艇；altitude 由地形函数计算。
 export const JIANGYIN_POSTS = Object.freeze([
   // 第一阶段：我军三艘水面舰艇（AI 航行，玩家只操作艏主炮塔）。length/beam 为实舰主尺度（米）。
-  // 部署（自西向东）：上游锚地的阻塞船 → 江心我军三舰 → 下游日军舰队。舰首朝东迎敌。
-  { id: 'pinghai', name: '平海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -420, z: -200, heading: -Math.PI / 2, bank: null,
+  // 部署（自西向东）：上游锚地的阻塞船 → 江心我军三舰（前出到堵塞线以东）→ 下游日军舰队。舰首朝东迎敌。
+  // v11：两军开场接战距离约 0.6–1 公里（原先 1.3–1.9 公里），4 倍放大下能看清敌舰舰形。
+  { id: 'pinghai', name: '平海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: 120, z: -200, heading: -Math.PI / 2, bank: null,
     health: 1150, key: '1', length: 109, beam: 11.9 },
-  { id: 'ninghai', name: '宁海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -620, z: 230, heading: -Math.PI / 2, bank: null,
+  { id: 'ninghai', name: '宁海舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -60, z: 230, heading: -Math.PI / 2, bank: null,
     health: 1150, key: '2', length: 109, beam: 11.9 },
-  { id: 'yixian', name: '逸仙舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: -250, z: 60, heading: -Math.PI / 2, bank: null,
+  { id: 'yixian', name: '逸仙舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: 260, z: 60, heading: -Math.PI / 2, bank: null,
     health: 850, key: '3', length: 82, beam: 10.4 },
   // 两岸阵地：岸防炮与机枪堡都设在山顶（南岸黄山、肖山、长山；北岸江边土岗），两个阶段都由炮手据守；第二阶段玩家以步兵小队在附近复生
   { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 250, bank: 'south', key: '4', health: 760 },
@@ -118,7 +119,7 @@ export const JIANGYIN_MOUNTS = Object.freeze({
   // 平海/宁海舰艏为双联 140 毫米主炮塔（逸仙艏炮口径不同，游戏中统一处理）
   shipTurret: Object.freeze({ mount: 'shipTurret', name: '舰艏双联主炮', muzzleHeight: 1.7, barrel: 7, damage: 210, radius: 9, aiInterval: 6.5,
     reload: 5, reserve: 75, traverse: 2.5, minPitch: -.15, maxPitch: .45, range: 3200, shellSpeed: 600,
-    view: Object.freeze({ first: Object.freeze({ back: -1.2, up: 1.35 }), third: Object.freeze({ back: 52, up: 20 }) }) }),   // 第一人称：炮塔前部观瞄位，炮管在视野下方
+    view: Object.freeze({ first: Object.freeze({ back: 1.75, up: 1.7 }), third: Object.freeze({ back: 52, up: 20 }) }) }),   // 第一人称：炮塔顶后部指挥塔口，向前能看到顶板、双联炮管和艏甲板
   deck: Object.freeze({ mount: 'deck', name: '76毫米艇首炮', muzzleHeight: 1.25, barrel: 3, reserve: 40, shellSpeed: 300,
     view: Object.freeze({ first: Object.freeze({ back: 1.35, up: .78 }), third: Object.freeze({ back: 24, up: 10.5 }) }) }),
   // 山顶环形机枪堡：可全向射击（日军步兵会沿江岸从侧面迂回）

@@ -6,26 +6,36 @@ import * as THREE from 'three';
 import { createNraMotion, advanceNraMotion, sampleNraMotion } from '../nra-motion.js';
 import { createRifleState } from '../rifle-action.js';
 import { createCasualtyState } from '../casualties.js';
-import { loadDadaoSurfaces } from '../dadao-surface.js';
 
 // 与 main.js 相同的加载顺序：国军模板 → 国军队伍渲染器 → 日军模板 → 日军队伍渲染器 → 预编译。
 export async function loadJiangyinCharacters({ scene, camera, renderer, walkHeight, capacity = 160, onProgress = () => {} }) {
   onProgress('加载我军士兵与人物动作…');
+  // 项目人物渲染器会为国军预烘焙大刀姿态，创建大刀模型前必须先加载大刀材质（与主游戏加载顺序一致）
+  try {
+    const { loadDadaoSurfaces } = await import('../dadao-surface.js');
+    await loadDadaoSurfaces(Math.max(1, renderer.capabilities?.getMaxAnisotropy?.() ?? 1));
+  } catch (error) { console.warn('[江阴] 大刀材质未加载', error); }
   const { loadNraCharacter } = await import('../nra-character.js');
   const { createNraForceRendererAsync } = await import('../nra-force-renderer.js');
-  await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy());
   const nraTemplate = await loadNraCharacter(walkHeight);
-  const friendly = await createNraForceRendererAsync(scene, camera, { ...nraTemplate, supportWeaponPoses: false }, capacity, {
+  // 本关没有迫击炮/掷弹筒等需要人物双手握持的支援武器；关闭这组预烘焙姿态，避免“支援武器握点超出原生手臂可达范围”的启动错误
+  nraTemplate.supportWeaponPoses = false;
+  const friendly = await createNraForceRendererAsync(scene, camera, nraTemplate, capacity, {
     onProgress: ({ completed, total }) => onProgress(`准备我军人物动作 ${completed}/${total}…`) });
   onProgress('加载日军士兵与人物动作…');
   const { loadIjaCharacter, createIjaForceRendererAsync } = await import('../ija-character.js');
   const ijaTemplate = await loadIjaCharacter(walkHeight);
-  const enemy = await createIjaForceRendererAsync(scene, camera, { ...ijaTemplate, supportWeaponPoses: false }, capacity, {
+  const enemy = await createIjaForceRendererAsync(scene, camera, ijaTemplate, capacity, {
     onProgress: ({ completed, total }) => onProgress(`准备日军人物动作 ${completed}/${total}…`) });
   onProgress('编译人物着色器…');
   await friendly.prepare(renderer);
   await enemy.prepare(renderer);
-  return createNativeSoldierBridge({ friendly, enemy });
+  const bridge = createNativeSoldierBridge({ friendly, enemy });
+  // 预热近景人物：项目渲染器第一次在近处显示某队人物时才创建带骨骼的近景模型（每队最多 6 个）并编译着色器。
+  // 第二阶段登岸时 11 名队员与日军先头部队同时出现，这一步若放到战斗中会造成明显卡顿，所以在加载阶段先做完。
+  onProgress('预热近景人物…');
+  try { bridge.warmUp(camera, renderer, scene); } catch (error) { console.warn('jiangyin character warm-up skipped', error); }
+  return bridge;
 }
 
 // 原生模式下，本关模拟拿到的“士兵模型”只是一个空的定位节点；真正的人物由队伍渲染器按 actor 绘制。
@@ -55,6 +65,42 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
 
   function trackCrew(anchor) { crews.add(anchor); return anchor; }
 
+  // 出错不拖垮整帧：记录第一条错误（供页面提示），并把出错的人物退回最简单的站立姿态再试一次
+  const errors = [];
+  const report = (where, error) => { if (errors.length < 5) { errors.push(`${where}: ${error?.message ?? error}`); console.error(`[江阴] 人物渲染 ${where}`, error); } };
+  const calm = actor => { actor.stance = 'standing'; actor.firingPose = null; actor.rifleReady = false; actor.aimPitch = 0; actor.target = null; };
+  function advance(actor, dt) {
+    if (dt <= 0) return;
+    try { advanceNraMotion(actor, dt); }
+    catch (error) {
+      report('动作', error); calm(actor);
+      try { advanceNraMotion(actor, dt); } catch { actor.locomotion.speed = 0; }
+    }
+  }
+  function render(renderer, list, now, controlledId, preset, name) {
+    try { renderer.update(list, now, controlledId, preset); return; }
+    catch (error) { report(`${name}更新`, error); }
+    for (const actor of list) calm(actor);
+    try { renderer.update(list, now, controlledId, preset); }
+    catch (error) { report(`${name}更新（简化后）`, error); try { renderer.update([], now, controlledId, preset); } catch {} }
+  }
+  // 加载阶段在镜头前临时放 6 个人物各渲染一帧，让项目渲染器提前创建近景模型并编译着色器，然后移除
+  function warmUp(camera, threeRenderer, scene) {
+    const ahead = new THREE.Vector3(), forwardDir = new THREE.Vector3();
+    camera.updateMatrixWorld(); camera.getWorldDirection(forwardDir);
+    const dummies = { friendly: [], enemy: [] };
+    for (const team of ['friendly', 'enemy']) for (let i = 0; i < 6; i++) {
+      ahead.copy(camera.position).addScaledVector(forwardDir, 6 + i * 1.5);
+      ahead.x += (i % 3 - 1) * 1.2;
+      dummies[team].push(createActor(team, i === 1 ? (team === 'enemy' ? 'type11' : 'zb26') : 'rifle', ahead, 0));
+    }
+    friendly.update(dummies.friendly, 0, null, 'high'); enemy.update(dummies.enemy, 0, null, 'high');
+    threeRenderer.compile?.(scene, camera);
+    threeRenderer.render(scene, camera);
+    friendly.remove(dummies.friendly); enemy.remove(dummies.enemy);
+    friendly.update([], 0, null, 'high'); enemy.update([], 0, null, 'high');
+  }
+
   // troops：jiangyin-game 的步兵记录 { id, x, z, dead, attacking, hidden, model }（日军步兵与玩家步兵小队）；model 为 createAnchor 返回的定位节点。
   function sync(troops, now, dt, preset = 'high', controlledId = null) {
     const live = { friendly: [], enemy: [] }, seen = new Set();
@@ -76,7 +122,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
         const attacking = Boolean(troop.attacking);
         actor.rifleReady = attacking;
         actor.stance = attacking ? 'crouched' : 'standing'; actor.firingPose = attacking ? 'kneeling' : null;
-        if (dt > 0) advanceNraMotion(actor, dt);
+        advance(actor, dt);
       }
       live[actor.team].push(actor);
     }
@@ -93,16 +139,16 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
       const moved = Math.hypot(anchorPosition.x - actor.position.x, anchorPosition.z - actor.position.z);
       actor.position.copy(anchorPosition); actor.heading = yawOf(anchor);
       actor.locomotion.speed = dt > 0 && moved < 1 ? moved / dt : 0;
-      if (dt > 0) advanceNraMotion(actor, dt);
+      advance(actor, dt);
       live.friendly.push(actor);
     }
     const gone = { friendly: [], enemy: [] };
     for (const [source, actor] of actors) if (!seen.has(source)) { gone[actor.team].push(actor); actors.delete(source); }
-    if (gone.friendly.length) friendly.remove(gone.friendly);
-    if (gone.enemy.length) enemy.remove(gone.enemy);
-    friendly.update(live.friendly, now, controlledId, preset);
-    enemy.update(live.enemy, now, controlledId, preset);
+    try { if (gone.friendly.length) friendly.remove(gone.friendly); } catch (error) { report('移除我军人物', error); }
+    try { if (gone.enemy.length) enemy.remove(gone.enemy); } catch (error) { report('移除日军人物', error); }
+    render(friendly, live.friendly, now, controlledId, preset, '我军人物');
+    render(enemy, live.enemy, now, controlledId, preset, '日军人物');
   }
 
-  return { native: true, friendly, enemy, sync, trackCrew, get count() { return actors.size; } };
+  return { native: true, friendly, enemy, sync, trackCrew, warmUp, errors, get count() { return actors.size; } };
 }

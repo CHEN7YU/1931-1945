@@ -88,9 +88,18 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     boat.hull.position.set(boat.x, -.2 - depth, boat.z);
     boat.hull.rotation.set(-k * .1, boat.heading, boat.roll * Math.min(.45, k * .9), 'YXZ');
     post.floor = boat.deck - depth - k * 2;
-    post.model.visible = k < .55;
+    post.model.visible = !boat.sunk;   // 炮塔随舰体一起倾斜下沉（见 attachToHull），直到完全没入水中
     const wake = boat.hull.userData.wake;
     if (wake) for (const mesh of wake) mesh.visible = Math.abs(boat.speed) > .8 && k === 0;
+  }
+  // 艏炮塔固定在舰体上：位置与姿态取自舰体（含横倾、艏倾与下沉），炮塔自身只保留回旋与俯仰
+  const hullAnchor = new THREE.Vector3();
+  function attachToHull(post) {
+    const { boat, model } = post;
+    boat.hull.updateMatrixWorld(true);
+    hullAnchor.set(0, boat.deck + .2, -boat.gunOffset).applyMatrix4(boat.hull.matrixWorld);
+    model.position.copy(hullAnchor); model.quaternion.copy(boat.hull.quaternion);
+    model.updateMatrixWorld(true);
   }
   const shipPosts = () => posts.filter(post => post.kind === 'ship');
   const shorePosts = () => posts.filter(post => post.kind === 'battery');
@@ -104,14 +113,15 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   const vehicles = [], bombs = createAirBombs(scene);
   const makeSoldier = (team, weapon) => createSoldierModel ? createSoldierModel(team, weapon) : createInfantryModel();
   const shipSerial = {};
-  function spawnShip(type) {
+  function spawnShip(type, early = false) {
     const cfg = ENEMY_TYPES[type], lane = [-320, 0, 320][Math.floor(random() * 3)] + (random() - .5) * 80;
     const route = shipRoute(lane), model = createWarshipModel(type);
     // 实舰尺度下同批入场的舰艇按舰长错开，避免在弯道后方重叠
     const startX = Math.max(route[0].x + random() * 20, ...ships.filter(other => other.sinking === null && other.x > route[0].x - 600)
       .map(other => other.x + (other.cfg.length + cfg.length) / 2 + 18));
-    const ship = { id: `ship-${++serial}`, type, cfg, x: startX, z: route[0].z, heading: Math.PI / 2, lane,
-      health: cfg.health, route, wp: 1, model, nextFire: now + 4 + random() * 3, sinking: null, speed: cfg.speed * .8 };
+    // early：开场第一批直接从弯道出口附近出发，约 15 秒后进入视野，玩家不用干等
+    const ship = { id: `ship-${++serial}`, type, cfg, x: early ? startX - 250 : startX, z: early ? route[1].z : route[0].z, heading: Math.PI / 2, lane,
+      health: cfg.health, route, wp: early ? 2 : 1, model, nextFire: now + 4 + random() * 3, sinking: null, speed: cfg.speed * .8 };
     assignHold(ship);
     const roster = cfg.ships ?? [], index = (shipSerial[type] = (shipSerial[type] ?? -1) + 1);
     ship.label = roster.length ? `${cfg.name}「${roster[index % roster.length]}」` : cfg.name;
@@ -122,7 +132,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   const navalPressure = () => state.phase === 'naval' ? 1 + Math.max(0, state.navalTime - JIANGYIN_RULES.navalReinforceAfter) / 60 : 1;
   // 敌舰停泊炮击位置：第一阶段停在阻塞船锚地下游与我舰对射；封江后逼近阻塞线下游侧炮击两岸阵地
   function assignHold(ship) {
-    ship.holdX = state.phase === 'naval' || state.phase === 'intro' ? 950 + random() * 300 : 220 + random() * 330;
+    ship.holdX = state.phase === 'naval' || state.phase === 'intro' ? 580 + random() * 180 : 220 + random() * 330;
     ship.holdZ = Math.max(-420, Math.min(420, ship.lane ?? 0));
   }
   function spawnLanding(bank) {
@@ -716,7 +726,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       if (!boat.waypoint || now > boat.retarget || Math.hypot(boat.waypoint.x - boat.x, boat.waypoint.z - boat.z) < 90) {
         let wp = null;
         for (let n = 0; n < 10; n++) {
-          wp = { x: -660 + random() * 580, z: (random() - .5) * 820 };
+          wp = { x: -120 + random() * 480, z: (random() - .5) * 820 };
           if (Math.hypot(wp.x - boat.x, wp.z - boat.z) > 350) break;
         }
         boat.waypoint = wp; boat.retarget = now + 40 + random() * 20;
@@ -724,9 +734,9 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       // 前方约 2.5 倍舰长处若是浅滩、岸线、锚地或友舰，提前转向江心
       const look = forward(boat.heading), reach = boat.cfg.length * 2.5;
       const ax = boat.x + look.x * reach, az = boat.z + look.z * reach;
-      if (groundHeight(ax, az) > -4 || Math.abs(az) > RIVER_HALF - 170 || ax < -780 || ax > 120 ||
+      if (groundHeight(ax, az) > -4 || Math.abs(az) > RIVER_HALF - 170 || ax < -280 || ax > 470 ||
         others.some(o => Math.hypot(o.boat.x - ax, o.boat.z - az) < 170))
-        boat.waypoint = { x: -430, z: -Math.sign(boat.z || 1) * 120 };
+        boat.waypoint = { x: 120, z: -Math.sign(boat.z || 1) * 120 };
       const desired = Math.atan2(-(boat.waypoint.x - boat.x), -(boat.waypoint.z - boat.z)), error = wrap(desired - boat.heading);
       const rate = Math.max(.004, Math.abs(boat.speed) / (boat.cfg.length * 2.2));
       boat.heading = wrap(boat.heading + Math.max(-rate * dt, Math.min(rate * dt, error)));
@@ -737,7 +747,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     const nx = boat.x + f.x * boat.speed * dt, nz = boat.z + f.z * boat.speed * dt;
     const blocked = Math.abs(boat.speed) > .05 && [0, half - 4, -(half - 4)].some(o => groundHeight(nx + f.x * o, nz + f.z * o) > -1.4 ||
       Math.abs(nz + f.z * o) > RIVER_HALF - 140 || insideWreck(nx + f.x * o, nz + f.z * o, 2, wreckZones));
-    if (blocked && alive(post)) { boat.speed *= .5; boat.waypoint = { x: -430, z: -Math.sign(boat.z || 1) * 120 }; }   // 受阻：减速并转向江心
+    if (blocked && alive(post)) { boat.speed *= .5; boat.waypoint = { x: 120, z: -Math.sign(boat.z || 1) * 120 }; }   // 受阻：减速并转向江心
     else if (!blocked) { boat.x = nx; boat.z = nz; }
     syncBoatGun(post);
   }
@@ -1378,7 +1388,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     }
     if (state.phase === 'naval') {
       state.navalTime += dt;
-      for (const wave of dueNavalWaves(state)) for (const type of wave.ships) spawnShip(type);
+      for (const wave of dueNavalWaves(state)) for (const type of wave.ships) spawnShip(type, wave.at === 0);
       // 迟迟分不出胜负时日军持续增援驱逐舰
       if (state.navalTime > JIANGYIN_RULES.navalReinforceAfter && now >= (state.reinforceAt ?? 0)) {
         state.reinforceAt = now + 22; spawnShip('destroyer');
@@ -1424,6 +1434,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     advanceShells(dt);
     for (const post of posts) {
       post.model.userData.update?.(); post.model.position.y = post.floor;
+      if (post.boat) attachToHull(post);
       if (alive(post) || post.destroyedAt !== null) continue;
       post.destroyedAt = now; post.point.operatorId = null;
       if (post.boat) {

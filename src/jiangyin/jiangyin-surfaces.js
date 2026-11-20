@@ -71,10 +71,11 @@ float surfFbm(vec2 p) { float s = 0., a = .5; for (int i = 0; i < 4; i++) { s +=
 // options：map/map2（三平面贴图，map2 由 surfSplat 顶点属性或 splat 参数混合）、tile（米/张）、macro（大尺度去重复）、
 // mottle（斑驳）、streaks（竖向锈水痕）、waterline（舷侧近水线污渍高度）、bump（凹凸强度）、world（按世界坐标投影）
 export function patchSurface(material, options = {}) {
-  const o = { tile: 3, detail: 1, macro: 0, mottle: .12, streaks: 0, waterline: null, bump: 0, world: false, splat: 0, rough: .2, ...options };
+  const o = { tile: 3, detail: 1, macro: 0, mottle: .12, streaks: 0, waterline: null, bump: 0, world: false, splat: 0, rough: .2, plates: 0, planks: 0, ...options };
   const uniforms = { uSurfMap: { value: o.map ?? null }, uSurfMap2: { value: o.map2 ?? null }, uSurfTile: { value: o.tile }, uSurfDetail: { value: o.detail },
     uSurfMacro: { value: o.macro }, uSurfMottle: { value: o.mottle }, uSurfStreaks: { value: o.streaks },
-    uSurfWaterline: { value: o.waterline ?? -999 }, uSurfBump: { value: o.bump }, uSurfSplat: { value: o.splat }, uSurfRough: { value: o.rough } };
+    uSurfWaterline: { value: o.waterline ?? -999 }, uSurfBump: { value: o.bump }, uSurfSplat: { value: o.splat }, uSurfRough: { value: o.rough },
+    uSurfPlates: { value: o.plates }, uSurfPlanks: { value: o.planks } };
   material.userData.surfaceUniforms = uniforms;
   const defines = [o.map ? '#define SURF_MAP' : '', o.map2 ? '#define SURF_MAP2' : '', o.world ? '#define SURF_WORLD' : '',
     o.splatAttribute ? '#define SURF_SPLAT_ATTR' : ''].join('\n');
@@ -100,7 +101,7 @@ export function patchSurface(material, options = {}) {
 #ifdef SURF_SPLAT_ATTR
 varying float vSurfSplat;
 #endif
-uniform sampler2D uSurfMap; uniform sampler2D uSurfMap2; uniform float uSurfTile, uSurfDetail, uSurfMacro, uSurfMottle, uSurfStreaks, uSurfWaterline, uSurfBump, uSurfSplat, uSurfRough;
+uniform sampler2D uSurfMap; uniform sampler2D uSurfMap2; uniform float uSurfTile, uSurfDetail, uSurfMacro, uSurfMottle, uSurfStreaks, uSurfWaterline, uSurfBump, uSurfSplat, uSurfRough, uSurfPlates, uSurfPlanks;
 ${NOISE_GLSL}
 vec4 surfTri(sampler2D tex, vec3 p, vec3 w) { return texture2D(tex, p.zy) * w.x + texture2D(tex, p.xz) * w.y + texture2D(tex, p.xy) * w.z; }
 vec3 surfAvg(sampler2D tex) { return max(textureLod(tex, vec2(.5), 12.).rgb, vec3(.02)); }
@@ -126,6 +127,31 @@ float surfLuma = .5;`)
   float surfN1 = surfFbm(vSurfPos.xz * .35 + vSurfPos.y * .21);
   diffuseColor.rgb *= 1. + (surfN1 - .5) * 2. * uSurfMottle;
   float surfSide = 1. - abs(normalize(vSurfNormal).y);
+  vec3 surfAN = abs(normalize(vSurfNormal));
+  if (uSurfPlates > 0.) {
+    // 钢板接缝：水平面 1.6×2.4 米、竖直面 2.4×1.1 米一块；接缝两侧一排铆钉；每块钢板色调略有差别。远处按像素尺度淡出，避免闪烁
+    vec2 q = surfAN.y > .7 ? vSurfPos.xz / vec2(1.6, 2.4) : (surfAN.x > surfAN.z ? vSurfPos.zy / vec2(2.4, 1.1) : vSurfPos.xy / vec2(1.6, 1.1));
+    vec2 fw = fwidth(q), d = min(fract(q), 1. - fract(q));
+    vec2 line = 1. - smoothstep(vec2(0.), fw * 1.2 + .006, d);
+    float fade = clamp(1. - max(fw.x, fw.y) * 6., 0., 1.);
+    float seam = max(line.x, line.y) * fade;
+    vec2 rq = vec2(q.x * 12., q.y * 18.);
+    float rivet = (1. - smoothstep(.12, .22, length(fract(rq) - .5))) * (1. - smoothstep(.03, .06, d.y)) * fade * step(.008, d.y);
+    diffuseColor.rgb *= 1. - seam * .28 * uSurfPlates;
+    diffuseColor.rgb *= 1. + rivet * .16 * uSurfPlates;
+    diffuseColor.rgb *= 1. + (surfHash(floor(q) + 7.3) - .5) * .07 * uSurfPlates;
+  }
+  if (uSurfPlanks > 0. && surfAN.y > .7) {
+    // 柚木甲板：沿舰长方向铺设，板宽 15 厘米，黑色填缝；接头错开；每条木板深浅不一
+    float px = vSurfPos.x / .15, row = floor(px);
+    float pz = vSurfPos.z / 4.8 + surfHash(vec2(row, 1.7)), col = floor(pz);
+    float fx = fwidth(px), fz = fwidth(pz);
+    float dx = min(fract(px), 1. - fract(px)), dz = min(fract(pz), 1. - fract(pz));
+    float fade = clamp(1. - fx * 3.5, 0., 1.);
+    float caulk = max(1. - smoothstep(0., fx * 1.2 + .05, dx), (1. - smoothstep(0., fz * 1.2 + .004, dz)) * .7) * fade;
+    diffuseColor.rgb *= 1. + (surfHash(vec2(row, col)) - .5) * .2 * uSurfPlanks * fade;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.07, .06, .05), caulk * .75 * uSurfPlanks);
+  }
   if (uSurfStreaks > 0.) {
     float lane = (vSurfPos.z + vSurfPos.x * .37) * 2.2;
     float col = surfHash(vec2(floor(lane), 3.1)), drip = surfNoise(vec2(lane * 1.7, vSurfPos.y * .55));

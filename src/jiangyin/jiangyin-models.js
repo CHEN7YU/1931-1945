@@ -15,15 +15,16 @@ const crewMember = (rifle = false) => crewFactory ? crewFactory(rifle) : createD
 const materials = new Map();
 // 写实表面：按材质键套用项目 PBR 贴图（三平面投影）+ 漆面斑驳、锈水痕、水线污渍与凹凸
 const SURFACE_STYLES = {
-  paint: { map: 'plaster', detail: .14, tile: 2.2, mottle: .09, streaks: .85, bump: .1, rough: .35 },
-  hull: { map: 'plaster', detail: .14, tile: 2.2, mottle: .1, streaks: 1, waterline: .6, bump: .18, rough: .35 },
+  // 涂装钢板：不贴石材纹理、不做凹凸（v10 及以前这样做会在近处产生满屏雪花噪点），改为钢板接缝 + 铆钉 + 轻微斑驳与雨痕
+  paint: { detail: 0, tile: 2.2, mottle: .06, streaks: .6, bump: 0, rough: .25, plates: 1 },
+  hull: { detail: 0, tile: 2.2, mottle: .07, streaks: .8, waterline: .6, bump: 0, rough: .25, plates: 1 },
   rust: { map: 'earth', detail: .6, tile: 1.8, mottle: .18, streaks: .5, bump: .5 },
-  deck: { map: 'timber', detail: .85, tile: 1.6, mottle: .12, bump: .35 },
+  deck: { map: 'timber', detail: .45, tile: 1.6, mottle: .08, bump: 0, planks: 1 },
   concrete: { map: 'weathered-plaster', detail: .9, tile: 2.6, mottle: .16, streaks: .55, bump: .6, macro: .4 },
   sandbag: { map: 'burlap', detail: .9, tile: .55, mottle: .12, bump: .9 },
   earth: { map: 'earth', detail: .9, tile: 3, mottle: .15, bump: .7, macro: .4 },
-  gun: { map: 'plaster', detail: .1, tile: 1.4, mottle: .12, streaks: .35, bump: .1, rough: .3 },
-  steel: { detail: 0, tile: 1.4, mottle: .04, streaks: .12, bump: .03, rough: .15 },   // 涂装钢板：无石材纹理，仅轻微斑驳与雨痕
+  gun: { detail: 0, tile: 1.4, mottle: .08, streaks: .3, bump: 0, rough: .25 },
+  steel: { detail: 0, tile: 1.4, mottle: .04, streaks: .12, bump: 0, rough: .15, plates: .6 },   // 涂装钢板：无石材纹理，仅轻微斑驳与雨痕
   roof: { map: 'tiles', detail: .9, tile: 1.3, mottle: .15, bump: .8 },
   plaster: { map: 'weathered-plaster', detail: .9, tile: 2.4, mottle: .14, streaks: .6, bump: .4 },
 };
@@ -460,6 +461,68 @@ export function createCruiserModel(name, { length = 109, beam = 11.9, omitBowTur
   box(root, (2.4) * W, 1.4, 2.2, 0, by + 10, bz + .2, light); box(root, (2.2) * W, .18, .06, 0, by + 10.2, bz - .92, M.black());
   tubeZ(root, .12, .12, 3.4, 0, by + 9.4, bz + .3, M.dark()).rotation.z = Math.PI / 2;
   pole(root, 0, by + 10.7, bz + .6, 5, { yard: 3.6 * W, top: 2 });
+  // 舰桥细部：驾驶室窗框、两翼平台与栏杆、帆布挡风、信号灯、扶梯
+  for (let k = -3; k <= 3; k++) box(root, .07, 1.0, .08, k * .55 * W, by + 5.95, bz - 1.72, M.dark());
+  box(root, (8.6) * W, .1, 2.2, 0, by + 7.15, bz - .4, hullM);                                  // 舰桥两翼
+  const wing = (8.6 * W) / 2;
+  railing(root, [[-wing, by + 7.2, bz - 1.5], [-wing, by + 7.2, bz + .7]], M.dark(), { height: .9, step: 1 });
+  railing(root, [[wing, by + 7.2, bz - 1.5], [wing, by + 7.2, bz + .7]], M.dark(), { height: .9, step: 1 });
+  railing(root, [[-wing, by + 7.2, bz - 1.5], [wing, by + 7.2, bz - 1.5]], M.dark(), { height: .9, step: 1.1 });
+  for (const side of [-1, 1]) {
+    box(root, (2.6) * W, .75, .04, side * (wing - 1.3 * W), by + 7.6, bz - 1.53, M.canvas());    // 帆布挡风
+    searchlight(root, side * (wing - .5), by + 7.2, bz + .2);
+    rod(root, [side * 1.9, by + 2.4, bz + 2.6], [side * 1.9, by + 7.1, bz + 1.2], .05, M.dark());   // 斜梯
+  }
+  railing(root, [[-1.2 * W, by + 10.8, bz - .9], [1.2 * W, by + 10.8, bz - .9], [1.2 * W, by + 10.8, bz + 1.3], [-1.2 * W, by + 10.8, bz + 1.3], [-1.2 * W, by + 10.8, bz - .9]], M.dark(), { height: .8, step: 1 });
+  // 艏甲板（玩家在艏炮塔上能直接看到）：舰艏旗杆与国旗、防浪板、起锚机、锚链、锚链孔、系缆桩、通风筒、舱口、实体栏杆
+  {
+    const s0 = .02, bowS = (-L * .32 + L / 2) / L, deckAt = s => hull.deck(s);
+    const jz = hull.zOf(.012) + .6, jy = deckAt(.012);
+    rod(root, [0, jy, jz], [0, jy + 4.2, jz], .05, M.dark());
+    flag(root, 'roc', 0, jy + 3.6, jz - .1, 1.6);
+    const bwS = bowS - 4.2 / L, bwZ = hull.zOf(bwS), bwY = deckAt(bwS), bwHalf = hull.halfWidth(bwS, bwY) * .75;
+    for (const side of [-1, 1]) {                                                              // V 形防浪板
+      const plate = box(root, Math.hypot(bwHalf, 1.6), .75, .06, side * bwHalf / 2, bwY + .37, bwZ + .8, hullM);
+      plate.rotation.y = side * Math.atan2(1.6, bwHalf);
+      for (let k = 1; k < 4; k++) rod(root, [side * bwHalf * k / 4, bwY, bwZ + 1.6 - 1.6 * k / 4 + .25], [side * bwHalf * k / 4, bwY + .6, bwZ + 1.6 - 1.6 * k / 4 + .05], .03, hullM, 5);
+    }
+    const wS = .095, wz = hull.zOf(wS), wy = deckAt(wS);                                         // 起锚机
+    box(root, 1.6, .45, 1.1, 0, wy + .22, wz, M.dark());
+    for (const side of [-1, 1]) {
+      const gyp = cyl(root, .42, .42, .28, side * .62, wy + .62, wz, M.dark(), 16); gyp.rotation.z = Math.PI / 2;
+      const head = cyl(root, .22, .3, .5, side * 1.15, wy + .65, wz, M.dark(), 12); head.rotation.z = Math.PI / 2;
+      cyl(root, .28, .34, .5, side * .7, wy + .25, wz + 1.9, M.dark(), 14);                     // 绞盘
+      cyl(root, .36, .3, .12, side * .7, wy + .56, wz + 1.9, M.dark(), 14);
+      // 锚链孔（甲板上的铸钢唇口）与锚链：一环横一环竖
+      const hS = .045, hz = hull.zOf(hS), hy = deckAt(hS), hx = side * hull.halfWidth(hS, hy) * .62;
+      const rim = add(root, new THREE.TorusGeometry(.3, .08, 6, 14), M.dark(), hx, hy + .05, hz); rim.rotation.x = Math.PI / 2;
+      const from = new THREE.Vector3(hx, hy + .08, hz), to = new THREE.Vector3(side * .62, wy + .95, wz), n = Math.round(from.distanceTo(to) / .17);
+      for (let k = 0; k <= n; k++) {
+        const p = from.clone().lerp(to, k / n), sag = Math.sin(k / n * Math.PI) * .12;
+        const link = add(root, new THREE.TorusGeometry(.085, .028, 4, 8), M.dark(), p.x, Math.max(p.y - sag, hy + .06), p.z);
+        link.lookAt(to.x, to.y, to.z); if (k % 2) link.rotateZ(Math.PI / 2); link.scale.set(1, 1.45, 1);
+      }
+      // 舷侧锚（无杆锚，收在锚链孔下方舷外）
+      const ax = side * (hull.halfWidth(.05, hy - 1.2) + .12), az = hull.zOf(.05);
+      box(root, .12, 1.5, .28, ax, hy - 1.3, az, M.dark());
+      box(root, .3, .3, 1.1, ax, hy - 2.05, az, M.dark());
+      // 系缆桩（双柱）：沿舷侧三处
+      for (const bs of [.06, .16, bowS + 4 / L]) {
+        const bz2 = hull.zOf(bs), by2 = deckAt(bs), bx = side * (hull.halfWidth(bs, by2) - .7);
+        box(root, .45, .08, 1.0, bx, by2 + .04, bz2, M.dark());
+        for (const dz of [-.3, .3]) { cyl(root, .13, .13, .5, bx, by2 + .3, bz2 + dz, M.dark(), 10); cyl(root, .17, .17, .06, bx, by2 + .56, bz2 + dz, M.dark(), 10); }
+      }
+      vent(root, side * 1.6, deckAt(.2), hull.zOf(.2), side > 0 ? Math.PI / 2 : -Math.PI / 2, 1.1);
+    }
+    const hz = hull.zOf(.135), hy = deckAt(.135);                                                // 舱口
+    box(root, 1.4, .3, 1.1, 0, hy + .15, hz, hullM); box(root, 1.2, .04, .9, 0, hy + .32, hz, M.canvas());
+    // 艏部实体栏杆（远处仍用线段）
+    for (const side of [-1, 1]) {
+      const pts = [];
+      for (let k = 0; k <= 14; k++) { const ss = s0 + (bowS + .03 - s0) * k / 14, y = deckAt(ss); pts.push([side * (hull.halfWidth(ss, y) - .06), y, hull.zOf(ss)]); }
+      railing(root, pts, M.dark(), { height: .95, step: 1.3, r: .02 });
+    }
+  }
   // 单根粗烟囱（前倾，顶部黑色）
   funnel(root, 0, hull.deck(.45), -L * .01, { r: 1.5 * FR, h: 6.4, rake: .1, oval: .65, color: light });
   lifeboat(root, (3) * W, hull.deck(.48) + 2.1, L * .06, 5, 1); lifeboat(root, (-3) * W, hull.deck(.48) + 2.1, L * .06, 5, -1);
@@ -828,24 +891,85 @@ export function createMgNestModel(point, createGun) {
 }
 
 // ---------- 我舰艏主炮塔（玩家可操作）：封闭式双联炮塔，炮塔随 yaw 旋转、炮管随 pitch 俯仰 ----------
+// 一排铆钉（小半球），沿 from→to 等距排布
+function rivets(parent, from, to, step, material, r = .035) {
+  const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to), n = Math.max(1, Math.round(a.distanceTo(b) / step));
+  for (let i = 0; i <= n; i++) { const p = a.clone().lerp(b, i / n); add(parent, new THREE.SphereGeometry(r, 6, 4), material, p.x, p.y, p.z); }
+}
+// 栏杆：立柱 + 两道扶手（实体细管，近看比线段真实）
+function railing(parent, points, material, { height = .95, step = 1.4, r = .022 } = {}) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, y0, z0] = points[i], [x1, y1, z1] = points[i + 1];
+    for (const h of [height * .5, height]) rod(parent, [x0, y0 + h, z0], [x1, y1 + h, z1], r, material, 5);
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / step));
+    for (let k = 0; k < n; k++) { const t = k / n; rod(parent, [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t], [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t + height, z0 + (z1 - z0) * t], r * 1.3, material, 5); }
+  }
+  const [x, y, z] = points.at(-1); rod(parent, [x, y, z], [x, y + height, z], r * 1.3, material, 5);
+}
+// 平海/宁海舰艏 14 厘米双联主炮塔（玩家操纵）。炮手视角在炮塔顶后部指挥塔口，近处能看清顶板、炮管与艏甲板
 export function createShipTurretModel(point) {
-  const s = point.weapon.settings, root = new THREE.Group(), hullM = M.rocHull(), dark = M.gunDark();
-  cyl(root, 2.1, 2.3, .5, 0, .25, 0, hullM, 24);                          // 座圈
+  const s = point.weapon.settings, root = new THREE.Group(), hullM = M.rocHull(), dark = M.gunDark(), black = M.black(), canvas = M.canvas();
+  // 座圈（露出甲板的炮座环）+ 一圈铆钉
+  cyl(root, 2.25, 2.4, .5, 0, .25, 0, hullM, 32);
+  cyl(root, 2.32, 2.32, .06, 0, .5, 0, dark, 32);
+  for (let k = 0; k < 40; k++) { const a = k / 40 * TAU; add(root, new THREE.SphereGeometry(.03, 5, 3), hullM, Math.sin(a) * 2.36, .32, Math.cos(a) * 2.36); }
   const swivel = group(root, 0, .5, 0), barrel = group(swivel, 0, s.muzzleHeight - .5, -1.2);
   barrel.userData.dynamic = true;
-  // 炮塔：前低后高的斜面装甲罩 + 顶部测距仪耳 + 观察镜
+  // 炮室：前窄后宽的斜面装甲罩（前 4.6 米、后 5.2 米，长 4.2 米，高 2.1 米）
   const shape = new THREE.Shape([[-2.6, -1.9], [2.6, -1.9], [2.3, 2.3], [-2.3, 2.3]].map(([x, y]) => new THREE.Vector2(x, y)));
-  const house = new THREE.ExtrudeGeometry(shape, { depth: 2.1, bevelEnabled: true, bevelSize: .12, bevelThickness: .12, bevelSegments: 2 });
-  house.rotateX(-Math.PI / 2); house.translate(0, 0, 0);
-  const houseMesh = add(swivel, house, hullM, 0, 0, .2);
-  houseMesh.scale.set(1, 1, 1);
-  box(swivel, 4.4, .14, 3.6, 0, 2.25, .5, hullM);
-  for (const side of [-1, 1]) { cyl(swivel, .32, .32, .7, side * 2.7, 1.6, 1.2, hullM, 10).rotation.z = Math.PI / 2; }
-  box(swivel, .34, .26, .42, -1.2, 2.42, -.4, dark); box(swivel, .34, .26, .42, 1.2, 2.42, -.4, dark);   // 观瞄潜望镜罩
+  const house = new THREE.ExtrudeGeometry(shape, { depth: 2.1, bevelEnabled: true, bevelSize: .1, bevelThickness: .1, bevelSegments: 2 });
+  house.rotateX(-Math.PI / 2);
+  add(swivel, house, hullM, 0, 0, .2);
+  // 顶板（略出檐）与顶板四周铆钉
+  const roofY = 2.26, roof = new THREE.Shape([[-2.68, -2.0], [2.68, -2.0], [2.38, 2.4], [-2.38, 2.4]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const roofG = new THREE.ExtrudeGeometry(roof, { depth: .1, bevelEnabled: false }); roofG.rotateX(-Math.PI / 2);
+  add(swivel, roofG, hullM, 0, roofY, .2);
+  const corners = [[-2.6, roofY + .1, 2.15], [2.6, roofY + .1, 2.15], [2.3, roofY + .1, -2.05], [-2.3, roofY + .1, -2.05]];
+  for (let i = 0; i < 4; i++) rivets(swivel, corners[i], corners[(i + 1) % 4], .28, hullM, .03);
+  rivets(swivel, [-2.45, roofY + .1, .1], [2.45, roofY + .1, .1], .28, hullM, .03);              // 顶板中部横向接缝
+  for (const x of [-1.1, 1.1]) rivets(swivel, [x, roofY + .1, -2], [x, roofY + .1, 2.1], .28, hullM, .03);
+  // 侧面竖向接缝铆钉
+  for (const side of [-1, 1]) for (const z of [-1.2, .2, 1.4]) rivets(swivel, [side * (2.45 + (z + 2) * .07), .15, z], [side * (2.45 + (z + 2) * .07), 2.15, z], .25, hullM, .03);
+  // 测距仪：横贯炮室后部，两端伸出带护罩的镜头
+  for (const side of [-1, 1]) {
+    const ear = cyl(swivel, .3, .3, .55, side * 2.85, 1.55, 1.2, hullM, 14); ear.rotation.z = Math.PI / 2;
+    const hood = cyl(swivel, .34, .34, .12, side * 3.15, 1.55, 1.2, dark, 14); hood.rotation.z = Math.PI / 2;
+    add(swivel, new THREE.CircleGeometry(.2, 12), M.glass(), side * 3.22, 1.55, 1.2).rotation.y = side * Math.PI / 2;
+  }
+  // 观瞄潜望镜罩：两侧前部，带斜顶与观察窗
+  for (const x of [-1.5, 1.5]) {
+    box(swivel, .5, .38, .62, x, roofY + .29, -1.2, hullM);
+    box(swivel, .54, .06, .7, x, roofY + .5, -1.2, hullM);
+    box(swivel, .36, .12, .04, x, roofY + .33, -1.52, M.glass());
+  }
+  // 指挥塔口（玩家视点所在）：圆形舱口围板 + 掀开的舱盖 + 铰链
+  cyl(swivel, .5, .52, .22, 0, roofY + .2, 1.55, hullM, 20);
+  cyl(swivel, .42, .42, .04, 0, roofY + .32, 1.55, black, 20);
+  const lid = cyl(swivel, .5, .5, .07, 0, roofY + .62, 2.12, hullM, 20); lid.rotation.x = -1.25;
+  rod(swivel, [-.25, roofY + .32, 2.05], [.25, roofY + .32, 2.05], .05, dark);
+  // 顶板扶手、通风帽、吊环
+  for (const side of [-1, 1]) {
+    for (const z of [-1.6, -.2, 1.2]) rod(swivel, [side * 2.0, roofY + .1, z], [side * 2.0, roofY + .3, z], .025, dark, 5);
+    rod(swivel, [side * 2.0, roofY + .3, -1.6], [side * 2.0, roofY + .3, 1.2], .025, dark, 5);
+    const eye = add(swivel, new THREE.TorusGeometry(.09, .025, 5, 10), dark, side * 2.25, roofY + .2, -1.85); eye.rotation.y = Math.PI / 2;
+    const eye2 = add(swivel, new THREE.TorusGeometry(.09, .025, 5, 10), dark, side * 2.45, roofY + .2, 2.2); eye2.rotation.y = Math.PI / 2;
+  }
+  cyl(swivel, .16, .16, .35, -.9, roofY + .28, .75, hullM, 10); cyl(swivel, .3, .3, .12, -.9, roofY + .5, .75, hullM, 14);
+  // 后壁：检修门与踏梯
+  box(swivel, 1.1, 1.6, .05, 0, .95, 2.33, hullM); for (const [dx, dy] of [[-.45, .3], [.45, .3], [-.45, 1.6], [.45, 1.6]]) cyl(swivel, .05, .05, .06, dx, dy, 2.36, dark, 6).rotation.x = Math.PI / 2;
+  for (let k = 0; k < 4; k++) rod(swivel, [1.4, .4 + k * .45, 2.4], [1.9, .4 + k * .45, 2.4], .025, dark, 5);
+  // 前壁：两个炮门（深色开口）与中间的瞄准窗
+  for (const off of [-.85, .85]) box(swivel, .78, 1.0, .06, off, s.muzzleHeight - .5, -2.02, black);
+  box(swivel, .9, .12, .05, 0, 1.75, -2.0, black);
+  // 炮管：带炮口加厚、身管箍、帆布防水套（随俯仰运动）
   for (const off of [-.85, .85]) {
-    tubeZ(barrel, .14, .22, s.barrel, off, 0, 0, dark, 14);
-    cyl(barrel, .26, .26, .7, off, 0, -.1, dark, 12).rotation.x = Math.PI / 2;      // 炮盾套筒
-    cyl(barrel, .17, .17, .25, off, 0, -s.barrel, dark, 12).rotation.x = Math.PI / 2;
+    tubeZ(barrel, .34, .3, .65, off, 0, -.55, canvas, 14);                       // 帆布炮衣（防水套）
+    for (const z of [-.7, -.95]) tubeZ(barrel, .35, .35, .04, off, 0, z, M.dark(), 14);   // 捆扎带
+    tubeZ(barrel, .19, .23, 1.6, off, 0, -1.15, dark, 16);                       // 身管加粗段
+    tubeZ(barrel, .14, .19, s.barrel - 2.95, off, 0, -2.75, dark, 16);
+    tubeZ(barrel, .17, .14, .35, off, 0, -s.barrel + .2, dark, 16);              // 炮口加厚
+    for (const z of [-1.2, -2.8]) tubeZ(barrel, .24, .24, .08, off, 0, z, dark, 16);
+    add(barrel, new THREE.CircleGeometry(.1, 12), black, off, 0, -s.barrel - .16).rotation.y = Math.PI;
   }
   mergeStatic(swivel); mergeStatic(barrel); mergeStatic(root);
   root.userData.update = () => {
