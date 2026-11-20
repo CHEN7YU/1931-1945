@@ -5,6 +5,7 @@ import { createAircraftSmokeEffects } from './aircraft-smoke.js';
 import { createPresentationView } from './presentation-view.js';
 import { valueNoise2D as cloudNoise } from './value-noise.js';
 import { blastProfile } from './blast-profiles.js';
+import { createBombAftermath } from './bomb-aftermath.js';
 
 const colors = { stone: 0xada695, soil: 0x83715a, wood: 0x796048, generic: 0x96968b, muzzle: 0xb7b6b0,
   'blast-dust': 0x9b8a6e, 'blast-smoke': 0x666560, 'blast-flash': 0xffc575,
@@ -75,6 +76,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
   fireTexture.magFilter = THREE.LinearFilter; fireTexture.needsUpdate = true;
   const tankFire = createTankFireEffects(scene, camera, blastTexture);
   const aircraftSmoke = createAircraftSmokeEffects(scene, blastTexture);
+  const bombAftermath = createBombAftermath(scene, view, groundHeight, shellTexture);
   const clouds = Array.from({ length: PARTICLE_LIMITS.clouds }, () => {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0 }));
     sprite.visible = false; scene.add(sprite); return sprite;
@@ -92,6 +94,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
   let settings = null, lastImpact = null, lastExplosion = null, presentationPasses = 0;
   const display = () => {
     view.update();
+    bombAftermath.display(state.time, settings?.preset === 'low');
     presentationPasses++;
     fragments.count = 0;
     for (const particle of state.fragments) {
@@ -202,8 +205,9 @@ export function createCombatEffects(scene, camera, groundHeight) {
       fragments.setMatrixAt(0, new THREE.Matrix4().compose(point, new THREE.Quaternion(), new THREE.Vector3(.1, .1, .1)));
       fragments.count = Math.max(1, count); fragments.instanceMatrix.needsUpdate = true;
       const restoreTank = tankFire.prepareBattleViews(), restoreAircraft = aircraftSmoke.prepareBattleViews(camera);
+      const restoreBomb = bombAftermath.prepareBattleViews(point);
       return () => {
-        restoreAircraft(); restoreTank();
+        restoreBomb(); restoreAircraft(); restoreTank();
         fragments.count = count; fragments.setMatrixAt(0, matrix); fragments.instanceMatrix.needsUpdate = true;
         for (const item of saved) {
           const { object } = item;
@@ -231,6 +235,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
         camera.position.distanceTo(position) <= (style === 'aircraft-hit' ? 600 : style === 'aircraft-bomb' ? 280 : style === 'tank-shell' ? 200 : 140);
       lastExplosion = { time, style, radius, position: position.toArray(), rendered: visible,
         surface: surface ? { kind: surface.kind, normal: { ...surface.normal } } : null };
+      if (style === 'aircraft-bomb' && surface?.kind === 'soil') bombAftermath.add(position, time, radius);
       if (!visible) return;
       emitExplosionParticles(state, position, time, { low: settings.preset === 'low', radius, lights: settings.effects.muzzleLight, style,
         debris: settings.effects.hitParticles,
@@ -238,7 +243,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
     },
     update,
     render(time, vehicles = []) { update(time - state.time, time, vehicles); },
-    clear() { clearCombatParticles(state); tankFire.clear(); aircraftSmoke.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
+    clear() { clearCombatParticles(state); tankFire.clear(); aircraftSmoke.clear(); bombAftermath.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
     get snapshot() {
       return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length + waves.filter(mesh => mesh.visible).length,
@@ -252,6 +257,7 @@ export function createCombatEffects(scene, camera, groundHeight) {
         shockwaves: waves.filter(mesh => mesh.visible).length,
         tankFire: tankFire.snapshot,
         aircraftSmoke: aircraftSmoke.snapshot,
+        bombAftermath: bombAftermath.snapshot,
         visibleLights: lights.filter(light => light.visible && light.intensity > 0).length,
         shaderLights: lights.filter(light => light.visible).length, pointLightShadows: lights.some(light => light.castShadow),
         limits: { ...PARTICLE_LIMITS }, emitted: state.emitted, presentationPasses,

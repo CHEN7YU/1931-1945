@@ -112,8 +112,8 @@ combatEffects.configure({ preset: 'high', effects: { muzzle: true, muzzleLight: 
 // 表现层出错不应打断战斗模拟：记录一次警告后跳过该特效
 const safely = (name, run) => { try { run(); } catch (error) { if (!safely[name]) console.warn(`combat effect skipped: ${name}`, error); safely[name] = true; } };
 const effects = {
-  explosion: (p, radius, style) => safely('explosion', () =>
-    combatEffects.explosion(new THREE.Vector3(p.x, p.y, p.z), clockTime, Math.max(.5, radius), style)),
+  explosion: (p, radius, style, surface) => safely('explosion', () =>
+    combatEffects.explosion(new THREE.Vector3(p.x, p.y, p.z), clockTime, Math.max(.5, radius), style, surface)),
   muzzle: (p, d) => safely('muzzle', () =>
     combatEffects.muzzle(new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(d.x, d.y, d.z).normalize(), clockTime)),
 };

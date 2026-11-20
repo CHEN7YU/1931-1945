@@ -52,8 +52,25 @@ try {
     const bounded = effects.snapshot, finalGeometries = renderer.info.memory.geometries;
     effects.render(8); brightness();
     const expired = effects.snapshot;
+    const terrain = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshBasicMaterial({ color: 0x9b805c }));
+    terrain.rotation.x = -Math.PI / 2;
+    scene.add(terrain);
+    camera.position.set(0, 15, 2); camera.lookAt(0, 0, -18);
+    effects.clear(); effects.configure(settings);
+    const ground = brightness();
+    effects.explosion(new THREE.Vector3(0, .22, -18), 0, 17, 'aircraft-bomb',
+      { kind: 'soil', normal: { x: 0, y: 1, z: 0 } });
+    effects.render(.06);
+    const bombFlash = brightness();
+    effects.render(8);
+    const smokyGround = brightness(), smoke = effects.snapshot.bombAftermath;
+    effects.render(18);
+    const scorchedGround = brightness();
+    effects.render(56);
+    const recoveredGround = brightness();
     renderer.dispose();
-    return { baseline, tiers, low, bounded, expired, geometryCount, finalGeometries, gpu: gl.getParameter(gl.RENDERER) };
+    return { baseline, tiers, low, bounded, expired, geometryCount, finalGeometries, ground, bombFlash, smokyGround,
+      smoke, scorchedGround, recoveredGround, gpu: gl.getParameter(gl.RENDERER) };
   });
   assert.deepEqual(errors, []);
   for (const tier of result.tiers) {
@@ -70,8 +87,13 @@ try {
   assert.ok(result.bounded.clouds <= 6);
   assert.equal(result.geometryCount, result.finalGeometries);
   assert.equal(result.expired.clouds + result.expired.fragments + result.expired.lights, 0);
+  assert.ok(result.bombFlash > result.ground + 2, 'bomb flash brightens the scene');
+  assert.ok(result.smoke.visiblePuffs > 0 && result.smokyGround < result.scorchedGround, 'rising smoke darkens pixels beyond the scorch');
+  assert.ok(result.scorchedGround < result.ground - 1, 'scorch is still visible after smoke clears');
+  assert.equal(result.recoveredGround, result.ground);
   console.log(JSON.stringify({ gpu: result.gpu, baseline: result.baseline,
-    tiers: result.tiers.map(({ style, brightness }) => ({ style, brightness })), low: result.low.brightness }));
+    tiers: result.tiers.map(({ style, brightness }) => ({ style, brightness })), low: result.low.brightness,
+    ground: result.ground, bombFlash: result.bombFlash, smokyGround: result.smokyGround, scorchedGround: result.scorchedGround }));
 } finally {
   await browser.close();
 }

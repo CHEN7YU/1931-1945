@@ -58,6 +58,42 @@ test('aircraft hits display a brief airborne fireball at flight distance without
   }
 });
 
+test('a ground bomb leaves dark smoke and a longer-lived mark even when the initial blast was out of view', () => {
+  const { effects, camera } = fixture();
+  effects.configure({ preset: 'low', effects: { muzzle: false, muzzleLight: false, hitParticles: false } });
+  const point = new THREE.Vector3(0, .22, -320);
+  effects.explosion(point, 0, 17, 'aircraft-bomb', { kind: 'soil', normal: { x: 0, y: 1, z: 0 } });
+  effects.render(0);
+  assert.equal(effects.snapshot.lastExplosion.rendered, false);
+  assert.equal(effects.snapshot.bombAftermath.marks, 1);
+  camera.position.z = -300;
+  effects.render(8);
+  assert.equal(effects.snapshot.clouds, 0);
+  assert.equal(effects.snapshot.bombAftermath.visibleMarks, 1);
+  assert.ok(effects.snapshot.bombAftermath.visiblePuffs > 0);
+  effects.render(17);
+  assert.deepEqual(effects.snapshot.bombAftermath, { marks: 1, visibleMarks: 1, visiblePuffs: 0 });
+  effects.clear();
+  assert.deepEqual(effects.snapshot.bombAftermath, { marks: 0, visibleMarks: 0, visiblePuffs: 0 });
+});
+
+test('only ground bombs leave scorch marks, and repeated hits reuse a bounded pool', () => {
+  const { effects, scene } = fixture();
+  const point = new THREE.Vector3(0, .22, -20), normal = { x: 0, y: 1, z: 0 };
+  effects.explosion(point, 0, 17, 'aircraft-bomb');
+  effects.explosion(point, 0, 17, 'aircraft-bomb', { kind: 'generic', normal });
+  effects.explosion(point, 0, 7, 'mortar', { kind: 'soil', normal });
+  effects.render(0);
+  assert.equal(effects.snapshot.bombAftermath.marks, 0);
+  const objectCount = scene.children.length;
+  for (let i = 0; i < 30; i++) effects.explosion(point, 0, 17, 'aircraft-bomb', { kind: 'soil', normal });
+  effects.render(0);
+  assert.equal(scene.children.length, objectCount);
+  assert.ok(effects.snapshot.bombAftermath.marks < 30);
+  effects.render(56);
+  assert.equal(effects.snapshot.bombAftermath.marks, 0);
+});
+
 test('a grenade retains a readable flash, dust and shock front even with low-quality hit debris disabled', () => {
   const { effects } = fixture();
   effects.configure({ preset: 'low', effects: { muzzle: false, muzzleLight: false, hitParticles: false } });

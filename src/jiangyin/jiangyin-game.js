@@ -337,7 +337,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     bombs.update(dt, airTerrainHit, (point, source) => {
       blast(point, AIR_BOMB.radius, AIR_BOMB.damage, source.team);
       if (effects) {
-        effects.explosion(point, AIR_BOMB.radius, 'aircraft-bomb');
+        const surface = groundHeight(point.x, point.z) >= 0 ? { kind: 'soil', normal: { x: 0, y: 1, z: 0 } } : null;
+        effects.explosion(point, AIR_BOMB.radius, 'aircraft-bomb', surface);
         emit({ type: 'sound', name: 'boom', position: point });
       } else explosion(point, 5, groundHeight(point.x, point.z) < 0);
     });
