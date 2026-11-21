@@ -15,6 +15,7 @@ export const JIANGYIN_MARKUP = `
   <div id="jy-crosshair"><i></i><i></i></div>
   <div id="jy-interact"></div>
   <div id="jy-range"></div>
+  <div id="jy-hitinfo" aria-live="polite"><b></b><span></span><i><em></em></i></div>
   <div id="jy-toast" role="status"></div>
   <ol id="jy-posts" aria-label="可接管阵位"></ol>
   <!-- 底部 HUD：与其他战役（index.html 的 .hud-bottom / .squad-status / .weapon-status / #minimap）同样的布局与样式 -->

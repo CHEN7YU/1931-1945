@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RIVER_HALF, JIANGYIN_RULES, JIANGYIN_WAVES, JIANGYIN_POSTS, NAVAL_WAVES, BLOCKSHIPS, blockshipZone, groundHeight, insideWreck, shipRoute, landingPoint,
-  createJiangyinState, dueWaves, dueNavalWaves, evaluateOutcome, navalPhaseOver, nextPostId, postFacing, jiangyinObjectives } from '../src/jiangyin/jiangyin-rules.js';
+  createJiangyinState, dueWaves, dueNavalWaves, navalTarget, SHIP_AA, evaluateOutcome, navalPhaseOver, nextPostId, postFacing, jiangyinObjectives } from '../src/jiangyin/jiangyin-rules.js';
 
 test('historical direction: the Yangtze flows east (+x) and the Japanese advance upstream from +x; before the scuttling the river is open', () => {
   assert.ok(JIANGYIN_RULES.flowSpeed > 0 && /下游/.test(JIANGYIN_RULES.rightLabel) && /上游/.test(JIANGYIN_RULES.leftLabel));
@@ -50,11 +50,15 @@ test('three friendly warships fight phase one; the phase ends only when all are 
   assert.equal(navalPhaseOver(1), false);
   assert.equal(navalPhaseOver(0), true);
   assert.ok(NAVAL_WAVES.every(wave => (wave.ships.length || wave.air) && !wave.landing && !wave.infantry), 'phase one is a naval and air battle (no landings yet)');
-  assert.ok(NAVAL_WAVES[0].ships.length >= 4, 'the Japanese fleet opens with superior numbers');
+  assert.equal(NAVAL_WAVES[0].ships.length, 2, 'the Japanese fleet opens with two ships');
+  assert.equal(navalTarget(0), 2);
+  assert.ok(navalTarget(30) > 2 && navalTarget(30) < 7, 'and grows gradually');
+  assert.equal(navalTarget(200), 7, 'up to seven ships at once');
+  assert.ok(!Object.values(SHIP_AA).some(gun => /20/.test(gun.name)), 'no 20 mm guns: the 1937 IJN used 13.2 mm Type 93 MGs and 25 mm Type 96 cannon');
   assert.ok(NAVAL_WAVES.some(wave => wave.air), 'Japanese aircraft attack our warships in phase one');
   const state = createJiangyinState();
   state.navalTime = 30;
-  assert.equal(dueNavalWaves(state).length, 3);
+  assert.equal(dueNavalWaves(state).length, 2);
   assert.equal(dueNavalWaves(state).length, 0);
   assert.equal(JIANGYIN_RULES.durationSeconds, 300, 'phase two lasts five minutes');
 });
@@ -170,4 +174,13 @@ test('every Jiangyin voice cue raised by the game has a scripted line and a batt
   const used = [...`${game}\n${main}`.matchAll(/'(jiangyin-[a-z]+(?:-[a-z]+)*)'/g)].map(m => m[1])
     .concat(['jiangyin-landing-south', 'jiangyin-landing-north']);
   for (const cue of used) if (!/^jiangyin-(map|game|rules|main)/.test(cue)) assert.ok(cues.has(cue), `missing voice line ${cue}`);
+});
+
+test('the player squad uses the same 11-man section as the other maps', async () => {
+  const { jiangyinSquadLoadout } = await import('../src/jiangyin/jiangyin-rules.js');
+  const roles = Array.from({ length: 11 }, (_, i) => jiangyinSquadLoadout(i).role);
+  assert.deepEqual(roles, ['mortarman', 'engineer', 'assault', 'rifleman', 'rifleman', 'rifleman', 'rifleman', 'rifleman', 'rifleman', 'sniper', 'machine-gunner']);
+  assert.equal(jiangyinSquadLoadout(2).model, 'sigm1920', 'the officer carries a submachine gun');
+  assert.equal(jiangyinSquadLoadout(9).model, 'sniper');
+  assert.equal(jiangyinSquadLoadout(10).model, 'zb26');
 });

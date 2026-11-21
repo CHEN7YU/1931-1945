@@ -141,14 +141,39 @@ function flagMaterial(type) {
     const texture = new THREE.CanvasTexture(c); texture.colorSpace = THREE.SRGBColorSpace;
     material = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 1 });
   } else material = new THREE.MeshStandardMaterial({ color: type === 'ijn' ? 0xeeeeee : 0xc0282d, side: THREE.DoubleSide });
+  windFlag(material);
   flagCache.set(type, material); return material;
 }
+// 旗帜随风飘动（顶点着色器）：旗面从旗杆一侧（升降边）到飞边，振幅逐渐增大的行波 + 二次细碎抖动；
+// 飞边略下垂、近旗杆处几乎不动。每面旗按世界坐标错开相位，不会整齐划一。updateFlags(time) 每帧更新时间。
+const flagWind = { uTime: { value: 0 }, uGust: { value: 1 } };
+export function updateFlags(time, gust = 1) { flagWind.uTime.value = time; flagWind.uGust.value = gust; }
+function windFlag(material) {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.uTime = flagWind.uTime; shader.uniforms.uGust = flagWind.uGust;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uGust; attribute float aFly;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float ph = modelMatrix[3].x * .37 + modelMatrix[3].z * .23;
+        float f = aFly;                                   // 0 = 旗杆一侧，1 = 飞边
+        float wave = sin(f * 7.5 - uTime * 7.2 + ph) * .55 + sin(f * 13.0 - uTime * 11.3 + ph * 1.7) * .22 + sin(transformed.y * 3.1 - uTime * 5.0 + ph) * .12;
+        transformed.z += wave * f * (.10 + .07 * uGust);
+        transformed.x += cos(f * 7.5 - uTime * 7.2 + ph) * .03 * f;   // 沿旗面方向的收缩，形成褶皱
+        transformed.y -= f * f * .05 * (1.2 - uGust * .5);`);
+    material.userData.shader = shader;
+  };
+  material.customProgramCacheKey = () => 'jy-flag';
+}
 function flag(parent, type, x, y, z, width = 2.4) {
-  const geometry = new THREE.PlaneGeometry(width, width * 2 / 3, 6, 1);
-  const p = geometry.attributes.position; // 轻微飘动的弧度
-  for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin((p.getX(i) / width + .5) * Math.PI * 1.4) * .12 * (p.getX(i) / width + .5));
-  geometry.computeVertexNormals();
+  const geometry = new THREE.PlaneGeometry(width, width * 2 / 3, 14, 4);
+  const p = geometry.attributes.position, fly = new Float32Array(p.count);
+  // 旗杆在 x = +width/2（见下方 rotation.y = π/2：本地 +x 指向旗杆一侧），飞边在 x = −width/2
+  for (let i = 0; i < p.count; i++) fly[i] = .5 - p.getX(i) / width;
+  geometry.setAttribute('aFly', new THREE.BufferAttribute(fly, 1));
+  // 着色器里的位移按“1 米宽”书写，这里把几何缩放折算进去：先把几何按宽度归一，再用 mesh.scale 放大回原尺寸
+  geometry.scale(1 / width, 1 / width, 1 / width);
   const mesh = add(parent, geometry, flagMaterial(type), x, y, z);
+  mesh.scale.setScalar(width);
   mesh.rotation.y = Math.PI / 2; mesh.position.z += width / 2; mesh.castShadow = false; mesh.userData.keep = true;
   return mesh;
 }

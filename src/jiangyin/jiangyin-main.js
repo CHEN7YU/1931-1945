@@ -5,6 +5,7 @@ import { createEmplacementModel } from '../emplacement-model.js';
 import { createJiangyinGame } from './jiangyin-game.js';
 import { JIANGYIN_RULES, JIANGYIN_LANDMARKS, riverCenter, groundHeight, RIVER_HALF, JIANGYIN_VOICE_LINES, JIANGYIN_VOICE_FILE } from './jiangyin-rules.js';
 import { createJiangyinGunModel, setCrewFactory } from './jiangyin-models.js';
+import { soldierRoleIcon } from '../soldier-role-icons.js';
 // —— 复用项目现有模块：士兵与枪械、坦克/飞机渲染（含残骸与燃烧）、爆炸/烟尘/枪口焰 ——
 import { soldierModel, weaponModel, setModelSurfaces } from '../world.js';
 // 第一人称步枪/轻机枪（含双手与拉栓、换弹动作）与手榴弹：复用项目 rifle-model.js / grenade-model.js
@@ -82,6 +83,14 @@ function playVoice(cue, urgent = false) {
     voiceBusyUntil = at + buffer.duration + .25; source.start(at);
   });
 }
+// 命中确认音：炮弹命中舰船时立刻给一声清脆的金属撞击（击沉时再加一声低沉的轰鸣），远处的爆炸声随后按距离延迟传来
+function hitConfirm(sunk) {
+  if (!audio) return;
+  const at = audio.currentTime;
+  burst(at, { seconds: .12, cutoff: 2600, gain: .5, decay: 30, type: 'bandpass', q: 6 });
+  burst(at, { seconds: .2, cutoff: 1400, gain: .35, decay: 18, type: 'bandpass', q: 9, delay: .03 });
+  if (sunk) burst(at, { seconds: 1.4, cutoff: 160, gain: .9, decay: 2.2, delay: .08 });
+}
 const noiseCache = new Map();
 function noiseBuffer(seconds) {
   const key = Math.round(seconds * 10);
@@ -154,7 +163,7 @@ function blastNear(position, style) {
 }
 
 // ---------- 游戏 ----------
-let toastTimer = 0, hitTimer = 0, hurtTimer = 0;
+let toastTimer = 0, hitTimer = 0, hurtTimer = 0, lastInteract = '', interactShownAt = 0;
 function toast(text, alert = false) {
   const element = $('jy-toast'); element.textContent = text; element.className = `show${alert ? ' alert' : ''}`;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { element.className = ''; }, 2600);
@@ -228,7 +237,8 @@ const game = createJiangyinGame({ scene, camera, createGunModel: point => create
     else if (event.name === 'gun' || event.name === 'enemy-gun') blastNear(event.position, 'mortar');
   }
   else if (event.type === 'hit') { $('jy-crosshair').classList.add('hit'); clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => $('jy-crosshair').classList.remove('hit'), 160); }
+    hitTimer = setTimeout(() => $('jy-crosshair').classList.remove('hit'), event.kind === 'ship' || event.kind === 'landing' ? 420 : 160);
+    if (event.kind === 'ship' || event.kind === 'landing') { hitConfirm(event.sunk); $('jy-hitinfo').classList.remove('pop'); void $('jy-hitinfo').offsetWidth; $('jy-hitinfo').classList.add('pop'); } }
   else if (event.type === 'transfer' && event.reason !== 'start')
     toast(event.reason === 'destroyed' ? `阵位失守 · 转移接管：${event.name}` : `接管：${event.name}`, event.reason === 'destroyed');
   else if (event.type === 'phase') { $('jy-caption').hidden = true; $('jy-hud').hidden = false;
@@ -323,7 +333,11 @@ function renderHud() {
     item.innerHTML = `<kbd${post.key ? '' : ' class="none"'}>${post.key || '·'}</kbd><span>${post.name}</span><div class="hp"><div style="width:${100 * post.health / post.maxHealth}%"></div></div>`;
     return item;
   }));
-  $('jy-interact').textContent = hud.interact ?? '';
+  // 交互提示：只在提示内容变化时显示约 3 秒后淡出（进炮位后“按 F 离开”不再一直挡在准星下方）；放在屏幕下方，不压住瞄准区
+  const interactText = hud.interact ?? '';
+  if (interactText !== lastInteract) { lastInteract = interactText; interactShownAt = performance.now(); $('jy-interact').textContent = interactText; }
+  const interactAge = (performance.now() - interactShownAt) / 1000;
+  $('jy-interact').style.opacity = interactText ? String(Math.max(0, Math.min(1, (3.6 - interactAge) / .6))) : '0';
   // 左下：小队成员概况（与其他战役一样的成员格：编号 + 兵种，存活/阵亡/当前操纵）
   const squadBox = $('jy-squad-status');
   squadBox.hidden = !hud.squad;
@@ -336,7 +350,9 @@ function renderHud() {
         const chip = document.createElement('span');
         chip.className = `member${m.active ? ' active' : ''}${m.alive ? '' : ' dead'}${m.hurt ? ' hurt' : ''}`;
         chip.title = `${m.index + 1} · ${m.role}${m.alive ? '' : '（阵亡）'}`;
-        chip.innerHTML = `${m.role === '轻机枪手' ? '机' : m.role === '班长' ? '班' : '步'}<b>${m.index + 1}</b>`;
+        // 与其他地图一致：用兵种图标（src/soldier-role-icons.js）而不是汉字；阵亡显示骷髅图标
+        chip.replaceChildren(soldierRoleIcon(m.alive ? m.icon : 'dead'));
+        const number = document.createElement('b'); number.textContent = String(m.index + 1); chip.append(number);
         return chip;
       }));
     }
@@ -366,13 +382,28 @@ function renderHud() {
     const integrity = post ? Math.round(100 * post.health / post.maxHealth) : 100;
     $('jy-health-fill').style.width = `${integrity}%`;
     $('jy-health-text').textContent = `${hud.weapon.ship ? '舰体' : '阵位'} ${integrity}%`;
-    const helm = hud.weapon.helm, bell = helm === null ? '' : helm < -.02 ? '微速后退' : helm < .04 ? '停车' : helm < .35 ? '微速前进' : helm < .7 ? '半速前进' : '全速前进';
-    $('jy-help').textContent = hud.weapon.ship ? (helm === null
+    const helm = hud.weapon.helm;
+    const rudder = helm ? (Math.abs(helm.rudder) < .05 ? '正舵' : `${helm.rudder > 0 ? '左' : '右'}舵 ${Math.round(Math.abs(helm.rudder) * 35)}°`) : '';
+    $('jy-help').textContent = hud.weapon.ship && integrity <= 0 ? '本舰已被击沉 · 稍后自动转到下一艘仍在作战的舰艇' : hud.weapon.ship ? (helm === null
       ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· WASD 接管操舰 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
-      : `手动操舰 · 车钟：${bell}（${hud.weapon.speed.toFixed(1)} m/s）· W/S 加减速 · A/D 转舵 · 左键开火 · 右键放大 · 换舰后交回 AI`)
+      : `手动操舰 · 车钟：${helm.bell} · ${rudder} · ${hud.weapon.speed.toFixed(1)} m/s · W/S 车钟进退一档 · A/D 转舵（大舰惯性大，提前操舵）· 换舰后交回 AI`)
       : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · F 离开炮位 · M 地图';
   }
-  $('jy-range').textContent = hud.range ? `${Math.round(hud.range)} m` : '';
+  // 辅助瞄准（按住右键）：显示预测落点距离、弹丸飞行时间与散布；落点椭圆罩住日舰提前量位置时提示“可命中”
+  $('jy-range').textContent = hud.aim
+    ? `落点 ${Math.round(hud.aim.distance)} m · 飞行 ${hud.aim.flight.toFixed(1)} s · 散布 ${hud.aim.spread[0]}×${hud.aim.spread[1]} m${hud.aim.onTarget ? ' · 可命中' : hud.aim.lead ? ' · 对准红色提前量标记' : ''}`
+    : hud.range ? `${Math.round(hud.range)} m` : '';
+  $('jy-range').classList.toggle('on-target', Boolean(hud.aim?.onTarget));
+  // 命中提示：准星下方显示被命中舰船的名称、本次伤害与剩余耐久（血条），5 秒内渐隐；击沉时显示“击沉！”
+  const target = hud.target, info = $('jy-hitinfo');
+  info.classList.toggle('show', Boolean(target));
+  if (target) {
+    info.querySelector('b').textContent = target.sunk ? '击沉！' : '命中！';
+    info.querySelector('span').textContent = `${target.label} −${Math.round(target.damage)} · 剩余 ${Math.round(target.health * 100)}%`;
+    info.querySelector('em').style.width = `${Math.round(target.health * 100)}%`;
+    info.style.opacity = String(Math.min(1, (5 - target.age) / 1.2));
+    info.classList.toggle('sunk', Boolean(target.sunk));
+  }
   drawRadar();
 }
 // 与主游戏 minimap-view.js 的 drawFacingSector 同样式（90° 扇形，浅金色），本地实现以免依赖其内部接口
@@ -430,6 +461,21 @@ function drawRadar() {
 
 // ---------- 第一人称武器（单独一层渲染，近裁剪面很小，不受远景深度精度影响） ----------
 const BASE_FOV = camera.fov;
+// 共享的 vehicle-renderer 只按航向摆放坦克（其他地图是平地）。江阴是山地：渲染器摆好之后，按战局算出的
+// groundPitch / groundRoll 让车体贴合坡面（不改共享模块）。车辆模型通过网格上的 userData.vehicleId 找到。
+const tankModels = new Map();
+function tiltTanks() {
+  for (const v of game.vehicles) {
+    if (v.type !== 'tank' || v.groundPitch === undefined) continue;
+    let model = tankModels.get(v.id);
+    if (!model || !model.parent) {
+      model = scene.children.find(o => { let id = null; o.traverse(c => { if (id === null && c.userData?.vehicleId) id = c.userData.vehicleId; }); return id === v.id; }) ?? null;
+      if (model) tankModels.set(v.id, model); else continue;
+    }
+    model.rotation.set(v.groundPitch, v.heading, v.groundRoll, 'YXZ');
+  }
+  for (const id of tankModels.keys()) if (!game.vehicles.some(v => v.id === id)) tankModels.delete(id);
+}
 // 兜底：镜头万一落到江面以下（如演出镜头），显示浑浊的长江水下：黄绿色浓雾、压暗、声音闷住
 let underwaterOn = false, airFog = null;
 function underwater() {
@@ -504,6 +550,7 @@ renderer.setAnimationLoop(time => {
   if (rifleAudio && audio) { try { listenerRight.set(1, 0, 0).applyQuaternion(camera.quaternion); rifleAudio.beginBatch(); rifleAudio.update({ position: camera.position, right: listenerRight, soldierId: 'player', weaponId: 'player-weapon' }); } catch {} }
   clockTime += dt;   // 表现层时钟单调递增（combat-effects 要求粒子时钟单调）
   vehicleRenderer.update(game.vehicles, clockTime);
+  tiltTanks();
   // 人物渲染出错时只跳过人物，不让整个画面卡死；第一次出错时在屏幕上提示错误内容，便于反馈
   try { characters?.sync([...game.troops, ...game.squad], clockTime, running && !paused ? dt : 0); }
   catch (error) { characters.errors?.push(String(error?.message ?? error)); console.error('[江阴] 人物同步', error); }

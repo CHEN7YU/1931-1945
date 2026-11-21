@@ -38,7 +38,7 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 #jy-top-0.alert, #jy-top-1.alert, #jy-top-2.alert { color: #e9876d; }
 
 /* 敌军标记（红点）与屏幕边缘指示 */
-#jy-interact { position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); font-size: .9rem; color: #f0d397;
+#jy-interact { position: absolute; left: 50%; top: auto; bottom: 150px; transition: opacity .3s; transform: translateX(-50%); font-size: .9rem; color: #f0d397;
   text-shadow: 0 1px 3px #000; }
 #jy-hurt { position: absolute; inset: 0; opacity: 0; transition: opacity .5s; background: radial-gradient(ellipse at center, transparent 55%, rgba(150, 10, 0, .55)); }
 #jy-hurt.show { opacity: 1; transition: none; }
@@ -89,3 +89,22 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
   background: radial-gradient(ellipse at 50% 20%, rgba(120,128,80,.25), rgba(40,48,30,.75) 70%, rgba(18,22,14,.92)),
     linear-gradient(to bottom, rgba(150,150,95,.35), rgba(30,36,24,.6)); backdrop-filter: blur(3px); }
 #jy-underwater.show { opacity: 1; }
+
+#jy-range.on-target { color: #ff7a5c; font-weight: 600; }
+
+/* 命中提示：准星下方，红色“命中！”+ 舰名 + 伤害 + 剩余耐久血条 */
+#jy-hitinfo { position: fixed; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); display: none; min-width: 230px;
+  padding: 6px 12px 8px; background: rgba(11,19,14,.72); border-left: 3px solid #e2553a; color: #f3e6cf;
+  font: 12px "Microsoft YaHei", "PingFang SC", sans-serif; text-align: center; pointer-events: none; }
+#jy-hitinfo.show { display: block; }
+#jy-hitinfo b { display: block; color: #ff6a4a; font-size: 18px; letter-spacing: 2px; text-shadow: 0 0 8px rgba(255,90,50,.6); }
+#jy-hitinfo.sunk b { color: #ffd27a; }
+#jy-hitinfo i { display: block; height: 4px; margin-top: 5px; background: rgba(255,255,255,.18); }
+#jy-hitinfo em { display: block; height: 100%; background: linear-gradient(90deg, #e2553a, #f0a24a); transition: width .25s; }
+#jy-hitinfo.pop b { animation: jy-hit-pop .35s ease-out; }
+@keyframes jy-hit-pop { from { transform: scale(1.6); } to { transform: scale(1); } }
+#jy-crosshair.hit i { box-shadow: 0 0 6px #ff5a3c; }
+
+/* 小队成员兵种图标（与其他地图 .soldier-role-icon 同一套路径） */
+#jy-members .member svg { width: 20px; height: 15px; display: block; margin: 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+#jy-members .member.dead svg { opacity: .55; }

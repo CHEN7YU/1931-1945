@@ -12,7 +12,7 @@ const REQUIRED_FILES = ['jiangyin-launcher.js', 'jiangyin-campaign.js', 'jiangyi
   'jiangyin-rules.js', 'jiangyin-world.js', 'jiangyin-models.js', 'jiangyin-soldiers.js', 'jiangyin-surfaces.js',
   'jiangyin-vegetation.js', 'jiangyin.css'];
 // 本关复用的项目模块与大厅元素；缺失说明仓库结构已变化，需要人工核对。
-const REUSED_MODULES = ['player-preferences.js', 'blast-feedback.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js', 'emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
+const REUSED_MODULES = ['soldier-role-icons.js', 'player-preferences.js', 'blast-feedback.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js', 'emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
   'materials.js', 'woodland.js', 'nra-motion.js', 'rifle-action.js', 'casualties.js', 'nra-character.js', 'nra-force-renderer.js',
   'ija-character.js', 'menu-music.js', 'entry.js'];
 const LOBBY_IDS = ['campaign-choice', 'confirm-campaign', 'campaign-description', 'campaign-history', 'campaign-goals', 'menu', 'loading'];

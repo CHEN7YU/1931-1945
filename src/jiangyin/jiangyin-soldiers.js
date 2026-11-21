@@ -58,7 +58,7 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
     const actor = { id: `jiangyin-${team}-${++serial}`, team, unitId: `jiangyin-${team}`, friendly: team === 'friendly',
       position: position.clone(), heading, walkPhase: Math.random() * 6, health: 100, deathTime: 0, vehicleId: null,
       groundType: 'infantry', stance: 'standing', firingPose: null, rifleReady: false, target: null,
-      locomotion: { speed: 0, mode: 'walk' }, rifle: { ...createRifleState(['type11', 'zb26'].includes(weapon) ? weapon : 'rifle') } };
+      locomotion: { speed: 0, mode: 'walk' }, rifle: { ...createRifleState(['type11', 'zb26', 'sigm1920', 'sniper'].includes(weapon) ? weapon : 'rifle') } };
     actor.rifle.id = `${actor.id}:rifle`;
     actor.nativeMotion = createNraMotion((team === 'friendly' ? friendly : enemy).motionProfile, actor);
     return actor;
@@ -110,7 +110,11 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
       if (!spec) continue;
       seen.add(troop);
       let actor = actors.get(troop);
-      if (!actor) { actor = createActor(spec.team, spec.weapon, anchor.position, anchor.rotation.y); actors.set(troop, actor); }
+      if (!actor) {
+        actor = createActor(spec.team, spec.weapon, anchor.position, anchor.rotation.y); actors.set(troop, actor);
+        // 我军步兵班：带上班内序号与编制，让项目的人物渲染按 officerSlot 给第 3 人换上军官服饰（与其他地图一致）
+        if (spec.team === 'friendly' && Number.isInteger(troop.index)) { actor.index = troop.index; actor.formation = { type: 'infantry', memberCount: 11 }; }
+      }
       if (actor.health > 0 && troop.dead !== null) {
         actor.health = 0; actor.deathTime = now; actor.locomotion.speed = 0; actor.rifleReady = false;
         actor.casualty = createCasualtyState(actor, now, sampleNraMotion(actor), { retainGun: false });

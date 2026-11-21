@@ -161,40 +161,41 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true; terrain.castShadow = true;
   scene.add(terrain);
-  // 公路高精度路带地形：沿路中线每 4 米一排、横向约 1.2 米一列，覆盖路面、路肩与路堑/路堤边坡及两侧 14 米，
-  // 真实挖出路堑（粗网格在这里已被压低到真实地面以下，不会再悬在头顶）
-  for (const road of jiangyinRoads()) {
-    const W = ROAD.half + ROAD.shoulder + 14, step = low ? 2 : 1.2, cols = Math.ceil(2 * W / step) + 1, n = road.points.length;
-    const pos = new Float32Array(n * cols * 3), index = [];
-    let o = 0;
-    road.points.forEach(([x, z], i) => {
-      const [ax, az] = road.points[Math.max(i - 1, 0)], [bx, bz] = road.points[Math.min(i + 1, n - 1)];
-      const tx = bx - ax, tz = bz - az, l = Math.hypot(tx, tz) || 1, nx = -tz / l, nz = tx / l;
-      // 弯道内侧收窄，避免横向网格线在小半径弯道内侧交叉翻折
-      let inner = 1, side = 0;
-      if (i > 0 && i < n - 1) {
-        const t1 = Math.atan2(z - az, x - ax), t2 = Math.atan2(bz - z, bx - x), turn = Math.atan2(Math.sin(t2 - t1), Math.cos(t2 - t1));
-        const radius = Math.abs(turn) > 1e-3 ? ROAD.sample / Math.abs(turn) : Infinity;
-        inner = Math.min(1, radius * .8 / W); side = Math.sign(turn);
+  // 公路高精度地形块（v18 重写）：沿公路两侧 30 米内用规则方格网（约 1.5 米）真实挖出路堑、填出路堤。
+  // v15 的“顺着公路的带状网格”在之字形急弯处会自相交、翻折，形成悬空的薄片和能透过山体看到天空的缝；
+  // 规则方格不会翻折。粗网格在公路附近已压到真实地面以下，本块完全覆盖被压低的范围（含相邻三角形），不会留缝。
+  {
+    const W = ROAD.half + ROAD.shoulder + 19, step = low ? 2.4 : 1.5;
+    for (const road of jiangyinRoads()) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const [x, z] of road.points) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); }
+      minX -= W + step; maxX += W + step; minZ -= W + step; maxZ += W + step;
+      const nx = Math.ceil((maxX - minX) / step) + 1, nz = Math.ceil((maxZ - minZ) / step) + 1;
+      const near = new Uint8Array(nx * nz);
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+        const probe = roadProbe(minX + i * step, minZ + j * step);
+        near[j * nx + i] = probe && probe.road === road && probe.d < W ? 1 : 0;
       }
-      for (let c = 0; c < cols; c++) {
-        let u = -W + c * 2 * W / (cols - 1);
-        if (side && Math.sign(u) === side) u *= inner;   // 左转时内侧为 +u（法线 n 指向左侧）
-        const px = x + nx * u, pz = z + nz * u;
-        pos[o++] = px; pos[o++] = groundHeight(px, pz); pos[o++] = pz;
+      const vertexOf = new Int32Array(nx * nz).fill(-1), pos = [], index = [];
+      const vertex = (i, j) => {
+        const k = j * nx + i;
+        if (vertexOf[k] < 0) { const x = minX + i * step, z = minZ + j * step; vertexOf[k] = pos.length / 3; pos.push(x, groundHeight(x, z), z); }
+        return vertexOf[k];
+      };
+      for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+        const k = j * nx + i;
+        if (!(near[k] || near[k + 1] || near[k + nx] || near[k + nx + 1])) continue;   // 任一角在范围内即铺设，边缘多铺一格
+        const a0 = vertex(i, j), b0 = vertex(i + 1, j), c0 = vertex(i, j + 1), d0 = vertex(i + 1, j + 1);
+        index.push(a0, c0, b0, b0, c0, d0);
       }
-    });
-    for (let i = 0; i < n - 1; i++) for (let c = 0; c < cols - 1; c++) {
-      const a0 = i * cols + c, b0 = a0 + 1, c0 = a0 + cols, d0 = c0 + 1;
-      index.push(a0, b0, c0, b0, d0, c0);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geometry.setIndex(new THREE.Uint32BufferAttribute(index, 1));
+      paintTerrain(geometry);
+      const patch = new THREE.Mesh(geometry, patchMaterial);
+      patch.receiveShadow = true; patch.castShadow = false;   // 投影由主地形负责，避免两层地形互相投出黑色条带
+      scene.add(patch);
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geometry.setIndex(new THREE.Uint32BufferAttribute(index, 1));
-    paintTerrain(geometry);
-    const patch = new THREE.Mesh(geometry, patchMaterial);
-    patch.receiveShadow = patch.castShadow = true;
-    scene.add(patch);
   }
   // 战壕高精度地形块：0.3 米网格，壕壁、壕底、胸墙都在地形里真实挖出（士兵可下到壕里，壕沟能挡子弹）
   const trenchPatches = [];

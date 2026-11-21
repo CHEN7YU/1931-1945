@@ -22,14 +22,26 @@ export const JIANGYIN_RULES = Object.freeze({
 // 第一阶段（江面决战）：只有水面舰艇，at 为第一阶段开始后的秒数。我军三舰全部沉没后进入自沉封江与第二阶段。
 // v13：日军占绝对优势——开场 4 艘（2 炮舰 + 2 驱逐舰）并列冲出弯道，10 秒后装甲巡洋舰“出云”与 1 艘驱逐舰跟进，
 // 之后陆续增援；air 为航空小队（第一阶段主攻我军舰艇，俯冲投弹并以机枪扫射甲板）。
+// v18：开场只有 2 艘日舰，之后按 NAVAL_RAMP 逐步增援到同时在场 7 艘（被击沉的也会补上），空袭穿插其间
 export const NAVAL_WAVES = Object.freeze([
-  { at: 0, ships: ['gunboat', 'destroyer', 'destroyer', 'gunboat'] },
-  { at: 10, ships: ['cruiser', 'destroyer'] },
+  { at: 0, ships: ['gunboat', 'destroyer'] },
   { at: 30, ships: [], air: 1 },
-  { at: 55, ships: ['gunboat', 'gunboat'] },
   { at: 80, ships: [], air: 1 },
-  { at: 110, ships: ['destroyer', 'destroyer'] },
+  { at: 130, ships: [], air: 1 },
 ].map(wave => Object.freeze({ ...wave, ships: Object.freeze(wave.ships) })));
+
+// 第一阶段日舰逐步增援：在场目标数从 start 起每 step 秒加 1 艘，最多 max 艘；在场不足目标数时按 roster 顺序补舰（两次补舰至少间隔 gap 秒）
+export const NAVAL_RAMP = Object.freeze({ start: 2, max: 7, step: 14, gap: 6,
+  roster: Object.freeze(['destroyer', 'gunboat', 'cruiser', 'destroyer', 'gunboat', 'destroyer', 'gunboat', 'destroyer']) });
+export function navalTarget(time) { return Math.min(NAVAL_RAMP.max, NAVAL_RAMP.start + Math.floor(Math.max(0, time) / NAVAL_RAMP.step)); }
+
+// 日舰近防机关炮（扫射）：1937 年日本海军舰艇的近防武器——驱逐舰、炮舰为九三式 13 毫米机枪（法国 Hotchkiss 13.2 毫米授权生产，1933 年定型），
+// 新式巡洋舰开始加装九六式 25 毫米机关炮（Hotchkiss 25 毫米，1936 年定型、1937 年起双联装上舰）。日本海军当年没有舰载 20 毫米炮（九九式 20 毫米为 1939 年的航空机炮）。
+export const SHIP_AA = Object.freeze({
+  gunboat: Object.freeze({ name: '九三式13毫米机枪', mounts: 1, range: 900, burst: 1.6, cooldown: 3.2, interval: .14, damage: 1.2, crew: 6, spread: .012 }),
+  destroyer: Object.freeze({ name: '九三式13毫米机枪', mounts: 2, range: 900, burst: 1.6, cooldown: 3, interval: .14, damage: 1.2, crew: 6, spread: .012 }),
+  cruiser: Object.freeze({ name: '九六式25毫米机关炮', mounts: 2, range: 1200, burst: 2, cooldown: 3.6, interval: .27, damage: 3.5, crew: 12, spread: .009 }),
+});
 
 // 第二阶段（死守两岸）：at 为第二阶段开始后的秒数，5 分钟内依次投入。
 // ships：水面舰艇；landing：登陆艇靠岸方向；infantry：从下游陆路来袭的步兵小队（共 6 个）；
@@ -90,7 +102,7 @@ export const ENEMY_TYPES = Object.freeze({
   cruiser: Object.freeze({ name: '日军装甲巡洋舰', ships: Object.freeze(['出云']), health: 3600, speed: 6, gapSpeed: 1.8, length: 122, beam: 20.9, height: 13,
     fireInterval: 3.2, fireRange: 3000, shellDamage: 110, shellRadius: 8, dispersion: 14 }),
   squad: Object.freeze({ name: '日军步兵小队', size: 12 }),
-  tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, roadStart: 620, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
+  tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, roadStart: 780, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
     shellDamage: 40, shellRadius: 4, dispersion: 4, radius: 2.4 }),
   aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),   // 飞行、机枪与投弹沿用项目共用的 aircraft-ai.js / air-support.js
   landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
@@ -100,12 +112,22 @@ export const ENEMY_TYPES = Object.freeze({
 
 // 第二阶段玩家步兵小队（与其他地图的默认步兵班一致：11 人，中正式步枪，第 2 人为捷克式轻机枪手，每人 2 枚手榴弹）
 export const JIANGYIN_SQUAD = Object.freeze({ members: 11, walk: 2.7, run: 5.2, aimWalk: 1.4, eye: 1.62, health: 100,
-  reserve: Object.freeze({ rifle: 60, zb26: 200 }), grenades: 2, rifleDamage: 100, rifleRange: 180,
+  reserve: Object.freeze({ rifle: 60, zb26: 200, sigm1920: 150, sniper: 40 }), grenades: 2, rifleDamage: 100, rifleRange: 180,
   grenade: Object.freeze({ speed: 17, fuse: 3.4, radius: 7, damage: 160 }), interactRange: 6, respawnSeconds: 6,
   deployAfter: 10, deployAfterSunk: 2, deployLatest: 60 });   // 自沉演出至少 10 秒、且至少 2 艘阻塞船沉没后（最迟 60 秒），玩家以步兵小队直接在炮台附近出现
 
 // 我方可接管的火力点。profile 复用 src/emplacements.js 中的 EMPLACEMENT_PROFILES。
 // bank 为 null 表示江面炮艇；altitude 由地形函数计算。
+// 我军步兵班 11 人编制，与其他地图（src/battle-roster.js 的 infantryLoadout，友军步兵班）一致：
+// 0 迫击炮手、1 工兵、2 军官（officerSlot：11 人班为第 3 人，手持冲锋枪）、3–8 步枪兵、9 狙击手、10 轻机枪手（捷克式）。
+// role 与 src/soldier-role-icons.js 的图标名一致；model 为 rifle-action.js 的枪械型号。
+const SQUAD_ROLE_LABELS = Object.freeze({ mortarman: '迫击炮手', engineer: '工兵', assault: '军官', rifleman: '步枪兵', sniper: '狙击手', 'machine-gunner': '机枪手' });
+export function jiangyinSquadLoadout(index) {
+  const role = index === 0 ? 'mortarman' : index === 1 ? 'engineer' : index === 2 ? 'assault' : index === 9 ? 'sniper' : index === 10 ? 'machine-gunner' : 'rifleman';
+  const model = role === 'assault' ? 'sigm1920' : role === 'sniper' ? 'sniper' : role === 'machine-gunner' ? 'zb26' : 'rifle';
+  return Object.freeze({ role, model, label: SQUAD_ROLE_LABELS[role] });
+}
+
 export const JIANGYIN_POSTS = Object.freeze([
   // 第一阶段：我军三艘水面舰艇（AI 航行，玩家只操作艏主炮塔）。length/beam 为实舰主尺度（米）。
   // 部署（自西向东）：上游锚地的阻塞船 → 江心我军三舰（前出到堵塞线以东）→ 下游日军舰队。舰首朝东迎敌。
@@ -124,7 +146,8 @@ export const JIANGYIN_POSTS = Object.freeze([
   { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 177, bank: 'south', key: '', health: 520 },
   { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 177, bank: 'south', key: '', health: 520 },
   { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 242), bank: 'north', key: '', health: 480 },
-  { id: 'south-mg', name: '肖山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 120, z: RIVER_HALF + 150, bank: 'south', key: '7', health: 480 },
+  // v18：机枪堡移到长山炮台西侧约 50 米（原在 440 米外的肖山），与炮台、高射炮同在步兵小队集结点附近，复生后马上能投入战斗
+  { id: 'south-mg', name: '长山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 510, z: RIVER_HALF + 152, bank: 'south', key: '7', health: 480 },
   { id: 'north-mg', name: '北岸土岗机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 200), bank: 'north', key: '8', health: 480 },
 ].map(Object.freeze));
 
@@ -338,6 +361,7 @@ let building = false;
 // 渲染用的“保守地面”：粗网格地形的顶点若落在公路附近，取 margin（该顶点到相邻顶点的距离）范围内路堑可能挖到的最低高度，
 // 使粗网格在任何地方都不会高出真实地面（否则走在路堑里会看到头顶悬着一大片地形）；路面附近的真实形状由高精度路带网格绘出。
 export function roadFloorHeight(x, z, margin) {
+  margin = Math.min(margin, 8);   // 高精度块覆盖到路肩外 19 米，压低范围（路肩 + 相邻顶点间距）必须在其内
   const exact = groundHeight(x, z);
   if (Math.abs(Math.abs(z) - RIVER_HALF) > 460 + margin && Math.abs(z) < 2000) return exact;
   const probe = roadProbe(x, z);

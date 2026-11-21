@@ -152,14 +152,78 @@ test('the player can take the helm of their warship with WASD', () => {
   const post = game.posts.find(p => p.id === game.controlledId);
   assert.ok(post?.boat, 'phase one starts on a warship');
   const heading = post.boat.heading;
-  run(game, 6, { move: { x: -1, z: 1 } });
+  run(game, 14, { move: { x: -1, z: 1 } });
   assert.equal(post.boat.manual, true);
-  assert.ok(post.boat.throttle > .5, 'W rings the telegraph up');
+  assert.equal(post.boat.throttle, 1, 'holding W rings the telegraph up notch by notch to full ahead');
   assert.ok(Math.abs(Math.atan2(Math.sin(post.boat.heading - heading), Math.cos(post.boat.heading - heading))) > .05, 'A turns the ship');
   run(game, 8, { move: { x: 0, z: -1 } });
-  assert.ok(post.boat.throttle < .2, 'S rings the telegraph down');
+  assert.ok(post.boat.throttle < 0, 'holding S rings the telegraph down to astern');
   game.step(.05, { switchPost: 1 });
   run(game, 1);
   assert.equal(post.boat.manual, false, 'switching ships hands the helm back to the AI');
   assert.ok(game.hud().weapon, 'hud still works');
+});
+
+test('ship handling has water drag, engine lag, coasting and turning inertia (not car-like)', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  run(game, 3);
+  const post = game.posts.find(p => p.id === game.controlledId), boat = post.boat;
+  post.point.health = post.point.maxHealth = 1e9;
+  for (const ship of game.ships) ship.health = 1e9;
+  const hold = (seconds, move) => { for (let t = 0; t < seconds; t += .05) { boat.x = -150; boat.z = 0; game.step(.05, { move }); } };
+  hold(.1, { x: 0, z: 1 }); hold(.1, { x: 0, z: 0 });   // 接管
+  assert.equal(boat.manual, true, 'pressing a movement key takes the helm');
+  boat.heading = -Math.PI / 2; boat.speed = 0; boat.thrust = 0; boat.bell = 2; boat.throttle = 0; boat.yawRate = 0; boat.rudder = 0;
+  for (let n = 0; n < 3; n++) { hold(.05, { x: 0, z: 1 }); hold(.05, { x: 0, z: 0 }); }   // 三下 W：全速前进
+  assert.equal(boat.throttle, 1);
+  hold(3, { x: 0, z: 0 });
+  assert.ok(boat.speed < 1, `the engine takes time to build up (speed ${boat.speed.toFixed(2)} m/s after 3 s)`);
+  hold(30, { x: 0, z: 0 });
+  const mid = boat.speed;
+  hold(60, { x: 0, z: 0 });
+  assert.ok(mid > 3 && boat.speed > mid && boat.speed < 7.05, 'speed rises ever more slowly toward top speed (quadratic drag)');
+  for (let n = 0; n < 3; n++) { hold(.05, { x: 0, z: -1 }); hold(.05, { x: 0, z: 0 }); }   // 停车
+  assert.equal(boat.throttle, 0);
+  const cruising = boat.speed;
+  hold(15, { x: 0, z: 0 });
+  assert.ok(boat.speed > cruising * .5, `a stopped engine leaves the ship coasting (${cruising.toFixed(1)} → ${boat.speed.toFixed(1)} m/s in 15 s)`);
+  // 回转惯性：满舵后回正舵，船首仍继续转动
+  boat.speed = 6; boat.thrust = .7;
+  hold(20, { x: -1, z: 0 });
+  assert.ok(boat.yawRate > .01 && boat.speed < 6, 'hard rudder turns the ship and bleeds speed');
+  assert.ok(Math.abs(boat.heel) > .02, 'the ship heels in the turn');
+  hold(1, { x: 0, z: 0 });
+  assert.ok(boat.yawRate > .005, 'the bow keeps swinging after the rudder is centred');
+  // 低速无舵效
+  boat.speed = .3; boat.thrust = 0; boat.bell = 2; boat.throttle = 0; boat.yawRate = 0; boat.rudder = 0;
+  const before = boat.heading; hold(8, { x: -1, z: 0 });
+  assert.ok(Math.abs(boat.heading - before) < .03, 'with no way on and no propeller wash the rudder barely bites');
+});
+
+test('phase one: the Japanese fleet grows from 2 to 7 ships, strafes with machine guns, and right-click shows the predicted fall of shot', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  for (const post of game.posts) if (post.boat) post.point.health = post.point.maxHealth = 1e9;
+  for (const ship of game.ships) ship.health = 1e9;
+  const afloat = () => game.ships.filter(ship => ship.sinking === null).length;
+  run(game, 1);
+  assert.equal(afloat(), 2, 'two enemy ships at the start');
+  let peak = 0, tracersSeen = false;
+  for (let t = 0; t < 110; t += .05) {
+    game.step(.05, {});
+    for (const ship of game.ships) ship.health = 1e9;
+    peak = Math.max(peak, afloat());
+    tracersSeen ||= game.ships.some(ship => ship.mg?.some(gun => gun.burstEnd > 0));
+  }
+  assert.equal(peak, 7, 'reinforced up to seven ships');
+  assert.ok(tracersSeen, 'enemy ships strafe with their machine guns');
+  // 辅助瞄准：按住右键时 HUD 给出预测落点、飞行时间与散布
+  const post = game.posts.find(p => p.id === game.controlledId);
+  post.point.pitch = .01;
+  game.step(.05, { aiming: true });
+  const aim = game.hud().aim;
+  assert.ok(aim && aim.distance > 100 && aim.flight > 0 && aim.spread[0] > aim.spread[1], `predicted fall of shot ${JSON.stringify(aim)}`);
+  game.step(.05, {});
+  assert.equal(game.hud().aim, null, 'the marker disappears when the right button is released');
 });
