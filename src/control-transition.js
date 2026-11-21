@@ -1,4 +1,4 @@
-export const DEATH_TRANSFER = Object.freeze({ handoffSeconds: .6, durationSeconds: .9 });
+export const DEATH_TRANSFER = Object.freeze({ handoffSeconds: .6, durationSeconds: 2.9, fadeSeconds: .3 });
 
 export function nearbyDeathTransferMember(members, current, eligible) {
   const origin = members[current]?.position;
@@ -40,8 +40,9 @@ export function deathTransferMask(state) {
   if (!state.active) return { opacity: 0, red: 0, dark: 0 };
   const t = state.elapsed;
   if (!state.handedOff) return { opacity: 1, red: Math.min(.55, .2 + t), dark: Math.min(1, t / DEATH_TRANSFER.handoffSeconds) };
-  const remaining = Math.max(0, (DEATH_TRANSFER.durationSeconds - t) / (DEATH_TRANSFER.durationSeconds - DEATH_TRANSFER.handoffSeconds));
-  return { opacity: remaining, red: 0, dark: 1 };
+  const fadeStart = DEATH_TRANSFER.durationSeconds - DEATH_TRANSFER.fadeSeconds;
+  const remaining = Math.max(0, (DEATH_TRANSFER.durationSeconds - t) / DEATH_TRANSFER.fadeSeconds);
+  return { opacity: t <= fadeStart ? 1 : remaining, red: 0, dark: 1 };
 }
 export function resetDeathTransfer(state) { Object.assign(state, createDeathTransfer()); }
 // ---模块结束---

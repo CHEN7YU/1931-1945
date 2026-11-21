@@ -9622,7 +9622,6 @@ function dispatchControlCommand(action, payload) {
   const actor = controlledSoldier(entities);
   if (!dyingActionAllowed(actor ?? {}, action) ||
     actor?.blastReaction && !actor.dying && action !== 'look') {
-    if (!actor?.dying) toast('爆炸失衡：正在撑地起身');
     return { status: 'rejected', reason: actor?.dying ? 'dying' : 'blast-recovery' };
   }
   if (!fatalFallActionAllowed(controlledSoldier(entities) ?? {}, action)) {

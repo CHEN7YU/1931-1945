@@ -12,7 +12,12 @@ test('death feedback precedes handoff and the next member cannot play until the 
   assert.equal(state.handedOff, false); assert.ok(deathTransferMask(state).red > 0);
   assert.equal(advanceDeathTransfer(state, .02), 'handoff');
   assert.equal(state.active, true); assert.equal(deathTransferMask(state).red, 0);
-  assert.equal(advanceDeathTransfer(state, .3), 'complete');
+  assert.equal(advanceDeathTransfer(state, 1.99), null);
+  assert.ok(Math.abs(deathTransferMask(state).opacity - 1) < 1e-8,
+    'the identity card remains fully visible for the added second');
+  assert.equal(advanceDeathTransfer(state, .15), null);
+  assert.ok(Math.abs(deathTransferMask(state).opacity - .5) < 1e-8, 'the original short fade is preserved');
+  assert.equal(advanceDeathTransfer(state, .151), 'complete');
   assert.equal(state.active, false); assert.equal(deathTransferMask(state).opacity, 0);
 });
 test('pause/disabled visual feedback cannot shorten the simulation-clock transfer', () => {
@@ -22,7 +27,8 @@ test('pause/disabled visual feedback cannot shorten the simulation-clock transfe
   assert.equal(advanceDeathTransfer(a, 0), null);
   advanceDeathTransfer(b, .2);
   assert.deepEqual(a, b);
-  assert.equal(DEATH_TRANSFER.durationSeconds, .9);
+  assert.equal(DEATH_TRANSFER.durationSeconds, 2.9);
+  assert.equal(DEATH_TRANSFER.fadeSeconds, .3);
   assert.throws(() => advanceDeathTransfer(a, -1), RangeError);
 });
 test('a new selected member dying restarts feedback, while resetting removes pending work', () => {
@@ -53,7 +59,7 @@ test('30/60/144Hz use the same transfer duration with only frame-quantization di
     const state = createDeathTransfer();
     startDeathTransfer(state, 's1', 'rifle');
     let handoffAt = null, completeAt = null;
-    for (let frame = 1; frame <= fps * 2; frame++) {
+    for (let frame = 1; frame <= fps * 3; frame++) {
       const event = advanceDeathTransfer(state, 1 / fps);
       if (event === 'handoff') handoffAt = frame / fps;
       if (event === 'complete') { completeAt = frame / fps; break; }
