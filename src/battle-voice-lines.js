@@ -1,7 +1,7 @@
 export const BATTLE_VOICE_PROFILES = Object.freeze({
   friendly: [
     { voice: 'zh-CN-YunjianNeural', locale: 'zh-CN', style: 'angry', rate: '+12%', pitch: '-2%' },
-    { voice: 'zh-CN-YunxiNeural', locale: 'zh-CN', style: 'angry', rate: '+16%', pitch: '+2%' },
+    { voice: 'zh-CN-YunjianNeural', locale: 'zh-CN', style: 'angry', rate: '+16%', pitch: '+2%' },
     { voice: 'zh-CN-YunfengNeural', locale: 'zh-CN', style: 'angry', rate: '+10%', pitch: '-4%' },
   ],
   enemy: [

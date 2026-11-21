@@ -1,6 +1,6 @@
 {
   "provider": "Azure AI Speech",
-  "generatedAt": "2026-11-21T20:18:47.450Z",
+  "generatedAt": "2026-11-21T20:50:42.989Z",
   "source": "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech",
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
@@ -1697,7 +1697,7 @@
       "id": "enemy-whistle-1",
       "cue": "enemy-whistle",
       "text": "日军吹哨了，他们要冲锋了！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1706,15 +1706,15 @@
       "variant": 1,
       "file": "friendly-1-enemy-whistle-1.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "5792191de354b930d053907a97966bc1d4a3a6caba75fd047e32b5ef8f17b9b6",
-      "synthesisHash": "ce89f09f2ce1d20308272c446f6716d78e3daca680149d240d8d6c93ffbf4bf4"
+      "bytes": 15984,
+      "sha256": "3ecfa5dd61044b08c7b64c39dcc391e16f9b2bccff0a8819ba9119d422793076",
+      "synthesisHash": "2e4c42030f50ff88b3f62a5b592d36b992b38866f6313e3392a69aff8b70916c"
     },
     {
       "id": "enemy-whistle-2",
       "cue": "enemy-whistle",
       "text": "听，日军的哨子！准备迎敌！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1723,15 +1723,15 @@
       "variant": 1,
       "file": "friendly-1-enemy-whistle-2.mp3",
       "gender": "Male",
-      "bytes": 20592,
-      "sha256": "30b2aa4d492cebdeeda0536ce3ef806b49185b13d6ef3606b8dc28303c5d97d5",
-      "synthesisHash": "60afa69f5d6f0775263371b7dae4696e73c18c1a5bc04f77b3ea7e1cad662d0a"
+      "bytes": 20016,
+      "sha256": "791da5614960e4a10c390ddeb34072397c7142ae22bd6808600a3480fbc66b2b",
+      "synthesisHash": "0d23b4d83b7600bb6d2cdfcf3a5c15b15ae6f94e001f36760bf925a0acdf1729"
     },
     {
       "id": "nanjing-gate-1",
       "cue": "nanjing-gate-1",
       "text": "弟兄们，我们还要在这里坚守一分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1740,15 +1740,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-1.mp3",
       "gender": "Male",
-      "bytes": 26784,
-      "sha256": "d112983918f2db97b6978a70188a95a14b115b34f9e383090010b725f9de5513",
-      "synthesisHash": "1d8a4f2f4c1921b0f10a6e4109ae9fe1d38af0de1d8959d904cc7c0275e6d009"
+      "bytes": 30384,
+      "sha256": "a2bdf12ed4708166e48afe63fb51df6a3372dfaf172433d9527281598355f8e2",
+      "synthesisHash": "4833c066a3a16100b8f65a6913c879da7ccb215a1d87292af591459b1cb1d15a"
     },
     {
       "id": "nanjing-dock-1",
       "cue": "nanjing-dock-1",
       "text": "守住渡口！还要坚守一分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1757,15 +1757,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-1.mp3",
       "gender": "Male",
-      "bytes": 27216,
-      "sha256": "5103454fc990e7a414ae31e2c1b0ebdf2689bcb73ad50bfb3a7c653539795dc3",
-      "synthesisHash": "90798eb212ad4b204c0b3b0d062bea9e8eb35f548b8df1f46a73cb1d917c25b1"
+      "bytes": 27936,
+      "sha256": "a739aaeddbe40a975d5d61c75009315309b7d57d2d0ca5d29042226b13b03cb9",
+      "synthesisHash": "a193c8cdd6117f80d0545166c1b6a0faae87264e6c76949d47bdef48f3c9690f"
     },
     {
       "id": "nanjing-gate-2",
       "cue": "nanjing-gate-2",
       "text": "弟兄们，我们还要在这里坚守二分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1774,15 +1774,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-2.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "d484bdc83e06a930ffeab19e016eac049d8d3217595188258bb3abbe5db0f316",
-      "synthesisHash": "440bd8b4b80ea0175aa0b924e2ef733badf9025cfdce59e47741b230e5e6bc9e"
+      "bytes": 30528,
+      "sha256": "8270e7e39c1267a2502810d27ad1d09fa394c74a3cb3bc1443106aff74e85cd7",
+      "synthesisHash": "fc0fd55d4f427222fc99455c64dfa3d3ce0200204db40af4a87e9fc5b0b3b93e"
     },
     {
       "id": "nanjing-dock-2",
       "cue": "nanjing-dock-2",
       "text": "守住渡口！还要坚守二分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1791,15 +1791,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-2.mp3",
       "gender": "Male",
-      "bytes": 26928,
-      "sha256": "a68eb35b604d2ac36f6fa8d4e211e4c2833e6315c4122cd792f83402068abc43",
-      "synthesisHash": "790152063c78d4a1b770c47389f25cf0e9eb09f2862461c9a5f9ef6ecdfb9372"
+      "bytes": 28368,
+      "sha256": "807df8acdbc42e021cc221ba1b3ee1cbd07d20c5271dfbd235865d6a71d11401",
+      "synthesisHash": "2b6f18de937ed5a25d37383328d2637681b7c5c9516a5ea094003e2ce55352d9"
     },
     {
       "id": "nanjing-gate-3",
       "cue": "nanjing-gate-3",
       "text": "弟兄们，我们还要在这里坚守三分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1808,15 +1808,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-3.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "e3add12d395e78a3e542badd504f72c56910ee6d2cd93a1aa2fa341b7492dbbc",
-      "synthesisHash": "54740ebb375401a9133399eac0089d6c2b1d55650def4ea96cb3958d72d7d104"
+      "bytes": 30816,
+      "sha256": "f3548ae2bc10f1f9999bf102268a3cdbde27ae7735c4e50c64e59fc5449fc32a",
+      "synthesisHash": "4911faf29836691afff62cb6e604ac7558136a39c5f709258c2709851cf8ce52"
     },
     {
       "id": "nanjing-dock-3",
       "cue": "nanjing-dock-3",
       "text": "守住渡口！还要坚守三分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1825,15 +1825,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-3.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "ec286712f866bca443a3443af8a6500e366f5674320f13e018dd3c9a7d64c1f0",
-      "synthesisHash": "236f8d41c0970b880dae291433028f4fc9077b876f5e5eb8c255ae1720c22c66"
+      "bytes": 28512,
+      "sha256": "2c8b5e77c18470f7b740d06659748cdeb8df3b4dba50c461aeb8421a1db4e7ee",
+      "synthesisHash": "526f63ceca9007dae89a934f08eccc579591d579531e7ac93e6c62c809d8b202"
     },
     {
       "id": "nanjing-gate-4",
       "cue": "nanjing-gate-4",
       "text": "弟兄们，我们还要在这里坚守四分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1842,15 +1842,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-4.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "8360757feed0e544d872fe4852bbed6cd33aae8e17f16061f3c11bd767d560fe",
-      "synthesisHash": "e5971ff62ac3d6cc074d3241e1e3aa7ee2e551de8e3997544733fc6ab87ac368"
+      "bytes": 30960,
+      "sha256": "3109eb6d193c83ef3ffab39bf00dcc9ab93fbd397d3cccbc24cb5b0632d42e2b",
+      "synthesisHash": "6b062cc275f58021cf76ceda84018ddda11aea78d39c9b1dc7f17a623cb49b79"
     },
     {
       "id": "nanjing-dock-4",
       "cue": "nanjing-dock-4",
       "text": "守住渡口！还要坚守四分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1859,15 +1859,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-4.mp3",
       "gender": "Male",
-      "bytes": 27216,
-      "sha256": "ea90396ce9520c6ef62fe2deae4a1033a1481ba7bced548e541db2c864485892",
-      "synthesisHash": "d4c6d8275a5778fed6a8e20267bfb7c5d94a4a2886998f7e1cecb615d84f1626"
+      "bytes": 29376,
+      "sha256": "01a8e4354cfacab245937edb98200c3e52569294a6574f49a1af8e3dca3ab8f7",
+      "synthesisHash": "b9dbd330d86e23bd1e10b90ded382676bde64b41f154a220c05e4bfbdf7ceff7"
     },
     {
       "id": "nanjing-gate-5",
       "cue": "nanjing-gate-5",
       "text": "弟兄们，我们还要在这里坚守五分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1876,15 +1876,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-5.mp3",
       "gender": "Male",
-      "bytes": 26928,
-      "sha256": "97e6a79da2ba85177f108b654215ed8d523192043cf25ce1144147b1d94fbfa2",
-      "synthesisHash": "7efebb61b91ca03b76a79cbc293281f53e90c8944f75aa410d5838b165a083b5"
+      "bytes": 30816,
+      "sha256": "25d33bffe718d2cc93b4d6c6b32615b326adb3aca320e75fa036bbec473902f1",
+      "synthesisHash": "d5590375e2a3ae16c2465b6ef87254da62749dff511925cf40505bee1404d6b8"
     },
     {
       "id": "nanjing-dock-5",
       "cue": "nanjing-dock-5",
       "text": "守住渡口！还要坚守五分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1893,15 +1893,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-5.mp3",
       "gender": "Male",
-      "bytes": 26928,
-      "sha256": "3354b42152ebeb0a6049aac87f1d3ebff5fdf0d1e289d68bf5112b14630f409d",
-      "synthesisHash": "f509ad604a6599065344ba42b4ced827026fec57a8296152385a887695efc39d"
+      "bytes": 28224,
+      "sha256": "c05442c1539fb6299cbdd06f5f107a48c63b53a43ab347c5ed5010b13288f655",
+      "synthesisHash": "c89baf27d770f95e1bc5563b81d4f4cb74b6bad52c27cd671afa15a5afdecbfc"
     },
     {
       "id": "nanjing-gate-6",
       "cue": "nanjing-gate-6",
       "text": "弟兄们，我们还要在这里坚守六分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1910,15 +1910,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-6.mp3",
       "gender": "Male",
-      "bytes": 27072,
-      "sha256": "b4e552f6420cdfe8eca55c3023400d7ee8a1a38a4dd9ad64a1ec6b85302604c3",
-      "synthesisHash": "cde4af384eddab46605098048c1a573fef65088e659cdb277aa6949b7aef5f89"
+      "bytes": 30672,
+      "sha256": "932d30c20152eb33e9310f71c0cb60e3100d354fb2943afb83b42e216dc73db3",
+      "synthesisHash": "8f853e21d485b18d9f59b2ccdc2401e59922e839f90569fb1bdae00a997af03e"
     },
     {
       "id": "nanjing-dock-6",
       "cue": "nanjing-dock-6",
       "text": "守住渡口！还要坚守六分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1927,15 +1927,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-6.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "9548fe7b29c8b9f60f4b775418108927a9495ea66afa85355def33027331d8c2",
-      "synthesisHash": "d7a6301f195c33c3ee338d791b436c2a7ebbc97eee1f3a09f056ebc75331afbb"
+      "bytes": 28512,
+      "sha256": "efa579563862493e8b6b912e5992260a2ec8327a73d0e9abf66bd7b0783e75db",
+      "synthesisHash": "3312cf621b14bac711c6442d378efc5ab2dbce527b0a4037042723f1b2b3af54"
     },
     {
       "id": "nanjing-gate-7",
       "cue": "nanjing-gate-7",
       "text": "弟兄们，我们还要在这里坚守七分钟，给百姓撤退争取时间！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1944,15 +1944,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-gate-7.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "7be4b6b4ebbeb262f71699bbbff7b0a6b7cbf685c5bfca770f40947dd272a875",
-      "synthesisHash": "43dea2596a1bdd1a039ebf86174dca92b0a39e979850a282c01d16053d441a4c"
+      "bytes": 30816,
+      "sha256": "d7c7231fb2bda5caf2081d7566f4f981593ef33dbf8f79a53043633a41ef2c8f",
+      "synthesisHash": "ad0a3f936e92c6bb82cee9e74a8283935f1366e3083647c12b122ad9a223e26e"
     },
     {
       "id": "nanjing-dock-7",
       "cue": "nanjing-dock-7",
       "text": "守住渡口！还要坚守七分钟，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1961,15 +1961,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-dock-7.mp3",
       "gender": "Male",
-      "bytes": 27360,
-      "sha256": "c8cb46b97744330d98db9eac8897780ab2018be16e6b1720309b2e2757079805",
-      "synthesisHash": "c717dc30009dd07040f96851057685457aadd685b291e5b4914b31baa5590fb6"
+      "bytes": 28944,
+      "sha256": "a82deb1ebe697164650154dab241dbe66bc7db260ae1b42781ff74e3fab8ad62",
+      "synthesisHash": "f8302871990ec82969a50c1afe0f6f9b1f638312b351a95198b0106a463413bc"
     },
     {
       "id": "nanjing-withdrawal",
       "cue": "nanjing-withdrawal",
       "text": "我们撤退到渡口，掩护百姓渡江！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1978,15 +1978,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-withdrawal.mp3",
       "gender": "Male",
-      "bytes": 18288,
-      "sha256": "48230ba457a635455a3c419aab33327e21c68fb6f622e567bf564a0059c7af98",
-      "synthesisHash": "9c7d23646402bd0ed817af44c1ee12cbd2c0a96b3556cf43d6b936c14b9ec30c"
+      "bytes": 19296,
+      "sha256": "3b6ddcd265d403c067e343e4a73d0a801c607caa06a4736baf47d1cdf892659e",
+      "synthesisHash": "d401df07ab2904939de9956904db1ab6382dd4453f2c461b3ac68871215e9413"
     },
     {
       "id": "nanjing-troops-boarding",
       "cue": "nanjing-troops-boarding",
       "text": "友军开始登船了！继续掩护，很快就轮到我们！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -1995,15 +1995,15 @@
       "variant": 1,
       "file": "friendly-1-nanjing-troops-boarding.mp3",
       "gender": "Male",
-      "bytes": 26496,
-      "sha256": "e7d84b5162f3aaae377b6ee5bc37e4bccc172a53698718ac7f8bd019e0caf803",
-      "synthesisHash": "d95988fe0776b68d715e254efd3c7fac81ca2dd3253f8750254bcc96b074a72d"
+      "bytes": 27072,
+      "sha256": "1703251ebbfa4c4a0df04920948312345949c0be8b90811c965a928eb4f074aa",
+      "synthesisHash": "edc96b9bd337ed0bd3a04f260d99745d27901b7f09163b5ffe1fb74b19e1652c"
     },
     {
       "id": "nanjing-evacuation-ready",
       "cue": "nanjing-evacuation-ready",
       "text": "能撤离的百姓已经过江，友军也已登船！掩护任务完成，赶紧登船离开南京！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2013,14 +2013,14 @@
       "file": "friendly-1-nanjing-evacuation-ready.mp3",
       "gender": "Male",
       "bytes": 41472,
-      "sha256": "d355423853256d5254ed144b0386938aa96dbf16d37bb60f06a907a399d8f513",
-      "synthesisHash": "35d4392239ac72a1d3f24181fa509e97e4dd1f59a8821a1bc61fe703787e3d6c"
+      "sha256": "e573005e225c82bf9257e1824552559d149cd719743ae16c9c1b152f8adf81ba",
+      "synthesisHash": "0321da05529c557c753682ee6723926405cf432d1947029e25f83ae638c2dc0e"
     },
     {
       "id": "east-breakout-1",
       "cue": "east-breakout",
       "text": "敌军失去支援，正向东门突围！守住东门，阻止他们！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2029,15 +2029,15 @@
       "variant": 1,
       "file": "friendly-1-east-breakout-1.mp3",
       "gender": "Male",
-      "bytes": 30960,
-      "sha256": "dc6f2fb1d7db9019514a2bb107c49a31909a5e27fb78555c54a26834badccea6",
-      "synthesisHash": "0ffdd80209ce3367b634a68333849c43dad18dc0297c176d61966e97a99d62cc"
+      "bytes": 33264,
+      "sha256": "cb4399704e96c1ee75588eda50f146477ad8eff3886aece96957d41ed82841f6",
+      "synthesisHash": "7f9a6b43a6464d3628c5c1162036e711dfebfa5c0553c89b28b72c9576f69fe3"
     },
     {
       "id": "advance-1",
       "cue": "advance",
       "text": "冲啊！跟我上！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2046,15 +2046,15 @@
       "variant": 1,
       "file": "friendly-1-advance-1.mp3",
       "gender": "Male",
-      "bytes": 15408,
-      "sha256": "06d2a3426af343393f8b77a14ecf0373097c00ec5c5c18eefea1aadb9b0f09bd",
-      "synthesisHash": "5c5271a65b459c036001ecd782d38be4dfac20948e941b0d428c6a54739625a2"
+      "bytes": 14112,
+      "sha256": "fc7aba0424a841fb81f36b3b3ee2a24eed95f9fb09a507343b00683d126fa61a",
+      "synthesisHash": "7d51aa4d2ed7e78c860aeac5efdd08232704b071a1cc9b9b53ea4f1f2aa15317"
     },
     {
       "id": "advance-2",
       "cue": "advance",
       "text": "弟兄们，向前推进！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2063,15 +2063,15 @@
       "variant": 1,
       "file": "friendly-1-advance-2.mp3",
       "gender": "Male",
-      "bytes": 13536,
-      "sha256": "defd123678ad381ce75f45dce50efc1f7885752ecd8770548c5ccd059bb705d3",
-      "synthesisHash": "1fe2437f2d722203fe60b1675e44b0380d25bf68b2e72d6f2b048b8ac8a41692"
+      "bytes": 14112,
+      "sha256": "014ca8b002077e59335a6a7ce78417be05a33624b12cc456bcee438faa266d02",
+      "synthesisHash": "345a68e055db27f66f0e0f98c96b3e62545544873ff0e6ecd6037beb5d191703"
     },
     {
       "id": "advance-3",
       "cue": "advance",
       "text": "跟紧队伍，别掉队！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2080,15 +2080,15 @@
       "variant": 1,
       "file": "friendly-1-advance-3.mp3",
       "gender": "Male",
-      "bytes": 13248,
-      "sha256": "df54a02b15327aad26527d2e3110015de4e491d3f49198782868bf6a929e6ab6",
-      "synthesisHash": "fa977424917dfec34d9cd34737121ceecd90fabe2d12445cf34995a985a09bae"
+      "bytes": 12672,
+      "sha256": "ad78222f5de1aa01bda9fa1ce4892eae82f2e0081b7fc26580901c3554fa8a3d",
+      "synthesisHash": "fa18fd7f5924b39c29edd9e8c86caa47034b7a1ebd594984b8df93fa21ca5599"
     },
     {
       "id": "advance-4",
       "cue": "advance",
       "text": "杀鬼子啊！弟兄们，冲！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2097,15 +2097,15 @@
       "variant": 1,
       "file": "friendly-1-advance-4.mp3",
       "gender": "Male",
-      "bytes": 19296,
-      "sha256": "3c646e1c46f268fca45889dd4d1a71e1012f598d80d6d7bd605219fbecf07b30",
-      "synthesisHash": "3661e0673059d2d1159adfe3c90ad5426c038dcf3e0d28b53293e20f46ece8f8"
+      "bytes": 19440,
+      "sha256": "ad75f07644f76ced423c53fe314d21193ac563303c5a32a3fa482c0e69087985",
+      "synthesisHash": "4831bbc6aa015932ba2e0526c00684948d371d493f3a63f43308975e5994bab7"
     },
     {
       "id": "advance-5",
       "cue": "advance",
       "text": "中国人不是亡国奴！冲啊！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2114,15 +2114,15 @@
       "variant": 1,
       "file": "friendly-1-advance-5.mp3",
       "gender": "Male",
-      "bytes": 19584,
-      "sha256": "964d3853b34c4152cfb228b36db75850914adbd0a553f35fbe481dea74f0bedb",
-      "synthesisHash": "84bc180e598a4f1d087f55fd52cf3e44f74b12ca8a1b20966e26df6b1c1ae3b9"
+      "bytes": 19296,
+      "sha256": "1ab349b35f3b3e8b6745a98c69cdb77c0b0bdfb28854fe81dea5b99fef43e79f",
+      "synthesisHash": "d879136944d2d73a41110404fb392c1e80a27b5f37f69415e0eee0b81a7349d4"
     },
     {
       "id": "advance-6",
       "cue": "advance",
       "text": "保家卫国！跟我冲！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2131,15 +2131,15 @@
       "variant": 1,
       "file": "friendly-1-advance-6.mp3",
       "gender": "Male",
-      "bytes": 17424,
-      "sha256": "7222967eff8a3c5264ca00b200171d2bc691651dd21d3f46f77a589370bf7ad0",
-      "synthesisHash": "ab60d568a2d406656680f279f5b84b6c8d6fc068c753f734b2b9d0891ea51fa8"
+      "bytes": 15696,
+      "sha256": "bdcaa97270e3b00eb5c750113f80fa5acffcc496978b734c5f87dbedad988124",
+      "synthesisHash": "c368320c1219406c45e47702a5d986b1d374ba040a0cb545a8907d3326062504"
     },
     {
       "id": "advance-7",
       "cue": "advance",
       "text": "弟兄们，守住我们的家园！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2148,15 +2148,15 @@
       "variant": 1,
       "file": "friendly-1-advance-7.mp3",
       "gender": "Male",
-      "bytes": 15264,
-      "sha256": "eb91e332b8a4853ca6829a1a597e21e619f88318a0871c748dee1dd578355cae",
-      "synthesisHash": "42d3381c6f6e8c98598ac1c5c590716b02c96fa9825f3987f13708ab605dd286"
+      "bytes": 16560,
+      "sha256": "8a0325dc5c5544439a797834b7ef84961740e1f08bbb7af62cb2361514f7088c",
+      "synthesisHash": "ea58f11a30f2239430b55cb93f8cfbb7ac34db08f30d2a63e5dd6f821318a305"
     },
     {
       "id": "contact-1",
       "cue": "contact",
       "text": "发现敌人！准备射击！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2165,15 +2165,15 @@
       "variant": 1,
       "file": "friendly-1-contact-1.mp3",
       "gender": "Male",
-      "bytes": 15840,
-      "sha256": "5abe8603d9799b1a2c3db8e8d0ca34a08a023237b7340ccd8a4e9ce219ac7b28",
-      "synthesisHash": "c05aa9443722a84fc8b5a7cdd9b43d014e2cdbf1c7ed40fb5961ef1d836bb00a"
+      "bytes": 16128,
+      "sha256": "9a42450a0e04a95d531d9d80dc7bd686d7668bd212e15da72f1c9e8c8f06d525",
+      "synthesisHash": "0b29188e3f75a88da95497f80a4d84bf8fe2e3e5a068f245fc121841b262df8d"
     },
     {
       "id": "contact-2",
       "cue": "contact",
       "text": "敌人在前面！小心！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2182,15 +2182,15 @@
       "variant": 1,
       "file": "friendly-1-contact-2.mp3",
       "gender": "Male",
-      "bytes": 16272,
-      "sha256": "5b7ad72ee32c93c6d1f59503a55354bd93aef5603dde69c45096531d829294fd",
-      "synthesisHash": "07134f984c8dbc1d5ab30a248c8f5c39582fdd77070b122ebfb47f2d1ef24903"
+      "bytes": 16704,
+      "sha256": "b3e886c9145d23f42d3719bee8fb523efefc016b8bc5267fc98bd2701442ba4a",
+      "synthesisHash": "fd35f485b896d025bad25d1aeb5e8fb43e2cf84d16d0278080f16cf0c999252e"
     },
     {
       "id": "contact-3",
       "cue": "contact",
       "text": "瞄准了打！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2200,14 +2200,14 @@
       "file": "friendly-1-contact-3.mp3",
       "gender": "Male",
       "bytes": 11232,
-      "sha256": "755b6138453f0dd3f21433c1187db9104143f3e5638745f6862a6b40e678dd0e",
-      "synthesisHash": "6fc1370c86864c0c7d9ce5075905aa41a7d7dc827160006f6703636b85e0571e"
+      "sha256": "cd62be254dbe9125d93923fa63cb41dc6f48198ea2fa1ed1e2545f2a3f2b5afd",
+      "synthesisHash": "2d9afc37d79081929a2cb22d66fc113fa4eb300491cf302e4acac4a63085b0e8"
     },
     {
       "id": "cover-1",
       "cue": "cover",
       "text": "找掩护！压低身子！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2216,15 +2216,15 @@
       "variant": 1,
       "file": "friendly-1-cover-1.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "5b22eb990f8235ada8ed2861d9b959ca84d2cbdf6dd9fd9821a64b2ec2b47d59",
-      "synthesisHash": "b143dd2bb7f7214edd2955c0e3dcf5f93cf88999b99dad3085e115e46bf78c94"
+      "bytes": 15408,
+      "sha256": "9bb9581934e0545fa8d11aae7c654d019e22ecaf0c0cf50ed9e130179aa5060c",
+      "synthesisHash": "0454108f0982c548d5f459d226dd08b08fed375a79d7ae4248098f83d3b143a8"
     },
     {
       "id": "cover-2",
       "cue": "cover",
       "text": "掩护我！别让他们靠近！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2233,15 +2233,15 @@
       "variant": 1,
       "file": "friendly-1-cover-2.mp3",
       "gender": "Male",
-      "bytes": 18576,
-      "sha256": "fff55378253ff71a2715184d548aa7394142314fa95fda606b60e8ff59031fb2",
-      "synthesisHash": "4ea0bd2033194f4287efccf7edb914c607a1f84c92ad4571a7191a0577cbf0a9"
+      "bytes": 16704,
+      "sha256": "22d4b1e33ef60a9f515a45b6dfd12a8dd6686d419de8d1f706e6185e31c8525d",
+      "synthesisHash": "86c599c00cdef8499c67484b654afb3878af8c9eca04ecfdaf06a8ec93d9cb40"
     },
     {
       "id": "reload-1",
       "cue": "reload",
       "text": "我装子弹！掩护一下！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2250,15 +2250,15 @@
       "variant": 1,
       "file": "friendly-1-reload-1.mp3",
       "gender": "Male",
-      "bytes": 17280,
-      "sha256": "daecd2f72ff674c1d8c862f501df88aa766696b9a47e8fc5f4e66606b56dbfaf",
-      "synthesisHash": "6ba1593f6bf531e71a653cd78e20a801e45d1c70ec04cc7451995f8c6545aac9"
+      "bytes": 16416,
+      "sha256": "95d98ed35b8e6c1179c86170dc9bcfad59c779be1a44bd9ce6830f039acb819b",
+      "synthesisHash": "3f1d59c3b22cffa526c162413284ae33d307b4ace8e27dc4106b1d1600c858fe"
     },
     {
       "id": "reload-2",
       "cue": "reload",
       "text": "换弹！帮我盯住前面！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2267,15 +2267,15 @@
       "variant": 1,
       "file": "friendly-1-reload-2.mp3",
       "gender": "Male",
-      "bytes": 17136,
-      "sha256": "fa22fb43b5750aff331c7fb9dd75a0bcee047ae4c1854c79fbd89f07e528e967",
-      "synthesisHash": "e71ffcaa3e076ca9f69b211f1aa3e1fb59f241342e1dd6e50215bb12410484af"
+      "bytes": 16704,
+      "sha256": "7b3ca114760729520ca5e1a28b0c6b5ef7c7a52c76ed6d2275804895be41a207",
+      "synthesisHash": "dc1edf214bbe4004ace47bff55c3edcf108d741cfbda66f7f42f41b6424cdd85"
     },
     {
       "id": "grenade-1",
       "cue": "grenade",
       "text": "手榴弹！快躲开！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2284,15 +2284,15 @@
       "variant": 1,
       "file": "friendly-1-grenade-1.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "99845cf84f9f8b9350fcfad497c98abbde3695da6232d0af125a39ec6cf457ad",
-      "synthesisHash": "d65fb6c2467bc678c1936badfb58577888f8282dcc14965c783583ef6b4ccee7"
+      "bytes": 15840,
+      "sha256": "c974fbd27f3e994d1ec76e4c6ee364a3008e06c15156d441c95fbd91f62bb6ce",
+      "synthesisHash": "fc5ceb622a915ed6cd1b023c72dc513850b2ccd48ddf6f196a22e952190f1f73"
     },
     {
       "id": "grenade-2",
       "cue": "grenade",
       "text": "小心手榴弹！散开！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2301,15 +2301,15 @@
       "variant": 1,
       "file": "friendly-1-grenade-2.mp3",
       "gender": "Male",
-      "bytes": 18576,
-      "sha256": "e1e327fb650609ff60357d5c5bd39a68e46ba527b87ef697617a5423c99d76d7",
-      "synthesisHash": "16dc229a38e0d212860ee3c6c88582b443831536a79c9ff77d3df6335440e078"
+      "bytes": 16848,
+      "sha256": "c9166a56bc15f467e84366c2d788ca41ba31d2c73568345c1f257d80dc04e76c",
+      "synthesisHash": "a7e920649c5f2f83698cc3ff54e2affbd73a1e3703e7aa7f61465825be494dc2"
     },
     {
       "id": "order-advance-1",
       "cue": "order-advance",
       "text": "全班注意！向目标前进！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2319,14 +2319,14 @@
       "file": "friendly-1-order-advance-1.mp3",
       "gender": "Male",
       "bytes": 18720,
-      "sha256": "2cd8a8e94a83777142f77192e7c4f105202ccfa404f8db176982a7da304a26e9",
-      "synthesisHash": "78f7a76ed5260bce13ef85c3126fe7a913e7085645c6fc1873b256e81ca0730a"
+      "sha256": "4c17bbac5c756d4e6178ca7965f8fa3cb07daa9d1d37872efb8d3ff541dc2996",
+      "synthesisHash": "4c9940da832b94f41e09aea94d610324524249ef8d954210aa7a34eadb73408c"
     },
     {
       "id": "order-advance-2",
       "cue": "order-advance",
       "text": "弟兄们，拿下前面的阵地！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2335,15 +2335,15 @@
       "variant": 1,
       "file": "friendly-1-order-advance-2.mp3",
       "gender": "Male",
-      "bytes": 16272,
-      "sha256": "7d61d78b7e079b1d22ddd4feea9d12963dac767c8e038666ee794f6811ab7eec",
-      "synthesisHash": "72baa4be479758a54c3d57c4552b63f0b16de6af811dceed9251fdcfa32f3693"
+      "bytes": 16560,
+      "sha256": "06620ab224c1596a94a88b81f5954784c7d2c468ca67223f566a176a5e65e39e",
+      "synthesisHash": "2e3cb35627fe59c092341f52a897bc2c959d8260bc0f7416124c66029f1ce67c"
     },
     {
       "id": "order-advance-3",
       "cue": "order-advance",
       "text": "中国人不是亡国奴！拿下阵地！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2352,15 +2352,15 @@
       "variant": 1,
       "file": "friendly-1-order-advance-3.mp3",
       "gender": "Male",
-      "bytes": 21024,
-      "sha256": "abdd33f3a5e6116addda0afc21b310cea28301a7c892ce5ede57db9382e60a12",
-      "synthesisHash": "9d27d05f4905326c1cd4d52510ca25e6f2cfc52df030704db6c0828abe11510d"
+      "bytes": 20016,
+      "sha256": "b1655a9deaa834f59e19efb2f1fdcbad0211dccd1122f9936d42afcc25987b1a",
+      "synthesisHash": "a7140c06d68d52521b92ec8c283eb3f1f6f6fffaca97b8240d41be465058fbf6"
     },
     {
       "id": "order-advance-4",
       "cue": "order-advance",
       "text": "杀鬼子啊！全班跟我上！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2369,15 +2369,15 @@
       "variant": 1,
       "file": "friendly-1-order-advance-4.mp3",
       "gender": "Male",
-      "bytes": 18144,
-      "sha256": "974045ec97f5f59747148c2d62a32acceaa2719170b898bc510fd79a3d8a7a53",
-      "synthesisHash": "f06f73a657f35bdd8dadbe86957220873c1f0f3afc4f64a55544ab4b65e42bbe"
+      "bytes": 18432,
+      "sha256": "229397adb6acbcfab982223e5e4d48d4ac5d66d4b2510157b8f33d95800a18e7",
+      "synthesisHash": "64b82546dbfc501d4c42dca1da11d671315ecf9d178a97c537cfdbda423c7cd7"
     },
     {
       "id": "order-hold-1",
       "cue": "order-hold",
       "text": "向标记位置移动！就地防守！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2386,15 +2386,15 @@
       "variant": 1,
       "file": "friendly-1-order-hold-1.mp3",
       "gender": "Male",
-      "bytes": 20304,
-      "sha256": "91a8d991d9edd50ddb5b78dbea27e7c7e7bfb27294c5597405dbc40778c22ebf",
-      "synthesisHash": "d434d4439e4a29e555e1d1f0ab0260c506729a7f30cf0df59c3fde8e45a7c3b1"
+      "bytes": 20592,
+      "sha256": "97820ee72bfb37de9197211b4b2a16ffee4069254c01ff8b28f0a1451e3a9c59",
+      "synthesisHash": "e316ceb639af8a8cc61f653324ce9370ae7cf712dd594c304662c463f2ba7f76"
     },
     {
       "id": "order-follow-1",
       "cue": "order-follow",
       "text": "取消命令！都跟我来！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2403,15 +2403,15 @@
       "variant": 1,
       "file": "friendly-1-order-follow-1.mp3",
       "gender": "Male",
-      "bytes": 16128,
-      "sha256": "80bfbb0b2ec758c9e13d07efe109521e8a169b0b6d8b1c011dd10abb5fa073da",
-      "synthesisHash": "d999adfb3f57f4a123911ca69ffebbc43e9f4b26ab039edb49ee8554a3e15743"
+      "bytes": 16416,
+      "sha256": "e82c77e7ab7bebe76afade7884d071620e0e4e76ad6fe23d2fe873efb6f8e3fb",
+      "synthesisHash": "92912879211b63c1cb4dadb73ce3fca723f7b1c8498d51e14a725cc14ff34fa2"
     },
     {
       "id": "deploy-1",
       "cue": "deploy",
       "text": "全队准备！出发！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2420,15 +2420,15 @@
       "variant": 1,
       "file": "friendly-1-deploy-1.mp3",
       "gender": "Male",
-      "bytes": 15984,
-      "sha256": "6ddf90881dcc1fa57e7a95b8e17225f4f650fe0981b4782925d9645560464a13",
-      "synthesisHash": "6d50781f87cda16aab59e992a5bd72df52a6572674aac0f67c0a74989b1f4e88"
+      "bytes": 15408,
+      "sha256": "c24c7bc6109a99b183688a5d49b1835adbe048f9cd81aa7d2e1d354f2fefd49d",
+      "synthesisHash": "c9f1cbbd42a4f3a93baa759247966d3e5a0f95f4d904ac1670aa45e6541e8735"
     },
     {
       "id": "capturing-1",
       "cue": "capturing",
       "text": "正在占领阵地！守住这里！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2437,15 +2437,15 @@
       "variant": 1,
       "file": "friendly-1-capturing-1.mp3",
       "gender": "Male",
-      "bytes": 19152,
-      "sha256": "07c29af0adafb6d31bfc7b4b6a8ce82182e60155182835c27184a94e55c8c3da",
-      "synthesisHash": "0fac8b4ce2acd993651b9eb099ba698da95b835c2a73c1c7dbe373cd5c20d004"
+      "bytes": 18576,
+      "sha256": "11cfc7b3522deb344c294ee20a294f918eaa3caa007385a2532fb1665a756758",
+      "synthesisHash": "b42294fb271a59d97c4eb97b332e1f862d7194f85ab1c776c5a77e635f48b7a1"
     },
     {
       "id": "contested-1",
       "cue": "contested",
       "text": "敌人进了阵地！把他们赶出去！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2454,15 +2454,15 @@
       "variant": 1,
       "file": "friendly-1-contested-1.mp3",
       "gender": "Male",
-      "bytes": 18000,
-      "sha256": "ca4038aacac0d900cd0ce30bc8f2fd72de48c4c74be0120ece14f12707d5e465",
-      "synthesisHash": "17e90f2d76fa0ad0b9bc2bbc57cf417a27f73e247e6a40cd11d7bbced4fd8359"
+      "bytes": 18864,
+      "sha256": "edc86d906422d36978480bcea876a26f876f940ced56aaede4f66c35a4e7a8f7",
+      "synthesisHash": "24ea8a33b78b2332ca1ae9a6a0ef9ae973e65987a2e769b84b719078713d709e"
     },
     {
       "id": "setback-1",
       "cue": "setback",
       "text": "进攻受挫！重新组织，继续进攻！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2472,14 +2472,14 @@
       "file": "friendly-1-setback-1.mp3",
       "gender": "Male",
       "bytes": 23184,
-      "sha256": "4dd415d2c00bdb30cfe3b01475e01687018862944317fc2aabbe8c3b259d0a52",
-      "synthesisHash": "135b019854d045d159edccfef354a977b245c0b48a23d38806fa51b1cd2832e4"
+      "sha256": "7bcfc08485103788c81a033ebd5a2f8b668c5f9a2706bf22f4536366e7059409",
+      "synthesisHash": "bc5c1fe071c400b03c29b015905ec1032e2d8cb17c18dd055f768eee181fd88e"
     },
     {
       "id": "captured-1",
       "cue": "captured",
       "text": "阵地拿下了！弟兄们，继续前进！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2488,15 +2488,15 @@
       "variant": 1,
       "file": "friendly-1-captured-1.mp3",
       "gender": "Male",
-      "bytes": 21168,
-      "sha256": "6783101260bfc2006abe592135f5f85673fca1df891987a4a2ef9b575b920229",
-      "synthesisHash": "f44f620f1f6ee681574ed6ce784bafc60d3ccef1c2faf03b81f8ec4918a5143a"
+      "bytes": 21888,
+      "sha256": "a752cca84e505fcc2bf45862556ce4f4df512aaa70030931a9b6267ed4783c6e",
+      "synthesisHash": "20ab146f5fc06b36e409608675350e6e74d117e44337481c63e2d2712e8bb45e"
     },
     {
       "id": "rally-lost-1",
       "cue": "rally-lost",
       "text": "我方集结点被毁！寻找其他出发位置！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2505,15 +2505,15 @@
       "variant": 1,
       "file": "friendly-1-rally-lost-1.mp3",
       "gender": "Male",
-      "bytes": 23616,
-      "sha256": "24d3ce89be4e6405e2945ece0d4b0a08118ceeaf4961acd39cf85cf40782cfa3",
-      "synthesisHash": "be841a2fff9904c610522fc08fdf8871833b621bfdb5a75df7a611b5e906e1aa"
+      "bytes": 23472,
+      "sha256": "6aa8b60b56b4b5b75e958b88cdd9582efa1f29bb60c54cac7cf1c1194abc2f25",
+      "synthesisHash": "104098150b8caeac16dbe4a134f465b7d3f478a7ea5464e481efccbc5fa7cc93"
     },
     {
       "id": "victory-1",
       "cue": "victory",
       "text": "作战胜利！弟兄们，守住阵地！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2523,14 +2523,14 @@
       "file": "friendly-1-victory-1.mp3",
       "gender": "Male",
       "bytes": 21888,
-      "sha256": "e833c31c552d2323edd216237496f7a20fc80373c6bd4012a72fcc886019767b",
-      "synthesisHash": "4c7e94062ed07a8dc75fbaab084262f6bf616a73ce203034adc7942f801009f8"
+      "sha256": "3b6af8db4ced4edc85d8f1d86df55eea94a2ee595f4c6ff6ae1fbfcdb76041c1",
+      "synthesisHash": "5cb75924a8adb123fb6897d416f4211f07083a94730caed2d2381b10e73f1058"
     },
     {
       "id": "defeat-1",
       "cue": "defeat",
       "text": "作战失利！重整队伍，准备再战！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2539,15 +2539,15 @@
       "variant": 1,
       "file": "friendly-1-defeat-1.mp3",
       "gender": "Male",
-      "bytes": 23040,
-      "sha256": "ae6157401599027c161a4771ba2edb07aacac6c44715c5956f7a156e20b75d98",
-      "synthesisHash": "d91e9e6c25093b1eccd612b4d04032134cff033123d5e7eb5aa3665b1266ee6e"
+      "bytes": 22320,
+      "sha256": "b852537a2c6796fabe2f541b28081bfd7535defca84ea7dd7dc685aa08db1e26",
+      "synthesisHash": "b9a390f82705bfe01b6f67c42f2ffa4a5f46065af073a73e6f3d202368ec358d"
     },
     {
       "id": "draw-1",
       "cue": "draw",
       "text": "时间到了！双方未分胜负，重整队伍！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2556,15 +2556,15 @@
       "variant": 1,
       "file": "friendly-1-draw-1.mp3",
       "gender": "Male",
-      "bytes": 25200,
-      "sha256": "d85251d97fc4da0b936b8006acb9e03eb38180b150330ac5ca1f783b9e86bc9c",
-      "synthesisHash": "3e702f69c3c1531c8f1106842f3b99ba3fa73365f62774faaba0e940271e740f"
+      "bytes": 26640,
+      "sha256": "4ca4153a54fbd7e1818392e067a2da89c8d071adf1da7dd3105e27bd349d1e9c",
+      "synthesisHash": "01952a37caa5c3c699d7c7d3e8888a2e7f519e3be66f7d3d97aeebbbfe8ef2f1"
     },
     {
       "id": "lost-1",
       "cue": "lost",
       "text": "阵地失去控制！重新集结，准备夺回！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2573,15 +2573,15 @@
       "variant": 1,
       "file": "friendly-1-lost-1.mp3",
       "gender": "Male",
-      "bytes": 24768,
-      "sha256": "9d5bbe0f39cc048a5ba94aee24686190fa0d1ce349f32ace4936c5a718643b81",
-      "synthesisHash": "5d85c5a5f33dd0c1de119aa394c34fd9ec46d80a0ee45f66a33d1829561ff40f"
+      "bytes": 25488,
+      "sha256": "74971e8e4972a327d975f0962d204da1dec567a34569784dd1f20d0a205f1706",
+      "synthesisHash": "bf01c9de48951656cd19afbf99d5e278946a1715ea5ea1f4780f4267ddf3ce55"
     },
     {
       "id": "supply-brief-1",
       "cue": "supply-brief",
       "text": "拿下A点高楼，就能切断日军补给！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2590,15 +2590,15 @@
       "variant": 1,
       "file": "friendly-1-supply-brief-1.mp3",
       "gender": "Male",
-      "bytes": 19584,
-      "sha256": "96055718f56d2af5a445a28171c46e4796ba3d5a0f4dee10ef6f27b320d99ab1",
-      "synthesisHash": "72c5975ab7be47b46d93a6afba280b5c507623464a8021a53eb78f327152ae1b"
+      "bytes": 20304,
+      "sha256": "c38c6eb349ab1141aeb7583210423fdb92e404b1a6d2aceed6d07e79a6fc707f",
+      "synthesisHash": "734e497a0bd418e4fb15be41f99d73da82be69dcb062f56762cc772ce6e7aff6"
     },
     {
       "id": "supply-cut-1",
       "cue": "supply-cut",
       "text": "日军补给切断了！守住高楼，拖住敌人！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2607,15 +2607,15 @@
       "variant": 1,
       "file": "friendly-1-supply-cut-1.mp3",
       "gender": "Male",
-      "bytes": 22896,
-      "sha256": "af105aad61eaa76d4674c41dbb76ae536b62b9c3cfe5d7d9f30a67e8edd446e3",
-      "synthesisHash": "e3ac664976a7760f57751762f7c19f109d5e1d97d2f232f35cb9cedd6b99c5f4"
+      "bytes": 25632,
+      "sha256": "ea3ad81afefe948ed6307dc494c4f1ff99d4374fd5402bcf16767e5d9e7b5bf2",
+      "synthesisHash": "63595140c1ffb5e5fa8edbccc31deca716d56af478c053d4d30ff034355dc22c"
     },
     {
       "id": "supply-restored-1",
       "cue": "supply-restored",
       "text": "日军夺回了补给点！弟兄们，把高楼抢回来！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2624,15 +2624,15 @@
       "variant": 1,
       "file": "friendly-1-supply-restored-1.mp3",
       "gender": "Male",
-      "bytes": 23184,
-      "sha256": "77105af91ba08e850fbb535b670da425384d39098ce27c643ca1ac464c150760",
-      "synthesisHash": "78ec881214724226aad390b05dc76f201609c00fc8bb9e88c6640c55a3cffad2"
+      "bytes": 26352,
+      "sha256": "9ce97954df35f1053517cafcdb9d56711cc8077f754dd675194199b76877b03b",
+      "synthesisHash": "600f8e2963940054d28235fdc61ab1674be1a0ecf0c71c9de3ee7a7d0cf16185"
     },
     {
       "id": "reinforcements-1",
       "cue": "reinforcements",
       "text": "我们的援军到了！弟兄们，继续进攻！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2641,15 +2641,15 @@
       "variant": 1,
       "file": "friendly-1-reinforcements-1.mp3",
       "gender": "Male",
-      "bytes": 21024,
-      "sha256": "b494225f5afadd1c000acfad9b36ccc5e415c46921af2acfd4ebc0dba5f4323d",
-      "synthesisHash": "fae18b53d33500ef5620f925caae6d4728b16d09006c79952ca47d91c91b4fb3"
+      "bytes": 22608,
+      "sha256": "5bf7f5f5f3a7166ee96953825576a8ea85868d7cd74d84651b277d94e1961bce",
+      "synthesisHash": "4425b8314ae4a4afa73aa0479c2005ba04596f6e45b5627235f86f9eb0733ec0"
     },
     {
       "id": "supply-reinforced-1",
       "cue": "supply-reinforced",
       "text": "敌军补给已断，我们的援军也到了！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2658,15 +2658,15 @@
       "variant": 1,
       "file": "friendly-1-supply-reinforced-1.mp3",
       "gender": "Male",
-      "bytes": 18864,
-      "sha256": "925b6693d2870cebc946a645fda6666e6ecf22ebf8d444d68bc21672545d55f5",
-      "synthesisHash": "35dd865c89958bac2a993f267988cad2e10ac0c02311908df1e8bf7c79003d8b"
+      "bytes": 19872,
+      "sha256": "d0d972b4b9adbff1e51a84e64174103ebd979cce8bcb8f7be2c32f6dc7545845",
+      "synthesisHash": "c1d14e9fa8c7ac7b69cf4beddcd5c6359230c3237aea992b300e7774b4bce6d6"
     },
     {
       "id": "encircled-1",
       "cue": "encircled",
       "text": "敌军被我们包围了！消灭地面残敌！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2675,15 +2675,15 @@
       "variant": 1,
       "file": "friendly-1-encircled-1.mp3",
       "gender": "Male",
-      "bytes": 22896,
-      "sha256": "4866b7e9f486199ceef871728ddc9afd010dcf3e100d7d345e577aaf482d3959",
-      "synthesisHash": "fd914b0dce341f55e3e55be6f43def41021c598ed1581d537ecf251bcbd17b32"
+      "bytes": 22464,
+      "sha256": "94708fbee14915881c56bacba75662a96daaf4a1f3c72bc9f16fb499f5ce42f4",
+      "synthesisHash": "f592e4b92d86952fd6736eba27c7dffd92f3b20a5679cd47af48dca6bf90bdb5"
     },
     {
       "id": "reinforcements-blocked-1",
       "cue": "reinforcements-blocked",
       "text": "敌军援军被拦截了！别让残敌跑了！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2692,15 +2692,15 @@
       "variant": 1,
       "file": "friendly-1-reinforcements-blocked-1.mp3",
       "gender": "Male",
-      "bytes": 21456,
-      "sha256": "d0d271a7aa7e5eba2b36adbce0a024715f43a89f2b81d88053c5f40a5d8da9df",
-      "synthesisHash": "ee4e1cb42ce1df898fb4778f23f165a2670cdfe5c24072f0ab531bc37222e4cc"
+      "bytes": 21888,
+      "sha256": "98c69ad563f13b1a9801754bd839fa8a12a88309e73083db7207f4729f83b2d3",
+      "synthesisHash": "55a5fa716eb3664c3008d36d0da8bfa243bfbb05462d5e4c9ad0b34216efd696"
     },
     {
       "id": "cleanup-orders-1",
       "cue": "cleanup-orders",
       "text": "敌人援军被切断，全歼被围日军，我们就赢了！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2709,15 +2709,15 @@
       "variant": 1,
       "file": "friendly-1-cleanup-orders-1.mp3",
       "gender": "Male",
-      "bytes": 25200,
-      "sha256": "8b16ea8fe087f29aebf87dd8e90e027469085d2a0ace52223673b3db4819a374",
-      "synthesisHash": "763d3f7326f092e0719afe3fe6a3234863b0a476f2f803f996d27bf1af268f9a"
+      "bytes": 26784,
+      "sha256": "12075f6b0d986160ea539b39787bc54736b2cec7b17208f48e666f0328845b7d",
+      "synthesisHash": "64fde3d693140f46a256cbd211e4cdc80e9b96800c05deadfe0d8c12ad35a111"
     },
     {
       "id": "callout-sniper-12",
       "cue": "callout-sniper-12",
       "text": "十二点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2726,15 +2726,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-12.mp3",
       "gender": "Male",
-      "bytes": 17568,
-      "sha256": "8d7df7fa4bdcdb48e5dcb8cb18addd525f21481ec16d35b4a374f5d266013348",
-      "synthesisHash": "bfed8c96555c515e3688e30e00e50fda748b30fc9ca41ed18e8e88da493ed028"
+      "bytes": 18144,
+      "sha256": "0378026486c46a3d4f2f7d5927ee2760a2e5eb62b2916142b945c30841623d2b",
+      "synthesisHash": "b0eaf0b1cb579266ff8ba22dfdad9c2abda129ea16a237a52659ceb473b71072"
     },
     {
       "id": "callout-machine-gunner-12",
       "cue": "callout-machine-gunner-12",
       "text": "十二点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2743,15 +2743,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-12.mp3",
       "gender": "Male",
-      "bytes": 18144,
-      "sha256": "962f30ce90b128b605b9807e9748b87be04f78b5c6464db4f2639daaa68173e3",
-      "synthesisHash": "6bf2334a1c94df3f26de394d63fbf11439856bc99093c040204adc38b7096c11"
+      "bytes": 18288,
+      "sha256": "93a6e6c16c60f75e6a2b98aff2f99812c9c1d972b7f6d7cd7ffc851f7f6950ba",
+      "synthesisHash": "b347e7efa9c476a22543b585b57c95ee130dcab11d3bdf83cc726d5bdc32fb10"
     },
     {
       "id": "callout-tank-12",
       "cue": "callout-tank-12",
       "text": "前方发现敌军坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2760,15 +2760,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-12.mp3",
       "gender": "Male",
-      "bytes": 14112,
-      "sha256": "797abee273f0e4738427f7c9e3df6ac5112e1b23c406c889db5975de3d14eef6",
-      "synthesisHash": "636820af489bd26440637eb09470b0f49e1c92622aa80920025568171da7bb6c"
+      "bytes": 14544,
+      "sha256": "9ee78e23b25e2ab1270ae0f18d9abc0ee88e33ca52fdff0df317d65bfdf11c97",
+      "synthesisHash": "a799dd9818dbafa573a6b5358422fd53de296b634a36d6147abcec75c1587968"
     },
     {
       "id": "callout-sniper-1",
       "cue": "callout-sniper-1",
       "text": "一点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2777,15 +2777,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-1.mp3",
       "gender": "Male",
-      "bytes": 17568,
-      "sha256": "1bb401cf677dd64108ef84d134d4ef6e9e0262dc32e6dcb10b9a0056fe150c40",
-      "synthesisHash": "0a39b8bd24ad55871c965787ff6ffadeedb91e1daa78aea6fb4b1a20ee1ff983"
+      "bytes": 16704,
+      "sha256": "17eeb5c58b742e5c80cd9a4d2a8accfe580cab44becb9fbce3b12254a7fce019",
+      "synthesisHash": "dc12ed4aace2de8c0463df07a1d2ef23d8b664234d1188833cb71b5ea4b52567"
     },
     {
       "id": "callout-machine-gunner-1",
       "cue": "callout-machine-gunner-1",
       "text": "一点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2794,15 +2794,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-1.mp3",
       "gender": "Male",
-      "bytes": 17712,
-      "sha256": "ada5dd595c01be1b4ca60388ff4d273f166f9f0cac608d0ccffae21b2266b360",
-      "synthesisHash": "e95fdf62d37346a4b9b70639fdc9ab8766380317456e569a687b924e9611573d"
+      "bytes": 16992,
+      "sha256": "f1da966015bea2a804148131e57d2b1e4a78249582756cf83a9f2429ecccbb42",
+      "synthesisHash": "eb5032dc52695bab8c05c94c6f7df3632ac359e37a852b28c2a7242bdf5897a6"
     },
     {
       "id": "callout-tank-1",
       "cue": "callout-tank-1",
       "text": "一点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2811,15 +2811,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-1.mp3",
       "gender": "Male",
-      "bytes": 16560,
-      "sha256": "e2c1b936de2844f2a76a2b41cfe2a7dc9cfdf0fb9402e41748b902ad21f5853f",
-      "synthesisHash": "da7f62e1c7da922d54d6ae8967eb9ba7391142b6e4feac041e30544712c72e54"
+      "bytes": 15840,
+      "sha256": "f27961e4f170612c58ab2eaa724315520b23e0b5b6ad136b738890be60645f7a",
+      "synthesisHash": "8315a9c7a559a6216e2441a17fa85f9bccd570e56ad9dbf326e3b26598d56d16"
     },
     {
       "id": "callout-sniper-2",
       "cue": "callout-sniper-2",
       "text": "二点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2828,15 +2828,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-2.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "f6d67b00afa12e0aa22ceb6301fefe1148032f88e183f4e0313a9d5f9ea6a4cf",
-      "synthesisHash": "760ee62695a784697ca48444abe56a79ea01c62c72ab440f883809215a87da98"
+      "bytes": 16848,
+      "sha256": "6807a8b51bbce7484c576d4cc86eda163a87fb80f1284fe6d1e85db13fcaeb6b",
+      "synthesisHash": "4a30227be26e4897fd8b87a20866c5ea8b42fffb62f4182bd371e9f5f6e30b4a"
     },
     {
       "id": "callout-machine-gunner-2",
       "cue": "callout-machine-gunner-2",
       "text": "二点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2845,15 +2845,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-2.mp3",
       "gender": "Male",
-      "bytes": 17136,
-      "sha256": "4d63b253b16749764a7ef50d22baec3fc390bb3c695981b0d5c044bec9e21299",
-      "synthesisHash": "d698e649a4cbfd442b5291e0fd6b8c27c672937ce7aa6885e3e523209fbc3157"
+      "bytes": 16992,
+      "sha256": "49b74642d946f6b4a39343bbde202ea4042657e074239a9e20b352671c2709ca",
+      "synthesisHash": "ee9b63f5fa6dc99902bdc201e55bdc23167dda4cace161dd6e4e66de09df712a"
     },
     {
       "id": "callout-tank-2",
       "cue": "callout-tank-2",
       "text": "二点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2862,15 +2862,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-2.mp3",
       "gender": "Male",
-      "bytes": 15552,
-      "sha256": "846e8b9616da0cf7194bb49b9fc1eb008589b8a767a55cb723eb21a26d77c2e7",
-      "synthesisHash": "d2cf83030ea71177ca21961d825f168ce97a2783494b2219ec09064505c44bd7"
+      "bytes": 16128,
+      "sha256": "9cbc634c49574d0e12df2329ec72bb5e2612dc3d1c96af390aacf090534f093a",
+      "synthesisHash": "4a2dc1e797dc4dc494831b48ba5f58dea2399f4e1e7b40db231285bdb0507557"
     },
     {
       "id": "callout-sniper-3",
       "cue": "callout-sniper-3",
       "text": "三点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2880,14 +2880,14 @@
       "file": "friendly-1-callout-sniper-3.mp3",
       "gender": "Male",
       "bytes": 17568,
-      "sha256": "2213a2b41a5ee5a7ef99229d5af0970c83ebd1740901286806ceefd81fcfdbd5",
-      "synthesisHash": "6ceb57d038042577afd0c48b61d105cec6d0cddf393457d7a67308b47c391294"
+      "sha256": "695c7cbe8115fe80674f6076a3fe250bed55544f5d995278dbc926e8d5e94548",
+      "synthesisHash": "e97e3c463d724e9859333f9f5da7e2832aa675440d1f3e36da1816b2e84a7ff3"
     },
     {
       "id": "callout-machine-gunner-3",
       "cue": "callout-machine-gunner-3",
       "text": "三点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2896,15 +2896,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-3.mp3",
       "gender": "Male",
-      "bytes": 18000,
-      "sha256": "6c80400eea85aa8509940f0a72c242e4a6577c2c2ee2b3e531f19f30c929492f",
-      "synthesisHash": "8b1712ddf86aff5e426b7c7502ce2c1f6264c8a53ed9ee1e0aae5b884e0d580f"
+      "bytes": 17712,
+      "sha256": "7abccddf3dd2e8edae28faff3c0db3f8b9f881ff6884dc0c65e758f00da4b2d2",
+      "synthesisHash": "9a43205fd64c1083a21d73e052b62d8b0e71a529a0bb65438f5933f122a98918"
     },
     {
       "id": "callout-tank-3",
       "cue": "callout-tank-3",
       "text": "三点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2913,15 +2913,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-3.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "0d6ef0adc43fdcceb4e6202ae8a1844b5cea1409f92bbf0dd928b78981c7d365",
-      "synthesisHash": "9b01dc00848d3f6ce1e7ec1c1ef62bf8bdba0bd9f4a15e10be3efaf4a72a6d8f"
+      "bytes": 16848,
+      "sha256": "32dbf54783f4c8201b8d71bdb0df63ba38b422b6f4735d63cb0565cc459eb8dd",
+      "synthesisHash": "a631ec10d917b6f2f2de4b7f6d090794d2ab7cc05ec5d46ae31a38f2cfe42059"
     },
     {
       "id": "callout-sniper-4",
       "cue": "callout-sniper-4",
       "text": "四点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2930,15 +2930,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-4.mp3",
       "gender": "Male",
-      "bytes": 17712,
-      "sha256": "d4da4a26e7a5a6586ed71f115960b440484de8bf30e29acc8539cdbfcbbbea78",
-      "synthesisHash": "d1b97fc394830f8646a5520dd1dc7c3738a9f3b857e57452e636ad9f9db73b55"
+      "bytes": 17424,
+      "sha256": "408dd0460c172ac278c62418569a8fbde04134ddd684036070211720660b4845",
+      "synthesisHash": "8303d899771007825a5a6e06b73949fef3666abda670782f0f64ed2957be3101"
     },
     {
       "id": "callout-machine-gunner-4",
       "cue": "callout-machine-gunner-4",
       "text": "四点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2948,14 +2948,14 @@
       "file": "friendly-1-callout-machine-gunner-4.mp3",
       "gender": "Male",
       "bytes": 17712,
-      "sha256": "0e0f6cc28490d508882fa1dbac5b018f0e876e8ff459fb48e1268518b80d8a33",
-      "synthesisHash": "362d144f4a276b74c932da6c098fde4c6894bfe792990acbcab35d59a241d5b9"
+      "sha256": "1546becfb745953cfea3c70a7089a30b624a0b3e4889aa1a03f9b97c9fe9ddbf",
+      "synthesisHash": "16590dbe3c72818093539937619f8a8212bba738cb10648791d8530643811fa8"
     },
     {
       "id": "callout-tank-4",
       "cue": "callout-tank-4",
       "text": "四点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2964,15 +2964,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-4.mp3",
       "gender": "Male",
-      "bytes": 16272,
-      "sha256": "d00ec36523ea6365c026a95a9adca1c4c50463d1767794a712ab1a927e93e49a",
-      "synthesisHash": "e8263568482d3fb0d74ad38f6a38f75727f8ae0f7dac7502eb8d79d6349b65b9"
+      "bytes": 16704,
+      "sha256": "950dd07c9591efc5317c96595c7d19f294ce6fd415fe4e0600fc459cfd834747",
+      "synthesisHash": "c7d3570105b240b4a143a4c4cb88afc04c448429ae512272ba1c3d99601a0cb6"
     },
     {
       "id": "callout-sniper-5",
       "cue": "callout-sniper-5",
       "text": "五点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2981,15 +2981,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-5.mp3",
       "gender": "Male",
-      "bytes": 17568,
-      "sha256": "6bf689ea6dc5be69f551d15a6f94670027abc93376e05a327a4b6fd5eb1bb872",
-      "synthesisHash": "9bb8bfd6f45410b5d65f40c68037768f2d2b6ecbf730ade7fa1ea082de184be4"
+      "bytes": 16848,
+      "sha256": "cf8173c03012da6ef808f0fabe77d836463651a7e7723da579d45f5e4bc891f9",
+      "synthesisHash": "2478fb06c1df1638dc358bd7c192249edbbba89204ab293f2b18e515111f6e33"
     },
     {
       "id": "callout-machine-gunner-5",
       "cue": "callout-machine-gunner-5",
       "text": "五点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -2998,15 +2998,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-5.mp3",
       "gender": "Male",
-      "bytes": 17424,
-      "sha256": "b1943376d484bd68df69a1dc5dfc4a219533f5d847a4a64f6a0211b414c351c0",
-      "synthesisHash": "49195ed31e7dea4c7082160d497d0a426009ab0a19a49e7c9e1d9aa8c75a2c05"
+      "bytes": 17136,
+      "sha256": "79702530aa00e40c627a4f60407af05fb97f9bc26daf8d9e4224355e38602860",
+      "synthesisHash": "82bcb6802d1e01ccfa830bda39769938746d064e541d5b7c0af70b38b6915602"
     },
     {
       "id": "callout-tank-5",
       "cue": "callout-tank-5",
       "text": "五点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3015,15 +3015,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-5.mp3",
       "gender": "Male",
-      "bytes": 15840,
-      "sha256": "c94eab1b53b8c1fa5d2284185aae5571cec386938613d182fd6fc45e8b6e6f16",
-      "synthesisHash": "2a550b285b83945dc4ac42f3b2ebe3a7560c4b98162d3b2171931e9fd7cf8c26"
+      "bytes": 15984,
+      "sha256": "55bfc469f276a291e17a2298cd1d91bbd6cb3c5eb7818ad6d49f93f39d270921",
+      "synthesisHash": "4b127c4dc71837bb421fa71a15860dec1a56ab298f3f066d63acdb95a7c0e55b"
     },
     {
       "id": "callout-sniper-6",
       "cue": "callout-sniper-6",
       "text": "六点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3032,15 +3032,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-6.mp3",
       "gender": "Male",
-      "bytes": 17280,
-      "sha256": "989c283f2da56bc9ecb64ccf89141588c68929ba0ad5e838bf74b5a81d3f7783",
-      "synthesisHash": "05760e65114159db95427e9ffa54f97aa9227f3101412f89c1c59711e33703a7"
+      "bytes": 16560,
+      "sha256": "a607df2ead91a8da875d8670db9c6a624f75f15c87e00ef275ad5482e48fd49f",
+      "synthesisHash": "e4cd2141c2612c20820c6cbfcacad2b6560defeaab8594dbe15bf10217ee3efb"
     },
     {
       "id": "callout-machine-gunner-6",
       "cue": "callout-machine-gunner-6",
       "text": "六点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3049,15 +3049,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-6.mp3",
       "gender": "Male",
-      "bytes": 17424,
-      "sha256": "bc475c776dda95aea085d47894794afbb91c9ab96604c63fa15a4045be2491c1",
-      "synthesisHash": "5e54aa4264068a30897dffadd44b51e7bd087952cf4eeb9b3788917c19ef1970"
+      "bytes": 16992,
+      "sha256": "c0a5851dd73f1d420636562c91256e9dd50c0cf3af553d8c3411ca8cd0150e0b",
+      "synthesisHash": "c32b2c69dadd56928b4562d9981fe9878f396a1ec3e61096a1242f6d0716fc91"
     },
     {
       "id": "callout-tank-6",
       "cue": "callout-tank-6",
       "text": "六点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3066,15 +3066,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-6.mp3",
       "gender": "Male",
-      "bytes": 16416,
-      "sha256": "546ba38add37615b4a033023f9a34c5b993b7a43375234d4ac1c5a80b740cd62",
-      "synthesisHash": "d6838c2a7fda44ee1e72602f409426b5a8f2bd8b4a937ec14b3fa6ab3f2c9b64"
+      "bytes": 15840,
+      "sha256": "0b6182fedf78a8ad384a48b9580de0a9d2ec13a23febb85c7881097e39348df8",
+      "synthesisHash": "dc09036d0ab8f097eeacec2eee31215d63897ee0c8ca442e23392b87302cb804"
     },
     {
       "id": "callout-sniper-7",
       "cue": "callout-sniper-7",
       "text": "七点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3083,15 +3083,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-7.mp3",
       "gender": "Male",
-      "bytes": 17424,
-      "sha256": "a8c8d4fb07073ac539c4bac13ff81980f8315b297650c44f4508eb2845b15cd1",
-      "synthesisHash": "f7fdb9ffd4a67b5bf16a6626059bd6718bb8d9c4f7654d0a8fd47e2bfd5c6820"
+      "bytes": 17136,
+      "sha256": "1d8f04d31c2c3774764cf6d2d656dc411f55707421866ebe00801e790dc17b1f",
+      "synthesisHash": "3f60cb3e68ec6c8b669cab9e610a61d692ac3f6a1f7710567dd6d1125e14ac9b"
     },
     {
       "id": "callout-machine-gunner-7",
       "cue": "callout-machine-gunner-7",
       "text": "七点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3100,15 +3100,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-7.mp3",
       "gender": "Male",
-      "bytes": 17712,
-      "sha256": "e831ef7cf9a2c4389869188738e9d27b939c9680316ba1a9ea3d480a2ad4e1c4",
-      "synthesisHash": "c6e59b1b89c737d716eeadf9980a324db31049ac63c395e876d0130e018ae2d3"
+      "bytes": 17424,
+      "sha256": "21372a9dce2213dd15f218571237577cb31657b255f08fb92bc79543e36205a3",
+      "synthesisHash": "27ca1915df6939213c351cc961e502cd048c0c8a9a463937e43c3462fd271a4b"
     },
     {
       "id": "callout-tank-7",
       "cue": "callout-tank-7",
       "text": "七点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3117,15 +3117,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-7.mp3",
       "gender": "Male",
-      "bytes": 16416,
-      "sha256": "fe83afd008bb69da3182ada29d271ef7299be02087585f4212edd3379431c017",
-      "synthesisHash": "782fb364c3bc34fda998f900c3294b3b0501de97bfa2d41f7365a3bd2407969b"
+      "bytes": 16272,
+      "sha256": "bd89c42a7a8d588d2f8b1739ced655536b8e72b0e1fea6aae480da330e2b04ed",
+      "synthesisHash": "672b1d1c09b796a78cecfb054baa675f5128fa63caed79b7ea7314806f730782"
     },
     {
       "id": "callout-sniper-8",
       "cue": "callout-sniper-8",
       "text": "八点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3134,15 +3134,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-8.mp3",
       "gender": "Male",
-      "bytes": 16992,
-      "sha256": "217dd6d3a2ae3a7977bdf498f58c25760ee9e290b68937ce8e4e8d7ae62a17b5",
-      "synthesisHash": "1790e0108aed998d59faf06af29813cd82f677fd629ac0ef0beb6da66901a2ae"
+      "bytes": 16560,
+      "sha256": "c469502a044a0f100696c88c8a850ca2c9454577b6cc427ec1cde05a8a93a7dc",
+      "synthesisHash": "bff401f155dd41b8fb70e2e52ef643c24387e700a98b84f79f3c5f4266cfe3a1"
     },
     {
       "id": "callout-machine-gunner-8",
       "cue": "callout-machine-gunner-8",
       "text": "八点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3151,15 +3151,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-8.mp3",
       "gender": "Male",
-      "bytes": 16992,
-      "sha256": "c64440f24450cdbadf23e34b2e332c8a46adc4f51ab7b6e99f605831413aaf47",
-      "synthesisHash": "ca559cdede6013f802aa32ed637367ed5223fe12f93454d3946d2ac2597cf26d"
+      "bytes": 16704,
+      "sha256": "f6deba57c19617f4b90248fe6638883440cb68d32213d81ca8cf47aa299b8e91",
+      "synthesisHash": "8bc79e4e1e7aa794d030f5a7843105255f524ebb4d95bf81412cde99b7d34ec3"
     },
     {
       "id": "callout-tank-8",
       "cue": "callout-tank-8",
       "text": "八点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3168,15 +3168,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-8.mp3",
       "gender": "Male",
-      "bytes": 15408,
-      "sha256": "ae7419b18e87f66ac24738e1d8ac9f3edc3c55ec7eaa90baadba40d2784fb1bd",
-      "synthesisHash": "8254bbbc8251473247c83c2ef39c1e82b0fde6bbc0bc92fa1b1382574ec1c008"
+      "bytes": 15696,
+      "sha256": "5593df91f84d4d5650e7a8d879eb556e5054bce23a24bad23b7d7a68b319a133",
+      "synthesisHash": "e701d1c47f3d944edcbd4573c7a9136d63917f06073078f1ec2770b6e10ac894"
     },
     {
       "id": "callout-sniper-9",
       "cue": "callout-sniper-9",
       "text": "九点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3185,15 +3185,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-9.mp3",
       "gender": "Male",
-      "bytes": 17280,
-      "sha256": "9ba5bd37b9acbe12d369d3e50a02d99f27d87eca260309402dea1898e491a9fb",
-      "synthesisHash": "1f582c8e5383d560250541f8a2c1bb1673b39e7230109f35aee8fe9d944d43a5"
+      "bytes": 16992,
+      "sha256": "ffe65c1fefea0b1259158a9298e3c710e82432941f96666e311e8128886e113a",
+      "synthesisHash": "789e7a3e06c1d66c08d64d531fec03ca29fe376adb3a6399c24e8416367461f4"
     },
     {
       "id": "callout-machine-gunner-9",
       "cue": "callout-machine-gunner-9",
       "text": "九点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3202,15 +3202,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-9.mp3",
       "gender": "Male",
-      "bytes": 18000,
-      "sha256": "40cebe42f16ccd6845b7fe327a854a70744a1f2f92b1d7c6914eb6b70f974cb8",
-      "synthesisHash": "8c507f50bb47d1b888ddbcda6aa6e19d5ceab004846bcc2a9d8b4577a74c39d7"
+      "bytes": 17280,
+      "sha256": "f385733def328a8136c506789211fa545f26070a543acafd235e870984fc9d64",
+      "synthesisHash": "7068f2a78856a2be0ab3664e46948604f7eff1b165e1dd9fd949bb5f7fc2ecf5"
     },
     {
       "id": "callout-tank-9",
       "cue": "callout-tank-9",
       "text": "九点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3219,15 +3219,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-9.mp3",
       "gender": "Male",
-      "bytes": 16272,
-      "sha256": "7872a261d2e44d06cffe503f8a3afce0127b97f615cf9cfda315f1ada45af4a8",
-      "synthesisHash": "945045bf628351d3600c593a208809b3dd8aaa1026a6c7e5026382e5b30279ec"
+      "bytes": 16416,
+      "sha256": "989d560f7debe5c0bdb36c05091476f0d1d665117a49721be4659a6076cfbe13",
+      "synthesisHash": "7d8e21ac73a388559dd85082cb8e89658426a509d5d76481a036eb024eea72b8"
     },
     {
       "id": "callout-sniper-10",
       "cue": "callout-sniper-10",
       "text": "十点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3236,15 +3236,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-10.mp3",
       "gender": "Male",
-      "bytes": 17712,
-      "sha256": "ea56db8d94e1f5f97adb5974869c4cea9c0228f9dc91d9c04f90f02fc9f8dae6",
-      "synthesisHash": "aabc9bab5c3d9c2f7c397797fb0d40838ba6eabf26f190819f420995a4ff4928"
+      "bytes": 17424,
+      "sha256": "a1b95969d6b24f0445c898acf398a5712bca54ca3a7ffb08e37bd0cdcc2b212c",
+      "synthesisHash": "c2feebe0d6c420920a247e6ff5887090df9df47eeb29ed7d94fffd008dacbe08"
     },
     {
       "id": "callout-machine-gunner-10",
       "cue": "callout-machine-gunner-10",
       "text": "十点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3254,14 +3254,14 @@
       "file": "friendly-1-callout-machine-gunner-10.mp3",
       "gender": "Male",
       "bytes": 18000,
-      "sha256": "251660765b2153bb1a5b465b078a8ee58c4c731eb4288c9b22a94c1ceac1875b",
-      "synthesisHash": "6e034dba0416e8be6e4618fd6b5f41676ef69aa198f9d1da50e7699cbbecc090"
+      "sha256": "05fefcf7803465a1f9a69a2db2ed4aa0dc368b42eebb439a470ec0c431fe5066",
+      "synthesisHash": "1bce30560eacb35b7f48f9271485add8f16a5b5b5e014901bddc2a0ae3193043"
     },
     {
       "id": "callout-tank-10",
       "cue": "callout-tank-10",
       "text": "十点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3270,15 +3270,15 @@
       "variant": 1,
       "file": "friendly-1-callout-tank-10.mp3",
       "gender": "Male",
-      "bytes": 16704,
-      "sha256": "6dce681885aaa31d3f85469f0dd054349a55bc6efa3081776e613c4fc7a5f776",
-      "synthesisHash": "bcb0435a582b93e1669db63dc22c806b4a9ba8cf36cdd07352fe9c213767df03"
+      "bytes": 16848,
+      "sha256": "205a9482b5a856fcc7d2a5393f4ed6136a8bf61620862687aa2e58930be5569f",
+      "synthesisHash": "9a7476111234ccb3d3fe615658be4e95e2d4014145d0772eb7e43107eb20241a"
     },
     {
       "id": "callout-sniper-11",
       "cue": "callout-sniper-11",
       "text": "十一点钟方向，敌方狙击手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3287,15 +3287,15 @@
       "variant": 1,
       "file": "friendly-1-callout-sniper-11.mp3",
       "gender": "Male",
-      "bytes": 18144,
-      "sha256": "d8985ebfe2701f9958a2fe8f75cc10bb82faa09027e62c6acb7b8c927d55b1bc",
-      "synthesisHash": "015962da2715f8149955daff0c5eefd7712aa31e64c39c579f53070d57e10c28"
+      "bytes": 17856,
+      "sha256": "f1521a7ca5d860d919e9b0154a9969b52ecb1edeb4622c0943733216dfc7ccfc",
+      "synthesisHash": "1e55c40b327517e60d221606dc46cd38b79212f0cd47d84c527f6f33110f52e8"
     },
     {
       "id": "callout-machine-gunner-11",
       "cue": "callout-machine-gunner-11",
       "text": "十一点钟方向，敌方机枪手！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3304,15 +3304,15 @@
       "variant": 1,
       "file": "friendly-1-callout-machine-gunner-11.mp3",
       "gender": "Male",
-      "bytes": 18576,
-      "sha256": "867eee3666de912028b717ff0241dc1f1cfa67e4613d57c7d5aea66464073d10",
-      "synthesisHash": "e9ed38585459da39887b8baa98cf288610d521817d0947224676a2ebfb1cd94a"
+      "bytes": 18288,
+      "sha256": "a6aec464d54e292fc29d9b1341dc2d22878368bd8f6a2f190a4ce328570d53fd",
+      "synthesisHash": "4c662463fa1c74cd60d1c76d8579e2749b3c32f8cbeed9922fd30b06be4a6b97"
     },
     {
       "id": "callout-tank-11",
       "cue": "callout-tank-11",
       "text": "十一点钟方向，敌方坦克！",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -3322,8 +3322,8 @@
       "file": "friendly-1-callout-tank-11.mp3",
       "gender": "Male",
       "bytes": 17136,
-      "sha256": "e66ae1391a76b4acba244bcc245c204185be64f075c46c08d68951b27a643c36",
-      "synthesisHash": "dc227143054304658e1864f1b5345688230e472635fed5bc771799547396e6f5"
+      "sha256": "5f94dc24988d3d69843c7fa4569105a317955eefbfabd7ad94ae32376da357e0",
+      "synthesisHash": "060b0b8508db760589888d79ee1bb3488be3402f184bb6a7287eff7af6e36f09"
     },
     {
       "id": "enemy-whistle-1",
@@ -6809,7 +6809,7 @@
       "id": "jiangyin-player-wounded-1",
       "cue": "jiangyin-player-wounded-1",
       "text": "我好像受伤了",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -6819,14 +6819,14 @@
       "file": "friendly-1-jiangyin-player-wounded-1.mp3",
       "gender": "Male",
       "bytes": 11232,
-      "sha256": "b2fb84569ad08652074744474e2f0e943c61e8ac483eb3486d9ef0ae2fe22f8a",
-      "synthesisHash": "5e6bfc8b367332af2ca07da7162a30ce919c67b1e20b5657752debd70a5de5fd"
+      "sha256": "5d42685d67bd36fe5209be077c8c2b6e3095df43e320d0d7e02254c9278e28af",
+      "synthesisHash": "f4b45f6cb71e947b41d7043946efdac449e885e86b399b8d818608a45968c6d4"
     },
     {
       "id": "jiangyin-player-wounded-2",
       "cue": "jiangyin-player-wounded-2",
       "text": "我好像流血了",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -6835,15 +6835,15 @@
       "variant": 1,
       "file": "friendly-1-jiangyin-player-wounded-2.mp3",
       "gender": "Male",
-      "bytes": 11664,
-      "sha256": "767574ba5e07bb7129ff99d88e3b150f3d0e08c915b5fdb856338b682462e226",
-      "synthesisHash": "3cd4e105523119077672867c33775a200497195825f9ac502dbe27fb6da82a2d"
+      "bytes": 11232,
+      "sha256": "491f3c514cfd6289f5b6d999d8dcb77e0476b0c0a62f610708a32552c2ecf91f",
+      "synthesisHash": "18124e95c2790402fe0a01b4b0629fc6b3b1aa23a9a0d4624ab53ccb0c3fd59e"
     },
     {
       "id": "jiangyin-player-bark-1",
       "cue": "jiangyin-player-bark-1",
       "text": "小鬼子我日你祖宗",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -6852,15 +6852,15 @@
       "variant": 1,
       "file": "friendly-1-jiangyin-player-bark-1.mp3",
       "gender": "Male",
-      "bytes": 14976,
-      "sha256": "f4fa21f207be1418ab6d96070fb761f766ad45d7a53d459df46791e5ddfda800",
-      "synthesisHash": "ce2d93c74edf7b820c33008a203bf8741539834068f9ef55d2b8af6a4ac2ff89"
+      "bytes": 14256,
+      "sha256": "aac0e6bd9647178ffb9e20ea5913dd54b6b0acc6c9719ad4d1bca784e1eabe12",
+      "synthesisHash": "3a1649efb699689385589d94b1d41736cbd0e551f59d35a775e3d136553f8d4e"
     },
     {
       "id": "jiangyin-player-bark-2",
       "cue": "jiangyin-player-bark-2",
       "text": "打到小鬼子",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -6870,14 +6870,14 @@
       "file": "friendly-1-jiangyin-player-bark-2.mp3",
       "gender": "Male",
       "bytes": 11232,
-      "sha256": "d9f9eb0918c2ee48c68e1bdb6424a6af4961c56359108c0df8df2d1a362e7135",
-      "synthesisHash": "0e3194435549baff8360ba7cf18c887cda3971d7059d45e134ac9c56b4ef18f7"
+      "sha256": "a6f085398a0769c69e40f53daf8fa3027d89fca0404fc19aebd1a6fbd15943d3",
+      "synthesisHash": "991fd6fc0608f25cad1c95af951cede6be39f8874fb66a21fef695dbfe89fe05"
     },
     {
       "id": "jiangyin-player-first-kill",
       "cue": "jiangyin-player-first-kill",
       "text": "我干掉一个小鬼子",
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "locale": "zh-CN",
       "style": "angry",
       "rate": "+16%",
@@ -6886,9 +6886,9 @@
       "variant": 1,
       "file": "friendly-1-jiangyin-player-first-kill.mp3",
       "gender": "Male",
-      "bytes": 12384,
-      "sha256": "607323b37755215bbc73f9096802ebc7c18a7a4ad8640b12fcf938a9bba191f7",
-      "synthesisHash": "011c545afdcd5c28f5842463aa1d83e30f3e08f56f95e6bdf4caf1f7e229fa50"
+      "bytes": 12240,
+      "sha256": "26fff30c1aee5ae9b824aa9fc6a2f3f689698dacc0f951b3cbde68fd4ee64bf1",
+      "synthesisHash": "12c2201295455513399b7154353e8d0ce8f8a290100643793046f0fec505a5e4"
     },
     {
       "id": "jiangyin-player-wounded-1",

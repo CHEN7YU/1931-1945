@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import metadata from '../public/assets/loading/source.json' with { type: 'json' };
 import { createPhotoWall, LOADING_PHOTOS, PHOTO_WALL_SPEED, PHOTO_WALL_BOTTOM_TRIMS } from '../src/loading-screen.js';
 
-function fixture({ hidden = false, reduced = false, random = () => 0 } = {}) {
+function fixture({ hidden = false, reduced = false, random = () => 0, id = '' } = {}) {
   class Node extends EventTarget {
     hidden = false;
     textContent = '';
@@ -25,6 +25,7 @@ function fixture({ hidden = false, reduced = false, random = () => 0 } = {}) {
     }
   }
   const element = new Node(), root = new Node(), doc = new Node(), motion = new Node();
+  element.id = id;
   const track = new Node(), status = new Node(), toggle = new Node();
   root.hidden = hidden; motion.matches = reduced;
   doc.createElement = tag => { const node = new Node(); node.tag = tag; return node; };
@@ -101,6 +102,19 @@ test('the wall has two identical collections for seamless horizontal scrolling, 
   assert.equal(f.track.style['--photo-wall-duration'], `${600 / PHOTO_WALL_SPEED}s`);
   assert.equal(f.track.style.animationPlayState, 'running');
   f.control.dispose(); assert.equal(f.track.style.animationPlayState, 'paused');
+});
+
+test('the home photo wall omits the restoration notice while retaining image descriptions and load failures', t => {
+  const home = fixture({ id: 'menu-photo-wall' }), loading = fixture({ id: 'loading-photo-wall' });
+  assert.equal(home.status.textContent, '');
+  assert.match(loading.status.textContent, /AI修复上色/);
+  assert.ok(home.track.querySelectorAll('img').some(image => /AI修复上色/.test(image.alt)));
+  t.mock.method(console, 'error', () => {});
+  home.track.querySelectorAll('img')[0].onerror();
+  assert.match(home.status.textContent, /未能加载/);
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /载具音效来源与署名|仅中国阵营/);
+  home.control.dispose(); loading.control.dispose();
 });
 
 test('seven display-only bottom trims apply consistently to both copies without changing original images', () => {

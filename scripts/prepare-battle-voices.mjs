@@ -153,18 +153,16 @@ export async function generateBattleVoices({ cacheOnly = false,
     files.push({ ...clip, gender: 'Male', bytes: bytes.length, sha256: hash(bytes), synthesisHash });
     console.log(`${files.length}/${clips.length} ${clip.file}`);
   }
-  if (newFriendlyOnly) {
-    const generated = new Set(files.map(file => file.file));
-    for (const old of previous.files) {
-      if (generated.has(old.file)) continue;
-      if (!/^(friendly|enemy)-\d+-[a-z0-9-]+\.(mp3|wav)$/.test(old.file)) throw new Error(`Unsafe retained voice filename: ${old.file}`);
-      const bytes = await readFile(join(root, old.file));
-      if (bytes.length !== old.bytes || hash(bytes) !== old.sha256) throw new Error(`Existing voice changed; refusing to discard its source evidence: ${old.file}`);
-      files.push(old);
-    }
-    const order = new Map(previous.files.map((file, index) => [file.file, index]));
-    files.sort((a, b) => (order.get(a.file) ?? previous.files.length) - (order.get(b.file) ?? previous.files.length));
+  const generated = new Set(files.map(file => file.file));
+  for (const old of previous.files) {
+    if (generated.has(old.file)) continue;
+    if (!/^(friendly|enemy)-\d+-[a-z0-9-]+\.(mp3|wav)$/.test(old.file)) throw new Error(`Unsafe retained voice filename: ${old.file}`);
+    const bytes = await readFile(join(root, old.file));
+    if (bytes.length !== old.bytes || hash(bytes) !== old.sha256) throw new Error(`Existing voice changed; refusing to discard its source evidence: ${old.file}`);
+    files.push(old);
   }
+  const order = new Map(previous.files.map((file, index) => [file.file, index]));
+  files.sort((a, b) => (order.get(a.file) ?? previous.files.length) - (order.get(b.file) ?? previous.files.length));
   const retained = new Set(files.map(file => file.file));
   const metadata = { provider: 'Azure AI Speech', generatedAt: new Date().toISOString(),
     source: 'https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech',

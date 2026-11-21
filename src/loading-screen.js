@@ -29,7 +29,8 @@ export function createPhotoWall(element, {
     throw new Error('Photo wall requires its track, controls and valid photos');
   }
   let paused = reducedMotion?.matches ?? false, disposed = false;
-  if (photos.some(photo => photo.restored)) status.textContent = '部分影像经AI修复上色，颜色与补全细节为推测，非历史原色。';
+  if (element.id !== 'menu-photo-wall' && photos.some(photo => photo.restored))
+    status.textContent = '部分影像经AI修复上色，颜色与补全细节为推测，非历史原色。';
   const failures = new Set();
   const copies = [false, true].map(duplicate => {
     const copy = doc.createElement('div'); copy.className = 'photo-wall-copy';

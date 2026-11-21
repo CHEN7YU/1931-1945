@@ -5,7 +5,7 @@
   "license": "Azure-generated-speech",
   "licenseUrl": "https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA",
   "provenance": "Original fictional civilian dialogue. Stock neural voices with supported age roles; not historical recordings, real survivors, cloned voices or CC0.",
-  "generatedAt": "2026-11-05T13:19:07.716Z",
+  "generatedAt": "2026-11-21T20:50:43.717Z",
   "requestedBudgetUSD": 50,
   "requestSSMLCharacterLimit": 200000,
   "budgetPerPhaseUSD": {
@@ -13,10 +13,10 @@
     "opening": 50
   },
   "budgetBasis": "200,000 SSML characters per phase, including retries. Standard S1 Neural retail meter in Sweden Central: USD 15 per million characters (2026-11-02). Counting full XML overestimates billable text; this is a synthesis guard, not an Azure subscription spending cap or invoice.",
-  "attemptedSSMLCharacters": 45709,
+  "attemptedSSMLCharacters": 59241,
   "attemptedCharactersByPhase": {
-    "retreat": 28349,
-    "opening": 17360
+    "retreat": 37499,
+    "opening": 21742
   },
   "files": [
     {
@@ -356,11 +356,11 @@
       "synthesisHash": "8ae3704f7874ee6aaffadb42a1d8ad8382c2967bd61e4509b40c3064a977aa6c"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -372,16 +372,16 @@
       "file": "man-1.mp3",
       "zone": "city",
       "text": "别走散了！沿着这条路去渡口！",
-      "bytes": 21456,
-      "sha256": "2d799f3e9b984e47af404f4279681f13c5bd7c8d4d0d7d4206a9d8a174cd5402",
-      "synthesisHash": "68c837fc653be35c42bffbb857e5ea9c4f4e2e507ab1012633d4ae795060c822"
+      "bytes": 28224,
+      "sha256": "52a76a98b89ce9ac6aca8e2f0ac57f330dc31b425c263087373a3195f421d248",
+      "synthesisHash": "0790f246f1a813b0a7ee154d5afc90fe4b54ce24fc6afed695532ef5deccfc46"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -393,16 +393,16 @@
       "file": "man-2.mp3",
       "zone": "dock",
       "text": "船上还有空位！先扶老人过去！",
-      "bytes": 21744,
-      "sha256": "2a451c69d90b80eb2f60f2bacd14eedd03ef234ef8d71540476ed01c7adb767c",
-      "synthesisHash": "eb84153bac23511c982728bb7eb30072ae91400b5529e244eb1e29efc0c695fc"
+      "bytes": 30240,
+      "sha256": "2fdc71b6e1f3051f8816cfa609836ffabcf3b4ab41db9201ef61e169caffe8f6",
+      "synthesisHash": "e5e5ec7eb50c5aa24618a2f95bec10c03f853948b94cf7dc0509d3b910bde7f6"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -414,16 +414,16 @@
       "file": "man-3.mp3",
       "zone": "city",
       "text": "城门那边全是枪声，不能回去了！",
-      "bytes": 21168,
-      "sha256": "f36b4dc7a7a405f7050752feceebdf1a5a8c005e091e049197f4da57519ae760",
-      "synthesisHash": "4443dfd82f526becc79921ed1b01af75a19685b6e543ff9d2c87d606c78ab3ca"
+      "bytes": 27072,
+      "sha256": "5d7e26af793871a0893042c3b919b3d4b8ca613734c3d5359f542ab5d25c2163",
+      "synthesisHash": "b145317eb2f5138581dfa1dc789ec19614285d41ee15f64f4ece7a03a9d55608"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -435,16 +435,16 @@
       "file": "man-4.mp3",
       "zone": "both",
       "text": "谁有水？给这孩子喝一口吧。",
-      "bytes": 20448,
-      "sha256": "2a47ed37f353f569f6cd7a9efd97de3482cec9f0c954330f1419b46c62054414",
-      "synthesisHash": "a0ebec803127fa23b35637cd8501505f4be9a7a1ca275e936a2ae87351a9ad4a"
+      "bytes": 27360,
+      "sha256": "83a0f92e12ca65a700ef4c00e3190c39634959de1313c4e65945c4b245da8897",
+      "synthesisHash": "8355d7ae4b143db094e3507c29b8a7dc2c075c382e0bed10c64331ba454c24c6"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -456,16 +456,16 @@
       "file": "man-5.mp3",
       "zone": "dock",
       "text": "我会划船，让我上去帮忙！",
-      "bytes": 16704,
-      "sha256": "367a8e6d91eb1db8afc7eb0ff8703ec12ac0372090d4949c19991fa236254910",
-      "synthesisHash": "88d780f1a5b6a028f26b84684a8e93594d64434efcc6e8a39d36f7c6d86f62e4"
+      "bytes": 20592,
+      "sha256": "09ce1195bb59ede22c410ddb397113e967a24c68a90c0ed3035175ae9d17ee85",
+      "synthesisHash": "f23f1644d193d061722f89f321f080364197d6789b0030d7bf1ff1f2b470e983"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -477,16 +477,16 @@
       "file": "man-6.mp3",
       "zone": "city",
       "text": "爹，靠着我，我背您走。",
-      "bytes": 19008,
-      "sha256": "22103ee1e70c6fb59c0e0e44a94d64ec86c0fd802fc61b02749413784ec8ee23",
-      "synthesisHash": "71bbc7ebceaf555f3926a3b605f71bd63b3fee46f159360a0e0040b619fc4989"
+      "bytes": 24192,
+      "sha256": "8c7b14ef2666c7c221472c5179d0e0234820398c642954cfba040be677e46109",
+      "synthesisHash": "9a63465731eb90a7a89ce467561505f387c92d46eb43f7fd178eae9032d92a77"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -498,16 +498,16 @@
       "file": "man-7.mp3",
       "zone": "dock",
       "text": "再来一条船啊！这里还有这么多人！",
-      "bytes": 22752,
-      "sha256": "ba47290aabe4545b5712e662a3f8ee8621b8cfaf53c9497c21f6b9f15adde709",
-      "synthesisHash": "b445ac638edc618287ecbb18e3d36a3ace79e00122d2cbcb00d905b5fefb4bdc"
+      "bytes": 26640,
+      "sha256": "0b9995e5858ee15dac79b9ad53dc4714f012a7746aa86aa10240cb298aa9a5c4",
+      "synthesisHash": "3986ba30601f88f7728e765560ebb9710749b83eeffd10a688c628848bc49a12"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -519,16 +519,16 @@
       "file": "man-8.mp3",
       "zone": "both",
       "text": "有人看见我家姑娘了吗？她才这么高！",
-      "bytes": 24912,
-      "sha256": "876cd91a2630b248fde4ec0b285273143f317d291dcfe28c9d637060c05495a3",
-      "synthesisHash": "3c364fec680874b7ddd88ae962c7c22d1d8ff53a10e2d38e45dd781fafc7edac"
+      "bytes": 29664,
+      "sha256": "bd4a8c027c6bfb1870ecbdf6e4c89a69e96109160c69c74d8878b7db26d8c81c",
+      "synthesisHash": "4995440fe1ded7a3dfcce67c313888750dbd438293a3b734a2d73b6fac8ff813"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -540,16 +540,16 @@
       "file": "man-9.mp3",
       "zone": "city",
       "text": "别停在路中间！后头还有人！",
-      "bytes": 20016,
-      "sha256": "498fea15f08c457f4624d02a79f3c2217e2fbdb4abb389c1f252fe74e2815c6c",
-      "synthesisHash": "6c918151a4ef7a89708e29b85e5c7c880c51db59d55ff2e45b4be5b1c8177066"
+      "bytes": 26208,
+      "sha256": "367d7b2bd0d9163d18330bd9feb5fde9b95f16c5b66ad02e7a8c1731c5451b06",
+      "synthesisHash": "7398c2554f63b6239153457991f45d5e0de7f12a044a5f63ac4233c57a43a6df"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -561,16 +561,16 @@
       "file": "man-10.mp3",
       "zone": "dock",
       "text": "别推了！再推就掉进江里了！",
-      "bytes": 22176,
-      "sha256": "4b52435fa3edb0981ea608fa0339c7ccecf7ddb533fe35192c60c2d8bd467176",
-      "synthesisHash": "e532e0a61573dd6bdde26e3fe7d90807bd07f80014a315b077217ef9634d9aad"
+      "bytes": 26352,
+      "sha256": "d4997920ff1b27b517a2a359215cc0d249baf074e5550ba09c332a4eea256416",
+      "synthesisHash": "090b95e5f702fa21fe4461e2393f31247c8350d00e203acdc4ee2cdc106c9953"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -582,16 +582,16 @@
       "file": "man-11.mp3",
       "zone": "both",
       "text": "都跟着家里人，千万别松手。",
-      "bytes": 18576,
-      "sha256": "ec3c2e7986f9a98fb0ab6bffdfe81cf62d0f100098737ca646aeee3df04441e2",
-      "synthesisHash": "77ca05f88dc075406708d122dc359d763995bb94991f6d44e3d0cb3a1e145ce1"
+      "bytes": 22464,
+      "sha256": "1b97717deb3e0dd989e1abaa85c9b321b1ff2e8dda24cfc3e246774dfaaa9529",
+      "synthesisHash": "a431f0091487bad9289f52497db3a19cd2480a4e2e2901a29a6bdae8751309ed"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -603,16 +603,16 @@
       "file": "man-12.mp3",
       "zone": "city",
       "text": "那边起火了！从这条巷子绕过去！",
-      "bytes": 22320,
-      "sha256": "c0d0d926cdef0f786f66e6b75da789f16d6c65cb78d03f0720ab90a3fedc5663",
-      "synthesisHash": "b483a37e967b5fe71eb5e123382738a42c09da124ad0a9b2efe2f0b8e8cb50cb"
+      "bytes": 28944,
+      "sha256": "a708279714c596cd251b3475eda2313f8e6c417a3d186bb5fdd0038a6a7b80b9",
+      "synthesisHash": "ae7cd89ae63fb09dcb02dcd77c28d79aeddc33f977e46165202dc4f216cc2b5d"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -624,16 +624,16 @@
       "file": "man-13.mp3",
       "zone": "dock",
       "text": "这船太小了……后面的人怎么办？",
-      "bytes": 19152,
-      "sha256": "1406c0f3740ced75eb6588323aa90cc4ebb215cb15fdacda18f65810d6777e00",
-      "synthesisHash": "1ff71d86e386ce7d2dc1c40372ff7ee25e2d37dfb5d26956bb3f661ef241a92a"
+      "bytes": 26640,
+      "sha256": "ca8b2f48d28fcd092dc8a8c0a55af0ee9fb78ea1cd15973d5ebafcb1a0f06f6d",
+      "synthesisHash": "fdf6550c59becb5e296febe38f2e4275218f1e1ea2cbe50b17212db1c75bde0c"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -645,16 +645,16 @@
       "file": "man-14.mp3",
       "zone": "dock",
       "text": "慢一点，把老人扶稳！",
-      "bytes": 15696,
-      "sha256": "5bd08abad18d8d1f517cb13f6e65a291cb7c3400db31a9fd0da2deeca1b8016a",
-      "synthesisHash": "cef5bfa1be3246b1ee20afdcf0fef0d80a939144a793d05230f28ee10a9e241c"
+      "bytes": 20448,
+      "sha256": "e792150287e61cf67aa5a1ab42964cd675e5edef5007645a33463db34aad3ff5",
+      "synthesisHash": "eb41ed4162537b773e0187d30f19477d03684a2a0dc4f1faa49a7a0d045e2918"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -666,16 +666,16 @@
       "file": "man-15.mp3",
       "zone": "both",
       "text": "屋子没了，人活着就好，快走吧。",
-      "bytes": 21024,
-      "sha256": "a431214d1b55ccaabab76cb3e04a997035df2759e39ef2748163527fa0fa62ff",
-      "synthesisHash": "8ee0bfc04d80cffbc489aa520ec7e540aac750b6fefceaaa66ae2efbb826b959"
+      "bytes": 27072,
+      "sha256": "c9d088ea7373e26711195c637fb033626a17ee71b4e66951f861b29107ad4a24",
+      "synthesisHash": "60f98eab35d680b9c99eb305e46aa337a391abbf1acd2a0626b5cc3d4acdb30d"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -687,9 +687,9 @@
       "file": "man-16.mp3",
       "zone": "dock",
       "text": "长官，后面还有百姓，求你们再守一会儿！",
-      "bytes": 25776,
-      "sha256": "5436b38db046e76f268f936c69ccfc57f6e0890c9ac46ffef102e149a0fb15ab",
-      "synthesisHash": "7b336b7aa69144f965aa7aefa7415f8fa62dba9481408b39610ebd14e7c28498"
+      "bytes": 31248,
+      "sha256": "1b7ee0e5ce6ffc7626b92c41797892f443969f6fce90b5cd2ca67176d1eeb679",
+      "synthesisHash": "6a034118e47ac773ad3f4bf820c36986ed3f47fa281b00322f19544fcf3dc4ae"
     },
     {
       "voice": "zh-CN-XiaomoNeural",
@@ -1239,10 +1239,9 @@
       "text": "妈妈！妈妈！你在哪里？",
       "pauseMs": 110,
       "audioRevision": "fearful-2",
-      "synthesisHash": "1b2bf9f44c3e3f97a02c12da7473278452790904429fd1f6d53c2845c0a96c53",
-      "sha256": "8f94b7a2be244681a1ad89431b771144f304f773e62757310ea6e9c558810a85",
       "bytes": 13824,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "sha256": "8f94b7a2be244681a1ad89431b771144f304f773e62757310ea6e9c558810a85",
+      "synthesisHash": "1b2bf9f44c3e3f97a02c12da7473278452790904429fd1f6d53c2845c0a96c53"
     },
     {
       "voice": "zh-CN-XiaomoNeural",
@@ -1264,10 +1263,9 @@
       "text": "娘！别丢下我！",
       "pauseMs": 110,
       "audioRevision": "fearful-2",
-      "synthesisHash": "2e7e799b729b27e5257496e5b2a06bee4a05316791b429095469fe256664199e",
-      "sha256": "72e6bb4fe0f0ca4ba78d72026f8e08bf2d7d716b88a4278375d78414618d6b00",
       "bytes": 11232,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "sha256": "72e6bb4fe0f0ca4ba78d72026f8e08bf2d7d716b88a4278375d78414618d6b00",
+      "synthesisHash": "2e7e799b729b27e5257496e5b2a06bee4a05316791b429095469fe256664199e"
     },
     {
       "voice": "zh-CN-XiaomoNeural",
@@ -1490,12 +1488,11 @@
       "synthesisHash": "af22008e6af721406bbe54c55886b9163640caaeb9c35fab51266cae0ed3cfd9"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+16%",
       "pitch": "+2%",
       "locale": "zh-CN",
@@ -1508,19 +1505,17 @@
       "zone": "both",
       "text": "妈妈！妈妈！你在哪里呀！",
       "pauseMs": 110,
-      "audioRevision": "fearful-2",
-      "synthesisHash": "70bb789323350a0226da3647bac5c63c26a3908f6a13f695f0fb54abb2262a9e",
-      "sha256": "a7d3c6eaf5b456b53fdb3c2ffe3cdb3cc38aab441f02a8c08757abc84382edc3",
-      "bytes": 16992,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "audioRevision": "sad-2",
+      "bytes": 20016,
+      "sha256": "3c8544e07d104cf163b30bdf2f3f11b6bfde04defc152ad68616f2116cd0f20e",
+      "synthesisHash": "0c47cd138c5497284f53a9ffbd5be286aa8a190ea3885cd199a47023cd757283"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+16%",
       "pitch": "+2%",
       "locale": "zh-CN",
@@ -1533,18 +1528,16 @@
       "zone": "city",
       "text": "爹！我找不到我妹妹了！",
       "pauseMs": 110,
-      "audioRevision": "fearful-2",
-      "synthesisHash": "9596ec6ed80a0238e25c3d8d1394bbf09e75c2241ff9ab6478057379c702bcd2",
-      "sha256": "1bfb19522e1a249832daa9dae9eab61fbdb27397633843d3bd11af9e3a9c3ae9",
-      "bytes": 14400,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "audioRevision": "sad-2",
+      "bytes": 16992,
+      "sha256": "f1c7d25eb8abf695908bb63d6a6416a91f78fafcd460d79946888aa97e6bfc36",
+      "synthesisHash": "f29986280802d51f2e347eb3342f9b8c17712345cde5cd5f56130e5227f39d98"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1557,16 +1550,15 @@
       "file": "boy-3.mp3",
       "zone": "dock",
       "text": "别推我！我要掉下去了！",
-      "bytes": 20160,
-      "sha256": "26731cb21527ab02de11ec9219c2703b211de9c276eb714aa3a61d064bfaabdd",
-      "synthesisHash": "76af346c85d9a83e908d135a4f5493a3f41fb2cbc8d33ed79d2418f695ab474b"
+      "bytes": 21600,
+      "sha256": "bf320a76e7bb6f66511d0f590ffd758f1c5cebfd09d152f34a1b8fff6e132c33",
+      "synthesisHash": "fc45b3cdb169a8754a19a6c0f1b96911f48326a0081065932173161711415da4"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1579,16 +1571,15 @@
       "file": "boy-4.mp3",
       "zone": "both",
       "text": "姐姐，你抓住我！",
-      "bytes": 17568,
-      "sha256": "c556ea017b74395cd8d1496fe34a1455fbcfc7eeacf1523d9d82f5dcd5ce34b0",
-      "synthesisHash": "a7bc3e3421228da1055144a83b89f150e17f6ba260a84feac9cab211a4b2c8ba"
+      "bytes": 17712,
+      "sha256": "ba88b908849607a4b8f00986963ad3ccf0be1cf176797768a4f6db470c26f3db",
+      "synthesisHash": "2213af73be259da545b70b9a1d4eb8b3020be9c9a02632c5fe638145b3529803"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1601,16 +1592,15 @@
       "file": "boy-5.mp3",
       "zone": "city",
       "text": "他们打过来了！快跑啊！",
-      "bytes": 19152,
-      "sha256": "74f44ebf7e00189cdb2275484ee046d4f215832696e33cf2b409d8da5308e504",
-      "synthesisHash": "669cf319a102858777a06d946abbc0e761fca14c1a622cbb717cccb2c345926a"
+      "bytes": 23472,
+      "sha256": "e6d207b77e94422fdec54c3be6fcd3611009a4d11eb3702ddf8e3cd4cf74fa8c",
+      "synthesisHash": "7247f7d8d880c866a56ad29d9b444a88e48f310179be09b1a35673ab23ce70fc"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1623,16 +1613,15 @@
       "file": "boy-6.mp3",
       "zone": "dock",
       "text": "能不能也带上我奶奶？",
-      "bytes": 14832,
-      "sha256": "3e6e7ee82e1579de61af275ff1caa3e4cb1922da1f58743ca3d1d48f0d298db7",
-      "synthesisHash": "a37105ea96454a398654a6a19137a4fd16a56affff228e43edb88c6d7644a84e"
+      "bytes": 17136,
+      "sha256": "7d4bf121cc8139a93a2f3b679fbc44f5cfe86c5658e7fcd852098bcf25d3b44a",
+      "synthesisHash": "48fc684809d957b3a036b3118ac843e25ccf08dd26edd73019772087570c0bd3"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1645,16 +1634,15 @@
       "file": "boy-7.mp3",
       "zone": "both",
       "text": "我不要一个人走！",
-      "bytes": 14256,
-      "sha256": "5b83d0b88d48da7cd301231da1855e01d029b8da4ba50167468418229a7c1186",
-      "synthesisHash": "582664c6765aa8dcbd7134ca256e15736b99813241b1342faf3b11bd6b3bbb85"
+      "bytes": 15408,
+      "sha256": "c88780dce569c907214c82de49b0505d4c4870995bd757732d0cc405390b4c2a",
+      "synthesisHash": "9ede631f57c88442ff8f40bf9138a6705361c04f43fb73c37733f65ad78c98e3"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1667,16 +1655,15 @@
       "file": "boy-8.mp3",
       "zone": "dock",
       "text": "娘，江那边还有枪声吗？",
-      "bytes": 20160,
-      "sha256": "96f4c9f8f50aa3050a521200b0a3d0a343da5a353c62852438e86dbf92edbe25",
-      "synthesisHash": "cccb4b164e792f30adae370fb95ceafaa5e2397034d3aa9f5f07c37f2cdd918c"
+      "bytes": 24480,
+      "sha256": "a5754ab684355f28a9aaa697f48fe07d8dba21fe415f604cda14278ad9d82e0c",
+      "synthesisHash": "08ac30a9e2c136fd30a5114fe4db1eb5de7f02b8529f72be5b4e21301109bbce"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1689,16 +1676,15 @@
       "file": "boy-9.mp3",
       "zone": "city",
       "text": "我跑不动了，等等我……",
-      "bytes": 18432,
-      "sha256": "c80c4c66cfae1d8e12cab19257fa7b0ff278b8bdba5ea656958b8f29bb31a55b",
-      "synthesisHash": "570e268acc5235cd46300813a42de32ee1e1e0fe0e6518a90ffae0d444807adf"
+      "bytes": 20304,
+      "sha256": "e3923981d08232f395e2d6bd447db1419b24e019179606be41016805f9d6c0a5",
+      "synthesisHash": "1c0350da88fe0a73f19d1875da65d94dde46ed465d2577f0d25674d1466359e4"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1711,16 +1697,15 @@
       "file": "boy-10.mp3",
       "zone": "both",
       "text": "爹爹！你听见我了吗！",
-      "bytes": 19008,
-      "sha256": "e3c4f3821358b65ab4654fc4cec978f88852b390c2a5a62763890570896a236b",
-      "synthesisHash": "977f8c06b194de2268361c535fb2013b914284aa25e2d061260479556241e83b"
+      "bytes": 21168,
+      "sha256": "80dd1e5123f070fb6a6fc897f97c0f5d422ab26c7833814cf84780cae268d6fe",
+      "synthesisHash": "d7cb313116c6900df7cf922b694236514f1f2b13301c4d02297d94f416bcfe8a"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1733,16 +1718,15 @@
       "file": "boy-11.mp3",
       "zone": "dock",
       "text": "叔叔，我们还要等多久？",
-      "bytes": 20304,
-      "sha256": "3e2fea26fa3d8f2743b599df2198aa139d904325b385fed08bbf8a92b7b7dbea",
-      "synthesisHash": "906d474c642b82791eee89b016af0fb3c739840870c8a9297254568f30cf4912"
+      "bytes": 21888,
+      "sha256": "0db7cf50bbef7bdd0b6c574a83e5228320df05bbf563e02727d86e568812eb8f",
+      "synthesisHash": "2976a3ef453da12a8099a4343f1534e3acbba6656558675f645991ad967b3704"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -1755,9 +1739,9 @@
       "file": "boy-12.mp3",
       "zone": "city",
       "text": "家里着火了……我们以后住哪里？",
-      "bytes": 22608,
-      "sha256": "5eac82a63ff3df984c202d35f80a24c336bea033efd859880f686a5128a999a7",
-      "synthesisHash": "d3d04dad34ad5a23ad0990faaaa7e87fea89dd73ccf739e9209f3fe3592c4269"
+      "bytes": 26928,
+      "sha256": "98ef4fd6bdd8cb60b3d075373ad299552d30111d763205ed5ea6f9b4edfee63c",
+      "synthesisHash": "a115da6495f3764b0613f060493868d9d0283249b047b653e2abfb1cc5e827a0"
     },
     {
       "voice": "zh-CN-XiaoxiaoNeural",
@@ -1928,11 +1912,11 @@
       "synthesisHash": "10613726d6a413581c632a7ed6660fc0285bdddd4597cf50e2b20b5eeb8e28f8"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -1944,16 +1928,16 @@
       "id": "opening-man-1",
       "file": "opening-man-1.mp3",
       "text": "后面有人开枪！快往城门跑！",
-      "bytes": 20736,
-      "sha256": "757fc6da330cd619f7c0d50f619bbe7dcac730b2dd9a9ea7dfb5a4bd65c804eb",
-      "synthesisHash": "836f924036f275e22ffba9d9108faf0c777863b334c805d151b2f6feb37aa875"
+      "bytes": 28224,
+      "sha256": "8c7684c63f82b9aa6eeaf93ce6d6316d68fe831c8326f39a9856333f56923483",
+      "synthesisHash": "6d85654e831054a7ed6dd5dd0cb44fe9c88fc8289107c367c57563d200b223ea"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -1965,16 +1949,16 @@
       "id": "opening-man-2",
       "file": "opening-man-2.mp3",
       "text": "长官！救救后面的人！",
-      "bytes": 19008,
-      "sha256": "6bcbb60fa9ea619ca5c389ee64942a862fbbfb09babb85ede607071b1e0a49f6",
-      "synthesisHash": "24960415463496fc4074f6fca1ed8d43537b2a43c4c1dd39863fa2d08a2447be"
+      "bytes": 20160,
+      "sha256": "67e88d889558b93bf593a8d10f734fdaa2e6412cbbbe2b69be4a5e8826a9d2b4",
+      "synthesisHash": "8faf11846bf6b7f8025adf5ae548af9c12f6fbf9546cfb7503134b4fb20cce93"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -1986,16 +1970,16 @@
       "id": "opening-man-3",
       "file": "opening-man-3.mp3",
       "text": "别挤！桥上别挤！",
-      "bytes": 18720,
-      "sha256": "1005d55c9b59f2170ec658f04273c5dc0d1f0fdd5938057c4acbefb805993b41",
-      "synthesisHash": "2f084254a4c69a2f802cb0c30b787b7a9bccc59c4402f6ead9fe7b320b22c3d7"
+      "bytes": 20160,
+      "sha256": "fe0ea0d1c32784fbb078ee27b46909fe41b4905de207b3557f789b99563967a9",
+      "synthesisHash": "f4952be66ce9cbea79fb303e30631d1e835f357653866eaa86c2f9dcee49cb06"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2007,16 +1991,16 @@
       "id": "opening-man-4",
       "file": "opening-man-4.mp3",
       "text": "把箱子扔了！先把孩子抱过去！",
-      "bytes": 20160,
-      "sha256": "3cf497c2d2a44f8a22a4fcbf322374df6d61145b5a2bdf3ed1faa92ff09cbe29",
-      "synthesisHash": "2e5e747e61dc106ae47545f9f35f008783604290fd7c70b1d0ab4d8e2aae5ba0"
+      "bytes": 25776,
+      "sha256": "844e5f8b2e63580d486b9df25a375b74f6178ea32fd52ab5f20a00e67fe5f0b7",
+      "synthesisHash": "2083fd197a5e9199eb703e2bcf9850bedcdf4d3ea65ded51a78c0380ecb12039"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2028,16 +2012,16 @@
       "id": "opening-man-5",
       "file": "opening-man-5.mp3",
       "text": "老人走里边！都扶着点！",
-      "bytes": 20016,
-      "sha256": "31a386e0e2ee00ed33396e1360c24a61717379e1be9b875b5e27f1911c9dd687",
-      "synthesisHash": "18833c67dfad47bed477be40d7a4c349d4f128c45c1b37fc30f12d94dd865c43"
+      "bytes": 22752,
+      "sha256": "f00cadc159067dcc8d33191b3fdef9461b83df52def5b06df4817bca227b60e9",
+      "synthesisHash": "6bfba2a746025c0f4d78ce48fcb2ff4be41e3a505382febe3cea8d8a169b3b9a"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2049,16 +2033,16 @@
       "id": "opening-man-6",
       "file": "opening-man-6.mp3",
       "text": "日本人追上来了！快跑！",
-      "bytes": 19008,
-      "sha256": "29b191b081acaaab3202de7c3dbe40fe57544b4a7cc20da9acdfb7ba791f3e55",
-      "synthesisHash": "52262ab9106075d0a8efd6ad5f2a023adf92ab1e6ca3eaf0fb83452fd3eeae14"
+      "bytes": 23616,
+      "sha256": "3582afd4024ca3bb1f323087d547d5161c66ea92a2b3061a0dd56cb3b7c4928f",
+      "synthesisHash": "369b32c7b21e372a4841519b37f63876b1ca7e3230c035a3e59be88082c41616"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2070,16 +2054,16 @@
       "id": "opening-man-7",
       "file": "opening-man-7.mp3",
       "text": "别开枪！我们都是老百姓！",
-      "bytes": 19728,
-      "sha256": "437812d54d8798de9e40efe64bdbc2ea061527106fdc4094208574f0a276d398",
-      "synthesisHash": "d0a24a8d69a2b1d6b9121da1a3175b2c4dc652774b0cb08760cf5c23f9bf40b9"
+      "bytes": 23616,
+      "sha256": "c0c94d570c4b4c298ddbb5cc0ffcf21a17e2f32ef1486ff9dffa6a63f78e4f67",
+      "synthesisHash": "fcd4092fe66106572cdc303f5b062653136bc3b92f4dd78b26cad827a1c99d6d"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2091,9 +2075,9 @@
       "id": "opening-man-8",
       "file": "opening-man-8.mp3",
       "text": "爹，抓紧我，前头就是城门！",
-      "bytes": 21024,
-      "sha256": "69600300a372e2dd3adf1b69b5f2062753728704f332777181657db2fc8f4ee9",
-      "synthesisHash": "e55415bde29cc3be2831d880a32620a033029cb526180c875b7e03f2974bbac8"
+      "bytes": 27504,
+      "sha256": "5babe008857d607e1436dea5ba3642d6863601d42d0e777e8e6f5f8abb756902",
+      "synthesisHash": "c422e6f9c5a01e92538fbed4fa3d398c8d32ff04403b5bfa5505821d8b754854"
     },
     {
       "voice": "zh-CN-XiaomoNeural",
@@ -2379,10 +2363,9 @@
       "text": "妈妈！别丢下我！",
       "pauseMs": 110,
       "audioRevision": "fearful-2",
-      "synthesisHash": "ea9e6979e28e14062b4f2e3e3a62806284dc208118bbb0f33e282bbdde72eccf",
-      "sha256": "ee470236814264f9edd09a0d062b4d3ca715888139f2cb3ed723dcce2bff1f9d",
       "bytes": 11232,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "sha256": "ee470236814264f9edd09a0d062b4d3ca715888139f2cb3ed723dcce2bff1f9d",
+      "synthesisHash": "ea9e6979e28e14062b4f2e3e3a62806284dc208118bbb0f33e282bbdde72eccf"
     },
     {
       "voice": "zh-CN-XiaomoNeural",
@@ -2495,12 +2478,11 @@
       "synthesisHash": "09b53cc5e742567e45dbb44abba0654efc43c099fd89ff1aab4343b693b5d4b0"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+16%",
       "pitch": "+2%",
       "locale": "zh-CN",
@@ -2513,18 +2495,16 @@
       "file": "opening-boy-1.mp3",
       "text": "日本人来啦！快跑！",
       "pauseMs": 110,
-      "audioRevision": "fearful-2",
-      "synthesisHash": "e934b626a703ea9e5907890ed017a5ad5c4e0355e60358a147658c2c02b46910",
-      "sha256": "ddca291cc699adeb16eb29d885e8e58010f89c287b33be5fc9a9f37f20d681d5",
-      "bytes": 13680,
-      "processing": "Stock fearful style at degree 2 with urgent cadence and short phrase breaks; no cloned or historical voice."
+      "audioRevision": "sad-2",
+      "bytes": 17424,
+      "sha256": "673b56c4f21e59076cf4c5f10175ba0474dbe0f69552965d40a220766c83496d",
+      "synthesisHash": "c5d6d754124ac76c99472c1181f409975cb800e0f1ce152d79cdf4c47da15a9b"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -2537,16 +2517,15 @@
       "id": "opening-boy-2",
       "file": "opening-boy-2.mp3",
       "text": "妈妈！妈妈！你在哪里！",
-      "bytes": 25488,
-      "sha256": "5b15518989f86da4082103cf0ec409a094e1dfc21e714e3f828c4c83705cda8c",
-      "synthesisHash": "b7ca4828fccb1f10c61e8ddfe4894ee2484c267495679eb33048caf001481b87"
+      "bytes": 27072,
+      "sha256": "05ab7f3561d1c9d39188ab6bccf9fd8cc36b72864bd2318e88645c7dbd5d000e",
+      "synthesisHash": "c9a38b119807741ebf2cc4a4e744fb60ddb456fae731b5099200fbc6cd18d446"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -2559,16 +2538,15 @@
       "id": "opening-boy-3",
       "file": "opening-boy-3.mp3",
       "text": "不要开枪！不要开枪！",
-      "bytes": 20160,
-      "sha256": "430c71703497376a945520c059d7363570b8544fceb5f8096de12f2839a4292b",
-      "synthesisHash": "be35889498ff31d770816c7e1adcd58616f623dc71c25058e0eb3b6039a51e75"
+      "bytes": 22176,
+      "sha256": "23fda92010b991f61d0a6c60424836572a5c5565f5777ebf7cc53837a8d3548d",
+      "synthesisHash": "8d37c6dfa8726a7ede23034a1002ec09e867cca1013df6ac4bfc4fad734ff8a1"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -2581,16 +2559,15 @@
       "id": "opening-boy-4",
       "file": "opening-boy-4.mp3",
       "text": "姐姐，抓住我的手！",
-      "bytes": 17280,
-      "sha256": "f63d2d3fe9582f72b649f5a46f9106731b8577f915d9ff4142bb8d5410892a70",
-      "synthesisHash": "03a701f8aaf3ecd78e55597672a88b2b08dd91c8784ff6b5e5dc8feedce620d6"
+      "bytes": 19296,
+      "sha256": "e271709ee7570643cd86e7d2445c7acdf33891cc64b62c7af2337c818e24e827",
+      "synthesisHash": "416d9039ef94de6a29e986b05103582cec4978dd7f0c9346dc912cd0c6ba9021"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -2603,16 +2580,15 @@
       "id": "opening-boy-5",
       "file": "opening-boy-5.mp3",
       "text": "叔叔，救救我爷爷！",
-      "bytes": 17568,
-      "sha256": "46d87b72abc7e34672a41f7e0cdf2eb786c359f49929481e7e1225d76a3b63d5",
-      "synthesisHash": "76ba1b47fe91d135afcef6a755bf04e1beae5432e85d1c993552d6033e3fc9f0"
+      "bytes": 19584,
+      "sha256": "6007f1456d63baaf8a95eee327ad37d8ed59c8d75d01d5c4962bd84072437083",
+      "synthesisHash": "5487bf9c8779348fd4dfab67de5aad8528d7cb2c844e1080fe6c8cb16c5e3941"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "child",
       "presentation": "man",
-      "role": "Boy",
       "style": "sad",
       "rate": "+4%",
       "pitch": "+2%",
@@ -2625,9 +2601,9 @@
       "id": "opening-boy-6",
       "file": "opening-boy-6.mp3",
       "text": "别关门！我们还在外面！",
-      "bytes": 20736,
-      "sha256": "dea5b6e3082573bb56aaa99921d62a0b6b943c8e965773f10460b99bd1f202cf",
-      "synthesisHash": "aa5a040e7a970316ca7ef1a36856d265a1d1802744a755923538f55483873cbd"
+      "bytes": 20880,
+      "sha256": "de1abb51f02ead468d9703fb506f4ce1b7095ded20a1faba03821e2fa44393bb",
+      "synthesisHash": "1d974b83b1df2d91f978cccc9516e18d7a79566f92f13a533dc45a6e940acd5e"
     },
     {
       "voice": "zh-CN-YunjianNeural",
@@ -2916,11 +2892,11 @@
       "synthesisHash": "14308234d45a8089ec0b817c23d40422b5a69b8be96f950905a088da5710848e"
     },
     {
-      "voice": "zh-CN-YunxiNeural",
+      "voice": "zh-CN-YunjianNeural",
       "gender": "Male",
       "age": "adult",
       "presentation": "man",
-      "style": "fearful",
+      "style": "sad",
       "rate": "+6%",
       "pitch": "-3%",
       "locale": "zh-CN",
@@ -2933,9 +2909,9 @@
       "id": "withdrawal-encounter-2",
       "file": "withdrawal-encounter-2.mp3",
       "text": "当兵的也跑了，我们往哪里跑啊？",
-      "bytes": 18720,
-      "sha256": "4aeb0392373117d83217e2e0419368cd0fc12a7af0ac55ea0624d18902611ead",
-      "synthesisHash": "b4f00eaba0838c3e571689e62521cee391f12650fedcb5203d6a26162ddfe760"
+      "bytes": 25632,
+      "sha256": "81bd954f778c69424269a296c76e5dd98f3eae7533a74afb6ffd5256999bfa2b",
+      "synthesisHash": "4ef52b9c1d4d28912aaa82a199caf68dabf95f8256d3d832c5b91eab87c80c32"
     },
     {
       "voice": "zh-CN-XiaomoNeural",

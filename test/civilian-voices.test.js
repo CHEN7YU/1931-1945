@@ -29,6 +29,9 @@ test('135 recordings cover opening, retreat and the three dedicated encounter li
   assert.equal(clips.filter(clip => clip.phase === 'retreat').length, 83);
   assert.equal(clips.filter(clip => Number.isInteger(clip.encounterOrder)).length, 3);
   assert.equal(clips.filter(clip => clip.speakerKind === 'soldier').length, 12);
+  assert.ok(clips.every(clip => clip.voice !== 'zh-CN-YunxiNeural'));
+  assert.ok(clips.filter(clip => clip.age === 'child' && clip.presentation === 'man')
+    .every(clip => clip.voice === 'zh-CN-YunjianNeural' && !clip.role));
   for (const phase of ['opening', 'retreat']) for (const age of ['child', 'elderly', 'adult'])
     for (const presentation of ['man', 'woman'])
       assert.ok(clips.some(clip => clip.phase === phase && clip.age === age && clip.presentation === presentation));
@@ -41,6 +44,7 @@ test('every real MP3 matches its synthesis hash and provenance, with independent
   const manifest = JSON.parse(await readFile(new URL('source.json', root), 'utf8'));
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.equal(manifest.files.length, 135);
+  assert.ok(manifest.files.every(file => file.voice !== 'zh-CN-YunxiNeural'));
   for (const clip of civilianVoiceClips()) {
     const record = manifest.files.find(file => file.file === clip.file);
     const bytes = await readFile(new URL(clip.file, root));
@@ -57,8 +61,9 @@ test('every real MP3 matches its synthesis hash and provenance, with independent
 test('only the six new urgent takes change emotion parameters and cache revision',()=>{
   const urgent=civilianVoiceClips().filter(clip=>clip.audioRevision);
   assert.equal(urgent.length,6);
-  assert.ok(urgent.every(clip=>clip.audioRevision==='fearful-2'&&clip.style==='fearful'&&
-    clip.styledegree==='2'&&clip.volume==='loud'&&clip.pauseMs===110&&clip.age==='child'));
+  assert.ok(urgent.every(clip=>clip.styledegree==='2'&&clip.volume==='loud'&&clip.pauseMs===110&&clip.age==='child'));
+  assert.equal(urgent.filter(clip=>clip.voice==='zh-CN-YunjianNeural'&&clip.audioRevision==='sad-2'&&clip.style==='sad').length,3);
+  assert.equal(urgent.filter(clip=>clip.voice==='zh-CN-XiaomoNeural'&&clip.audioRevision==='fearful-2'&&clip.style==='fearful').length,3);
 });
 test('the actual voice loader requests revised URLs for changed takes and keeps legacy URLs stable',async()=>{
   const previousAudio=globalThis.OfflineAudioContext,previousFetch=globalThis.fetch,requests=[];
@@ -67,7 +72,8 @@ test('the actual voice loader requests revised URLs for changed takes and keeps 
   try{
     await loadCivilianVoices();
     assert.equal(requests.length,135);
-    assert.equal(requests.filter(url=>url.includes('?v=fearful-2')).length,6);
+    assert.equal(requests.filter(url=>url.includes('?v=fearful-2')).length,3);
+    assert.equal(requests.filter(url=>url.includes('?v=sad-2')).length,3);
     assert.ok(requests.includes('/assets/audio/civilian-voices/man-1.mp3'));
   }finally{globalThis.fetch=previousFetch;globalThis.OfflineAudioContext=previousAudio;}
 });
@@ -76,7 +82,8 @@ test('voice selection follows actual age, gender, stage and location, excludes i
   const director = createCivilianVoiceDirector(undefined, () => 0), civilian = person('child', 'man');
   const first = director.select([civilian], listener, 'gate-defense', 0);
   assert.equal(first.clip.phase, 'opening');
-  assert.equal(first.clip.role, 'Boy');
+  assert.equal(first.clip.age, 'child');
+  assert.equal(first.clip.role, undefined);
   const heard = new Set([first.clip.text]);
   for (let now = 30; now <= 120; now += 30) {
     const next = director.select([civilian], listener, 'gate-defense', now);

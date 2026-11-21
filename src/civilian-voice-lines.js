@@ -1,10 +1,10 @@
 const profiles = {
   woman: { voice: 'zh-CN-XiaoxiaoNeural', gender: 'Female', age: 'adult', presentation: 'woman', style: 'fearful', rate: '+4%', pitch: '-2%' },
-  man: { voice: 'zh-CN-YunxiNeural', gender: 'Male', age: 'adult', presentation: 'man', style: 'fearful', rate: '+6%', pitch: '-3%' },
+  man: { voice: 'zh-CN-YunjianNeural', gender: 'Male', age: 'adult', presentation: 'man', style: 'sad', rate: '+6%', pitch: '-3%' },
   grandmother: { voice: 'zh-CN-XiaomoNeural', gender: 'Female', age: 'elderly', presentation: 'woman', role: 'SeniorFemale', style: 'sad', rate: '-8%', pitch: '-3%' },
   grandfather: { voice: 'zh-CN-YunzeNeural', gender: 'Male', age: 'elderly', presentation: 'man', role: 'SeniorMale', style: 'sad', rate: '-7%', pitch: '-2%' },
   girl: { voice: 'zh-CN-XiaomoNeural', gender: 'Female', age: 'child', presentation: 'woman', role: 'Girl', style: 'fearful', rate: '+3%', pitch: '+2%' },
-  boy: { voice: 'zh-CN-YunxiNeural', gender: 'Male', age: 'child', presentation: 'man', role: 'Boy', style: 'sad', rate: '+4%', pitch: '+2%' },
+  boy: { voice: 'zh-CN-YunjianNeural', gender: 'Male', age: 'child', presentation: 'man', style: 'sad', rate: '+4%', pitch: '+2%' },
 };
 
 const dialogue = {
@@ -171,7 +171,17 @@ export function civilianVoiceClips() {
       id: `opening-soldier-${voiceIndex}-${index + 1}`, file: `opening-soldier-${voiceIndex}-${index + 1}.mp3`, text,
     })));
   const urgentCalls=new Set(['girl-1','girl-2','boy-1','boy-2','opening-girl-1','opening-boy-1']);
-  return [...retreat, ...opening, ...soldiers, ...encounter].map(clip=>urgentCalls.has(clip.id)?{
-    ...clip,style:'fearful',styledegree:'2',rate:'+16%',volume:'loud',pauseMs:110,audioRevision:'fearful-2',
-  }:clip);
+  return [...retreat, ...opening, ...soldiers, ...encounter].map(clip => {
+    if (!urgentCalls.has(clip.id)) return clip;
+    const usesYunjian = clip.voice === 'zh-CN-YunjianNeural';
+    return {
+      ...clip,
+      style: usesYunjian ? 'sad' : 'fearful',
+      styledegree: '2',
+      rate: '+16%',
+      volume: 'loud',
+      pauseMs: 110,
+      audioRevision: usesYunjian ? 'sad-2' : 'fearful-2',
+    };
+  });
 }

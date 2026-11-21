@@ -59,14 +59,16 @@ function sightedThreat(role = 'sniper', clock = 3, time = 2) {
   return { player, observer, target, actors: [player, observer, target] };
 }
 
-test('battle voice clips retain campaign commands and actual-whistle warnings with three male voices', () => {
+test('battle voice clips retain campaign commands and actual-whistle warnings without Yunxi', () => {
   const clips = battleVoiceClips();
   assert.equal(clips.length, 383);
   assert.equal(new Set(clips.map(clip => clip.file)).size, 383);
   for (const team of ['friendly', 'enemy']) {
-    assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, 3);
+    assert.equal(new Set(BATTLE_VOICE_PROFILES[team].map(profile => profile.voice)).size, team === 'friendly' ? 2 : 3);
     assert.equal(clips.filter(clip => clip.team === team).length, team === 'friendly' ? 305 : 78);
   }
+  assert.ok(BATTLE_VOICE_PROFILES.friendly.every(profile => profile.voice !== 'zh-CN-YunxiNeural'));
+  assert.equal(BATTLE_VOICE_PROFILES.friendly[1].voice, 'zh-CN-YunjianNeural');
   assert.equal(VOICE_FORMAT, 'audio-24khz-48kbitrate-mono-mp3');
   assert.match(voiceSSML(clips[0]), /style="angry"/);
   assert.match(voiceSSML(clips[0]), /volume="loud"/);
@@ -92,6 +94,7 @@ test('all MP3s and reviewed WAVs have exact source evidence and cannot be relabe
   assert.equal(manifest.license, 'Azure-generated-speech');
   assert.match(manifest.provenance, /Not historical/);
   assert.equal(manifest.files.length, 401);
+  assert.ok(manifest.files.every(file => file.voice !== 'zh-CN-YunxiNeural'));
   const fortressBatch = manifest.generationBatches.find(batch => batch.requests.some(request =>
     request.file === 'friendly-0-cleanup-orders-1.mp3'));
   assert.equal(fortressBatch.authorizedUsd, 50);
