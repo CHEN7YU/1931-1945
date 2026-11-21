@@ -774,11 +774,15 @@ export function createCoastalGunModel(point) {
   tubeZ(barrel, .155, .155, .35, 0, 0, -s.barrel + .35, GD, 18);     // 炮口加厚环
   rod(barrel, [-.5, 0, 0], [.5, 0, 0], .14, GD);                    // 耳轴
   }
-  // 炮手（随炮塔转动）：装填手抱弹、瞄准手
-  for (const [x, z, rifle] of [[.9, 2.4, false], [-1.2, 1.9, false]]) {
+  // 炮手（随炮塔转动）。全封闭炮塔的炮室后壁在 z ≈ 2.55（含倒角），原先 z = 1.9–2.4 的两名炮手落在装甲里面，
+  // 看起来人和炮塔“长在一起”。炮室内的瞄准手、装填手看不见，不再放模型；炮塔后门外只留一名弹药手和一名传弹兵。
+  // 敞开式炮位（另一分支）炮手仍站在防盾后面。
+  const enclosed = !flak;
+  const crewSpots = enclosed ? [[.75, 3.35, false], [-1.0, 3.9, false]] : [[.9, 2.4, false], [-1.2, 1.9, false]];
+  for (const [x, z, rifle] of crewSpots) {
     const man = crewMember(rifle); man.position.set(x, -mh, z); man.rotation.y = Math.PI * .92; swivel.add(man);
   }
-  const shell = cyl(swivel, .1, .1, .7, .9, -mh + 1.2, 2.0, M.brass(), 8); shell.rotation.x = 1.2;
+  const shell = cyl(swivel, .1, .1, .7, .9, -mh + 1.2, enclosed ? 3.0 : 2.0, M.brass(), 8); shell.rotation.x = 1.2;
   mergeStatic(base); mergeStatic(swivel); mergeStatic(barrel);
   // mergeStatic 会把 dynamic 子树跳过 —— 对 swivel/barrel 单独合并时它们自身就是 root，所以能合并。
   root.userData.update = () => {

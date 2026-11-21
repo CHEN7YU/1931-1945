@@ -4,7 +4,7 @@ import { createEmplacement, emplacementLook, emplacementPose, aimEmplacement, em
   fireEmplacement, advanceEmplacement, damageEmplacement, emplacementCooldown } from '../emplacements.js';
 import { JIANGYIN_RULES, JIANGYIN_WAVES, JIANGYIN_POSTS, JIANGYIN_PROFILE_OVERRIDES, JIANGYIN_MOUNTS, ENEMY_TYPES,
   postFacing, groundHeight, insideWreck, RIVER_HALF, shipRoute, landingPoint, createJiangyinState, dueWaves, dueNavalWaves,
-  evaluateOutcome, nextPostId, jiangyinSquadLoadout, NAVAL_RAMP, navalTarget, SHIP_AA, LAND_SPAWNS, AIR_SPAWN, riverCenter, BLOCKSHIPS, blockshipZone, NAVAL_WAVES, JIANGYIN_SQUAD,
+  evaluateOutcome, nextPostId, jiangyinSquadLoadout, LANDING_STREAM, NAVAL_RAMP, navalTarget, SHIP_AA, LAND_SPAWNS, AIR_SPAWN, riverCenter, BLOCKSHIPS, blockshipZone, NAVAL_WAVES, JIANGYIN_SQUAD,
   JIANGYIN_ADVANCE_GUARD, jiangyinRoads, roadRoute } from './jiangyin-rules.js';
 // 复用项目现有的步枪/轻机枪状态机（弹匣、拉栓、换弹时间与主游戏一致）
 import { createRifleState, shootRifle, advanceRifle, reloadRifle, infantryWeaponProfile, rifleReloadSeconds } from '../rifle-action.js';
@@ -146,16 +146,17 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     ship.holdPost = pick?.id ?? null;
     const side = pick ? Math.sign(pick.point.z) : 0;
     ship.holdX = Math.max(90, (pick?.point.x ?? 300) + 120 + random() * 200);   // 不能越过堵塞线（x≈0）
-    ship.holdZ = side * (RIVER_HALF - 260 - random() * 140);
+    ship.holdZ = side * (RIVER_HALF - 305 - random() * 140);   // v19 阵地移近江边 45 米，停泊线同步后退，保持原来的 450–700 米交战距离
   }
   // 日舰有效交战距离（游戏压缩值）：实际舰炮射程可达十余公里，但本关地图只有约 3 公里，
   // 为了让玩家看得见是谁在开炮，日舰只在 1.4 公里（第一阶段）/ 1.2 公里（第二阶段）以内开火
   const ENGAGE_RANGE = { naval: 1400, hold: 1200 };
   function spawnLanding(bank) {
     const target = landingPoint(bank, random), model = createLandingCraftModel();
-    const x0 = 1400 + random() * 60;   // 自弯道内侧出发（仍在玩家视线外）
-    // 先沿江道驶出弯道（途经点），再斜插向本岸滩头
-    const via = [{ x: 1300, z: riverCenter(1300) + (random() - .5) * 300 }, { x: 900, z: (bank === 'south' ? 1 : -1) * (150 + random() * 250) }];
+    const x0 = 1360 + random() * 40;   // 自弯道出口出发
+    // 驶出弯道后直接斜插向本岸滩头（途经滩头下游约 250 米、离岸约 180 米处，船首对准滩头冲滩）
+    const sign = bank === 'south' ? 1 : -1;
+    const via = [{ x: target.x + 250 + random() * 80, z: sign * (RIVER_HALF - 160 - random() * 60) }];
     const craft = { id: `landing-${++serial}`, bank, x: x0, z: riverCenter(x0) + (random() - .5) * 300, via,
       heading: Math.PI / 2, health: ENEMY_TYPES.landing.health, target, state: 'approach', unloadAt: 0, model, sinking: null };
     scene.add(model); landings.push(craft); syncShip(craft);
@@ -168,7 +169,11 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function spawnTroops(craft) {
     const cfg = ENEMY_TYPES.infantry, sign = craft.bank === 'south' ? 1 : -1;
     for (let i = 0; i < ENEMY_TYPES.landing.troops; i++) {
-      const model = makeSoldier('enemy', i === 0 ? 'type11' : 'rifle'), x = craft.x + (i - 2) * 1.6, z = sign * (73 + random() * 2);
+      // 修正：原来写成 z = ±73 米（江面缩放到 1.5 公里宽之前的旧滩头坐标），登陆步兵被放进江心深水里，半天走不上岸。
+      // 现在在登陆艇跳板前方的滩头下船（沿离岸方向 6–9 米）
+      const model = makeSoldier('enemy', i === 0 ? 'type11' : 'rifle'), x = craft.x + (i - 2) * 1.6;
+      let z = craft.z + sign * (6 + random() * 3);
+      for (let k = 0; k < 20 && groundHeight(x, z) < .4; k++) z += sign * 2;   // 确保落在岸上
       const soldier = { id: `troop-${++serial}`, bank: craft.bank, x, z, health: cfg.health, model, nextAttack: 0,
         offset: (i - 2) * 1.8, dead: null, focus: random() < .6 };
       model.position.set(x, groundHeight(x, z), z); scene.add(model); troops.push(soldier);
@@ -179,12 +184,16 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   // ---------- 陆路步兵小队 / 坦克小队 / 航空小队（敌军自下游两岸与空中出发） ----------
   // escort：与坦克小队一起出发的伴随步兵（步坦协同），出现在坦克纵队后方的公路两侧，跟着坦克推进
   // 日军步兵小队与其他地图一致：小队全灭后 17 秒（BATTLE_RULES.respawnSeconds）在下游出发点重新集结，第二阶段持续补充
-  const ENEMY_SQUAD_RESPAWN = 17, ENEMY_TROOP_CAP = 96;
-  const enemySquads = [];
+  const ENEMY_SQUAD_RESPAWN = 17, ENEMY_TROOP_CAP = 48;
+  const enemySquads = [], pendingTankPlatoons = [];
   function spawnSquad(bank, escort = null) {
     const spawn = escort ? escort.spawn : LAND_SPAWNS[bank], cfg = ENEMY_TYPES.infantry;
     const record = { bank, troops: [], respawnAt: null };
     enemySquads.push(record);
+    if (troops.filter(t => t.dead === null).length > ENEMY_TROOP_CAP - ENEMY_TYPES.squad.size) {
+      record.respawnAt = now + 4;
+      return;
+    }
     for (let i = 0; i < ENEMY_TYPES.squad.size; i++) {
       const x = spawn.x + (i % 4) * 2.2 + random() + (escort ? escort.side.x * ((i % 2) * 2 - 1) * 5 : 0),
         z = spawn.z + Math.floor(i / 4) * 2.4 + random() + (escort ? escort.side.z * ((i % 2) * 2 - 1) * 5 : 0);
@@ -198,8 +207,19 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     if (!escort) emit({ type: 'toast', text: `${ENEMY_TYPES.squad.name}自${bank === 'south' ? '南' : '北'}岸下游陆路来袭`, alert: true, voice: 'jiangyin-infantry' });
   }
   // 坦克：已从下游滩头上岸，沿军用公路纵队开上山（车距约 25 米），到射程内停车射击
+  // 登陆艇持续输送（第二阶段）
+  function advanceLandingStream() {
+    if (state.phase !== 'hold' || now < (state.landingAt ?? 0)) return;
+    const active = landings.filter(craft => craft.sinking === null && craft.state !== 'empty').length;
+    state.landingAt = now + (active >= LANDING_STREAM.maxActive ? 3 : LANDING_STREAM.interval);
+    if (active >= LANDING_STREAM.maxActive || troops.filter(t => t.dead === null).length > ENEMY_TROOP_CAP - ENEMY_TYPES.landing.troops) return;
+    spawnLanding(LANDING_STREAM.pattern[(state.landingIndex = (state.landingIndex ?? -1) + 1) % LANDING_STREAM.pattern.length]);
+  }
   function advanceEnemySquads() {
     if (state.phase !== 'hold') return;
+    while (pendingTankPlatoons.length &&
+      troops.filter(t => t.dead === null).length <= ENEMY_TROOP_CAP - ENEMY_TYPES.squad.size)
+      spawnTankPlatoon(pendingTankPlatoons.shift());
     for (let i = enemySquads.length - 1; i >= 0; i--) {
       const squadRecord = enemySquads[i];
       if (squadRecord.troops.some(t => t.dead === null)) continue;
@@ -211,8 +231,16 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     }
   }
   function spawnTankPlatoon(bank) {
+    if (troops.filter(t => t.dead === null).length > ENEMY_TROOP_CAP - ENEMY_TYPES.squad.size) {
+      pendingTankPlatoons.push(bank);
+      return;
+    }
     const road = jiangyinRoads().find(r => r.bank === bank);
-    const startS = ENEMY_TYPES.tank.roadStart ?? 600;
+    // 坦克出发点：沿公路从滩头往上，取第一个离本岸最近阵地约 260 米的路段（阵地移近江边后，固定里程会让坦克一出现就贴脸）
+    const bankPosts = posts.filter(p => !p.boat && p.bank === bank);
+    let startIndex = road.points.findIndex(([x, z]) => Math.min(...bankPosts.map(p => Math.hypot(p.point.x - x, p.point.z - z))) < 260);
+    if (startIndex < 0) startIndex = road.lengths.findIndex(l => l >= (ENEMY_TYPES.tank.roadStart ?? 600));
+    const startS = Math.max(ENEMY_TYPES.tank.platoon * 25 + 20, road.lengths[Math.max(0, startIndex)]);
     for (let i = 0; i < ENEMY_TYPES.tank.platoon; i++) {
       const s0 = Math.max(0, startS - i * 25);
       const index = Math.max(0, road.lengths.findIndex(l => l >= s0)), [x, z] = road.points[index], [x2, z2] = road.points[Math.min(index + 2, road.points.length - 1)];
@@ -652,6 +680,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   // 炮弹命中舰船：远处也看得清的爆炸——白热闪光 + 橙红火球 + 飞溅的碎片火星 + 冲天黑烟；命中点留下持续燃烧的火头（最多 4 处），
   // 舰体越残破火越大、烟越浓。与落空时江面上的白色水柱一眼可分。
   let lastHit = null;
+  const HIT_BANNER_SECONDS = 2.5;   // 命中提示显示时长（原 5 秒，挡住下一次瞄准）
   const shipHitLocal = new THREE.Vector3();
   function shipHitFx(vessel, p, shell) {
     const big = shell.radius >= 8 ? 1.5 : 1.15;
@@ -683,11 +712,18 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     if (vessel.cfg) { state.stats.shipsSunk++; emit({ type: 'toast', text: `${vessel.label ?? vessel.cfg.name}被击沉${byPlayer ? '（玩家）' : ''}`, voice: 'jiangyin-enemy-sunk' }); }
     else state.stats.landingSunk++;
   }
-  function damageTroop(soldier, amount) {
-    if (soldier.dead !== null) return;
+  let firstEnemyKillReported = false;
+  function damageTroop(soldier, amount, byPlayer = false) {
+    if (soldier.dead !== null || amount <= 0) return false;
     soldier.health -= amount;
-    if (soldier.health > 0) return;
+    if (soldier.health > 0) return false;
     soldier.dead = now; state.stats.infantryKilled++;
+    const firstKill = byPlayer && !firstEnemyKillReported;
+    if (firstKill) {
+      firstEnemyKillReported = true;
+      emit({ type: 'first-enemy-kill' });
+    }
+    return firstKill;
   }
   function blast(position, radius, damage, team, byPlayer) {
     if (team === 'friendly') {
@@ -700,7 +736,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       for (const soldier of troops) {
         const d = Math.hypot(soldier.x - position.x, groundHeight(soldier.x, soldier.z) + 1 - position.y, soldier.z - position.z);
-        if (d < radius) damageTroop(soldier, 160 * (1 - d / radius));
+        if (d < radius) damageTroop(soldier, 160 * (1 - d / radius), byPlayer);
       }
       for (const vehicle of vehicles) {
         if (vehicle.health <= 0) continue;
@@ -844,7 +880,10 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       const spread = settings.spread + error;
       const dir = aimDirection(point, gauss() * spread, gauss() * spread);
       const hit = traceRay(pose.muzzle, dir, settings.range);
-      if (hit?.kind === 'troop') { damageTroop(hit.target, settings.damage); if (byPlayer) emit({ type: 'hit', kind: 'troop' }); }
+      if (hit?.kind === 'troop') {
+        const firstKill = damageTroop(hit.target, settings.damage, byPlayer);
+        if (byPlayer) emit({ type: 'hit', kind: 'troop', firstKill });
+      }
       else if (hit?.kind === 'landing') damageVessel(hit.target, 9, byPlayer);
       else if (hit?.kind === 'ship') damageVessel(hit.target, 1.5, byPlayer);
       else if (hit?.kind === 'plane') { damageVehicle(hit.target, settings.damage * .25, byPlayer); if (byPlayer) emit({ type: 'hit', kind: 'plane' }); }
@@ -1218,6 +1257,9 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       for (const vessel of [...ships, ...landings]) {
         if (vessel.x >= JIANGYIN_RULES.radarRevealX) continue;   // 弯道后方看不见，双方都不开火
+        // AI 大炮优先打日舰与坦克；登陆艇又小又快，AI 炮手只在它冲到滩头前 300 米内才开炮（主要留给玩家和机枪堡拦截），
+        // 否则登陆艇几乎全在半路被 AI 击沉，登陆步兵根本上不了岸
+        if (!vessel.cfg && (state.phase !== 'hold' || Math.hypot(vessel.target.x - vessel.x, vessel.target.z - vessel.z) > 300)) continue;
         const rough = Math.hypot(vessel.x - point.x, vessel.z - point.z), flight = rough / shellSpeedOf(point);
         const aim = predicted(vessel, flight);
         if (aim) aim.y += .5 * GRAVITY * flight * flight;
@@ -1266,8 +1308,83 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     const yaw = ship.heading + turret.rotation.y, reach = turret.userData.muzzle ?? 3;
     return { x: turretWorld.x - Math.sin(yaw) * reach, y: turretWorld.y + 1, z: turretWorld.z - Math.cos(yaw) * reach };
   }
+  // 第二阶段日舰：最多 3 艘；耐久低于 40% 的舰艇停止炮击、减速顺流撤出（驶回下游弯道后离开战场），不补充新舰
+  // 第二阶段日舰（与玩家讨论后确定）：江面保持最多 3 艘；前 2 分钟有舰撤走或被击沉时补到 3 艘，之后不再补充（江面越打越空，
+  // 后期以陆空进攻为主，贴近史实——封锁线守住了江面，江阴要塞最终从陆路失守）；耐久低于 40% 的舰艇停止主炮射击、顺流撤出；
+  // 第二阶段主炮射速降低约 30%。
+  const HOLD_FLEET = Object.freeze({ max: 3, withdrawBelow: .4, withdrawSpeed: 2.6, topUpUntil: 120, topUpGap: 20, fireSlowdown: 1 / .7,
+    roster: Object.freeze(['destroyer', 'gunboat', 'destroyer', 'gunboat']) });
+  function topUpHoldFleet() {
+    if (state.phase !== 'hold' || state.elapsed > HOLD_FLEET.topUpUntil || now < (state.holdTopUpAt ?? 0)) return;
+    const engaged = ships.filter(ship => ship.sinking === null && !ship.withdrawing).length;
+    if (engaged >= HOLD_FLEET.max) return;
+    state.holdTopUpAt = now + HOLD_FLEET.topUpGap;
+    spawnShip(HOLD_FLEET.roster[(state.holdTopUpIndex = (state.holdTopUpIndex ?? -1) + 1) % HOLD_FLEET.roster.length]);
+  }
+  function beginWithdraw(ship) {
+    if (ship.withdrawing || ship.sinking !== null) return;
+    ship.withdrawing = true; ship.aimTarget = null;
+    ship.wp = Math.min(ship.route.length - 1, Math.max(0, ship.route.findIndex(p => p.x <= ship.x) - 1));
+    if (ship.wp < 0) ship.wp = 0;
+    emit({ type: 'toast', text: `${ship.label}${ship.health < ship.cfg.health * HOLD_FLEET.withdrawBelow ? '受创' : ''}退出战斗，顺流撤往下游` });
+  }
+  // 船体近似为沿船首方向的胶囊体：中心线长 (舰长 − 舰宽)，半径 = 舰宽/2。用于舰艇之间的避让与防穿模
+  function hullSegment(v) {
+    const L = v.cfg?.length ?? v.boat?.cfg.length, B = v.cfg?.beam ?? v.boat?.cfg.beam, h = forward(v.heading ?? v.boat.heading);
+    const x = v.x ?? v.boat.x, z = v.z ?? v.boat.z, half = Math.max(0, L - B) / 2;
+    return { ax: x - h.x * half, az: z - h.z * half, bx: x + h.x * half, bz: z + h.z * half, r: B / 2 };
+  }
+  function segmentGap(p, q) {   // 两条线段之间的最短距离及最近点（平面）
+    const d1x = p.bx - p.ax, d1z = p.bz - p.az, d2x = q.bx - q.ax, d2z = q.bz - q.az, rx = p.ax - q.ax, rz = p.az - q.az;
+    const a = d1x * d1x + d1z * d1z || 1e-6, e = d2x * d2x + d2z * d2z || 1e-6, f = d2x * rx + d2z * rz, c = d1x * rx + d1z * rz, b = d1x * d2x + d1z * d2z;
+    const den = a * e - b * b;
+    let s = den > 1e-6 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0, t = (b * s + f) / e;
+    if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); } else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); }
+    const px = p.ax + d1x * s, pz = p.az + d1z * s, qx = q.ax + d2x * t, qz = q.az + d2z * t;
+    return { d: Math.hypot(px - qx, pz - qz), nx: px - qx, nz: pz - qz };
+  }
+  // 避让：前方约 3 个舰长、左右各一个舰宽加 25 米的走廊内有别的船（日舰、我舰、阻塞船残骸外的水面舰）时，
+  // 按右舷让左舷的惯例向右转并减速；若两船胶囊体已经相交，沿最近点方向把本舰推开，绝不互相穿过。
+  function avoidOtherShips(ship, dt) {
+    const mine = hullSegment(ship), f = forward(ship.heading), side = { x: -f.z, z: f.x };
+    let steer = 0, slow = 1;
+    const others = [...ships.filter(o => o !== ship && o.sinking === null), ...shipPosts().filter(post => !post.boat.sunk).map(post => ({ boat: post.boat }))];
+    for (const other of others) {
+      const seg = hullSegment(other), ox = (seg.ax + seg.bx) / 2, oz = (seg.az + seg.bz) / 2;
+      const dx = ox - ship.x, dz = oz - ship.z, ahead = dx * f.x + dz * f.z, lateral = dx * side.x + dz * side.z;
+      const reach = ship.cfg.length * 3, corridor = mine.r + seg.r + 25;
+      if (ahead > 0 && ahead < reach && Math.abs(lateral) < corridor) {
+        const k = 1 - ahead / reach;
+        steer += (lateral >= 0 ? -1 : 1) * k;      // 对方在左侧就向右让，反之向左
+        slow = Math.min(slow, .35 + .65 * (ahead / reach));
+      }
+      const gap = segmentGap(mine, seg), overlap = mine.r + seg.r + 3 - gap.d;
+      if (overlap > 0) {
+        const n = Math.hypot(gap.nx, gap.nz) || 1, nx = gap.d > 1e-3 ? gap.nx / n : side.x, nz = gap.d > 1e-3 ? gap.nz / n : side.z;
+        const push = Math.min(overlap, 6 * dt + overlap * .5);
+        if (groundHeight(ship.x + nx * push, ship.z + nz * push) < -1) { ship.x += nx * push; ship.z += nz * push; }
+        ship.speed *= Math.max(.5, 1 - dt * 1.5);
+      }
+    }
+    return { steer: Math.max(-1, Math.min(1, steer)), slow };
+  }
   function advanceShip(ship, dt) {
     if (ship.sinking !== null) { syncShip(ship); return now - ship.sinking < 10; }
+    if (state.phase === 'hold' && !ship.withdrawing && ship.health < ship.cfg.health * HOLD_FLEET.withdrawBelow) beginWithdraw(ship);
+    if (ship.withdrawing) {   // 顺流撤退：沿进场航线倒序驶回下游弯道，出视野后离开战场
+      const p = ship.route[ship.wp];
+      if (Math.hypot(p.x - ship.x, p.z - ship.z) < 130 && ship.wp > 0) ship.wp--;
+      const avoid = avoidOtherShips(ship, dt);
+      const desired = Math.atan2(-(p.x - ship.x), -(p.z - ship.z)) + avoid.steer * .6, turn = wrap(desired - ship.heading);
+      ship.speed += Math.max(-.3 * dt, Math.min(.3 * dt, HOLD_FLEET.withdrawSpeed * avoid.slow - ship.speed));
+      const rate = Math.max(.006, ship.speed / (ship.cfg.length * 2.2));
+      ship.heading = wrap(ship.heading + Math.max(-rate * dt, Math.min(rate * dt, turn)));
+      const f = forward(ship.heading), nx = ship.x + f.x * ship.speed * dt, nz = ship.z + f.z * ship.speed * dt;
+      if (groundHeight(nx, nz) < -1) { ship.x = nx; ship.z = nz; }
+      shipMachineGuns(ship, dt); syncShip(ship);
+      if (ship.x > JIANGYIN_RULES.radarRevealX + 150) { scene.remove(ship.model); return false; }   // 驶出弯道，离开战场
+      return true;
+    }
     const target = ship.route[ship.wp];
     const dx = target.x - ship.x, dz = target.z - ship.z;
     if (Math.hypot(dx, dz) < 130 && ship.wp < ship.route.length - 1) ship.wp++;   // 大舰回转半径约 150–250 米，航路点放宽
@@ -1276,8 +1393,9 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     const holding = ship.x <= ship.holdX;
     const approaching = !holding && ship.x <= ship.holdX + 650;   // 出弯后转向目标阵地前方的停泊点
     const goal = holding ? { x: ship.x - 400, z: ship.holdZ } : approaching ? { x: ship.holdX, z: ship.holdZ } : target;
-    const desired = Math.atan2(-(goal.x - ship.x), -(goal.z - ship.z)), turn = wrap(desired - ship.heading);
-    ship.speed += Math.max(-.4 * dt, Math.min(.4 * dt, (holding ? .5 : ship.cfg.speed) - ship.speed));
+    const avoid = avoidOtherShips(ship, dt);
+    const desired = Math.atan2(-(goal.x - ship.x), -(goal.z - ship.z)) + avoid.steer * .6, turn = wrap(desired - ship.heading);
+    ship.speed += Math.max(-.4 * dt, Math.min(.4 * dt, (holding ? .5 : ship.cfg.speed) * avoid.slow - ship.speed));
     const rate = Math.max(.006, ship.speed / (ship.cfg.length * 2.2));
     ship.heading = wrap(ship.heading + Math.max(-rate * dt, Math.min(rate * dt, turn)));
     const speed = ship.speed, f = forward(ship.heading);
@@ -1290,7 +1408,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     // 驶出下游弯道（进入视野）后才开火；第一阶段开头 15 秒双方接近、不开火；自沉封江期间暂停炮击（演出）
     const engaged = ship.x < JIANGYIN_RULES.radarRevealX && !(state.phase === 'naval' && state.navalTime < 15);
     if (state.phase !== 'scuttle' && engaged && now >= ship.nextFire) {
-      ship.nextFire = now + ship.cfg.fireInterval * (.8 + random() * .4);
+      ship.nextFire = now + ship.cfg.fireInterval * (.8 + random() * .4) * (state.phase === 'hold' ? HOLD_FLEET.fireSlowdown : 1);
       const range = Math.min(ship.cfg.fireRange, state.phase === 'naval' ? ENGAGE_RANGE.naval : ENGAGE_RANGE.hold);
       let candidates = posts.filter(post => alive(post) &&
         Math.hypot(targetPosition(post).x - ship.x, targetPosition(post).z - ship.z) < range);
@@ -1401,7 +1519,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       if (distance < 3 || groundHeight(craft.x + f.x * 6, craft.z + f.z * 6) > -.4) {
         craft.state = 'unloading'; craft.unloadAt = now + ENEMY_TYPES.landing.unloadSeconds;
       }
-    } else if (craft.state === 'unloading' && now >= craft.unloadAt) {
+    } else if (craft.state === 'unloading' && now >= craft.unloadAt &&
+      troops.filter(t => t.dead === null).length <= ENEMY_TROOP_CAP - ENEMY_TYPES.landing.troops) {
       craft.state = 'empty'; craft.model.userData.ramp.rotation.x = -1.2; craft.model.userData.unload?.(); spawnTroops(craft);
     }
     syncShip(craft);
@@ -1582,7 +1701,10 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     }
     const len = Math.hypot(dir.x, dir.y, dir.z); dir = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
     const hit = traceRay(eye, dir, S.rifleRange);
-    if (hit?.kind === 'troop') { damageTroop(hit.target, S.rifleDamage); if (byPlayer) emit({ type: 'hit', kind: 'troop' }); }
+    if (hit?.kind === 'troop') {
+      const firstKill = damageTroop(hit.target, S.rifleDamage, byPlayer);
+      if (byPlayer) emit({ type: 'hit', kind: 'troop', firstKill });
+    }
     else if (hit?.kind === 'tank' || hit?.kind === 'plane') damageVehicle(hit.target, hit.kind === 'plane' ? 4 : 1, byPlayer);
     if (byPlayer) state.stats.shots++;
     const muzzle = { x: eye.x + dir.x * .9, y: eye.y - .08 + dir.y * .9, z: eye.z + dir.z * .9 };
@@ -1624,7 +1746,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function damageMember(m, amount) {
     if (m.dead !== null || amount <= 0) return;
     m.health -= amount;
-    if (m.id === memberId) emit({ type: 'hurt', amount });
+    if (m.id === memberId) emit({ type: 'hurt', amount, health: Math.max(0, m.health), fatal: m.health <= 0 });
     if (m.health > 0) return;
     m.health = 0; m.dead = now; m.attacking = false; state.stats.squadLost = (state.stats.squadLost ?? 0) + 1;
     if (m.postId) { const post = postById(m.postId); if (post && alive(post)) post.point.operatorId = 'crew'; m.postId = null; }
@@ -1915,7 +2037,10 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function beginHold() {
     if (state.phase !== 'scuttle') return;
     state.phase = 'hold'; state.elapsed = 0; state.waveIndex = 0;
-    for (const ship of ships) assignHold(ship);
+    // 第二阶段江面：封锁线已经沉船堵死，日舰不再增援；只留最完好的 3 艘在江面炮击两岸，其余顺流撤出战场
+    const afloat = ships.filter(ship => ship.sinking === null).sort((a, b) => b.health / b.cfg.health - a.health / a.cfg.health);
+    afloat.forEach((ship, i) => { if (i >= HOLD_FLEET.max) beginWithdraw(ship); });
+    for (const ship of ships) if (!ship.withdrawing) assignHold(ship);
     deployNow();
     emit({ type: 'phase', phase: 'hold' });
     emit({ type: 'toast', text: `第二阶段 · 死守两岸阵地 ${Math.round(JIANGYIN_RULES.durationSeconds / 60)} 分钟：日军海陆空三路来攻，目标是摧毁我军全部阵地`, alert: true });
@@ -2002,8 +2127,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       state.elapsed += dt;
       if (blockships.some(ship => ship.state !== 'sunk')) advanceScuttle(dt);
       for (const wave of dueWaves(state)) {
-        for (const type of wave.ships) spawnShip(type);
-        for (const bank of wave.landing) spawnLanding(bank);
+        // 第二阶段日舰由 HOLD_FLEET 控制（最多 3 艘、前 2 分钟补足），波次中的舰艇不再另外出场
+        // 登陆艇改由 advanceLandingStream 持续输送（LANDING_STREAM），波次中的登陆不再另外出场
         const escorted = [...wave.tanks];   // 同岸步兵小队改作坦克的伴随步兵（已在 spawnTankPlatoon 中生成）
         for (const bank of wave.infantry) { const k = escorted.indexOf(bank); if (k >= 0) escorted.splice(k, 1); else spawnSquad(bank); }
         for (const bank of wave.tanks) spawnTankPlatoon(bank);
@@ -2033,7 +2158,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       advanceBombs(dt);
     }
-    advanceShells(dt); advanceTracers(dt); advanceEnemySquads();
+    advanceShells(dt); advanceTracers(dt); advanceEnemySquads(); topUpHoldFleet(); advanceLandingStream();
     updateFlags(now, .75 + .25 * Math.sin(now * .31) * Math.sin(now * .17 + 1));   // 旗帜飘动，风力时强时弱
     for (const post of posts) {
       post.model.userData.update?.(); post.model.position.y = post.floor;
@@ -2124,7 +2249,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       weapon: point ? { name: point.weapon.settings.name,
         ammo: point.weapon.ammo, reserve: point.weapon.reserve, cooldown, cannon: point.weapon.settings.type === 'field-gun',
         heat: point.heat, ship: Boolean(post.boat), speed: post.boat?.speed ?? 0, helm: post.boat ? helmState(post.boat) : null } : null,
-      range, aim: aimInfo, target: lastHit && now - lastHit.at < 5 ? { ...lastHit, age: now - lastHit.at } : null, viewMode, zoom: point ? (point.weapon.settings.type === 'field-gun' ? 4 : 2) : infantry ? (controlledMember()?.rifle.model === 'sniper' ? 4 : 1.45) : 1,
+      range, aim: aimInfo, target: lastHit && now - lastHit.at < HIT_BANNER_SECONDS ? { ...lastHit, age: now - lastHit.at } : null, viewMode, zoom: point ? (point.weapon.settings.type === 'field-gun' ? 4 : 2) : infantry ? (controlledMember()?.rifle.model === 'sniper' ? 4 : 1.45) : 1,
     };
   }
   function radar() {

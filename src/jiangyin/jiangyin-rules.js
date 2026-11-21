@@ -1,4 +1,5 @@
 // 江阴要塞阻击战 · 纯规则模块（不依赖 three，可直接被 node --test 与 campaign-layout 引用）
+import { JIANGYIN_PLAYER_VOICE_LINES } from '../battle-voice-lines.js';
 // 坐标约定（按史实方向）：x 轴沿长江，长江自西向东流。+x 为东、下游（吴淞方向，日军来向），-x 为西、上游（南京方向，我军阵地）；
 // 江水沿 +x 方向流动，日军舰队逆流而上。z<0 为北岸，z>0 为南岸（江阴城、黄山炮台一侧）。
 // 尺度（按 1937 年实况）：堵塞线处江面宽约 1500 米（RIVER_HALF = 750），舰船为实舰主尺度。
@@ -63,10 +64,14 @@ export const JIANGYIN_WAVES = Object.freeze([
 export const JIANGYIN_ADVANCE_GUARD = Object.freeze({ infantry: Object.freeze(['south', 'south']) });
 
 // 陆路/空中出生点：下游两岸台地，位于弯道与山丘之后，玩家阵地看不到
+// v19：陆上集结点移到离最近阵地约 200 米处（下游一侧的平缓台地），日军冲锋约 45 秒即可接敌（原约 400–600 米）
 export const LAND_SPAWNS = Object.freeze({
-  south: Object.freeze({ x: 930, z: RIVER_HALF + 430 }),    // 巫山西麓背后（离长山炮台约 400 米）
-  north: Object.freeze({ x: 960, z: -(RIVER_HALF + 380) }),
+  south: Object.freeze({ x: 770, z: RIVER_HALF + 160 }),    // 长山以东台地，距长山高射炮约 190 米
+  north: Object.freeze({ x: 570, z: -(RIVER_HALF + 140) }),  // 北岸土岗以东，距北岸机枪堡约 190 米
 });
+// 登陆艇持续输送：第二阶段每隔 interval 秒从下游弯道驶出一艘，南岸与北岸约 2:1，江面上同时最多 maxActive 艘；
+// 滩头选在各阵地正下方（±70 米），上岸后约 120–190 米即抵达阵地
+export const LANDING_STREAM = Object.freeze({ interval: 28, maxActive: 3, pattern: Object.freeze(['south', 'south', 'north']) });
 // 江阴战场语音（Azure AI Speech 生成，与仓库 public/assets/audio/battle-voices 同一流程与 source.json 登记）
 // 文件名：friendly-0-<cue>.mp3；音色与其他地图一致 zh-CN-YunjianNeural / angry / +12% / -2%。
 // 文件缺失时页面静默跳过，只显示文字提示，不影响战斗。
@@ -89,8 +94,9 @@ export const JIANGYIN_VOICE_LINES = Object.freeze([
   { cue: 'jiangyin-squad-rally', text: '新的弟兄上来了！跟我守住炮台！' },
   { cue: 'jiangyin-victory', text: '江阴守住了！鬼子的舰队过不去！' },
   { cue: 'jiangyin-defeat', text: '炮台全部失守……弟兄们，撤！' },
+  ...JIANGYIN_PLAYER_VOICE_LINES.map(({ cue, text }) => ({ cue, text, variants: 3 })),
 ].map(Object.freeze));
-export const JIANGYIN_VOICE_FILE = cue => `/assets/audio/battle-voices/friendly-0-${cue}.mp3`;
+export const JIANGYIN_VOICE_FILE = (cue, variant = 0) => `/assets/audio/battle-voices/friendly-${variant}-${cue}.mp3`;
 
 export const AIR_SPAWN = Object.freeze({ x: 2800, y: 260, z: 0 });
 
@@ -105,8 +111,8 @@ export const ENEMY_TYPES = Object.freeze({
   tank: Object.freeze({ name: '日军九五式轻战车', platoon: 3, roadStart: 780, health: 520, speed: 3.4, fireRange: 170, fireInterval: 4.2,
     shellDamage: 40, shellRadius: 4, dispersion: 4, radius: 2.4 }),
   aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),   // 飞行、机枪与投弹沿用项目共用的 aircraft-ai.js / air-support.js
-  landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
-  infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 4.4, attackRange: 5, attackInterval: 2.5, attackDamage: 25,
+  landing: Object.freeze({ name: '日军大发登陆艇', health: 450, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
+  infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 4.4, attackRange: 5, attackInterval: 3.5, attackDamage: 25,
     shootRange: 140, shootInterval: 2.8, shootDamage: 34, closeRange: 35, chargeRange: 10 }),   // 边冲边打；35 米内停下跪射，10 米内白刃冲锋
 });
 
@@ -138,17 +144,19 @@ export const JIANGYIN_POSTS = Object.freeze([
     health: 1800, key: '2', length: 109, beam: 11.9 },
   { id: 'yixian', name: '逸仙舰', kind: 'ship', profile: 'bofors75', mount: 'shipTurret', x: 260, z: 60, heading: -Math.PI / 2, bank: null,
     health: 1350, key: '3', length: 82, beam: 10.4 },
+  // v19：阵地离滩头、陆上集结点都更近，日军接敌更快；阵地耐久相应提高约 80%
+  // v19：两岸阵地整体（连同所在山丘）向江边移近 45 米，登陆日军从滩头到炮位约 120 米（原约 165 米）
   // 两岸阵地：岸防炮与机枪堡都设在山顶（南岸黄山、肖山、长山；北岸江边土岗），两个阶段都由炮手据守；第二阶段玩家以步兵小队在附近复生
-  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 165, bank: 'south', key: '4', health: 760 },
-  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -380, z: RIVER_HALF + 165, bank: 'south', key: '5', health: 760 },
-  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -260, z: -(RIVER_HALF + 230), bank: 'north', key: '6', health: 680 },
+  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 120, bank: 'south', key: '4', health: 1370 },
+  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -380, z: RIVER_HALF + 120, bank: 'south', key: '5', health: 1370 },
+  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -260, z: -(RIVER_HALF + 185), bank: 'north', key: '6', health: 1230 },
   // 每座岸防炮台旁配置一门德制 8.8 cm Flak 18/36 高射炮（高平两用，主要对空）
-  { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 177, bank: 'south', key: '', health: 520 },
-  { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 177, bank: 'south', key: '', health: 520 },
-  { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 242), bank: 'north', key: '', health: 480 },
+  { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 132, bank: 'south', key: '', health: 930 },
+  { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 132, bank: 'south', key: '', health: 930 },
+  { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 197), bank: 'north', key: '', health: 870 },
   // v18：机枪堡移到长山炮台西侧约 50 米（原在 440 米外的肖山），与炮台、高射炮同在步兵小队集结点附近，复生后马上能投入战斗
-  { id: 'south-mg', name: '长山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 510, z: RIVER_HALF + 152, bank: 'south', key: '7', health: 480 },
-  { id: 'north-mg', name: '北岸土岗机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 200), bank: 'north', key: '8', health: 480 },
+  { id: 'south-mg', name: '长山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 510, z: RIVER_HALF + 107, bank: 'south', key: '7', health: 870 },
+  { id: 'north-mg', name: '北岸土岗机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 155), bank: 'north', key: '8', health: 870 },
 ].map(Object.freeze));
 
 // 岸防火力在本关允许更大俯角/射程（江面在炮位下方），只覆盖本关点位，不改动全局 EMPLACEMENT_PROFILES。
@@ -464,10 +472,10 @@ function baseGroundHeight(x, z) {
   // 南岸：黄山（高约 92 米）、肖山、长山、巫山；东侧弯道内侧山嘴遮挡下游出生点。北岸低平，仅有零星土丘。
   const R = RIVER_HALF, onLand = smooth(75, 120, a);   // 山丘只叠加在岸上，不进入江面
   let hills = 0;
-  if (z > 0) hills += hill(x, zw, -380, R + 165, 430, 175, 68) + hill(x, zw, 120, R + 150, 200, 130, 36) + hill(x, zw, 560, R + 165, 260, 155, 52)
+  if (z > 0) hills += hill(x, zw, -380, R + 120, 430, 175, 68) + hill(x, zw, 120, R + 150, 200, 130, 36) + hill(x, zw, 560, R + 120, 260, 155, 52)
     + hill(x, zw, 1180, R + 280, 300, 170, 48) + hill(x, zw, -1050, R + 300, 260, 160, 30) + hill(x, zw, 1560, 1220, 280, 200, 58);
   else hills += hill(x, zw, -700, -(R + 300), 220, 120, 10) + hill(x, zw, 1600, -600, 300, 180, 45)   // 北岸弯道处土岗：遮挡下游出生点
-    + hill(x, zw, -260, -(R + 230), 200, 130, 30) + hill(x, zw, 380, -(R + 200), 140, 100, 20);        // 八圩港炮台、北岸机枪堡所在土岗
+    + hill(x, zw, -260, -(R + 185), 200, 130, 30) + hill(x, zw, 380, -(R + 155), 140, 100, 26);        // 八圩港炮台、北岸机枪堡所在土岗
   h += hills * onLand;
   return h;
 }
@@ -566,7 +574,10 @@ export function shipRoute(laneZ) {
 export function landingPoint(bank, random = Math.random) {
   if (!['north', 'south'].includes(bank)) throw new RangeError(`Unknown bank: ${bank}`);
   const sign = bank === 'south' ? 1 : -1;
-  return { x: 220 + random() * 520, z: sign * (RIVER_HALF - 3) };
+  // 滩头在本岸某个阵地正下方（±70 米）；只选沉船封锁线（x≈0）下游的阵地——登陆艇过不了封锁线
+  const anchors = JIANGYIN_POSTS.filter(post => post.kind === 'battery' && post.bank === bank && post.x > 100);
+  const anchor = anchors[Math.floor(random() * anchors.length) % anchors.length];
+  return { x: anchor.x + (random() - .5) * 140, z: sign * (RIVER_HALF - 3) };
 }
 
 export function createJiangyinState() {
