@@ -6,7 +6,7 @@ import {
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
-  nanjingCivilianEvacuationStatus, recordNanjingCivilianCityEntry,
+  nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
 } from '../src/nanjing-campaign.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
 
@@ -33,13 +33,21 @@ test('final evacuation status distinguishes civilians still on the road, waiting
   registerCivilianArrival(campaign);
   assert.deepEqual(nanjingCivilianEvacuationStatus(campaign, civilians),
     { enRoute: 1, waiting: 1, aboard: 0, evacuated: 0, ready: false });
+  assert.equal(nanjingPlayerBoardingReady(nanjingCivilianEvacuationStatus(campaign, civilians)), false);
   campaign.dockActivated = true;
   boardCivilian(campaign, 0);
-  assert.equal(nanjingCivilianEvacuationStatus(campaign, civilians).ready, false);
+  const boardingStatus = nanjingCivilianEvacuationStatus(campaign, civilians);
+  assert.equal(boardingStatus.ready, false);
+  assert.equal(nanjingPlayerBoardingReady(boardingStatus), true,
+    'the player can board once nobody is waiting, even while civilians are en route or aboard');
   departNanjingBoat(campaign, 0); completeNanjingCrossing(campaign, 0);
-  assert.equal(nanjingCivilianEvacuationStatus(campaign, civilians).ready, false, 'a distant survivor still needs evacuation');
+  const crossingStatus = nanjingCivilianEvacuationStatus(campaign, civilians);
+  assert.equal(crossingStatus.ready, false, 'a distant survivor still needs evacuation');
+  assert.equal(nanjingPlayerBoardingReady(crossingStatus), true);
   civilians[0].userData.dead = true;
-  assert.equal(nanjingCivilianEvacuationStatus(campaign, civilians).ready, true);
+  const completeStatus = nanjingCivilianEvacuationStatus(campaign, civilians);
+  assert.equal(completeStatus.ready, true);
+  assert.equal(nanjingPlayerBoardingReady(completeStatus), true);
 });
 
 test('raised dock decks and ordinary city floors are not mistaken for castle-wall descent',()=>{

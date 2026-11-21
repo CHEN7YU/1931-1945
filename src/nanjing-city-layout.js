@@ -8,6 +8,14 @@ const streets = [
   { id: 'north-bank-lane', width: 5.5, points: [[-68, -96], [-40, -94], [-19, -98], [0, -94],
     [26, -98], [51, -93], [79, -97], [104, -93]] },
 ];
+const streetFixtures = [
+  { id: 'utility-west-north', kind: 'utility', x: -6, z: -85 },
+  { id: 'utility-west-south', kind: 'utility', x: -6, z: -40 },
+  { id: 'utility-east-north', kind: 'utility', x: 6, z: -85 },
+  { id: 'utility-east-south', kind: 'utility', x: 7, z: -30 },
+  { id: 'streetlamp-west', kind: 'streetlamp', x: -6, z: -102.5 },
+  { id: 'streetlamp-east', kind: 'streetlamp', x: 7, z: -15 },
+];
 
 export function cityStreetIntersectsLot(lot, street, clearance = 0) {
   const [x, z, width, depth] = lot;
@@ -87,6 +95,10 @@ export function createNanjingCityLayout() {
     }
     lot.push(facing);
   }
-  return { lots, streets: streets.map(street => ({ ...street, points: street.points.map(point => [...point]) })) };
+  return {
+    lots,
+    streets: streets.map(street => ({ ...street, points: street.points.map(point => [...point]) })),
+    streetFixtures: streetFixtures.map(fixture => ({ ...fixture })),
+  };
 }
 import { NANJING_DOCK_ASSAULT_SPAWNS, NANJING_SPAWNS } from './nanjing-campaign.js';

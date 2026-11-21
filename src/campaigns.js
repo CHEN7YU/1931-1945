@@ -17,7 +17,7 @@ export const CAMPAIGNS = Object.freeze([
     historySource: Object.freeze({ name: '新华网／人民网 · 台儿庄战役',
       url: 'https://cpc.people.com.cn/n1/2018/1219/c421684-30476925.html' }),
     goals: Object.freeze(['进入A点粮栈夺取补给点，再合围A/B/C三点。',
-      '合围后在C点布防20秒，阻击日军从东门突围。',
+      '合围后我军向C点集结；日军先在A点西北角重整，随后向C点反扑并冲击东门。',
       '目标歼灭至少2/3、逃脱不超过1/3；全部地面残敌解决后结算。']) }),
   Object.freeze({ id: 'shanghai', name: '淞沪会战', year: 1937, region: '上海', locked: true, hidden: true,
     x: 85, y: 61, description: '战场设计待提交，当前不可进入。' }),

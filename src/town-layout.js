@@ -7,6 +7,14 @@ export const STREET_BLOCK = Object.freeze({
   wallThickness: .24,
   rows: [62, 43, 10, -38, -68],
 });
+const streetFixtures = Object.freeze([
+  Object.freeze({ id: 'utility-west-north', kind: 'utility', x: -18, z: 34 }),
+  Object.freeze({ id: 'utility-west-south', kind: 'utility', x: -18, z: -20 }),
+  Object.freeze({ id: 'utility-east-north', kind: 'utility', x: 18, z: 34 }),
+  Object.freeze({ id: 'utility-east-south', kind: 'utility', x: 18, z: -20 }),
+  Object.freeze({ id: 'streetlamp-west', kind: 'streetlamp', x: -16, z: 5 }),
+  Object.freeze({ id: 'streetlamp-east', kind: 'streetlamp', x: 16, z: 20 }),
+]);
 
 export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS, rows = STREET_BLOCK.rows, laneCenter = null } = {}) {
   const buildings = [], pieces = [], covers = [], passages = [];
@@ -179,6 +187,9 @@ export function makeTownLayout({ storeys: storeyOverrides = TOWN_STOREYS, rows =
   const obstacles = damagedPieces.filter(p => p.collision || p.wall).map(p => ({
     id: p.id, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2,
     minY: p.y - p.h / 2, height: p.y + p.h / 2, stair: Boolean(p.stair), walkable: Boolean(p.walkable),
-  }));
-  return { streetWidth: STREET_BLOCK.streetWidth, buildings, pieces: damagedPieces, obstacles, covers, passages, courtyard: { minX: -19.5, maxX: -12.5, minZ: 55, maxZ: 69 } };
+  })).concat(streetFixtures.map(fixture => ({ id: fixture.id, minX: fixture.x - .3, maxX: fixture.x + .3,
+    minZ: fixture.z - .3, maxZ: fixture.z + .3, minY: 0, height: 5.2 })));
+  return { streetWidth: STREET_BLOCK.streetWidth, buildings, pieces: damagedPieces, obstacles,
+    streetFixtures: streetFixtures.map(fixture => ({ ...fixture })), covers, passages,
+    courtyard: { minX: -19.5, maxX: -12.5, minZ: 55, maxZ: 69 } };
 }

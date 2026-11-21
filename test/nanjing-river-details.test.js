@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { createCivilianCharacterFactory } from '../src/civilian-character.js';
 import { createNanjingFerryFactory, updateNanjingFerryRower, createShoreReeds, NANJING_FERRY_FLOOR } from '../src/nanjing-river-details.js';
 
 test('five open wooden ferries share finite low-cost hull geometry and have separate oars', () => {
@@ -41,6 +42,21 @@ test('a dedicated boatman rows on empty inbound and outbound trips and rests whe
   updateNanjingFerryRower(ferry, 2);
   assert.equal(ferry.userData.oar.visible, false);
   assert.equal(rower.civilianTorso.rotation.x, 0);
+});
+
+test('the boatman holds the paddle in front of his chest while rowing', () => {
+  const ferry = createNanjingFerryFactory(new THREE.MeshStandardMaterial())();
+  const rower = createCivilianCharacterFactory().create(1000, 'adult', 'man', 'none');
+  rower.position.set(2.35, NANJING_FERRY_FLOOR, .1);
+  ferry.add(rower);
+  ferry.userData.rower = rower;
+  ferry.userData.state = 'outbound';
+  updateNanjingFerryRower(ferry, 1);
+  ferry.updateMatrixWorld(true);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(rower.getWorldQuaternion(new THREE.Quaternion()));
+  const chest = new THREE.Vector3(0, 1.1, 0).applyMatrix4(rower.matrixWorld);
+  const grip = ferry.localToWorld(ferry.userData.oar.position.clone());
+  assert.ok(grip.sub(chest).dot(forward) > .2, 'the paddle grip must remain in front of the torso');
 });
 
 test('shore reeds are one opaque merged mesh, retain dock clearance, and do not register collision', () => {

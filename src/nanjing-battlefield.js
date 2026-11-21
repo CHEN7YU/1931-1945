@@ -113,7 +113,8 @@ export function makeNanjingBattlefield(scene, surface) {
   const dark = new THREE.MeshStandardMaterial({ color: 0x242a28, roughness: .92 });
   const sceneArt = { wallPieces: 0, doorLeaves: 0, sandbagMaterial: 'burlap',
     grimeDecals: 0, detailedCargo: 0, detailedSandbags: 0, shopAwnings: 0,
-    shopNotices: 0, contactPatches: 0, shopSamples: [] };
+    shopNotices: 0, contactPatches: 0, shopSamples: [],
+    cityInfrastructure: { utilityPoles: 0, streetLamps: 0, overheadWireSpans: 0 } };
 
   function addBox(x, y, z, w, h, d, material, collision = false, wallPiece = false) {
     const geometry = boxGeometry.clone();
@@ -134,6 +135,19 @@ export function makeNanjingBattlefield(scene, surface) {
     if (wallPiece) town.pieces.push({ x, y, z, w, h, d, material: 'stone', wall: true });
     return mesh;
   }
+  const cityPoleGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
+  const cityBeam = (start, end, radius, material, blocksShots = false) => {
+    const from = new THREE.Vector3(...start), to = new THREE.Vector3(...end);
+    const direction = to.clone().sub(from);
+    const mesh = new THREE.Mesh(cityPoleGeometry, material);
+    mesh.position.copy(from.clone().add(to).multiplyScalar(.5));
+    mesh.scale.set(radius, direction.length(), radius);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+    if (blocksShots) solids.push(mesh);
+    return mesh;
+  };
 
   function makeSurface(x, z, w, d, material, y = -.16, clipRivers = true) {
     // Cut river openings out of terrain and roads, rather than burying water under a full ground plane.
@@ -612,6 +626,50 @@ export function makeNanjingBattlefield(scene, surface) {
       paving.rotation.z = Math.atan2(bx - ax, bz - az);
       paving.userData.nanjingFeature = 'city-lane';
       paving.userData.streetId = street.id;
+    }
+  }
+  const utilityWire = new THREE.MeshStandardMaterial({ color: 0x343632, roughness: .88 });
+  const utilityTimber = surface('timber', 0x554633, 2.6);
+  const streetLampMetal = new THREE.MeshStandardMaterial({ color: 0x47483f, roughness: .82, metalness: .34 });
+  const streetLampGlass = new THREE.MeshStandardMaterial({
+    color: 0x9b8762, emissive: 0x302514, roughness: .8,
+  });
+  for (const fixture of cityLayout.streetFixtures) {
+    const { x, z } = fixture;
+    if (fixture.kind === 'utility') {
+      cityBeam([x, 0, z], [x, 6, z], .12, utilityTimber, true);
+      cityBeam([x - .85, 5.55, z], [x + .85, 5.55, z], .055, utilityTimber, true);
+      for (const offset of [-.58, 0, .58]) {
+        const insulator = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .16, 6), stone);
+        insulator.position.set(x + offset, 5.65, z);
+        scene.add(insulator);
+        solids.push(insulator);
+      }
+      obstacles.push({ minX: x - .24, maxX: x + .24, minZ: z - .24, maxZ: z + .24,
+        minY: 0, height: 6 });
+      sceneArt.cityInfrastructure.utilityPoles++;
+    } else if (fixture.kind === 'streetlamp') {
+      cityBeam([x, 0, z], [x, 4.5, z], .085, streetLampMetal, true);
+      const armX = x > 0 ? x - 1 : x + 1;
+      cityBeam([x, 4.18, z], [armX, 4.45, z], .045, streetLampMetal, true);
+      addBox(armX, 4.3, z, .3, .12, .23, streetLampMetal);
+      addBox(armX, 4.15, z, .2, .09, .16, streetLampGlass);
+      obstacles.push({ minX: x - .2, maxX: x + .2, minZ: z - .2, maxZ: z + .2,
+        minY: 0, height: 4.5 });
+      sceneArt.cityInfrastructure.streetLamps++;
+    }
+  }
+  for (const side of [-1, 1]) {
+    const poles = cityLayout.streetFixtures.filter(fixture => fixture.kind === 'utility' &&
+      Math.sign(fixture.x) === side).sort((a, b) => a.z - b.z);
+    for (let index = 1; index < poles.length; index++) {
+      const a = poles[index - 1], b = poles[index];
+      for (const offset of [-.58, 0, .58]) {
+        const x = (a.x + b.x) / 2 + offset, midZ = (a.z + b.z) / 2;
+        cityBeam([x, 5.65, a.z], [x, 5.35, midZ], .018, utilityWire);
+        cityBeam([x, 5.35, midZ], [x, 5.65, b.z], .018, utilityWire);
+      }
+      sceneArt.cityInfrastructure.overheadWireSpans++;
     }
   }
   makeSurface(-24, 76, 10, 58, road, -.07);
@@ -1888,6 +1946,7 @@ export function makeNanjingBattlefield(scene, surface) {
       rivers: RIVERS,
       trees,
       cityStreets: cityLayout.streets,
+      cityFixtures: cityLayout.streetFixtures,
       residentialBuildings,
       northernBackdrop,
       primaryAssaultRoute: 'yuhua-road-bridge-through-jubaomen',

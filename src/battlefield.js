@@ -60,7 +60,8 @@ export function makeWorld(scene, surface, options = {}) {
   sand.vertexColors = true;
   const sceneArt = { wallPieces: 0, doorLeaves: 0, sandbagMaterial: 'burlap',
     grimeDecals: 0, detailedCargo: 0, detailedSandbags: 0,
-    shopAwnings: 0, shopNotices: 0, contactPatches: 0, shopSamples: Object.freeze(Object.keys(SHOP_ART_STYLES)) };
+    shopAwnings: 0, shopNotices: 0, contactPatches: 0, shopSamples: Object.freeze(Object.keys(SHOP_ART_STYLES)),
+    cityInfrastructure: { utilityPoles: 0, streetLamps: 0, overheadWireSpans: 0 } };
   const awningGeometry = shopAwningGeometry();
   const noticeGeometry = shopNoticeGeometry();
   const shopCloth = new Map(Object.entries(SHOP_ART_STYLES).map(([id, style]) => {
@@ -373,6 +374,42 @@ export function makeWorld(scene, surface, options = {}) {
       sceneArt.wallPieces++;
     }
     box(piece.x, piece.y, piece.z, piece.w, piece.h, piece.d, mat, true);
+  }
+  const streetLampMetal = new THREE.MeshStandardMaterial({ color: 0x47483f, roughness: .82, metalness: .34 });
+  const streetLampGlass = new THREE.MeshStandardMaterial({ color: 0x9b8762, emissive: 0x302514, roughness: .8 });
+  for (const fixture of town.streetFixtures ?? []) {
+    const { x, z } = fixture;
+    if (fixture.kind === 'utility') {
+      const post = beam([x, 0, z], [x, 5.5, z], .105, timber);
+      solids.push(post);
+      beam([x - 1, 5.05, z], [x + 1, 5.05, z], .065, timber);
+      for (const offset of [-.68, 0, .68]) cylinder(x + offset, 5.16, z, .055, .16, stone);
+      obstacle(x, z, .42, .42, 5.5);
+      sceneArt.cityInfrastructure.utilityPoles++;
+    } else if (fixture.kind === 'streetlamp') {
+      const post = beam([x, 0, z], [x, 4.4, z], .085, streetLampMetal);
+      solids.push(post);
+      const armX = x > 0 ? x - 1 : x + 1;
+      beam([x, 4.05, z], [armX, 4.35, z], .045, streetLampMetal);
+      box(armX, 4.22, z, .32, .13, .25, streetLampMetal);
+      box(armX, 4.08, z, .23, .1, .18, streetLampGlass);
+      obstacle(x, z, .34, .34, 4.4);
+      sceneArt.cityInfrastructure.streetLamps++;
+    }
+  }
+  for (const side of [-1, 1]) {
+    const poles = (town.streetFixtures ?? []).filter(fixture => fixture.kind === 'utility' &&
+      Math.sign(fixture.x) === side).sort((a, b) => a.z - b.z);
+    for (let index = 1; index < poles.length; index++) {
+      const a = poles[index - 1], b = poles[index];
+      for (const offset of [-.68, 0, .68]) {
+        const x = (a.x + b.x) / 2 + offset;
+        const midZ = (a.z + b.z) / 2;
+        beam([x, 5.16, a.z], [x, 4.92, midZ], .018, iron);
+        beam([x, 4.92, midZ], [x, 5.16, b.z], .018, iron);
+      }
+      sceneArt.cityInfrastructure.overheadWireSpans++;
+    }
   }
   for (const patch of streetGrimePatches(town)) {
     const decal = mesh(grimePatchGeometry(patch), wallGrime, patch.x, patch.y, patch.z);

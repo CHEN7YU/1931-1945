@@ -346,6 +346,10 @@ export function nanjingCivilianEvacuationStatus(campaign, civilians) {
     ready: enRoute === 0 && campaign.civiliansWaiting === 0 && campaign.civiliansAboard === 0 };
 }
 
+export function nanjingPlayerBoardingReady(evacuation) {
+  return evacuation.waiting === 0;
+}
+
 export function overrunNanjingDock(campaign) {
   campaign.dockOverrun = true;
   advanceNanjingCampaign(campaign, 0);

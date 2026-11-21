@@ -1,4 +1,13 @@
 import {EAST_BREAKOUT} from './encirclement.js';
+import {PREVIEW_OBJECTIVES} from './town-preview-layout.js';
+
+const supplyPoint=PREVIEW_OBJECTIVES.find(point=>point.id==='A');
+export const BREAKOUT_REGROUP_POINTS=Object.freeze([
+  Object.freeze({x:supplyPoint.x-14,z:supplyPoint.z-12}),
+  Object.freeze({x:supplyPoint.x-20,z:supplyPoint.z-18}),
+  Object.freeze({x:supplyPoint.x-8,z:supplyPoint.z-18}),
+]);
+export const BREAKOUT_COUNTERATTACK_POINT=Object.freeze({x:EAST_BREAKOUT.x-4,z:EAST_BREAKOUT.z});
 
 export function breakoutGroupNumber(formation) {
   return Math.floor((formation.index??0)/2)%3;
@@ -6,7 +15,7 @@ export function breakoutGroupNumber(formation) {
 
 export function breakoutGroupDestination(group) {
   if(!Number.isInteger(group)||group<0||group>2)throw new RangeError('Invalid eastern breakout group');
-  return [{x:28,z:-18},{x:30,z:3},{x:28,z:24}][group];
+  return BREAKOUT_REGROUP_POINTS[group];
 }
 
 export function advanceBreakoutGroups(formations,match,now) {

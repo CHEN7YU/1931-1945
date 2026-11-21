@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from '../src/nanjing-city-layout.js';
+import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+
+function segmentDistance(point, start, end) {
+  const dx = end.x - start.x, dz = end.z - start.z;
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.z - start.z) * dz) /
+    (dx * dx + dz * dz)));
+  return Math.hypot(point.x - start.x - t * dx, point.z - start.z - t * dz);
+}
 
 test('city layout is deterministic, varied and street-facing rather than aligned rows of identical lots', () => {
   const layout = createNanjingCityLayout();
@@ -28,6 +36,35 @@ test('city layout is deterministic, varied and street-facing rather than aligned
   for (const home of homes) {
     assert.ok(layout.streets.every(street => !cityStreetIntersectsLot(home, street, .65)),
       'street ribbons and their verge must never pass through houses');
+  }
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'utility').length, 4);
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'streetlamp').length, 2);
+  for (const fixture of layout.streetFixtures) {
+    assert.ok(layout.streets.every(street => !cityStreetIntersectsLot(
+      [fixture.x, fixture.z, .5, .5], street, .2)), `${fixture.id} stays off vehicle lanes`);
+    assert.ok(layout.lots.every(([x, z, width, depth]) =>
+      Math.abs(fixture.x - x) >= width / 2 + .55 || Math.abs(fixture.z - z) >= depth / 2 + .55),
+    `${fixture.id} keeps clearance from buildings`);
+    assert.ok(NANJING_SPAWNS.every(spawn => Math.hypot(fixture.x - spawn.x, fixture.z - spawn.z) > 5),
+      `${fixture.id} stays clear of troop spawns`);
+  }
+  for (const [x, z, footprintWidth, footprintDepth, , facing] of layout.lots) {
+    const depth = facing % 2 ? footprintWidth : footprintDepth;
+    const transform = (px, pz) => {
+      const cosine = [1, 0, -1, 0][facing], sine = [0, 1, 0, -1][facing];
+      return { x: x + (px - x) * cosine + (pz - z) * sine,
+        z: z - (px - x) * sine + (pz - z) * cosine };
+    };
+    const door = transform(x, z - depth / 2);
+    const exit = transform(x, z - depth / 2 - .8);
+    const length = Math.hypot(exit.x - door.x, exit.z - door.z);
+    const direction = { x: (exit.x - door.x) / length, z: (exit.z - door.z) / length };
+    const approach = { x: door.x + direction.x * 1.2, z: door.z + direction.z * 1.2 };
+    const inside = { x: door.x - direction.x * .8, z: door.z - direction.z * .8 };
+    for (const fixture of layout.streetFixtures) {
+      assert.ok(segmentDistance(fixture, approach, inside) > .75,
+        `${fixture.id} leaves the entrance route for a home facing ${facing} clear`);
+    }
   }
   for (let i = 0; i < layout.lots.length; i++) for (const b of layout.lots.slice(i + 1)) {
     const a = layout.lots[i];

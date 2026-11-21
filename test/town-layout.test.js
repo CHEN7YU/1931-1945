@@ -20,6 +20,19 @@ test('the town has twenty-five enterable buildings and preserves main street cle
   assert.equal(STREET_BLOCK.streetWidth, 8.76);
   for (const z of [62, 43, 10]) assert.equal(segmentClear({ x: 0, z: z - 8 }, { x: 0, z: z + 8 }, 1.9, layout.obstacles), true);
 });
+test('street infrastructure stays beside the road and away from troop routes', () => {
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'utility').length, 4);
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'streetlamp').length, 2);
+  for (const fixture of layout.streetFixtures) {
+    assert.ok(Math.abs(fixture.x) > STREET_BLOCK.streetWidth / 2 + 5);
+    assert.ok(layout.obstacles.some(obstacle => obstacle.id === fixture.id &&
+      obstacle.minX < fixture.x && obstacle.maxX > fixture.x &&
+      obstacle.minZ < fixture.z && obstacle.maxZ > fixture.z));
+  }
+  for (const z of [62, 43, 10]) {
+    assert.equal(segmentClear({ x: 0, z: z - 8 }, { x: 0, z: z + 8 }, .46, layout.obstacles), true);
+  }
+});
 test('every street door and back door has actual capsule clearance, not a hidden building box', () => {
   for (const shop of layout.buildings) {
     assert.equal(segmentClear({ x: shop.x - shop.w / 2 - 1, z: shop.doorZ }, { x: shop.x + shop.w / 2 + 1, z: shop.doorZ }, .42, layout.obstacles), true, shop.id);

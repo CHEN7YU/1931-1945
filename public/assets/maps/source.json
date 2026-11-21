@@ -6,13 +6,13 @@
   "files": [
     {
       "file": "taierzhuang-streets.json",
-      "bytes": 178924,
-      "sha256": "199ffe971f9b87b62577b8d1bc949467d1adbb7f562aca1b10bad3a4c7617289"
+      "bytes": 179514,
+      "sha256": "6e8a48e009a2a6e70840a5a042b1e10104c89a6298246087d3eaa87b643e1ac8"
     },
     {
       "file": "taierzhuang-fort.json",
-      "bytes": 213838,
-      "sha256": "51d130e6b4f067309d0209d0c07dc2dc0d0288c06c284e6d12ffcc6867e3e065"
+      "bytes": 214428,
+      "sha256": "45d0cfb76eefb96cb7167308b59af57949ad861a0833433f0225143900c0e98e"
     }
   ]
 }

@@ -93,6 +93,8 @@ export function makeTownPreviewLayout() {
     minZ: piece.z - piece.d / 2, maxZ: piece.z + piece.d / 2,
     minY: piece.y - piece.h / 2, height: piece.y + piece.h / 2,
     stair: Boolean(piece.stair), walkable: Boolean(piece.walkable),
-  }));
+  })).concat(town.streetFixtures.map(fixture => ({ id: fixture.id,
+    minX: fixture.x - .3, maxX: fixture.x + .3, minZ: fixture.z - .3, maxZ: fixture.z + .3,
+    minY: 0, height: 5.2 })));
   return { ...town, fortifications: { sides: 2, walls, gate: { x: 56, z: 3, width: 7.2 } } };
 }

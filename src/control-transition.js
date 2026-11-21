@@ -14,10 +14,12 @@ export function nearbyDeathTransferMember(members, current, eligible) {
   return best;
 }
 
-export function createDeathTransfer() { return { active: false, fromId: null, reason: null, elapsed: 0, handedOff: false }; }
-export function startDeathTransfer(state, fromId, reason) {
+export function createDeathTransfer() {
+  return { active: false, fromId: null, reason: null, memorial: null, elapsed: 0, handedOff: false };
+}
+export function startDeathTransfer(state, fromId, reason, memorial = null) {
   if (state.active && state.fromId === fromId) return false;
-  Object.assign(state, { active: true, fromId, reason, elapsed: 0, handedOff: false });
+  Object.assign(state, { active: true, fromId, reason, memorial, elapsed: 0, handedOff: false });
   return true;
 }
 export function advanceDeathTransfer(state, dt) {
