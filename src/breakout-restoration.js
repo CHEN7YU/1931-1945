@@ -1,5 +1,12 @@
+import { RIVER } from './ground.js';
+import { PREVIEW_OBJECTIVES } from './town-preview-layout.js';
+
 export const BREAKOUT_FORCE = Object.freeze({ originalInfantrySquads: 6, infantrySquads: 8, infantryMembers: 11,
   tankSquads: 1, aircraftSquads: 1, spawnInterval: .35, minimumPlayerDistance: 28 });
+
+const supplyPoint = PREVIEW_OBJECTIVES.find(point => point.id === 'A');
+const preferredPositions = [-28, -16, -4].flatMap(dx =>
+  [-28, -16, -34].map(dz => ({ x: supplyPoint.x + dx, z: RIVER.centerZ + dz })));
 
 export function breakoutRestorationPlan(formations) {
   const infantry = formations.filter(unit => unit.team === 'enemy' && unit.type === 'infantry')
@@ -29,11 +36,31 @@ export function hiddenBreakoutPositions(playerPosition, visible, groundClear) {
   if(![playerPosition.x,playerPosition.z].every(Number.isFinite)||
     typeof visible!=='function'||typeof groundClear!=='function')throw new TypeError('Invalid breakout spawn queries');
   const points=[];
+  for(const point of preferredPositions){
+    if(Math.hypot(point.x-playerPosition.x,point.z-playerPosition.z)<BREAKOUT_FORCE.minimumPlayerDistance||
+      visible(point)||!groundClear(point))continue;
+    points.push(point);
+  }
+  const fallback=[];
   for(const z of [-72,-48,-24,0,24,48,72])for(const x of [-72,-48,-24,0,24,36]){
     const point={x,z};
     if(Math.hypot(x-playerPosition.x,z-playerPosition.z)<BREAKOUT_FORCE.minimumPlayerDistance||
       visible(point)||!groundClear(point))continue;
-    points.push(point);
+    fallback.push(point);
   }
-  return points.sort((a,b)=>Math.hypot(a.x-36,a.z-3)-Math.hypot(b.x-36,b.z-3));
+  fallback.sort((a,b)=>Math.hypot(a.x-36,a.z-3)-Math.hypot(b.x-36,b.z-3));
+  return points.concat(fallback);
+}
+
+export function breakoutSpawnAttempts(task, candidates, limit = 3) {
+  const key = point => `${point.x},${point.z}`;
+  task.attemptedSpawns ??= [];
+  let remaining = candidates.filter(point => !task.attemptedSpawns.includes(key(point)));
+  if (!remaining.length) {
+    task.attemptedSpawns = [];
+    remaining = candidates;
+  }
+  const attempts = remaining.slice(0, limit);
+  task.attemptedSpawns.push(...attempts.map(key));
+  return attempts;
 }

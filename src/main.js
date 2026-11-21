@@ -197,7 +197,7 @@ import { updateCivilianAppearance } from './civilian-character.js';
 import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
-import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions } from './breakout-restoration.js';
+import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions, breakoutSpawnAttempts } from './breakout-restoration.js';
 import { registerBreakoutStrength, crossedEastGate } from './encirclement.js';
 import { NANJING_FERRY_ROUTE, updateFerryVisibility, restoreFerryPassenger, shouldDepartNanjingFerry,
   selectCivilianBoarding } from './nanjing-ferry.js';
@@ -5769,9 +5769,7 @@ function restoreBreakoutForces() {
     const candidates=hiddenBreakoutPositions(player.position,visible,point=>
       !spawnBlockReason({...point,altitude:0,kind:task.type==='tank'?'garage':'base',team:'enemy'},
         task.type,hostilePositions('enemy'),obstacles));
-    for(let attempt=0;attempt<Math.min(3,candidates.length);attempt++){
-      const point=candidates[(task.spawnCursor??0)%candidates.length];
-      task.spawnCursor=(task.spawnCursor??0)+1;
+    for(const point of breakoutSpawnAttempts(task,candidates)){
       if(!navigate(point,{x:52,z:3}).length)continue;
       const candidate={id:`${task.id}-restore`,name:'合围部队视野外集结',team:'enemy',kind:task.type==='tank'?'garage':'base',altitude:0,...point};
       if(task.type==='tank'&&!armorNavigate.canSpawn(candidate,[...entities.vehicles.values()]))continue;

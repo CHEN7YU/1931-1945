@@ -20,6 +20,22 @@ try {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.eastBreakoutReview = {
+        spawnPreference(playerX,playerZ) {
+          setGameState('menu');beginMatch();
+          const player=controlledSoldier(entities);
+          for(const actor of allForces)if(actor!==player)actor.health=0;
+          for(const formation of formations)formation.respawnEnabled=false;
+          player.position.set(playerX,0,playerZ);
+          camera.position.set(playerX,3,playerZ);
+          camera.lookAt(playerX+20,3,playerZ+20);
+          const before=new Set(enemies.map(actor=>actor.id));
+          for(const point of objectives)Object.assign(point,{owner:'friendly',control:1,progress:1,enemyProgress:0,captured:true});
+          updateObjectives(0);
+          for(let index=0;index<30&&!enemies.some(actor=>!before.has(actor.id));index++) {
+            time+=.35;restoreBreakoutForces();
+          }
+          return enemies.filter(actor=>!before.has(actor.id)).map(actor=>actor.spawnPosition);
+        },
         range() {
           const actor=controlledSoldier(entities);
           dispatchControlCommand('equipTool');dispatchControlCommand('pressFire');
@@ -129,7 +145,17 @@ try {
   await page.locator('#redeploy-choices [data-type="infantry"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
-  if (process.env.PHASE_TWO_COMPOSITION_ONLY === '1') {
+  if (process.env.PHASE_TWO_SPAWN_ONLY === '1') {
+    const far=await page.evaluate(() => eastBreakoutReview.spawnPreference(60,60));
+    const near=await page.evaluate(() => eastBreakoutReview.spawnPreference(-52,-40));
+    assert.equal(far.length,11,'a complete infantry squad must spawn');
+    assert.ok(far.every(point=>point.x < -36 && point.z < -23),
+      'the squad must appear northwest of A and north of the dry river');
+    assert.equal(near.length,11,'fallback must spawn a complete infantry squad');
+    assert.ok(near.every(point=>Math.hypot(point.x+52,point.z+40)>=28),
+      'fallback squad must stay outside the player safety distance');
+    console.log(JSON.stringify({passed:true,far,near}));
+  } else if (process.env.PHASE_TWO_COMPOSITION_ONLY === '1') {
     const restoration = await page.evaluate(() => eastBreakoutReview.restoreComposition());
     assert.equal(restoration.phase, 2);
     assert.equal(restoration.reinforcing, false);
