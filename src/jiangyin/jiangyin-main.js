@@ -394,14 +394,14 @@ function renderHud() {
     ? `落点 ${Math.round(hud.aim.distance)} m · 飞行 ${hud.aim.flight.toFixed(1)} s · 散布 ${hud.aim.spread[0]}×${hud.aim.spread[1]} m${hud.aim.onTarget ? ' · 可命中' : hud.aim.lead ? ' · 对准红色提前量标记' : ''}`
     : hud.range ? `${Math.round(hud.range)} m` : '';
   $('jy-range').classList.toggle('on-target', Boolean(hud.aim?.onTarget));
-  // 命中提示：准星下方显示被命中舰船的名称、本次伤害与剩余耐久（血条），5 秒内渐隐；击沉时显示“击沉！”
+  // 命中提示：准星下方显示被命中舰船的名称、本次伤害与剩余耐久（血条），2.5 秒内渐隐；击沉时显示“击沉！”
   const target = hud.target, info = $('jy-hitinfo');
   info.classList.toggle('show', Boolean(target));
   if (target) {
     info.querySelector('b').textContent = target.sunk ? '击沉！' : '命中！';
     info.querySelector('span').textContent = `${target.label} −${Math.round(target.damage)} · 剩余 ${Math.round(target.health * 100)}%`;
     info.querySelector('em').style.width = `${Math.round(target.health * 100)}%`;
-    info.style.opacity = String(Math.min(1, (5 - target.age) / 1.2));
+    info.style.opacity = String(Math.min(1, (2.5 - target.age) / .6));   // 2.5 秒：前 1.9 秒完全显示，最后 0.6 秒淡出
     info.classList.toggle('sunk', Boolean(target.sunk));
   }
   drawRadar();

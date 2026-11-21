@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createJiangyinGame } from '../src/jiangyin/jiangyin-game.js';
-import { JIANGYIN_SQUAD } from '../src/jiangyin/jiangyin-rules.js';
+import { JIANGYIN_SQUAD, JIANGYIN_WAVES, LANDING_STREAM, ENEMY_TYPES, groundHeight } from '../src/jiangyin/jiangyin-rules.js';
 
 const stub = point => { const group = new THREE.Group(); group.userData.update = () => {}; return group; };
 function makeGame(seed = 11, effects = null) {
@@ -226,4 +226,125 @@ test('phase one: the Japanese fleet grows from 2 to 7 ships, strafes with machin
   assert.ok(aim && aim.distance > 100 && aim.flight > 0 && aim.spread[0] > aim.spread[1], `predicted fall of shot ${JSON.stringify(aim)}`);
   game.step(.05, {});
   assert.equal(game.hud().aim, null, 'the marker disappears when the right button is released');
+});
+
+test('phase-two landing craft continuously deliver troops onto both banks, never into the river centre', () => {
+  const { game } = makeGame();
+  game.state.phase = 'hold'; game.state.waveIndex = JIANGYIN_WAVES.length;
+  for (const post of game.posts) post.point.health = 1e9;
+  const banks = [];
+  for (let delivery = 0; delivery < 3; delivery++) {
+    game.step(.05, {});
+    const craft = game.landings.find(item => item.state === 'approach' && item.sinking === null);
+    assert.ok(craft, `delivery ${delivery} must depart`);
+    banks.push(craft.bank);
+    assert.ok(craft.target.x > 0, 'landing remains downstream of the blockage');
+    craft.health = 1e9; craft.x = craft.target.x; craft.z = craft.target.z; craft.via = [];
+    const before = new Set(game.troops.map(troop => troop.id));
+    run(game, 2);
+    const landed = game.troops.filter(troop => !before.has(troop.id));
+    assert.equal(landed.length, 5);
+    for (const troop of landed) {
+      assert.ok(Math.abs(troop.z) > 740, 'troops land beside the actual riverbank');
+      assert.ok(groundHeight(troop.x, troop.z) >= .4, 'troops land on dry ground');
+      assert.equal(Math.sign(troop.z), craft.bank === 'south' ? 1 : -1);
+    }
+    assert.ok(game.landings.filter(item => item.state !== 'empty' && item.sinking === null).length <= LANDING_STREAM.maxActive);
+    if (delivery < 2) run(game, LANDING_STREAM.interval - 2);
+  }
+  assert.deepEqual(banks, ['south', 'south', 'north']);
+});
+
+test('phase two retains three engaged ships, withdraws damaged ships and stops replacements after two minutes', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  for (const post of game.posts) post.point.health = 1e9;
+  run(game, 90);
+  assert.equal(game.ships.filter(ship => ship.sinking === null).length, 7);
+  for (const post of game.posts) if (post.boat) post.point.health = 0;
+  for (let step = 0; step < 900 && game.state.phase !== 'scuttle'; step++) game.step(.05, {});
+  game.skipScuttle();
+  const engaged = () => game.ships.filter(ship => ship.sinking === null && !ship.withdrawing);
+  assert.equal(game.state.phase, 'hold');
+  assert.equal(engaged().length, 3);
+  assert.equal(game.ships.filter(ship => ship.withdrawing).length, 4);
+  const damaged = engaged()[0]; damaged.health = damaged.cfg.health * .39;
+  game.step(.05, {});
+  assert.equal(damaged.withdrawing, true);
+  run(game, 21);
+  assert.equal(engaged().length, 3, 'early losses are replaced');
+  game.state.elapsed = 121; game.state.waveIndex = JIANGYIN_WAVES.length;
+  for (const ship of engaged()) ship.health = ship.cfg.health * .39;
+  const ids = new Set(game.ships.map(ship => ship.id));
+  run(game, 21);
+  assert.equal(engaged().length, 0, 'late damaged ships withdraw without replacement');
+  assert.ok(game.ships.every(ship => ids.has(ship.id)));
+});
+
+test('phase-two waves wait for infantry capacity without discarding tank escorts or landing passengers', () => {
+  const { game } = makeGame();
+  game.state.phase = 'hold'; game.state.elapsed = 171;
+  for (const post of game.posts) post.point.health = 1e9;
+  game.step(.05, {});
+  const living = () => game.troops.filter(troop => troop.dead === null);
+  assert.equal(living().length, 48, 'whole waves fit within the 48-person limit');
+  assert.equal(game.vehicles.filter(vehicle => vehicle.type === 'tank').length, 6);
+  for (const troop of living().slice(0, ENEMY_TYPES.squad.size)) { troop.dead = game.now; troop.health = 0; }
+  game.step(.05, {});
+  assert.equal(living().length, 48);
+  assert.equal(game.vehicles.filter(vehicle => vehicle.type === 'tank').length, 9,
+    'the deferred platoon arrives with its complete escort when there is room');
+  const blockers = living().slice(0, 5);
+  for (const troop of blockers) { troop.dead = game.now; troop.health = 0; }
+  game.state.landingAt = game.now;
+  game.step(.05, {});
+  const craft = game.landings.find(item => item.state === 'approach' && item.sinking === null);
+  assert.ok(craft);
+  craft.health = 1e9; craft.x = craft.target.x; craft.z = craft.target.z; craft.via = [];
+  for (const troop of blockers) {
+    troop.dead = null; troop.health = 100;
+  }
+  assert.equal(living().length, 48);
+  run(game, 2);
+  assert.equal(craft.state, 'unloading', 'passengers stay aboard when no full landing party fits');
+  assert.equal(living().length, 48);
+  for (const troop of living().slice(0, 5)) { troop.dead = game.now; troop.health = 0; }
+  game.step(.05, {});
+  assert.equal(craft.state, 'empty', 'the same craft unloads once capacity is available');
+  assert.ok(living().length <= 48);
+});
+
+test('enemy ships never sail through each other, and in phase two at most three stay while damaged ones withdraw', () => {
+  const { game } = makeGame();
+  game.skipIntro();
+  for (const post of game.posts) if (post.boat) post.point.health = post.point.maxHealth = 1e9;
+  let overlaps = 0, samples = 0;
+  for (let t = 0; t < 120; t += .05) {
+    game.step(.05, {});
+    for (const ship of game.ships) ship.health = Math.max(ship.health, ship.cfg.health * .9);
+    const afloat = game.ships.filter(ship => ship.sinking === null);
+    for (let i = 0; i < afloat.length; i++) for (let j = i + 1; j < afloat.length; j++) {
+      const a = afloat[i], b = afloat[j];
+      samples++;
+      // 两船中心距离小于两船舰宽之和的一半（明显重叠）且船身方向平行时视为穿模
+      if (Math.hypot(a.x - b.x, a.z - b.z) < (a.cfg.beam + b.cfg.beam) / 2) overlaps++;
+    }
+  }
+  assert.ok(samples > 1000);
+  assert.equal(overlaps, 0, `enemy hulls overlapped in ${overlaps} samples`);
+  // 第二阶段：最多 3 艘留在江面，不再增援；受创舰顺流撤出
+  for (const post of game.posts) if (post.boat) post.point.health = 0;
+  for (let n = 0; n < 4000 && game.state.phase !== 'hold'; n++) game.step(.05, {});
+  assert.equal(game.state.phase, 'hold');
+  const engaged = () => game.ships.filter(ship => ship.sinking === null && !ship.withdrawing).length;
+  assert.ok(engaged() <= 3, `at most three enemy ships keep fighting (${engaged()})`);
+  let peak = 0;
+  for (let t = 0; t < 140; t += .05) { game.step(.05, {}); peak = Math.max(peak, engaged()); }
+  assert.ok(peak <= 3, 'phase two never has more than three enemy ships fighting');
+  const victim = game.ships.find(ship => ship.sinking === null && !ship.withdrawing);
+  if (victim) {
+    victim.health = victim.cfg.health * .3;
+    game.step(.05, {});
+    assert.equal(victim.withdrawing, true, 'a badly damaged ship withdraws downstream');
+  }
 });
