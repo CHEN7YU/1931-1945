@@ -11,8 +11,17 @@ export const BATTLE_VOICE_PROFILES = Object.freeze({
   ],
 });
 
+export const JIANGYIN_PLAYER_VOICE_LINES = Object.freeze([
+  { id: 'jiangyin-player-wounded-1', cue: 'jiangyin-player-wounded-1', text: '我好像受伤了' },
+  { id: 'jiangyin-player-wounded-2', cue: 'jiangyin-player-wounded-2', text: '我好像流血了' },
+  { id: 'jiangyin-player-bark-1', cue: 'jiangyin-player-bark-1', text: '小鬼子我日你祖宗' },
+  { id: 'jiangyin-player-bark-2', cue: 'jiangyin-player-bark-2', text: '打到小鬼子' },
+  { id: 'jiangyin-player-first-kill', cue: 'jiangyin-player-first-kill', text: '我干掉一个小鬼子' },
+].map(Object.freeze));
+
 export const BATTLE_VOICE_LINES = Object.freeze({
   friendly: [
+    ...JIANGYIN_PLAYER_VOICE_LINES,
     { id: 'enemy-whistle-1', cue: 'enemy-whistle', text: '日军吹哨了，他们要冲锋了！' },
     { id: 'enemy-whistle-2', cue: 'enemy-whistle', text: '听，日军的哨子！准备迎敌！' },
     ...['一', '二', '三', '四', '五', '六', '七'].flatMap((minutes, index) => [

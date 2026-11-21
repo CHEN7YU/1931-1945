@@ -712,11 +712,18 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     if (vessel.cfg) { state.stats.shipsSunk++; emit({ type: 'toast', text: `${vessel.label ?? vessel.cfg.name}被击沉${byPlayer ? '（玩家）' : ''}`, voice: 'jiangyin-enemy-sunk' }); }
     else state.stats.landingSunk++;
   }
-  function damageTroop(soldier, amount) {
-    if (soldier.dead !== null) return;
+  let firstEnemyKillReported = false;
+  function damageTroop(soldier, amount, byPlayer = false) {
+    if (soldier.dead !== null || amount <= 0) return false;
     soldier.health -= amount;
-    if (soldier.health > 0) return;
+    if (soldier.health > 0) return false;
     soldier.dead = now; state.stats.infantryKilled++;
+    const firstKill = byPlayer && !firstEnemyKillReported;
+    if (firstKill) {
+      firstEnemyKillReported = true;
+      emit({ type: 'first-enemy-kill' });
+    }
+    return firstKill;
   }
   function blast(position, radius, damage, team, byPlayer) {
     if (team === 'friendly') {
@@ -729,7 +736,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       for (const soldier of troops) {
         const d = Math.hypot(soldier.x - position.x, groundHeight(soldier.x, soldier.z) + 1 - position.y, soldier.z - position.z);
-        if (d < radius) damageTroop(soldier, 160 * (1 - d / radius));
+        if (d < radius) damageTroop(soldier, 160 * (1 - d / radius), byPlayer);
       }
       for (const vehicle of vehicles) {
         if (vehicle.health <= 0) continue;
@@ -873,7 +880,10 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       const spread = settings.spread + error;
       const dir = aimDirection(point, gauss() * spread, gauss() * spread);
       const hit = traceRay(pose.muzzle, dir, settings.range);
-      if (hit?.kind === 'troop') { damageTroop(hit.target, settings.damage); if (byPlayer) emit({ type: 'hit', kind: 'troop' }); }
+      if (hit?.kind === 'troop') {
+        const firstKill = damageTroop(hit.target, settings.damage, byPlayer);
+        if (byPlayer) emit({ type: 'hit', kind: 'troop', firstKill });
+      }
       else if (hit?.kind === 'landing') damageVessel(hit.target, 9, byPlayer);
       else if (hit?.kind === 'ship') damageVessel(hit.target, 1.5, byPlayer);
       else if (hit?.kind === 'plane') { damageVehicle(hit.target, settings.damage * .25, byPlayer); if (byPlayer) emit({ type: 'hit', kind: 'plane' }); }
@@ -1691,7 +1701,10 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     }
     const len = Math.hypot(dir.x, dir.y, dir.z); dir = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
     const hit = traceRay(eye, dir, S.rifleRange);
-    if (hit?.kind === 'troop') { damageTroop(hit.target, S.rifleDamage); if (byPlayer) emit({ type: 'hit', kind: 'troop' }); }
+    if (hit?.kind === 'troop') {
+      const firstKill = damageTroop(hit.target, S.rifleDamage, byPlayer);
+      if (byPlayer) emit({ type: 'hit', kind: 'troop', firstKill });
+    }
     else if (hit?.kind === 'tank' || hit?.kind === 'plane') damageVehicle(hit.target, hit.kind === 'plane' ? 4 : 1, byPlayer);
     if (byPlayer) state.stats.shots++;
     const muzzle = { x: eye.x + dir.x * .9, y: eye.y - .08 + dir.y * .9, z: eye.z + dir.z * .9 };
@@ -1733,7 +1746,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function damageMember(m, amount) {
     if (m.dead !== null || amount <= 0) return;
     m.health -= amount;
-    if (m.id === memberId) emit({ type: 'hurt', amount });
+    if (m.id === memberId) emit({ type: 'hurt', amount, health: Math.max(0, m.health), fatal: m.health <= 0 });
     if (m.health > 0) return;
     m.health = 0; m.dead = now; m.attacking = false; state.stats.squadLost = (state.stats.squadLost ?? 0) + 1;
     if (m.postId) { const post = postById(m.postId); if (post && alive(post)) post.point.operatorId = 'crew'; m.postId = null; }

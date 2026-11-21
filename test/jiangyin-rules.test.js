@@ -165,13 +165,23 @@ test('south batteries sit on the river-facing brow and overlook the water in fro
 test('every Jiangyin voice cue raised by the game has a scripted line and a battle-voices file name', async () => {
   const { readFile } = await import('node:fs/promises');
   const { JIANGYIN_VOICE_LINES, JIANGYIN_VOICE_FILE } = await import('../src/jiangyin/jiangyin-rules.js');
+  const { battleVoiceClips, JIANGYIN_PLAYER_VOICE_LINES } = await import('../src/battle-voice-lines.js');
   const cues = new Set(JIANGYIN_VOICE_LINES.map(line => line.cue));
   assert.equal(cues.size, JIANGYIN_VOICE_LINES.length);
   for (const line of JIANGYIN_VOICE_LINES) {
-    assert.match(line.cue, /^jiangyin-[a-z-]+$/);
+    assert.match(line.cue, /^jiangyin-[a-z0-9-]+$/);
     assert.ok(line.text.length >= 4 && line.text.length <= 40);
     assert.equal(JIANGYIN_VOICE_FILE(line.cue), `/assets/audio/battle-voices/friendly-0-${line.cue}.mp3`);
+    if (line.variants) for (let variant = 0; variant < line.variants; variant++)
+      assert.equal(JIANGYIN_VOICE_FILE(line.cue, variant), `/assets/audio/battle-voices/friendly-${variant}-${line.cue}.mp3`);
   }
+  const generated = battleVoiceClips().filter(clip => JIANGYIN_PLAYER_VOICE_LINES.some(line => line.id === clip.id));
+  assert.equal(generated.length, JIANGYIN_PLAYER_VOICE_LINES.length * 3);
+  assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '我好像受伤了'));
+  assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '我好像流血了'));
+  assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '小鬼子我日你祖宗'));
+  assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '打到小鬼子'));
+  assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '我干掉一个小鬼子'));
   const game = await readFile(new URL('../src/jiangyin/jiangyin-game.js', import.meta.url), 'utf8');
   const main = await readFile(new URL('../src/jiangyin/jiangyin-main.js', import.meta.url), 'utf8');
   const used = [...`${game}\n${main}`.matchAll(/'(jiangyin-[a-z]+(?:-[a-z]+)*)'/g)].map(m => m[1])

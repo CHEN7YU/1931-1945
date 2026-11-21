@@ -314,6 +314,44 @@ test('phase-two waves wait for infantry capacity without discarding tank escorts
   assert.ok(living().length <= 48);
 });
 
+test('a player rifle kill emits the first-enemy-kill cue only once and only after a real enemy dies', () => {
+  const { game, events } = makeGame();
+  game.skipIntro();
+  for (const post of game.posts) if (post.boat) post.point.health = 0;
+  run(game, 25);
+  assert.equal(game.state.phase, 'scuttle');
+  game.skipScuttle();
+  const member = game.member;
+  for (const squadmate of game.squad) if (squadmate.id !== member.id) {
+    squadmate.health = 0;
+    squadmate.dead = game.now;
+  }
+  const makeTarget = (id, distance) => {
+    const target = { id, x: member.x + distance, z: member.z, health: 50, dead: null, model: new THREE.Group(),
+      bank: 'south', nextAttack: Infinity, offset: 0, walk: 0, land: true, focus: false };
+    target.model.position.set(target.x, groundHeight(target.x, target.z), target.z);
+    game.troops.push(target);
+    return target;
+  };
+  const first = makeTarget('voice-test-first', 8), second = makeTarget('voice-test-second', 14);
+  const aimAt = (target) => {
+    const dx = target.x - member.x, dz = target.z - member.z, distance = Math.hypot(dx, dz);
+    const targetY = groundHeight(target.x, target.z) + .95;
+    member.heading = Math.atan2(-dx, -dz);
+    member.pitch = Math.atan2(targetY - (member.y + 1.62), distance);
+  };
+  aimAt(first);
+  game.step(.05, { firePressed: true, aiming: true });
+  assert.equal(first.dead, game.now, 'the first target is killed by the real rifle trace');
+  assert.equal(second.dead, null, 'the first target, not a later target, receives the first shot');
+  assert.equal(events.filter(event => event.type === 'first-enemy-kill').length, 1);
+  aimAt(second);
+  run(game, 1);
+  game.step(.05, { firePressed: true, aiming: true });
+  assert.notEqual(second.dead, null, 'the second rifle shot also kills its target');
+  assert.equal(events.filter(event => event.type === 'first-enemy-kill').length, 1, 'later kills do not replay the first-kill event');
+});
+
 test('enemy ships never sail through each other, and in phase two at most three stay while damaged ones withdraw', () => {
   const { game } = makeGame();
   game.skipIntro();

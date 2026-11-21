@@ -1,4 +1,5 @@
 // 江阴要塞阻击战 · 纯规则模块（不依赖 three，可直接被 node --test 与 campaign-layout 引用）
+import { JIANGYIN_PLAYER_VOICE_LINES } from '../battle-voice-lines.js';
 // 坐标约定（按史实方向）：x 轴沿长江，长江自西向东流。+x 为东、下游（吴淞方向，日军来向），-x 为西、上游（南京方向，我军阵地）；
 // 江水沿 +x 方向流动，日军舰队逆流而上。z<0 为北岸，z>0 为南岸（江阴城、黄山炮台一侧）。
 // 尺度（按 1937 年实况）：堵塞线处江面宽约 1500 米（RIVER_HALF = 750），舰船为实舰主尺度。
@@ -93,8 +94,9 @@ export const JIANGYIN_VOICE_LINES = Object.freeze([
   { cue: 'jiangyin-squad-rally', text: '新的弟兄上来了！跟我守住炮台！' },
   { cue: 'jiangyin-victory', text: '江阴守住了！鬼子的舰队过不去！' },
   { cue: 'jiangyin-defeat', text: '炮台全部失守……弟兄们，撤！' },
+  ...JIANGYIN_PLAYER_VOICE_LINES.map(({ cue, text }) => ({ cue, text, variants: 3 })),
 ].map(Object.freeze));
-export const JIANGYIN_VOICE_FILE = cue => `/assets/audio/battle-voices/friendly-0-${cue}.mp3`;
+export const JIANGYIN_VOICE_FILE = (cue, variant = 0) => `/assets/audio/battle-voices/friendly-${variant}-${cue}.mp3`;
 
 export const AIR_SPAWN = Object.freeze({ x: 2800, y: 260, z: 0 });
 

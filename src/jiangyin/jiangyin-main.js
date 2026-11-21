@@ -23,6 +23,7 @@ import { getMenuMusic } from '../menu-music.js';
 import { createBlastFeedback } from '../blast-feedback.js';
 import { createBlastTinnitus } from '../blast-tinnitus.js';
 import { loadRifleAudio } from '../rifle-audio.js';
+import { createJiangyinVoiceReactions } from './jiangyin-voice.js';
 
 mountJiangyinPage();
 // 大厅背景音乐：加载期间继续，进入战斗淡出，暂停时按主游戏规则处理
@@ -64,17 +65,19 @@ function ensureAudio() {
 }
 // 战场语音：按 cue 懒加载 Azure 生成的 mp3（见 JIANGYIN_VOICE_LINES）；文件不存在时静默跳过，只保留文字提示
 const voiceCache = new Map(), voiceHeard = new Map();
+const voiceReactions = createJiangyinVoiceReactions();
 let voiceBusyUntil = 0;
-function playVoice(cue, urgent = false) {
+function playVoice(cue, urgent = false, variant = 0) {
   if (!audio || !JIANGYIN_VOICE_LINES.some(line => line.cue === cue)) return;
   const now = audio.currentTime;
   if (!urgent && (now < voiceBusyUntil || now - (voiceHeard.get(cue) ?? -1e9) < 25)) return;   // 不叠播；同一句 25 秒内不重复
   voiceHeard.set(cue, now);
-  if (!voiceCache.has(cue)) voiceCache.set(cue, fetch(JIANGYIN_VOICE_FILE(cue))
+  const cacheKey = `${cue}:${variant}`;
+  if (!voiceCache.has(cacheKey)) voiceCache.set(cacheKey, fetch(JIANGYIN_VOICE_FILE(cue, variant))
     .then(response => response.ok ? response.arrayBuffer() : null)
     .then(data => data ? audio.decodeAudioData(data) : null)
     .catch(() => null));
-  voiceCache.get(cue).then(buffer => {
+  voiceCache.get(cacheKey).then(buffer => {
     if (!buffer || !audio) return;
     const source = audio.createBufferSource(), amp = audio.createGain(), radio = audio.createBiquadFilter();
     radio.type = 'highpass'; radio.frequency.value = 160; amp.gain.value = 1.15;
@@ -236,7 +239,12 @@ const game = createJiangyinGame({ scene, camera, createGunModel: point => create
     else if (event.name === 'boom') blastNear(event.position, event.heavy ? 'aircraft-bomb' : 'explosive-pack');
     else if (event.name === 'gun' || event.name === 'enemy-gun') blastNear(event.position, 'mortar');
   }
-  else if (event.type === 'hit') { $('jy-crosshair').classList.add('hit'); clearTimeout(hitTimer);
+  else if (event.type === 'hit') {
+    if (event.kind === 'troop') {
+      const reaction = voiceReactions.troopHit(game.now, event.firstKill);
+      if (reaction) playVoice(reaction.cue, false, reaction.variant);
+    }
+    $('jy-crosshair').classList.add('hit'); clearTimeout(hitTimer);
     hitTimer = setTimeout(() => $('jy-crosshair').classList.remove('hit'), event.kind === 'ship' || event.kind === 'landing' ? 420 : 160);
     if (event.kind === 'ship' || event.kind === 'landing') { hitConfirm(event.sunk); $('jy-hitinfo').classList.remove('pop'); void $('jy-hitinfo').offsetWidth; $('jy-hitinfo').classList.add('pop'); } }
   else if (event.type === 'transfer' && event.reason !== 'start')
@@ -246,7 +254,15 @@ const game = createJiangyinGame({ scene, camera, createGunModel: point => create
     document.querySelector('.jy-weapon').hidden = event.phase === 'scuttle'; $('jy-range').hidden = event.phase === 'scuttle'; }
   else if (event.type === 'deploy') { const fade = $('jy-fade'); fade.classList.remove('out'); void fade.offsetWidth; fade.classList.add('out'); for (const id of ['jy-crosshair', 'jy-posts', 'jy-range']) $(id).hidden = false;
     document.querySelector('.jy-weapon').hidden = false; $('jy-hud').hidden = false; }
-  else if (event.type === 'hurt') { $('jy-hurt').classList.add('show'); clearTimeout(hurtTimer); hurtTimer = setTimeout(() => $('jy-hurt').classList.remove('show'), 120); }
+  else if (event.type === 'first-enemy-kill') {
+    const reaction = voiceReactions.firstKill();
+    if (reaction) playVoice(reaction.cue, false, reaction.variant);
+  }
+  else if (event.type === 'hurt') {
+    $('jy-hurt').classList.add('show'); clearTimeout(hurtTimer); hurtTimer = setTimeout(() => $('jy-hurt').classList.remove('show'), 120);
+    const reaction = voiceReactions.wounded(game.now, event.health);
+    if (!event.fatal && reaction) playVoice(reaction.cue, false, reaction.variant);
+  }
   else if (event.type === 'ended') { playVoice(event.outcome?.result === 'victory' ? 'jiangyin-victory' : 'jiangyin-defeat', true); showEnd(event.outcome, event.stats); }
 } });
 
