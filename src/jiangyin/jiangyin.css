@@ -83,3 +83,9 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 #jy-fade { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 0; }
 #jy-fade.out { animation: jy-fade-in .9s ease-out; }
 @keyframes jy-fade-in { from { opacity: 1; } to { opacity: 0; } }
+
+/* 水下兜底：浑黄的江水，越往下越暗，边缘压暗 */
+#jy-underwater { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
+  background: radial-gradient(ellipse at 50% 20%, rgba(120,128,80,.25), rgba(40,48,30,.75) 70%, rgba(18,22,14,.92)),
+    linear-gradient(to bottom, rgba(150,150,95,.35), rgba(30,36,24,.6)); backdrop-filter: blur(3px); }
+#jy-underwater.show { opacity: 1; }

@@ -366,7 +366,10 @@ function renderHud() {
     const integrity = post ? Math.round(100 * post.health / post.maxHealth) : 100;
     $('jy-health-fill').style.width = `${integrity}%`;
     $('jy-health-text').textContent = `${hud.weapon.ship ? '舰体' : '阵位'} ${integrity}%`;
-    $('jy-help').textContent = hud.weapon.ship ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
+    const helm = hud.weapon.helm, bell = helm === null ? '' : helm < -.02 ? '微速后退' : helm < .04 ? '停车' : helm < .35 ? '微速前进' : helm < .7 ? '半速前进' : '全速前进';
+    $('jy-help').textContent = hud.weapon.ship ? (helm === null
+      ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· WASD 接管操舰 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
+      : `手动操舰 · 车钟：${bell}（${hud.weapon.speed.toFixed(1)} m/s）· W/S 加减速 · A/D 转舵 · 左键开火 · 右键放大 · 换舰后交回 AI`)
       : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · F 离开炮位 · M 地图';
   }
   $('jy-range').textContent = hud.range ? `${Math.round(hud.range)} m` : '';
@@ -427,6 +430,25 @@ function drawRadar() {
 
 // ---------- 第一人称武器（单独一层渲染，近裁剪面很小，不受远景深度精度影响） ----------
 const BASE_FOV = camera.fov;
+// 兜底：镜头万一落到江面以下（如演出镜头），显示浑浊的长江水下：黄绿色浓雾、压暗、声音闷住
+let underwaterOn = false, airFog = null;
+function underwater() {
+  const below = camera.position.y < -.05 && groundHeight(camera.position.x, camera.position.z) < 0;
+  if (below === underwaterOn || !scene.fog) return;
+  underwaterOn = below;
+  airFog ??= { color: scene.fog.color.clone(), density: scene.fog.density };
+  scene.fog.color.copy(below ? new THREE.Color(0x3f4a33) : airFog.color);
+  scene.fog.density = below ? .09 : airFog.density;
+  $('jy-underwater')?.classList.toggle('show', below);
+  if (master && audio) master.gain.setTargetAtTime(below ? .35 : 1, audio.currentTime, .08);
+}
+// 镜头晃动强度：读取与其他地图相同的玩家设置（player-preferences.js 的 motionStrength）；读不到时用 1
+let preferenceStore = null;
+import('../player-preferences.js').then(module => { preferenceStore = module.getPlayerPreferences?.() ?? null; }).catch(() => {});
+function motionPreference() {
+  const value = preferenceStore?.snapshot?.motionStrength;
+  return Number.isFinite(value) ? value : 1;
+}
 let lastHud = null;
 const viewScene = new THREE.Scene(), viewCamera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, .01, 10);
 viewScene.add(new THREE.HemisphereLight(0xd8dde2, 0x5c5446, 1.1));
@@ -452,7 +474,7 @@ function updateViewWeapon(dt) {
   if (member.weapon === 'primary') {
     const pose = updateRifleModel(viewWeapon, member.rifle);
     const aim = input.aiming && member.rifle.action !== 'reload', k = 1 - Math.exp(-dt * 15);
-    const bob = member.speed > .5 ? Math.sin(performance.now() / 1000 * 9) * .012 : 0;
+    const bob = game.viewBob * .4;   // 与镜头起伏同相、同频（按实际步伐），避免两种晃动频率叠加造成眩晕
     const target = aim ? new THREE.Vector3(0, -RIFLE.sightHeight, -.2) : new THREE.Vector3(.18, -.22 + bob - (pose?.lower ?? 0) * .045, -.14);
     viewWeapon.position.lerp(target, k);
     viewWeapon.rotation.set(-(pose?.lower ?? 0) * .14 + (pose?.recoil ?? 0) * .05, 0, 0);
@@ -471,6 +493,7 @@ renderer.setAnimationLoop(time => {
     input.move = { x: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), z: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0) };
     input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     input.sensitivity = camera.fov / BASE_FOV;                  // 放大时降低鼠标灵敏度
+    input.motionStrength = motionPreference();
     try { game.step(dt, input); }
     catch (error) { console.error('[江阴] 战局更新', error); if (!stepErrorShown) { stepErrorShown = true; toast(`战局更新出错：${error.message}`, true); } }
     input.lookDX = input.lookDY = 0; input.firePressed = false; input.skipIntro = false; input.switchPost = null; input.toggleView = false;
@@ -498,6 +521,7 @@ renderer.setAnimationLoop(time => {
     camera.rotateX(shake.pitch); camera.rotateY(shake.yaw); camera.rotateZ(shake.roll);
   }
   $('jy-flash').style.opacity = String(Math.min(.55, shake.flash));
+  underwater();
   renderer.render(scene, camera);
   updateViewWeapon(dt);
 });

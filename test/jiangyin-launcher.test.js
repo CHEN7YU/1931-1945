@@ -40,7 +40,7 @@ test('the installer adds exactly one launcher import and is idempotent', async (
       'jiangyin-vegetation.js', 'jiangyin.css']) await writeFile(join(root, 'src/jiangyin', file), '');
     for (const file of ['emplacements.js', 'emplacement-model.js', 'chi-ha.js', 'world.js', 'vehicle-renderer.js', 'combat-effects.js',
       'materials.js', 'woodland.js', 'nra-motion.js', 'rifle-action.js', 'casualties.js', 'nra-character.js', 'nra-force-renderer.js',
-      'ija-character.js', 'blast-feedback.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js',
+      'ija-character.js', 'blast-feedback.js', 'player-preferences.js', 'blast-tinnitus.js', 'blast-profiles.js', 'rifle-audio.js', 'air-support.js', 'aircraft-ai.js',
       'terrain-gait.js']) await writeFile(join(root, 'src', file), '');
     await writeFile(join(root, 'src/menu-music.js'), 'setState(next) {} prepareNavigation() {}');
     await writeFile(join(root, 'src/entry.js'), "import './style.css';\n");

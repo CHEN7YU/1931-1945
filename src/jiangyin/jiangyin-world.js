@@ -6,7 +6,7 @@
 // - 烟：舰船烟囱煤烟、沉船燃烧烟柱（软粒子）。
 import * as THREE from 'three';
 import { JIANGYIN_RULES, JIANGYIN_POSTS, groundHeight, riverCenter, terrainFbm, RIVER_HALF, postFacing,
-  jiangyinTrenches, naturalGroundHeight, TRENCH, jiangyinRoads, roadProbe, ROAD } from './jiangyin-rules.js';
+  jiangyinTrenches, naturalGroundHeight, TRENCH, jiangyinRoads, roadProbe, ROAD, roadFloorHeight } from './jiangyin-rules.js';
 const SO = RIVER_HALF - 70;   // 岸线剖面外移量（与 jiangyin-rules 一致）
 const FLOW = JIANGYIN_RULES.flowSpeed ?? 1.6;   // 江水向东（+x）流动
 import { createWreckModel, mergeStatic, mat } from './jiangyin-models.js';
@@ -83,9 +83,11 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   // 非均匀网格：两岸滩头—石崖—台地一带（玩家阵位所在）最密，江心与远郊逐渐变疏，远处延伸到地平线
   const span = (from, to, step) => { const out = []; for (let v = from; v < to; v += step(v)) out.push(v); out.push(to); return out; };
   const k = low ? 1.7 : 1;
-  const xs = span(-5000, 5500, x => k * (x > -1100 && x < 1500 ? 3 : Math.min(60, 3 + (x < 0 ? -1100 - x : x - 1500) * .03)));
+  // 可活动范围（约 x −1400…1900、两岸纵深约 500 米）内网格间距不超过约 5 米：粗网格在山谷处会高出真实地面，走进去会看到头顶悬着地形
+  const fine = (excess, slope = .008, cap = 5.2) => excess <= 0 ? 0 : excess < 400 ? Math.min(cap, excess * slope) : cap - 3 + Math.min(60, 3 + (excess - 400) * .03);
+  const xs = span(-5000, 5500, x => k * Math.min(60, 3 + fine(x < 0 ? -1100 - x : x - 1500, .006, 2.4)));
   const zs = span(-4500, 5000, z => { const d = Math.abs(Math.abs(z) - R - 60);
-    return k * (d < 110 ? 2.6 : Math.abs(z) < R ? Math.min(16, 2.6 + (R - 50 - Math.abs(z)) * .06) : Math.min(60, 2.6 + (d - 110) * .04)); });
+    return k * (d < 110 ? 2.6 : Math.abs(z) < R ? Math.min(16, 2.6 + (R - 50 - Math.abs(z)) * .06) : Math.min(60, 2.6 + fine(d - 110, .008, 2.6))); });
   const cx = 0, width = 10500, depth = 9500;
   const terrainGeometry = new THREE.BufferGeometry();
   { const pos = new Float32Array(xs.length * zs.length * 3), index = [];
@@ -93,7 +95,11 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
     // 战壕一带由高精度地形块单独绘制（见下），主地形网格在此处压低，避免粗网格盖住壕沟
     const sunken = jiangyinTrenches().map(t => t.bounds);
     const under = (x, z) => sunken.some(b => x > b.minX - 1.5 && x < b.maxX + 1.5 && z > b.minZ - 1.5 && z < b.maxZ + 1.5);
-    for (const z of zs) for (const x of xs) { pos[o++] = x; pos[o++] = groundHeight(x, z) - (under(x, z) ? 6 : 0); pos[o++] = z; }
+    // 公路附近的顶点取保守（不高于真实地面）的高度，路带本身由下面的高精度路带网格绘制
+    const gap = (arr, i) => Math.max(arr[Math.min(i + 1, arr.length - 1)] - arr[i], arr[i] - arr[Math.max(i - 1, 0)]);
+    zs.forEach((z, j) => xs.forEach((x, i) => {
+      pos[o++] = x; pos[o++] = roadFloorHeight(x, z, Math.hypot(gap(xs, i), gap(zs, j))) - (under(x, z) ? 6 : 0); pos[o++] = z;
+    }));
     for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) {
       const a0 = j * xs.length + i, b0 = a0 + 1, c0 = a0 + xs.length, d0 = c0 + 1;
       index.push(a0, c0, b0, b0, c0, d0);
@@ -155,6 +161,41 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true; terrain.castShadow = true;
   scene.add(terrain);
+  // 公路高精度路带地形：沿路中线每 4 米一排、横向约 1.2 米一列，覆盖路面、路肩与路堑/路堤边坡及两侧 14 米，
+  // 真实挖出路堑（粗网格在这里已被压低到真实地面以下，不会再悬在头顶）
+  for (const road of jiangyinRoads()) {
+    const W = ROAD.half + ROAD.shoulder + 14, step = low ? 2 : 1.2, cols = Math.ceil(2 * W / step) + 1, n = road.points.length;
+    const pos = new Float32Array(n * cols * 3), index = [];
+    let o = 0;
+    road.points.forEach(([x, z], i) => {
+      const [ax, az] = road.points[Math.max(i - 1, 0)], [bx, bz] = road.points[Math.min(i + 1, n - 1)];
+      const tx = bx - ax, tz = bz - az, l = Math.hypot(tx, tz) || 1, nx = -tz / l, nz = tx / l;
+      // 弯道内侧收窄，避免横向网格线在小半径弯道内侧交叉翻折
+      let inner = 1, side = 0;
+      if (i > 0 && i < n - 1) {
+        const t1 = Math.atan2(z - az, x - ax), t2 = Math.atan2(bz - z, bx - x), turn = Math.atan2(Math.sin(t2 - t1), Math.cos(t2 - t1));
+        const radius = Math.abs(turn) > 1e-3 ? ROAD.sample / Math.abs(turn) : Infinity;
+        inner = Math.min(1, radius * .8 / W); side = Math.sign(turn);
+      }
+      for (let c = 0; c < cols; c++) {
+        let u = -W + c * 2 * W / (cols - 1);
+        if (side && Math.sign(u) === side) u *= inner;   // 左转时内侧为 +u（法线 n 指向左侧）
+        const px = x + nx * u, pz = z + nz * u;
+        pos[o++] = px; pos[o++] = groundHeight(px, pz); pos[o++] = pz;
+      }
+    });
+    for (let i = 0; i < n - 1; i++) for (let c = 0; c < cols - 1; c++) {
+      const a0 = i * cols + c, b0 = a0 + 1, c0 = a0 + cols, d0 = c0 + 1;
+      index.push(a0, b0, c0, b0, d0, c0);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geometry.setIndex(new THREE.Uint32BufferAttribute(index, 1));
+    paintTerrain(geometry);
+    const patch = new THREE.Mesh(geometry, patchMaterial);
+    patch.receiveShadow = patch.castShadow = true;
+    scene.add(patch);
+  }
   // 战壕高精度地形块：0.3 米网格，壕壁、壕底、胸墙都在地形里真实挖出（士兵可下到壕里，壕沟能挡子弹）
   const trenchPatches = [];
   for (const trench of jiangyinTrenches()) {

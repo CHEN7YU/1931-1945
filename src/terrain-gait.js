@@ -15,9 +15,9 @@ export const TERRAIN_GAIT = Object.freeze({
 
 // heightAt(x, z) → 地面高度；(dirX, dirZ) 为水平单位方向；speed 为平地速度（米/秒）
 export function terrainStep(heightAt, x, z, dirX, dirZ, speed, dt) {
-  const probe = Math.max(.25, speed * dt);
-  const h0 = heightAt(x, z), h1 = heightAt(x + dirX * probe, z + dirZ * probe);
-  const grade = (h1 - h0) / probe;
+  // 坡度取前后各 0.8 米的中心差分：只反映“坡”，不被地表的小坑小包左右，避免奔跑时速度一快一慢地抖动
+  const probe = Math.max(.8, speed * dt);
+  const grade = (heightAt(x + dirX * probe, z + dirZ * probe) - heightAt(x - dirX * probe * .5, z - dirZ * probe * .5)) / (probe * 1.5);
   if (grade > TERRAIN_GAIT.maxClimb) return { ok: false, grade, horizontal: 0, path: 0, factor: 0 };
   let factor;
   if (grade >= 0) factor = 1 / (1 + grade * TERRAIN_GAIT.uphillDrag);

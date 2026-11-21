@@ -95,7 +95,7 @@ export const ENEMY_TYPES = Object.freeze({
   aircraft: Object.freeze({ name: '日军九六式舰攻', flight: 3, health: 520, radius: 4 }),   // 飞行、机枪与投弹沿用项目共用的 aircraft-ai.js / air-support.js
   landing: Object.freeze({ name: '日军大发登陆艇', health: 260, speed: 13, length: 14.9, beam: 3.35, height: 2.2, troops: 5, unloadSeconds: 1.6 }),
   infantry: Object.freeze({ name: '日军登陆步兵', health: 100, speed: 4.4, attackRange: 5, attackInterval: 2.5, attackDamage: 25,
-    shootRange: 140, shootInterval: 2.8, shootDamage: 34 }),   // 遇到我军步兵时就地射击
+    shootRange: 140, shootInterval: 2.8, shootDamage: 34, closeRange: 35, chargeRange: 10 }),   // 边冲边打；35 米内停下跪射，10 米内白刃冲锋
 });
 
 // 第二阶段玩家步兵小队（与其他地图的默认步兵班一致：11 人，中正式步枪，第 2 人为捷克式轻机枪手，每人 2 枚手榴弹）
@@ -335,6 +335,17 @@ function roadOffset(x, z, natural) {
   return (probe.height - natural) * w;
 }
 let building = false;
+// 渲染用的“保守地面”：粗网格地形的顶点若落在公路附近，取 margin（该顶点到相邻顶点的距离）范围内路堑可能挖到的最低高度，
+// 使粗网格在任何地方都不会高出真实地面（否则走在路堑里会看到头顶悬着一大片地形）；路面附近的真实形状由高精度路带网格绘出。
+export function roadFloorHeight(x, z, margin) {
+  const exact = groundHeight(x, z);
+  if (Math.abs(Math.abs(z) - RIVER_HALF) > 460 + margin && Math.abs(z) < 2000) return exact;
+  const probe = roadProbe(x, z);
+  if (!probe || probe.d > ROAD.half + ROAD.shoulder + margin) return exact;
+  const natural = naturalGroundHeight(x, z), d = Math.max(0, probe.d - margin);
+  const w = d <= ROAD.half ? 1 : 1 - smooth(ROAD.half, ROAD.half + ROAD.shoulder, d);
+  return Math.min(exact, natural + trenchOffset(x, z) + Math.min(0, (probe.height - natural) * w)) - .2;
+}
 // 沿路线行进：从任意点出发，先就近上路，再沿公路走到离目标阵位最近的路段（返回航点列表，间隔约 12 米）
 export function roadRoute(bank, from, to) {
   const road = jiangyinRoads().find(r => r.bank === bank);
