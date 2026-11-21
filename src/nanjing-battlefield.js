@@ -46,6 +46,17 @@ const RIVERS = Object.freeze([
   { id: 'qinhuai-south', name: '秦淮河南段', x: 0, z: 52, width: 210, depth: 26 },
   { id: 'yangtze-west', name: '长江', x: -84, z: 0, width: 24, depth: 300 },
 ].map(Object.freeze));
+const riverShoreDistance = (x, z) => {
+  const [south, west] = RIVERS;
+  let distance = 0;
+  if (Math.abs(x - south.x) < south.width / 2 && Math.abs(z - south.z) < south.depth / 2)
+    distance = Math.min(south.width / 2 - Math.abs(x - south.x), south.depth / 2 - Math.abs(z - south.z));
+  const westBank = west.x + west.width / 2;
+  if (x < westBank && x > westBank - NANJING_FERRY_ROUTE.riverWidth &&
+    Math.abs(z - west.z) < NANJING_FERRY_ROUTE.riverDepth / 2)
+    distance = Math.max(distance, westBank - x);
+  return Math.max(0, distance);
+};
 
 export function makeNanjingBattlefield(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], ferries = [], civilians = [], civilianQueue = [];
@@ -90,25 +101,11 @@ export function makeNanjingBattlefield(scene, surface) {
   const stone = surface('paving', 0x96896f, 2.4);
   const courtyardGround = surface('earth', 0x62634e, 1.8);
   const timber = surface('timber', 0x594a35, 2);
-  const wavePixels = new Uint8Array(64 * 64 * 4);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-    const index = (y * 64 + x) * 4;
-    const phase = Math.PI * 2 / 64;
-    wavePixels[index] = 128 + Math.round(12 * Math.sin((3 * x + 2 * y) * phase) +
-      9 * Math.sin((5 * x - 3 * y) * phase) + 6 * Math.cos((2 * x - 5 * y) * phase));
-    wavePixels[index + 1] = 128 + Math.round(12 * Math.cos((2 * x + 3 * y) * phase) +
-      9 * Math.cos((4 * x - 5 * y) * phase) + 6 * Math.sin((5 * x + y) * phase));
-    wavePixels[index + 2] = 250;
-    wavePixels[index + 3] = 255;
-  }
-  const waveTexture = new THREE.DataTexture(wavePixels, 64, 64);
-  waveTexture.wrapS = waveTexture.wrapT = THREE.RepeatWrapping;
-  waveTexture.repeat.set(18, 8);
-  waveTexture.needsUpdate = true;
-  const water = new THREE.MeshStandardMaterial({ color: 0x263e35, roughness: .58, metalness: .02,
-    normalMap: waveTexture, normalScale: new THREE.Vector2(.24, .24) });
-  const waterWaves = createWaterWaveClock();
+  const water = new THREE.MeshStandardMaterial({ color: 0x514b3b, roughness: .38, metalness: .02, envMapIntensity: .9 });
+  const waterWaves = createWaterWaveClock({ hazeColor: 0x858b7c, reflection: .72 });
   waterWaves.attach(water, 'z');
+  water.normalMap.repeat.set(18, 8);
+  water.normalScale.set(.34, .34);
   const burlap = surface('burlap', 0x9a8b67);
   burlap.vertexColors = true;
   const detailedSandbagGeometry = sandbagGeometry();
@@ -256,6 +253,14 @@ export function makeNanjingBattlefield(scene, surface) {
         }
         riverSurface.geometry.computeVertexNormals();
       }
+      const positions = riverSurface.geometry.attributes.position;
+      const waterDepth = new Float32Array(positions.count);
+      for (let index = 0; index < positions.count; index++) {
+        const x = positions.getX(index) + riverSurface.position.x;
+        const z = riverSurface.position.z - positions.getY(index);
+        waterDepth[index] = riverShoreDistance(x, z);
+      }
+      riverSurface.geometry.setAttribute('waterDepth', new THREE.Float32BufferAttribute(waterDepth, 1));
       riverSurface.geometry.computeBoundingSphere();
       riverSurface.geometry.boundingSphere.radius += .102;
     }
@@ -1851,8 +1856,7 @@ export function makeNanjingBattlefield(scene, surface) {
     },
     bridgeSurfaces: { deck: 0, northRamp: 0, southRamp: 0 },
     updateWater(time) {
-      waterWaves.update(time);
-      waveTexture.offset.set(time * .004, time * -.003);
+      waterWaves.update(time, scene.fog?.color);
     },
     riverSurfaces: { water: SOUTH_RIVER_WATER, southBank: 0, northBank: 0, street: 0 },
     armorObstacles: obstacles,

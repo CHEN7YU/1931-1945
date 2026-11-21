@@ -337,6 +337,18 @@ test('river water is exposed in the rendered scene, with only stone bridges cros
   const water = surfaces.filter(object => object.userData.nanjingFeature === 'river-water');
   assert.ok(water.length > 0 && water.every(surface => surface.geometry.attributes.position.count < 50000),
     'extended water must retain a bounded mesh rather than uniformly subdividing the whole river');
+  for (const riverSurface of water) {
+    const depth = riverSurface.geometry.getAttribute('waterDepth');
+    assert.ok(depth && depth.count === riverSurface.geometry.attributes.position.count);
+    let minDepth = Infinity, maxDepth = -Infinity;
+    for (let index = 0; index < depth.count; index++) {
+      const value = depth.getX(index);
+      assert.ok(Number.isFinite(value) && value >= 0);
+      minDepth = Math.min(minDepth, value); maxDepth = Math.max(maxDepth, value);
+    }
+    assert.ok(minDepth < .01 && maxDepth > 1, 'river vertices carry bank distance for animated shoreline foam');
+    assert.ok(riverSurface.material.normalMap, 'river water uses the shared animated normal texture');
+  }
   for (const [x, z] of [[0, 52], [-35, 52], [-84, -25]]) {
     ray.set(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0));
     const hit = ray.intersectObjects(surfaces, true)[0];

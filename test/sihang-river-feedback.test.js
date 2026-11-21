@@ -10,6 +10,20 @@ const fixture = () => {
   return { scene, world: makeSihangBattlefield(scene, (_kind, color) => new THREE.MeshStandardMaterial({ color })) };
 };
 
+test('warehouse river uses the shared detailed water shader with shoreline depth', () => {
+  const { scene } = fixture(), river = scene.getObjectByName('suzhou-river');
+  const depth = river.geometry.getAttribute('waterDepth');
+  assert.ok(depth && depth.count === river.geometry.attributes.position.count);
+  assert.equal(river.material.normalMap.image.width, 256);
+  let minDepth = Infinity, maxDepth = -Infinity;
+  for (let index = 0; index < depth.count; index++) {
+    const value = depth.getX(index);
+    assert.ok(Number.isFinite(value) && value >= 0);
+    minDepth = Math.min(minDepth, value); maxDepth = Math.max(maxDepth, value);
+  }
+  assert.ok(minDepth < .01 && maxDepth >= 15, 'bank edges remain shallow while the channel center remains deep');
+});
+
 test('diagonal river envelopes do not block the visibly dry quay, while real rails and water still block', () => {
   const { world } = fixture();
   for (const x of [-95, -85, 52, 60, 68, 99, 105]) {

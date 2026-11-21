@@ -169,13 +169,16 @@ export function makeSihangBattlefield(scene, surface) {
     obstacles.at(-1).walkable = true;
   }
   // Every strip uses the same analytic river as safety, ray clipping and foot support.
-  const riverVertices = [], riverIndices = [], bankVertices = [[], []], bankIndices = [];
+  const riverVertices = [], riverIndices = [], riverDepths = [], bankVertices = [[], []], bankIndices = [];
   const riverBlocks = [];
   const riverSegments = 16;
   for (let i = 0; i <= 108; i++) {
     const x = -108 + i * 2, bounds = sihangRiverBounds(x);
-    for (let row = 0; row <= riverSegments; row++)
-      riverVertices.push(x, R.waterY, THREE.MathUtils.lerp(bounds.northZ, bounds.southZ, row / riverSegments));
+    for (let row = 0; row <= riverSegments; row++) {
+      const z = THREE.MathUtils.lerp(bounds.northZ, bounds.southZ, row / riverSegments);
+      riverVertices.push(x, R.waterY, z);
+      riverDepths.push(Math.max(0, Math.min(z - bounds.northZ, bounds.southZ - z)));
+    }
     bankVertices[0].push(x, -.05, M.minZ, x, -.05, bounds.northZ);
     bankVertices[1].push(x, -.05, bounds.southZ, x, -.05, M.maxZ);
     if (i) {
@@ -307,10 +310,13 @@ export function makeSihangBattlefield(scene, surface) {
   for (const x of [-60, 48, 85]) pave(x - 5, x + 5, -108, 8, .012);
   const streetSurface = strip(streetVertices, streetIndices, materials.street, 'sihang-bank-clipped-streets');
   solids.push(streetSurface); terrainSurfaces.push(streetSurface);
-  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x354f48, roughness: .48, metalness: .12 });
-  const waterWaves = createWaterWaveClock();
+  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x514b3d, roughness: .38, metalness: .02, envMapIntensity: .9 });
+  const waterWaves = createWaterWaveClock({ hazeColor: 0x858b7c, reflection: .62 });
   waterWaves.attach(waterMaterial, 'y');
   const water = strip(riverVertices, riverIndices, waterMaterial, 'suzhou-river');
+  water.geometry.setAttribute('waterDepth', new THREE.Float32BufferAttribute(riverDepths, 1));
+  waterMaterial.normalMap.repeat.set(1, 1);
+  waterMaterial.normalScale.set(.42, .42);
   water.geometry.computeBoundingSphere();
   water.geometry.boundingSphere.radius += .102;
   obstacles.push(...riverBlocks);
@@ -958,7 +964,7 @@ export function makeSihangBattlefield(scene, surface) {
     riverSurfaces: { water: -1, northBank: 0, southBank: 0, street: 0 },
     impactHeight: groundHeight, isDeepWater, riverBounds: sihangRiverBounds,
     updateWater(time) {
-      waterWaves.update(time);
+      waterWaves.update(time, scene.fog?.color);
     },
     updateFlag: flagAnimation.update,
     setNightLighting: city.setNightLighting,

@@ -2,6 +2,7 @@
 // 以三平面投影贴到没有 UV 的程序化模型上（船体、炮台、地形），并叠加锈迹/水渍/斑驳与凹凸。
 // 只用 three 本体；不依赖 DOM（node 模拟时自动退化为程序化噪声贴图），可被 jiangyin-game 在无浏览器环境下引用。
 import * as THREE from 'three';
+import { createWaterNormalTexture } from '../water-waves.js';
 
 // ---------- 程序化贴图（DataTexture，无需画布） ----------
 function hash2(x, y, seed = 0) {
@@ -37,29 +38,7 @@ export function noiseTexture(seed = 1, size = 128, { base = [150, 140, 125], spr
   textureCache.set(key, texture);
   return texture;
 }
-// 江面法线：多组方向波叠加，严格可平铺
-export function waterNormalTexture(size = 256) {
-  if (textureCache.has('water')) return textureCache.get('water');
-  const data = new Uint8Array(size * size * 4), waves = [];
-  for (let i = 0; i < 22; i++) {
-    const k = 2 + Math.floor(hash2(i, 1, 77) * 12), a = hash2(i, 2, 77) * Math.PI * 2;
-    waves.push({ kx: Math.round(Math.cos(a) * k), ky: Math.round(Math.sin(a) * k), amp: 1 / (k ** 1.15), phase: hash2(i, 3, 77) * 6.28 });
-  }
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    let dx = 0, dy = 0;
-    for (const w of waves) {
-      const t = (w.kx * x + w.ky * y) / size * Math.PI * 2 + w.phase, c = Math.cos(t) * w.amp * Math.PI * 2;
-      dx += c * w.kx; dy += c * w.ky;
-    }
-    const n = new THREE.Vector3(-dx * .055, -dy * .055, 1).normalize(), i = (y * size + x) * 4;
-    data[i] = (n.x * .5 + .5) * 255; data[i + 1] = (n.y * .5 + .5) * 255; data[i + 2] = (n.z * .5 + .5) * 255; data[i + 3] = 255;
-  }
-  const texture = new THREE.DataTexture(data, size, size);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true; texture.needsUpdate = true;
-  textureCache.set('water', texture);
-  return texture;
-}
+export function waterNormalTexture(size = 256) { return createWaterNormalTexture(size); }
 
 // ---------- 着色器补丁：三平面贴图 + 斑驳/锈迹/水渍 + 凹凸 ----------
 const NOISE_GLSL = /* glsl */`
