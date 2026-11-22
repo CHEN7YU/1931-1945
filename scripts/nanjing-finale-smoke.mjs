@@ -6,7 +6,7 @@ import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.j
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
 const readyTimeout = Number(process.env.NANJING_FINALE_READY_TIMEOUT_MS ?? 180000);
-const gameUrl = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
+const gameUrl = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5173');
 gameUrl.pathname = '/';
 gameUrl.searchParams.set('campaign', 'nanjing');
 if (process.env.GAME_CHARACTER) gameUrl.searchParams.set('character', process.env.GAME_CHARACTER);

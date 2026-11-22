@@ -17,6 +17,7 @@ import { createSolidIndex } from '../src/solid-index.js';
 import { createOcclusionQuery } from '../src/occlusion-query.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from '../src/nanjing-defense.js';
 import { casemateGateSlices } from '../src/nanjing-casemate.js';
+import { BATTLE_AREA } from '../src/battle-boundary.js';
 
 function housePoint(home, x, z) {
   const c = [1, 0, -1, 0][home.facing], s = [0, 1, 0, -1][home.facing];
@@ -770,6 +771,10 @@ test('all eight initial Japanese infantry formations have a registered safe sout
       throw error;
     }
     occupied.push(...positions);
+    assert.ok(positions.every(position =>
+      position.x >= BATTLE_AREA.minX && position.x <= BATTLE_AREA.maxX &&
+      position.z >= BATTLE_AREA.minZ && position.z <= BATTLE_AREA.maxZ),
+      `${formation.id} squad stays inside the playable battle boundary`);
     hostiles.push(...positions.map(position => ({ ...position, altitude: 0, health: 100 })));
   }
   assert.equal(occupied.length, 88);

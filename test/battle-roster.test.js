@@ -45,6 +45,8 @@ test('Nanjing roster stays isolated from the default ten-versus-ten battle roste
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.type === 'infantry').length, 8);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.variant === 'chi-ha').length, 1);
   assert.equal(roster.filter(unit => unit.team === 'enemy' && unit.aerialSupport).length, 1);
+  assert.ok(roster.filter(unit => unit.team === 'enemy').every(unit => unit.reserve),
+    'Nanjing attackers remain in reserve until the opening refugees cross the river');
   assert.throws(() => nanjingBattleRoster('tank'), /infantry squad/);
   assert.equal(battleRoster().length, 20);
 });

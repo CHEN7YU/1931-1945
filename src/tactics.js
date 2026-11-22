@@ -52,7 +52,8 @@ export function rememberThreat(state, position, now, kind = 'person', sense = 'v
 
 export function targetAimPoint(target) {
   if (!target || !validPoint(target.position) || !Number.isFinite(target.position.y)) throw new RangeError('Target position must be finite');
-  return { x: target.position.x, y: target.position.y + soldierPostureHeight(target, 'aim'), z: target.position.z };
+  const height = Number.isFinite(target.aimHeight) ? target.aimHeight : soldierPostureHeight(target, 'aim');
+  return { x: target.position.x, y: target.position.y + height, z: target.position.z };
 }
 
 export function visibleTargetPoint(target, canSee) {

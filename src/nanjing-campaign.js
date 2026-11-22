@@ -1,5 +1,6 @@
 import { NANJING_COURTYARDS, NANJING_SOLDIER_CAVE,
   NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK, NANJING_WALL_WALKS } from './nanjing-layout.js';
+import { NANJING_OPENING_CIVILIAN_COUNT } from './civilian-crowd.js';
 
 export const NANJING_STAGE_SECONDS = 3 * 60;
 
@@ -10,6 +11,7 @@ export function nanjingGateRegroupPost(index) {
 export const NANJING_GATE_CAPTURE_SECONDS = 20;
 export const NANJING_BOAT_CAPACITY = 10;
 export const NANJING_BOAT_COUNT = 5;
+export const NANJING_CIVILIAN_RIVER_NORTH_BANK_Z = 38;
 export const NANJING_DOCK = Object.freeze({ x: -66, z: -80, ferryX: -76 });
 export const NANJING_CITY_WALLS = Object.freeze([
   Object.freeze({ minX: -74.2, maxX: -23.7, minZ: 16, maxZ: 20.4 }),
@@ -26,7 +28,7 @@ const assaultLanes = Array.from({ length: 8 }, (_, index) => {
   const across = -84 + index * 24;
   const along = -84 + index * 24;
   return [
-    Object.freeze({ id: `nanjing-south-${index + 1}`, name: `中华门南路集结点 ${index + 1}`, team: 'enemy', kind: 'base', x: -62 + index * 21, z: index % 2 ? 96 : 84, altitude: 0, aiOnly: true }),
+    Object.freeze({ id: `nanjing-south-${index + 1}`, name: `中华门南路集结点 ${index + 1}`, team: 'enemy', kind: 'base', x: -62 + index * 21, z: index % 2 ? 94 : 84, altitude: 0, aiOnly: true }),
     Object.freeze({ id: `nanjing-north-${index + 1}`, name: `渡口北路集结点 ${index + 1}`, team: 'enemy', kind: 'base', x: across, z: -94, altitude: 0, aiOnly: true }),
     Object.freeze({ id: `nanjing-east-${index + 1}`, name: `渡口东路集结点 ${index + 1}`, team: 'enemy', kind: 'base', x: 82,
       z: index === 1 ? -72 : index === 3 ? -30 : index === 5 ? -12 : along, altitude: 0, aiOnly: true }),
@@ -55,9 +57,9 @@ export const NANJING_SPAWNS = Object.freeze([
   Object.freeze({ id: 'nanjing-gate-cave', name: '中华门东侧藏兵洞', team: 'friendly', kind: 'base',
     x: NANJING_SOLDIER_CAVE.x, z: NANJING_SOLDIER_CAVE.z,
     altitude: NANJING_SOLDIER_CAVE.floorHeight, layout: 'cave', aiOnly: true }),
-  Object.freeze({ id: 'nanjing-south-armor', name: 'Yuhua Road桥南日军装甲点', team: 'enemy', kind: 'garage', x: -24, z: 92, altitude: 0, aiOnly: true }),
+  Object.freeze({ id: 'nanjing-south-armor', name: 'Yuhua Road桥南日军装甲点', team: 'enemy', kind: 'garage', x: -24, z: 90, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-north-armor', name: '渡口北路日军装甲点', team: 'enemy', kind: 'garage', x: 90, z: -93, altitude: 0, aiOnly: true }),
-  Object.freeze({ id: 'nanjing-south-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: 98, altitude: 28, aiOnly: true }),
+  Object.freeze({ id: 'nanjing-south-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: 102, altitude: 28, aiOnly: true }),
   Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口及附近', team: 'friendly', kind: 'base',
     x: NANJING_DOCK.x, z: NANJING_DOCK.z, altitude: 0, allowNearbyEnemies: true,
     deploymentZone: Object.freeze({ minX: -71, maxX: -46, minZ: -92, maxZ: -68 }) }),
@@ -153,6 +155,9 @@ export function createNanjingCampaign() {
     civiliansEvacuated: 0,
     civilianCasualties: 0,
     civiliansEnteredCity: 0,
+    civiliansCrossedRiver: 0,
+    openingCivilianCasualties: 0,
+    openingAssaultReleased: false,
     civiliansUnrescued: 0,
     civilianEnRouteCasualties: 0,
     civiliansWaiting: 0,
@@ -211,6 +216,27 @@ export function recordNanjingCivilianCityEntry(campaign, civilian) {
   data.enteredCity = true;
   campaign.civiliansEnteredCity++;
   return true;
+}
+
+export function recordNanjingCivilianRiverCrossing(campaign, civilian) {
+  const data = civilian.userData;
+  if (!data.openingWave || data.dead || data.crossedRiver ||
+      civilian.position.z >= NANJING_CIVILIAN_RIVER_NORTH_BANK_Z) return false;
+  data.crossedRiver = true;
+  campaign.civiliansCrossedRiver++;
+  return true;
+}
+
+export function nanjingOpeningAssaultReady(campaign) {
+  return campaign.stage === 'gate-defense' && !campaign.openingAssaultReleased &&
+    campaign.civiliansCrossedRiver >= nanjingOpeningCrossingRequired(campaign);
+}
+
+export function nanjingOpeningCrossingRequired(campaign) {
+  const casualties = campaign.openingCivilianCasualties ?? 0;
+  if (!Number.isInteger(casualties) || casualties < 0 ||
+      casualties > NANJING_OPENING_CIVILIAN_COUNT) throw new RangeError('Invalid opening civilian casualties');
+  return Math.ceil((NANJING_OPENING_CIVILIAN_COUNT - casualties) * .9);
 }
 
 export function advanceNanjingCampaign(campaign, dt) {

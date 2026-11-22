@@ -2,6 +2,8 @@ import { circleBlocked, segmentClear } from './core.js';
 import { obstacleLookup } from './spatial.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
+export const NANJING_OPENING_CIVILIAN_COUNT = 60;
+export const NANJING_OPENING_CROSSING_REQUIRED = Math.ceil(NANJING_OPENING_CIVILIAN_COUNT * .9);
 
 const variation = (index, salt) => {
   let value = Math.imul(index + salt, 0x45d9f3b);
@@ -10,7 +12,7 @@ const variation = (index, salt) => {
 };
 const CROWD_TURNS = Object.freeze([0, .6, -.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]);
 const openingStarts = [];
-for (let candidate = 0; openingStarts.length < 60; candidate++) {
+for (let candidate = 0; openingStarts.length < NANJING_OPENING_CIVILIAN_COUNT; candidate++) {
   const point = { x: -24 + (variation(candidate, 19) - .5) * 4.4,
     z: 39 + variation(candidate, 71) * 25 };
   if (openingStarts.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .82))
@@ -18,19 +20,21 @@ for (let candidate = 0; openingStarts.length < 60; candidate++) {
 }
 openingStarts.sort((a, b) => a.z - b.z);
 const openingReleaseTimes = [];
-for (let index = 0, releaseAt = 0; index < 60; index++) {
+for (let index = 0, releaseAt = 0; index < NANJING_OPENING_CIVILIAN_COUNT; index++) {
   if (index === 48) releaseAt = 46;
   else if (index > 0) releaseAt += index < 48 ? .25 + variation(index, 103) * .55 : .8 + variation(index, 103) * .9;
   openingReleaseTimes.push(releaseAt);
 }
 
 export function nanjingOpeningCivilianStart(index) {
-  if (!Number.isInteger(index) || index < 0 || index >= 60) throw new RangeError('Invalid opening civilian');
+  if (!Number.isInteger(index) || index < 0 || index >= NANJING_OPENING_CIVILIAN_COUNT)
+    throw new RangeError('Invalid opening civilian');
   return { ...openingStarts[index] };
 }
 
 export function nanjingOpeningCivilianReleaseAt(index) {
-  if (!Number.isInteger(index) || index < 0 || index >= 60) throw new RangeError('Invalid opening civilian');
+  if (!Number.isInteger(index) || index < 0 || index >= NANJING_OPENING_CIVILIAN_COUNT)
+    throw new RangeError('Invalid opening civilian');
   return openingReleaseTimes[index];
 }
 

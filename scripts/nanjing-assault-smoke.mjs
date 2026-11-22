@@ -23,7 +23,9 @@ try {
         "openingSpawnId: index === 1 ? 'nanjing-gate-wall' : index < 3 ? `nanjing-gate-front-${index}` : null,") });
     });
   }
-  await page.goto(new URL('/?campaign=nanjing', origin).href);
+  const gameUrl = new URL('/?campaign=nanjing', origin);
+  if (process.env.GAME_CHARACTER) gameUrl.searchParams.set('character', process.env.GAME_CHARACTER);
+  await page.goto(gameUrl.href);
   await page.waitForFunction(() => window.__battle?.state === 'menu', undefined, { timeout: 60000 });
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
@@ -45,12 +47,32 @@ try {
     console.log(JSON.stringify({ time: sample.time, state: sample.state,
       squadsMoving: sample.units.filter(unit => unit.members.some(member =>
         Math.hypot(member.x - member.spawnPosition.x, member.z - member.spawnPosition.z) > 8)).length,
-      crossed: sample.units.filter(unit => unit.members.some(member => member.z < 38)).length }));
+      crossed: sample.units.filter(unit => unit.members.some(member => member.z < 38)).length,
+      refugeesCrossed: sample.campaign.civiliansCrossedRiver,
+      assaultReleased: sample.campaign.openingAssaultReleased }));
     if (wallRespawnFixture && seconds >= 120) break;
-    if (seconds >= 90 && samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 15.2))) &&
+    if (seconds >= 180 && samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 15.2))) &&
       samples.some(sample => sample.vehicles.some(vehicle => vehicle.position.z < 38))) break;
   }
-  const firstWave = samples[2];
+  const opening = samples[0];
+  assert.equal(opening.campaign.openingAssaultReleased, false,
+    'Japanese forces must remain in reserve while the opening refugees cross the river');
+  assert.ok(opening.units.every(unit => unit.members.length === 0),
+    'the opening attack must not spawn before the refugee crossing threshold');
+  assert.equal(opening.campaign.airSupport.count, 0,
+    'Japanese aircraft must also wait for the opening refugee crossing');
+  assert.ok(samples.some(sample => sample.campaign.openingAssaultReleased &&
+    sample.campaign.civiliansCrossedRiver >= 54),
+  'the Japanese assault must release only after at least 90 percent of the first civilian wave crosses');
+  const firstWave = samples.find(sample => sample.units.length === 8 &&
+    sample.units.every(unit => unit.members.length > 0));
+  assert.ok(firstWave, 'all eight Japanese squads must spawn after the crossing threshold');
+  assert.ok(firstWave.units.every(unit => unit.members.every(member => member.spawnPosition.z > 96)),
+    'the opening Japanese assault must spawn farther south than the previous line');
+  const movingWave = samples.find(sample => sample.units.length === 8 && sample.units.every(unit =>
+    unit.members.some(member => Math.hypot(member.x - member.spawnPosition.x,
+      member.z - member.spawnPosition.z) > 8)));
+  assert.ok(movingWave, 'all eight Japanese squads must leave their southern starting positions');
   if (wallRespawnFixture) {
     const firedWallActors = new Set(samples.flatMap(sample => sample.wallDefenders
       .filter(actor => actor.y > 8 && actor.rifle.shots > 0).map(actor => actor.soldierId)));
@@ -64,9 +86,6 @@ try {
     unit.members.every(member => member.y >= 0 &&
       (member.z <= 39 || member.z >= 65 || Math.abs(member.x + 24) < 5)))),
   'all eight Japanese squads must use the bridge without wading or standing in deep water');
-  assert.ok(firstWave.units.every(unit => unit.members.some(member =>
-    Math.hypot(member.x - member.spawnPosition.x, member.z - member.spawnPosition.z) > 8)),
-  'all eight Japanese squads must actually leave their starting positions');
   if (!wallRespawnFixture) {
     assert.ok(samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 38))),
       'Japanese infantry must physically cross the Yuhua Road bridge');

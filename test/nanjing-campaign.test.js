@@ -7,8 +7,12 @@ import {
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
+  NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, nanjingOpeningAssaultReady, nanjingOpeningCrossingRequired,
+  recordNanjingCivilianRiverCrossing,
 } from '../src/nanjing-campaign.js';
+import { NANJING_OPENING_CROSSING_REQUIRED } from '../src/civilian-crowd.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
+import { BATTLE_AREA } from '../src/battle-boundary.js';
 
 test('only living opening refugees who pass the inner gate count as safely entering the city once', () => {
   const campaign = createNanjingCampaign();
@@ -24,6 +28,47 @@ test('only living opening refugees who pass the inner gate count as safely enter
   assert.equal(recordNanjingCivilianCityEntry(campaign, { userData: { openingWave: false }, position: refugee.position }), false);
   assert.equal(recordNanjingCivilianCityEntry(campaign, { userData: { openingWave: true, dead: true }, position: refugee.position }), false);
   assert.equal(campaign.civiliansEnteredCity, 1);
+});
+
+test('opening assault waits for 90 percent of the first civilian wave to cross the bridge', () => {
+  const campaign = createNanjingCampaign();
+  const refugee = { userData: { openingWave: true }, position: { z: NANJING_CIVILIAN_RIVER_NORTH_BANK_Z } };
+  assert.equal(NANJING_OPENING_CROSSING_REQUIRED, 54);
+  assert.equal(campaign.civiliansCrossedRiver, 0);
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  assert.equal(recordNanjingCivilianRiverCrossing(campaign, refugee), false,
+    'standing at the north bridge bank is not a completed crossing');
+  refugee.position.z = NANJING_CIVILIAN_RIVER_NORTH_BANK_Z - .1;
+  assert.equal(recordNanjingCivilianRiverCrossing(campaign, refugee), true);
+  assert.equal(recordNanjingCivilianRiverCrossing(campaign, refugee), false);
+  assert.equal(campaign.civiliansCrossedRiver, 1);
+  assert.equal(recordNanjingCivilianRiverCrossing(campaign,
+    { userData: { openingWave: false }, position: refugee.position }), false);
+  assert.equal(recordNanjingCivilianRiverCrossing(campaign,
+    { userData: { openingWave: true, dead: true }, position: refugee.position }), false);
+  campaign.civiliansCrossedRiver = NANJING_OPENING_CROSSING_REQUIRED - 1;
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  campaign.civiliansCrossedRiver++;
+  assert.equal(nanjingOpeningAssaultReady(campaign), true);
+  campaign.openingAssaultReleased = true;
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  campaign.openingCivilianCasualties = 10;
+  campaign.openingAssaultReleased = false;
+  assert.equal(nanjingOpeningCrossingRequired(campaign), 45,
+    'the threshold follows 90 percent of the surviving opening wave');
+  campaign.civiliansCrossedRiver = 44;
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  campaign.civiliansCrossedRiver = 45;
+  assert.equal(nanjingOpeningAssaultReady(campaign), true);
+  assert.throws(() => nanjingOpeningCrossingRequired({ openingCivilianCasualties: 61 }), /casualties/);
+});
+
+test('opening Japanese infantry, armor and aircraft stage south of the river', () => {
+  const southern = NANJING_SPAWNS.filter(spawn => spawn.id.startsWith('nanjing-south-'));
+  assert.equal(southern.length, 10);
+  assert.ok(southern.every(spawn => spawn.z > NANJING_CIVILIAN_RIVER_NORTH_BANK_Z));
+  assert.ok(southern.filter(spawn => spawn.kind !== 'air').every(spawn => spawn.z <= BATTLE_AREA.maxZ),
+    'ground attackers stay inside the playable battle boundary');
 });
 
 test('final evacuation status distinguishes civilians still on the road, waiting, aboard and actually across', () => {

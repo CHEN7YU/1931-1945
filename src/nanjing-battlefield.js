@@ -23,7 +23,7 @@ import { createNanjingFerryFactory, createShoreReeds, NANJING_FERRY_FLOOR, updat
 import { obstacleLookup } from './spatial.js';
 import { planeModel } from './world.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStart,
-  nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
+  NANJING_OPENING_CIVILIAN_COUNT, nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from './nanjing-city-layout.js';
 import { WOODLAND_SPECIES, woodlandTreeGeometry } from './woodland.js';
 import { NANJING_CASEMATE, subtractCasemateBox, casemateGateSlices, casemateFloorAt,
@@ -1486,7 +1486,7 @@ export function makeNanjingBattlefield(scene, surface) {
     const group = civilianCharacters.create(index, ageGroup, presentation, carrying);
     const home = civilianHomes[index >= 60 && index < 70
       ? Math.floor((index - 60) * civilianHomes.length / 10) : index % civilianHomes.length];
-    const start = index < 60 ? nanjingOpeningCivilianStart(index) : home.exit;
+    const start = index < NANJING_OPENING_CIVILIAN_COUNT ? nanjingOpeningCivilianStart(index) : home.exit;
     const startX = start.x;
     const startZ = start.z;
     group.position.set(startX, 0, startZ);
@@ -1495,7 +1495,8 @@ export function makeNanjingBattlefield(scene, surface) {
       openingWave: index < 60, openingStraggler: index >= 48 && index < 60,
       populationKind: index < 60 ? 'refugee' : 'resident', flightReleaseAt: null, fleeReleased: false,
       resting: false, restPoseWeight: 0,
-      withdrawalWave: index >= 60, releaseAt: index >= 60 ? Infinity : nanjingOpeningCivilianReleaseAt(index),
+      withdrawalWave: index >= NANJING_OPENING_CIVILIAN_COUNT,
+      releaseAt: index >= NANJING_OPENING_CIVILIAN_COUNT ? Infinity : nanjingOpeningCivilianReleaseAt(index),
       ageGroup, presentation, carrying, walkPhase: index * .71,
       waypoint: 0, arrived: false, dead: false, health: 100, waitingSlot: civilianWaitingSlot(index) });
     scene.add(group);

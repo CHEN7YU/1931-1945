@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 
+if (process.argv.includes('--campaign-behavior-only')) {
+  process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY = '1';
+  if (!process.env.GAME_CHARACTER) process.env.GAME_CHARACTER = 'procedural';
+}
+
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
@@ -21,6 +26,22 @@ try {
     await route.fulfill({ response, body: await response.text() + `
       window.civilianDefenseReview = {
         resume() { $('hud').hidden=false;setGameState('playing'); },
+        openingAssault() {
+          setGameState('menu');beginMatch();
+          const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
+          const aircraft=formations.find(unit=>unit.team==='enemy'&&unit.type==='plane');
+          const armor=formations.find(unit=>unit.team==='enemy'&&unit.variant===CHI_HA.id);
+          nanjingCampaign.civiliansCrossedRiver=53;updateNanjingMission(0);
+          const held={released:nanjingCampaign.openingAssaultReleased,
+            squads:infantry.filter(unit=>unit.members.length).length,
+            vehicles:[...entities.vehicles.values()].filter(vehicle=>vehicle.team==='enemy').length};
+          nanjingCampaign.civiliansCrossedRiver=54;updateNanjingMission(0);
+          return {held,released:nanjingCampaign.openingAssaultReleased,
+            squads:infantry.filter(unit=>unit.members.length===11).length,
+            aircraft:aircraft.members.length,armor:armor.members.length,
+            south:infantry.map(unit=>unit.members[0]?.spawnPosition.z)};
+        },
+        releaseAssault() { nanjingCampaign.civiliansCrossedRiver=54;updateNanjingMission(0); },
         fieldReload() {
           setGameState('menu');beginMatch();
           const actor=controlledSoldier(entities),point=emplacements.get('bridge-gun');
@@ -44,6 +65,7 @@ try {
         },
         airframeBurst() {
           setGameState('menu');beginMatch();
+          this.releaseAssault();
           const crew=controlledSoldier(entities),point=emplacements.get('gate-aa'),floor=point.altitude;
           const pose=emplacementPose(point,floor);
           crew.position.set(pose.operator.x,floor,pose.operator.z);occupyEmplacement(point,crew);
@@ -89,7 +111,17 @@ try {
           }
           renderer.render(scene,camera);
         },
-        run() {
+        async run() {
+          const openingAssault=this.openingAssault();
+          await new Promise((resolve,reject)=>{
+            let frames=0;
+            const ready=()=>{
+              if(window.__battle?.state==='playing'&&$('loading').hidden)resolve();
+              else if(++frames>2400)reject(Error('Battle rendering did not finish after the opening-assault fixture'));
+              else setTimeout(ready,50);
+            };
+            ready();
+          });
           const operator = controlledSoldier(entities), checks = [];
           for (const point of emplacements.values()) {
             releaseEmplacement(operator);
@@ -165,10 +197,53 @@ try {
           const friendlySafe = !data.dead;
           fireAutomaticShot({ id: null, team: 'enemy' }, { gun }, source, start, 0, 0);
           const casualties = nanjingCampaign.civilianCasualties - damageBefore;
+          const bayonetAttacker = originalEnemies.find(actor => !actor.vehicleId &&
+            (actor.rifle.model ?? 'rifle') === 'rifle');
+          const bayonetPerson = world.civilians.find(candidate => candidate !== person);
+          if (!bayonetAttacker || !bayonetPerson) throw Error('Missing bayonet pursuit fixture');
+          for (const civilian of world.civilians) {
+            civilian.visible = false; civilian.userData.active = false;
+          }
+          Object.assign(bayonetPerson.userData, { active: true, dead: false, health: 100,
+            evacuated: false, threatResponse: null, streetLife: null,
+            route: [{ x: -67, z: -85 }], waypoint: 0 });
+          bayonetPerson.visible = true; bayonetPerson.position.set(-67, .36, -77);
+          bayonetAttacker.position.set(-67, .36, -81);
+          bayonetAttacker.heading = Math.PI;
+          bayonetAttacker.rifle.ammo = 0;
+          bayonetAttacker.target = null;
+          bayonetAttacker.tactics.civilianTarget = null;
+          bayonetAttacker.tactics.civilianThinkAt = 0;
+          bayonetAttacker.tactics.nanjingRegroup = { x: -24, y: 0, z: 24 };
+          bayonetAttacker.bayonet.strikes = bayonetAttacker.bayonet.hits = 0;
+          bayonetAttacker.bayonet.nextAttackAt = 0;
+          const bayonetShotsBefore = bayonetAttacker.rifle.shots;
+          const selectedByBayonetRifleman = nanjingCivilianPursuitTarget(bayonetAttacker) === bayonetPerson;
+          nanjingCampaign.stage = 'withdrawal';
+          const previousForces = { allies, friendlyAI, friendlyForces, enemies, allForces };
+          allies = [controlledSoldier(entities)]; friendlyAI = []; friendlyForces = [...allies];
+          enemies = [bayonetAttacker]; rebuildForces();
+          for (let frame = 0; frame < 120 && !bayonetPerson.userData.dead; frame++) {
+            time += .05;
+            aiDecisions.beginFrame();
+            updateWeaponSimulation(.05);
+            updateAI(.05);
+            if (bayonetAttacker.nativeMotion) advanceNraMotion(bayonetAttacker, .05);
+          }
+          const bayonetPursuit = { selected: selectedByBayonetRifleman,
+            strikes: bayonetAttacker.bayonet.strikes,
+            hits: bayonetAttacker.bayonet.hits,
+            damage: 100 - bayonetPerson.userData.health,
+            shots: bayonetAttacker.rifle.shots - bayonetShotsBefore,
+            mode: bayonetAttacker.tactics.mode,
+            attacker: bayonetAttacker.position.toArray(), civilian: bayonetPerson.position.toArray() };
+          ({ allies, friendlyAI, friendlyForces, enemies, allForces } = previousForces);
+          rebuildForces();
           enemies = originalEnemies;
+          rebuildForces();
           state = 'pause';
-          return { checks, sharedPlanes, beforeDistance, afterDistance, mode,
-            selectedByMachineGunner, crouching, friendlySafe, casualties, civilianDead: data.dead,
+          return { openingAssault, checks, sharedPlanes, beforeDistance, afterDistance, mode,
+            selectedByMachineGunner, crouching, friendlySafe, casualties, civilianDead: data.dead, bayonetPursuit,
             houses: world.landmarks.residentialBuildings.length, mortarReadout };
         },
         retreat() {
@@ -237,6 +312,7 @@ try {
         },
         operators() {
           setGameState('menu'); beginMatch();
+          this.releaseAssault();
           const player=controlledSoldier(entities), originalEnemies=[...enemies], results=[];
           const crew=friendlyAI.find(actor=>actor.health>0);
           for(const [index,friend] of friendlyForces.entries())if(friend!==crew)
@@ -288,8 +364,9 @@ try {
       };
     ` });
   });
-  await page.goto(`${process.env.GAME_URL ?? 'http://127.0.0.1:5203'}/?campaign=nanjing`,
-    { waitUntil: 'domcontentloaded', timeout: 120000 });
+  const gameUrl = new URL('/?campaign=nanjing', process.env.GAME_URL ?? 'http://127.0.0.1:5173');
+  if (process.env.GAME_CHARACTER) gameUrl.searchParams.set('character', process.env.GAME_CHARACTER);
+  await page.goto(gameUrl.href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 120000 });
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
@@ -311,20 +388,44 @@ try {
     await writeFile(join(process.env.ARTIFACT_DIR, 'defense-result.json'), JSON.stringify({ result, errors }, null, 2));
   }
   console.log(JSON.stringify({ result, errors }));
-  assert.equal(result.checks.length, 6);
-  assert.ok(result.checks.every(check => check.assigned === check.id && check.shots === 1 &&
-    check.stale === 'rejected' && check.released), 'all six stations must really mount, shoot and release');
-  assert.equal(result.sharedPlanes.length, 3);
-  assert.ok(result.sharedPlanes.every(plane => plane.health === 180 && plane.maxHealth === 180 &&
-    plane.magazine <= 60 && plane.magazine >= 0 && plane.type === 'plane' && plane.pilot));
-  assert.deepEqual(result.mortarReadout, { phase:'ready',first:'50 m',second:'60 m',visible:true,unchangedAmmo:true });
-  assert.ok(result.afterDistance > result.beforeDistance + 1 || result.mode === 'cower');
-  assert.ok(result.selectedByMachineGunner);
-  assert.ok(result.crouching.root < -.28 && result.crouching.knees < -1.7 && result.crouching.arm > 1.9);
-  assert.ok(result.friendlySafe);
-  assert.equal(result.casualties, 1);
-  assert.ok(result.civilianDead);
+  if (process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY === '1') {
+    assert.deepEqual(result.openingAssault.held,
+      { released:false,squads:0,vehicles:0 },
+      'fewer than 90 percent of the first civilian wave must not spawn Japanese forces');
+    assert.equal(result.openingAssault.released,true);
+    assert.equal(result.openingAssault.squads,8);
+    assert.equal(result.openingAssault.aircraft,3);
+    assert.equal(result.openingAssault.armor,4);
+    assert.ok(result.openingAssault.south.every(z=>z>38&&z<=96),
+      'all opening Japanese infantry must spawn south of the river and inside the battle boundary');
+    assert.ok(result.bayonetPursuit.selected);
+    assert.ok(result.bayonetPursuit.strikes > 0 && result.bayonetPursuit.damage > 0,
+      'bayonet-qualified Japanese infantry must charge and damage a nearby civilian');
+    assert.equal(result.bayonetPursuit.shots, 0,
+      'bayonet pursuit must not fire the rifle at the civilian, even with an empty magazine');
+    assert.deepEqual(errors, []);
+  } else {
+    assert.equal(result.checks.length, 7);
+    assert.ok(result.checks.every(check => check.assigned === check.id && check.shots === 1 &&
+      check.stale === 'rejected' && check.released), 'all seven stations must really mount, shoot and release');
+    assert.equal(result.sharedPlanes.length, 3);
+    assert.ok(result.sharedPlanes.every(plane => plane.health === 180 && plane.maxHealth === 180 &&
+      plane.magazine <= 60 && plane.magazine >= 0 && plane.type === 'plane' && plane.pilot));
+    assert.deepEqual(result.mortarReadout, { phase:'ready',first:'50 m',second:'60 m',visible:true,unchangedAmmo:true });
+    assert.ok(result.afterDistance > result.beforeDistance + 1 || result.mode === 'cower');
+    assert.ok(result.selectedByMachineGunner);
+    assert.ok(result.bayonetPursuit.selected);
+    assert.ok(result.bayonetPursuit.strikes > 0 && result.bayonetPursuit.damage > 0,
+      'bayonet-qualified Japanese infantry must charge and damage a nearby civilian');
+    assert.equal(result.bayonetPursuit.shots, 0,
+      'bayonet pursuit must not fire the rifle at the civilian, even with an empty magazine');
+    assert.ok(result.crouching.root < -.28 && result.crouching.knees < -1.7 && result.crouching.arm > 1.9);
+    assert.ok(result.friendlySafe);
+    assert.equal(result.casualties, 1);
+    assert.ok(result.civilianDead);
   }
+  }
+  if (process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY !== '1') {
   const retreat = await page.evaluate(() => civilianDefenseReview.retreat());
   console.log(JSON.stringify({retreat}));
   assert.ok(retreat.arrival.distance < 12 && Math.abs(retreat.arrival.position[1]-retreat.arrival.floor)<.03,
@@ -365,8 +466,11 @@ try {
     if(process.env.ARTIFACT_DIR)await writeFile(join(process.env.ARTIFACT_DIR,'reinforcement-march.json'),
       JSON.stringify({retreat,errors},null,2));
   }
+  }
 } catch (error) {
-  console.error(JSON.stringify({ errors, loading: await page.locator('#loading').textContent() }));
+  const loading = await page.locator('#loading').count()
+    ? await page.locator('#loading').textContent() : 'loading indicator unavailable';
+  console.error(JSON.stringify({ error: error.message, errors, loading }));
   throw error;
 } finally {
   await browser.close();

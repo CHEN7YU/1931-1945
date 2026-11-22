@@ -68,16 +68,17 @@ export function nanjingBattleRoster(playerType = 'infantry') {
   }));
   const enemyInfantry = Array.from({ length: 8 }, (_, index) => ({
     id: `enemy-${index}`, team: 'enemy', index, type: 'infantry', player: false, members: [],
-    generation: 0, respawnAt: null, spawnId: `nanjing-south-${index + 1}`,
+    generation: 0, respawnAt: null, reserve: true, spawnId: `nanjing-south-${index + 1}`,
     assaultCrossing: 'bridge',
   }));
   const armor = japaneseArmorRoster()[0];
   armor.id = 'enemy-8';
   armor.index = 8;
+  armor.reserve = true;
   armor.spawnId = 'nanjing-south-armor';
   const aircraft = { id: 'enemy-9', team: 'enemy', index: 9, type: 'plane', player: false,
     aerialSupport: true, memberCount: AIRCRAFT_SQUAD_SIZE, aircraftCount: AIRCRAFT_SQUAD_SIZE,
-    members: [], generation: 0, respawnAt: null, spawnId: 'nanjing-south-air' };
+    members: [], generation: 0, respawnAt: null, reserve: true, spawnId: 'nanjing-south-air' };
   if (NANJING_SPAWNS.filter(spawn => spawn.team === 'friendly').length < friendly.length ||
     NANJING_SPAWNS.filter(spawn => spawn.team === 'enemy').length < enemyInfantry.length + 2) {
     throw new Error('Nanjing campaign spawn configuration is incomplete');

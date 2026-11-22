@@ -43,6 +43,8 @@
     "test:nanjing-preview": "node scripts/nanjing-preview-smoke.mjs",
     "test:nanjing-campaign": "node scripts/nanjing-campaign-smoke.mjs",
     "test:nanjing-assault": "node scripts/nanjing-assault-smoke.mjs",
+    "test:nanjing-civilian-behavior": "node scripts/nanjing-civilian-defense-smoke.mjs --campaign-behavior-only",
+    "test:nanjing-finale": "node scripts/nanjing-finale-smoke.mjs",
     "test:boundary": "node scripts/boundary-smoke.mjs",
     "test:doors": "node scripts/door-smoke.mjs",
     "test:quality": "node scripts/quality-smoke.mjs",
