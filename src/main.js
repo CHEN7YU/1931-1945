@@ -347,7 +347,9 @@ if (nanjingCampaignMode) {
   document.querySelector('.map-description').textContent =
     '独立南京战场布局：精简为两道内瓮城、三重城门，保留护城河石桥、中华门防线与上新河渡口。先坚守3分钟，再掩护百姓登船并守住渡口3分钟。复用现有人物、武器和战斗系统，不复用台儿庄地图。';
   $('deploy').querySelector('span:first-child').textContent = '进入南京战役';
-  document.querySelector('.deployment-note').innerHTML = '我方3支小队 <span>·</span> 日军10支小队 <span>·</span> 两阶段撤离战役';
+  const deploymentNote = document.querySelector('.deployment-note');
+  deploymentNote.innerHTML = '我方3支小队 <span>·</span> 日军10支小队 <span>·</span> 两阶段撤离战役';
+  deploymentNote.hidden = false;
   for (const button of document.querySelectorAll('#squad-choices [data-type]')) {
     if (button.dataset.type !== 'infantry') button.hidden = true;
   }

@@ -36,6 +36,38 @@ await page.route('**/src/main.js*', async route => {
       return { id: actor.id, health: actor.health, corpseRemoved: actor.corpseRemoved,
         registered: entities.soldiers.has(actor.id), retainedAsCorpse: corpses.has(actor.id) };
     };
+    window.__masonryRadarPixels = () => {
+      const health = allForces.map(actor => [actor, actor.health]);
+      const displayedSpawns = spawnPoints;
+      const displayedObjectives = objectives;
+      const missionTargetProvider = currentMissionTargets;
+      try {
+        for (const actor of allForces) actor.health = 0;
+        spawnPoints = [];
+        objectives = [];
+        currentMissionTargets = () => [];
+        drawRadar();
+        const canvas = $('radar'), ctx = canvas.getContext('2d');
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return world.landmarks.flankingStructures.map(structure => {
+          const minX = Math.ceil((structure.minX + 110) / 220 * canvas.width);
+          const maxX = Math.floor((structure.maxX + 110) / 220 * canvas.width);
+          const minZ = Math.ceil((structure.minZ + 110) / 220 * canvas.height);
+          const maxZ = Math.floor((structure.maxZ + 110) / 220 * canvas.height);
+          let count = 0;
+          for (let z = minZ; z < maxZ; z++) for (let x = minX; x < maxX; x++) {
+            const index = (z * canvas.width + x) * 4;
+            if (pixels.data[index] === 116 && pixels.data[index + 1] === 107 && pixels.data[index + 2] === 81) count++;
+          }
+          return { side: structure.side, courtyardId: structure.courtyardId, count };
+        });
+      } finally {
+        for (const [actor, value] of health) actor.health = value;
+        spawnPoints = displayedSpawns;
+        objectives = displayedObjectives;
+        currentMissionTargets = missionTargetProvider;
+      }
+    };
   ` });
 });
 
@@ -44,6 +76,8 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
     null, { timeout: 180000 });
   assert.equal(await page.locator('#game-title').textContent(), '南京保卫战');
+  assert.equal(await page.locator('.deployment-note').isVisible(), true);
+  assert.equal(await page.locator('.deployment-note').textContent(), '我方3支小队 · 日军10支小队 · 两阶段撤离战役');
   assert.equal(await page.locator('#back-campaign').isVisible(), true);
   assert.deepEqual(await page.locator('#squad-choices [data-type]:visible').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
     ['infantry']);
@@ -144,22 +178,9 @@ try {
   assert.deepEqual(mapPixels.southRiver, [36, 80, 93]);
   assert.deepEqual(mapPixels.westYangtze, [36, 80, 93]);
   assert.ok(mapPixels.fortressWall[0] > mapPixels.fortressWall[1], 'minimap should outline the fort walls');
-  const flankPixels = await page.locator('#radar').evaluate((canvas, structures) => {
-    const ctx = canvas.getContext('2d');
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return [-1, 1].map(side => structures.filter(structure => structure.side === side).reduce((count, structure) => {
-      const minX = Math.ceil((structure.minX + 110) / 220 * canvas.width);
-      const maxX = Math.floor((structure.maxX + 110) / 220 * canvas.width);
-      const minZ = Math.ceil((structure.minZ + 110) / 220 * canvas.height);
-      const maxZ = Math.floor((structure.maxZ + 110) / 220 * canvas.height);
-      for (let z = minZ; z < maxZ; z++) for (let x = minX; x < maxX; x++) {
-        const index = (z * canvas.width + x) * 4;
-        if (image.data[index] === 116 && image.data[index + 1] === 107 && image.data[index + 2] === 81) count++;
-      }
-      return count;
-    }, 0));
-  }, data.campaign.map.flankingStructures);
-  assert.ok(flankPixels.every(count => count > 0), 'minimap should fill both masonry flanks, not just the outer walls');
+  const flankPixels = await page.evaluate(() => window.__masonryRadarPixels());
+  assert.ok([-1, 1].every(side => flankPixels.some(flank => flank.side === side && flank.count > 0)),
+    `minimap should fill both masonry flanks, not just the outer walls: ${JSON.stringify(flankPixels)}`);
 
   const layout = await page.evaluate(() => {
     const hud = document.querySelector('#hud');

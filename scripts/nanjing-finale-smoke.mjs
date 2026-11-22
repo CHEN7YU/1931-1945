@@ -5,7 +5,16 @@ import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.j
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
-page.on('pageerror', error => errors.push(error.message));
+const readyTimeout = Number(process.env.NANJING_FINALE_READY_TIMEOUT_MS ?? 180000);
+const gameUrl = new URL(process.env.GAME_URL ?? 'http://127.0.0.1:5203');
+gameUrl.pathname = '/';
+gameUrl.searchParams.set('campaign', 'nanjing');
+if (process.env.GAME_CHARACTER) gameUrl.searchParams.set('character', process.env.GAME_CHARACTER);
+page.on('pageerror', error => { errors.push(error.message); console.error(error.stack); });
+page.on('console', message => {
+  if (message.type() === 'error') { errors.push(message.text()); console.error(message.text()); }
+});
+page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
 try {
   const settings = defaultPreferences(); settings.quality.preset = 'low';
   Object.keys(settings.quality.effects).forEach(key => settings.quality.effects[key] = false);
@@ -57,7 +66,7 @@ try {
             world.doorSystem.update(.05,world.civilians.filter(person=>person.visible&&person.parent===scene)
               .map(person=>({...person.position,radius:.36})));
             const before=walker.getWorldPosition(new THREE.Vector3());
-            updateNanjingCivilians(.05);updateNanjingMission(0);
+            updateNanjingCivilians(.05);updateNanjingMission(.05);
             if(walker.parent)maxCivilianStep=Math.max(maxCivilianStep,
               walker.getWorldPosition(new THREE.Vector3()).distanceTo(before));
             if(!walker.userData.arrived)for(const ferry of world.ferries){
@@ -70,22 +79,41 @@ try {
           const before=guards.map(actor=>actor.position.clone());let travel=0;
           for(let frame=0;frame<800&&!nanjingCampaign.evacuatedSquads.length;frame++){
             time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateGrenades(.05);updateAI(.05);
-            for(const actor of guards)if(actor.health>0)advanceNraMotion(actor,.05);
-            updateNanjingCivilians(.05);updateNanjingMission(0);
+            for(const actor of guards)if(actor.health>0&&actor.nativeMotion)advanceNraMotion(actor,.05);
+            updateNanjingCivilians(.05);updateNanjingMission(.05);
             controlEvents.drain(()=>{});combatEvents.drain(()=>{});
           }
           for(let index=0;index<guards.length;index++)travel+=guards[index].position.distanceTo(before[index]);
+          const aiBoarding={required:nanjingCampaign.requiredAISquads,boarded:[...nanjingCampaign.boardedAISquads],
+            evacuated:nanjingCampaign.evacuatedSquads.map(squad=>({...squad})),
+            guards:guards.map(actor=>({id:actor.id,health:actor.health,position:actor.position.toArray(),
+              ferry:actor.tactics.nanjingFerry??null})),
+            ferries:world.ferries.map(ferry=>({id:ferry.userData.ferryId,state:ferry.userData.state,
+              passengers:ferry.userData.troopPassengers?.map(passenger=>passenger.actor.id)??[],
+              boarding:ferry.userData.troopBoarding?.actor.id??null}))};
           for(let frame=0;frame<1400&&!world.ferries.some(ferry=>ferry.userData.state==='docked'&&
             Math.hypot(player.position.x-ferry.position.x,player.position.z-ferry.position.z)<=4);frame++){
-            time+=.05;updateNanjingCivilians(.05);updateNanjingMission(0);
+            time+=.05;updateNanjingCivilians(.05);updateNanjingMission(.05);
             controlEvents.drain(()=>{});combatEvents.drain(()=>{});
           }
-          setGameState('playing');dispatchControlCommand('interact');updateNanjingMission(0);
+          setGameState('playing');
+          bindControlInput();
+          const interaction=dispatchControlCommand('interact');
+          let playerSteps=0;
+          for(;playerSteps<3000&&!nanjingCampaign.outcome;playerSteps++){
+            time+=.05;updateNanjingCivilians(.05);updateNanjingMission(.05);
+            controlEvents.drain(()=>{});combatEvents.drain(()=>{});
+          }
+          const playerFerry=world.ferries.find(ferry=>ferry.userData.ferryId===player.tactics.nanjingFerry?.ferryId);
           return{pendingHUD,partialDeparture,civilianSeconds:steps*.05,civilians,maxCivilianStep,
             aiTravel:travel,evacuated:nanjingCampaign.evacuatedSquads,ending:battleEnding.snapshot,outcome:nanjingCampaign.outcome,
-            toast:$('toast').textContent};
+            toast:$('toast').textContent,interaction,playerSteps,playerBoarding:player.tactics.nanjingFerry??null,
+            playerFerry:playerFerry?{id:playerFerry.userData.ferryId,state:playerFerry.userData.state,x:playerFerry.position.x,
+              departed:playerFerry.position.x<=NANJING_DOCK.ferryX-1}:null,aiBoarding};
         },
-        respawn(){
+        async respawn(){
+          for(let frame=0;battlePreparing&&frame<300;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+          if(battlePreparing)throw Error('Previous battle render preparation did not finish before respawn');
           setGameState('menu');beginMatch();
           const enemy=enemies.find(actor=>!actor.vehicleId);
           for(const actor of allForces)if(actor!==enemy)actor.health=0;
@@ -124,19 +152,42 @@ try {
         }
       };` });
   });
-  await page.goto((process.env.GAME_URL ?? 'http://127.0.0.1:5203') + '/?campaign=nanjing');
-  await page.waitForFunction(() => window.__battle?.state === 'menu' && window.nanjingFinaleReview,
-    null, { timeout: 180000 });
-  await page.waitForFunction(() => Number.isFinite(window.firstBattleFrameInterval));
-  const firstFrameInterval = await page.evaluate(() => window.firstBattleFrameInterval);
-  assert.ok(firstFrameInterval < 500, 'the deliberate one-second preparation delay must not appear as a battle frame hitch');
+  await page.goto(gameUrl.href, { waitUntil: 'domcontentloaded' });
+  try {
+    await page.waitForFunction(() => window.__battle?.state === 'menu' && window.nanjingFinaleReview,
+      null, { timeout: readyTimeout });
+  } catch (error) {
+    const readiness = await page.evaluate(() => ({
+      state: window.__battle?.state ?? null,
+      hasReview: Boolean(window.nanjingFinaleReview),
+      loading: document.querySelector('#loading')?.textContent,
+      loadingHidden: document.querySelector('#loading')?.hidden,
+      menuHidden: document.querySelector('#menu')?.hidden,
+    })).catch(() => null);
+    console.log(JSON.stringify({ readiness, errors }));
+    throw error;
+  }
+  let firstFrameInterval = null;
+  if (process.env.GAME_CHARACTER !== 'procedural') {
+    await page.waitForFunction(() => Number.isFinite(window.firstBattleFrameInterval));
+    firstFrameInterval = await page.evaluate(() => window.firstBattleFrameInterval);
+    assert.ok(firstFrameInterval < 500, 'the deliberate one-second preparation delay must not appear as a battle frame hitch');
+  }
   const finale = await page.evaluate(() => nanjingFinaleReview.finale());
   console.log(JSON.stringify({ finale }));
   assert.match(finale.pendingHUD, /在途 1.*候船 2/);
   assert.ok(finale.partialDeparture && finale.civilians.ready);
   assert.equal(finale.civilians.evacuated, 3);
   assert.ok(finale.maxCivilianStep <= .27 && finale.aiTravel > 3);
-  assert.equal(finale.evacuated.filter(squad => !squad.isPlayer).length, 1);
+  assert.equal(finale.aiBoarding.boarded.length, 1);
+  assert.equal(finale.aiBoarding.evacuated.length, 0, 'the player must not wait for other ferries to finish crossing');
+  assert.ok(finale.aiBoarding.ferries.some(ferry => ferry.state === 'docked' && ferry.passengers.length > 0));
+  assert.ok(finale.aiBoarding.ferries.some(ferry => ferry.state === 'outbound' && ferry.passengers.length > 0));
+  assert.equal(finale.interaction.status, 'applied', JSON.stringify(finale.interaction));
+  assert.equal(finale.playerBoarding.phase, 'aboard');
+  assert.equal(finale.playerFerry.state, 'outbound');
+  assert.ok(finale.playerFerry.departed, 'the ending must wait until the selected ferry has left the dock');
+  assert.ok(finale.playerSteps < 3000, 'the player must actually board and depart on the selected ferry');
   assert.equal(finale.outcome, 'evacuated');
   assert.equal(finale.ending.result, 'commemoration');
   const respawn = await page.evaluate(() => nanjingFinaleReview.respawn());

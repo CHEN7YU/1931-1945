@@ -17,7 +17,7 @@ export function createJiangyinVoiceReactions(random = Math.random) {
 
   return Object.freeze({
     wounded(now, health) {
-      if (health <= 0 || now - lastWoundAt < 12) return null;
+      if (health <= 0 || now - lastWoundAt < 30) return null;
       lastWoundAt = now;
       return select(WOUND_LINES);
     },
