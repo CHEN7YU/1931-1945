@@ -182,6 +182,8 @@ test('every Jiangyin voice cue raised by the game has a scripted line and a batt
   assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '小鬼子我日你祖宗'));
   assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '打到小鬼子'));
   assert.ok(JIANGYIN_PLAYER_VOICE_LINES.some(line => line.text === '我干掉一个小鬼子'));
+  for (const line of JIANGYIN_PLAYER_VOICE_LINES)
+    assert.ok(JIANGYIN_VOICE_LINES.some(retained => retained.cue === line.cue && retained.text === line.text));
   const game = await readFile(new URL('../src/jiangyin/jiangyin-game.js', import.meta.url), 'utf8');
   const main = await readFile(new URL('../src/jiangyin/jiangyin-main.js', import.meta.url), 'utf8');
   const used = [...`${game}\n${main}`.matchAll(/'(jiangyin-[a-z]+(?:-[a-z]+)*)'/g)].map(m => m[1])

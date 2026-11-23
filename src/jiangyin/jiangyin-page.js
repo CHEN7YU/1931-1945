@@ -39,6 +39,7 @@ export const JIANGYIN_MARKUP = `
 <div id="jy-flash" aria-hidden="true"></div>
 <div id="jy-fade" aria-hidden="true"></div>
 <div id="jy-underwater" aria-hidden="true"></div>
+<div id="jy-hitdir" aria-hidden="true"><i></i><span></span></div>
 <section id="jy-overlay" class="jy-overlay">
   <div class="jy-dialog">
     <span class="jy-kicker" id="jy-kicker">1937 · 江阴</span>

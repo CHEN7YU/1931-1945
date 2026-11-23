@@ -767,6 +767,17 @@ export function createCoastalGunModel(point) {
   }
   for (let i = 0; i < 7; i++) { const r = cyl(swivel, .045, .045, .04, -1.3 + i * .43, 1.62, -1.6 + (i % 2) * .2, GD, 6); }   // 顶部铆钉
   box(swivel, .9, .22, .5, .7, 1.66, .5, T);                                                            // 顶部通风罩
+  // v24 近景（炮长从顶部舱口探身时看到的部分）：舱口圈与竖起的舱盖、潜望镜、前缘吊耳、顶板与前板的焊缝/铆钉线、
+
+  const hatchZ = -.9;   // 与 JIANGYIN_MOUNTS.coastal.view.first.back = -.9 对应：舱口在耳轴前方 0.9 米的平顶板上
+  add(swivel, new THREE.TorusGeometry(.42, .05, 6, 28), GD, 0, 1.6, hatchZ).rotation.x = Math.PI / 2;
+  const lid = add(swivel, new THREE.CylinderGeometry(.44, .44, .05, 24), T, 0, 1.95, hatchZ + .46); lid.rotation.x = -1.35;
+  box(swivel, .1, .08, .14, 0, 1.62, hatchZ + .44, GD);                                    // 舱盖铰链
+  for (const x of [-.95, .95]) { box(swivel, .16, .2, .12, x, 1.68, hatchZ - .3, GD); box(swivel, .12, .03, .02, x, 1.74, hatchZ - .365, M.glass()); }   // 潜望镜
+  rivets(swivel, [-1.35, 1.6, -1.3], [1.35, 1.6, -1.3], .16, GD, .028);                  // 顶板前缘铆钉线
+  rivets(swivel, [-1.6, 1.6, -1.6], [-1.6, 1.6, 1.0], .2, GD, .028);
+  rivets(swivel, [1.6, 1.6, -1.6], [1.6, 1.6, 1.0], .2, GD, .028);
+  for (const sign of [1, -1]) { add(swivel, new THREE.TorusGeometry(.09, .025, 4, 10), GD, sign * 1.2, 1.62, -1.75).rotation.y = Math.PI / 2; }   // 吊耳
   // 炮身：炮门内的防盾套箍 + 细长身管（炮口略加厚）
   tubeZ(barrel, .3, .3, .45, 0, 0, -2.05, T, 18);                   // 炮门处套箍
   tubeZ(barrel, .17, .24, 1.6, 0, 0, -2.45, GD, 18);                 // 身管加粗段
@@ -780,7 +791,7 @@ export function createCoastalGunModel(point) {
   const enclosed = !flak;
   const crewSpots = enclosed ? [[.75, 3.35, false], [-1.0, 3.9, false]] : [[.9, 2.4, false], [-1.2, 1.9, false]];
   for (const [x, z, rifle] of crewSpots) {
-    const man = crewMember(rifle); man.position.set(x, -mh, z); man.rotation.y = Math.PI * .92; swivel.add(man);
+    const man = crewMember(rifle); man.position.set(x, -mh, z); man.rotation.y = enclosed ? 0 : Math.PI * .08; man.userData.crewPose = enclosed ? 'stand' : 'kneel'; swivel.add(man);   // 面朝炮塔/火炮，而不是背对
   }
   const shell = cyl(swivel, .1, .1, .7, .9, -mh + 1.2, enclosed ? 3.0 : 2.0, M.brass(), 8); shell.rotation.x = 1.2;
   mergeStatic(base); mergeStatic(swivel); mergeStatic(barrel);
@@ -856,7 +867,25 @@ export function createFlak88Model(point) {
   tubeZ(barrel, .085, .085, 2.3, 0, .52, 1.0, F, 12);                   // 复进机
   for (const z of [-.6, .3, 1.0]) box(barrel, .24, .5, .1, 0, .32, z, F);   // 箍带
   rod(barrel, [-.5, 0, 0], [.5, 0, 0], .1, FD);                         // 耳轴
-  for (const [x, z] of [[1.1, 1.4], [-1.2, 1.2]]) { const man = crewMember(false); man.position.set(x, -mh, z); man.rotation.y = Math.PI * .92; swivel.add(man); }
+  // v24 近景（第一人称在炮尾后方约 1.6 米）：横楔式炮闩与开闩柄、炮尾环上的铆接面、输弹槽与一发待装的 88 毫米弹、
+  // 左侧瞄准镜（镜筒 + 目镜护眼罩）、身管根部的箍与加强筋
+  box(barrel, .52, .08, .06, 0, .27, 1.84, FD); box(barrel, .52, .08, .06, 0, -.27, 1.84, FD);
+  box(barrel, .36, .3, .08, .05, 0, 1.86, mat('flak-breech', 0x3a3d37, .4, .6));        // 横楔炮闩（磨亮）
+  rod(barrel, [.26, -.05, 1.8], [.42, -.28, 2.05], .025, FD, 6); cyl(barrel, .04, .04, .1, .43, -.3, 2.06, FD, 8);   // 开闩柄
+  rivets(barrel, [-.22, .2, 1.89], [.22, .2, 1.89], .09, FD, .02); rivets(barrel, [-.22, -.2, 1.89], [.22, -.2, 1.89], .09, FD, .02);
+  box(barrel, .22, .06, 1.1, 0, -.16, 2.45, F);                                         // 输弹槽
+  for (const sign of [1, -1]) box(barrel, .03, .1, 1.1, sign * .11, -.1, 2.45, F);
+  tubeZ(barrel, .044, .044, .62, 0, -.07, 2.75, M.brass(), 14);                        // 待装弹：黄铜药筒
+  tubeZ(barrel, .02, .044, .3, 0, -.07, 2.13, mat('flak-round', 0x56503a, .6, .3), 14); // 弹头（引信端在前）
+  tubeZ(barrel, .045, .045, .9, -.42, .2, 1.4, FD, 14);                                 // 左侧瞄准镜镜筒
+  tubeZ(barrel, .06, .05, .12, -.42, .2, 1.95, mat('rubber', 0x151515, .9, 0), 14);     // 目镜护眼罩
+  add(barrel, new THREE.CircleGeometry(.032, 14), M.glass(), -.42, .2, .95).rotation.y = Math.PI;
+  for (const z of [-1.4, -2.2, -3.0]) tubeZ(barrel, .1 - (z + 1.4) * -.006, .1 - (z + 1.4) * -.006, .06, 0, 0, z, FD, 14);
+  // 炮手：原先两人背对火炮站立（朝向 π·0.92 = 面朝炮尾后方），像在站岗。8.8 cm Flak 18 的瞄准手（高低）与方向手分坐炮架左右两侧、
+  // 面朝火炮摇手轮，装填手站在炮尾后方。这里瞄准手、方向手在两侧手轮旁半跪、身体斜向内对着炮架，装填手在炮尾后方面朝炮口。
+  for (const [x, z, yaw, pose] of [[1.05, .35, Math.PI / 2 * .6, 'kneel'], [-1.05, .35, -Math.PI / 2 * .6, 'kneel'], [.35, 2.6, 0, 'stand']]) {
+    const man = crewMember(false); man.position.set(x, -mh, z); man.rotation.y = yaw; man.userData.crewPose = pose; swivel.add(man);
+  }
   mergeStatic(base); mergeStatic(swivel); mergeStatic(barrel);
   root.userData.update = () => {
     root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
@@ -885,7 +914,7 @@ export function createDeckGunModel(point) {
   tubeZ(barrel, .07, .11, s.barrel, 0, 0, .2, GD, 12);
   tubeZ(barrel, .14, .14, .9, 0, 0, .7, G, 12); box(barrel, .3, .3, .45, 0, 0, .9, GD);
   for (const y of [.2]) tubeZ(barrel, .06, .06, 1.2, 0, y, .6, G, 8);
-  const man = crewMember(false); man.position.set(.7, -mh, 1.4); man.rotation.y = Math.PI; swivel.add(man);
+  const man = crewMember(false); man.position.set(.7, -mh, 1.4); man.rotation.y = 0; man.userData.crewPose = 'kneel'; swivel.add(man);   // 艇首炮装填手面朝火炮
   mergeStatic(swivel); mergeStatic(barrel); mergeStatic(root);
   root.userData.update = () => {
     root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
@@ -896,17 +925,97 @@ export function createDeckGunModel(point) {
   return root;
 }
 
-// 滩头钢筋混凝土机枪掩体（马蹄形胸墙 + 顶部沙袋 + 射孔），内部复用项目的民二四式重机枪模型
-export function createMgNestModel(point, createGun) {
-  const wrapper = new THREE.Group(), nest = group(wrapper), gun = createGun(point);
-  gun.traverse(o => { if (o.isMesh && o.userData.emplacementCover) o.visible = false; }); // 去掉原模型自带沙袋，由掩体代替
+// ---------- v24：民二四式重机枪（马克沁 MG08 仿制）上高射枪架 ----------
+// 近景按实物做：带加注口和蒸汽管接头的水冷套筒、枪口助退器、机匣与供弹机、帆布弹带（黄铜枪弹）、木质双握把与扳机板、拉机柄，
+// 以及对空环形瞄具（前方大小两圈加辐条的环形准星 + 机匣后部的觇孔照门）。玩家第一人称的眼睛就在照门后方：
+// 透过觇孔对准环形准星中心即为枪膛轴线（两者都在膛轴上方 MAXIM_SIGHT.height 米，平行于膛轴）。
+export const MAXIM_SIGHT = Object.freeze({ height: .21, eyeBack: .9, ring: .095, inner: .045, ringZ: -.98, rearZ: .27 });
+export function createMaximAAGun(point) {
+  const s = point.weapon.settings, mh = s.muzzleHeight, root = new THREE.Group();
+  const base = group(root), swivel = group(root, 0, mh, 0), barrel = group(swivel);
+  swivel.userData.dynamic = true; barrel.userData.dynamic = true;
+  const blued = mat('maxim-blued', 0x3c403d, .45, .55), worn = mat('maxim-worn', 0x5d605a, .38, .65), stand = mat('gun-dark', 0x2b2f29, .6, .45);
+  const wood = mat('maxim-wood', 0x5b3f27, .7, 0), canvas = mat('maxim-belt', 0x8d7b56, 1, 0), brass = M.brass();
+  // 高射枪架：三脚架 + 中央立柱 + 顶部回转座；地上放两只弹药箱
+  for (let k = 0; k < 3; k++) { const a = Math.PI / 3 + k * TAU / 3;
+    rod(base, [0, mh - .55, 0], [Math.sin(a) * .85, .04, Math.cos(a) * .85], .028, stand, 8);
+    box(base, .14, .05, .14, Math.sin(a) * .85, .025, Math.cos(a) * .85, stand); }
+  cyl(base, .05, .06, mh - .3, 0, (mh - .3) / 2 + .02, 0, stand, 12);
+  cyl(base, .085, .085, .12, 0, mh - .52, 0, stand, 14);
+  for (const [x, z, r] of [[-.75, .55, .3], [-.95, .1, -.2]]) { const ammo = box(base, .26, .2, .42, x, .1, z, mat('ammo-box', 0x4e5440, .8, .2)); ammo.rotation.y = r;
+    box(base, .2, .03, .06, x, .215, z, stand); }
+  // 回转座与俯仰叉架
+  cyl(swivel, .07, .07, .26, 0, -.36, 0, stand, 12);
+  box(swivel, .3, .05, .12, 0, -.22, 0, stand);
+  for (const sign of [1, -1]) box(swivel, .035, .26, .1, sign * .13, -.1, 0, stand);
+  rod(swivel, [-.15, 0, 0], [.15, 0, 0], .022, worn, 8);   // 耳轴
+  // 机匣（枪身在耳轴后方略偏上）
+  box(barrel, .13, .16, .58, 0, .01, .05, blued);
+  box(barrel, .145, .025, .6, 0, .1, .05, worn);                        // 机匣盖
+  for (const z of [-.16, .05, .26]) box(barrel, .15, .012, .012, 0, .113, z, blued);   // 盖板铰链/铆钉线
+  // 供弹机（右侧）+ 帆布弹带 + 枪弹
+  box(barrel, .11, .09, .12, .12, .03, -.08, blued);
+  // 弹带：一条连续的帆布带从供弹口斜垂向右下方的弹药箱，上面密排黄铜枪弹（弹头朝前）
+  const beltDir = new THREE.Vector3(.36, -.3, 0).normalize(), beltLen = .5;
+  const strip = box(barrel, beltLen, .006, .07, .18 + beltDir.x * beltLen / 2, .02 + beltDir.y * beltLen / 2, -.08, canvas);
+  strip.rotation.z = Math.atan2(beltDir.y, beltDir.x);
+  for (let k = 0; k < 18; k++) { const t = .02 + k * .027, x = .18 + beltDir.x * t, y = .028 + beltDir.y * t;
+    tubeZ(barrel, .0045, .0058, .078, x, y, -.04, brass, 6); }
+  // 拉机柄（右侧后部）与机匣后板、木质双握把、扳机板
+  rod(barrel, [.075, .02, .24], [.16, .02, .2], .012, worn, 6); cyl(barrel, .022, .022, .03, .17, .02, .2, worn, 8).rotation.z = Math.PI / 2;
+  box(barrel, .15, .13, .025, 0, -.01, .345, blued);
+  for (const sign of [1, -1]) {
+    rod(barrel, [sign * .06, -.02, .36], [sign * .1, -.02, .4], .012, blued, 6);
+    cyl(barrel, .022, .02, .13, sign * .1, -.05, .41, wood, 10);
+  }
+  box(barrel, .07, .03, .02, 0, -.0, .375, worn);                       // 扳机板
+  // 水冷套筒：较粗的光面圆筒，前后箍、顶部加注口、底部蒸汽管接头
+  tubeZ(barrel, .058, .058, .92, 0, 0, -.22, blued, 24);
+  for (const z of [-.24, -1.12]) tubeZ(barrel, .064, .064, .035, 0, 0, z, worn, 24);
+  cyl(barrel, .022, .022, .03, 0, .07, -.95, worn, 10);                 // 加注口盖
+  rod(barrel, [0, -.06, -1.0], [0, -.11, -1.04], .014, worn, 6);        // 蒸汽管接头
+  tubeZ(barrel, .03, .045, .1, 0, 0, -1.145, blued, 14);                // 枪口助退器
+  tubeZ(barrel, .02, .02, .05, 0, 0, -1.245, M.black(), 10);
+  // 对空环形瞄具：前方大小两圈 + 4 根辐条 + 立柱；后方觇孔照门
+  const H = MAXIM_SIGHT.height;
+  rod(barrel, [0, .058, MAXIM_SIGHT.ringZ], [0, H - MAXIM_SIGHT.ring, MAXIM_SIGHT.ringZ], .006, blued, 5);
+  for (const r of [MAXIM_SIGHT.ring, MAXIM_SIGHT.inner]) add(barrel, new THREE.TorusGeometry(r, .0035, 4, 36), blued, 0, H, MAXIM_SIGHT.ringZ);
+  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4;
+    rod(barrel, [Math.cos(a) * MAXIM_SIGHT.inner, H + Math.sin(a) * MAXIM_SIGHT.inner, MAXIM_SIGHT.ringZ],
+      [Math.cos(a) * MAXIM_SIGHT.ring, H + Math.sin(a) * MAXIM_SIGHT.ring, MAXIM_SIGHT.ringZ], .0025, blued, 4); }
+  rod(barrel, [0, .11, MAXIM_SIGHT.rearZ], [0, H - .012, MAXIM_SIGHT.rearZ], .008, blued, 5);
+  add(barrel, new THREE.TorusGeometry(.009, .0035, 4, 14), blued, 0, H, MAXIM_SIGHT.rearZ);
+  mergeStatic(base); mergeStatic(swivel); mergeStatic(barrel);
+  root.userData.update = () => {
+    root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
+    swivel.rotation.y = point.yaw - point.heading; barrel.rotation.x = point.pitch;
+    barrel.position.z = (point.recoil ?? 0) * .4;
+    root.updateMatrixWorld(true);
+  };
+  root.userData.destroy = () => {
+    barrel.rotation.x = -.35; swivel.rotation.z = .3;
+    root.userData.update = () => { root.position.x = point.x; root.position.z = point.z; root.updateMatrixWorld(true); };
+  };
+  root.userData.update();
+  return root;
+}
+// 第一人称眼位（照门后方，随枪身俯仰），供 jiangyin-game 的 viewFor 使用
+export function maximEye(point, floor) {
+  const s = point.weapon.settings, p = point.pitch, y0 = MAXIM_SIGHT.height, z0 = MAXIM_SIGHT.eyeBack;
+  const up = y0 * Math.cos(p) - z0 * Math.sin(p), back = y0 * Math.sin(p) + z0 * Math.cos(p);
+  return { x: point.x + Math.sin(point.yaw) * back, y: floor + s.muzzleHeight + up, z: point.z + Math.cos(point.yaw) * back };
+}
+
+// 山顶高射机枪阵地（马蹄形混凝土胸墙 + 顶部沙袋），v24 起枪为本文件的民二四式高射架重机枪（带环形对空瞄具）
+export function createMgNestModel(point) {
+  const wrapper = new THREE.Group(), nest = group(wrapper), gun = createMaximAAGun(point);
   wrapper.add(gun);
   const C = M.concrete();
   add(nest, new THREE.LatheGeometry([new THREE.Vector2(2.9, -.4), new THREE.Vector2(2.35, .85), new THREE.Vector2(1.85, .88),
     new THREE.Vector2(1.7, .78), new THREE.Vector2(1.7, -.2)], 28, Math.PI - 1.9, 3.8), C);
   add(nest, new THREE.CylinderGeometry(1.75, 1.75, .2, 24), M.concreteDark(), 0, -.1, 0);
   for (let i = -3; i <= 3; i++) { const a = Math.PI + i * .42, b = box(nest, .8, .3, .45, Math.sin(a) * 2.05, 1.03, Math.cos(a) * 2.05, M.sand()); b.rotation.y = a; }
-  const loader = crewMember(false); loader.position.set(-.9, 0, .9); loader.rotation.y = Math.PI * .8; nest.add(loader);
+  const loader = crewMember(false); loader.position.set(-.9, 0, .9); loader.rotation.y = -Math.PI * .2; loader.userData.crewPose = 'kneel'; nest.add(loader);   // 副射手跪在机枪左侧供弹
   mergeStatic(nest);
   wrapper.userData.update = () => {
     gun.userData.update?.();
@@ -915,6 +1024,7 @@ export function createMgNestModel(point, createGun) {
     nest.rotation.y = point.heading;
     wrapper.updateMatrixWorld(true);
   };
+  wrapper.userData.destroy = () => gun.userData.destroy?.();
   wrapper.userData.update();
   return wrapper;
 }
@@ -1144,6 +1254,6 @@ export function createJiangyinGunModel(point, createProjectModel) {
   if (mount === 'coastal') return createCoastalGunModel(point);
   if (mount === 'deck') return createDeckGunModel(point);
   if (mount === 'shipTurret') return createShipTurretModel(point);
-  if (mount === 'nest') return createMgNestModel(point, createProjectModel);
+  if (mount === 'nest') return createMgNestModel(point);
   return createProjectModel(point);
 }

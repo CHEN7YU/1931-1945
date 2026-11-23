@@ -142,6 +142,9 @@ export function createNativeSoldierBridge({ friendly, enemy }) {
       seen.add(anchor);
       if (!shown) { actor.vehicleId = 'hidden'; live.friendly.push(actor); continue; }   // 与项目一致：vehicleId 非空即不绘制
       actor.vehicleId = null;
+      // 炮手姿态：半跪在手轮/供弹位旁（与步兵跪射同一套姿态），枪口朝下，不再像哨兵一样持枪直立
+      const kneel = anchor.userData.crewPose === 'kneel';
+      actor.stance = kneel ? 'crouched' : 'standing'; actor.firingPose = kneel ? 'kneeling' : null; actor.rifleReady = false;
       const moved = Math.hypot(anchorPosition.x - actor.position.x, anchorPosition.z - actor.position.z);
       actor.position.copy(anchorPosition); actor.heading = yawOf(anchor);
       actor.locomotion.speed = dt > 0 && moved < 1 ? moved / dt : 0;

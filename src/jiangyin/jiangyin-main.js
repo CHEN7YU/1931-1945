@@ -18,6 +18,9 @@ import { loadJiangyinCharacters, createAnchor } from './jiangyin-soldiers.js';
 import { loadSceneMaterials } from '../materials.js';
 import { setSceneSurfaces } from './jiangyin-surfaces.js';
 import { mountJiangyinPage } from './jiangyin-page.js';
+import { createSightOverlay, sightKind } from './jiangyin-sights.js';
+import { createAdaptiveQuality } from '../adaptive-quality.js';   // 主游戏已有的“卡顿时自动降低画质”逻辑（0–3 档）
+import { createFrameWork } from '../frame-work.js';
 import { getMenuMusic } from '../menu-music.js';
 // 与其他战役统一：爆炸/开炮的镜头余震与闪光（blast-feedback）、近距爆炸耳鸣（blast-tinnitus）、录音枪声（rifle-audio）
 import { createBlastFeedback } from '../blast-feedback.js';
@@ -26,6 +29,7 @@ import { loadRifleAudio } from '../rifle-audio.js';
 import { createJiangyinVoiceReactions } from './jiangyin-voice.js';
 
 mountJiangyinPage();
+const sight = createSightOverlay(document.getElementById('jy-hud').parentElement, document.getElementById('jy-hud'));
 // 大厅背景音乐：加载期间继续，进入战斗淡出，暂停时按主游戏规则处理
 const menuMusic = (() => { try { return getMenuMusic(); } catch { return { setState() {} }; } })();
 menuMusic.setState('loading');
@@ -64,7 +68,7 @@ function ensureAudio() {
     .catch(error => console.warn('[江阴] 录音枪声加载失败，改用合成音', error));
 }
 // 战场语音：按 cue 懒加载 Azure 生成的 mp3（见 JIANGYIN_VOICE_LINES）；文件不存在时静默跳过，只保留文字提示
-const voiceCache = new Map(), voiceHeard = new Map();
+const voiceCache = new Map(), voiceHeard = new Map(), voiceStarted = new Map();
 const voiceReactions = createJiangyinVoiceReactions();
 let voiceBusyUntil = 0;
 function playVoice(cue, urgent = false, variant = 0) {
@@ -82,7 +86,8 @@ function playVoice(cue, urgent = false, variant = 0) {
     const source = audio.createBufferSource(), amp = audio.createGain(), radio = audio.createBiquadFilter();
     radio.type = 'highpass'; radio.frequency.value = 160; amp.gain.value = 1.15;
     source.buffer = buffer; source.connect(radio).connect(amp).connect(master);
-    const at = Math.max(audio.currentTime, voiceBusyUntil);
+    const at = Math.max(audio.currentTime, voiceBusyUntil, (voiceStarted.get(cue) ?? -1e9) + 25);
+    voiceStarted.set(cue, at);
     voiceBusyUntil = at + buffer.duration + .25; source.start(at);
   });
 }
@@ -254,14 +259,21 @@ const game = createJiangyinGame({ scene, camera, createGunModel: point => create
     document.querySelector('.jy-weapon').hidden = event.phase === 'scuttle'; $('jy-range').hidden = event.phase === 'scuttle'; }
   else if (event.type === 'deploy') { const fade = $('jy-fade'); fade.classList.remove('out'); void fade.offsetWidth; fade.classList.add('out'); for (const id of ['jy-crosshair', 'jy-posts', 'jy-range']) $(id).hidden = false;
     document.querySelector('.jy-weapon').hidden = false; $('jy-hud').hidden = false; }
+  else if (event.type === 'hurt-from') {   // 受击方向：屏幕中心外圈的红色弧标，指向开火方向，1.5 秒淡出；旁边写伤害来源
+    const mark = $('jy-hitdir'); mark.style.transform = `translate(-50%, -50%) rotate(${-event.angle}rad)`;
+    mark.querySelector('span').textContent = event.cause;
+    mark.querySelector('span').style.transform = `rotate(${event.angle}rad)`;
+    mark.classList.remove('show'); void mark.offsetWidth; mark.classList.add('show');
+  }
   else if (event.type === 'first-enemy-kill') {
     const reaction = voiceReactions.firstKill();
     if (reaction) playVoice(reaction.cue, false, reaction.variant);
   }
   else if (event.type === 'hurt') {
     $('jy-hurt').classList.add('show'); clearTimeout(hurtTimer); hurtTimer = setTimeout(() => $('jy-hurt').classList.remove('show'), 120);
-    const reaction = voiceReactions.wounded(game.now, event.health);
-    if (!event.fatal && reaction) playVoice(reaction.cue, false, reaction.variant);
+    const reaction = Number.isFinite(event.health) && !event.fatal
+      ? voiceReactions.wounded(game.now, event.health) : null;
+    if (reaction) playVoice(reaction.cue, false, reaction.variant);
   }
   else if (event.type === 'ended') { playVoice(event.outcome?.result === 'victory' ? 'jiangyin-victory' : 'jiangyin-defeat', true); showEnd(event.outcome, event.stats); }
 } });
@@ -292,20 +304,12 @@ addEventListener('keydown', event => {
   if (event.code === 'KeyV') input.toggleView = true;
   if (event.code === 'Tab') event.preventDefault();
   const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
-  if (game.state.phase === 'naval') {                          // 第一阶段：Q/E 或 1–3 换舰
-    if (event.code === 'KeyE') input.switchPost = 1;
-    if (event.code === 'KeyQ') input.switchPost = -1;
+  // 第一阶段：Q/E 或 1–3 换舰；第二阶段（v23 起玩家不再操纵步兵）：Q/E、Tab 或 1–8 在两岸炮位之间切换
+  if (game.state.phase === 'naval' || game.state.phase === 'hold' || game.deployed) {
+    if (event.code === 'KeyE' || event.code === 'Tab' && !event.shiftKey) input.switchPost = 1;
+    if (event.code === 'KeyQ' || event.code === 'Tab' && event.shiftKey) input.switchPost = -1;
     if (digit) input.switchPost = game.hud().posts.find(post => post.key === digit)?.id ?? null;
-    return;
   }
-  // 第二阶段：与其他地图一致 —— F 进出炮位、Y 切换队员、R 换弹、1 主武器、5/G 手榴弹、Ctrl/C 蹲下
-  if (event.code === 'KeyF') input.interact = true;
-  if (event.code === 'KeyY') input.cycleMember = true;
-  if (event.code === 'KeyR') input.reload = true;
-  if (['ControlLeft', 'KeyC'].includes(event.code)) input.crouch = true;
-  if (event.code === 'KeyG' || digit === '5') input.equip = 'grenade';
-  else if (digit === '1') input.equip = 'primary';
-  else if (digit) input.equip = 'other';
 });
 addEventListener('keyup', event => keys.delete(event.code));
 document.addEventListener('pointerlockchange', () => {
@@ -403,7 +407,7 @@ function renderHud() {
     $('jy-help').textContent = hud.weapon.ship && integrity <= 0 ? '本舰已被击沉 · 稍后自动转到下一艘仍在作战的舰艇' : hud.weapon.ship ? (helm === null
       ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· WASD 接管操舰 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
       : `手动操舰 · 车钟：${helm.bell} · ${rudder} · ${hud.weapon.speed.toFixed(1)} m/s · W/S 车钟进退一档 · A/D 转舵（大舰惯性大，提前操舵）· 换舰后交回 AI`)
-      : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · F 离开炮位 · M 地图';
+      : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · 1–8 或 Q/E 换炮位 · M 地图';
   }
   // 辅助瞄准（按住右键）：显示预测落点距离、弹丸飞行时间与散布；落点椭圆罩住日舰提前量位置时提示“可命中”
   $('jy-range').textContent = hud.aim
@@ -548,15 +552,37 @@ function updateViewWeapon(dt) {
 }
 
 // ---------- 主循环 ----------
+// ---------- v24：卡顿时自动降低画质（沿用主游戏 src/adaptive-quality.js + src/frame-work.js） ----------
+// 与主游戏相同的判定：渲染（含 GPU 计时）是瓶颈、持续 1.5 秒平均帧时 ≥ 32/40/50 毫秒或连续两帧超过 250 毫秒时降一档；
+// 流畅 20 秒后升回一档。本关的分档：0 原画；1 分辨率上限 1.25×、阴影 2048、江面碎金减半；
+// 2 分辨率 1.0×、阴影 1024、关闭江面碎金与云影；3 分辨率 0.8×、阴影每 4 帧更新。
+const BASE_PIXEL_RATIO = Math.min(devicePixelRatio, 1.6);
+const frameWork = createFrameWork({ gl: renderer.getContext(), warn: message => console.warn('[江阴]', message) });
+function applyGraphicsLevel(level) {
+  const ratio = [BASE_PIXEL_RATIO, Math.min(BASE_PIXEL_RATIO, 1.25), Math.min(BASE_PIXEL_RATIO, 1), Math.min(BASE_PIXEL_RATIO, .8)][level];
+  if (renderer.getPixelRatio() !== ratio) { renderer.setPixelRatio(ratio); renderer.setSize(innerWidth, innerHeight); }
+  try { game.setGraphicsLevel?.(level); } catch (error) { console.warn('[江阴] 画质档位', error); }
+}
+const automaticQuality = createAdaptiveQuality({ initialLevel: 0, onChange({ level, previous, reason }) {
+  applyGraphicsLevel(level);
+  if (reason === 'pressure' || reason === 'backlog') toast(`画面卡顿，已自动降低画质（减负 ${level} 档）`);
+  else if (reason === 'recovery') toast(level ? `画面已流畅，画质回升到减负 ${level} 档` : '画面已流畅，恢复原画质');
+} });
 let last = performance.now();
 renderer.setAnimationLoop(time => {
+  const frameMs = Math.max(0, time - last);
   const dt = Math.max(0, Math.min(.05, (time - last) / 1000)); last = time;   // 首帧时间戳可能早于 performance.now()
+  const activeFrame = running && !paused && !document.hidden;
+  try {
+    automaticQuality.observe(frameMs, { active: running && !paused, visible: !document.hidden, work: frameWork.snapshot, now: time });
+  } catch (error) { console.warn('[江阴] 自动画质', error); }
+  frameWork.beginFrame(activeFrame);
   if (running && !paused) {
     input.move = { x: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), z: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0) };
     input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     input.sensitivity = camera.fov / BASE_FOV;                  // 放大时降低鼠标灵敏度
     input.motionStrength = motionPreference();
-    try { game.step(dt, input); }
+    try { frameWork.measureAI(() => game.step(dt, input)); }
     catch (error) { console.error('[江阴] 战局更新', error); if (!stepErrorShown) { stepErrorShown = true; toast(`战局更新出错：${error.message}`, true); } }
     input.lookDX = input.lookDY = 0; input.firePressed = false; input.skipIntro = false; input.switchPost = null; input.toggleView = false;
     input.interact = input.cycleMember = input.reload = input.crouch = false; input.equip = null;
@@ -576,7 +602,13 @@ renderer.setAnimationLoop(time => {
   const zoom = running && !paused && input.aiming && lastHud && game.state.phase !== 'ended' ? lastHud.zoom ?? 1 : 1;
   const fov = BASE_FOV / zoom;
   if (Math.abs(camera.fov - fov) > .01) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix(); }
+  // 火炮第一人称右键：换成炮手瞄准镜（圆形视场 + 分划），放大到位后出现
+  const kind = zoom > 1.5 && lastHud?.viewMode !== 'third' && !lastHud?.transferring ? sightKind(lastHud?.weapon) : null;
+  sight.update({ kind, visible: Boolean(kind) && camera.fov < BASE_FOV / zoom * 1.25, fovDeg: BASE_FOV / zoom });
   $('jy-crosshair').classList.toggle('scoped', zoom > 1.5);
+  $('jy-crosshair').classList.toggle('in-sight', sight.visible);
+  // 高射机枪第一人称：用枪上的环形对空瞄具瞄准，不再叠加屏幕准星（第三人称仍显示）
+  $('jy-crosshair').classList.toggle('iron', lastHud?.weapon?.mount === 'nest' && lastHud?.viewMode !== 'third' && !lastHud?.transferring);
   // 余震：在本帧渲染前叠加镜头抖动（下一帧战局会重新设定镜头，不会漂移），并显示爆炸闪光
   const shake = blastFeedback.update(dt, 1);
   if (shake.strength > 0) {
@@ -585,6 +617,7 @@ renderer.setAnimationLoop(time => {
   }
   $('jy-flash').style.opacity = String(Math.min(.55, shake.flash));
   underwater();
-  renderer.render(scene, camera);
+  frameWork.measureRender(() => renderer.render(scene, camera));
   updateViewWeapon(dt);
+  frameWork.finishFrame();
 });

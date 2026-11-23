@@ -108,3 +108,18 @@ body.jiangyin { margin: 0; height: 100vh; overflow: hidden; background: #101411;
 /* 小队成员兵种图标（与其他地图 .soldier-role-icon 同一套路径） */
 #jy-members .member svg { width: 20px; height: 15px; display: block; margin: 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 #jy-members .member.dead svg { opacity: .55; }
+
+/* 受击方向标：围绕准星半径约 150 像素的红色弧，指向开火者方向 */
+#jy-hitdir { position: fixed; left: 50%; top: 50%; width: 300px; height: 300px; pointer-events: none; opacity: 0; }
+#jy-hitdir i { position: absolute; left: 50%; top: 0; width: 90px; height: 18px; margin-left: -45px; border-top: 5px solid rgba(225,55,35,.9);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0; filter: drop-shadow(0 0 4px rgba(255,60,30,.8)); }
+#jy-hitdir span { position: absolute; left: 50%; top: 14px; transform-origin: 0 0; margin-left: -40px; width: 80px; text-align: center;
+  font: 12px "Microsoft YaHei", sans-serif; color: #ffb39e; text-shadow: 0 1px 2px #000; }
+#jy-hitdir.show { animation: jy-hitdir 1.5s ease-out; }
+@keyframes jy-hitdir { 0% { opacity: 1; } 60% { opacity: .85; } 100% { opacity: 0; } }
+
+/* 火炮瞄准镜（右键放大时）：全屏 SVG，视场外全黑；放在 HUD 之下、画面之上 */
+#jy-sight { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: 0; transition: opacity .12s; }
+#jy-sight.show { opacity: 1; }
+#jy-crosshair.in-sight { opacity: 0; }
+#jy-crosshair.iron { opacity: 0; }

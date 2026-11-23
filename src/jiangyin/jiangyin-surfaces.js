@@ -49,6 +49,8 @@ float surfFbm(vec2 p) { float s = 0., a = .5; for (int i = 0; i < 4; i++) { s +=
 `;
 // options：map/map2（三平面贴图，map2 由 surfSplat 顶点属性或 splat 参数混合）、tile（米/张）、macro（大尺度去重复）、
 // mottle（斑驳）、streaks（竖向锈水痕）、waterline（舷侧近水线污渍高度）、bump（凹凸强度）、world（按世界坐标投影）
+// v24：全局共享的云影参数（页面每帧更新 uCloudTime；画质自动减负时 uCloudAmount 降为 0 即关闭）
+export const SURF_GLOBALS = { uCloudTime: { value: 0 }, uCloudAmount: { value: 1 } };
 export function patchSurface(material, options = {}) {
   const o = { tile: 3, detail: 1, macro: 0, mottle: .12, streaks: 0, waterline: null, bump: 0, world: false, splat: 0, rough: .2, plates: 0, planks: 0, ...options };
   const uniforms = { uSurfMap: { value: o.map ?? null }, uSurfMap2: { value: o.map2 ?? null }, uSurfTile: { value: o.tile }, uSurfDetail: { value: o.detail },
@@ -57,10 +59,10 @@ export function patchSurface(material, options = {}) {
     uSurfPlates: { value: o.plates }, uSurfPlanks: { value: o.planks } };
   material.userData.surfaceUniforms = uniforms;
   const defines = [o.map ? '#define SURF_MAP' : '', o.map2 ? '#define SURF_MAP2' : '', o.world ? '#define SURF_WORLD' : '',
-    o.splatAttribute ? '#define SURF_SPLAT_ATTR' : ''].join('\n');
+    o.splatAttribute ? '#define SURF_SPLAT_ATTR' : '', o.clouds ? '#define SURF_CLOUDS' : ''].join('\n');
   material.customProgramCacheKey = () => `surf:${defines}`;
   material.onBeforeCompile = shader => {
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, SURF_GLOBALS);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${defines}\nvarying vec3 vSurfPos; varying vec3 vSurfNormal;\n#ifdef SURF_SPLAT_ATTR\nattribute float surfSplat; varying float vSurfSplat;\n#endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -82,6 +84,7 @@ varying float vSurfSplat;
 #endif
 uniform sampler2D uSurfMap; uniform sampler2D uSurfMap2; uniform float uSurfTile, uSurfDetail, uSurfMacro, uSurfMottle, uSurfStreaks, uSurfWaterline, uSurfBump, uSurfSplat, uSurfRough, uSurfPlates, uSurfPlanks;
 ${NOISE_GLSL}
+uniform float uCloudTime, uCloudAmount;
 vec4 surfTri(sampler2D tex, vec3 p, vec3 w) { return texture2D(tex, p.zy) * w.x + texture2D(tex, p.xz) * w.y + texture2D(tex, p.xy) * w.z; }
 vec3 surfAvg(sampler2D tex) { return max(textureLod(tex, vec2(.5), 12.).rgb, vec3(.02)); }
 float surfLuma = .5;`)
@@ -105,6 +108,12 @@ float surfLuma = .5;`)
   #endif
   float surfN1 = surfFbm(vSurfPos.xz * .35 + vSurfPos.y * .21);
   diffuseColor.rgb *= 1. + (surfN1 - .5) * 2. * uSurfMottle;
+  #ifdef SURF_CLOUDS
+    // v24 云影：几百米大小的积云阴影随风（向东偏南）缓缓掠过地面，阴影里失去大部分直射阳光
+    vec2 cloudUv = (vSurfPos.xz + vec2(-uCloudTime * 9., -uCloudTime * 3.)) * .0016;
+    float cloudShade = smoothstep(.5, .72, surfFbm(cloudUv) * .8 + surfNoise(cloudUv * 3.7) * .25);
+    diffuseColor.rgb *= 1. - cloudShade * .36 * uCloudAmount;
+  #endif
   float surfSide = 1. - abs(normalize(vSurfNormal).y);
   vec3 surfAN = abs(normalize(vSurfNormal));
   if (uSurfPlates > 0.) {

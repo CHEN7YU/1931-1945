@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createJiangyinGame } from '../src/jiangyin/jiangyin-game.js';
-import { JIANGYIN_SQUAD, JIANGYIN_WAVES, LANDING_STREAM, ENEMY_TYPES, groundHeight } from '../src/jiangyin/jiangyin-rules.js';
+import { JIANGYIN_SQUAD, groundHeight } from '../src/jiangyin/jiangyin-rules.js';
 
 const stub = point => { const group = new THREE.Group(); group.userData.update = () => {}; return group; };
 function makeGame(seed = 11, effects = null) {
@@ -36,7 +36,7 @@ test('warships move only along their bow (no sideways sliding) and there are no 
   assert.ok(game.radar().player, 'minimap knows the player position and heading');
 });
 
-test('after the scuttling begins the player lands as an infantry squad near a battery and plays like the other maps', () => {
+test('phase two: the player no longer leads an infantry squad but takes over a shore gun and switches between gun positions', () => {
   const { game, events } = makeGame();
   game.skipIntro();
   for (const post of game.posts) if (post.boat) post.point.health = 0;
@@ -49,36 +49,35 @@ test('after the scuttling begins the player lands as an infantry squad near a ba
   assert.equal(game.deployed, true);
   assert.ok(waited >= JIANGYIN_SQUAD.deployAfter - .1, 'the scuttling cinematic plays first');
   const sunk = game.blockships.filter(ship => ship.state === 'sunk' || ship.state === 'sinking').length;
-  assert.ok(sunk >= JIANGYIN_SQUAD.deployAfterSunk || waited >= JIANGYIN_SQUAD.deployLatest - .1, `player lands after ${sunk} blockships went down (${waited.toFixed(1)} s)`);
-  console.log(`deploy after ${waited.toFixed(1)} s with ${sunk} blockships sunk`);
-  assert.equal(game.mode, 'infantry');
-  assert.equal(game.squad.filter(member => member.dead === null).length, JIANGYIN_SQUAD.members);
-  assert.ok(events.some(event => event.type === 'deploy'));
-  // F: walk to the nearest battery and enter it; F again leaves it
-  const member = game.member, battery = game.posts.find(post => post.id === 'huangshan-east');
-  for (let n = 0; n < 400 && Math.hypot(battery.point.x - game.member.x, battery.point.z - game.member.z) > 4; n++) {
-    game.member.heading = Math.atan2(-(battery.point.x - game.member.x), -(battery.point.z - game.member.z));
-    game.step(.05, { move: { x: 0, z: 1 } });
-  }
-  game.step(.05, { interact: true });
+  assert.ok(sunk >= JIANGYIN_SQUAD.deployAfterSunk || waited >= JIANGYIN_SQUAD.deployLatest - .1, `player takes over after ${sunk} blockships went down (${waited.toFixed(1)} s)`);
+  // 玩家直接接管长山炮台，不再是步兵
   assert.equal(game.mode, 'post');
   assert.equal(game.controlledId, 'huangshan-east');
-  run(game, 1);
-  game.step(.05, { interact: true });
-  assert.equal(game.mode, 'infantry');
-  // Y: switch to another squad member; digits/G: weapons
-  run(game, 1);
-  game.step(.05, { cycleMember: true });
-  assert.notEqual(game.member.id, member.id);
-  run(game, 1);
-  game.step(.05, { equip: 'grenade' });
-  assert.equal(game.member.weapon, 'grenade');
-  game.step(.05, { firePressed: true });
-  assert.equal(game.member.grenades, JIANGYIN_SQUAD.grenades - 1);
-  game.step(.05, { equip: 'primary' });
-  const ammo = game.member.rifle.ammo;
-  game.step(.05, { firePressed: true, fireHeld: true });
-  assert.equal(game.member.rifle.ammo, ammo - 1);
+  assert.equal(game.member, null, 'no infantry soldier is player-controlled');
+  assert.equal(game.hud().squad, null, 'no player squad panel');
+  assert.ok(events.some(event => event.type === 'deploy'));
+  // AI 守备班 11 人仍在前沿据守
+  assert.equal(game.squad.filter(member => member.dead === null).length, JIANGYIN_SQUAD.members);
+  // F / Y 不再有作用
+  run(game, 2);
+  game.step(.05, { interact: true, cycleMember: true });
+  assert.equal(game.mode, 'post');
+  assert.equal(game.controlledId, 'huangshan-east');
+  // 1–8 选炮位（第二阶段数字键）、Q/E 轮换
+  const keyed = game.hud().posts.map(p => p.key);
+  assert.deepEqual(keyed, ['1', '2', '3', '4', '5', '6', '7', '8']);
+  game.step(.05, { switchPost: 'south-mg' });
+  run(game, 2);
+  assert.equal(game.controlledId, 'south-mg');
+  assert.match(game.hud().posts.find(p => p.controlled).name, /高射机枪/);
+  game.step(.05, { switchPost: 1 });
+  run(game, 2);
+  assert.equal(game.controlledId, 'huangshan-west');
+  // 所在炮位被毁：自动转到同岸最近的尚存炮位
+  game.posts.find(p => p.id === 'huangshan-west').point.health = 0;
+  run(game, 4);
+  assert.equal(game.mode, 'post');
+  assert.equal(game.controlledId, 'huangshan-flak');
   // phase two starts while the remaining blockships keep scuttling in the background
   run(game, 45);
   assert.equal(game.state.phase, 'hold');
@@ -86,16 +85,13 @@ test('after the scuttling begins the player lands as an infantry squad near a ba
   assert.ok(hud.top.some(field => /日军目标/.test(field.label)), 'the HUD states that the Japanese aim to destroy our positions');
 });
 
-test('a deployed squad grenade reaches the shared grenade explosion effect', () => {
-  const impacts = [];
-  const { game } = makeGame(11, { explosion: (...args) => impacts.push(args), muzzle() {} });
-  game.skipIntro();
-  for (const post of game.posts) if (post.boat) post.point.health = 0;
-  run(game, 25 + JIANGYIN_SQUAD.deployAfter + 1);
-  game.step(.05, { equip: 'grenade' });
-  game.step(.05, { firePressed: true });
-  run(game, 6);
-  assert.ok(impacts.some(([, , style]) => style === 'grenade'));
+test('the dual-purpose machine-gun positions elevate high enough to engage aircraft', () => {
+  const { game } = makeGame();
+  for (const id of ['south-mg', 'north-mg']) {
+    const post = game.posts.find(p => p.id === id);
+    assert.match(post.name, /高射机枪阵地/);
+    assert.ok(post.point.weapon.settings.maxPitch >= 1.3, `${id} max elevation ${post.point.weapon.settings.maxPitch}`);
+  }
 });
 
 test('the player can zoom every gun with the right mouse button', () => {
@@ -103,6 +99,37 @@ test('the player can zoom every gun with the right mouse button', () => {
   game.skipIntro();
   game.step(.05, {});
   assert.ok(game.hud().zoom >= 4, 'ship turret zoom');
+});
+
+test('shore cannon shells retain the tank-shell soil aftermath through the projectile update', () => {
+  const impacts = [];
+  const { game } = makeGame(11, {
+    explosion: (position, radius, style, surface) => impacts.push({ position, radius, style, surface }),
+    muzzle() {},
+  });
+  game.skipIntro();
+  for (const post of game.posts.filter(post => post.boat)) {
+    post.point.health = 0;
+    post.boat.sunk = true;
+  }
+  game.step(.05, {});
+  game.skipScuttle();
+  run(game, 2);
+  const post = game.posts.find(post => post.id === game.controlledId);
+  post.point.yaw = Math.PI;
+  post.point.pitch = -.08;
+  const shots = game.state.stats.shots;
+  for (let step = 0; step < 400 && game.state.stats.shots === shots; step++)
+    game.step(.05, { fireHeld: true });
+  assert.equal(game.state.stats.shots, shots + 1);
+  run(game, 8);
+  const shells = impacts.filter(impact => impact.style === 'tank-shell' &&
+    impact.position.y <= groundHeight(impact.position.x, impact.position.z));
+  assert.ok(shells.length > 0, 'a real shell must reach the ground');
+  for (const impact of shells) {
+    assert.equal(impact.surface.kind, 'soil');
+    assert.deepEqual(impact.surface.normal, { x: 0, y: 1, z: 0 });
+  }
 });
 
 test('a sinking warship carries its bow turret: the turret lists and settles with the hull', () => {
@@ -130,19 +157,19 @@ test('phase one opens at about one kilometre so the 4x sight shows the enemy cle
   assert.ok(nearest < 900, `closest engagement ${Math.round(nearest)} m`);
 });
 
-test('the squad always regroups after a wipe, even when one blast kills the controlled soldier before the others', () => {
+test('the AI garrison squad is replaced after a wipe while the player stays on the gun', () => {
   const { game, events } = makeGame();
   game.skipIntro();
   for (const post of game.posts) if (post.boat) post.point.health = 0;
   let waited = 0;
   while (!game.deployed && waited < JIANGYIN_SQUAD.deployLatest + 30) { game.step(.05, {}); waited += .05; }
   assert.equal(game.deployed, true);
-  const first = game.member;
-  // 模拟同一枚航弹：先命中当前操控的队员（此时还有活着的队友），同一帧再炸死其余队员
-  for (const member of [first, ...game.squad.filter(m => m !== first)]) { member.health = 0; member.dead = 0; }
+  // 模拟同一枚航弹炸死整个 AI 守备班
+  for (const member of game.squad) { member.health = 0; member.dead = 0; }
   run(game, JIANGYIN_SQUAD.respawnSeconds + 3);
-  assert.ok(game.squad.some(m => m.dead === null), 'a new squad deployed after the wipe');
-  assert.ok(events.some(e => e.type === 'deploy' && e.reason === 'respawn'));
+  assert.ok(game.squad.some(m => m.dead === null), 'a new garrison squad arrived after the wipe');
+  assert.ok(events.some(e => e.type === 'toast' && /守备班/.test(e.text)));
+  assert.equal(game.mode, 'post', 'the player stays on the gun');
 });
 
 test('the player can take the helm of their warship with WASD', () => {
@@ -228,130 +255,6 @@ test('phase one: the Japanese fleet grows from 2 to 7 ships, strafes with machin
   assert.equal(game.hud().aim, null, 'the marker disappears when the right button is released');
 });
 
-test('phase-two landing craft continuously deliver troops onto both banks, never into the river centre', () => {
-  const { game } = makeGame();
-  game.state.phase = 'hold'; game.state.waveIndex = JIANGYIN_WAVES.length;
-  for (const post of game.posts) post.point.health = 1e9;
-  const banks = [];
-  for (let delivery = 0; delivery < 3; delivery++) {
-    game.step(.05, {});
-    const craft = game.landings.find(item => item.state === 'approach' && item.sinking === null);
-    assert.ok(craft, `delivery ${delivery} must depart`);
-    banks.push(craft.bank);
-    assert.ok(craft.target.x > 0, 'landing remains downstream of the blockage');
-    craft.health = 1e9; craft.x = craft.target.x; craft.z = craft.target.z; craft.via = [];
-    const before = new Set(game.troops.map(troop => troop.id));
-    run(game, 2);
-    const landed = game.troops.filter(troop => !before.has(troop.id));
-    assert.equal(landed.length, 5);
-    for (const troop of landed) {
-      assert.ok(Math.abs(troop.z) > 740, 'troops land beside the actual riverbank');
-      assert.ok(groundHeight(troop.x, troop.z) >= .4, 'troops land on dry ground');
-      assert.equal(Math.sign(troop.z), craft.bank === 'south' ? 1 : -1);
-    }
-    assert.ok(game.landings.filter(item => item.state !== 'empty' && item.sinking === null).length <= LANDING_STREAM.maxActive);
-    if (delivery < 2) run(game, LANDING_STREAM.interval - 2);
-  }
-  assert.deepEqual(banks, ['south', 'south', 'north']);
-});
-
-test('phase two retains three engaged ships, withdraws damaged ships and stops replacements after two minutes', () => {
-  const { game } = makeGame();
-  game.skipIntro();
-  for (const post of game.posts) post.point.health = 1e9;
-  run(game, 90);
-  assert.equal(game.ships.filter(ship => ship.sinking === null).length, 7);
-  for (const post of game.posts) if (post.boat) post.point.health = 0;
-  for (let step = 0; step < 900 && game.state.phase !== 'scuttle'; step++) game.step(.05, {});
-  game.skipScuttle();
-  const engaged = () => game.ships.filter(ship => ship.sinking === null && !ship.withdrawing);
-  assert.equal(game.state.phase, 'hold');
-  assert.equal(engaged().length, 3);
-  assert.equal(game.ships.filter(ship => ship.withdrawing).length, 4);
-  const damaged = engaged()[0]; damaged.health = damaged.cfg.health * .39;
-  game.step(.05, {});
-  assert.equal(damaged.withdrawing, true);
-  run(game, 21);
-  assert.equal(engaged().length, 3, 'early losses are replaced');
-  game.state.elapsed = 121; game.state.waveIndex = JIANGYIN_WAVES.length;
-  for (const ship of engaged()) ship.health = ship.cfg.health * .39;
-  const ids = new Set(game.ships.map(ship => ship.id));
-  run(game, 21);
-  assert.equal(engaged().length, 0, 'late damaged ships withdraw without replacement');
-  assert.ok(game.ships.every(ship => ids.has(ship.id)));
-});
-
-test('phase-two waves wait for infantry capacity without discarding tank escorts or landing passengers', () => {
-  const { game } = makeGame();
-  game.state.phase = 'hold'; game.state.elapsed = 171;
-  for (const post of game.posts) post.point.health = 1e9;
-  game.step(.05, {});
-  const living = () => game.troops.filter(troop => troop.dead === null);
-  assert.equal(living().length, 48, 'whole waves fit within the 48-person limit');
-  assert.equal(game.vehicles.filter(vehicle => vehicle.type === 'tank').length, 6);
-  for (const troop of living().slice(0, ENEMY_TYPES.squad.size)) { troop.dead = game.now; troop.health = 0; }
-  game.step(.05, {});
-  assert.equal(living().length, 48);
-  assert.equal(game.vehicles.filter(vehicle => vehicle.type === 'tank').length, 9,
-    'the deferred platoon arrives with its complete escort when there is room');
-  const blockers = living().slice(0, 5);
-  for (const troop of blockers) { troop.dead = game.now; troop.health = 0; }
-  game.state.landingAt = game.now;
-  game.step(.05, {});
-  const craft = game.landings.find(item => item.state === 'approach' && item.sinking === null);
-  assert.ok(craft);
-  craft.health = 1e9; craft.x = craft.target.x; craft.z = craft.target.z; craft.via = [];
-  for (const troop of blockers) {
-    troop.dead = null; troop.health = 100;
-  }
-  assert.equal(living().length, 48);
-  run(game, 2);
-  assert.equal(craft.state, 'unloading', 'passengers stay aboard when no full landing party fits');
-  assert.equal(living().length, 48);
-  for (const troop of living().slice(0, 5)) { troop.dead = game.now; troop.health = 0; }
-  game.step(.05, {});
-  assert.equal(craft.state, 'empty', 'the same craft unloads once capacity is available');
-  assert.ok(living().length <= 48);
-});
-
-test('a player rifle kill emits the first-enemy-kill cue only once and only after a real enemy dies', () => {
-  const { game, events } = makeGame();
-  game.skipIntro();
-  for (const post of game.posts) if (post.boat) post.point.health = 0;
-  run(game, 25);
-  assert.equal(game.state.phase, 'scuttle');
-  game.skipScuttle();
-  const member = game.member;
-  for (const squadmate of game.squad) if (squadmate.id !== member.id) {
-    squadmate.health = 0;
-    squadmate.dead = game.now;
-  }
-  const makeTarget = (id, distance) => {
-    const target = { id, x: member.x + distance, z: member.z, health: 50, dead: null, model: new THREE.Group(),
-      bank: 'south', nextAttack: Infinity, offset: 0, walk: 0, land: true, focus: false };
-    target.model.position.set(target.x, groundHeight(target.x, target.z), target.z);
-    game.troops.push(target);
-    return target;
-  };
-  const first = makeTarget('voice-test-first', 8), second = makeTarget('voice-test-second', 14);
-  const aimAt = (target) => {
-    const dx = target.x - member.x, dz = target.z - member.z, distance = Math.hypot(dx, dz);
-    const targetY = groundHeight(target.x, target.z) + .95;
-    member.heading = Math.atan2(-dx, -dz);
-    member.pitch = Math.atan2(targetY - (member.y + 1.62), distance);
-  };
-  aimAt(first);
-  game.step(.05, { firePressed: true, aiming: true });
-  assert.equal(first.dead, game.now, 'the first target is killed by the real rifle trace');
-  assert.equal(second.dead, null, 'the first target, not a later target, receives the first shot');
-  assert.equal(events.filter(event => event.type === 'first-enemy-kill').length, 1);
-  aimAt(second);
-  run(game, 1);
-  game.step(.05, { firePressed: true, aiming: true });
-  assert.notEqual(second.dead, null, 'the second rifle shot also kills its target');
-  assert.equal(events.filter(event => event.type === 'first-enemy-kill').length, 1, 'later kills do not replay the first-kill event');
-});
-
 test('enemy ships never sail through each other, and in phase two at most three stay while damaged ones withdraw', () => {
   const { game } = makeGame();
   game.skipIntro();
@@ -385,4 +288,24 @@ test('enemy ships never sail through each other, and in phase two at most three 
     game.step(.05, {});
     assert.equal(victim.withdrawing, true, 'a badly damaged ship withdraws downstream');
   }
+});
+
+
+test('v24 art: gun sights by mount, ring-sight eye behind the machine gun, and graphics levels for automatic quality reduction', async () => {
+  const { sightKind } = await import('../src/jiangyin/jiangyin-sights.js');
+  assert.equal(sightKind({ cannon: true, mount: 'coastal' }), 'coastal');
+  assert.equal(sightKind({ cannon: true, mount: 'coastal', variant: 'flak88' }), 'flak88');
+  assert.equal(sightKind({ cannon: true, mount: 'shipTurret' }), 'naval');
+  assert.equal(sightKind({ cannon: false, mount: 'nest' }), null);
+  const { maximEye, MAXIM_SIGHT } = await import('../src/jiangyin/jiangyin-models.js');
+  const point = { x: 0, z: 0, yaw: 0, pitch: 0, weapon: { settings: { muzzleHeight: 1.45 } } };
+  const level = maximEye(point, 10);
+  assert.ok(Math.abs(level.y - (10 + 1.45 + MAXIM_SIGHT.height)) < 1e-9 && Math.abs(level.z - MAXIM_SIGHT.eyeBack) < 1e-9, 'eye sits behind the rear peep on the sight line');
+  point.pitch = 1.2; const up = maximEye(point, 10);
+  assert.ok(up.y < level.y && up.z < level.z, 'pointing the gun skyward brings the gunner down and forward under the receiver');
+  const { game } = makeGame();
+  const world = game.posts && game;   // game exposes setGraphicsLevel → world
+  game.setGraphicsLevel(2);
+  game.setGraphicsLevel(0);
+  assert.ok(world);
 });

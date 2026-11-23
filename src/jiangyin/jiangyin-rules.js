@@ -147,22 +147,24 @@ export const JIANGYIN_POSTS = Object.freeze([
   // v19：阵地离滩头、陆上集结点都更近，日军接敌更快；阵地耐久相应提高约 80%
   // v19：两岸阵地整体（连同所在山丘）向江边移近 45 米，登陆日军从滩头到炮位约 120 米（原约 165 米）
   // 两岸阵地：岸防炮与机枪堡都设在山顶（南岸黄山、肖山、长山；北岸江边土岗），两个阶段都由炮手据守；第二阶段玩家以步兵小队在附近复生
-  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 120, bank: 'south', key: '4', health: 1370 },
-  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -380, z: RIVER_HALF + 120, bank: 'south', key: '5', health: 1370 },
-  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -260, z: -(RIVER_HALF + 185), bank: 'north', key: '6', health: 1230 },
+  { id: 'huangshan-east', name: '长山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: 560, z: RIVER_HALF + 120, bank: 'south', key: '4', holdKey: '1', health: 1370 },
+  { id: 'huangshan-west', name: '黄山炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -380, z: RIVER_HALF + 120, bank: 'south', key: '5', holdKey: '4', health: 1370 },
+  { id: 'north-battery', name: '八圩港炮台', kind: 'battery', profile: 'bofors75', mount: 'coastal', x: -260, z: -(RIVER_HALF + 185), bank: 'north', key: '6', holdKey: '6', health: 1230 },
   // 每座岸防炮台旁配置一门德制 8.8 cm Flak 18/36 高射炮（高平两用，主要对空）
-  { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 132, bank: 'south', key: '', health: 930 },
-  { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 132, bank: 'south', key: '', health: 930 },
-  { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 197), bank: 'north', key: '', health: 870 },
+  { id: 'changshan-flak', name: '长山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: 582, z: RIVER_HALF + 132, bank: 'south', key: '', holdKey: '2', health: 930 },
+  { id: 'huangshan-flak', name: '黄山高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -358, z: RIVER_HALF + 132, bank: 'south', key: '', holdKey: '5', health: 930 },
+  { id: 'bawei-flak', name: '八圩港高射炮', kind: 'battery', profile: 'bofors75', mount: 'flak88', x: -238, z: -(RIVER_HALF + 197), bank: 'north', key: '', holdKey: '7', health: 870 },
+  // v23：两座机枪堡改为高射机枪阵地（24 式马克沁重机枪架在高射枪架上，大仰角对空，也能压低打冲上来的步兵和登陆艇）。
+  // 第二阶段玩家不再操纵步兵，只在岸防炮、高射炮、高射机枪阵地之间切换（holdKey：第二阶段数字键 1–8）。
   // v18：机枪堡移到长山炮台西侧约 50 米（原在 440 米外的肖山），与炮台、高射炮同在步兵小队集结点附近，复生后马上能投入战斗
-  { id: 'south-mg', name: '长山机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 510, z: RIVER_HALF + 107, bank: 'south', key: '7', health: 870 },
-  { id: 'north-mg', name: '北岸土岗机枪堡', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 155), bank: 'north', key: '8', health: 870 },
+  { id: 'south-mg', name: '长山高射机枪阵地', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 510, z: RIVER_HALF + 107, bank: 'south', key: '7', holdKey: '3', health: 870 },
+  { id: 'north-mg', name: '北岸土岗高射机枪阵地', kind: 'battery', profile: 'maxim24', mount: 'nest', x: 380, z: -(RIVER_HALF + 155), bank: 'north', key: '8', holdKey: '8', health: 870 },
 ].map(Object.freeze));
 
 // 岸防火力在本关允许更大俯角/射程（江面在炮位下方），只覆盖本关点位，不改动全局 EMPLACEMENT_PROFILES。
 export const JIANGYIN_PROFILE_OVERRIDES = Object.freeze({
   bofors75: Object.freeze({ minPitch: -.32, range: 3200, reserve: 40 }),
-  maxim24: Object.freeze({ minPitch: -.42, maxPitch: .9, range: 900 }),   // 允许抬高对空射击
+  maxim24: Object.freeze({ minPitch: -.42, maxPitch: 1.35, range: 900, muzzleHeight: 1.45 }),   // v24：高射枪架，枪身高约 1.45 米   // 高射枪架：仰角可到约 77°，对空、对地两用
 });
 
 // 本关专用炮位外形与参数（按点位 mount 叠加在上面的覆盖值之上）。
@@ -171,7 +173,7 @@ export const JIANGYIN_PROFILE_OVERRIDES = Object.freeze({
 export const JIANGYIN_MOUNTS = Object.freeze({
   coastal: Object.freeze({ mount: 'coastal', name: '德制150毫米加农炮', muzzleHeight: 2.1, barrel: 7.6, damage: 220, radius: 10, aiInterval: 11,
     reload: 6, reserve: 75, traverse: 1.45, minPitch: -.55, maxPitch: .3, range: 3200, shellSpeed: 520,
-    view: Object.freeze({ first: Object.freeze({ back: -1.5, up: 1.55 }), third: Object.freeze({ back: 11, up: 4.2 }) }) }),
+    view: Object.freeze({ first: Object.freeze({ back: -.9, up: 2.1 }), third: Object.freeze({ back: 11, up: 4.2 }) }) }),   // v24：炮长从顶部舱口探出上半身
   // 据记载，1937 年江阴要塞配有德制 88 毫米炮 8 门、德制 150 毫米加农炮 4 门及各型旧式榴弹炮；具体部署到哪座炮台为游戏改编。
   flak88: Object.freeze({ mount: 'coastal', variant: 'flak88', name: '8.8 cm Flak 18/36 高射炮', muzzleHeight: 2.05, barrel: 4.9, damage: 150, radius: 7, aiInterval: 7,
     reload: 3.2, reserve: 75, traverse: 1.6, minPitch: -.5, maxPitch: 1.25, range: 3200, shellSpeed: 640,   // 高平两用

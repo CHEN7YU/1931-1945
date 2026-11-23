@@ -10,7 +10,7 @@ import { JIANGYIN_RULES, JIANGYIN_POSTS, groundHeight, riverCenter, terrainFbm, 
 const SO = RIVER_HALF - 70;   // 岸线剖面外移量（与 jiangyin-rules 一致）
 const FLOW = JIANGYIN_RULES.flowSpeed ?? 1.6;   // 江水向东（+x）流动
 import { createWreckModel, mergeStatic, mat } from './jiangyin-models.js';
-import { patchSurface, surfaceMap, hasSceneSurfaces, waterNormalTexture } from './jiangyin-surfaces.js';
+import { patchSurface, surfaceMap, hasSceneSurfaces, waterNormalTexture, SURF_GLOBALS } from './jiangyin-surfaces.js';
 import { createTreeCards, createWoodlandTrees, createGrass } from './jiangyin-vegetation.js';
 
 const smoothstep = (a, b, t) => { const k = Math.max(0, Math.min(1, (t - a) / (b - a))); return k * k * (3 - 2 * k); };
@@ -71,12 +71,15 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
     skyDome = sky;
     sky.renderOrder = -1; scene.add(sky);
   }
+  installAerialFog();
+  const ridges = createDistantRidges(scene, fogColor);
   const hemi = new THREE.HemisphereLight(0xcdd6de, 0x6b6250, hasSceneSurfaces() ? .45 : .85);
   const sun = new THREE.DirectionalLight(0xfbeedb, 2.6);
   sun.position.set(-170, 150, 125); sun.castShadow = true;
   sun.shadow.mapSize.set(low ? 2048 : 4096, low ? 2048 : 4096); sun.shadow.bias = -.0003; sun.shadow.normalBias = .35; sun.shadow.radius = 2;
   Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 10, far: 1200 });   // 阴影范围随镜头移动（见 update）
   const sunOffset = sun.position.clone();
+  const baseShadow = sun.shadow.mapSize.x; let shadowLevel = 0, shadowFrame = 0;
   scene.add(hemi, sun, sun.target);
 
   // ---------- 地形 ----------
@@ -154,7 +157,7 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
   }
   paintTerrain(terrainGeometry);
   const makeTerrainMaterial = (extra = {}) => patchSurface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, metalness: 0, ...extra }),
-    { map: surfaceMap('earth'), map2: surfaceMap('dry-silt'), splatAttribute: true, tile: 3.2, macro: .45, detail: .85, mottle: .08, bump: 1.1, rough: .1 });
+    { map: surfaceMap('earth'), map2: surfaceMap('dry-silt'), splatAttribute: true, tile: 3.2, macro: .45, detail: .85, mottle: .08, bump: 1.1, rough: .1, clouds: true });
   const terrainMaterial = makeTerrainMaterial();
   // 战壕地形块与主地形在边缘重叠：略向镜头偏移，避免两层网格闪烁
   const patchMaterial = makeTerrainMaterial({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -238,7 +241,9 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
     uWakes: { value: Array.from({ length: MAX_WAKES }, () => new THREE.Vector4()) },
     uWakeSize: { value: Array.from({ length: MAX_WAKES }, () => new THREE.Vector3()) }, uWakeCount: { value: 0 },
     // 无 HDR 环境贴图时，手动补上天空与云的菲涅耳倒影；有项目 sky.hdr 时由 PBR 环境反射负责，只留少量补充
-    uSkyReflect: { value: hasSceneSurfaces() && scene.environment ? .25 : 1 }, uHaze: { value: fogColor } };
+    uSkyReflect: { value: hasSceneSurfaces() && scene.environment ? .25 : 1 }, uHaze: { value: fogColor },
+    // v24：太阳方向（与平行光一致）用于江面碎金闪光；uGlitter 由画质档位控制（自动减负时降为 0）
+    uSunDir: { value: new THREE.Vector3(-170, 150, 125).normalize() }, uGlitter: { value: low ? .6 : 1 } };
   const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x5c4e35, roughness: .26, metalness: 0, envMapIntensity: .9 });
   waterMaterial.customProgramCacheKey = () => 'jiangyin-water';
   waterMaterial.onBeforeCompile = shader => {
@@ -257,6 +262,7 @@ export function createJiangyinWorld(scene, { quality = 'high' } = {}) {
       .replace('#include <common>', `#include <common>
 varying float vWaterDepth; varying vec3 vWaterWorld; uniform float uTime; uniform float uFlow; uniform sampler2D uWaterNormals;
 uniform vec4 uWakes[${MAX_WAKES}]; uniform vec3 uWakeSize[${MAX_WAKES}]; uniform int uWakeCount; uniform float uSkyReflect; uniform vec3 uHaze;
+uniform vec3 uSunDir; uniform float uGlitter;
 float wakeFoam = 0.;
 float wHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2. * f);
@@ -268,6 +274,9 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
   float plume = wNoise((vWaterWorld.xz - drift) * vec2(.006, .014)) * .6 + wNoise((vWaterWorld.xz - drift * 1.2) * vec2(.03, .07)) * .4;
   float streak = smoothstep(.62, .9, wNoise((vWaterWorld.xz - drift * 1.4) * vec2(.02, .55)));
   diffuseColor.rgb *= .86 + plume * .28;
+  // v24：深水略暗、偏橄榄褐（长江中泓水深 10–20 米，泥沙浓度高，几乎不透光）
+  diffuseColor.rgb *= mix(1., .82, smoothstep(3., 14., vWaterDepth));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(.94, 1.0, .9), smoothstep(4., 16., vWaterDepth) * .5);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.42, .35, .23), shallow * .55);
   float foamBand = smoothstep(.55, .05, vWaterDepth) * smoothstep(-.35, .05, vWaterDepth);
   float foam = foamBand * smoothstep(.45, .8, wNoise((vWaterWorld.xz - drift * 1.3) * vec2(.6, 1.8)));
@@ -326,6 +335,18 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
   vec3 skyRefl = mix(uHaze * 1.04, vec3(.6, .67, .74), pow(ry, .6));
   skyRefl = mix(skyRefl, vec3(.86, .86, .84), smoothstep(.45, .75, wNoise(refl.xz / max(.08, ry) * .6 + uTime * .002)) * smoothstep(.02, .2, ry) * .6);
   outgoingLight = mix(outgoingLight, skyRefl, fres * uSkyReflect * (1. - wakeFoam) * .85);
+  // v24 江面碎金：太阳方向的镜面反射被细碎波纹打散成一闪一闪的亮点（越靠近太阳方位越密），远处连成一条亮带
+  if (uGlitter > 0.) {
+    vec3 fine = texture2D(uWaterNormals, (wuv - vec2(uTime * uFlow * 2.3, uTime * .4)) * vec2(.45, .6)).xyz * 2. - 1.;
+    vec3 gn = normalize(wnWorld + vec3(fine.x, 0., fine.y) * .22);
+    float sunAlign = max(dot(reflect(viewDir, gn), normalize(uSunDir)), 0.);
+    float spark = pow(sunAlign, 900.) * 9. + pow(max(dot(refl, normalize(uSunDir)), 0.), 60.) * .35;
+    float flicker = smoothstep(.55, .95, wNoise(wuv * 2.7 + uTime * 1.3));
+    outgoingLight += vec3(1., .93, .8) * spark * mix(.35, 1., flicker) * uGlitter * (1. - wakeFoam) * (1. - shallow * .8);
+  }
+  // v24 江面低雾：贴水面的水汽比空气雾更浓，远处江面（1 公里外）渐渐与天际融成灰蓝一片
+  float mist = smoothstep(700., 3200., viewDist) * .55;
+  outgoingLight = mix(outgoingLight, uHaze * 1.02, mist);
   #include <opaque_fragment>`);
   };
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
@@ -566,7 +587,16 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
   scene.add(decor);
   const vesselTrack = new WeakMap();
   return {
-    terrain, water, sun, treeCards, woodland: woodlandMeshes, grass,
+    terrain, water, sun, treeCards, woodland: woodlandMeshes, grass, ridges, waterUniforms,
+    // v24 画质自动减负（与主游戏 src/quality.js 的 automaticLevel 0–3 同一分档）：
+    // 1 档：阴影 2048、江面碎金减半；2 档：阴影 1024、关闭碎金与云影；3 档：阴影每 4 帧更新一次（分辨率由页面层降到 0.8）
+    setGraphicsLevel(level) {
+      const size = level >= 2 ? 1024 : level === 1 ? Math.min(2048, baseShadow) : baseShadow;
+      if (sun.shadow.mapSize.x !== size) { sun.shadow.map?.dispose(); sun.shadow.map = null; sun.shadow.mapSize.set(size, size); }
+      sun.shadow.autoUpdate = level < 3; sun.shadow.needsUpdate = true; shadowLevel = level;
+      waterUniforms.uGlitter.value = level >= 2 ? 0 : (low ? .6 : 1) * (level === 1 ? .5 : 1);
+      SURF_GLOBALS.uCloudAmount.value = level >= 2 ? 0 : 1;
+    },
     groundHeight,
     surfaceHeight: (x, z) => Math.max(0, groundHeight(x, z)),
     stats: { cards: cards.length, woodland: woodland.length, grass: grassSpots.length, reeds: reedSpots.length, houses: houseSpots.length },
@@ -575,6 +605,8 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
     // vessels：[{ object, length, beam }]，按模型位移求航速与航向，写入江水航迹
     update(time, dt = 0, sources = [], camera = null, vessels = []) {
       waterUniforms.uTime.value = time;
+      SURF_GLOBALS.uCloudTime.value = time;
+      if (shadowLevel >= 3 && (++shadowFrame) % 4 === 0) sun.shadow.needsUpdate = true;
       if (skyDome) skyDome.material.uniforms.uTime.value = time;
       let count = 0;
       const wakes = waterUniforms.uWakes.value, sizes = waterUniforms.uWakeSize.value;
@@ -601,6 +633,75 @@ float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2
       smoke.update(time, dt, sources);
     },
   };
+}
+
+// ---------- v24 空气透视：高度雾 + 向阳散射 ----------
+// 替换 three.js 的雾片段（只影响本关页面）：雾随高度指数变薄（标高约 160 米减半），贴近江面的水汽更浓，山顶与天空更通透；
+// 朝太阳方向的雾带暖色散射光，背阳方向偏冷灰蓝。与 Enlisted 等写实射击游戏的“远景层次”做法一致。
+const SUN_DIR_GLSL = 'normalize(vec3(-170., 150., 125.))';
+let aerialFogInstalled = false;
+export function installAerialFog() {
+  if (aerialFogInstalled) return;
+  aerialFogInstalled = true;
+  const C = THREE.ShaderChunk;
+  C.fog_pars_vertex = `#ifdef USE_FOG
+  varying float vFogDepth; varying vec3 vFogWorld;
+#endif`;
+  C.fog_vertex = `#ifdef USE_FOG
+  vFogDepth = - mvPosition.z;
+  vFogWorld = cameraPosition + transpose(mat3(viewMatrix)) * mvPosition.xyz;
+#endif`;
+  C.fog_pars_fragment = `#ifdef USE_FOG
+  uniform vec3 fogColor; varying float vFogDepth; varying vec3 vFogWorld;
+  #ifdef FOG_EXP2
+    uniform float fogDensity;
+  #else
+    uniform float fogNear; uniform float fogFar;
+  #endif
+#endif`;
+  C.fog_fragment = `#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    vec3 fogRay = vFogWorld - cameraPosition;
+    float fogY0 = max(cameraPosition.y, -5.), fogY1 = max(vFogWorld.y, -5.), fogHk = 1. / 160.;
+    float fogDy = fogY1 - fogY0;
+    float fogHeight = abs(fogDy) < 1. ? exp(-fogY0 * fogHk) : (exp(-fogY0 * fogHk) - exp(-fogY1 * fogHk)) / (fogDy * fogHk);
+    float fogOd = fogDensity * vFogDepth * (.35 + 1.05 * fogHeight);
+    float fogFactor = 1.0 - exp(- fogOd * fogOd);
+    float fogSun = pow(max(dot(normalize(fogRay), ${SUN_DIR_GLSL}), 0.), 6.);
+    vec3 fogTint = mix(fogColor * vec3(.97, .99, 1.03), fogColor * vec3(1.1, 1.04, .93) + .02, fogSun);
+  #else
+    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+    vec3 fogTint = fogColor;
+  #endif
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogTint, fogFactor );
+#endif`;
+}
+
+// ---------- v24 远山：南岸与上游方向 6–9 公里外两层山脊剪影（江阴南面的君山、花山一带丘陵），北岸为平原只留低矮林带 ----------
+// 用空气透视后的颜色直接着色（不受场景雾影响，否则 6 公里外会被雾完全吞掉），近层略深、远层更淡更蓝。
+function createDistantRidges(scene, fogColor) {
+  const group = new THREE.Group(), cx = 250, cz = 300;
+  const layers = [{ r: 6200, near: .74, peak: 210, seed: 3 }, { r: 8600, near: .86, peak: 300, seed: 11 }];
+  const hash = (i, s) => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return v - Math.floor(v); };
+  const noise = (t, s) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return hash(i, s) * (1 - u) + hash(i + 1, s) * u; };
+  for (const L of layers) {
+    const seg = 360, pos = [], index = [];
+    for (let k = 0; k <= seg; k++) {
+      const a = k / seg * Math.PI * 2, x = cx + Math.cos(a) * L.r, z = cz + Math.sin(a) * L.r;
+      const south = Math.max(0, Math.sin(a)), west = Math.max(0, -Math.cos(a)) * .5;   // z>0 为南岸，x<0 为上游（西）
+      const ridge = noise(a * 9, L.seed) * .55 + noise(a * 27, L.seed + 1) * .3 + noise(a * 80, L.seed + 2) * .15;
+      const h = 12 + L.peak * Math.min(1, south * 1.2 + west) * ridge ** 1.3;
+      pos.push(x, -20, z, x, h, z);
+      if (k < seg) { const b = k * 2; index.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geometry.setIndex(index);
+    const color = fogColor.clone().multiplyScalar(L.near).lerp(new THREE.Color(0x6f7c86), .18);
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color, fog: false, side: THREE.DoubleSide }));
+    mesh.frustumCulled = false; mesh.renderOrder = -0.5; group.add(mesh);
+  }
+  scene.add(group);
+  return group;
 }
 
 // ---------- 软粒子烟 ----------
