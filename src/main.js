@@ -42,6 +42,7 @@ import { FOOT_SPEEDS, createLocomotion, advanceLocomotion, advanceStamina, stopL
 import { RIFLE, createRifleState, reloadRifle, shootRifle, infantryWeaponProfile, rifleReloadSeconds } from './rifle-action.js';
 import { createBreathState, advanceBreath, aimSway } from './sniper-aim.js';
 import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle-model.js';
+import { RIFLE_IRON_AIM } from './rifle-contacts.js';
 import { createRifleRecoil } from './rifle-recoil.js';
 import { createWeaponHands } from './weapon-hands.js';
 import { isNativeOfficer } from './officer-appearance.js';
@@ -4705,9 +4706,10 @@ function updateCamera(dt) {
       weapon.userData.rifle.flash.visible &&= graphics.snapshot.effects.muzzle;
       const swayScale = aim ? .025 : 1;
       const supportAim = Math.max(aim ? 1 : 0, mount.blend);
+      const ironAim = !profile.automatic && !profile.scoped ? RIFLE_IRON_AIM : null;
       const targetX = .18 * (1 - supportAim) + motion.weaponX * swayScale * stability.sway;
       const vaultLower = allies[current].traversal.kind === 'vaulting' ? .3 : 0;
-      const targetY = -.22 * (1 - supportAim) - RIFLE.sightHeight * supportAim + motion.weaponY * swayScale * stability.sway - pose.lower * .045 - vaultLower;
+      const targetY = -.22 * (1 - supportAim) + (ironAim?.y ?? -RIFLE.sightHeight) * supportAim + motion.weaponY * swayScale * stability.sway - pose.lower * .045 - vaultLower;
       const targetZ = (aim ? -.2 : -.14) + motion.sprintBlend * .08;
       const base = weapon.userData.basePosition ??= weapon.position.clone();
       base.x = THREE.MathUtils.lerp(base.x, targetX, response);
@@ -4715,7 +4717,7 @@ function updateCamera(dt) {
       base.z = THREE.MathUtils.lerp(base.z, targetZ, response);
       weapon.position.copy(base);
       weapon.position.z += kick.rear;
-      weapon.rotation.set(motion.weaponPitch * swayScale - pose.lower * .14 + kick.weaponPitch,
+      weapon.rotation.set((ironAim?.pitch ?? 0) * supportAim + motion.weaponPitch * swayScale - pose.lower * .14 + kick.weaponPitch,
         kick.weaponYaw, -motion.sprintBlend * .12 - pose.lower * .08);
       weapon.updateMatrixWorld(true);
       // Test the intended shoulder-to-muzzle segment, not the already-retracted gun.

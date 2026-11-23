@@ -6,7 +6,7 @@ import { RIFLE, riflePose, infantryWeaponProfile, rifleReloadSeconds } from './r
 import { lightMachineGunModel, configureLightMachineGunMaterials } from './light-machine-gun-model.js';
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
-import { RIFLE_STOCK_SECTIONS, rifleStockSection, BOLT_HANDLE } from './rifle-contacts.js';
+import { RIFLE_STOCK_SECTIONS, rifleStockSection, BOLT_HANDLE, RIFLE_IRON_SIGHTS } from './rifle-contacts.js';
 import { machineGunReloadPose, ZB26_HAND } from './machine-gun-reload.js';
 import { submachineGunModel } from './submachine-gun-model.js';
 
@@ -381,8 +381,8 @@ function buildTemplate(detail = 'near') {
     add(root, new THREE.TorusGeometry(.031, .005, 12, 32), materials.cloth, x, -.09, z, `${side}Cuff`);
   }
   const muzzle = new THREE.Object3D(); muzzle.name = 'muzzle'; muzzle.position.set(0, 0, -.891); root.add(muzzle);
-  const rearSight = new THREE.Object3D(); rearSight.name = 'rearSight'; rearSight.position.set(0, RIFLE.sightHeight, -.36); root.add(rearSight);
-  const frontSight = new THREE.Object3D(); frontSight.name = 'frontSight'; frontSight.position.set(0, RIFLE.sightHeight, -.857); root.add(frontSight);
+  const rearSight = new THREE.Object3D(); rearSight.name = 'rearSight'; rearSight.position.fromArray(RIFLE_IRON_SIGHTS.rear); root.add(rearSight);
+  const frontSight = new THREE.Object3D(); frontSight.name = 'frontSight'; frontSight.position.fromArray(RIFLE_IRON_SIGHTS.front); root.add(frontSight);
   const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffe1a3, transparent: true, opacity: .8, depthWrite: false });
   flashMaterial.blending = THREE.AdditiveBlending;
   const flash = add(root, new THREE.ConeGeometry(.026, .1, 12), flashMaterial, 0, 0, -.936, 'flash');
@@ -429,7 +429,10 @@ export function rifleModel(weaponState = null) {
     muzzle: model.getObjectByName('muzzle'), rearSight: model.getObjectByName('rearSight'), frontSight: model.getObjectByName('frontSight'),
     flash: model.getObjectByName('flash'), casing: model.getObjectByName('casing'),
   };
-  if (infantryWeaponProfile(weaponState).scoped) model.add(scopeModel());
+  if (infantryWeaponProfile(weaponState).scoped) {
+    model.add(scopeModel());
+    model.userData.rifle.rearSight.position.y = RIFLE.sightHeight;
+  }
   if (infantryWeaponProfile(weaponState).automatic) {
     model.getObjectByName('rifleBody').visible = false;
     model.getObjectByName('bolt').visible = false;
@@ -439,6 +442,7 @@ export function rifleModel(weaponState = null) {
     model.userData.rifle.muzzle.position.x = infantryWeaponProfile(weaponState).muzzleX;
     model.userData.rifle.frontSight.position.z = infantryWeaponProfile(weaponState).muzzleZ + .045;
     model.userData.rifle.rearSight.position.z = -.08;
+    model.userData.rifle.rearSight.position.y = RIFLE.sightHeight;
     model.userData.rifle.flash.position.z = infantryWeaponProfile(weaponState).muzzleZ - .045;
     model.userData.rifle.flash.position.x = infantryWeaponProfile(weaponState).muzzleX;
     model.userData.dimensions = { length: infantryWeaponProfile(weaponState).length };

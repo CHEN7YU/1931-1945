@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { BATTLE_END_STATES } from '../src/battle-ending.js';
 
 const origin = process.env.GAME_URL || 'http://127.0.0.1:5173';
 const artifacts = process.env.ARTIFACT_DIR;
@@ -29,7 +30,8 @@ try {
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   for (const seconds of [15, 35, 60, 90, 120, 180]) {
-    await page.waitForFunction(seconds => window.__battle.time >= seconds, seconds, { timeout: 360000 });
+    await page.waitForFunction(({ seconds, endings }) => window.__battle.time >= seconds ||
+      endings.includes(window.__battle.state), { seconds, endings: BATTLE_END_STATES }, { timeout: 360000 });
     const sample = await page.evaluate(() => {
       const battle = window.__battle;
       return {
@@ -49,6 +51,7 @@ try {
       crossed: sample.units.filter(unit => unit.members.some(member => member.z < 38)).length,
       refugeesCrossed: sample.campaign.civiliansCrossedRiver,
       assaultReleased: sample.campaign.openingAssaultReleased }));
+    if (BATTLE_END_STATES.includes(sample.state)) break;
     if (wallRespawnFixture && seconds >= 120) break;
     if (seconds >= 180 && samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 15.2))) &&
       samples.some(sample => sample.vehicles.some(vehicle => vehicle.position.z < 38))) break;

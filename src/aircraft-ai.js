@@ -143,13 +143,21 @@ export function advanceAircraftAI(vehicle, dt, now, { targets, canFire, visible,
   if (state.phase !== 'egress' && (horizontal < 30 || p.y < floor + AIRCRAFT_AVOIDANCE.pullUpAltitude)) {
     state.phase = 'egress'; state.until = now + 2.5;
   }
-  if (state.phase === 'egress' && now >= state.until) state.phase = 'approach';
+  if (state.phase === 'egress' && now >= state.until) {
+    state.phase = 'approach'; delete state.attackRunExitHeading;
+  }
+  // A target inside the turning circle needs a straight outbound leg before another approach.
+  if (aim && state.phase === 'approach' && horizontal < 2 * TYPES.plane.speed / AIRCRAFT_TURN.rate &&
+    Math.abs(headingError(vehicle.heading, Math.atan2(p.x - aim.x, p.z - aim.z))) > .8) {
+    state.phase = 'egress'; state.until = now + 4;
+    state.attackRunExitHeading = vehicle.heading;
+  }
   const edgeDistance = Math.max(Math.abs(p.x - patrolCenter.x), Math.abs(p.z - patrolCenter.z));
   state.returningToArea = state.returningToArea ? edgeDistance > 105 : edgeDistance > 125;
   const nearEdge = state.returningToArea;
   let desiredHeading, desiredPitch;
   if (state.phase === 'egress' && !nearEdge) {
-    desiredHeading = vehicle.heading + .55;
+    desiredHeading = state.attackRunExitHeading ?? vehicle.heading + .55;
     desiredPitch = p.y < 50 ? .22 : 0;
   } else if (aim && !nearEdge) {
     desiredHeading = Math.atan2(p.x - aim.x, p.z - aim.z);

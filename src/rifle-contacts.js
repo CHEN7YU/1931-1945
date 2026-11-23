@@ -2,6 +2,19 @@ import { Vector3 } from 'three';
 
 export const BOLT_HANDLE = Object.freeze({ center: Object.freeze([.082, .001, -.086]), radius: .012 });
 
+export const RIFLE_IRON_SIGHTS = Object.freeze({
+  rear: Object.freeze([0, .055, -.36]),
+  front: Object.freeze([0, .05, -.857]),
+});
+
+const ironSightPitch = Math.atan2(RIFLE_IRON_SIGHTS.rear[1] - RIFLE_IRON_SIGHTS.front[1],
+  RIFLE_IRON_SIGHTS.rear[2] - RIFLE_IRON_SIGHTS.front[2]);
+export const RIFLE_IRON_AIM = Object.freeze({
+  pitch: ironSightPitch,
+  y: -RIFLE_IRON_SIGHTS.rear[1] * Math.cos(ironSightPitch) +
+    RIFLE_IRON_SIGHTS.rear[2] * Math.sin(ironSightPitch),
+});
+
 export const RIFLE_STOCK_SECTIONS = Object.freeze([
   [.22, -.095, .025, .068], [.19, -.094, .027, .071], [.08, -.076, .025, .061],
   [-.025, -.052, .018, .027], [-.09, -.049, .019, .026], [-.16, -.045, .028, .037],

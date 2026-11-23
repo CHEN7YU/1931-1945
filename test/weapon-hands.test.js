@@ -9,6 +9,7 @@ import { createWeaponHands, WEAPON_HAND_GRIPS } from '../src/weapon-hands.js';
 import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
 import { createRifleState, infantryWeaponProfile, rifleReloadSeconds } from '../src/rifle-action.js';
 import { applyCloseWeaponPose } from '../src/weapon-close-pose.js';
+import { RIFLE_IRON_AIM, RIFLE_IRON_SIGHTS } from '../src/rifle-contacts.js';
 
 const manager = new T.LoadingManager();
 manager.addHandler(/\.(png|jpe?g|dds)$/i, { setPath() { return this; }, load() { return new T.Texture(); } });
@@ -18,6 +19,37 @@ prepareNraRig(model);
 const source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
+
+test('iron aiming aligns the visible rear shoulders with the front tip without moving the real grips', () => {
+  const state = createRifleState(), gun = rifleModel(state);
+  const body = gun.getObjectByName('rifleBody'), original = structuredClone(state);
+  const rear = new T.Vector3(...RIFLE_IRON_SIGHTS.rear);
+  const front = new T.Vector3(...RIFLE_IRON_SIGHTS.front);
+  gun.position.set(0, RIFLE_IRON_AIM.y, -.2); gun.rotation.x = RIFLE_IRON_AIM.pitch;
+  gun.updateMatrixWorld(true);
+  const projectedRear = gun.localToWorld(rear.clone()), projectedFront = gun.localToWorld(front.clone());
+  assert.ok(Math.abs(projectedRear.y) < 1e-10 && Math.abs(projectedFront.y) < 1e-10);
+  assert.ok(rear.y > .05, 'use the visible shoulders, not the bottom of the V notch');
+  const shoulders = [-.008, .008].map(x => gun.localToWorld(new T.Vector3(x, rear.y, rear.z)));
+  assert.ok(shoulders.every(point => Math.abs(point.y) < 1e-10));
+  assert.ok(shoulders[0].x < projectedFront.x && shoulders[1].x > projectedFront.x);
+  for (const expected of [new T.Vector3(-.004, .055, -.36), new T.Vector3(.004, .055, -.36),
+    new T.Vector3(.0009, .05, -.857)]) {
+    let nearest = Infinity;
+    body.traverse(child => {
+      if (!child.isMesh) return;
+      const positions = child.geometry.getAttribute('position');
+      for (let index = 0; index < positions.count; index++)
+        nearest = Math.min(nearest, new T.Vector3().fromBufferAttribute(positions, index).distanceTo(expected));
+    });
+    assert.ok(nearest < .0005, `alignment must reference real sight vertices, not metadata alone: ${expected.toArray()}`);
+  }
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  updateRifleModel(gun, state); view.update(gun, state);
+  assert.equal(view.snapshot.visible, true);
+  for (const side of ['left', 'right']) assert.ok(view.snapshot[side].arm.reachable);
+  assert.deepEqual(state, original);
+});
 
 test('reported near-wall retraction stows an unreachable presentation and recovers without ending combat', () => {
   const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));

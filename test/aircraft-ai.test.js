@@ -116,6 +116,30 @@ test('open-air strafing returns for repeated passes without changing gun cadence
   }
 });
 
+test('an off-axis target inside the turning circle can be attacked again after it relocates', () => {
+  for (const fps of [30, 60, 120]) {
+    const aircraft = plane(), times = [];
+    Object.assign(aircraft.position, { x: -55 + 55 * Math.cos(Math.PI / 6), y: 43, z: -55 });
+    aircraft.heading = Math.atan2(55 * Math.sin(Math.PI / 6), 110 * Math.cos(Math.PI / 6));
+    aircraft.pitch = 0;
+    const player = { ...target, position: { x: -10, y: 0, z: 0 } };
+    for (let frame = 1; frame <= fps * 120; frame++) {
+      if (frame === fps * 30) player.position = { x: -66, y: 0, z: -80 };
+      const before = { ...aircraft.position }, now = frame / fps;
+      const shot = advanceAircraftAI(aircraft, 1 / fps, now, {
+        targets: [player], canFire: true, visible: () => true,
+      });
+      assert.ok(Math.hypot(aircraft.position.x - before.x, aircraft.position.y - before.y,
+        aircraft.position.z - before.z) <= aircraft.speed / fps + 1e-8, 'repositioning must not teleport');
+      if (shot) times.push(now);
+    }
+    assert.ok(times.some(time => time < 30), `no initial pass at ${fps} fps`);
+    const retasked = times.filter(time => time >= 30);
+    assert.ok(retasked.filter((time, index) => !index || time - retasked[index - 1] > 1).length >= 2,
+      `target must not stay trapped inside a perpetual turn at ${fps} fps: ${JSON.stringify(times)}`);
+  }
+});
+
 test('changing the preferred squad replaces the previous target but retains visibility requirements', () => {
   const aircraft = plane();
   const a = { ...target, id: 'a', unitId: 'a', position: { x: 10, y: 0, z: 0 } };
