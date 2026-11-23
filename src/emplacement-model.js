@@ -130,7 +130,8 @@ export function createEmplacementModel(point) {
       }
       grips[sign < 0 ? 'left' : 'right'] = addSupportGrip(barrel,
         `${point.profile}-${sign < 0 ? 'left' : 'right'}-spade-handle`,
-        { center: [sign * .14, 0, .43], radius: .022, normal: [0, 0, 1], forward: [0, 1, 0] });
+        { center: [sign * .14, 0, .43], radius: .022, normal: [sign * .7, 0, -.714],
+          forward: [-sign * .714, 0, -.7] });
     }
     box(barrel, 0, .015, .42, .035, .05, .035, dark);
     if (profile.antiAircraft) {

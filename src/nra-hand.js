@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
-import { solveArm } from './nra-rifle-pose.js';
+import { solveArm, solveCylinderGripFinger } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
 import { DADAO_GRIP } from './dadao.js';
 import { createOfficerHandAppearance, createOfficerSleeveAppearance } from './officer-appearance.js';
@@ -174,7 +174,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     }
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
-    if (weaponRig) {
+    if (weaponRig && name !== 'machine') {
       for (const finger of fingerNames) {
         const chain = chains.get(finger);
         for (let joint = 0; joint < 3; joint++) {
@@ -209,7 +209,12 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     for (const [index, finger] of fingerNames.entries()) {
       const [first, second, third, end] = chains.get(finger), base = localPoint(first);
       const a = fingerLengths[finger][0], b = fingerLengths[finger][1];
-      const x = round && index < 2 ? center[0] + (index ? -.006 : .006) : base.x;
+      const x = round && name !== 'machine' && index < 2 ? center[0] + (index ? -.006 : .006) : base.x;
+      if (name === 'machine') {
+        solveCylinderGripFinger(first, second, third, end, angle => root.localToWorld(contact(angle, x)),
+          new THREE.Vector3(0, 1, -sign * .7).applyQuaternion(facing), `${side} ${finger} machine-gun finger`);
+        continue;
+      }
       const angles = [-.2, ...Array.from({ length: 60 }, (_, i) => -.175 + i * .025),
         ...Array.from({ length: 108 }, (_, i) => -.225 - i * .025)];
       const angle = angles.find(angle => {
@@ -233,7 +238,8 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
       rotateEnd(third, end, root.localToWorld(contact(angle - (low + high) / 2, x)));
     }
     const [first, second, third, end] = chains.get('Thumb');
-    const tip = contact(1.5, center[0] + (round ? .006 : .014));
+    const tip = contact(name === 'machine' ? .6 : 1.5,
+      name === 'machine' ? localPoint(first).x : center[0] + (round ? .006 : .014));
     const direction = new THREE.Vector3(0, .8, sign * .6);
     const desired = root.localToWorld(tip.clone().addScaledVector(direction, -fingerLengths.Thumb[2]));
     const solved = solveArm(first, second, third, desired,

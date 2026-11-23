@@ -3,7 +3,6 @@ import { obstacleLookup } from './spatial.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
 export const NANJING_OPENING_CIVILIAN_COUNT = 60;
-export const NANJING_OPENING_CROSSING_REQUIRED = Math.ceil(NANJING_OPENING_CIVILIAN_COUNT * .9);
 
 const variation = (index, salt) => {
   let value = Math.imul(index + salt, 0x45d9f3b);

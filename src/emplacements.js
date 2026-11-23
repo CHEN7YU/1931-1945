@@ -96,6 +96,28 @@ export function emplacementCanAimAt(point, target, floor = 0) {
   return Math.abs(delta) <= profile.traverse && pitch >= profile.minPitch && pitch <= profile.maxPitch;
 }
 
+export function aiEmplacementMaxPitch(point) {
+  return point.profile === 'maxim24' || point.profile === 'maxim24aa'
+    ? Math.min(point.weapon.settings.maxPitch, .5) : point.weapon.settings.maxPitch;
+}
+
+export function aiEmplacementCanAimAt(point, target, floor = 0) {
+  const pitch = Math.atan2(target.y - floor - point.weapon.settings.muzzleHeight,
+    Math.hypot(target.x - point.x, target.z - point.z));
+  return pitch <= aiEmplacementMaxPitch(point) && emplacementCanAimAt(point, target, floor);
+}
+
+export function aimAIEmplacement(point, target, dt, floor = 0) {
+  const maxPitch = aiEmplacementMaxPitch(point);
+  if (target && aiEmplacementCanAimAt(point, target, floor)) {
+    const aligned = aimEmplacement(point, target, dt, floor);
+    return aligned && point.pitch <= maxPitch;
+  }
+  if (point.pitch > maxPitch)
+    emplacementLook(point, point.yaw, Math.max(maxPitch, point.pitch - .8 * dt));
+  return false;
+}
+
 export function emplacementLook(point, yaw, pitch) {
   const profile = point.weapon.settings;
   const delta = Math.atan2(Math.sin(yaw - point.heading), Math.cos(yaw - point.heading));

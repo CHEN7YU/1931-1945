@@ -31,17 +31,63 @@ try {
           const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
           const aircraft=formations.find(unit=>unit.team==='enemy'&&unit.type==='plane');
           const armor=formations.find(unit=>unit.team==='enemy'&&unit.variant===CHI_HA.id);
-          nanjingCampaign.civiliansCrossedRiver=53;updateNanjingMission(0);
+          nanjingCampaign.civiliansCrossedRiver=60;
+          advanceNanjingCampaign(nanjingCampaign,19.99);updateNanjingMission(0);
           const held={released:nanjingCampaign.openingAssaultReleased,
             squads:infantry.filter(unit=>unit.members.length).length,
             vehicles:[...entities.vehicles.values()].filter(vehicle=>vehicle.team==='enemy').length};
-          nanjingCampaign.civiliansCrossedRiver=54;updateNanjingMission(0);
+          nanjingCampaign.civiliansCrossedRiver=0;
+          advanceNanjingCampaign(nanjingCampaign,.01);updateNanjingMission(0);
           return {held,released:nanjingCampaign.openingAssaultReleased,
             squads:infantry.filter(unit=>unit.members.length===11).length,
             aircraft:aircraft.members.length,armor:armor.members.length,
             south:infantry.map(unit=>unit.members[0]?.spawnPosition.z)};
         },
-        releaseAssault() { nanjingCampaign.civiliansCrossedRiver=54;updateNanjingMission(0); },
+        async restartCrossing() {
+          const ready=()=>new Promise((resolve,reject)=>{
+            let frames=0;
+            const check=()=>{
+              if(!battlePreparing)resolve();
+              else if(++frames>2400)reject(Error('Battle preparation did not finish'));
+              else requestAnimationFrame(check);
+            };
+            check();
+          });
+          await ready();
+          setGameState('menu');beginMatch();
+          await ready();
+          const opening=world.civilians.filter(civilian=>civilian.userData.openingWave);
+          for(const civilian of opening.slice(0,54)) {
+            civilian.position.z=37.9;
+            recordNanjingCivilianRiverCrossing(nanjingCampaign,civilian);
+          }
+          setGameState('menu');beginMatch();
+          await ready();
+          const reset=opening.filter(civilian=>civilian.userData.crossedRiver).length;
+          for(const civilian of world.civilians) {
+            civilian.visible=false;
+            civilian.userData.active=false;
+            civilian.userData.releaseAt=Infinity;
+          }
+          const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
+          const progress=[];
+          for(const civilian of opening.slice(0,54)) {
+            const data=civilian.userData;
+            civilian.position.set(-24,0,38.01);civilian.visible=true;
+            data.active=true;data.route=[{x:-24,z:37}];data.waypoint=0;
+            updateNanjingCivilians(.05);updateNanjingMission(0);
+            progress.push(nanjingCampaign.civiliansCrossedRiver);
+            civilian.visible=false;data.active=false;data.releaseAt=Infinity;
+          }
+          const beforeDelay=nanjingCampaign.openingAssaultReleased;
+          advanceNanjingCampaign(nanjingCampaign,20);updateNanjingMission(0);
+          return {reset,progress,beforeDelay,released:nanjingCampaign.openingAssaultReleased,
+            squads:infantry.filter(unit=>unit.members.length===11).length};
+        },
+        releaseAssault() {
+          advanceNanjingCampaign(nanjingCampaign,Math.max(0,20-nanjingCampaign.stageElapsed));
+          updateNanjingMission(0);
+        },
         fieldReload() {
           setGameState('menu');beginMatch();
           const actor=controlledSoldier(entities),point=emplacements.get('bridge-gun');
@@ -391,7 +437,7 @@ try {
   if (process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY === '1') {
     assert.deepEqual(result.openingAssault.held,
       { released:false,squads:0,vehicles:0 },
-      'fewer than 90 percent of the first civilian wave must not spawn Japanese forces');
+      'Japanese forces must not spawn before 20 seconds, even if everyone has crossed');
     assert.equal(result.openingAssault.released,true);
     assert.equal(result.openingAssault.squads,8);
     assert.equal(result.openingAssault.aircraft,3);
@@ -403,6 +449,13 @@ try {
       'bayonet-qualified Japanese infantry must charge and damage a nearby civilian');
     assert.equal(result.bayonetPursuit.shots, 0,
       'bayonet pursuit must not fire the rifle at the civilian, even with an empty magazine');
+    const restarted = await page.evaluate(() => civilianDefenseReview.restartCrossing());
+    assert.equal(restarted.reset, 0, 'starting a new match must clear previous civilian crossings');
+    assert.deepEqual(restarted.progress, Array.from({length:54}, (_,index)=>index+1),
+      'actual civilian movement must count every crossing after restarting');
+    assert.equal(restarted.beforeDelay, false);
+    assert.equal(restarted.released, true);
+    assert.equal(restarted.squads, 8);
     assert.deepEqual(errors, []);
   } else {
     assert.equal(result.checks.length, 7);

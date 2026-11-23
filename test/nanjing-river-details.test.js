@@ -59,6 +59,37 @@ test('the boatman holds the paddle in front of his chest while rowing', () => {
   assert.ok(grip.sub(chest).dot(forward) > .2, 'the paddle grip must remain in front of the torso');
 });
 
+test('the real rower keeps both hands on the tilted shaft and dips the blade in the west river', () => {
+  const makeFerry = createNanjingFerryFactory(new THREE.MeshStandardMaterial());
+  const characters = createCivilianCharacterFactory();
+  for (let index = 0; index < 5; index++) {
+    const ferry = makeFerry(), rower = characters.create(1000 + index, 'adult', 'man', 'none');
+    rower.position.set(2.35, NANJING_FERRY_FLOOR, .1);
+    ferry.position.y = .05; ferry.add(rower); ferry.userData.rower = rower;
+    for (const state of ['outbound', 'inbound']) {
+      ferry.userData.state = state;
+      let lowest = Infinity, highest = -Infinity;
+      for (let time = 0; time < 2.25; time += .1) {
+        updateNanjingFerryRower(ferry, time); ferry.updateMatrixWorld(true);
+        const oar = ferry.userData.oar, origin = oar.localToWorld(new THREE.Vector3());
+        const tip = oar.localToWorld(new THREE.Vector3(...oar.userData.bladeTip));
+        const shaft = tip.clone().sub(origin).normalize();
+        assert.ok(shaft.y < -.55, 'the shaft must lean down toward the river');
+        for (const [side, x] of [['left', -.002], ['right', .002]]) {
+          const hand = new THREE.Vector3(x, -.285, -.005)
+            .applyMatrix4(rower.civilianSkin.joints[`${side}Elbow`].matrixWorld);
+          const offset = hand.sub(origin);
+          assert.ok(offset.addScaledVector(shaft, -offset.dot(shaft)).length() < 1e-6,
+            `${side} hand must stay on the physical shaft`);
+        }
+        lowest = Math.min(lowest, tip.y); highest = Math.max(highest, tip.y);
+      }
+      assert.ok(lowest < -.28, 'the blade must enter the west river water');
+      assert.ok(highest - lowest > .1, 'rowing must move the blade through the stroke');
+    }
+  }
+});
+
 test('shore reeds are one opaque merged mesh, retain dock clearance, and do not register collision', () => {
   const banks = [-100, -80, -60].map(z => {
     const bank = new THREE.Mesh(); bank.position.set(-73.5, -1.5, z);

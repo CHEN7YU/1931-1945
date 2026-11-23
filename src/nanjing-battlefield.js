@@ -1982,7 +1982,7 @@ export function makeNanjingBattlefield(scene, surface) {
           threatThinkCount:0,
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           finalRecovery: null,
-          unrescued: false, enteredCity: false,
+          unrescued: false, enteredCity: false, crossedRiver: false,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
           streetEvacuating: false, route: data.refugeeRestRoute ?? data.homeRoute,

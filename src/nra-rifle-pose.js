@@ -49,6 +49,30 @@ export function solveArm(upper, lower, hand, target, pole) {
   return { error: position(hand).distanceTo(target), reachable: distance < a + b && distance > Math.abs(a - b) };
 }
 
+export function solveCylinderGripFinger(first, second, third, end, contact, pole, label) {
+  const a = position(first).distanceTo(position(second)), b = position(second).distanceTo(position(third));
+  const length = position(third).distanceTo(position(end));
+  const angles = [-.2, ...Array.from({ length: 60 }, (_, i) => -.175 + i * .025),
+    ...Array.from({ length: 108 }, (_, i) => -.225 - i * .025)];
+  const angle = angles.find(value => {
+    const distance = contact(value).distanceTo(position(first));
+    return distance < a + b - .001 && distance > Math.abs(a - b) + .001;
+  });
+  if (angle === undefined) throw new Error(`Native ${label} cannot reach the handle`);
+  const result = solveArm(first, second, third, contact(angle), pole);
+  if (!result.reachable || result.error > .001) throw new Error(`Native ${label} grip solve failed`);
+  const dip = position(third);
+  let low = 0, high = 2.4;
+  if (contact(angle - high).distanceTo(dip) < length) throw new Error(`Native ${label} fingertip arc is too short`);
+  for (let step = 0; step < 24; step++) {
+    const turn = (low + high) / 2;
+    if (contact(angle - turn).distanceTo(dip) < length) low = turn;
+    else high = turn;
+  }
+  const target = contact(angle - (low + high) / 2);
+  swing(third, end, target);
+}
+
 function basis(forward, across) {
   const x = forward.clone().normalize(), y = across.clone().addScaledVector(x, -across.dot(x)).normalize();
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, x.clone().cross(y)));

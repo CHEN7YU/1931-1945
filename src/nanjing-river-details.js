@@ -98,7 +98,8 @@ export function updateNanjingFerryRower(ferry, time) {
   const phase = moving ? Math.sin(time * 2.8) : 0;
   rower.rotation.y = state === 'inbound' ? -Math.PI / 2 : Math.PI / 2;
   rower.civilianTorso.rotation.x = moving ? phase * .12 : 0;
-  for (const arm of rower.civilianArms) arm.rotation.x = moving ? .72 + phase * .18 : -.15;
+  rower.civilianArms[0].rotation.x = moving ? .50 + phase * .12 : -.15;
+  rower.civilianArms[1].rotation.x = moving ? 1.72 + phase * .05 : -.15;
   oar.visible = moving;
   if (!moving) return;
   const { leftElbow, rightElbow } = rower.civilianSkin.joints;

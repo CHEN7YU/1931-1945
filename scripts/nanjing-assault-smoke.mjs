@@ -25,12 +25,11 @@ try {
   }
   const gameUrl = new URL('/?campaign=nanjing', origin);
   if (process.env.GAME_CHARACTER) gameUrl.searchParams.set('character', process.env.GAME_CHARACTER);
-  await page.goto(gameUrl.href);
-  await page.waitForFunction(() => window.__battle?.state === 'menu', undefined, { timeout: 60000 });
+  await page.goto(gameUrl.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   for (const seconds of [15, 35, 60, 90, 120, 180]) {
-    await page.waitForFunction(seconds => window.__battle.time >= seconds, seconds, { timeout: 150000 });
+    await page.waitForFunction(seconds => window.__battle.time >= seconds, seconds, { timeout: 360000 });
     const sample = await page.evaluate(() => {
       const battle = window.__battle;
       return {
@@ -56,19 +55,19 @@ try {
   }
   const opening = samples[0];
   assert.equal(opening.campaign.openingAssaultReleased, false,
-    'Japanese forces must remain in reserve while the opening refugees cross the river');
+    'Japanese forces must remain in reserve during the first 20 seconds');
   assert.ok(opening.units.every(unit => unit.members.length === 0),
-    'the opening attack must not spawn before the refugee crossing threshold');
+    'the opening attack must not spawn before 20 seconds');
   assert.equal(opening.campaign.airSupport.count, 0,
-    'Japanese aircraft must also wait for the opening refugee crossing');
-  assert.ok(samples.some(sample => sample.campaign.openingAssaultReleased &&
-    sample.campaign.civiliansCrossedRiver >= 54),
-  'the Japanese assault must release only after at least 90 percent of the first civilian wave crosses');
+    'Japanese aircraft must also wait for 20 seconds');
+  assert.equal(samples[1].campaign.openingAssaultReleased, true,
+    'the Japanese assault must release after 20 seconds regardless of civilian crossings');
   const firstWave = samples.find(sample => sample.units.length === 8 &&
     sample.units.every(unit => unit.members.length > 0));
-  assert.ok(firstWave, 'all eight Japanese squads must spawn after the crossing threshold');
-  assert.ok(firstWave.units.every(unit => unit.members.every(member => member.spawnPosition.z > 96)),
-    'the opening Japanese assault must spawn farther south than the previous line');
+  assert.ok(firstWave, 'all eight Japanese squads must spawn after the opening delay');
+  assert.ok(firstWave.units.every(unit => unit.members.every(member =>
+    member.spawnPosition.z > 65 && member.spawnPosition.z <= 96)),
+    'the opening Japanese assault must spawn south of the river and within the battle boundary');
   const movingWave = samples.find(sample => sample.units.length === 8 && sample.units.every(unit =>
     unit.members.some(member => Math.hypot(member.x - member.spawnPosition.x,
       member.z - member.spawnPosition.z) > 8)));

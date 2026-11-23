@@ -7,10 +7,9 @@ import {
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
-  NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, nanjingOpeningAssaultReady, nanjingOpeningCrossingRequired,
+  NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady,
   recordNanjingCivilianRiverCrossing,
 } from '../src/nanjing-campaign.js';
-import { NANJING_OPENING_CROSSING_REQUIRED } from '../src/civilian-crowd.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
 
@@ -30,10 +29,9 @@ test('only living opening refugees who pass the inner gate count as safely enter
   assert.equal(campaign.civiliansEnteredCity, 1);
 });
 
-test('opening assault waits for 90 percent of the first civilian wave to cross the bridge', () => {
+test('opening assault waits 20 seconds independently of civilian crossings', () => {
   const campaign = createNanjingCampaign();
   const refugee = { userData: { openingWave: true }, position: { z: NANJING_CIVILIAN_RIVER_NORTH_BANK_Z } };
-  assert.equal(NANJING_OPENING_CROSSING_REQUIRED, 54);
   assert.equal(campaign.civiliansCrossedRiver, 0);
   assert.equal(nanjingOpeningAssaultReady(campaign), false);
   assert.equal(recordNanjingCivilianRiverCrossing(campaign, refugee), false,
@@ -46,21 +44,22 @@ test('opening assault waits for 90 percent of the first civilian wave to cross t
     { userData: { openingWave: false }, position: refugee.position }), false);
   assert.equal(recordNanjingCivilianRiverCrossing(campaign,
     { userData: { openingWave: true, dead: true }, position: refugee.position }), false);
-  campaign.civiliansCrossedRiver = NANJING_OPENING_CROSSING_REQUIRED - 1;
+  campaign.civiliansCrossedRiver = 60;
+  advanceNanjingCampaign(campaign, NANJING_OPENING_ASSAULT_DELAY - .01);
   assert.equal(nanjingOpeningAssaultReady(campaign), false);
-  campaign.civiliansCrossedRiver++;
+  advanceNanjingCampaign(campaign, 0);
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  campaign.civiliansCrossedRiver = 0;
+  advanceNanjingCampaign(campaign, .01);
   assert.equal(nanjingOpeningAssaultReady(campaign), true);
   campaign.openingAssaultReleased = true;
   assert.equal(nanjingOpeningAssaultReady(campaign), false);
-  campaign.openingCivilianCasualties = 10;
   campaign.openingAssaultReleased = false;
-  assert.equal(nanjingOpeningCrossingRequired(campaign), 45,
-    'the threshold follows 90 percent of the surviving opening wave');
-  campaign.civiliansCrossedRiver = 44;
+  campaign.outcome = 'gate-overrun';
   assert.equal(nanjingOpeningAssaultReady(campaign), false);
-  campaign.civiliansCrossedRiver = 45;
-  assert.equal(nanjingOpeningAssaultReady(campaign), true);
-  assert.throws(() => nanjingOpeningCrossingRequired({ openingCivilianCasualties: 61 }), /casualties/);
+  campaign.outcome = null;
+  campaign.stage = 'withdrawal';
+  assert.equal(nanjingOpeningAssaultReady(campaign), false);
 });
 
 test('opening Japanese infantry, armor and aircraft stage south of the river', () => {

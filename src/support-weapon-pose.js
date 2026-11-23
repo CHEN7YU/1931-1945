@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { solveArm } from './nra-rifle-pose.js';
+import { solveArm, solveCylinderGripFinger } from './nra-rifle-pose.js';
 
 export const SUPPORT_WEAPON_BANKS = Object.freeze([
   { kind: 'type89', stance: 'crouched', firingPose: 'kneeling', phase: 'operate', neutralPitch: 0, modelOffset: Object.freeze([0, 0, -.14]) },
@@ -110,6 +110,7 @@ export function createSupportWeaponPose(root, bones, {
   const headForward = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation(root))
     .applyQuaternion(rotation(head).invert());
   const modified = new Map();
+  const machineFingers = new Map();
   let owner = null, snapshot = null;
   const restore = () => {
     for (const [bone, state] of modified) {
@@ -122,11 +123,13 @@ export function createSupportWeaponPose(root, bones, {
     if (!modified.has(bone)) modified.set(bone, { base: bone.quaternion.clone(), applied: null });
   };
   const palm = side => position(bones.get(`${side}Hand`)).lerp(position(bones.get(`${side}HandMiddle1`)), .55);
-  function orient(side, forward, normal) {
+  function orient(side, forward, normal, invert = false) {
     const hand = bones.get(`${side}Hand`);
     const native = frame(position(bones.get(`${side}HandMiddle1`)).sub(position(hand)),
       position(bones.get(`${side}HandIndex1`)).sub(position(bones.get(`${side}HandPinky1`))));
-    setRotation(hand, frame(forward, normal.clone().cross(forward)).multiply(native.invert()).multiply(rotation(hand)));
+    const across = normal.clone().cross(forward);
+    if (invert) across.negate();
+    setRotation(hand, frame(forward, across).multiply(native.invert()).multiply(rotation(hand)));
   }
   function curl(side) {
     for (const [index, finger] of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb'].entries()) {
@@ -144,6 +147,49 @@ export function createSupportWeaponPose(root, bones, {
     }
     root.updateMatrixWorld(true);
   }
+  function machineCurl(side, target, facing) {
+    const cached = machineFingers.get(side);
+    if (cached) {
+      for (const [bone, quaternion] of cached) { remember(bone); bone.quaternion.copy(quaternion); }
+      root.updateMatrixWorld(true);
+      return;
+    }
+    const names = ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb'];
+    const chains = names.map(name => [1, 2, 3, 4].map(joint => bones.get(`${side}Hand${name}${joint}`)));
+    if (chains.some(chain => chain.some(bone => !bone))) throw new Error(`Missing native ${side} machine-gun finger joints`);
+    for (const chain of chains) for (const bone of chain.slice(0, 3)) remember(bone);
+    {
+      const axis = new THREE.Vector3(...target.axis).applyQuaternion(facing).normalize();
+      const forward = new THREE.Vector3(...target.forward).applyQuaternion(facing).normalize();
+      const normal = new THREE.Vector3(...target.normal).applyQuaternion(facing).normalize();
+      const center = root.localToWorld(new THREE.Vector3(...target.center));
+      const contact = (angle, axial) => center.clone().addScaledVector(axis, axial)
+        .addScaledVector(forward, (target.radius + .005) * Math.cos(angle))
+        .addScaledVector(normal, (target.radius + .005) * Math.sin(angle));
+      const rotateEnd = (third, end, tip) => {
+        const base = position(third), direction = position(end).sub(base).normalize();
+        const swing = new THREE.Quaternion().setFromUnitVectors(direction, tip.clone().sub(base).normalize());
+        setRotation(third, swing.multiply(rotation(third)));
+      };
+      for (const [index, chain] of chains.entries()) {
+        const [first, second, third, end] = chain;
+        const axial = position(first).sub(center).dot(axis);
+        const length = position(third).distanceTo(position(end));
+        if (index === 4) {
+          const tip = contact(.6, axial);
+          const desired = tip.clone().addScaledVector(forward, -.8 * length).addScaledVector(normal, .6 * length);
+          const result = solveArm(first, second, third, desired,
+            axis.clone().multiplyScalar(.8).addScaledVector(forward, .4).addScaledVector(normal, .8));
+          if (!result.reachable || result.error > .001) throw new Error(`Native ${side} machine-gun thumb cannot reach the handle`);
+          rotateEnd(third, end, tip);
+          continue;
+        }
+        solveCylinderGripFinger(first, second, third, end, angle => contact(angle, axial),
+          forward.clone().addScaledVector(normal, .7), `${side} machine-gun finger`);
+      }
+      machineFingers.set(side, new Map(chains.flatMap(chain => chain.slice(0, 3).map(bone => [bone, bone.quaternion.clone()]))));
+    }
+  }
   return {
     reset({ preservePose = false } = {}) {
       if (preservePose) modified.clear(); else restore();
@@ -159,6 +205,12 @@ export function createSupportWeaponPose(root, bones, {
       for (const side of ['left', 'right']) for (const key of ['wrist', 'palm', 'forward', 'normal']) {
         if (!Array.isArray(targets?.[side]?.[key]) || targets[side][key].length !== 3 ||
           !targets[side][key].every(Number.isFinite)) throw new Error('Support pose requires finite actor-local grip frames');
+      }
+      if (['maxim24', 'maxim24aa'].includes(marker.kind)) for (const side of ['left', 'right']) {
+        const target = targets[side];
+        if (!['center', 'axis'].every(key => Array.isArray(target[key]) && target[key].length === 3 &&
+          target[key].every(Number.isFinite)) || !(target.radius > 0) || !Number.isFinite(target.radius))
+          throw new Error('Machine-gun pose requires a finite handle axis and radius');
       }
       owner = actor.id;
       for (const name of ['Spine', ...['Left', 'Right'].flatMap(side => ['Shoulder', 'Arm', 'ForeArm', 'Hand'].map(name => side + name))])
@@ -211,17 +263,21 @@ export function createSupportWeaponPose(root, bones, {
         const worldPalm = root.localToWorld(new THREE.Vector3(...target.palm));
         const forward = new THREE.Vector3(...target.forward).applyQuaternion(facing);
         const normal = new THREE.Vector3(...target.normal).applyQuaternion(facing);
-        const pole = new THREE.Vector3(side === 'Left' ? -.8 : .8,
-          marker.kind === 'bofors75' && marker.phase !== 'march' ? .35 : -.55, .25).applyQuaternion(facing);
+        const machine = ['maxim24', 'maxim24aa'].includes(marker.kind);
+        const pole = machine ? desired.clone().sub(position(upper)).addScaledVector(forward, -lengths[1])
+          : new THREE.Vector3(side === 'Left' ? -.8 : .8,
+            marker.kind === 'bofors75' && marker.phase !== 'march' ? .35 : -.55, .25).applyQuaternion(facing);
         let solved;
         for (let iteration = 0; iteration < 5; iteration++) {
           solved = solveArm(upper, lower, hand, desired, pole);
-          orient(side, forward, normal);
+          orient(side, forward, normal, side === 'Left' && machine);
           const offset = worldPalm.clone().sub(palm(side));
           if (offset.length() < .0005 || iteration === 4) break;
           desired.add(offset);
         }
-        curl(side);
+        if (machine && solved.reachable && palm(side).distanceTo(worldPalm) <= SUPPORT_CONTACT.palmTolerance)
+          machineCurl(side, target, facing);
+        else curl(side);
         hands[key] = { wrist: root.worldToLocal(position(hand)).toArray(), anchor: target.wrist.slice(),
           shoulder: root.worldToLocal(position(upper)).toArray(),
           elbow: root.worldToLocal(position(lower)).toArray(),

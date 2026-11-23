@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { supportWeaponPoseIndex, supportWeaponTargets, supportViewShoulders, SUPPORT_CONTACT } from './support-weapon-pose.js';
 
-function handFrame(target) {
+function handFrame(target, invert = false) {
   const forward = new THREE.Vector3(...target.forward).normalize(), normal = new THREE.Vector3(...target.normal).normalize();
   const across = normal.clone().cross(forward).normalize();
+  if (invert) across.negate();
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(across, forward, across.clone().cross(forward)));
 }
 
@@ -36,6 +37,8 @@ export function createSupportViewHands(createHand, { applyAppearance = null } = 
     hand.updateMatrixWorld(true);
     palms[side] = hand.worldToLocal(wrist.getWorldPosition(new THREE.Vector3())
       .lerp(middle.getWorldPosition(new THREE.Vector3()), .55));
+    hand.prepareWeaponGrip('machine', { center: [palms[side].x, palms[side].y,
+      palms[side].z + hand.userData.palmFacingAxis * .03], depth: .022, thickness: .022, round: true });
     hands[side] = { hand, wrist, middle }; lengths[side] = hand.userData.armLengths;
     root.add(hand);
   }
@@ -63,22 +66,30 @@ export function createSupportViewHands(createHand, { applyAppearance = null } = 
       const result = {};
       let limited = false;
       for (const side of ['left', 'right']) {
-        const { hand, wrist: wristBone, middle } = hands[side], target = targets[side], facing = handFrame(target);
+        const { hand, wrist: wristBone, middle } = hands[side], target = targets[side];
+        const machine = ['maxim24', 'maxim24aa'].includes(marker.kind);
+        const orientation = machine ? { ...target,
+          forward: new THREE.Vector3(...target.normal).cross(new THREE.Vector3(...target.axis))
+            .multiplyScalar(side === 'left' ? 1 : -1).normalize().toArray() } : target;
+        const facing = handFrame(orientation, side === 'left' && machine);
         const wrist = new THREE.Vector3(...target.palm).sub(palms[side].clone().applyQuaternion(facing));
         const shoulder = new THREE.Vector3(...reference.shoulders[side]);
         const distance = wrist.distanceTo(shoulder), [upper, lower] = lengths[side];
         const reachable = distance < upper + lower - 1e-6 && distance > Math.abs(upper - lower) + 1e-6;
         hand.visible = reachable;
         if (reachable) {
-          hand.poseArm(shoulder, wrist, facing, new THREE.Vector3(side === 'left' ? -.8 : .8,
-            marker.kind === 'bofors75' && marker.phase !== 'march' ? .35 : -.55, .25));
-          hand.poseWeaponGrip({ [marker.phase === 'loading' && side === 'right' ? 'press' : 'support']: 1 });
+          const pole = machine
+            ? wrist.clone().sub(shoulder).addScaledVector(new THREE.Vector3(...orientation.forward), -lower)
+            : new THREE.Vector3(side === 'left' ? -.8 : .8,
+              marker.kind === 'bofors75' && marker.phase !== 'march' ? .35 : -.55, .25);
+          hand.poseArm(shoulder, wrist, facing, pole);
+          hand.poseWeaponGrip({ [machine ? 'machine' : marker.phase === 'loading' && side === 'right' ? 'press' : 'support']: 1 });
         }
         root.updateMatrixWorld(true);
         const actualWrist = root.worldToLocal(wristBone.getWorldPosition(new THREE.Vector3()));
         const actualPalm = root.worldToLocal(wristBone.getWorldPosition(new THREE.Vector3())
           .lerp(middle.getWorldPosition(new THREE.Vector3()), .55));
-        const wristError = actualWrist.distanceTo(new THREE.Vector3(...target.wrist));
+        const wristError = actualWrist.distanceTo(machine ? wrist : new THREE.Vector3(...target.wrist));
         const palmError = actualPalm.distanceTo(new THREE.Vector3(...target.palm));
         const contactLimited = !reachable || wristError > SUPPORT_CONTACT.wristTolerance || palmError > SUPPORT_CONTACT.palmTolerance;
         limited ||= contactLimited;

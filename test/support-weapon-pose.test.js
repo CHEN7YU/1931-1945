@@ -108,6 +108,53 @@ test('four shared canonical banks match real model anchors with both native 65-b
   }
 });
 
+test('third-person machine-gun fingers wrap the actual handles', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const native = rig(team), { root, bones } = native;
+    const pose = createSupportWeaponPose(root, bones);
+    for (const kind of ['maxim24', 'maxim24aa']) for (const [yaw, pitch] of [
+      [EMPLACEMENT_PROFILES[kind].traverse, EMPLACEMENT_PROFILES[kind].maxPitch],
+      [0, 0], [.35, .2], [-.35, .1], [0, .5],
+      [-EMPLACEMENT_PROFILES[kind].traverse, EMPLACEMENT_PROFILES[kind].minPitch],
+    ]) {
+      const bank = SUPPORT_WEAPON_BANKS.find(value => value.kind === kind), setup = fixture(kind, .7, yaw, pitch);
+      native.apply(bank.firingPose ?? 'standing');
+      root.position.copy(setup.operator); root.rotation.y = setup.heading; root.updateMatrixWorld(true);
+      pose.update({ id: 'gunner', team, health: 100, supportWeaponPose: { ...bank, active: true } }, 1, setup.model);
+      const targets = supportWeaponTargets(setup.model, root);
+      for (const side of ['left', 'right']) {
+        const target = targets[side], center = new THREE.Vector3(...target.center), axis = new THREE.Vector3(...target.axis).normalize();
+        const prefix = side === 'left' ? 'Left' : 'Right';
+        const wrist = bones.get(`${prefix}Hand`).getWorldPosition(new THREE.Vector3());
+        const elbow = bones.get(`${prefix}ForeArm`).getWorldPosition(new THREE.Vector3());
+        const knuckle = bones.get(`${prefix}HandMiddle1`).getWorldPosition(new THREE.Vector3());
+        const bend = wrist.clone().sub(elbow).angleTo(knuckle.sub(wrist));
+        if (Math.abs(yaw) <= .35 && pitch >= 0 && (pitch <= .2 || pitch === .5))
+          assert.ok(bend < Math.PI / 6, `${team} ${kind} yaw=${yaw} pitch=${pitch} ${side} wrist bend ${THREE.MathUtils.radToDeg(bend)}`);
+        const axialTips = {};
+        for (const finger of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+          const points = [1, 2, 3, 4].map(joint => root.worldToLocal(
+            bones.get(`${prefix}Hand${finger}${joint}`).getWorldPosition(new THREE.Vector3())));
+          const point = points[3].clone();
+          const delta = point.sub(center), axial = delta.dot(axis), radial = delta.addScaledVector(axis, -axial).length();
+          axialTips[finger] = axial;
+          assert.ok(Math.abs(axial) <= .09 && radial >= target.radius - .008 && radial <= target.radius + .012,
+            `${team} ${kind} ${yaw} ${pitch} ${side} ${finger}: axial=${axial} radial=${radial}`);
+          for (let index = 0; index < 3; index++) for (const fraction of [0, .25, .5, .75, 1]) {
+            const sample = points[index].clone().lerp(points[index + 1], fraction).sub(center);
+            const along = sample.dot(axis), distance = sample.addScaledVector(axis, -along).length();
+            if (Math.abs(along) <= .08) assert.ok(distance >= target.radius - .006,
+              `${team} ${kind} ${side} ${finger} segment ${index} intersects the handle: ${distance}`);
+          }
+        }
+        assert.ok(axialTips.Index > axialTips.Pinky && axialTips.Thumb > axialTips.Pinky,
+          `${team} ${kind} ${side} thumb-index web must face up`);
+      }
+      pose.reset();
+    }
+  }
+});
+
 test('dynamic controls follow actual constrained traverse/pitch and stay reachable rather than using neutral empty hands', () => {
   const native = rig('friendly'), { root, bones } = native;
   for (const bank of SUPPORT_WEAPON_BANKS.filter(bank => bank.kind !== 'type89')) {
@@ -258,15 +305,19 @@ test('stow, ordinary roles, shield, death and pooled rebinding restore owned arm
 });
 
 test('unreachable targets report actual residual error and fixed reach without scaling or fake wrist contact', () => {
-  const native = rig('enemy'), { root, bones } = native, setup = fixture('type89');
-  native.apply('kneeling'); root.position.copy(setup.operator); root.rotation.y = setup.heading; root.updateMatrixWorld(true);
-  const targets = supportWeaponTargets(setup.model, root);
-  targets.left.wrist = [-3, 7, 0]; targets.left.palm = [-3, 7, -.055];
-  const pose = createSupportWeaponPose(root, bones);
-  const snapshot = pose.update({ id: 'unreachable', health: 100,
-    supportWeaponPose: { active: true, kind: 'type89', phase: 'operate', targets } }, 1);
-  assert.equal(snapshot.contactLimited, true); assert.ok(snapshot.hands.left.solveError > 5);
-  assert.ok(pose.issue); assert.equal(bones.get('LeftArm').scale.x, 1);
+  const native = rig('enemy'), { root, bones } = native;
+  for (const kind of ['type89', 'maxim24']) {
+    const setup = fixture(kind);
+    native.apply('kneeling'); root.position.copy(setup.operator); root.rotation.y = setup.heading; root.updateMatrixWorld(true);
+    const targets = supportWeaponTargets(setup.model, root);
+    targets.left.wrist = [-3, 7, 0]; targets.left.palm = [-3, 7, -.055];
+    const pose = createSupportWeaponPose(root, bones);
+    const snapshot = pose.update({ id: 'unreachable', health: 100,
+      supportWeaponPose: { active: true, kind, phase: 'operate', targets } }, 1);
+    assert.equal(snapshot.contactLimited, true); assert.ok(snapshot.hands.left.solveError > 5);
+    assert.ok(pose.issue); assert.equal(bones.get('LeftArm').scale.x, 1);
+    pose.reset();
+  }
 });
 
 test('first-person uses two native sleeve/hand skins with real contacts, shared posture origins and no camera head or rifle', () => {
@@ -329,4 +380,55 @@ test('first-person stow/death/role/rebind is explicit, and repeated aiming never
   assert.ok(view.resources.geometries > 0); assert.ok(view.resources.materials > 0);
   view.dispose();
   assert.equal(view.root.children.length, 0); assert.equal(view.resources.geometries, 0); assert.equal(view.resources.materials, 0);
+});
+
+test('first-person Maxim fingers wrap the real handle at multiple aim angles', () => {
+  const native = rig('friendly');
+  const view = createSupportViewHands(side => createNraGrenadeHand(native.normalized, side, { fullArm: true, weaponRig: true }));
+  const camera = new THREE.PerspectiveCamera();
+  for (const kind of ['maxim24', 'maxim24aa']) for (const [yaw, pitch] of [[0, 0], [.35, .3], [-.35, .1]]) {
+    const setup = fixture(kind, .7, yaw, pitch);
+    const actor = { id: 'gunner', team: 'friendly', health: 100, position: setup.operator,
+      heading: setup.heading, nativeMotion: { profile: native.profile },
+      supportWeaponPose: { active: true, kind, phase: 'operate' } };
+    const snapshot = view.update(actor, camera, setup.model);
+    assert.equal(snapshot.contactLimited, false);
+    const targets = supportWeaponTargets(setup.model, view.root);
+    for (const side of ['left', 'right']) {
+      const target = targets[side], center = new THREE.Vector3(...target.center);
+      const axis = new THREE.Vector3(...target.axis).normalize(), hand = view.root.getObjectByName(`${side}-grenade-hand`);
+      const joints = {}, bases = {};
+      const prefix = side === 'left' ? 'Left' : 'Right';
+      const wrist = hand.getObjectByName(`${prefix}Hand`).getWorldPosition(new THREE.Vector3());
+      const elbow = hand.getObjectByName(`${prefix}ForeArm`).getWorldPosition(new THREE.Vector3());
+      const knuckle = hand.getObjectByName(`${prefix}HandMiddle1`).getWorldPosition(new THREE.Vector3());
+      const bend = wrist.clone().sub(elbow).normalize().angleTo(knuckle.sub(wrist).normalize());
+      assert.ok(bend < Math.PI / 6, `${kind} ${side} wrist bend ${THREE.MathUtils.radToDeg(bend)} degrees`);
+      for (const finger of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+        const points = [1, 2, 3, 4].map(index => view.root.worldToLocal(
+          hand.getObjectByName(`${prefix}Hand${finger}${index}`).getWorldPosition(new THREE.Vector3())));
+        bases[finger] = points[0].clone().sub(center).dot(axis);
+        const tip = points[3].clone();
+        const delta = tip.sub(center), axial = delta.dot(axis);
+        if (finger !== 'Thumb') assert.ok(delta.clone().addScaledVector(axis, -axial).z > 0,
+          `${kind} ${side} ${finger} must face the player`);
+        joints[finger] = axial;
+        const radius = delta.addScaledVector(axis, -axial).length();
+        assert.ok(Math.abs(axial) <= .09, `${kind} ${side} ${finger} outside handle: ${axial}`);
+        assert.ok(radius >= target.radius - .008 && radius <= target.radius + .012,
+          `${kind} ${side} ${finger} radial distance ${radius}, handle ${target.radius}`);
+        for (let index = 0; index < 3; index++) for (const fraction of [0, .25, .5, .75, 1]) {
+          const point = points[index].clone().lerp(points[index + 1], fraction).sub(center);
+          const along = point.dot(axis), radial = point.addScaledVector(axis, -along).length();
+          if (Math.abs(along) <= .08) assert.ok(radial >= target.radius - .006,
+            `${kind} ${side} ${finger} segment ${index} intersects handle: ${radial}`);
+        }
+      }
+      assert.ok(joints.Index > joints.Pinky && joints.Thumb > joints.Pinky,
+        `${kind} ${side} thumb-index web must face up along the handle`);
+      assert.ok(bases.Index > bases.Pinky && bases.Thumb > bases.Pinky,
+        `${kind} ${side} thumb and index roots must be above the little finger`);
+    }
+  }
+  view.dispose();
 });

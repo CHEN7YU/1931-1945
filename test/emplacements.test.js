@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
   advanceEmplacement, fireEmplacement, reloadEmplacement, emplacementObstacles, aimEmplacement,
-  moveArtillery, setArtilleryPosition, ARTILLERY_MARCH, emplacementCooldown } from '../src/emplacements.js';
+  moveArtillery, setArtilleryPosition, ARTILLERY_MARCH, emplacementCooldown,
+  aiEmplacementCanAimAt, aimAIEmplacement } from '../src/emplacements.js';
 import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
 import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
@@ -62,6 +63,36 @@ test('both anti-aircraft mounts share the Maxim weapon specification, traverse a
     assert.ok(point.pitch > .7 && point.pitch < 1.45);
     assert.equal(point.weapon.settings.magazine, 200);
   }
+});
+
+test('AI machine gun elevation rejects high targets and settles after player handover without limiting player aim', () => {
+  for (const profile of ['maxim24', 'maxim24aa']) {
+    const point = createEmplacement({ id: profile, profile, x: 0, z: 0, heading: 0 });
+    const target = pitch => ({ x: 0, y: point.weapon.settings.muzzleHeight + 20 * Math.tan(pitch), z: -20 });
+    assert.equal(aiEmplacementCanAimAt(point, target(.49)), true);
+    assert.equal(aiEmplacementCanAimAt(point, target(.51)), false);
+    emplacementLook(point, 0, point.weapon.settings.maxPitch);
+    assert.equal(point.pitch, point.weapon.settings.maxPitch, 'player can still use the full range');
+    let previous = point.pitch;
+    for (let frame = 0; frame < 100; frame++) {
+      assert.equal(aimAIEmplacement(point, null, .02), false);
+      assert.ok(point.pitch <= previous && previous - point.pitch <= .8 * .02 + 1e-10);
+      previous = point.pitch;
+    }
+    assert.ok(Math.abs(point.pitch - .5) < 1e-10);
+    assert.equal(aimAIEmplacement(point, target(.51), .1), false);
+    emplacementLook(point, 0, .52);
+    assert.equal(aimAIEmplacement(point, target(.49), .01), false,
+      'AI must not fire just above its limit even within alignment tolerance');
+    for (let frame = 0; frame < 100; frame++) aimAIEmplacement(point, target(.3), .02);
+    assert.ok(Math.abs(point.pitch - .3) < 1e-10);
+    assert.equal(aimAIEmplacement(point, target(.3), .02), true);
+    emplacementLook(point, 0, point.weapon.settings.maxPitch);
+    assert.equal(point.pitch, point.weapon.settings.maxPitch, 'player can retake control without an AI cap');
+  }
+  const cannon = createEmplacement({ id: 'gun', profile: 'bofors75', x: 0, z: 0, heading: 0 });
+  const target = { x: 0, y: cannon.weapon.settings.muzzleHeight + 20 * Math.tan(.53), z: -20 };
+  assert.equal(aiEmplacementCanAimAt(cannon, target), true, 'field guns retain their original range');
 });
 
 test('Nanjing anti-aircraft guns can be re-entered after every orientation without bypassing real obstacles', () => {

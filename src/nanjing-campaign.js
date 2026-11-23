@@ -1,6 +1,5 @@
 import { NANJING_COURTYARDS, NANJING_SOLDIER_CAVE,
   NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK, NANJING_WALL_WALKS } from './nanjing-layout.js';
-import { NANJING_OPENING_CIVILIAN_COUNT } from './civilian-crowd.js';
 
 export const NANJING_STAGE_SECONDS = 3 * 60;
 
@@ -156,7 +155,6 @@ export function createNanjingCampaign() {
     civilianCasualties: 0,
     civiliansEnteredCity: 0,
     civiliansCrossedRiver: 0,
-    openingCivilianCasualties: 0,
     openingAssaultReleased: false,
     civiliansUnrescued: 0,
     civilianEnRouteCasualties: 0,
@@ -229,15 +227,10 @@ export function recordNanjingCivilianRiverCrossing(campaign, civilian) {
 
 export function nanjingOpeningAssaultReady(campaign) {
   return campaign.stage === 'gate-defense' && !campaign.openingAssaultReleased &&
-    campaign.civiliansCrossedRiver >= nanjingOpeningCrossingRequired(campaign);
+    !campaign.outcome && campaign.stageElapsed >= NANJING_OPENING_ASSAULT_DELAY;
 }
 
-export function nanjingOpeningCrossingRequired(campaign) {
-  const casualties = campaign.openingCivilianCasualties ?? 0;
-  if (!Number.isInteger(casualties) || casualties < 0 ||
-      casualties > NANJING_OPENING_CIVILIAN_COUNT) throw new RangeError('Invalid opening civilian casualties');
-  return Math.ceil((NANJING_OPENING_CIVILIAN_COUNT - casualties) * .9);
-}
+export const NANJING_OPENING_ASSAULT_DELAY = 20;
 
 export function advanceNanjingCampaign(campaign, dt) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Nanjing campaign time must be finite and non-negative');

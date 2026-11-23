@@ -129,7 +129,7 @@ import { civilianStepAvoidsThreats, updateCivilianThreatResponse } from './civil
 import { advanceCivilianMotion } from './civilian-motion.js';
 import { traceCivilianBullet } from './civilian-hits.js';
 import { NANJING_EMPLACEMENTS, EMPLACEMENT_PROFILES, createEmplacement, emplacementLook, emplacementPose, emplacementEntry,
-  advanceEmplacement, fireEmplacement, reloadEmplacement, aimEmplacement, emplacementCanAimAt,
+  advanceEmplacement, fireEmplacement, reloadEmplacement, aimAIEmplacement, aiEmplacementCanAimAt,
   emplacementObstacles, moveArtillery, setArtilleryPosition, damageEmplacement, fireSupportPriority,
   artilleryPositionTargets, emplacementCooldown, canOperateEmplacement } from './emplacements.js';
 import { createEmplacementModel } from './emplacement-model.js';
@@ -184,7 +184,7 @@ import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from 
 import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
   nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
-  nanjingOpeningAssaultReady, nanjingOpeningCrossingRequired, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
+  NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
   nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady,
   recordNanjingCivilianCityEntry } from './nanjing-campaign.js';
@@ -3146,17 +3146,17 @@ function operateAIEmplacement(actor, dt) {
   const eye = new THREE.Vector3(point.x, floor + profile.muzzleHeight + .8, point.z);
   const target = candidates.filter(target => target.position.distanceTo(eye) < profile.range &&
     (!sihangCampaignMode || sihangNightVisibility(sihangCampaign, eye, target.position)) &&
-    emplacementCanAimAt(point, targetPoint(target), floor))
+    aiEmplacementCanAimAt(point, targetPoint(target), floor))
     .sort((a, b) => a.position.distanceToSquared(eye) - b.position.distanceToSquared(eye))
     .find(target => hasLine(eye, targetPoint(target),
       profile.range, target.type === 'plane' ? target.id : target.vehicleId));
-  if (!target) return true;
-  const aim = targetPoint(target);
-  const aligned = aimEmplacement(point, aim, dt, floor);
+  const aim = target ? targetPoint(target) : null;
+  const aligned = aimAIEmplacement(point, aim, dt, floor);
   point.view.userData.update();
   const operatorPose = emplacementPose(point, floor);
   actor.position.set(operatorPose.operator.x, operatorPose.operator.y, operatorPose.operator.z);
   actor.heading = point.yaw; actor.lookPitch = Math.min(.8, point.pitch);
+  if (!target) return true;
   const muzzle = emplacementPose(point, floor).muzzle;
   const unsafe = allForces.some(friend => {
     if (friend.team !== actor.team) return false;
@@ -7858,7 +7858,6 @@ function applyCivilianDamage(civilian, damage, source) {
   if(source.weaponClass==='plane')nanjingCampaign.civilianAircraftHits=(nanjingCampaign.civilianAircraftHits??0)+1;
   civilianCombatTime=null;
   if (data.health > 0) { data.panicked = true; return; }
-  if (data.openingWave) nanjingCampaign.openingCivilianCasualties++;
   data.dead = true; data.deadAt = time; data.casualtySource = source.soldierId;
   const corpseId = `civilian-${data.civilianId}`;
   civilianCorpses.set(corpseId, { id: corpseId, health: 0, casualty: { time }, civilian });
@@ -8818,7 +8817,7 @@ function updateHUD() {
     $('objective-title').textContent = title;
     document.querySelector('.objective-banner').hidden = false;
     $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense'
-      ? `${gateLabel} · 已过河 ${nanjingCampaign.civiliansCrossedRiver}/${nanjingOpeningCrossingRequired(nanjingCampaign)}${nanjingCampaign.openingAssaultReleased ? '（日军已开始进攻）' : '（掩护百姓过河）'} · 已安全进城 ${nanjingCampaign.civiliansEnteredCity} · 遭日军残害致死 ${nanjingCampaign.civilianCasualties}`
+      ? `${gateLabel} · 已过河 ${nanjingCampaign.civiliansCrossedRiver} · ${nanjingCampaign.openingAssaultReleased ? '日军已开始进攻' : `日军进攻倒计时 ${Math.max(0, Math.ceil(NANJING_OPENING_ASSAULT_DELAY - nanjingCampaign.stageElapsed))}秒`} · 已安全进城 ${nanjingCampaign.civiliansEnteredCity} · 遭日军残害致死 ${nanjingCampaign.civilianCasualties}`
       : nanjingCampaign.stage === 'dock-defense' ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
