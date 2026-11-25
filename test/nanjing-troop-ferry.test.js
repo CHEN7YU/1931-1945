@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Group, Vector3, Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
+import { NANJING_DOCK_SHIFT } from '../src/nanjing-campaign.js';
+import { ferryBoardingPoints } from '../src/nanjing-ferry.js';
 import { beginTroopFerryBoarding, advanceTroopFerryBoarding, syncTroopFerryPassengers,
   troopFerryReady, troopFerryWaitPoint, playerTroopFerryReady, completeTroopFerryCrossing, startFinalBoardingFireBuffer,
   finalBoardingFireHeld, finalBoardingDamageHeld, FINAL_BOARDING_FIRE_BUFFER_SECONDS, retainTroopFerryCasualty,
   syncTroopFerryCorpses } from '../src/nanjing-troop-ferry.js';
 
 function fixture(count = 1) {
-  const ferry = new Group(); ferry.position.set(-76, .05, -80);
+  const ferry = new Group(); ferry.position.set(-76 + NANJING_DOCK_SHIFT, .05, -80);
   ferry.userData = { ferryId: 0, state: 'docked', boarding: null };
   const actors = Array.from({ length: count }, (_, index) => ({ id: `soldier-${index}`, index,
     team: 'friendly', playerUnit: false, health: 100, vehicleId: null, tactics: {}, locomotion: {},
-    traversal: { kind: 'grounded' }, position: new Vector3(-71.8 + index * .01, .36, -80), walkPhase: 0 }));
+    traversal: { kind: 'grounded' }, position: new Vector3(-71.8 + NANJING_DOCK_SHIFT + index * .01, .36, -80), walkPhase: 0 }));
   const route = (_actor, shore) => [{ ...shore, y: .36 }];
   const board = time => {
     if (!beginTroopFerryBoarding(ferry, actors, time, route)) return false;
@@ -114,10 +116,10 @@ test('a dead soldier still on the shore-side boarding route is not incorrectly a
 test('a casualty on the actual boarding plank stays on that fixed support, not the moving boat or the water', () => {
   const { ferry, actors, route } = fixture();
   const plank = new Mesh(new BoxGeometry(2.4, .12, .8), new MeshBasicMaterial());
-  plank.position.set(-73.2, .42, -80); ferry.userData.gangplank = plank;
+  plank.position.set(-73.2 + NANJING_DOCK_SHIFT, .42, -80); ferry.userData.gangplank = plank;
   beginTroopFerryBoarding(ferry, actors, 0, route);
   const actor = actors[0]; actor.health = 0; actor.heading = 0;
-  actor.position.set(-73.2, .45, -80);
+  actor.position.set(-73.2 + NANJING_DOCK_SHIFT, .45, -80);
   assert.equal(retainTroopFerryCasualty(ferry, actor), true);
   assert.equal(actor.tactics.corpseFerry.support, 'gangplank');
   assert.ok(Math.abs(actor.position.y - .48) < 1e-6);
@@ -152,7 +154,7 @@ test('being inside the dock does not evacuate a soldier: actual walking, boardin
     assert.ok(ferry.worldToLocal(actor.position.clone()).distanceTo(seat) < 1e-8);
     assert.equal(actor.nativeMotion.position.x, actor.position.x, 'boat motion must not become an artificial walking stride');
   }
-  ferry.position.x = -144;
+  ferry.position.x = -144 + NANJING_DOCK_SHIFT;
   assert.deepEqual(completeTroopFerryCrossing(ferry), [actor]);
   assert.equal(actor.tactics.nanjingFerry.phase, 'evacuated');
 });
@@ -205,7 +207,8 @@ test('partially loaded AI boats hold spare seats for the player instead of leavi
 
 test('a player already standing at the shore point needs no extra land route before walking onto the gangplank', () => {
   const { ferry, actors } = fixture();
-  const player = actors[0]; player.playerUnit = true; player.position.set(-72.2, .36, -80);
+  const player = actors[0], shore = ferryBoardingPoints(ferry).shore;
+  player.playerUnit = true; player.position.set(shore.x, .36, shore.z);
   assert.equal(beginTroopFerryBoarding(ferry, [player], 0, () => [], true), true);
   const before = player.position.clone(); advanceTroopFerryBoarding(ferry, .05);
   assert.ok(player.position.distanceTo(before) <= .160001);
@@ -215,17 +218,17 @@ test('a player already standing at the shore point needs no extra land route bef
 test('soldiers select an available ferry and leave the reserved player seat free', () => {
   const ferries = Array.from({ length: 5 }, (_, id) => {
     const ferry = new Group();
-    ferry.position.set(-76, .05, -86 + id * 3);
+    ferry.position.set(-76 + NANJING_DOCK_SHIFT, .05, -86 + id * 3);
     ferry.userData = { ferryId: id, state: 'docked', troopPassengers: [] };
     return ferry;
   });
   const actor = fixture().actors[0];
-  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[0].position.z);
+  assert.deepEqual(troopFerryWaitPoint(actor, ferries, 0), { ...ferryBoardingPoints(ferries[0]).shore, transit: true });
   ferries[0].userData.troopPassengers = Array.from({ length: 9 }, () => ({}));
-  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[1].position.z);
+  assert.deepEqual(troopFerryWaitPoint(actor, ferries, 0), { ...ferryBoardingPoints(ferries[1]).shore, transit: true });
   ferries[1].userData.state = 'outbound';
-  assert.equal(troopFerryWaitPoint(actor, ferries, 0).z, ferries[2].position.z);
-  assert.equal(troopFerryWaitPoint(actor, ferries).z, ferries[0].position.z);
+  assert.deepEqual(troopFerryWaitPoint(actor, ferries, 0), { ...ferryBoardingPoints(ferries[2]).shore, transit: true });
+  assert.deepEqual(troopFerryWaitPoint(actor, ferries), { ...ferryBoardingPoints(ferries[0]).shore, transit: true });
 });
 
 test('player boat leaves when the actual player finishes boarding, independent of other boats and soldiers', () => {

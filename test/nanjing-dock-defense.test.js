@@ -5,9 +5,9 @@ import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { createNavigator, segmentClear } from '../src/core.js';
 import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockOutsideGoal,
   nanjingDockAssaultGoal, nanjingDockBufferActive, nanjingDockPathClear,
-  assignNanjingDockDefense } from '../src/nanjing-dock-defense.js';
+  nanjingDockPostOutsideBuildings, assignNanjingDockDefense } from '../src/nanjing-dock-defense.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingCoreGuard } from '../src/nanjing-defense.js';
-import { NANJING_DOCK_ASSAULT_SPAWNS, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_SHIFT, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT } from '../src/civilian-crowd.js';
 import { formationPositions } from '../src/battle-roster.js';
 
@@ -26,13 +26,13 @@ test('the real civilian queue is behind the exclusion boundary, not just its vis
   assert.equal(nanjingDockBufferActive('withdrawal-to-boats'), true);
   const outside = { x: -50, z: -80 };
   assert.equal(nanjingDockOutsideGoal(outside), outside);
-  assert.equal(nanjingDockInside(nanjingDockOutsideGoal({ x: -66, z: -80 }, .6), .6), false);
+  assert.equal(nanjingDockInside(nanjingDockOutsideGoal({ x: -66 + NANJING_DOCK_SHIFT, z: -80 }, .6), .6), false);
 });
 
 test('a shared route cannot shortcut through the waiting area when both endpoints are outside', () => {
-  const start = { x: -65, z: -95 }, end = { x: -65, z: -65 };
+  const start = { x: -65 + NANJING_DOCK_SHIFT, z: -95 }, end = { x: -65 + NANJING_DOCK_SHIFT, z: -65 };
   assert.equal(nanjingDockPathClear(start, [end]), false);
-  assert.equal(nanjingDockPathClear(start, [{ x: -57, z: -95 }, { x: -57, z: -65 }, end]), true);
+  assert.equal(nanjingDockPathClear(start, [{ x: NANJING_DOCK_BUFFER.maxX + 1, z: -95 }, { x: NANJING_DOCK_BUFFER.maxX + 1, z: -65 }, end]), true);
 });
 
 test('all four autonomous squads have distinct reachable outer posts, without redirecting the player squad', () => {
@@ -41,7 +41,8 @@ test('all four autonomous squads have distinct reachable outer posts, without re
     return Array.from({ length: 11 }, (_, slot) => ({ id: `${index}-${slot}`, index: slot, formation,
       friendly: true, playerUnit: index === 0, health: 100, tactics: {} }));
   }).flat();
-  const clear = point => Math.abs(world.walkHeight(point.x, point.z, 0)) < .1 &&
+  const clear = point => nanjingDockPostOutsideBuildings(point, world.landmarks.residentialBuildings) &&
+    Math.abs(world.walkHeight(point.x, point.z, 0)) < .1 &&
     !world.obstacles.some(obstacle => {
       return !segmentClear(point, point, .5, [obstacle]);
     });
@@ -59,6 +60,12 @@ test('all four autonomous squads have distinct reachable outer posts, without re
     const positions = formationPositions(spawn, 11, world.obstacles);
     assert.equal(positions.length, 11);
     assert.ok(positions.every(point => !nanjingDockInside(point, .5)), 'reinforcements spawn outside the queue too');
+    assert.ok(Math.hypot(spawn.x - NANJING_DOCK.x, spawn.z - NANJING_DOCK.z) < 25);
+    for (const post of posts) {
+      const path = planner(positions[0], post);
+      assert.ok(path.length, `${id} cannot reach ${JSON.stringify(post)} from ${JSON.stringify(positions[0])}: ${planner.stats.reason}`);
+      assert.ok(path.some(point => point.x > -74), 'the squad must pass through the west wall');
+    }
   }
   const entrance = { x: -56, z: -61 };
   for (const post of posts) {

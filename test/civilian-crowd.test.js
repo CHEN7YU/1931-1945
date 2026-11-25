@@ -85,12 +85,12 @@ test('crowds can spread through a shared street waypoint without cutting solid c
   assert.equal(civilianWaypointReached({ x: .01, z: -5 }, route, 1, []), true);
 });
 
-test('sixty individual waiting places form a dense crowd on the dock without merged bodies', () => {
+test('sixty individual waiting places form a dense shore crowd without merged bodies', () => {
   const slots = Array.from({ length: 60 }, (_, index) => civilianWaitingSlot(index));
   for (const [index, slot] of slots.entries()) {
-    assert.ok(slot.x > -73 && slot.x < -64 && slot.z > -90 && slot.z < -70);
-    assert.equal(slot.y, .36);
-    for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) >= .58);
+    assert.ok(slot.x > -89 && slot.x < -80 && slot.z > -90 && slot.z < -70);
+    assert.equal(slot.y, 0);
+    for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) >= .74);
   }
   assert.throws(() => civilianWaitingSlot(NANJING_CIVILIAN_COUNT), RangeError);
   assert.ok(new Set(slots.map(slot => Math.round(slot.z * 100))).size > 55, 'waiting people must not form grid rows');
@@ -115,8 +115,8 @@ test('a moving civilian cannot pass through a waiting person or a solid barrier'
     assert.ok(Math.hypot(first.position.x - second.position.x, first.position.z - second.position.z) >= .72);
     assert.ok(first.position.x <= 1.64);
   }
-  const dock = { position: { x: -65, y: 0, z: -80 }, userData: { civilianId: 2 } };
-  moveCivilianInCrowd(dock, { x: -66, z: -80 }, .1, [dock], []);
+  const dock = { position: { x: -98, y: 0, z: -80 }, userData: { civilianId: 2 } };
+  moveCivilianInCrowd(dock, { x: -99, z: -80 }, .1, [dock], []);
   assert.equal(dock.position.y, .36, 'feet stand on the platform instead of sinking through its planks');
 });
 

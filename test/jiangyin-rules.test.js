@@ -60,7 +60,7 @@ test('three friendly warships fight phase one; the phase ends only when all are 
   state.navalTime = 30;
   assert.equal(dueNavalWaves(state).length, 2);
   assert.equal(dueNavalWaves(state).length, 0);
-  assert.equal(JIANGYIN_RULES.durationSeconds, 300, 'phase two lasts five minutes');
+  assert.equal(JIANGYIN_RULES.durationSeconds, 180, 'phase two lasts three minutes');
 });
 
 test('waves release in time order exactly once', () => {
@@ -72,11 +72,11 @@ test('waves release in time order exactly once', () => {
   assert.equal(dueWaves(state).length, JIANGYIN_WAVES.length - 2);
 });
 
-test('outcome: losing every shore battery is defeat; holding five minutes or clearing all waves is victory', () => {
+test('outcome: losing every shore battery is defeat; otherwise hold three minutes', () => {
   const base = { elapsed: 10, shoreAlive: 3, wavesRemaining: 4, enemiesAlive: 5 };
   assert.equal(evaluateOutcome(base), null);
   assert.deepEqual(evaluateOutcome({ ...base, shoreAlive: 0 }), { result: 'defeat', reason: 'batteries' });
-  assert.deepEqual(evaluateOutcome({ ...base, wavesRemaining: 0, enemiesAlive: 0 }), { result: 'victory', reason: 'repelled' });
+  assert.equal(evaluateOutcome({ ...base, wavesRemaining: 0, enemiesAlive: 0 }), null);
   assert.deepEqual(evaluateOutcome({ ...base, elapsed: JIANGYIN_RULES.durationSeconds }), { result: 'victory', reason: 'held' });
 });
 
@@ -90,19 +90,10 @@ test('possession switching skips destroyed posts in both directions and reports 
   assert.throws(() => nextPostId(posts, 'a', 2), RangeError);
 });
 
-test('enemy attacks by water, land and air: 10 infantry squads, 3 tank platoons, 3 air sections, spawned downstream about 200 m away', async () => {
-  const { LAND_SPAWNS, AIR_SPAWN, riverCenter, JIANGYIN_ADVANCE_GUARD } = await import('../src/jiangyin/jiangyin-rules.js');
-  const total = key => JIANGYIN_WAVES.reduce((sum, wave) => sum + (Array.isArray(wave[key]) ? wave[key].length : wave[key]), 0);
-  assert.equal(total('infantry') + JIANGYIN_ADVANCE_GUARD.infantry.length, 10);
-  assert.equal(total('tanks'), 3);
-  assert.equal(total('air'), 3);
-  for (const spawn of Object.values(LAND_SPAWNS)) {
-    assert.ok(groundHeight(spawn.x, spawn.z) > 8, 'land units start on the bank above the beach');
-    const near = Math.min(...JIANGYIN_POSTS.filter(post => post.kind === 'battery' && Math.sign(post.z) === Math.sign(spawn.z))
-      .map(post => Math.hypot(post.x - spawn.x, post.z - spawn.z)));
-    assert.ok(near > 170 && near < 230, `land spawns sit about 200 m from the nearest position (${Math.round(near)} m)`);
-    assert.ok(JIANGYIN_POSTS.filter(post => Math.sign(post.z) === Math.sign(spawn.z)).every(post => spawn.x > post.x), 'on the downstream side');
-  }
+test('phase two schedules four air sections within three minutes', async () => {
+  const { AIR_SPAWN, riverCenter } = await import('../src/jiangyin/jiangyin-rules.js');
+  assert.equal(JIANGYIN_WAVES.reduce((sum, wave) => sum + wave.air, 0), 4);
+  assert.ok(JIANGYIN_WAVES.every(wave => wave.at < JIANGYIN_RULES.durationSeconds && !wave.infantry && !wave.tanks && !wave.landing));
   assert.ok(AIR_SPAWN.x > JIANGYIN_RULES.spawnX && AIR_SPAWN.y > 100);
   assert.ok(riverCenter(JIANGYIN_RULES.spawnX) > 100, 'the river bends so ships appear behind the bend');
   for (const post of JIANGYIN_POSTS) assert.ok(post.x < JIANGYIN_RULES.spawnX - 250, 'player posts are downstream of the enemy');

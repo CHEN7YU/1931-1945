@@ -9,11 +9,11 @@ import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
 import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { spawnBlockReason } from '../src/spawns.js';
-import { circleBlocked } from '../src/core.js';
+import { circleBlocked, createNavigator } from '../src/core.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
 test('bridge and dock each include a shared-profile heavy machine gun and 75mm mountain gun', () => {
-  assert.equal(NANJING_EMPLACEMENTS.length, 7);
+  assert.equal(NANJING_EMPLACEMENTS.length, 9);
   assert.equal(NANJING_EMPLACEMENTS.find(point => point.id === 'gate-wall-mg').enclosed, true);
   for (const place of ['bridge', 'dock']) {
     assert.deepEqual(NANJING_EMPLACEMENTS.filter(point => point.id.startsWith(place) && !point.id.endsWith('-aa')).map(point => point.profile),
@@ -254,6 +254,31 @@ test('northern dock weapons face clear eastern streets and AA stays behind their
   }
   const aa=NANJING_EMPLACEMENTS.find(point=>point.id==='dock-aa');
   assert.ok(aa.x<NANJING_EMPLACEMENTS.find(point=>point.id==='dock-mg').x-8);
+});
+
+test('the two new ferry machine guns have supported, reachable crew positions and clear outward fire', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const guns = NANJING_EMPLACEMENTS.filter(spec => spec.id.startsWith('ferry-'));
+  assert.equal(guns.length, 2);
+  const navigate = createNavigator(world.doorSystem.navigationObstacles);
+  for (const spec of guns) {
+    const point = createEmplacement(spec), floor = spec.altitude ?? world.groundHeight(spec.x, spec.z);
+    const pose = emplacementPose(point, floor);
+    assert.equal(world.groundHeight(point.x, point.z), floor);
+    assert.equal(world.isDeepWater(point.x, point.z), false);
+    assert.ok(emplacementEntry(point, floor,
+      operator => circleBlocked(operator.x, operator.z, .43, world.obstacles, operator.y)));
+    const start = { x: -85, y: 0, z: -60 }, path = navigate(start, pose.operator);
+    assert.ok(path.length, `${spec.id}: ${navigate.stats.reason}`);
+    for (const waypoint of path)
+      world.moveInfantry(start, waypoint.x - start.x, waypoint.z - start.z, .42);
+    assert.ok(Math.hypot(start.x - pose.operator.x, start.z - pose.operator.z) < .05, `${spec.id}: physical approach`);
+    assert.ok(Math.abs(start.y - floor) < .01);
+    const ray = new THREE.Raycaster(new THREE.Vector3(pose.muzzle.x, pose.muzzle.y, pose.muzzle.z),
+      new THREE.Vector3(-Math.sin(point.yaw), 0, -Math.cos(point.yaw)), 0, 15);
+    assert.equal(ray.intersectObjects(world.solids, true).length, 0, `${spec.id}: outward fire`);
+  }
 });
 
 test('artillery has no original-position tether, cannot exceed walking speed and retains physical obstruction and reload time',()=>{

@@ -8,7 +8,7 @@ export const RIVER_HALF = 750;              // 水面半宽：江阴黄山—靖
 const SHORE_OFFSET = RIVER_HALF - 70;       // 岸线剖面（浅滩—滩头—石崖—台地）整体外移量
 
 export const JIANGYIN_RULES = Object.freeze({
-  durationSeconds: 300,          // 第二阶段：死守两岸阵地 5 分钟
+  durationSeconds: 180,          // 第二阶段：死守两岸阵地 3 分钟
   navalReinforceAfter: 120,      // 第一阶段超过该秒数仍未分出胜负时，日军每 30 秒增援一艘驱逐舰
   introSeconds: 12,              // 开场演出，可跳过
   breakthroughX: -1300,          // 敌舰航线的上游终点（南京方向；自沉封江后已无法到达）
@@ -44,21 +44,10 @@ export const SHIP_AA = Object.freeze({
   cruiser: Object.freeze({ name: '九六式25毫米机关炮', mounts: 2, range: 1200, burst: 2, cooldown: 3.6, interval: .27, damage: 3.5, crew: 12, spread: .009 }),
 });
 
-// 第二阶段（死守两岸）：at 为第二阶段开始后的秒数，5 分钟内依次投入。
-// ships：水面舰艇；landing：登陆艇靠岸方向；infantry：从下游陆路来袭的步兵小队（共 6 个）；
-// tanks：坦克小队（共 2 个，每队 3 辆）；air：航空小队（共 3 个，每队 3 架，被击落前反复来袭）。
-// 日军的目标是摧毁我军两岸阵地：5 个阵地全部被毁即失败。
-// v13：日军蜂拥而上——步兵小队 9 个（每队 12 人，南岸为主攻方向）、坦克小队 3 个（沿公路开上山）、航空小队 3 个
+// 第二阶段：四个三机航空编队依次来袭，水面舰艇由游戏中的舰队补充规则管理。
 export const JIANGYIN_WAVES = Object.freeze([
-  { at: 0, ships: [], landing: ['south', 'north'], infantry: ['south'], tanks: ['south'] },
-  { at: 40, ships: ['gunboat'], landing: ['south', 'south'], infantry: ['north', 'south'], air: 1 },
-  { at: 80, ships: [], landing: ['north'], infantry: ['south'], tanks: ['south'] },
-  { at: 125, ships: ['gunboat'], landing: ['north', 'south', 'south'], infantry: ['north', 'south'], air: 1 },
-  { at: 170, ships: [], landing: ['north', 'south'], infantry: ['south'], tanks: ['north'] },
-  { at: 215, ships: ['destroyer'], landing: ['south'], infantry: ['north'], air: 1 },
-  { at: 255, ships: [], landing: ['north', 'south', 'south'] },
-].map(wave => Object.freeze({ ...wave, ships: Object.freeze(wave.ships), landing: Object.freeze(wave.landing),
-  infantry: Object.freeze(wave.infantry ?? []), tanks: Object.freeze(wave.tanks ?? []), air: wave.air ?? 0 })));
+  { at: 0, air: 1 }, { at: 45, air: 1 }, { at: 90, air: 1 }, { at: 135, air: 1 },
+].map(Object.freeze));
 
 // 日军陆军先头部队：玩家在自沉演出中登岸时即从下游陆路出发，约在第二阶段开始时抵达（计入 6 个步兵小队）
 export const JIANGYIN_ADVANCE_GUARD = Object.freeze({ infantry: Object.freeze(['south', 'south']) });
@@ -583,7 +572,7 @@ export function landingPoint(bank, random = Math.random) {
 }
 
 export function createJiangyinState() {
-  // phase：intro → naval（江面决战）→ scuttle（自沉封江）→ hold（死守两岸 5 分钟）→ ended
+  // phase：intro → naval（江面决战）→ scuttle（自沉封江）→ hold（死守两岸 3 分钟）→ ended
   return { phase: 'intro', introTime: 0, navalTime: 0, scuttleTime: 0, elapsed: 0, navalIndex: 0, waveIndex: 0, outcome: null,
     stats: { shipsSunk: 0, landingSunk: 0, infantryKilled: 0, tanksDestroyed: 0, planesDowned: 0, shots: 0, transfers: 0 } };
 }
@@ -602,11 +591,10 @@ export function dueNavalWaves(state) {
   return due;
 }
 
-// 第一阶段：三舰全部沉没 → 'scuttle'；两岸阵地全毁 → 失败。第二阶段（hold）：坚守 5 分钟或击退全部波次 → 胜利。
+// 第一阶段：三舰全部沉没 → 'scuttle'；第二阶段阵地全毁则失败，否则守满三分钟获胜。
 export function navalPhaseOver(shipsAfloat) { return shipsAfloat <= 0; }
-export function evaluateOutcome({ elapsed, shoreAlive, wavesRemaining, enemiesAlive }) {
+export function evaluateOutcome({ elapsed, shoreAlive }) {
   if (shoreAlive <= 0) return { result: 'defeat', reason: 'batteries' };
-  if (wavesRemaining === 0 && enemiesAlive === 0) return { result: 'victory', reason: 'repelled' };
   if (elapsed >= JIANGYIN_RULES.durationSeconds) return { result: 'victory', reason: 'held' };
   return null;
 }

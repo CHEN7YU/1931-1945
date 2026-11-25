@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createCivilianCharacterFactory } from '../src/civilian-character.js';
 import { createNanjingFerryFactory, updateNanjingFerryRower, createShoreReeds, NANJING_FERRY_FLOOR } from '../src/nanjing-river-details.js';
+import { NANJING_RIVER_SHORE_X } from '../src/nanjing-campaign.js';
 
 test('five open wooden ferries share finite low-cost hull geometry and have separate oars', () => {
   const make = createNanjingFerryFactory(new THREE.MeshStandardMaterial());
@@ -92,7 +93,7 @@ test('the real rower keeps both hands on the tilted shaft and dips the blade in 
 
 test('shore reeds are one opaque merged mesh, retain dock clearance, and do not register collision', () => {
   const banks = [-100, -80, -60].map(z => {
-    const bank = new THREE.Mesh(); bank.position.set(-73.5, -1.5, z);
+    const bank = new THREE.Mesh(); bank.position.set(NANJING_RIVER_SHORE_X - 1.5, -1.5, z);
     bank.scale.set(3, 3.1, 3);
     bank.userData = { riverId: 'yangtze-west', shoreline: {
       from: z - 1.5, to: z + 1.5, startInset: 1, endInset: 1,

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { NANJING_DOCK_SHIFT, NANJING_RIVER_SHORE_X } from './nanjing-campaign.js';
 
 export const NANJING_FERRY_FLOOR = .42;
 export const NANJING_OAR_BLADE_TIP = Object.freeze([2.975, 0, 0]);
@@ -27,6 +28,40 @@ function box(parts, size, position, color) {
   for (let i = 0; i < geometry.attributes.position.count; i++) colors.push(tint.r, tint.g, tint.b);
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   parts.push(geometry);
+}
+
+export function createNanjingDockDetails(timber) {
+  const wood = timber.clone(); wood.vertexColors = true;
+  const parts = [];
+  const addPlank = (size, position, color) => {
+    const geometry = new THREE.BoxGeometry(...size);
+    const positions = geometry.attributes.position, uvs = geometry.attributes.uv;
+    for (let i = 0; i < positions.count; i++)
+      uvs.setXY(i, (positions.getZ(i) + position[2]) / 2, (positions.getX(i) + position[0]) / 2);
+    geometry.translate(...position);
+    const tint = new THREE.Color(color), colors = new Float32Array(positions.count * 3);
+    for (let i = 0; i < positions.count; i++) tint.toArray(colors, i * 3);
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    parts.push(geometry);
+  };
+  const colors = [0xffffff, 0xeadcc9, 0xd7c8b3, 0xf2e5d0, 0xe2d2bb];
+  for (let row = 0; row < 15; row++) {
+    const z = -2.5 + (row + .5) * 5 / 15;
+    const offset = ((row * 17 % 11) - 5) * .11;
+    const edges = [-7, -3.5 + offset, offset, 3.5 + offset, 7];
+    for (let segment = 0; segment < edges.length - 1; segment++) {
+      const start = edges[segment], end = edges[segment + 1];
+      addPlank([end - start - .014, .012, 5 / 15 - .018],
+        [(start + end) / 2, .36, z], colors[(row * 7 + segment * 3) % colors.length]);
+      for (const x of [start + .12, end - .12]) for (const dz of [-.095, .095])
+        addPlank([.02, .003, .02], [x, .3675, z + dz], 0x8a7c69);
+    }
+  }
+  for (const x of [-6.8, -3.4, 0, 3.4, 6.8]) for (const z of [-2.4, 2.4])
+    addPlank([.18, .70, .18], [x, -.015, z], 0xc7b8a1);
+  const mesh = finish(parts, wood);
+  mesh.userData.nanjingFeature = 'dock-planked-detail';
+  return mesh;
 }
 
 export function createNanjingFerryFactory(timber) {
@@ -120,14 +155,14 @@ export function createShoreReeds(banks) {
   for (const bank of banks) {
     const { from, to, startInset, endInset } = bank.userData.shoreline;
     const horizontal = bank.userData.riverId === 'qinhuai-south';
-    const side = Math.sign(horizontal ? bank.position.z - 52 : bank.position.x + 84);
+    const side = Math.sign(horizontal ? bank.position.z - 52 : bank.position.x - (NANJING_RIVER_SHORE_X - 12));
     for (let cluster = 0; cluster < 4; cluster++) {
       const t = (cluster + .35) / 4, along = from + (to - from) * t;
       const inset = startInset + (endInset - startInset) * t;
       const cross = (horizontal ? bank.position.z : bank.position.x) -
         side * ((horizontal ? bank.scale.z : bank.scale.x) / 2 + inset);
       const x = horizontal ? along : cross, z = horizontal ? cross : along;
-      if (x > -77 && x < -55 && z > -94 && z < -66) continue;
+      if (x > -77 + NANJING_DOCK_SHIFT && x < -55 + NANJING_DOCK_SHIFT && z > -94 && z < -66) continue;
       if (Math.sin(along * 1.73 + side) < -.3) continue;
       for (let blade = 0; blade < 9; blade++) {
         const seed = along * 7.31 + blade * 2.47;

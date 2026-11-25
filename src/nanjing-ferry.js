@@ -1,9 +1,20 @@
-import { NANJING_BOAT_CAPACITY } from './nanjing-campaign.js';
+import { NANJING_BOAT_CAPACITY, NANJING_DOCK, NANJING_DOCK_SHIFT } from './nanjing-campaign.js';
 
 export const NANJING_FERRY_ROUTE = Object.freeze({
-  visibleStartX: -112, hiddenX: -144, speed: 2.8, offscreenSeconds: 6,
+  visibleStartX: -112 + NANJING_DOCK_SHIFT, hiddenX: -144 + NANJING_DOCK_SHIFT, speed: 2.8, offscreenSeconds: 6,
   riverWidth: 2000, riverDepth: 3000, maximumLoadingSeconds: 15,
 });
+
+export function ferryBoardingPoints(ferry) {
+  const x = ferry.userData.originX ?? ferry.position.x;
+  const z = ferry.userData.originZ ?? ferry.position.z;
+  if (!Number.isFinite(x) || !Number.isFinite(z)) throw new RangeError('Ferry berth must have finite coordinates');
+  const side = Math.sign(z - NANJING_DOCK.z);
+  return side
+    ? { shore: { x, z: NANJING_DOCK.z + side * 1.6 },
+      plank: { x, z: NANJING_DOCK.z + side * 3.2 } }
+    : { shore: { x: x + 3.7, z }, plank: { x: x + 2, z } };
+}
 
 export function selectCivilianBoarding(campaign, ferries, queue, now) {
   if (!Number.isFinite(now) || now < 0) throw new RangeError('Civilian boarding requires simulation time');

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
 import { deployFromMenu } from './game-entry.mjs';
+import { NANJING_DOCK_SHIFT } from '../src/nanjing-campaign.js';
 
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), errors = [];
@@ -26,8 +27,9 @@ try {
           .sort((a,b)=>Number(!(a.userData.troopPassengers?.length))-Number(!(b.userData.troopPassengers?.length))||
             (a.userData.troopPassengers?.length??0)-(b.userData.troopPassengers?.length??0))[0];
         if(!ferry)throw new Error('No actual ferry space remains for the player');
-        allies[current].position.set(-72.2,.36,ferry.position.z);
-        if(allies[current].nativeMotion)allies[current].nativeMotion.position={x:-72.2,z:ferry.position.z};
+        const shore = ferryBoardingPoints(ferry).shore;
+        allies[current].position.set(shore.x,.36,shore.z);
+        if(allies[current].nativeMotion)allies[current].nativeMotion.position={...shore};
         setGameState('playing');bindControlInput();
       },
       delayOtherBoat() {
@@ -35,7 +37,7 @@ try {
           ferry.userData.state === 'docked' && !ferry.userData.troopBoarding &&
           !(ferry.userData.troopPassengers?.length));
         if (!boat) throw new Error('No empty other boat for departure regression');
-        boat.position.x = -100; boat.userData.state = 'inbound'; boat.userData.gangplank.visible = false;
+        boat.position.x = -100 + NANJING_DOCK_SHIFT; boat.userData.state = 'inbound'; boat.userData.gangplank.visible = false;
         nanjingCampaign.boats[boat.userData.ferryId].returning = true;
         const teammate = allies.find(actor => actor !== controlledSoldier(entities) && actor.health > 0);
         if (!teammate) throw new Error('No living teammate for departure regression');
@@ -44,7 +46,7 @@ try {
         return boat.userData.ferryId;
       },
       observeDock() {
-        camera.position.set(-65,2.1,-80);camera.lookAt(-91,.8,-80);camera.updateMatrixWorld(true);
+        camera.position.set(-65 + NANJING_DOCK_SHIFT,2.1,-80);camera.lookAt(-91 + NANJING_DOCK_SHIFT,.8,-80);camera.updateMatrixWorld(true);
       },
       begin(ownCount=11,aiCount=3) {
         setGameState('pause');
@@ -68,17 +70,19 @@ try {
           clearActors(discard);formation.members=keep;
           for(const actor of keep) {
             const index=retained.length;
-            actor.position.set(-67+(index%2),.36,-86+(index%5)*3);
+            const slot=world.civilians[index].userData.waitingSlot;
+            actor.position.set(slot.x,0,slot.z);
             actor.nextThink=Infinity;actor.target=null;actor.tactics.cover=null;actor.path=[];
             retained.push(actor);
           }
         }
         friendlyAI=retained;rebuildForces();
         for(const [index,actor] of allies.entries()){
-          actor.health=index<ownCount?100:0;actor.position.set(-65+index%3,.36,-86+index%5*3);
+          const slot=world.civilians[index+44].userData.waitingSlot;
+          actor.health=index<ownCount?100:0;actor.position.set(slot.x,0,slot.z);
           actor.order='hold';actor.orderPoint=actor.position.clone();actor.nextThink=Infinity;actor.target=null;
         }
-        allies[current].position.set(-72.2,.36,-80);controlPose.yaw=Math.PI/2;controlPose.pitch=-.13;
+        controlPose.yaw=Math.PI/2;controlPose.pitch=-.13;
         this.tracked=[...retained,...allies.filter(actor=>actor.health>0)];
         this.playerId=entities.control.soldierId;updateCamera(0);
         nanjingCampaign.requiredAISquads=forces.length;
@@ -99,7 +103,10 @@ try {
             x:actor.position.x,y:actor.position.y,z:actor.position.z,phase:actor.tactics.nanjingFerry?.phase??'waiting',
             ferryId:actor.tactics.nanjingFerry?.ferryId??null})),
           actors:friendlyAI.filter(actor=>this.ids.includes(actor.id)).map(actor=>({id:actor.id,x:actor.position.x,y:actor.position.y,z:actor.position.z,
-            phase:actor.tactics.nanjingFerry?.phase??'approach'})),
+            phase:actor.tactics.nanjingFerry?.phase??'approach',mode:actor.tactics.mode,
+            goal:nanjingBoardingGoal(actor),path:actor.path?.slice(0,3),pathGoal:actor.pathGoal,
+            pathReason:actor.tactics.pathReason,traffic:actor.tactics.traffic,
+            emplacementId:actor.emplacementId,stationId:actor.tactics.stationId})),
           boats:world.ferries.map(ferry=>({state:ferry.userData.state,x:ferry.position.x,boarding:Boolean(ferry.userData.troopBoarding),
             departures:nanjingCampaign.boats[ferry.userData.ferryId].departures,
             troops:ferry.userData.troopPassengers?.length??0,
@@ -151,7 +158,7 @@ try {
     final = await page.evaluate(() => troopFerryReview.step(10));
     checkSeats(final);
     const checkpoint = final.boats.some(boat => boat.boarding) && !seen.boarding ? 'boarding'
-      : final.boats.some(boat => boat.state === 'outbound' && boat.troops > 0 && boat.x < -76.1) && !seen.outgoing ? 'outgoing'
+      : final.boats.some(boat => boat.state === 'outbound' && boat.troops > 0 && boat.x < -76.1 + NANJING_DOCK_SHIFT) && !seen.outgoing ? 'outgoing'
       : final.boats.some(boat => boat.troops > 0) && !seen.aboard ? 'aboard' : null;
     if (checkpoint) {
       seen[checkpoint] = true; snapshots.push({ checkpoint, ...final });
@@ -161,7 +168,7 @@ try {
       }
     }
   }
-  assert.equal(final.boarded, final.required);
+  assert.equal(final.boarded, final.required, JSON.stringify(final));
   async function boardAndExit(start, count, delayOtherBoat = false) {
     await page.evaluate(() => troopFerryReview.readyForF());
     await page.keyboard.press('f');
@@ -216,7 +223,7 @@ try {
   for (let chunk = 0; chunk < 240 && small.boarded < small.required; chunk++) {
     small = await page.evaluate(() => troopFerryReview.step(10)); checkSeats(small);
   }
-  assert.equal(small.boarded, small.required);
+  assert.equal(small.boarded, small.required, JSON.stringify(small));
   smallStart.playerId = await page.evaluate(() => troopFerryReview.playerId);
   await boardAndExit(smallStart, 3, true);
   const fullArmyStart = await page.evaluate(() => troopFerryReview.restart(11,11));
@@ -225,7 +232,7 @@ try {
   for (let chunk = 0; chunk < 480 && fullArmy.boarded < fullArmy.required; chunk++) {
     fullArmy = await page.evaluate(() => troopFerryReview.step(10)); checkSeats(fullArmy);
   }
-  assert.equal(fullArmy.boarded, fullArmy.required);
+  assert.equal(fullArmy.boarded, fullArmy.required, JSON.stringify(fullArmy));
   fullArmyStart.playerId = await page.evaluate(() => troopFerryReview.playerId);
   await boardAndExit(fullArmyStart, 11);
   await page.evaluate(() => troopFerryReview.returnToLobby());

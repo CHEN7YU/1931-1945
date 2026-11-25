@@ -1,6 +1,7 @@
 import { Vector3, Raycaster } from 'three';
 import { NANJING_BOAT_CAPACITY } from './nanjing-campaign.js';
 import { NANJING_FERRY_FLOOR } from './nanjing-river-details.js';
+import { ferryBoardingPoints } from './nanjing-ferry.js';
 
 export const FINAL_BOARDING_FIRE_BUFFER_SECONDS = 16;
 
@@ -91,7 +92,7 @@ export function troopFerryWaitPoint(actor, ferries, reservedFerryId = null) {
     .find(candidate => candidate.userData.state === 'docked' &&
       (candidate.userData.troopPassengers?.length ?? 0) <
         NANJING_BOAT_CAPACITY - Number(candidate.userData.ferryId === reservedFerryId)) ?? ferries[start];
-  return { x: -72.2, z: ferry.position.z, transit: true };
+  return { ...ferryBoardingPoints(ferry).shore, transit: true };
 }
 
 export function playerTroopFerryReady(ferry, player, campaign) {
@@ -111,7 +112,7 @@ export function beginTroopFerryBoarding(ferry, actors, time, shorePath, allowPla
   if (data.state !== 'docked' || data.boarding || data.troopBoarding ||
     time < (data.troopNextRouteAttemptAt ?? 0) ||
     data.troopPassengers.length >= NANJING_BOAT_CAPACITY) return false;
-  const shore = { x: -72.2, z: ferry.position.z };
+  const { shore, plank } = ferryBoardingPoints(ferry);
   const candidates = actors.filter(actor => actor.team === 'friendly' && (!actor.playerUnit || allowPlayerUnit) && actor.health > 0 && !actor.vehicleId &&
     !actor.grenades?.action && actor.traversal?.kind === 'grounded' &&
     !actor.tactics.nanjingFerry && time >= (actor.tactics.nanjingFerryRetryAt?.[data.ferryId] ?? 0) &&
@@ -135,7 +136,8 @@ export function beginTroopFerryBoarding(ferry, actors, time, shorePath, allowPla
   delete actor.tactics.nanjingFerryRetryAt;
   actor.tactics.nanjingFerry = { ferryId: data.ferryId, phase: 'boarding', speed: 0 };
   data.troopBoarding = { actor, seat, local, path: [...path,
-    { x: -74.3, z: ferry.position.z, y: target.y }, { x: target.x, y: target.y, z: target.z }] };
+    { ...plank, y: target.y }, { x: ferry.position.x, z: ferry.position.z, y: target.y },
+    { x: target.x, y: target.y, z: target.z }] };
   data.troopsLoadedAt ??= time;
   return true;
 }

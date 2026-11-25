@@ -5,7 +5,7 @@ import { createEmplacement, emplacementLook, emplacementPose, aimEmplacement, em
 import { JIANGYIN_RULES, JIANGYIN_WAVES, JIANGYIN_POSTS, JIANGYIN_PROFILE_OVERRIDES, JIANGYIN_MOUNTS, ENEMY_TYPES,
   postFacing, groundHeight, naturalGroundHeight, insideWreck, RIVER_HALF, shipRoute, landingPoint, createJiangyinState, dueWaves, dueNavalWaves,
   evaluateOutcome, nextPostId, jiangyinSquadLoadout, LANDING_STREAM, NAVAL_RAMP, navalTarget, SHIP_AA, LAND_SPAWNS, AIR_SPAWN, riverCenter, BLOCKSHIPS, blockshipZone, NAVAL_WAVES, JIANGYIN_SQUAD,
-  JIANGYIN_ADVANCE_GUARD, jiangyinRoads, roadRoute } from './jiangyin-rules.js';
+  jiangyinRoads, roadRoute } from './jiangyin-rules.js';
 // 复用项目现有的步枪/轻机枪状态机（弹匣、拉栓、换弹时间与主游戏一致）
 import { createRifleState, shootRifle, advanceRifle, reloadRifle, infantryWeaponProfile, rifleReloadSeconds } from '../rifle-action.js';
 // 复用项目现有的九七式中战车规则（车体尺寸、炮口/机枪位姿、射程与装填）
@@ -1332,11 +1332,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     const yaw = ship.heading + turret.rotation.y, reach = turret.userData.muzzle ?? 3;
     return { x: turretWorld.x - Math.sin(yaw) * reach, y: turretWorld.y + 1, z: turretWorld.z - Math.cos(yaw) * reach };
   }
-  // 第二阶段日舰：最多 3 艘；耐久低于 40% 的舰艇停止炮击、减速顺流撤出（驶回下游弯道后离开战场），不补充新舰
-  // 第二阶段日舰（与玩家讨论后确定）：江面保持最多 3 艘；前 2 分钟有舰撤走或被击沉时补到 3 艘，之后不再补充（江面越打越空，
-  // 后期以陆空进攻为主，贴近史实——封锁线守住了江面，江阴要塞最终从陆路失守）；耐久低于 40% 的舰艇停止主炮射击、顺流撤出；
-  // 第二阶段主炮射速降低约 30%。
-  const HOLD_FLEET = Object.freeze({ max: 3, withdrawBelow: .4, withdrawSpeed: 2.6, topUpUntil: 120, topUpGap: 20, fireSlowdown: 1 / .7,
+  // 第二阶段最多四艘，前两分钟补充；受创舰艇仍按原规则撤退。
+  const HOLD_FLEET = Object.freeze({ max: 4, withdrawBelow: .4, withdrawSpeed: 2.6, topUpUntil: 120, topUpGap: 20, fireSlowdown: 1 / .7,
     roster: Object.freeze(['destroyer', 'gunboat', 'destroyer', 'gunboat']) });
   function topUpHoldFleet() {
     if (state.phase !== 'hold' || state.elapsed > HOLD_FLEET.topUpUntil || now < (state.holdTopUpAt ?? 0)) return;
@@ -2032,7 +2029,6 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function deployNow() {
     if (deployed) return;
     deployed = true; deployedAt = state.scuttleTime; deploySquad('deploy'); takeShorePost();
-    for (const bank of JIANGYIN_ADVANCE_GUARD.infantry) spawnSquad(bank);   // 日军陆军先头部队已沿下游两岸逼近
   }
   function advanceScuttle(dt) {
     const t = state.scuttleTime += dt;
@@ -2095,13 +2091,13 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
   function beginHold() {
     if (state.phase !== 'scuttle') return;
     state.phase = 'hold'; state.elapsed = 0; state.waveIndex = 0;
-    // 第二阶段江面：封锁线已经沉船堵死，日舰不再增援；只留最完好的 3 艘在江面炮击两岸，其余顺流撤出战场
+    // 第二阶段保留状态最好的舰艇，其余撤退。
     const afloat = ships.filter(ship => ship.sinking === null).sort((a, b) => b.health / b.cfg.health - a.health / a.cfg.health);
     afloat.forEach((ship, i) => { if (i >= HOLD_FLEET.max) beginWithdraw(ship); });
     for (const ship of ships) if (!ship.withdrawing) assignHold(ship);
     deployNow();
     emit({ type: 'phase', phase: 'hold' });
-    emit({ type: 'toast', text: `第二阶段 · 死守两岸阵地 ${Math.round(JIANGYIN_RULES.durationSeconds / 60)} 分钟：日军海陆空三路来攻，目标是摧毁我军全部阵地`, alert: true });
+    emit({ type: 'toast', text: `第二阶段 · 死守两岸阵地 ${Math.round(JIANGYIN_RULES.durationSeconds / 60)} 分钟：日军海空来攻，目标是摧毁我军全部阵地`, alert: true });
   }
 
   // 烟源：日舰烟囱煤烟、正在下沉的舰船、开场被炸沉的宁海/平海、我方炮艇
@@ -2185,11 +2181,6 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       state.elapsed += dt;
       if (blockships.some(ship => ship.state !== 'sunk')) advanceScuttle(dt);
       for (const wave of dueWaves(state)) {
-        // 第二阶段日舰由 HOLD_FLEET 控制（最多 3 艘、前 2 分钟补足），波次中的舰艇不再另外出场
-        // 登陆艇改由 advanceLandingStream 持续输送（LANDING_STREAM），波次中的登陆不再另外出场
-        const escorted = [...wave.tanks];   // 同岸步兵小队改作坦克的伴随步兵（已在 spawnTankPlatoon 中生成）
-        for (const bank of wave.infantry) { const k = escorted.indexOf(bank); if (k >= 0) escorted.splice(k, 1); else spawnSquad(bank); }
-        for (const bank of wave.tanks) spawnTankPlatoon(bank);
         if (wave.air) spawnAirFlight();
       }
     }
@@ -2216,7 +2207,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       }
       advanceBombs(dt);
     }
-    advanceShells(dt); advanceTracers(dt); advanceEnemySquads(); topUpHoldFleet(); advanceLandingStream();
+    advanceShells(dt); advanceTracers(dt); topUpHoldFleet();
     updateFlags(now, .75 + .25 * Math.sin(now * .31) * Math.sin(now * .17 + 1));   // 旗帜飘动，风力时强时弱
     for (const post of posts) {
       post.model.userData.update?.(); post.model.position.y = post.floor;
@@ -2249,10 +2240,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     updateEffects(dt);
     if (activePhase()) {
       const shoreAlive = shorePosts().filter(alive).length;
-      const enemiesAlive = ships.filter(s => s.sinking === null).length + landings.filter(c => c.sinking === null && c.state !== 'empty').length +
-        troops.filter(t => t.dead === null).length + vehicles.filter(v => v.health > 0).length;
       const outcome = state.phase === 'hold'
-        ? evaluateOutcome({ elapsed: state.elapsed, shoreAlive, wavesRemaining: JIANGYIN_WAVES.length - state.waveIndex, enemiesAlive })
+        ? evaluateOutcome({ elapsed: state.elapsed, shoreAlive })
         : shoreAlive <= 0 ? { result: 'defeat', reason: 'batteries' } : null;
       if (outcome) { bombs.clear(); state.outcome = outcome; state.phase = 'ended'; emit({ type: 'ended', outcome, stats: { ...state.stats } }); }
       updateCamera(dt);

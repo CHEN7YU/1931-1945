@@ -34,15 +34,32 @@ try {
           const actor = enemies.find(a => a.health > 0 && !a.vehicleId);
           if (!actor) throw new Error('Missing actual attacker for movement verification');
           const old = actor.position.clone();
-          actor.position.set(-57, 0, -80);
-          moveInfantry(actor.position, -8, 0, .42, movementObstacles(-57, -80));
+          actor.position.set(-82, 0, -68);
+          moveInfantry(actor.position, 0, -8, .42, movementObstacles(-82, -68));
           const blockedPosition = actor.position.toArray(); actor.position.copy(old);
           return { stage: nanjingCampaign.stage, outcome: nanjingCampaign.outcome, incursions, blockedPosition,
             posts: friendlyAI.filter(a => a.health > 0).map(a => ({ point: a.tactics.nanjingDockDefense,
               position: a.position.toArray(), spawn: a.formation.spawnId, mode: a.tactics.mode })),
             playerOrders: allies.map(a => a.order),
             goals: enemies.filter(a => a.health > 0 && !a.vehicleId).map(a => formationDestination(a, objectives[1])),
-            dockEnemyPath: dockNavigate({ x: -65, z: -95 }, { x: -65, z: -65 }) };
+            dockEnemyPath: dockNavigate({ x: -92, z: -95 }, { x: -92, z: -65 }) };
+        },
+        respawn() {
+          setGameState('playing');
+          const formation = formations.find(item => item.team === 'friendly' && !item.player && !item.reserve &&
+            item.members.some(actor => actor.health > 0));
+          if (!formation) throw new Error('Missing living AI formation');
+          const generation = formation.generation;
+          for (const actor of formation.members) actor.health = 0;
+          formation.respawnAt = time; populationRefreshAt = time;
+          aiDecisions.beginFrame(); advanceBattleStep(.05, time + .05);
+          const positions = formation.members.filter(actor => actor.health > 0).map(actor => actor.position.toArray());
+          for (let i = 0; i < 40 && !nanjingCampaign.outcome; i++) {
+            aiDecisions.beginFrame(); advanceBattleStep(.05, time + .05);
+          }
+          setGameState('pause');
+          return { generation, newGeneration: formation.generation, spawn: formation.spawnId, positions,
+            posts: formation.members.filter(actor => actor.health > 0).map(actor => actor.tactics.nanjingDockDefense) };
         },
       };
     ` });
@@ -62,12 +79,22 @@ try {
   assert.equal(dock.stage, 'dock-defense');
   assert.equal(dock.outcome, null);
   assert.equal(dock.incursions, 0, 'normal attackers cannot enter the civilian queue');
-  assert.ok(dock.blockedPosition[0] >= -58.08, 'actual actor movement must respect the buffer');
+  assert.ok(dock.blockedPosition[2] >= -69.08, 'actual actor movement must respect the buffer');
   assert.ok(dock.posts.length >= 22);
-  assert.ok(dock.posts.every(a => a.point && a.point.x > -58));
+  assert.ok(dock.posts.every(a => a.point && a.point.x >= -68 && a.point.x <= -54 &&
+    Math.abs(a.point.z + 60) <= 10), 'AI defense posts are near the west gate');
   assert.deepEqual(dock.playerOrders, gate.playerOrders);
-  assert.ok(dock.goals.every(goal => goal.x > -58));
+  assert.ok(dock.goals.every(goal => goal.x >= -58 && goal.x <= -54 &&
+    Math.abs(goal.z + 60) <= 4));
   assert.ok(dock.dockEnemyPath.length > 0);
+  const respawn = await page.evaluate(() => nanjingDockReview.respawn());
+  assert.equal(respawn.newGeneration, respawn.generation + 1, 'a lost squad actually respawns');
+  assert.equal(respawn.positions.length, 11, 'the full squad respawns');
+  assert.ok(respawn.positions.every(position => position[0] < -74.2 &&
+    position[2] < -80 && Math.hypot(position[0] + 98, position[2] + 80) < 30),
+    'the squad starts north of the ferry and outside the west wall');
+  assert.ok(respawn.posts.length && respawn.posts.every(post => post &&
+    post.x >= -68 && post.x <= -54 && Math.abs(post.z + 60) <= 10), 'respawned AI is assigned to the west gate');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, coreGuards: 6, dockPosts: dock.posts.length,
     enemyIncursions: dock.incursions, errors }));

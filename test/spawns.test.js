@@ -51,7 +51,7 @@ test('Nanjing dock deployment permits nearby enemies but retains body, geometry,
   assert.ok(formationPositions(point, 11, [wreck], occupied, [enemy]).every(position =>
     !circleBlocked(position.x, position.z, .48, [wreck])));
   assert.equal(spawnBlockReason(point, 'infantry', [enemy],
-    [{ minX: -73, maxX: -40, minZ: -95, maxZ: -65 }]), '重生区域受阻');
+    [point.deploymentZone]), '重生区域受阻');
 });
 
 const wiped = [{ health: 0 }, { health: 0 }];

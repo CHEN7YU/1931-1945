@@ -255,7 +255,7 @@ test('phase one: the Japanese fleet grows from 2 to 7 ships, strafes with machin
   assert.equal(game.hud().aim, null, 'the marker disappears when the right button is released');
 });
 
-test('enemy ships never sail through each other, and in phase two at most three stay while damaged ones withdraw', () => {
+test('enemy ships never sail through each other, and in phase two at most four stay while damaged ones withdraw', () => {
   const { game } = makeGame();
   game.skipIntro();
   for (const post of game.posts) if (post.boat) post.point.health = post.point.maxHealth = 1e9;
@@ -273,21 +273,47 @@ test('enemy ships never sail through each other, and in phase two at most three 
   }
   assert.ok(samples > 1000);
   assert.equal(overlaps, 0, `enemy hulls overlapped in ${overlaps} samples`);
-  // 第二阶段：最多 3 艘留在江面，不再增援；受创舰顺流撤出
+  // 第二阶段：最多 4 艘留在江面；受创舰顺流撤出
   for (const post of game.posts) if (post.boat) post.point.health = 0;
   for (let n = 0; n < 4000 && game.state.phase !== 'hold'; n++) game.step(.05, {});
   assert.equal(game.state.phase, 'hold');
   const engaged = () => game.ships.filter(ship => ship.sinking === null && !ship.withdrawing).length;
-  assert.ok(engaged() <= 3, `at most three enemy ships keep fighting (${engaged()})`);
+  assert.ok(engaged() <= 4, `at most four enemy ships keep fighting (${engaged()})`);
   let peak = 0;
   for (let t = 0; t < 140; t += .05) { game.step(.05, {}); peak = Math.max(peak, engaged()); }
-  assert.ok(peak <= 3, 'phase two never has more than three enemy ships fighting');
+  assert.ok(peak <= 4, 'phase two never has more than four enemy ships fighting');
   const victim = game.ships.find(ship => ship.sinking === null && !ship.withdrawing);
   if (victim) {
     victim.health = victim.cfg.health * .3;
     game.step(.05, {});
     assert.equal(victim.withdrawing, true, 'a badly damaged ship withdraws downstream');
   }
+});
+
+test('phase two has only enemy ships and aircraft until the three-minute outcome', () => {
+  const { game, events } = makeGame();
+  game.skipIntro();
+  for (const post of game.posts) {
+    if (post.boat) { post.point.health = 0; post.boat.sunk = true; }
+    else post.point.health = post.point.maxHealth = 1e9;
+  }
+  game.step(.05, {});
+  assert.equal(game.state.phase, 'scuttle');
+  game.step(.05, { skipIntro: true });
+  assert.equal(game.troops.length, 0, 'early deployment does not spawn an advance guard');
+  game.skipScuttle();
+  for (let step = 0; step < 3599; step++) {
+    game.step(.05, {});
+    assert.equal(game.troops.length, 0);
+    assert.equal(game.landings.length, 0);
+    assert.ok(game.vehicles.every(vehicle => vehicle.type !== 'tank'));
+  }
+  assert.equal(game.state.phase, 'hold');
+  assert.equal(events.filter(event => event.type === 'toast' && event.voice === 'jiangyin-air-raid').length, 4);
+  assert.ok(game.ships.some(ship => ship.sinking === null && !ship.withdrawing));
+  while (game.state.phase === 'hold') game.step(.05, {});
+  assert.deepEqual(game.state.outcome, { result: 'victory', reason: 'held' });
+  assert.ok(game.state.elapsed >= 180 && game.state.elapsed < 180.1);
 });
 
 

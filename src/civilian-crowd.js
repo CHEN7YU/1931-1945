@@ -1,5 +1,6 @@
 import { circleBlocked, segmentClear } from './core.js';
 import { obstacleLookup } from './spatial.js';
+import { NANJING_DOCK_SHIFT, nanjingPierHeight } from './nanjing-campaign.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
 export const NANJING_OPENING_CIVILIAN_COUNT = 60;
@@ -87,15 +88,9 @@ export function civilianWaypointReached(position, route, index, obstacles, looku
 
 const waitingSlots = [];
 for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
-  for (let attempt = 0; ; attempt++) {
-    const seed = index * 997 + attempt;
-    const x = -71.6 + variation(seed, 701) ** 1.35 * (index < 60 ? 5 : 10.8);
-    const z = index < 60 ? -86.5 + variation(seed, 709) * 12 : -88.8 + variation(seed, 709) * 17.6;
-    const gangway = x < -70.4 && [-86, -83, -80, -77, -74].some(boatZ => Math.abs(z - boatZ) < .65);
-    if (!gangway && waitingSlots.every(point => Math.hypot(point.x - x, point.z - z) >= .74)) {
-      waitingSlots.push({ x, y: x < -59 ? .36 : 0, z }); break;
-    }
-  }
+  const slot = index * 73 % 240;
+  waitingSlots.push({ x: -88 + slot % 10 * .78 + (variation(index, 701) - .5) * .024, y: 0,
+    z: -89 + Math.floor(slot / 10) * .76 + slot % 10 * .03 + (variation(index, 709) - .5) * .012 });
 }
 
 export function civilianWaitingSlot(index) {
@@ -115,11 +110,10 @@ export function placeCivilianWaitingSlots(clear) {
     for (const radius of [.6, 1.2, 1.8, 2.4, 3.6, 5]) for (let side = 0; side < 24; side++) {
       const angle = side * Math.PI / 12 + index * 2.17;
       const x = anchor.x + Math.cos(angle) * radius, z = anchor.z + Math.sin(angle) * radius;
-      candidates.push({ x, z, y: x < -59 ? .36 : 0 });
+      candidates.push({ x, z, y: 0 });
     }
-    const point = candidates.find(point => point.x > -72.5 && point.x < -59.8 &&
-      point.z > -91 && point.z < -71 &&
-      !(point.x < -70.4 && [-86, -83, -80, -77, -74].some(z => Math.abs(point.z - z) < .65)) &&
+    const point = candidates.find(point => point.x > -89 && point.x < -80 &&
+      point.z > -90.5 && point.z < -69.5 &&
       placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .74) && clear(point));
     if (!point) throw new Error(`No physically clear dock waiting place for civilian ${index}`);
     placed.push(point);
@@ -187,8 +181,8 @@ export function rejoinCivilianRoute(position, target, navigate, obstacles, looku
 function* dockDetour(position, target, peers, civilian, obstacles, spacing, planner) {
   position = { x: position.x, z: position.z };
   const step = .25, dock = [position, target].every(value =>
-    value.x >= -73 && value.x <= -40 && value.z >= -94 && value.z <= -59);
-  const minX = dock ? -73 : Math.floor((Math.min(position.x, target.x) - 6) / step) * step;
+    value.x >= -73 + NANJING_DOCK_SHIFT && value.x <= -40 + NANJING_DOCK_SHIFT && value.z >= -94 && value.z <= -59);
+  const minX = dock ? -73 + NANJING_DOCK_SHIFT : Math.floor((Math.min(position.x, target.x) - 6) / step) * step;
   const minZ = dock ? -94 : Math.floor((Math.min(position.z, target.z) - 6) / step) * step;
   const width = dock ? 133 : Math.ceil((Math.max(position.x, target.x) + 6 - minX) / step) + 1;
   const depth = dock ? 141 : Math.ceil((Math.max(position.z, target.z) + 6 - minZ) / step) + 1;
@@ -345,7 +339,7 @@ function civilianYieldTarget(civilian, peers, obstacles, spacing) {
 export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles, canStep = null, planner = null) {
   if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid civilian movement distance');
   const position = civilian.position, radius = .36, data = civilian.userData;
-  const crowdedDock = position.x < -45 && position.z < -65;
+  const crowdedDock = position.x < -45 + NANJING_DOCK_SHIFT && position.z < -65;
   const spacing = crowdedDock ? .52 : radius * 2;
   const remaining = Math.hypot(target.x - position.x, target.z - position.z);
   if (remaining > .01) data.crowdDirection = { x: (target.x - position.x) / remaining, z: (target.z - position.z) / remaining };
@@ -413,7 +407,7 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
     position.x = next.x; position.z = next.z;
     moved += stride;
   }
-  position.y = position.x >= -73 && position.x <= -59 && position.z >= -90 && position.z <= -70 ? .36 : 0;
+  position.y = nanjingPierHeight(position.x, position.z);
   return moved;
 }
 

@@ -8,7 +8,8 @@ const walls = {
   },
   west: {
     notches: [{ x: 32, radius: 3.3, depth: 2.25 }],
-    clusters: [-6, 8, 24, 32, 38, 47, 60],
+    visualNotches: [{ x: 88, radius: 3, depth: 2 }, { x: 104, radius: 2.4, depth: 1.6 }],
+    clusters: [-6, 8, 24, 32, 38, 47, 60, 82, 91, 104],
     front: -69.8, heading: Math.PI / 2, step: .24,
   },
   north: {
@@ -24,7 +25,7 @@ export const NANJING_WALL_PLUMES = Object.freeze(Object.entries(walls).flatMap((
 
 export function nanjingWallNotch(wall, x) {
   let depth = 0;
-  for (const notch of walls[wall].notches) {
+  for (const notch of [...walls[wall].notches, ...(walls[wall].visualNotches ?? [])]) {
     const edge = Math.abs(x - notch.x) / notch.radius;
     const teeth = .13 * Math.sin(x * 5.3) + .09 * Math.cos(x * 13.1);
     depth = Math.max(depth, notch.depth * Math.max(0, 1 - edge ** 1.25) * (1 + teeth));
@@ -59,10 +60,12 @@ export function nanjingDamagedWallGeometry(wall, minX, maxX, height, thickness, 
   for (let i = 0; i < positions.count; i++) {
     const px = positions.getX(i), py = positions.getY(i), pz = positions.getZ(i);
     const x = minX + (px + .5) * width, y = (py + .5) * height;
-    const front = 1 - THREE.MathUtils.smoothstep((.5 - pz) * thickness, 0, 1.65);
+    const faceSide = wall === 'west' && pz < 0 ? -1 : 1;
+    const faceZ = pz * faceSide;
+    const front = 1 - THREE.MathUtils.smoothstep((.5 - faceZ) * thickness, 0, 1.65);
     const notch = nanjingWallNotch(wall, x) * front * THREE.MathUtils.smoothstep(y, height - 3.4, height);
     let recess = 0, shade = 0;
-    if (pz === .5) for (const pit of pits) {
+    if (faceZ === .5) for (const pit of pits) {
       const dx = (x - pit.x) / pit.radius, dy = (y - pit.y) / (pit.radius * .8);
       if (Math.abs(dx) > 1.26 || Math.abs(dy) > 1.26) continue;
       const angle = Math.atan2(dy, dx);
@@ -71,7 +74,7 @@ export function nanjingDamagedWallGeometry(wall, minX, maxX, height, thickness, 
       recess = Math.max(recess, pit.radius * .57 * Math.max(0, 1 - edge ** 1.45));
       shade = Math.max(shade, .78 * (1 - THREE.MathUtils.smoothstep(edge, .37, 1.25)));
     }
-    positions.setXYZ(i, px, py - notch / height, pz - recess / thickness);
+    positions.setXYZ(i, px, py - notch / height, pz - faceSide * recess / thickness);
     const side = Math.abs(normals.getX(i)) > .5, top = Math.abs(normals.getY(i)) > .5;
     uv.setXY(i, (side ? pz * thickness - recess : px * width) / meters,
       (top ? pz * thickness : py * height - notch) / meters);

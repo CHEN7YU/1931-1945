@@ -1,8 +1,9 @@
 import { circleBlocked, segmentClear } from './core.js';
+import { NANJING_DOCK_SHIFT, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 
 // Waiting civilians and the ferry approaches are behind the landward fighting line.
 export const NANJING_DOCK_BUFFER = Object.freeze({
-  minX: -74, maxX: -58.5, minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
+  minX: -74 + NANJING_DOCK_SHIFT, maxX: -79.5, minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
 });
 const buffer = [NANJING_DOCK_BUFFER];
 
@@ -29,9 +30,13 @@ export function nanjingDockOutsideGoal(point, radius = .5) {
 }
 
 export function nanjingDockAssaultGoal(actor) {
-  const lane = actor.formation.index < 3 ? -92 : actor.formation.index < 6 ? -80 : -65;
-  return { x: -49 + actor.index % 3 * 1.7, y: 0,
-    z: lane + (Math.floor(actor.index % 11 / 3) - 1.5) * 1.5, transit: true };
+  return { x: -58 + actor.index % 3 * 1.7, y: 0,
+    z: NANJING_WEST_GATE_Z + (Math.floor(actor.index % 11 / 3) - 1.5) * 2, transit: true };
+}
+
+export function nanjingDockPostOutsideBuildings(point, buildings) {
+  return buildings.every(home => Math.abs(point.x - home.x) > home.width / 2 + .6 ||
+    Math.abs(point.z - home.z) > home.depth / 2 + .6);
 }
 
 export function assignNanjingDockDefense(actors, clear) {
@@ -47,10 +52,10 @@ export function assignNanjingDockDefense(actors, clear) {
   }
   for (const actor of defenders.filter(actor => !actor.tactics.nanjingDockDefense)) {
     const sector = (actor.formation.index - 1) % 4;
-    const anchorZ = [-90, -80, -66, -79][sector];
-    const anchorX = sector === 3 ? -56 : -53;
+    const anchorZ = NANJING_WEST_GATE_Z + [-8, -4, 2, 6][sector];
+    const anchorX = sector === 3 ? -61 : -64;
     const candidates = [];
-    for (let x = -56.5; x <= -39.5; x += 1.7) for (let z = -94; z <= -63; z += 1.7)
+    for (let x = -68; x <= -54; x += 1.7) for (let z = NANJING_WEST_GATE_Z - 10; z <= NANJING_WEST_GATE_Z + 10; z += 1.7)
       candidates.push({ x, y: 0, z, heading: -Math.PI / 2, transit: true });
     candidates.sort((a, b) => Math.hypot(a.x - anchorX, a.z - anchorZ) -
       Math.hypot(b.x - anchorX, b.z - anchorZ));
