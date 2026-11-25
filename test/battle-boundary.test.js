@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from '../src/battle-boundary.js';
+import { BATTLE_AREA, NANJING_BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from '../src/battle-boundary.js';
 import { MAP_LIMIT, OBJECTIVES } from '../src/core.js';
-import { makeBaseSpawns, rallyBuildBlockReason } from '../src/spawns.js';
-import { stagingSpawns } from '../src/battle-roster.js';
+import { makeBaseSpawns, rallyBuildBlockReason, groundSpawnCandidates } from '../src/spawns.js';
+import { formationPositions, stagingSpawns } from '../src/battle-roster.js';
+import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { damageForTarget } from '../src/combat-targets.js';
 import { createCombatEvents } from '../src/combat-events.js';
 
@@ -19,6 +20,25 @@ test('safe battle area covers ground spawns and objectives but leaves reachable 
   }
   assert.ok(BATTLE_AREA.maxX < MAP_LIMIT - 3 && BATTLE_AREA.maxZ < MAP_LIMIT - 3);
   assert.ok(BATTLE_AREA.minX > -MAP_LIMIT + 3 && BATTLE_AREA.minZ > -MAP_LIMIT + 3);
+});
+
+test('Nanjing dock spawn candidates and full squads are inside the actual playable boundary', () => {
+  for (const point of NANJING_SPAWNS.filter(spawn => spawn.id === 'nanjing-west-dock' || spawn.id.startsWith('nanjing-west-ai-'))) {
+    const candidates = groundSpawnCandidates(point);
+    assert.ok(candidates.length >= 11);
+    for (const candidate of candidates) {
+      assert.ok(candidate.z >= NANJING_BATTLE_AREA.minZ + 2);
+      assert.ok(candidate.z > -MAP_LIMIT + 1);
+      const state = createBoundaryState();
+      assert.equal(advanceBoundary(state, candidate, 30, NANJING_BATTLE_AREA), 0);
+      assert.equal(state.outside, false);
+    }
+    assert.equal(formationPositions(point, 11, []).length, 11);
+  }
+  assert.ok(NANJING_BATTLE_AREA.minZ > -MAP_LIMIT + 3, 'the northern warning strip remains reachable');
+  const outside = createBoundaryState();
+  advanceBoundary(outside, { x: -89, z: NANJING_BATTLE_AREA.minZ - .5 }, 0, NANJING_BATTLE_AREA);
+  assert.equal(outside.outside, true);
 });
 
 test('all four sides and corners warn immediately, with no damage during the eight-second grace period', () => {

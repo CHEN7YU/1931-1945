@@ -1,6 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RESOURCE_MODES, startupResourceProfile, createStartupTextureBudget } from '../src/startup-resources.js';
+import { RESOURCE_MODES, startupResourceProfile, createStartupTextureBudget, prefetchCommonStartupResources } from '../src/startup-resources.js';
+
+test('idle prefetch downloads shared models only while the launcher is eligible', () => {
+  const links = [], tasks = [], warnings = [];
+  const document = { hidden: false, createElement: () => ({ addEventListener(_type, listener) { this.error = listener; } }),
+    head: { append: link => links.push(link) } };
+  const options = { document, schedule: callback => tasks.push(callback), warn: message => warnings.push(message) };
+  prefetchCommonStartupResources({ ...options, connection: { saveData: true } });
+  prefetchCommonStartupResources({ ...options, connection: { effectiveType: '2g' } });
+  prefetchCommonStartupResources({ ...options, deviceMemory: 4 });
+  assert.equal(tasks.length, 0, 'data saver, slow connections and low-memory devices skip speculative downloads');
+  prefetchCommonStartupResources({ ...options, shouldStart: () => false });
+  tasks.shift()();
+  assert.equal(links.length, 0, 'a selected or already-loading map cancels speculative work');
+  document.hidden = true;
+  prefetchCommonStartupResources(options);
+  tasks.shift()();
+  assert.equal(links.length, 0, 'hidden tabs do not start speculative downloads');
+  document.hidden = false;
+  prefetchCommonStartupResources(options);
+  tasks.shift()();
+  assert.equal(links.length, 2);
+  assert.ok(links.every(link => link.rel === 'prefetch' && link.fetchPriority === 'low'));
+  links[0].error();
+  assert.match(warnings[0], /Startup prefetch failed/);
+});
 
 test('startup chooses low-resident resources only on an explicit request or a bounded reported memory hint', () => {
   assert.equal(startupResourceProfile('auto', 4).lowMemory, true);

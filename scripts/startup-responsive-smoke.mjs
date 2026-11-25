@@ -8,6 +8,7 @@ import { validatePerformanceBatch } from '../src/performance-schema.js';
 const base = process.env.GAME_URL ?? 'http://127.0.0.1:5328/';
 const directory = resolve(process.env.ARTIFACT_DIR ?? 'asset-research', 'startup-responsive');
 const rate = Number(process.env.CPU_THROTTLE ?? 6);
+const identityDelayMs = Number(process.env.STARTUP_IDENTITY_DELAY_MS ?? 0);
 await mkdir(directory, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const results = [];
@@ -63,6 +64,10 @@ try {
     await page.locator('#campaign-choice').selectOption(map);
     const campaignRequestedAt = Date.now();
     await confirmCampaign.click();
+    await page.locator('#confirm-identity').waitFor({ state: 'visible', timeout: 600000 });
+    const identityReadyMs = Date.now() - campaignRequestedAt;
+    await page.waitForTimeout(identityDelayMs);
+    const identityConfirmedAt = Date.now();
     await page.locator('#confirm-identity').click({ timeout: 600000 });
     await page.waitForFunction(() => document.getElementById('overlay').dataset.deploymentStep === 'squad' ||
       !document.getElementById('fatal').hidden, null, { timeout: 600000 });
@@ -102,11 +107,20 @@ try {
       probe.stop();
       return { deployMs: performance.now() - probe.timings.deployRequestedMs };
     });
-    Object.assign(timings, { entryMenuMs, campaignToSquadMenuMs: result.squadMenuAt - campaignRequestedAt });
+    Object.assign(timings, { entryMenuMs, identityReadyMs, identityDelayMs,
+      identityToSquadMenuMs: result.squadMenuAt - identityConfirmedAt,
+      campaignToSquadMenuMs: result.squadMenuAt - campaignRequestedAt });
     assert.ok(timings.campaignToSquadMenuMs > 0 && timings.deployMs >= 0);
+    if (map === 'nanjing') {
+      assert.equal(await page.evaluate(() => window.__battle.population.enemy.alive), 0,
+        'Nanjing attackers remain in reserve until the opening delay');
+      await page.waitForFunction(() => window.__battle.campaign.openingAssaultReleased &&
+        window.__battle.population.enemy.alive > 40, null, { timeout: 360000 });
+    }
     const population = await page.evaluate(() => ({ friendly: window.__battle.population.friendly.alive,
       enemy: window.__battle.population.enemy.alive,
       assigned: window.__battle.historicalForce.assigned, enemyAssigned: window.__battle.enemyHistoricalForce.assigned }));
+    console.log(JSON.stringify({ map, timings, population }));
     assert.equal(population.assigned, population.friendly);
     assert.equal(population.enemyAssigned, population.enemy);
     assert.ok(population.friendly > 20 && population.enemy > 40);

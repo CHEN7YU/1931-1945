@@ -2,6 +2,7 @@ export const BAYONET = Object.freeze({
   chargeRange: 8, disengageRange: 11, reach: 1.65, floorTolerance: .6,
   windup: .22, returnTime: .22, cooldown: 1.1, damage: 65, tipZ: -1.35,
 });
+export const CIVILIAN_BAYONET_SPRINT_SPEED = 5.5;
 export const EMPTY_MAGAZINE_MELEE = Object.freeze({ chargeRange: 12, disengageRange: 15 });
 
 export function meleeEngagementRange(actor, target) {

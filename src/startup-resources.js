@@ -1,5 +1,27 @@
 export const RESOURCE_MODES = Object.freeze(['auto', 'standard', 'low-memory']);
 
+const COMMON_PREFETCH = Object.freeze([
+  '/assets/game/nra-88/character.fbx',
+  '/assets/game/nra-88/animations.json',
+]);
+
+export function prefetchCommonStartupResources({ document, connection, deviceMemory, shouldStart = () => true,
+  schedule = callback => globalThis.requestIdleCallback
+    ? globalThis.requestIdleCallback(callback, { timeout: 3000 }) : setTimeout(callback, 1500),
+  warn = console.warn }) {
+  if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType) ||
+    Number.isFinite(deviceMemory) && deviceMemory <= 4) return;
+  schedule(() => {
+    if (document.hidden || !shouldStart()) return;
+    for (const url of COMMON_PREFETCH) {
+      const link = document.createElement('link');
+      link.rel = 'prefetch'; link.href = url; link.fetchPriority = 'low';
+      link.addEventListener('error', () => warn(`Startup prefetch failed: ${url}`), { once: true });
+      document.head.append(link);
+    }
+  });
+}
+
 export function startupResourceProfile(mode, deviceMemory = null) {
   if (!RESOURCE_MODES.includes(mode)) throw new RangeError('Unknown startup resource mode');
   if (deviceMemory !== null && (!Number.isFinite(deviceMemory) || deviceMemory <= 0))

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { createNavigator, segmentClear } from '../src/core.js';
-import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockOutsideGoal,
+import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockYardContains, nanjingDockOutsideGoal,
   nanjingDockAssaultGoal, nanjingDockBufferActive, nanjingDockPathClear,
   nanjingDockPostOutsideBuildings, assignNanjingDockDefense } from '../src/nanjing-dock-defense.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingCoreGuard } from '../src/nanjing-defense.js';
@@ -20,6 +20,11 @@ before(() => {
 test('the real civilian queue is behind the exclusion boundary, not just its visible marker', () => {
   for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++)
     assert.ok(nanjingDockInside(civilianWaitingSlot(index)));
+  assert.ok(world.civilians.every(person => nanjingDockYardContains(person.userData.waitingSlot)),
+    'every physically placed waiting slot is inside the fenced yard');
+  assert.equal(nanjingDockYardContains({ x: -81.1, z: -80 }), false);
+  assert.equal(nanjingDockYardContains({ x: -81.3, z: -80 }), true);
+  assert.equal(nanjingDockYardContains({ x: -85, z: -69.9 }), false);
   assert.equal(nanjingDockBufferActive('gate-defense'), false);
   assert.equal(nanjingDockBufferActive('withdrawal'), false);
   assert.equal(nanjingDockBufferActive('dock-defense'), true);

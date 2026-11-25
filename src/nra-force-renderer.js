@@ -6,10 +6,10 @@ import { isNraSkin } from './nra-appearance.js';
 import { FIRING_POSES, ownedFiringPose } from './combat-posture.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rifleWorldModel } from './rifle-model.js';
-import { CORPSE_RULES, CASUALTY_POSE_FRAMES, createCasualtyState, corpseFootprint, casualtyProgress } from './casualties.js';
+import { CORPSE_RULES, CASUALTY_POSE_FRAMES, createCasualtyState, corpseFootprintWork, casualtyProgress } from './casualties.js';
 import { hasBayonet } from './bayonet.js';
 import { createDistantPoseGeometry, createDistantWeaponGeometry, createLowMemoryPoseGeometry,
-  prepareDistantGeometry, indexedAnimatedSource, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
+  prepareDistantGeometry, indexedAnimatedSourceWork, DISTANT_WEAPON_TRIANGLE_BUDGET, useDistantPose } from './distant-pose-lod.js';
 import { createDadaoState } from './dadao.js';
 import { dadaoModel } from './dadao-model.js';
 import { RIFLE_HAND_SAMPLES, rifleHandAction, rifleHandWeights } from './rifle-hand-action.js';
@@ -506,7 +506,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       geometry.morphAttributes.normal = poses.slice(1).map(pose => pose.geometry.attributes.normal);
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     }
-    if ((blast || travelMorph || dead) && !lowMemory) geometry = indexedAnimatedSource(geometry);
+    if ((blast || travelMorph || dead) && !lowMemory) geometry = yield* indexedAnimatedSourceWork(geometry);
     const residentGeometry = lowMemory ? createLowMemoryPoseGeometry(geometry) : geometry;
     residentResources.sourceBodyBytes += geometryBytes(geometry);
     residentResources.residentBodyBytes += geometryBytes(residentGeometry);
@@ -550,12 +550,12 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
     const bounds = instance.geometry.boundingBox.clone();
     const footprint = dead ? [] : null;
     if (dead) for (const pose of poses) {
-      footprint.push(...corpseFootprint(pose.geometry));
+      footprint.push(...(yield* corpseFootprintWork(pose.geometry)));
       yield;
     }
     for (const geometry of casualtyWeapons) {
       geometry.computeBoundingBox(); bounds.union(geometry.boundingBox);
-      footprint.push(...corpseFootprint(geometry)); geometry.dispose();
+      footprint.push(...(yield* corpseFootprintWork(geometry))); geometry.dispose();
     }
     banks.push({ parts, coarseParts: [], coarseCount: 0, count: 0, capacity, attachments, gunMatrix, deathStance, postureMorph, rifleAction, shieldWalk, bounds,
       chest, smgChest, chestTravel, chestPoseFrames,

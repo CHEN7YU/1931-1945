@@ -14,6 +14,7 @@ export const NANJING_CIVILIAN_RIVER_NORTH_BANK_Z = 38;
 export const NANJING_DOCK_SHIFT = -32;
 export const NANJING_DOCK = Object.freeze({ x: -66 + NANJING_DOCK_SHIFT, z: -80, ferryX: -76 + NANJING_DOCK_SHIFT });
 export const NANJING_RIVER_SHORE_X = NANJING_DOCK.x + 4;
+export const NANJING_DOCK_ENTRY_X = NANJING_DOCK.x + 16.8;
 export const NANJING_PIER = Object.freeze({ minX: NANJING_DOCK.x - 7, maxX: NANJING_DOCK.x + 7,
   minZ: NANJING_DOCK.z - 2.5, maxZ: NANJING_DOCK.z + 2.5 });
 export function nanjingPierHeight(x, z) {
@@ -31,10 +32,11 @@ export const NANJING_FERRY_BERTHS = Object.freeze([
   Object.freeze({ x: -108.2, z: -80 }),
 ]);
 export const NANJING_WEST_GATE_Z = -60;
+export const NANJING_WEST_GATE_HALF_WIDTH = 3.4;
 export const NANJING_WEST_BREACH = Object.freeze({ minX: -74.2, maxX: -69.8, minZ: -92, maxZ: -86 });
 export const NANJING_CITY_WALLS = Object.freeze([
   Object.freeze({ minX: -74.2, maxX: -23.7, minZ: 16, maxZ: 20.4 }),
-  Object.freeze({ minX: -74.2, maxX: -69.8, minZ: NANJING_WEST_GATE_Z + 4, maxZ: 16 }),
+  Object.freeze({ minX: -74.2, maxX: -69.8, minZ: NANJING_WEST_GATE_Z + NANJING_WEST_GATE_HALF_WIDTH, maxZ: 16 }),
   Object.freeze({ minX: 23.7, maxX: 105, minZ: 16, maxZ: 20.4 }),
 ]);
 
@@ -81,13 +83,13 @@ export const NANJING_SPAWNS = Object.freeze([
   Object.freeze({ id: 'nanjing-south-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: 102, altitude: 28, aiOnly: true }),
   Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口北侧', team: 'friendly', kind: 'base',
     x: -89, z: -100, altitude: 0, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -106, maxZ: -93 }) }),
+    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -102, maxZ: -89 }) }),
   Object.freeze({ id: 'nanjing-west-ai-1', name: '渡口北侧集结点', team: 'friendly', kind: 'base',
     x: -89, z: -100, altitude: 0, aiOnly: true, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -106, maxZ: -93 }) }),
+    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -102, maxZ: -89 }) }),
   Object.freeze({ id: 'nanjing-west-ai-2', name: '渡口北侧后备集结点', team: 'friendly', kind: 'base',
     x: -87, z: -98, altitude: 0, aiOnly: true, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -106, maxZ: -93 }) }),
+    deploymentZone: Object.freeze({ minX: -92, maxX: -84.5, minZ: -102, maxZ: -89 }) }),
   Object.freeze({ id: 'nanjing-reserve-1', name: '城内中部预备队集结点', team: 'friendly', kind: 'base',
     x: -16, z: -42, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-reserve-2', name: '城内东街预备队集结点', team: 'friendly', kind: 'base',

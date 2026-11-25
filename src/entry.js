@@ -1,8 +1,8 @@
 import './jiangyin/jiangyin-launcher.js';
+import { isJiangyinRequest } from './jiangyin/jiangyin-campaign.js';
 import './style.css';
 import './loading-screen.css';
 import { createPhotoWall } from './loading-screen.js';
-import { setLoadingProgress } from './loading-progress.js';
 import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { SELECTABLE_CAMPAIGNS, DEFAULT_CAMPAIGN, campaignById } from './campaigns.js';
 import { createFeedback } from './feedback.js';
@@ -11,7 +11,7 @@ import { createCampaignPresentation } from './campaign-presentation.js';
 import { createPlayerIdentityControls } from './player-identity.js';
 import { getPlayerPreferences } from './player-preferences.js';
 import { getPreferenceControls } from './preference-controls.js';
-import { startupResourceProfile } from './startup-resources.js';
+import { prefetchCommonStartupResources, startupResourceProfile } from './startup-resources.js';
 import { getMenuMusic } from './menu-music.js';
 import { getEndingMusic } from './ending-music.js';
 
@@ -29,11 +29,12 @@ const ensurePhotoWalls = () => {
 const campaignPresentation = createCampaignPresentation();
 const playerIdentity = createPlayerIdentityControls();
 const deploy = document.getElementById('deploy');
-let loaded = false, pending = false;
+let loaded = false, pending = false, gamePromise = null, loadingCampaign = null;
 const launcherPreferences = getPlayerPreferences();
 const lowMemoryRestart = document.getElementById('low-memory-restart');
-lowMemoryRestart.hidden = startupResourceProfile(params.get('resources') ??
+const lowMemoryStartup = startupResourceProfile(params.get('resources') ??
   'auto', navigator.deviceMemory ?? null).lowMemory;
+lowMemoryRestart.hidden = lowMemoryStartup;
 lowMemoryRestart.addEventListener('click', () => {
   launcherPreferences.update({ resourceMode: 'low-memory' });
   const url = new URL(location.href); url.searchParams.set('resources', 'low-memory');
@@ -105,12 +106,35 @@ function campaignStep() {
   squadStep.hidden = true;
   confirmCampaign.hidden = false;
 }
-confirmCampaign.addEventListener('click', () => {
-  if (!loaded && ['nanjing', 'sihang'].includes(selector.value)) {
-    menuMusic.prepareNavigation();
-    const url = new URL(location.href); url.searchParams.set('campaign', selector.value); location.assign(url); return;
+function reportLoadFailure(error) {
+  pending = false; deploy.disabled = false;
+  menu.hidden = true; loading.hidden = false; $('overlay').hidden = true;
+  $('loading-message').textContent = `加载失败：${error.message}。刷新后重试。`;
+  console.error('Battle loading failed', error);
+}
+function startGameLoad() {
+  if (gamePromise) return gamePromise;
+  loadingCampaign = selector.value;
+  if (!params.has('benchmark')) {
+    const url = new URL(location.href); url.searchParams.set('campaign', loadingCampaign);
+    history.replaceState(null, '', url);
   }
-  void openInitialDeployment();
+  gamePromise = import('./main.js').then(game => {
+    loaded = true;
+    if (!pending && $('overlay').dataset.deploymentStep === 'identity') {
+      menu.hidden = true; loading.hidden = true;
+      menuMusic.setState('deployment');
+    }
+    return game;
+  }, error => {
+    reportLoadFailure(error);
+    return null;
+  });
+  return gamePromise;
+}
+confirmCampaign.addEventListener('click', () => {
+  openInitialDeployment();
+  void startGameLoad();
 });
 document.getElementById('back-campaign').addEventListener('click', campaignStep);
 for (const campaign of SELECTABLE_CAMPAIGNS) {
@@ -136,7 +160,7 @@ function selectCampaign(id) {
   }));
 }
 selector.addEventListener('change', () => {
-  if (loaded) {
+  if ((loaded || gamePromise) && selector.value !== loadingCampaign) {
     menuMusic.prepareNavigation();
     const url = new URL(location.href);
     url.searchParams.set('campaign', selector.value);
@@ -154,24 +178,22 @@ for (const button of document.querySelectorAll('.squad-choice')) button.addEvent
 });
 selectCampaign(selector.value);
 loading.hidden = true; menu.hidden = false;
+if (!params.has('benchmark') && !isJiangyinRequest(location.search) && !lowMemoryStartup &&
+  !['nanjing', 'sihang'].includes(params.get('campaign'))) {
+  prefetchCommonStartupResources({ document, connection: navigator.connection, deviceMemory: navigator.deviceMemory,
+    shouldStart: () => !gamePromise && selector.value !== 'jiangyin' });
+}
 $('confirm-identity').addEventListener('click', async event => {
   event.stopImmediatePropagation();
   if (pending) return;
   pending = true; deploy.disabled = true; menu.hidden = true; loading.hidden = false;
   $('overlay').hidden = true;
   menuMusic.setState('loading');
-  setLoadingProgress(0, '正在加载游戏程序与已选战场…');
-  const url = new URL(location.href); url.searchParams.set('campaign', selector.value);
-  history.replaceState(null, '', url);
-  try {
-    const game = await import('./main.js');
-    loaded = true; pending = false; deploy.disabled = false; loading.hidden = true;
-    game.showInitialSquadDeployment();
-  } catch (error) {
-    pending = false; deploy.disabled = false;
-    loading.querySelector('p').textContent = `加载失败：${error.message}。刷新后重试。`;
-    console.error('Battle loading failed', error);
-  }
+  const game = await startGameLoad();
+  if (!game) return;
+  pending = false; deploy.disabled = false; loading.hidden = true;
+  try { game.showInitialSquadDeployment(); }
+  catch (error) { reportLoadFailure(error); }
 });
 deploy.addEventListener('click', event => {
   if (params.has('benchmark')) return;
@@ -187,8 +209,12 @@ if (params.has('benchmark') || ['nanjing', 'sihang'].includes(params.get('campai
   }
   squadStep.hidden = false; confirmCampaign.hidden = true;
   menu.hidden = true; loading.hidden = false;
-  menuMusic.setState('loading');
-  await import('./main.js');
-  loaded = true;
-  if (!params.has('benchmark')) openInitialDeployment();
+  if (params.has('benchmark')) {
+    menuMusic.setState('loading');
+    await startGameLoad();
+  } else {
+    loading.hidden = true;
+    openInitialDeployment();
+    void startGameLoad();
+  }
 }

@@ -1,6 +1,6 @@
 const surnames = Object.freeze(['汪', '王', '李', '张', '刘', '陈', '杨', '赵', '黄', '周',
   '吴', '徐', '孙', '胡', '朱', '高', '林', '何', '郭', '马']);
-const givenNames = Object.freeze(['洋', '勇', '保', '强', '明']);
+const givenNames = Object.freeze(['洋', '勇', '保国', '志强', '建明']);
 
 export const SOLDIER_MEMORIAL_ROSTER = Object.freeze(surnames.flatMap((surname, family) =>
   givenNames.map((given, index) => {

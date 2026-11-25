@@ -88,7 +88,7 @@ test('crowds can spread through a shared street waypoint without cutting solid c
 test('sixty individual waiting places form a dense shore crowd without merged bodies', () => {
   const slots = Array.from({ length: 60 }, (_, index) => civilianWaitingSlot(index));
   for (const [index, slot] of slots.entries()) {
-    assert.ok(slot.x > -89 && slot.x < -80 && slot.z > -90 && slot.z < -70);
+    assert.ok(slot.x > -90 && slot.x < -81 && slot.z > -90 && slot.z < -70);
     assert.equal(slot.y, 0);
     for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) >= .74);
   }

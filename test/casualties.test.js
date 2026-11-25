@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Vector3 } from 'three';
-import { CORPSE_RULES, createCasualtyState, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion, casualtyResponse } from '../src/casualties.js';
+import { BufferGeometry, Float32BufferAttribute, Vector3 } from 'three';
+import { CORPSE_RULES, createCasualtyState, corpseFootprint, corpseFootprintWork, expiredCorpses, casualtyProgress, casualtyRotation, placeCasualty, sampleCasualtyMotion, casualtyResponse } from '../src/casualties.js';
+import { runStartupWork } from '../src/startup-work.js';
 import { circleBlocked } from '../src/core.js';
 import { legacyPlaceCasualty } from '../scripts/fixtures/casualty-placement-legacy.js';
 
@@ -10,6 +11,23 @@ function corpse(index, time = 0) {
   actor.casualty = createCasualtyState(actor, time);
   return actor;
 }
+
+test('startup slices casualty footprint computation without changing indexed geometry coverage', async () => {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, .17, 0, 0, 0, 0, .17], 3));
+  geometry.setIndex(Array.from({ length: 256 }, () => [0, 1, 2]).flat());
+  const expected = [[.08, .08], [.08, .24], [.24, .08], [.24, .24]];
+  assert.deepEqual(corpseFootprint(geometry), expected);
+  let time = 0, yields = 0;
+  const actual = await runStartupWork(corpseFootprintWork(geometry), {
+    budgetMs: 1, now: () => time++, yieldTask: async () => { yields++; },
+  });
+  assert.deepEqual(actual, expected);
+  assert.ok(yields >= 3);
+  geometry.attributes.position.setX(0, NaN);
+  assert.throws(() => corpseFootprint(geometry), /finite rendered body geometry/);
+  await assert.rejects(runStartupWork(corpseFootprintWork(geometry)), /finite rendered body geometry/);
+});
 
 test('casualty variants and retained/released guns are stable per original identity without rerolling battle randomness', () => {
   const samples = Array.from({ length: 60 }, (_, i) => corpse(i));

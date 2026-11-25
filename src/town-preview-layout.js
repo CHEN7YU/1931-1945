@@ -10,7 +10,7 @@ export const PREVIEW_OBJECTIVES = Object.freeze([
     view: { x: -49, z: -6, yaw: -2.5, pitch: .2 } }),
   Object.freeze({ id: 'B', name: '运河石桥', x: 8, z: -16, radius: 10,
     view: { x: 8, z: -5, yaw: 0 } }),
-  Object.freeze({ id: 'C', name: '东侧城门', x: 52, z: 3, radius: 10,
+  Object.freeze({ id: 'C', name: '东侧城门', x: 52, z: 3, radius: 10, groundMarkerOnly: true,
     view: { x: 44, z: 3, yaw: -Math.PI / 2, pitch: .1 } }),
 ]);
 export const PREVIEW_BASES = Object.freeze([

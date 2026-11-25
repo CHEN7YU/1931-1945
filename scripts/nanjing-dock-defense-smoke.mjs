@@ -61,6 +61,57 @@ try {
           return { generation, newGeneration: formation.generation, spawn: formation.spawnId, positions,
             posts: formation.members.filter(actor => actor.health > 0).map(actor => actor.tactics.nanjingDockDefense) };
         },
+        preparePlayerRespawn() {
+          for (const actor of allies) actor.health = 0;
+          showOverlay('dead');
+        },
+        playerBoundary() {
+          setGameState('pause');
+          const before = allies.map(actor => actor.health);
+          updateBattleBoundary(BOUNDARY_RULES.graceSeconds + 1);
+          return { area: battleArea, positions: allies.map(actor => actor.position.toArray()),
+            before, after: allies.map(actor => actor.health),
+            outside: allies.map(actor => boundaryStates.get(actor.id)?.outside ?? false) };
+        },
+        civilianProtection() {
+          const actor = enemies.find(a => a.health > 0 && !a.vehicleId);
+          const person = world.civilians.find(c => c.parent === scene && !c.userData.dead);
+          if (!actor || !person) throw new Error('Missing attacker or civilian for dock protection');
+          const oldActor = actor.position.clone(), oldPerson = person.position.clone();
+          const oldTarget = actor.tactics.civilianTarget, oldThink = actor.tactics.civilianThinkAt;
+          const oldVisible = person.visible, oldActive = world.civilians.map(c => c.userData.active);
+          for (const civilian of world.civilians) civilian.userData.active = false;
+          actor.position.set(-77, 0, -80); person.position.set(-80, 0, -80);
+          person.visible = true; person.userData.active = true; actor.tactics.civilianThinkAt = 0;
+          civilianCombatTime = -1;
+          const selectedOutside = nanjingCivilianPursuitTarget(actor) === person;
+          person.position.set(-82, 0, -80); time += .05; civilianCombatTime = -1;
+          const selectedInside = nanjingCivilianPursuitTarget(actor) === person;
+          const attackInside = nanjingCivilianAttackTargets().some(target => target.civilian === person);
+          const physicalInside = nanjingCivilianCombatTargets().some(target => target.civilian === person);
+          const soldierOutside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: -80, z: -80 } });
+          const soldierInside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: -82, z: -80 } });
+          actor.position.copy(oldActor); person.position.copy(oldPerson); person.visible = oldVisible;
+          world.civilians.forEach((civilian, index) => { civilian.userData.active = oldActive[index]; });
+          actor.tactics.civilianTarget = oldTarget; actor.tactics.civilianThinkAt = oldThink;
+          civilianCombatTime = -1;
+          return { selectedOutside, selectedInside, attackInside, physicalInside, soldierOutside, soldierInside };
+        },
+        view(direction) {
+          setGameState('pause');
+          $('hud').hidden = true;
+          for (const child of camera.children) child.visible = false;
+          if (direction === 'north') {
+            camera.position.set(-91, 1.65, -103);
+            camera.lookAt(-91, 1.4, -150);
+          } else {
+            const gate = scene.children.find(object => object.userData.nanjingFeature === 'west-gate-name');
+            if (!gate) throw new Error('Missing western gate name');
+            camera.position.set(-84, 1.65, gate.position.z);
+            camera.lookAt(-72, 4.5, gate.position.z);
+          }
+          renderer.render(scene, camera);
+        },
       };
     ` });
   });
@@ -93,8 +144,29 @@ try {
   assert.ok(respawn.positions.every(position => position[0] < -74.2 &&
     position[2] < -80 && Math.hypot(position[0] + 98, position[2] + 80) < 30),
     'the squad starts north of the ferry and outside the west wall');
+  assert.ok(respawn.positions.every(position => position[2] >= -104 && position[2] <= 96),
+    'the complete AI squad respawns inside the real battle boundary');
   assert.ok(respawn.posts.length && respawn.posts.every(post => post &&
     post.x >= -68 && post.x <= -54 && Math.abs(post.z + 60) <= 10), 'respawned AI is assigned to the west gate');
+  await page.evaluate(() => nanjingDockReview.preparePlayerRespawn());
+  const marker = page.locator('[data-spawn="nanjing-west-dock"]');
+  await marker.click();
+  await page.screenshot({ path: join(directory, 'dock-deployment.png') });
+  await page.locator('#confirm-deploy').click();
+  const playerBoundary = await page.evaluate(() => nanjingDockReview.playerBoundary());
+  assert.equal(playerBoundary.positions.length, 11);
+  assert.ok(playerBoundary.positions.every(([x, , z]) => x >= playerBoundary.area.minX &&
+    x <= playerBoundary.area.maxX && z >= playerBoundary.area.minZ && z <= playerBoundary.area.maxZ));
+  assert.ok(playerBoundary.outside.every(outside => !outside), 'no player squad member starts outside');
+  assert.deepEqual(playerBoundary.after, playerBoundary.before, 'spawning never causes boundary damage');
+  for (const direction of ['north', 'gate']) {
+    await page.evaluate(direction => nanjingDockReview.view(direction), direction);
+    await page.screenshot({ path: join(directory, `dock-${direction}.png`) });
+  }
+  const protection = await page.evaluate(() => nanjingDockReview.civilianProtection());
+  assert.deepEqual(protection, { selectedOutside: true, selectedInside: false,
+    attackInside: false, physicalInside: true, soldierOutside: true, soldierInside: false },
+    'AI drops the target when a person crosses the entrance');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, coreGuards: 6, dockPosts: dock.posts.length,
     enemyIncursions: dock.incursions, errors }));

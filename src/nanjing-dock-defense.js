@@ -1,11 +1,16 @@
 import { circleBlocked, segmentClear } from './core.js';
-import { NANJING_DOCK_SHIFT, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
+import { NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 
 // Waiting civilians and the ferry approaches are behind the landward fighting line.
 export const NANJING_DOCK_BUFFER = Object.freeze({
   minX: -74 + NANJING_DOCK_SHIFT, maxX: -79.5, minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
 });
 const buffer = [NANJING_DOCK_BUFFER];
+
+export function nanjingDockYardContains(point) {
+  return point.x >= NANJING_DOCK.x - 7 && point.x <= NANJING_DOCK_ENTRY_X &&
+    Math.abs(point.z - NANJING_DOCK.z) <= 10;
+}
 
 export function nanjingDockBufferActive(stage) {
   return stage === 'dock-defense' || stage === 'withdrawal-to-boats';

@@ -243,19 +243,34 @@ try {
           const friendlySafe = !data.dead;
           fireAutomaticShot({ id: null, team: 'enemy' }, { gun }, source, start, 0, 0);
           const casualties = nanjingCampaign.civilianCasualties - damageBefore;
-          const bayonetAttacker = originalEnemies.find(actor => !actor.vehicleId &&
-            (actor.rifle.model ?? 'rifle') === 'rifle');
+          const bayonetAttacker = originalEnemies.find(actor => actor.health > 0 && !actor.vehicleId &&
+            !actor.discharger && !actor.engineer && hasBayonet(actor));
           const bayonetPerson = world.civilians.find(candidate => candidate !== person);
           if (!bayonetAttacker || !bayonetPerson) throw Error('Missing bayonet pursuit fixture');
+          const { createTraversal } = await import('/src/infantry-traversal.js');
+          bayonetAttacker.traversal = createTraversal();
+          let corridor = null;
+          for (let x = -72; x <= 72 && !corridor; x += 3) for (let z = -30; z <= 60 && !corridor; z += 3) {
+            const start = { x, z }, end = { x, z: z - 32 };
+            const clear = Array.from({ length: 33 }, (_, i) => ({ x, z: z - i })).every(point =>
+              !world.isDeepWater(point.x, point.z) && !nanjingDockMovementLimited(point) &&
+              Math.abs(world.groundHeight(point.x, point.z)) < .1 &&
+              !circleBlocked(point.x, point.z, .5, movementObstacles(point.x, point.z)) &&
+              !circleBlocked(point.x, point.z, .5, civilianNavigationLookup.at(point.x, point.z)));
+            if (clear && segmentClear(start, end, .5, world.civilianNavigationObstacles,
+              (px, pz) => civilianNavigationLookup.at(px, pz))) corridor = { start, end };
+          }
+          if (!corridor) throw Error('Missing clear civilian pursuit fixture');
           for (const civilian of world.civilians) {
             civilian.visible = false; civilian.userData.active = false;
           }
           Object.assign(bayonetPerson.userData, { active: true, dead: false, health: 100,
             evacuated: false, threatResponse: null, streetLife: null,
-            route: [{ x: -67, z: -85 }], waypoint: 0 });
-          bayonetPerson.visible = true; bayonetPerson.position.set(-67, .36, -77);
-          bayonetAttacker.position.set(-67, .36, -81);
-          bayonetAttacker.heading = Math.PI;
+            route: [corridor.end], waypoint: 0 });
+          bayonetPerson.visible = true;
+          bayonetPerson.position.set(corridor.start.x, 0, corridor.start.z - 4);
+          bayonetAttacker.position.set(corridor.start.x, 0, corridor.start.z);
+          bayonetAttacker.heading = 0;
           bayonetAttacker.rifle.ammo = 0;
           bayonetAttacker.target = null;
           bayonetAttacker.tactics.civilianTarget = null;
@@ -263,6 +278,7 @@ try {
           bayonetAttacker.tactics.nanjingRegroup = { x: -24, y: 0, z: 24 };
           bayonetAttacker.bayonet.strikes = bayonetAttacker.bayonet.hits = 0;
           bayonetAttacker.bayonet.nextAttackAt = 0;
+          civilianCombatTime = null;
           const bayonetShotsBefore = bayonetAttacker.rifle.shots;
           const selectedByBayonetRifleman = nanjingCivilianPursuitTarget(bayonetAttacker) === bayonetPerson;
           nanjingCampaign.stage = 'withdrawal';
@@ -282,14 +298,60 @@ try {
             damage: 100 - bayonetPerson.userData.health,
             shots: bayonetAttacker.rifle.shots - bayonetShotsBefore,
             mode: bayonetAttacker.tactics.mode,
+            health: bayonetAttacker.health, traversal: bayonetAttacker.traversal.kind,
+            reaction: Boolean(bayonetAttacker.blastReaction || bayonetAttacker.dying),
             attacker: bayonetAttacker.position.toArray(), civilian: bayonetPerson.position.toArray() };
+          const movingPerson = world.civilians.filter(candidate => candidate !== person && candidate !== bayonetPerson &&
+            candidate.userData.ageGroup === 'adult')
+            .sort((a, b) => civilianPaceMultiplier(a.userData.civilianId, time) -
+              civilianPaceMultiplier(b.userData.civilianId, time))[0];
+          if (!movingPerson) throw Error('Missing moving civilian pursuit fixture');
+          bayonetPerson.visible = false;
+          bayonetPerson.userData.active = false;
+          const movingData = movingPerson.userData;
+          Object.assign(movingData, { active: true, dead: false, health: 100, arrived: false,
+            evacuated: false, panicked: true, streetLife: null, streetEvacuating: false,
+            fleeReleased: true, restPoseWeight: 0, resting: false, route: [corridor.end], waypoint: 0,
+            threatResponse: { mode: 'flee', target: corridor.end, nextThinkAt: time + 60,
+              until: time + 60, threats: [] }, crowdTarget: null, crowdPath: null,
+            crowdStalled: 0, crowdPathStalled: 0 });
+          movingPerson.visible = true;
+          movingPerson.position.set(corridor.start.x, world.groundHeight(corridor.start.x, corridor.start.z - 10.6),
+            corridor.start.z - 10.6);
+          bayonetAttacker.position.set(corridor.start.x, world.groundHeight(corridor.start.x, corridor.start.z),
+            corridor.start.z);
+          bayonetAttacker.heading = 0;
+          bayonetAttacker.rifle.ammo = 1;
+          bayonetAttacker.locomotion = createLocomotion();
+          bayonetAttacker.traversal = createTraversal();
+          bayonetAttacker.path = bayonetAttacker.pathGoal = null;
+          pathRequests.delete(bayonetAttacker.tactics.id);
+          cancelBayonet(bayonetAttacker.bayonet);
+          bayonetAttacker.bayonet.nextAttackAt = 0;
+          bayonetAttacker.tactics.civilianTarget = null;
+          bayonetAttacker.tactics.civilianThinkAt = 0;
+          civilianCombatTime = null;
+          const movingStart = movingPerson.position.clone(), movingInitialDistance =
+            bayonetAttacker.position.distanceTo(movingPerson.position), movingShots = bayonetAttacker.rifle.shots;
+          const movingSamples = [];
+          for (let frame = 0; frame < 120 && movingData.health === 100; frame++) {
+            time += .05; aiDecisions.beginFrame();
+            updateWeaponSimulation(.05); updateAI(.05); updateNanjingCivilians(.05);
+            if (bayonetAttacker.nativeMotion) advanceNraMotion(bayonetAttacker, .05);
+            if (frame % 10 === 0) movingSamples.push({ distance: bayonetAttacker.position.distanceTo(movingPerson.position),
+              speed: bayonetAttacker.locomotion.speed, mode: bayonetAttacker.tactics.mode,
+              stamina: bayonetAttacker.locomotion.stamina });
+          }
+          const movingPursuit = { corridor, initialDistance: movingInitialDistance, samples: movingSamples,
+            civilianTravel: movingStart.distanceTo(movingPerson.position), damage: 100 - movingData.health,
+            shots: bayonetAttacker.rifle.shots - movingShots };
           ({ allies, friendlyAI, friendlyForces, enemies, allForces } = previousForces);
           rebuildForces();
           enemies = originalEnemies;
           rebuildForces();
           state = 'pause';
           return { openingAssault, checks, sharedPlanes, beforeDistance, afterDistance, mode,
-            selectedByMachineGunner, crouching, friendlySafe, casualties, civilianDead: data.dead, bayonetPursuit,
+            selectedByMachineGunner, crouching, friendlySafe, casualties, civilianDead: data.dead, bayonetPursuit, movingPursuit,
             houses: world.landmarks.residentialBuildings.length, mortarReadout };
         },
         retreat() {
@@ -449,6 +511,11 @@ try {
       'bayonet-qualified Japanese infantry must charge and damage a nearby civilian');
     assert.equal(result.bayonetPursuit.shots, 0,
       'bayonet pursuit must not fire the rifle at the civilian, even with an empty magazine');
+    assert.ok(result.movingPursuit.initialDistance > 8 && result.movingPursuit.civilianTravel > 2);
+    assert.ok(result.movingPursuit.samples.some(sample => sample.mode === 'pursue-civilians') &&
+      result.movingPursuit.samples.some(sample => sample.distance < 8),
+      'a moving civilian must be pursued from outside charge range and approached');
+    assert.equal(result.movingPursuit.shots, 0);
     const restarted = await page.evaluate(() => civilianDefenseReview.restartCrossing());
     assert.equal(restarted.reset, 0, 'starting a new match must clear previous civilian crossings');
     assert.deepEqual(restarted.progress, Array.from({length:54}, (_,index)=>index+1),

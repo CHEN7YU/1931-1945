@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CIVILIAN_PANIC_MEMORY, CIVILIAN_PANIC_RADIUS, frightenCivilian, isCivilianNearCombat } from '../src/civilian-panic.js';
 import { civilianEscapeSpeed } from '../src/civilian-panic.js';
+import { civilianPaceMultiplier } from '../src/civilian-crowd.js';
+import { CIVILIAN_BAYONET_SPRINT_SPEED } from '../src/bayonet.js';
 
 test('residents flee at an urgent pace before panic and accelerate when frightened', () => {
   for (const age of ['adult', 'child', 'elderly']) {
@@ -11,6 +13,15 @@ test('residents flee at an urgent pace before panic and accelerate when frighten
     assert.ok(civilianEscapeSpeed(age, true) > civilianEscapeSpeed(age, false));
   }
   assert.throws(() => civilianEscapeSpeed('unknown', false), TypeError);
+});
+
+test('an unobstructed bayonet sprint can close on every civilian escape pace', () => {
+  for (const age of ['adult', 'child', 'elderly']) {
+    for (let id = 0; id < 180; id++) for (let time = 0; time <= 100; time += .5) {
+      const speed = civilianEscapeSpeed(age, true) * civilianPaceMultiplier(id, time);
+      assert.ok(CIVILIAN_BAYONET_SPRINT_SPEED > speed);
+    }
+  }
 });
 
 test('civilians react to fresh combat within hearing distance, regardless of which side fired', () => {

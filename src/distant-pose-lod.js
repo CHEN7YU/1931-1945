@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { MeshoptSimplifier } from 'meshoptimizer/simplifier';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { finishStartupWork } from './startup-work.js';
 
 export const DISTANT_WEAPON_TRIANGLE_BUDGET = 3000;
 let simplifierReady = false;
@@ -24,6 +25,10 @@ export function createLowMemoryPoseGeometry(source) {
 }
 
 export function indexedAnimatedSource(source) {
+  return finishStartupWork(indexedAnimatedSourceWork(source));
+}
+
+export function* indexedAnimatedSourceWork(source) {
   const working = new BufferGeometry(), morphNames = [];
   for (const [name, attribute] of Object.entries(source.attributes))
     if (!attribute.isInstancedBufferAttribute && (name !== 'normal' || !source.attributes.nraPoseVertex))
@@ -36,7 +41,7 @@ export function indexedAnimatedSource(source) {
       working.setAttribute(key, attribute); morphNames.push({ key, name });
     });
   }
-  const indexed = indexPoseVertices(working); working.dispose();
+  const indexed = yield* indexPoseVerticesWork(working); working.dispose();
   if (source.attributes.nraPoseVertex) {
     indexed.computeVertexNormals();
     indexed.morphAttributes.normal = indexed.morphAttributes.position.map(position => {
@@ -54,7 +59,7 @@ export function indexedAnimatedSource(source) {
   return indexed;
 }
 
-function indexPoseVertices(source) {
+function* indexPoseVerticesWork(source) {
   const attributes = Object.entries(source.attributes);
   const isPlain = a => a.array instanceof Float32Array && !a.normalized && !a.isInterleavedBufferAttribute;
   if ([...attributes.map(([, a]) => a), ...Object.values(source.morphAttributes).flat()].some(a => !isPlain(a)))
@@ -64,9 +69,12 @@ function indexPoseVertices(source) {
   const keys = new Int32Array(count * stride);
   let column = 0;
   for (const [, { array, itemSize }] of attributes) {
-    for (let vertex = 0; vertex < count; vertex++) for (let i = 0; i < itemSize; i++)
-      // Same signed truncation and tolerance as Three's mergeVertices.
-      keys[vertex * stride + column + i] = (array[vertex * itemSize + i] * 1e6 + .5) | 0;
+    for (let vertex = 0; vertex < count; vertex++) {
+      for (let i = 0; i < itemSize; i++)
+        // Same signed truncation and tolerance as Three's mergeVertices.
+        keys[vertex * stride + column + i] = (array[vertex * itemSize + i] * 1e6 + .5) | 0;
+      if ((vertex + 1) % 512 === 0) yield;
+    }
     column += itemSize;
   }
   const indices = new Uint32Array(count);
@@ -90,17 +98,23 @@ function indexPoseVertices(source) {
       buckets.set(hash, match);
     }
     indices[vertex] = match - 1;
+    if ((vertex + 1) % 512 === 0) yield;
   }
-  const compact = attribute => {
+  function* compact(attribute) {
     const { array, itemSize } = attribute;
     const output = new array.constructor(representatives.length * itemSize);
-    for (let vertex = 0; vertex < representatives.length; vertex++)
+    for (let vertex = 0; vertex < representatives.length; vertex++) {
       for (let i = 0; i < itemSize; i++) output[vertex * itemSize + i] = array[representatives[vertex] * itemSize + i];
+      if ((vertex + 1) % 512 === 0) yield;
+    }
     return new BufferAttribute(output, itemSize, attribute.normalized);
-  };
+  }
   const result = new BufferGeometry();
-  for (const [name, attribute] of attributes) result.setAttribute(name, compact(attribute));
-  for (const [name, frames] of Object.entries(source.morphAttributes)) result.morphAttributes[name] = frames.map(compact);
+  for (const [name, attribute] of attributes) result.setAttribute(name, yield* compact(attribute));
+  for (const [name, frames] of Object.entries(source.morphAttributes)) {
+    result.morphAttributes[name] = [];
+    for (const frame of frames) result.morphAttributes[name].push(yield* compact(frame));
+  }
   result.setIndex(new BufferAttribute(representatives.length <= 65535 ? new Uint16Array(indices) : indices, 1));
   return result;
 }

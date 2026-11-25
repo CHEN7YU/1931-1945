@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
-import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_DOCK_SHIFT, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_FERRY_BERTHS, NANJING_RIVER_SHORE_X, NANJING_SPAWNS, NANJING_WEST_BREACH, NANJING_WEST_GATE_Z,
+import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_FERRY_BERTHS, NANJING_RIVER_SHORE_X, NANJING_SPAWNS, NANJING_WEST_BREACH, NANJING_WEST_GATE_HALF_WIDTH, NANJING_WEST_GATE_Z,
   nanjingDefensePost, nanjingWallExitWaypoint } from '../src/nanjing-campaign.js';
 import { ferryBoardingPoints } from '../src/nanjing-ferry.js';
 import { NANJING_COURTYARDS, NANJING_COURTYARD_HALF_WIDTH, NANJING_COURTYARD_WIDTH,
@@ -85,6 +85,22 @@ test('dock north deployment reaches the city through both the ruined wall and th
   const ray = new THREE.Raycaster(new THREE.Vector3(-78, 1.5, -89), new THREE.Vector3(1, 0, 0), 0, 12);
   assert.ok(!ray.intersectObjects(world.solids).some(hit =>
     hit.object.userData.nanjingFeature === 'west-city-wall'), 'the gap must not block shots');
+  const names = scene.children.filter(object => object.userData.nanjingFeature === 'west-gate-name');
+  assert.equal(names.length, 2);
+  assert.ok(names.every(name => name.userData.text === '水西門' &&
+    name.material.userData.lettering.order === 'right-to-left'));
+  assert.equal(NANJING_WEST_GATE_HALF_WIDTH * 2, 6.8);
+  assert.ok(circleBlocked(-72, NANJING_WEST_GATE_Z + 3.8, .42, world.obstacles));
+  const ground = scene.children.find(object => object.userData.nanjingFeature === 'north-distant-ground');
+  const bank = scene.children.find(object => object.userData.nanjingFeature === 'north-distant-bank');
+  assert.ok(ground && bank);
+  for (const z of [-109, -150, -250]) {
+    const down = new THREE.Raycaster(new THREE.Vector3(-88, 2, z), new THREE.Vector3(0, -1, 0), 0, 3);
+    assert.ok(down.intersectObject(ground).length, `missing northern terrain at z=${z}`);
+  }
+  assert.ok(scene.children.some(object => object.userData.nanjingFeature === 'north-distant-house'));
+  assert.equal(world.solids.includes(ground), false);
+  assert.equal(world.solids.includes(bank), false);
 });
 
 test('the west breach has a rendered and physically walkable rubble slope in both directions', () => {
@@ -1056,26 +1072,26 @@ test('dock planking is visual-only and preserves the actual deck and ferry acces
   assert.equal(sign.userData.text, '上新河渡口');
   assert.ok(sign.position.y - sign.scale.y / 2 > 3, 'the raised sign leaves the entrance clear');
   assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-entry-roof').length, 2);
-  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-fence-post').length, 14);
+  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-fence-post').length, 22);
   assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-fence-rail').length, 8);
-  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-fence-slat').length, 28);
+  assert.equal(world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-fence-slat').length, 52);
   for (const side of [-1, 1]) {
     for (let offset = 5; offset <= 10; offset += .5) {
-      assert.ok(circleBlocked(NANJING_DOCK.x + 8, NANJING_DOCK.z + side * offset, .42, world.obstacles),
+      assert.ok(circleBlocked(NANJING_DOCK_ENTRY_X, NANJING_DOCK.z + side * offset, .42, world.obstacles),
         `the city-facing fence blocks passage at ${side * offset}`);
     }
-    for (let x = NANJING_RIVER_SHORE_X; x <= NANJING_DOCK.x + 8; x += .5) {
+    for (let x = NANJING_RIVER_SHORE_X; x <= NANJING_DOCK_ENTRY_X; x += .5) {
       assert.ok(circleBlocked(x, NANJING_DOCK.z + side * 10, .42, world.obstacles),
         `the return fence blocks passage at ${x}`);
     }
   }
   const outerBags = scene.children.filter(mesh => mesh.userData.nanjingFeature === 'dock-outer-sandbag');
   assert.equal(outerBags.length, 36);
-  assert.ok(outerBags.every(bag => Math.abs(bag.position.x - (NANJING_DOCK.x + 9)) < .04),
+  assert.ok(outerBags.every(bag => Math.abs(bag.position.x - (NANJING_DOCK_ENTRY_X + 1)) < .04),
     'the outer sandbag line is approximately one metre in front of the fence');
-  const entrance = { x: NANJING_DOCK.x + 12, y: 0, z: NANJING_DOCK.z };
-  world.moveInfantry(entrance, -12, 0, .42);
-  assert.ok(entrance.x < NANJING_DOCK.x + 7, 'the gate opening permits physical entry');
+  const entrance = { x: NANJING_DOCK_ENTRY_X + 4, y: 0, z: NANJING_DOCK.z };
+  world.moveInfantry(entrance, -8, 0, .42);
+  assert.ok(entrance.x < NANJING_DOCK_ENTRY_X - 1, 'the gate opening permits physical entry');
   for (const ferry of world.ferries) {
     const { shore } = ferryBoardingPoints(ferry);
     assert.equal(world.groundHeight(shore.x, shore.z), .36);
@@ -1096,7 +1112,7 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
   assert.equal(northbound.maxZ, west.minZ, 'western wall must turn north without leaving a gap');
   assert.equal(east.minX, NANJING_GATE_WIDTH / 2, 'eastern wall must connect to the opposite gate flank');
   assert.equal(east.minZ, west.minZ);
-  assert.ok(east.maxX >= 100 && northbound.minZ === NANJING_WEST_GATE_Z + 4);
+  assert.ok(east.maxX >= 100 && northbound.minZ === NANJING_WEST_GATE_Z + NANJING_WEST_GATE_HALF_WIDTH);
   assert.ok(Math.abs(NANJING_DOCK.z - NANJING_WEST_GATE_Z) >= 20, 'the dock lies diagonally beyond the west gate');
   assert.ok(circleBlocked(-72, -112, .42, world.obstacles), 'the west and north walls meet');
   assert.ok(circleBlocked(-72, -84, .42, world.obstacles), 'the extended west wall remains solid outside the breach');
@@ -1150,7 +1166,7 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
   for (const bag of outerBags) bag.updateWorldMatrix(true, false);
   for (const side of [-1, 1]) {
     const z = NANJING_DOCK.z + side * 7.26;
-    ray.set(new THREE.Vector3(NANJING_DOCK.x + 11, .55, z), new THREE.Vector3(-1, 0, 0));
+    ray.set(new THREE.Vector3(NANJING_DOCK_ENTRY_X + 3, .55, z), new THREE.Vector3(-1, 0, 0));
     ray.far = 4;
     assert.ok(ray.intersectObjects(outerBags, false).length, 'the outer sandbag wall blocks fire');
   }
@@ -1184,8 +1200,9 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
     assert.equal(spawnBlockReason(spawn, 'infantry', [], world.obstacles), null, spawn.id);
   }
   const armorNavigate = createNavigator(world.obstacles, 1.5, 3.1);
-  assert.ok(armorNavigate({ x: 90, z: -93 }, { x: -84, z: NANJING_DOCK.z }).length,
-    'second-stage armor must reach the landward dock approach');
+  const approach = { x: -78, z: -66 };
+  assert.ok(armorNavigate({ x: 90, z: -93 }, approach).length,
+    'second-stage armor must reach the landward approach outside the fenced yard');
 });
 
 test('withdrawing wall squads can descend both ramps before using ground navigation to the dock', () => {

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createDistantPoseGeometry, createLowMemoryPoseGeometry, indexedAnimatedSource, prepareDistantGeometry, useDistantPose } from '../src/distant-pose-lod.js';
+import { createDistantPoseGeometry, createLowMemoryPoseGeometry, indexedAnimatedSource, indexedAnimatedSourceWork, prepareDistantGeometry, useDistantPose } from '../src/distant-pose-lod.js';
+import { runStartupWork } from '../src/startup-work.js';
 
 for (const withIdentity of [false, true]) test(`native pose remapping agrees with Three (identity: ${withIdentity})`, () => {
   const source = new THREE.BufferGeometry();
@@ -31,6 +32,22 @@ for (const withIdentity of [false, true]) test(`native pose remapping agrees wit
   assert.deepEqual(actual.morphAttributes.position[0].array,
     (withIdentity ? expected.morphAttributes.position[0] : expected.attributes.poseFrame).array);
   if (withIdentity) assert.equal(actual.morphAttributes.normal[0].count, actual.attributes.position.count);
+});
+
+test('startup slices pose indexing without changing remapped attributes or morph frames', async () => {
+  const source = new THREE.SphereGeometry(1, 32, 16).toNonIndexed();
+  source.morphAttributes.position = [source.attributes.position.clone()];
+  source.morphAttributes.position[0].setZ(0, .37);
+  const expected = indexedAnimatedSource(source);
+  let time = 0, yields = 0;
+  const actual = await runStartupWork(indexedAnimatedSourceWork(source), {
+    budgetMs: 1, now: () => time++, yieldTask: async () => { yields++; },
+  });
+  assert.ok(yields > 3);
+  assert.deepEqual(actual.index.array, expected.index.array);
+  for (const [name, attribute] of Object.entries(actual.attributes))
+    assert.deepEqual(attribute.array, expected.attributes[name].array);
+  assert.deepEqual(actual.morphAttributes.position[0].array, expected.morphAttributes.position[0].array);
 });
 
 test('coarse poses reduce real triangles while retaining original attribute tuples and independent buffers', async () => {

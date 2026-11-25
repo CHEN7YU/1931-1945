@@ -6,6 +6,8 @@ test('the game memorial pool has 100 distinct generated names and includes the s
   assert.equal(SOLDIER_MEMORIAL_ROSTER.length, 100);
   assert.equal(new Set(SOLDIER_MEMORIAL_ROSTER.map(person => person.name)).size, 100);
   assert.ok(SOLDIER_MEMORIAL_ROSTER.some(person => person.name === '汪洋'));
+  assert.ok(SOLDIER_MEMORIAL_ROSTER.some(person => person.name.length === 2));
+  assert.ok(SOLDIER_MEMORIAL_ROSTER.some(person => person.name.length === 3));
 });
 
 test('death cards receive a deterministic shuffled identity, unit, and campaign-year range', () => {

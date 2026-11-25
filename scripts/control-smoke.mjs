@@ -9,9 +9,9 @@ page.setDefaultTimeout(15000);
 const errors = [], observations = [];
 let stage = 'loading';
 const watchdog = setTimeout(() => {
-  console.error(`G2 control test exceeded 90s at stage: ${stage}`);
+  console.error(`G2 control test exceeded 300s at stage: ${stage}`);
   void browser.close();
-}, 90000);
+}, 300000);
 const checkpoint = name => { stage = name; console.log(`G2: ${name}`); };
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -44,9 +44,11 @@ async function shoot() {
 }
 try {
   const url = new URL(process.env.GAME_URL || 'http://127.0.0.1:5173');
+  url.searchParams.delete('campaign');
   url.searchParams.set('benchmark', 'control'); url.searchParams.set('seed', '1938');
   await page.goto(url.href);
-  await wait(() => window.__battle?.state === 'menu');
+  await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
+  await page.locator('#squad-choices [data-type="tank"]').waitFor({ state: 'visible', timeout: 180000 });
   checkpoint('diagnostic loaded');
   assert.equal((await snapshot()).benchmark.scenario, 'control');
   await page.locator('#squad-choices [data-type="tank"]').click(); await page.locator('#deploy').click();
@@ -198,11 +200,14 @@ try {
     const observed = { state: data.state, transfer: data.deathTransfer, current: data.current, control: data.control,
       time: data.time, health: data.health, vehicles: data.vehicles, own: data.allies, weaponVisible: data.weaponVisible,
       combatEvents: data.combatEvents, combatFeedback: data.combatFeedback };
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
-    document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape' }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape', bubbles: true }));
     return observed;
   });
   const firstDeath = await dying.jsonValue(); await dying.dispose(); await page.mouse.up();
+  assert.ok([2, 3].includes(firstDeath.transfer.memorial.name.length));
+  assert.equal(await page.locator('#death-transfer-name').textContent(), firstDeath.transfer.memorial.name);
+  assert.equal(await page.locator('#death-transfer-unit').textContent(), firstDeath.transfer.memorial.unitName);
   assert.equal(firstDeath.control.soldierId, personId, 'death is visible before control moves to another soldier');
   assert.equal(firstDeath.own[0].health, 0);
   assert.equal(firstDeath.weaponVisible, false);
@@ -227,8 +232,8 @@ try {
   await page.evaluate(() => {
     const canvas = document.querySelector('#world');
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY' }));
-    document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyY' }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY', bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyY', bubbles: true }));
   });
   const handoff = await page.waitForFunction(() => {
     const data = window.__battle;

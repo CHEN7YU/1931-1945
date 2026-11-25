@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import { solveArm } from './nra-rifle-pose.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 import { casualtyJointDynamics } from './casualty-dynamics.js';
+import { finishStartupWork } from './startup-work.js';
 
 export const CORPSE_RULES = Object.freeze({ minimumSeconds: 180, softLimit: 120, variants: 4 });
 export const CASUALTY_POSE_FRAMES = 5;
@@ -23,6 +24,10 @@ const smooth = (from, to, value) => {
 };
 
 export function corpseFootprint(geometry) {
+  return finishStartupWork(corpseFootprintWork(geometry));
+}
+
+export function* corpseFootprintWork(geometry) {
   const positions = geometry.attributes.position, indices = geometry.index, cells = new Set(), size = .16;
   if (!positions || positions.itemSize !== 3 || !positions.count || !positions.array.every(Number.isFinite)) {
     throw new Error('Casualty footprint requires finite rendered body geometry');
@@ -37,6 +42,7 @@ export function corpseFootprint(geometry) {
     const minZ = Math.floor(Math.min(...points.map(point => point[1])) / size);
     const maxZ = Math.floor(Math.max(...points.map(point => point[1])) / size);
     for (let x = minX; x <= maxX; x++) for (let z = minZ; z <= maxZ; z++) cells.add(`${x},${z}`);
+    if ((at + 3) % 384 === 0) yield;
   }
   return Object.freeze([...cells].map(key => Object.freeze(key.split(',').map(value => (Number(value) + .5) * size))));
 }

@@ -709,13 +709,15 @@ export function makeWorld(scene, surface, options = {}) {
   }
   for (const point of options.objectives ?? OBJECTIVES) {
     const baseY = options.objectives ? groundHeight(point.x, point.z) : 0;
-    cylinder(point.x, baseY + 3, point.z, .04, 6, timber);
-    const flagMat = new THREE.MeshStandardMaterial({ color: 0xa19469, side: THREE.DoubleSide, roughness: 1 });
-    const flagGeometry = new THREE.PlaneGeometry(1.8, 1, 10, 4);
-    const flag = new THREE.Mesh(flagGeometry, flagMat);
-    flag.position.set(point.x + .9, baseY + 5.3, point.z);
-    flag.castShadow = true;
-    scene.add(flag); flags.push(flag);
+    if (!point.groundMarkerOnly) {
+      cylinder(point.x, baseY + 3, point.z, .04, 6, timber);
+      const flagMat = new THREE.MeshStandardMaterial({ color: 0xa19469, side: THREE.DoubleSide, roughness: 1 });
+      const flagGeometry = new THREE.PlaneGeometry(1.8, 1, 10, 4);
+      const flag = new THREE.Mesh(flagGeometry, flagMat);
+      flag.position.set(point.x + .9, baseY + 5.3, point.z);
+      flag.castShadow = true;
+      scene.add(flag); flags.push(flag);
+    }
     const radius = options.objectives ? point.radius : 13;
     const ringGeometry = new THREE.RingGeometry(radius - .1, radius, 64);
     ringGeometry.rotateX(-Math.PI / 2);
@@ -726,9 +728,11 @@ export function makeWorld(scene, surface, options = {}) {
       }
       ringGeometry.computeVertexNormals();
     }
-    const ring = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false }));
+    const ring = new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({ color: 0xc5b278, transparent: true, opacity: point.groundMarkerOnly ? .35 : .13, side: THREE.DoubleSide, depthWrite: false }));
     ring.visible = !point.captureArea;
+    ring.userData.groundCaptureMarker = point.id;
     ring.position.set(point.x, .055, point.z); scene.add(ring);
+    if (point.groundMarkerOnly) flags.push(ring);
   }
   // Pre-tinted haze keeps the distant ridges from tone-mapping into white silhouettes.
   const hillMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false });
