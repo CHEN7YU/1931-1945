@@ -22,7 +22,7 @@ export function damagedSurfaceGeometry(x, z, width, depth) {
   return new THREE.ShapeGeometry(shape, 24).rotateX(-Math.PI / 2);
 }
 
-export function craterGeometry(crater, base, craters = SHELL_CRATERS, sectors = 48, rings = 14) {
+export function craterGeometry(crater, base, craters = SHELL_CRATERS, sectors = 48, rings = 14, skirtDepth = 0) {
   const positions = [], uv = [], colors = [];
   const bed = new THREE.Color(0x65594b), edge = new THREE.Color(0xc3b29a);
   const add = (ring, sector) => {
@@ -35,6 +35,17 @@ export function craterGeometry(crater, base, craters = SHELL_CRATERS, sectors = 
   for (let ring = 0; ring < rings; ring++) for (let sector = 0; sector < sectors; sector++) {
     for (const [r, a] of [[ring, sector], [ring + 1, sector + 1], [ring + 1, sector],
       [ring, sector], [ring, sector + 1], [ring + 1, sector + 1]]) add(r, a);
+  }
+  if (skirtDepth > 0) for (let sector = 0; sector < sectors; sector++) {
+    for (const [index, y] of [[sector, base], [sector + 1, base], [sector, base - skirtDepth],
+      [sector + 1, base], [sector + 1, base - skirtDepth], [sector, base - skirtDepth]]) {
+      const angle = index / sectors * Math.PI * 2;
+      const radius = crater.radius * CRATER_EDGE + (y < base ? skirtDepth : 0);
+      const x = crater.x + Math.cos(angle) * radius;
+      const z = crater.z + Math.sin(angle) * radius;
+      positions.push(x, y, z); uv.push(x / 4, z / 4);
+      colors.push(edge.r, edge.g, edge.b);
+    }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));

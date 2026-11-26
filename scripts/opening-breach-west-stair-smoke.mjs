@@ -67,8 +67,10 @@ try {
               remaining: nanjingCampaign.stageRemaining };
           },
           approach() {
+            nanjingCampaign = createNanjingCampaign();
+            advanceNanjingCampaign(nanjingCampaign, nanjingCampaign.stageRemaining);
             const actor = controlledSoldier(entities);
-            actor.position.set(NANJING_DOCK.x + 10.5, 0, NANJING_DOCK.z);
+            actor.position.set(NANJING_DOCK.x + 37.3, 0, NANJING_DOCK.z);
             actor.position.y = world.walkHeight(actor.position.x, actor.position.z, 0);
             actor.nativeMotion.position = { x: actor.position.x, z: actor.position.z };
             actor.heading = controlPose.yaw = Math.PI / 2;
@@ -159,7 +161,7 @@ try {
           null, { timeout: 90000 });
       } finally { await page.keyboard.up('KeyW'); }
       const atGate = await page.evaluate(() => window.gateExitReview.snapshot());
-      assert.equal(atGate.stage, 'withdrawal', JSON.stringify(atGate));
+      assert.equal(atGate.stage, 'dock-defense', JSON.stringify(atGate));
       await page.evaluate(() => window.gateExitReview.approach());
       assert.equal((await page.evaluate(() => window.gateExitReview.snapshot())).stage, 'withdrawal');
       await page.keyboard.down('KeyW');

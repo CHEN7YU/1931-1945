@@ -1007,6 +1007,24 @@ test('continuous gate masonry seals the arch shoulders without overlapping tunne
   }
 });
 
+test('gate side walls have no coplanar overlapping curtain faces', () => {
+  const scene = new THREE.Scene();
+  const world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const masonry = world.solids.filter(mesh => ['gate-above-arch-masonry', 'barbican-curtain-wall']
+    .includes(mesh.userData.nanjingFeature));
+  for (const gate of world.landmarks.gatehouse.gates) for (const side of [-1, 1]) {
+    for (const zOffset of [-2, 0, 2]) for (const y of [1, 3, 6]) {
+      const ray = new THREE.Raycaster(new THREE.Vector3(side * (NANJING_GATE_WIDTH / 2 + 2), y, gate.z + zOffset),
+        new THREE.Vector3(-side, 0, 0), 0, 3);
+      const hits = ray.intersectObjects(masonry, false);
+      const features = new Set(hits.filter(hit => Math.abs(hit.distance - 2) < .001)
+        .map(hit => hit.object.userData.nanjingFeature));
+      assert.equal(features.size, 1, `overlapping side face at ${side}, ${gate.z + zOffset}, ${y}`);
+    }
+  }
+});
+
 test('all eight initial Japanese infantry formations have a registered safe southern entry', () => {
   const scene = new THREE.Scene();
   const world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());

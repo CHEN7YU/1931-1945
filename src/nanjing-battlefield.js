@@ -107,6 +107,10 @@ export function makeNanjingBattlefield(scene, surface) {
       '#include <map_fragment>\ndiffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(.2126, .7152, .0722))), diffuseColor.rgb, .12);');
   };
   brick.customProgramCacheKey = () => 'nanjing-grey-masonry';
+  const warmBrick = brick.clone();
+  warmBrick.color.set(0xa6a198);
+  warmBrick.onBeforeCompile = brick.onBeforeCompile;
+  warmBrick.customProgramCacheKey = brick.customProgramCacheKey;
   const stone = surface('paving', 0x96896f, 2.4);
   const courtyardGround = surface('earth', 0x62634e, 1.8);
   const timber = surface('timber', 0x594a35, 2);
@@ -542,7 +546,7 @@ export function makeNanjingBattlefield(scene, surface) {
       section.absarc(0, spring, inner, end, start, true);
       section.closePath();
       const voussoir = new THREE.Mesh(new THREE.ExtrudeGeometry(section,
-        { depth: .12, bevelEnabled: false, curveSegments: 4 }), stone);
+        { depth: .12, bevelEnabled: false, curveSegments: 4 }), warmBrick);
       voussoir.position.set(0, 0, z - depth / 2 - .12);
       voussoir.castShadow = voussoir.receiveShadow = true;
       voussoir.userData.nanjingFeature = 'arched-gateway';
@@ -593,7 +597,7 @@ export function makeNanjingBattlefield(scene, surface) {
     masonry.lineTo(width / 2, wallHeight);
     masonry.lineTo(-width / 2, wallHeight);
     masonry.closePath();
-    const material = main ? brick : stone, meters = material.userData.metersPerTile ?? 2.4;
+    const material = main ? brick : warmBrick, meters = material.userData.metersPerTile ?? 2.4;
     for (const slice of casemateGateSlices(z - depth / 2, z + depth / 2)) {
       const shape = masonry.clone();
       for (const opening of slice.holes) {
@@ -1010,15 +1014,21 @@ export function makeNanjingBattlefield(scene, surface) {
     for (const piece of subtractCasemateBox({ minX: x - NANJING_RAMPART_THICKNESS / 2,
       maxX: x + NANJING_RAMPART_THICKNESS / 2, minY: 0, maxY: curtainHeight,
       minZ: NANJING_GATE_NORTH_EDGE, maxZ: NANJING_GATE_SOUTH_EDGE })) {
-      const curtain = addBox((piece.minX + piece.maxX) / 2, (piece.minY + piece.maxY) / 2,
-        (piece.minZ + piece.maxZ) / 2, piece.maxX - piece.minX, piece.maxY - piece.minY,
-        piece.maxZ - piece.minZ, stone, true, true);
-      curtain.userData.nanjingFeature = 'barbican-curtain-wall';
+      obstacles.push({ minX: piece.minX, maxX: piece.maxX, minZ: piece.minZ, maxZ: piece.maxZ,
+        minY: piece.minY, height: piece.maxY });
     }
     let startZ = NANJING_GATE_NORTH_EDGE;
     for (const gate of [...gateways, { z: NANJING_GATE_SOUTH_EDGE, depth: 0 }]) {
       const endZ = gate.z - gate.depth / 2;
       if (endZ > startZ) {
+        for (const piece of subtractCasemateBox({ minX: x - NANJING_RAMPART_THICKNESS / 2,
+          maxX: x + NANJING_RAMPART_THICKNESS / 2, minY: 0, maxY: curtainHeight,
+          minZ: startZ, maxZ: endZ })) {
+          const curtain = addBox((piece.minX + piece.maxX) / 2, (piece.minY + piece.maxY) / 2,
+            (piece.minZ + piece.maxZ) / 2, piece.maxX - piece.minX, piece.maxY - piece.minY,
+            piece.maxZ - piece.minZ, warmBrick, false, true);
+          curtain.userData.nanjingFeature = 'barbican-curtain-wall';
+        }
         const walk = addBox(x, WALL_WALK.height - .225 * DETAIL_SCALE, (startZ + endZ) / 2,
           NANJING_RAMPART_THICKNESS, .45 * DETAIL_SCALE, endZ - startZ, brick);
         walk.userData.nanjingFeature = 'wall-walk';

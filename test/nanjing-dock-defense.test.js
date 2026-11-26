@@ -5,7 +5,7 @@ import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { createNavigator, segmentClear } from '../src/core.js';
 import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockYardContains, nanjingDockOutsideGoal,
   nanjingDockAssaultGoal, nanjingDockBufferActive, nanjingDockPathClear,
-  nanjingDockPostOutsideBuildings, assignNanjingDockDefense } from '../src/nanjing-dock-defense.js';
+  nanjingDockPostOutsideBuildings, assignNanjingDockDefense, assignNanjingOuterEnemyPosts } from '../src/nanjing-dock-defense.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingCoreGuard } from '../src/nanjing-defense.js';
 import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT } from '../src/civilian-crowd.js';
@@ -138,6 +138,30 @@ test('four assault formations route through the west gate while the others retai
     assert.ok(position.x < -74.2);
     assert.equal(actor.tactics.nanjingGateAssaultReady, true);
   }
+});
+
+test('enemy soldiers that crossed the west gate spread into distinct reachable guard positions', () => {
+  const actors = [0, 2, 4, 6].flatMap(index => Array.from({ length: 11 }, (_, slot) => ({
+    id: `${index}-${slot}`, index: slot, formation: { index }, friendly: false,
+    health: 100, position: { x: -75, z: -60 }, tactics: { nanjingGateAssaultReady: true },
+  })));
+  const clear = point => Math.abs(world.walkHeight(point.x, point.z, 0)) < .1 &&
+    segmentClear(point, point, .5, world.obstacles);
+  const assigned = assignNanjingOuterEnemyPosts(actors, clear);
+  assert.equal(assigned.length, 44);
+  const posts = actors.map(actor => actor.tactics.nanjingOuterPost);
+  const planner = createNavigator([...world.doorSystem.navigationObstacles, NANJING_DOCK_BUFFER]);
+  for (const [index, post] of posts.entries()) {
+    assert.ok(post && clear(post) && !nanjingDockInside(post, .65));
+    assert.ok(post.x < -74.2);
+    for (const other of posts.slice(index + 1)) assert.ok(Math.hypot(post.x - other.x, post.z - other.z) >= 1.6);
+    assert.ok(planner({ x: -75.5, y: 0, z: -60 }, post).length, JSON.stringify(post));
+    assert.equal(nanjingDockAssaultGoal(actors[index]), post);
+  }
+  assert.ok(Math.max(...posts.map(post => post.x)) - Math.min(...posts.map(post => post.x)) > 10);
+  assert.ok(Math.max(...posts.map(post => post.z)) - Math.min(...posts.map(post => post.z)) > 10);
+  assignNanjingOuterEnemyPosts(actors, clear);
+  assert.deepEqual(actors.map(actor => actor.tactics.nanjingOuterPost), posts);
 });
 
 test('all six core positions are physically clear, reachable, and cannot be reassigned to autonomous weapons', () => {

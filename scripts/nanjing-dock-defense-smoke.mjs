@@ -114,10 +114,13 @@ try {
           for (const actor of actors) {
             actor.vehicleId = null;
             actor.position.set(-64, 0, -60);
+            actor.hasFirearm = false;
             actor.path = actor.pathGoal = actor.target = null;
             actor.blastReaction = actor.dying = null;
             actor.traversal.kind = 'grounded';
             actor.grenades.action = null;
+            actor.tactics.throwIntent = null; actor.tactics.packApproach = null;
+            actor.tactics.throwDecisionAt = Infinity;
             cancelAIMelee(actor);
             actor.tactics.lastSeen = null;
             actor.tactics.civilianTarget = null;
@@ -128,7 +131,14 @@ try {
               time += .05;
               aiDecisions.beginFrame();
               updateAI(.05);
+              if (actor.nativeMotion) advanceNraMotion(actor, .05);
               samples.push(actor.position.toArray());
+            }
+            for (let frame = 0; frame < 1400 && actor.tactics.mode !== 'dock-perimeter-guard'; frame++) {
+              time += .05;
+              aiDecisions.beginFrame();
+              updateAI(.05);
+              if (actor.nativeMotion) advanceNraMotion(actor, .05);
             }
             results.push({ formation: actor.formation.index, position: actor.position.toArray(),
               mode: actor.tactics.mode, goal: formationDestination(actor, objectives[1]),
@@ -137,9 +147,39 @@ try {
               traversal: actor.traversal.kind, dying: actor.dying, blastReaction: actor.blastReaction,
               state, present: allForces.includes(actor), pathReason: actor.tactics.pathReason,
               path: actor.path, samples });
+            this.guard = actor;
             actor.health = 0;
           }
           return results;
+        },
+        guardCombat() {
+          const guard = this.guard, player = controlledSoldier(entities);
+          if (!guard || !player) throw new Error('Missing guard or player for combat check');
+          guard.health = 100; guard.hasFirearm = true;
+          guard.nextThink = 0; guard.target = null; guard.tactics.lastSeen = null;
+          player.health = 100000; player.dying = null; player.blastReaction = null;
+          let target = null;
+          for (let x = -98; x <= -76 && !target; x += 2)
+            for (let z = -76; z <= -42 && !target; z += 2) {
+              const distance = Math.hypot(x - guard.position.x, z - guard.position.z);
+              if (distance < 12 || distance > 20 || nanjingDockInside({ x, z }, .65) ||
+                circleBlocked(x, z, .5, movementObstacles(x, z), 0)) continue;
+              if (hasLine(new THREE.Vector3(guard.position.x, 1.4, guard.position.z),
+                new THREE.Vector3(x, 1.2, z), 30)) target = { x, z };
+            }
+          if (!target) throw new Error('No clear target position for guard combat check');
+          player.position.set(target.x, 0, target.z);
+          if (player.nativeMotion) player.nativeMotion.position = target;
+          guard.heading = Math.atan2(guard.position.x - target.x, guard.position.z - target.z);
+          rebuildForces();
+          const before = guard.rifle.shots;
+          setGameState('playing');
+          for (let i = 0; i < 400 && guard.rifle.shots === before && guard.health > 0; i++) {
+            aiDecisions.beginFrame(); advanceBattleStep(.05, time + .05);
+          }
+          setGameState('pause');
+          return { before, shots: guard.rifle.shots, mode: guard.tactics.mode,
+            lastShot: guard.tactics.lastShot, target, health: guard.health };
         },
         positionFenceVault() {
           setGameState('pause');
@@ -255,7 +295,13 @@ try {
     assert.ok(crossing.position[0] < -74.2, `formation ${crossing.formation} did not cross the wall`);
     assert.ok(crossing.samples.filter(([x]) => x >= -74.2 && x <= -69.8)
       .every(([, , z]) => Math.abs(z + 60) < 3.4), 'actual AI must cross through the gate opening');
+    assert.equal(crossing.mode, 'dock-perimeter-guard', JSON.stringify(crossing));
   }
+  assert.ok(new Set(crossings.map(crossing => `${crossing.goal.x},${crossing.goal.z}`)).size === 4,
+    'the four assault formations use different guard posts');
+  const combat = await page.evaluate(() => nanjingDockReview.guardCombat());
+  assert.ok(combat.shots > combat.before, `a guard must still engage an actually visible opponent: ${JSON.stringify(combat)}`);
+  await writeFile(join(directory, 'guard-combat.json'), JSON.stringify(combat, null, 2));
   const ending = await page.evaluate(() => nanjingDockReview.ending());
   assert.equal(ending.hidden, false);
   assert.match(ending.text, /中华门/);
@@ -263,7 +309,7 @@ try {
   assert.equal(ending.links, 0, 'the ending screen does not show source links');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, coreGuards: 6, dockPosts: dock.posts.length,
-    enemyIncursions: dock.incursions, errors }));
+    enemyIncursions: dock.incursions, guardCombat: combat.shots > combat.before, errors }));
 } finally {
   await browser.close();
 }

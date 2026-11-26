@@ -2,7 +2,7 @@ import test from 'node:test';
 import { recordNanjingAISquadBoarding, nanjingAISquadsBoarded, nanjingAIBoardedCount } from '../src/nanjing-campaign.js';
 import assert from 'node:assert/strict';
 import {
-  NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_OBJECTIVES, NANJING_SPAWNS,
+  NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_OBJECTIVES, NANJING_SPAWNS,
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
@@ -152,23 +152,19 @@ test('mission voice announces each remaining minute once, withdraws at zero and 
   assert.equal(nanjingMissionVoice(createNanjingCampaign()), 'nanjing-gate-3');
 });
 
-test('evacuation announcements follow actual boarding readiness once and never claim troops have crossed', () => {
+test('evacuation reminder is issued once when the player may board, even with troops left ashore', () => {
   const campaign = createNanjingCampaign();
-  assert.equal(nanjingEvacuationVoice(campaign, true, true), null);
+  assert.equal(nanjingEvacuationVoice(campaign, true), null);
   campaign.stage = 'withdrawal-to-boats';
-  assert.equal(nanjingEvacuationVoice(campaign, false, true), null);
-  assert.equal(nanjingEvacuationVoice(campaign, true, true), 'nanjing-troops-boarding');
-  assert.equal(nanjingEvacuationVoice(campaign, true, true), null);
-  campaign.boardedAISquads = ['a', 'b', 'c', 'd'];
-  assert.equal(nanjingEvacuationVoice(campaign, true, false), 'nanjing-evacuation-ready');
-  assert.equal(nanjingEvacuationVoice(campaign, true, false), null);
+  assert.equal(nanjingEvacuationVoice(campaign, false), null);
+  assert.equal(nanjingEvacuationVoice(campaign, true), 'nanjing-depart-now');
+  assert.equal(nanjingEvacuationVoice(campaign, true), null);
   const alreadyReady = createNanjingCampaign();
   alreadyReady.stage = 'withdrawal-to-boats'; alreadyReady.requiredAISquads = 0;
-  assert.equal(nanjingEvacuationVoice(alreadyReady, true, false), 'deploy',
-    'when no AI squad survives, use the existing general departure announcement');
-  assert.equal(nanjingEvacuationVoice(alreadyReady, true, false), null);
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true), 'nanjing-depart-now');
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true), null);
   alreadyReady.playerBoardingBoatId = 0;
-  assert.equal(nanjingEvacuationVoice(alreadyReady, true, true), null);
+  assert.equal(nanjingEvacuationVoice(alreadyReady, true), null);
 });
 
 test('Nanjing campaign uses dedicated gate, dock, and three-direction assault positions', () => {
@@ -222,18 +218,19 @@ test('three-minute gate defense ends reinforcements and waits for withdrawal to 
   assert.equal(activateNanjingDock(campaign), false);
 });
 
-test('withdrawal triggers at the dock within ten horizontal meters, independent of route', () => {
+test('withdrawal triggers after the west gate or within 20 meters of the dock entrance', () => {
   for (const point of [
-    { x: -74.2, y: 0, z: -60 }, { x: -74.2, y: 0, z: -89 },
-    { x: NANJING_OBJECTIVES[1].x + 10.01, y: 0, z: NANJING_OBJECTIVES[1].z },
-    { x: NANJING_OBJECTIVES[1].x, y: 2.4, z: NANJING_OBJECTIVES[1].z },
-    { x: NANJING_OBJECTIVES[1].x, y: -1.01, z: NANJING_OBJECTIVES[1].z },
+    { x: -74.19, y: 0, z: -60 }, { x: -74.2, y: 0, z: -89 },
+    { x: NANJING_DOCK_ENTRY_X + 20.01, y: 0, z: NANJING_DOCK.z },
+    { x: NANJING_DOCK_ENTRY_X, y: 2.4, z: NANJING_DOCK.z },
+    { x: NANJING_DOCK_ENTRY_X, y: -1.01, z: NANJING_DOCK.z },
     { x: NaN, y: 0, z: -60 }, null,
   ]) assert.equal(nanjingDockApproachReached(point), false, JSON.stringify(point));
   for (const point of [
-    { x: NANJING_OBJECTIVES[1].x + 10, y: 0, z: NANJING_OBJECTIVES[1].z },
-    { x: NANJING_OBJECTIVES[1].x, y: -1, z: NANJING_OBJECTIVES[1].z + 10 },
-    { x: NANJING_OBJECTIVES[1].x + 6, y: 2.39, z: NANJING_OBJECTIVES[1].z - 8 },
+    { x: -74.2, y: 0, z: -60 }, { x: -75, y: .5, z: -63.4 },
+    { x: NANJING_DOCK_ENTRY_X + 20, y: 0, z: NANJING_DOCK.z },
+    { x: NANJING_DOCK_ENTRY_X, y: -1, z: NANJING_DOCK.z + 20 },
+    { x: NANJING_DOCK_ENTRY_X + 12, y: 2.39, z: NANJING_DOCK.z - 16 },
   ]) assert.equal(nanjingDockApproachReached(point), true, JSON.stringify(point));
 });
 

@@ -108,6 +108,10 @@ export function createBattleVoices(buffers, random = Math.random) {
   const counts = { ambient: 0, callout: 0, command: 0, announcement: 0, interrupted: 0, queuePressure: 0 };
   const choose = items => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
   function select(team, cue, variant) {
+    if (team === 'friendly' && cue === 'nanjing-depart-now') {
+      const original = select(team, 'nanjing-evacuation-ready', variant);
+      return { ...original, cue, text: '赶紧登船离开南京！', playbackOffset: [4.93, 4.76, 4.30][variant] };
+    }
     const key = `${team}:${cue}`, candidates = clips.filter(clip => clip.team === team && clip.cue === cue && clip.variant === variant);
     if (!candidates.length) throw new Error(`Unknown battle voice cue: ${team}/${cue}/${variant}`);
     const fresh = candidates.filter(clip => clip.id !== lastLine.get(key)), pool = fresh.length ? fresh : candidates;
@@ -149,7 +153,7 @@ export function createBattleVoices(buffers, random = Math.random) {
       ...(request.targetId ? { targetId: request.targetId, targetKey: request.targetKey, targetRole: request.targetRole, clock: request.clock,
         listenerId: request.listenerId } : {}) });
     if (history.length > 64) history.shift();
-    source.start();
+    source.start(0, request.clip.playbackOffset ?? 0);
     return true;
   }
   function flush() {

@@ -43,6 +43,28 @@ try {
           return { ready: nanjingAISquadsBoarded(nanjingCampaign), waiting: nanjingCampaign.civiliansWaiting,
             aboard: nanjingCampaign.civiliansAboard, unrescued: nanjingCampaign.civiliansUnrescued };
         },
+        startStuck() {
+          this.start(0);
+          const teammate = allies.find(actor => actor !== controlledSoldier(entities));
+          const other = formations.find(formation => formation.team === 'friendly' && !formation.player &&
+            formation.members.length).members[0];
+          teammate.health = 100;
+          const shore = ferryBoardingPoints(world.ferries[2]).shore;
+          teammate.position.set(shore.x, world.groundHeight(shore.x, shore.z), shore.z);
+          teammate.nativeMotion.position = { x: shore.x, z: shore.z };
+          other.health = 100; other.position.set(50, 0, 40);
+          other.nextThink = Infinity;
+          rebuildForces(); updateNanjingMission(0);
+          this.teammate = teammate; this.other = other;
+          return { required: nanjingCampaign.requiredAISquads, ready: nanjingAISquadsBoarded(nanjingCampaign) };
+        },
+        waitForTeammate() {
+          for (let i = 0; i < 600 && this.teammate.tactics.nanjingFerry?.phase !== 'aboard' &&
+            this.teammate.tactics.nanjingFerry?.phase !== 'evacuated'; i++)
+            advanceBattleStep(.05, time + .05);
+          return { phase: this.teammate.tactics.nanjingFerry?.phase,
+            playerSelected: nanjingCampaign.playerBoardingBoatId, otherHealth: this.other.health };
+        },
         advance() {
           for (let i = 0; i < 400 && !nanjingCampaign.outcome; i++) {
             time += .05; updateNanjingCivilians(.05); updateNanjingMission(.05);
@@ -63,8 +85,16 @@ try {
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   const aboard = process.env.REVIEW_CIVILIANS_ABOARD === '0' ? 0 : 1;
-  const start = await page.evaluate(aboard => departureReview.start(aboard), aboard);
-  assert.deepEqual(start, { ready: true, waiting: 0, aboard, unrescued: 1 });
+  const stuck = process.env.REVIEW_STUCK_ALLY === '1';
+  const start = stuck ? await page.evaluate(() => departureReview.startStuck())
+    : await page.evaluate(aboard => departureReview.start(aboard), aboard);
+  if (stuck) {
+    assert.deepEqual(start, { ready: false, required: 1 });
+    const teammate = await page.evaluate(() => departureReview.waitForTeammate());
+    assert.ok(['aboard', 'evacuated'].includes(teammate.phase), JSON.stringify(teammate));
+    assert.equal(teammate.playerSelected, null, 'the teammate boards without a player interaction');
+    assert.equal(teammate.otherHealth, 100, 'an unboarded AI remains alive');
+  } else assert.deepEqual(start, { ready: true, waiting: 0, aboard, unrescued: 1 });
   await page.keyboard.press('f');
   const result = await page.evaluate(() => departureReview.advance());
   console.log(JSON.stringify({ start, result, errors }));

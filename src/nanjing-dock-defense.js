@@ -56,11 +56,46 @@ export function nanjingDockAssaultGoal(actor) {
         actor.position.x < -74.2 && Math.abs(actor.position.z - NANJING_WEST_GATE_Z) < 3))
       actor.tactics.nanjingGateAssaultReady = true;
     if (!actor.tactics.nanjingGateAssaultReady) return approach;
-    return { x: -78 - actor.index % 3, y: 0,
+    return actor.tactics.nanjingOuterPost ?? { x: -78 - actor.index % 3, y: 0,
       z: NANJING_WEST_GATE_Z + (Math.floor(actor.index % 11 / 3) - 1.5) * 1.2, transit: true };
   }
   return { x: -58 + actor.index % 3 * 1.7, y: 0,
     z: NANJING_WEST_GATE_Z + (Math.floor(actor.index % 11 / 3) - 1.5) * 2, transit: true };
+}
+
+export function assignNanjingOuterEnemyPosts(actors, clear) {
+  const guards = actors.filter(actor => actor.health > 0 && !actor.friendly && !actor.vehicleId &&
+    actor.formation.index % 2 === 0 && actor.position.x < -74.2 &&
+    actor.tactics.nanjingGateAssaultReady);
+  const claimed = [];
+  const free = point => !nanjingDockInside(point, .65) && clear(point) &&
+    claimed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= 1.6);
+  for (const actor of guards) {
+    const old = actor.tactics.nanjingOuterPost;
+    if (old && free(old)) claimed.push(old);
+    else actor.tactics.nanjingOuterPost = null;
+  }
+  for (const actor of guards.filter(actor => !actor.tactics.nanjingOuterPost)) {
+    const slot = actor.formation.index * 11 + actor.index;
+    const desired = { x: -77 - slot % 5 * 4, z: -67 + Math.floor(slot / 5) % 5 * 4 };
+    const candidates = [];
+    for (let x = -96; x <= -76; x += 1.8) for (let z = -68; z <= -51; z += 1.8)
+      candidates.push({ x, y: 0, z, transit: true });
+    candidates.sort((a, b) => Math.hypot(a.x - desired.x, a.z - desired.z) -
+      Math.hypot(b.x - desired.x, b.z - desired.z));
+    const post = candidates.find(free);
+    if (!post) {
+      if (!actor.tactics.nanjingOuterPostWarning) {
+        console.warn(`No clear outer gate watch post for ${actor.id}; retaining the gate approach.`);
+        actor.tactics.nanjingOuterPostWarning = true;
+      }
+      continue;
+    }
+    actor.tactics.nanjingOuterPostWarning = false;
+    actor.tactics.nanjingOuterPost = post;
+    claimed.push(post);
+  }
+  return guards;
 }
 
 export function nanjingDockPostOutsideBuildings(point, buildings) {

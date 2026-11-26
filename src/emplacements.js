@@ -21,8 +21,10 @@ export const NANJING_EMPLACEMENTS = Object.freeze([
   { id: 'gate-wall-mg', profile: 'maxim24', playerOnly: true, ...NANJING_CASEMATE.weapon },
   { id: 'dock-mg', profile: 'maxim24', x: -53.5, z: -92, heading: -Math.PI / 2 },
   { id: 'dock-gun', profile: 'bofors75', x: -63, z: -94, heading: -Math.PI / 2 },
-  { id: 'ferry-north-mg', profile: 'maxim24', x: NANJING_DOCK.x + 12, z: NANJING_DOCK.z - 11.5, heading: -2.7 },
+  { id: 'ferry-north-mg', profile: 'maxim24', x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z - 16, heading: -2.7 },
   { id: 'ferry-south-mg', profile: 'maxim24', x: NANJING_DOCK.x + 12, z: NANJING_DOCK.z + 15, heading: -2 },
+  { id: 'ferry-south-aa', profile: 'maxim24aa', x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z + 15, heading: Math.PI },
+  { id: 'ferry-south-gun', profile: 'bofors75', x: NANJING_DOCK.x + 7, z: NANJING_DOCK.z + 13, heading: Math.PI },
   { id: 'gate-aa', profile: 'maxim24aa', x: 13.5, z: 20, altitude: NANJING_GATE_HEIGHT, heading: Math.PI },
   { id: 'dock-aa', profile: 'maxim24aa', x: -68, z: -71, altitude: .36, heading: -Math.PI / 2 },
 ].map(Object.freeze));

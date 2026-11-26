@@ -27,9 +27,7 @@ try {
           const actor = formations.filter(formation => formation.team === 'friendly' && !formation.player)
             .flatMap(formation => formation.members).find(member => member.health > 0);
           if (!actor) throw new Error('No live friendly AI soldier for the voice fixture');
-          world.ferries[0].userData.troopBoarding = { actor };
           updateNanjingMission(0);
-          world.ferries[0].userData.troopBoarding = null;
         },
         ready() {
           const altered = [];
@@ -55,7 +53,6 @@ try {
           for (const formation of formations.filter(item => item.team === 'friendly' && !item.player))
             for (const actor of formation.members) actor.health = 0;
           nanjingCampaign.evacuatedSquads = [];
-          nanjingCampaign.evacuationVoiceReady = false;
           updateNanjingMission(0); updateHUD();
           return { required: nanjingCampaign.requiredAISquads, playerSquadAlive: allies.filter(actor => actor.health > 0).length,
             help: document.getElementById('objective-help').textContent };
@@ -75,21 +72,18 @@ try {
   console.log('Nanjing battle started');
   await page.evaluate(() => window.nanjingVoiceReview.start());
   await page.waitForFunction(() => window.__battle.battleVoices.history.some(item =>
-    item.cue === 'nanjing-troops-boarding'), null, { timeout: 30000 });
-  console.log('Troop boarding announcement played');
+    item.cue === 'nanjing-depart-now'), null, { timeout: 30000 });
+  console.log('Departure reminder played');
   console.log('Readiness:', JSON.stringify(await page.evaluate(() => window.nanjingVoiceReview.ready())));
-  await page.waitForFunction(() => window.__battle.battleVoices.history.some(item =>
-    item.cue === 'nanjing-evacuation-ready'), null, { timeout: 30000 });
   const voices = await page.evaluate(() => window.__battle.battleVoices);
   const history = voices.history.filter(item => item.cue.startsWith('nanjing-'));
-  assert.equal(history.filter(item => item.cue === 'nanjing-troops-boarding').length, 1);
-  assert.equal(history.filter(item => item.cue === 'nanjing-evacuation-ready').length, 1);
+  assert.equal(history.filter(item => item.cue === 'nanjing-depart-now').length, 1);
   const alone = await page.evaluate(() => window.nanjingVoiceReview.alone());
   assert.equal(alone.required, 0);
   assert.ok(alone.playerSquadAlive > 1, 'this condition does not mean the player squad was wiped out');
   assert.match(alone.help, /靠近木船按F登船/);
-  await page.waitForFunction(() => window.__battle.battleVoices.history.some(item =>
-    item.cue === 'deploy' && item.eventKey === 'deploy' && item.soldierId === 'nanjing-command'), null, { timeout: 30000 });
+  assert.equal((await page.evaluate(() => window.__battle.battleVoices.history))
+    .filter(item => item.cue === 'nanjing-depart-now').length, 1, 'readiness changes must not repeat the reminder');
   assert.deepEqual(errors, []);
   await writeFile(join(directory, 'voice-review.json'), JSON.stringify({
     fixture: 'Artificial civilian evacuation and soldier boarding state; production mission update and Web Audio playback',

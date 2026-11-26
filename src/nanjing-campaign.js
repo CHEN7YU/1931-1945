@@ -109,12 +109,16 @@ export const NANJING_OBJECTIVES = Object.freeze([
   Object.freeze({ id: 'dock', name: '上新河渡口', x: NANJING_DOCK.x, z: NANJING_DOCK.z, radius: 15, capturePoint: false }),
 ]);
 
-export const NANJING_DOCK_TRIGGER_RADIUS = 10;
+export const NANJING_DOCK_TRIGGER_RADIUS = 20;
 
 export function nanjingDockApproachReached(position) {
   if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y) ||
       !Number.isFinite(position.z) || position.y < -1 || position.y >= 2.4) return false;
-  return Math.hypot(position.x - NANJING_DOCK.x, position.z - NANJING_DOCK.z) <= NANJING_DOCK_TRIGGER_RADIUS;
+  const beyondWestGate = position.x <= NANJING_WEST_BREACH.minX &&
+    position.x >= NANJING_WEST_BREACH.minX - 4 &&
+    Math.abs(position.z - NANJING_WEST_GATE_Z) <= NANJING_WEST_GATE_HALF_WIDTH;
+  return beyondWestGate ||
+    Math.hypot(position.x - NANJING_DOCK_ENTRY_X, position.z - NANJING_DOCK.z) <= NANJING_DOCK_TRIGGER_RADIUS;
 }
 
 export function nanjingWallExitWaypoint(position) {
@@ -226,16 +230,12 @@ export function nanjingMissionVoice(campaign) {
   return cue;
 }
 
-export function nanjingEvacuationVoice(campaign, civiliansReady, troopsBoarding) {
+export function nanjingEvacuationVoice(campaign, playerMayBoard) {
   if (campaign.stage !== 'withdrawal-to-boats' || campaign.outcome || campaign.playerBoardingBoatId != null) return null;
-  if (civiliansReady && nanjingAISquadsBoarded(campaign)) {
+  if (playerMayBoard) {
     if (campaign.evacuationVoiceReady) return null;
     campaign.evacuationVoiceReady = true;
-    return campaign.requiredAISquads === 0 ? 'deploy' : 'nanjing-evacuation-ready';
-  }
-  if (civiliansReady && troopsBoarding && !campaign.evacuationVoiceBoarding) {
-    campaign.evacuationVoiceBoarding = true;
-    return 'nanjing-troops-boarding';
+    return 'nanjing-depart-now';
   }
   return null;
 }

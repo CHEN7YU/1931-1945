@@ -25,6 +25,28 @@ test('shell bowls cut every overlapping ground and rotated road layer and have m
   }
 });
 
+test('a crater rim closes the visible gap to lower terrain without filling the bowl', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial(), solids = [];
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), material);
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -.16; scene.add(ground);
+  const crater = { id: 'gap', x: 0, z: 0, radius: 2, depth: .5, rim: .13 };
+  addBattlefieldCraters(scene, [ground], solids, [crater], material);
+  scene.updateMatrixWorld(true);
+  for (let side = 0; side < 32; side++) {
+    const angle = (side + .5) * Math.PI * 2 / 32;
+    const radius = crater.radius * 1.35 * Math.cos(Math.PI / 32);
+    const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const start = outward.clone().multiplyScalar(radius + .1);
+    start.y = -.08;
+    const ray = new THREE.Raycaster(start, outward.clone().negate(), 0, .2);
+    assert.ok(ray.intersectObjects(solids).length, `open rim at sector ${side}`);
+    const lower = outward.clone().multiplyScalar(radius + .22);
+    lower.y = -.15;
+    const lowerRay = new THREE.Raycaster(lower, outward.clone().negate(), 0, .2);
+    assert.ok(lowerRay.intersectObjects(solids).length, `rim does not slope into terrain at sector ${side}`);
+  }
+});
+
 test('deterministic crater selection protects buildings, water, spawn zones and tactical corridors', () => {
   const options = { bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
     obstacles: [{ minX: -15, maxX: 15, minZ: -15, maxZ: 15, height: 6 }],

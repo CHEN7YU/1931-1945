@@ -7,13 +7,13 @@ import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPo
   aiEmplacementCanAimAt, aimAIEmplacement } from '../src/emplacements.js';
 import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
-import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+import { NANJING_MAP_BOUNDS, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { spawnBlockReason } from '../src/spawns.js';
-import { circleBlocked, createNavigator } from '../src/core.js';
+import { circleBlocked, createNavigator, setMapBounds } from '../src/core.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
 test('bridge and dock each include a shared-profile heavy machine gun and 75mm mountain gun', () => {
-  assert.equal(NANJING_EMPLACEMENTS.length, 9);
+  assert.equal(NANJING_EMPLACEMENTS.length, 11);
   assert.equal(NANJING_EMPLACEMENTS.find(point => point.id === 'gate-wall-mg').enclosed, true);
   for (const place of ['bridge', 'dock']) {
     assert.deepEqual(NANJING_EMPLACEMENTS.filter(point => point.id.startsWith(place) && !point.id.endsWith('-aa')).map(point => point.profile),
@@ -37,21 +37,26 @@ test('bridge and dock each include a shared-profile heavy machine gun and 75mm m
 });
 
 test('predefined weapons never obstruct the three opening squad assembly zones', () => {
-  const obstacles = NANJING_EMPLACEMENTS.flatMap(emplacementObstacles);
-  for (const spawn of NANJING_SPAWNS.filter(spawn => spawn.initialOnly))
-    assert.equal(spawnBlockReason(spawn, 'infantry', [], obstacles), null, spawn.id);
-  assert.equal(circleBlocked(-24, 31, .45, obstacles), false,
-    'the existing bridge-to-gate civilian route must not start inside a new gun position');
-  for (const spec of NANJING_EMPLACEMENTS) {
-    const point = createEmplacement(spec), pose = emplacementPose(point, spec.altitude ?? 0);
-    assert.equal(circleBlocked(pose.operator.x, pose.operator.z, .43, obstacles), false,
-      'the operator cannot be blocked by the gun base or an adjacent fixed weapon');
+  setMapBounds(NANJING_MAP_BOUNDS);
+  try {
+    const obstacles = NANJING_EMPLACEMENTS.flatMap(emplacementObstacles);
+    for (const spawn of NANJING_SPAWNS.filter(spawn => spawn.initialOnly))
+      assert.equal(spawnBlockReason(spawn, 'infantry', [], obstacles), null, spawn.id);
+    assert.equal(circleBlocked(-24, 31, .45, obstacles), false,
+      'the existing bridge-to-gate civilian route must not start inside a new gun position');
+    for (const spec of NANJING_EMPLACEMENTS) {
+      const point = createEmplacement(spec), pose = emplacementPose(point, spec.altitude ?? 0);
+      assert.equal(circleBlocked(pose.operator.x, pose.operator.z, .43, obstacles), false,
+        `${spec.id}: the operator cannot be blocked by the gun base or an adjacent fixed weapon`);
+    }
+  } finally {
+    setMapBounds();
   }
 });
 
-test('both anti-aircraft mounts share the Maxim weapon specification, traverse all directions and only fire after alignment', () => {
+test('anti-aircraft mounts share the Maxim weapon specification, traverse all directions and only fire after alignment', () => {
   const specs = NANJING_EMPLACEMENTS.filter(point => point.profile === 'maxim24aa');
-  assert.equal(specs.length, 2);
+  assert.equal(specs.length, 3);
   assert.ok(specs.some(point => point.id === 'gate-aa' && point.altitude > 8));
   assert.ok(specs.some(point => point.id === 'dock-aa'));
   for (const spec of specs) {
@@ -259,7 +264,7 @@ test('northern dock weapons face clear eastern streets and AA stays behind their
 test('the two new ferry machine guns have supported, reachable crew positions and clear outward fire', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
-  const guns = NANJING_EMPLACEMENTS.filter(spec => spec.id.startsWith('ferry-'));
+  const guns = NANJING_EMPLACEMENTS.filter(spec => ['ferry-north-mg', 'ferry-south-mg'].includes(spec.id));
   assert.equal(guns.length, 2);
   const navigate = createNavigator(world.doorSystem.navigationObstacles);
   for (const spec of guns) {
@@ -278,6 +283,34 @@ test('the two new ferry machine guns have supported, reachable crew positions an
     const ray = new THREE.Raycaster(new THREE.Vector3(pose.muzzle.x, pose.muzzle.y, pose.muzzle.z),
       new THREE.Vector3(-Math.sin(point.yaw), 0, -Math.cos(point.yaw)), 0, 15);
     assert.equal(ray.intersectObjects(world.solids, true).length, 0, `${spec.id}: outward fire`);
+  }
+});
+
+test('southern ferry anti-aircraft gun and artillery are reachable and leave the deployment zone clear', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const navigate = createNavigator(world.doorSystem.navigationObstacles);
+  for (const id of ['ferry-south-aa', 'ferry-south-gun']) {
+    const spec = NANJING_EMPLACEMENTS.find(point => point.id === id);
+    const point = createEmplacement(spec), floor = world.groundHeight(point.x, point.z);
+    assert.ok(point.z > -70 && point.x < -101.2, `${id} must be south of the fence`);
+    assert.equal(world.isDeepWater(point.x, point.z), false);
+    const blocked = operator => circleBlocked(operator.x, operator.z, .43, world.obstacles, operator.y);
+    const entry = emplacementEntry(point, floor, blocked);
+    assert.ok(entry, `${id}: operator position`);
+    const start = { x: -107, y: 0, z: -55 };
+    const path = navigate(start, entry.pose.operator);
+    assert.ok(path.length, `${id}: ${navigate.stats.reason}`);
+    for (const waypoint of path) world.moveInfantry(start, waypoint.x - start.x, waypoint.z - start.z, .42);
+    assert.ok(Math.hypot(start.x - entry.pose.operator.x, start.z - entry.pose.operator.z) < .05, id);
+    assert.equal(spawnBlockReason(NANJING_SPAWNS.find(spawn => spawn.id === 'nanjing-west-dock-south'),
+      'infantry', [], world.obstacles), null);
+    if (spec.profile === 'bofors75') {
+      const muzzle = entry.pose.muzzle;
+      const ray = new THREE.Raycaster(new THREE.Vector3(muzzle.x, muzzle.y, muzzle.z),
+        new THREE.Vector3(0, 0, 1), 0, 15);
+      assert.equal(ray.intersectObjects(world.solids, false).length, 0, `${id}: clear forward fire`);
+    }
   }
 });
 

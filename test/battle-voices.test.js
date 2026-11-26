@@ -24,7 +24,7 @@ function fakeContext() {
   return { sources, nodes, state: 'running', currentTime: 0, destination: {},
     createGain: node, createStereoPanner: node, createBiquadFilter: node,
     createBufferSource() {
-      const source = Object.assign(node(), { started: false, start() { this.started = true; },
+      const source = Object.assign(node(), { started: false, start(when, offset) { this.started = true; this.offset = offset; },
         stop() { this.stopped = true; this.onended?.(); } });
       sources.push(source); return source;
     } };
@@ -34,6 +34,21 @@ const setup = () => {
   audio.sync(true); return { context, audio };
 };
 const finish = context => context.sources.filter(source => !source.stopped).forEach(source => source.onended?.());
+test('Nanjing departure reminder plays only the final instruction from the existing voice clip', () => {
+  const { context, audio } = setup();
+  const offsets = [4.93, 4.76, 4.30];
+  const ids = Array.from({ length: 100 }, (_, index) => `nanjing-command-${index}`);
+  for (const [variant, offset] of offsets.entries()) {
+    const soldierId = ids.find(id => soldierVoiceVariant(id) === variant);
+    assert.ok(soldierId);
+    audio.event(context, 'nanjing-depart-now', { soldierId, time: 1, command: true });
+    const message = audio.snapshot.history.at(-1);
+    assert.equal(message.cue, 'nanjing-depart-now');
+    assert.equal(message.text, '赶紧登船离开南京！');
+    assert.equal(message.file, `friendly-${variant}-nanjing-evacuation-ready.mp3`);
+    assert.equal(context.sources.at(-1).offset, offset);
+  }
+});
 test('Chinese whistle warnings remain positional callouts without becoming stale target reports or a repeated queue', () => {
   const { context, audio } = setup(), observer = actor('whistle-observer');
   assert.equal(audio.signalWarning(context, observer, listener, 10), true);
