@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import {
   NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_OBJECTIVES, NANJING_SPAWNS,
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
-  completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation,
+  completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
   NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady,
-  recordNanjingCivilianRiverCrossing, nanjingWithdrawalExitReached,
+  recordNanjingCivilianRiverCrossing, nanjingDockApproachReached,
 } from '../src/nanjing-campaign.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
@@ -222,16 +222,19 @@ test('three-minute gate defense ends reinforcements and waits for withdrawal to 
   assert.equal(activateNanjingDock(campaign), false);
 });
 
-test('withdrawal exit covers the west gate and breach without triggering from inside or the wall top', () => {
+test('withdrawal triggers at the dock within ten horizontal meters, independent of route', () => {
   for (const point of [
-    { x: -74.19, y: 0, z: -60 }, { x: -72, y: 0, z: -60 },
-    { x: -75, y: 8.58, z: -60 }, { x: -75, y: 0, z: -70 },
-    { x: -60, y: 0, z: -89 }, { x: NaN, y: 0, z: -60 }, null,
-  ]) assert.equal(nanjingWithdrawalExitReached(point), false, JSON.stringify(point));
+    { x: -74.2, y: 0, z: -60 }, { x: -74.2, y: 0, z: -89 },
+    { x: NANJING_OBJECTIVES[1].x + 10.01, y: 0, z: NANJING_OBJECTIVES[1].z },
+    { x: NANJING_OBJECTIVES[1].x, y: 2.4, z: NANJING_OBJECTIVES[1].z },
+    { x: NANJING_OBJECTIVES[1].x, y: -1.01, z: NANJING_OBJECTIVES[1].z },
+    { x: NaN, y: 0, z: -60 }, null,
+  ]) assert.equal(nanjingDockApproachReached(point), false, JSON.stringify(point));
   for (const point of [
-    { x: -74.2, y: 0, z: -60 }, { x: -75, y: 0, z: -63.4 },
-    { x: -74.2, y: .5, z: -89 }, { x: NANJING_OBJECTIVES[1].x, y: 0, z: NANJING_OBJECTIVES[1].z },
-  ]) assert.equal(nanjingWithdrawalExitReached(point), true, JSON.stringify(point));
+    { x: NANJING_OBJECTIVES[1].x + 10, y: 0, z: NANJING_OBJECTIVES[1].z },
+    { x: NANJING_OBJECTIVES[1].x, y: -1, z: NANJING_OBJECTIVES[1].z + 10 },
+    { x: NANJING_OBJECTIVES[1].x + 6, y: 2.39, z: NANJING_OBJECTIVES[1].z - 8 },
+  ]) assert.equal(nanjingDockApproachReached(point), true, JSON.stringify(point));
 });
 
 test('dock evacuation keeps the player last and distinguishes successful escape from being overrun', () => {
@@ -251,6 +254,30 @@ test('dock evacuation keeps the player last and distinguishes successful escape 
   const fallen = createNanjingCampaign();
   overrunNanjingDock(fallen);
   assert.equal(fallen.outcome, 'fallen');
+});
+
+test('confirmed player departure finishes even if civilian counts change after boarding', () => {
+  const campaign = createNanjingCampaign();
+  campaign.stage = 'withdrawal-to-boats';
+  campaign.playerBoardingBoatId = 1;
+  campaign.civiliansWaiting = 1;
+  campaign.civiliansAboard = 2;
+  const player = { health: 100, playerUnit: true, tactics: { nanjingFerry: { phase: 'aboard', ferryId: 1 } } };
+  const ferry = { position: { x: -101 }, userData: { ferryId: 1, originX: -100,
+    state: 'docked', troopPassengers: [{ actor: player }] } };
+  assert.equal(recordNanjingPlayerDeparture(campaign, ferry, player), false);
+  ferry.userData.state = 'outbound';
+  ferry.position.x = -100.5;
+  assert.equal(recordNanjingPlayerDeparture(campaign, ferry, player), false);
+  ferry.position.x = -101;
+  ferry.userData.troopPassengers = [];
+  assert.equal(recordNanjingPlayerDeparture(campaign, ferry, player), false);
+  ferry.userData.troopPassengers = [{ actor: player }];
+  assert.equal(recordNanjingPlayerDeparture(campaign, ferry, player), true);
+  assert.equal(campaign.outcome, 'evacuated');
+  assert.equal(campaign.civiliansWaiting, 1);
+  assert.equal(campaign.civiliansAboard, 2);
+  assert.equal(recordNanjingPlayerDeparture(campaign, ferry, player), false);
 });
 
 test('civilians board five ten-person boats without losing count', () => {

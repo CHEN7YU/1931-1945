@@ -28,6 +28,34 @@ function housePoint(home, x, z) {
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
 
+test('city wrecks and roadside barricades block the indexed projectile ray without closing the dock approach', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const index = createSolidIndex(world.solids), ray = new THREE.Raycaster();
+  assert.equal(world.staticDamage.wrecks.length, 3);
+  assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'tank'));
+  assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'truck'));
+  for (const wreck of world.staticDamage.wrecks) {
+    assert.ok(world.obstacles.some(obstacle => obstacle.id === wreck.id));
+    const target = new THREE.Vector3(wreck.x, world.groundHeight(wreck.x, wreck.z) + .75, wreck.z);
+    const start = target.clone().add(new THREE.Vector3(Math.cos(wreck.heading) * 5, 0, -Math.sin(wreck.heading) * 5));
+    const direction = target.clone().sub(start).normalize();
+    ray.set(start, direction); ray.far = 10;
+    const hits = ray.intersectObjects(index.candidates(start, direction, ray.far), false);
+    assert.ok(hits.some(hit => `wreck-${hit.object.parent?.userData.staticWreckId}` === wreck.id), wreck.id);
+  }
+  assert.equal(world.landmarks.cityRoadblocks.length, 3);
+  for (const block of world.landmarks.cityRoadblocks) {
+    const start = new THREE.Vector3(block.x, .6, block.z + 3), direction = new THREE.Vector3(0, 0, -1);
+    ray.set(start, direction); ray.far = 6;
+    const hits = ray.intersectObjects(index.candidates(start, direction, ray.far), false);
+    assert.ok(hits.some(hit => hit.object.userData.nanjingFeature === 'city-roadblock-collision' &&
+      hit.object.userData.sandbagId.startsWith(block.id)), block.id);
+  }
+  for (const [x, z] of [[-72, -60], [-82, -66], [-91, -80], [NANJING_DOCK_ENTRY_X - 2, -80]])
+    assert.equal(circleBlocked(x, z, .45, world.obstacles), false, `dock road at ${x},${z}`);
+});
+
 test('expanded dock has safe southern squad deployment and navigable waiting and boarding routes', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   const spawn = NANJING_SPAWNS.find(point => point.id === 'nanjing-west-dock-south');
@@ -419,6 +447,34 @@ test('wall paving has no overlapping coplanar top faces at gates, ramp cheeks or
   }
 });
 
+test('west gate street junctions do not place road surfaces at the same height', () => {
+  const scene = new THREE.Scene();
+  makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), meshes = scene.children.filter(object => object.isMesh);
+  ray.set(new THREE.Vector3(-64.8, 1, -59.9), new THREE.Vector3(0, -1, 0));
+  const heights = ray.intersectObjects(meshes, true).map(hit => hit.point.y)
+    .filter(y => y > -.15 && y < -.1).sort((a, b) => a - b);
+  const unique = heights.filter((y, index) => !index || Math.abs(y - heights[index - 1]) > .0001);
+  assert.ok(unique.length >= 2, 'the intersecting streets are both rendered');
+  for (let i = 1; i < unique.length; i++)
+    assert.ok(unique[i] - unique[i - 1] >= .0039, 'road layers must have depth separation');
+});
+
+test('northern riverside backdrop covers the shore without a gap and includes distant scenery', () => {
+  const scene = new THREE.Scene();
+  makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const ground = scene.children.find(object => object.userData.nanjingFeature === 'north-distant-ground');
+  assert.ok(ground);
+  for (const x of [NANJING_RIVER_SHORE_X + .1, -105, -95]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 2, -180), new THREE.Vector3(0, -1, 0));
+    assert.ok(ray.intersectObject(ground).length, `northern shore has ground at x=${x}`);
+  }
+  assert.ok(scene.children.filter(object => object.userData.nanjingFeature === 'north-distant-house').length > 24);
+  assert.ok(scene.children.filter(object => object.userData.nanjingFeature === 'north-distant-tree').length > 0);
+});
+
 test('wall defenders can reach south-facing firing posts using elevated navigation instead of ground routes', () => {
   const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
   for (const index of [0, 2, 5, 8, 10]) for (const x of [-21.5, 21.5]) for (const z of [-6, 0, 12]) {
@@ -605,17 +661,35 @@ test('masonry parapets are continuous brick walls with real narrow openings and 
     mesh.userData.parapet.min === NANJING_WEST_GATE_Z - NANJING_WEST_GATE_HALF_WIDTH);
   assert.ok(west, 'both edges of the west gate have a continuous parapet');
   const p = west.userData.parapet, z = p.openings[0];
-  assert.ok(Number.isFinite(z) && p.openingWidth < .4 && p.height === 1);
+  assert.ok(Number.isFinite(z) && p.openingWidth < .4 && p.height === 1.5);
   west.updateMatrixWorld(true);
   const hitsAt = y => new THREE.Raycaster(new THREE.Vector3(p.fixed - 2, p.base + y, z),
     new THREE.Vector3(1, 0, 0), 0, 4).intersectObject(west, false);
   assert.equal(hitsAt((p.openingBottom + p.openingTop) / 2).length, 0, 'slit is a real opening');
   assert.ok(hitsAt(.2).length && hitsAt(.9).length, 'brick above and below the slit blocks shots');
-  assert.equal(hitsAt(1.1).length, 0, 'shots above the parapet remain clear');
+  assert.ok(hitsAt(1.1).length, 'the raised outer parapet blocks shots through its brickwork');
+  assert.equal(hitsAt(1.6).length, 0, 'shots above the parapet remain clear');
   assert.equal(circleBlocked(p.fixed, z, .4, world.obstacles, p.base), true,
     'the opening is too small for a soldier to walk through');
-  assert.equal(circleBlocked(p.fixed, z, .4, world.obstacles, p.base + 1.1, .2), false,
-    'a standing shot above the parapet remains clear');
+  assert.equal(circleBlocked(p.fixed, z, .4, world.obstacles, p.base + 1.6, .2), false,
+    'space above the raised parapet remains clear');
+  const inner = parapets.find(mesh => mesh.userData.parapet.axis === 'z' &&
+    Math.abs(mesh.userData.parapet.fixed + 69.45) < .001 &&
+    mesh.userData.parapet.min === NANJING_WEST_GATE_Z - NANJING_WEST_GATE_HALF_WIDTH);
+  assert.equal(inner?.userData.parapet.height, 1, 'the city-facing edge remains lower');
+  for (const [axis, fixed, along, height] of [
+    ['x', 20.1, 35, 1.5], ['x', 16.3, 35, 1],
+    ['z', -73.9, -50, 1.5], ['z', -69.45, -50, 1],
+    ['z', 106.9, -50, 1.5], ['z', 103.1, -50, 1],
+    ['x', -114.9, 0, 1.5], ['x', -111.1, 0, 1],
+    ['x', 20.9, 0, 1.5],
+  ]) {
+    const edge = parapets.find(mesh => {
+      const p = mesh.userData.parapet;
+      return p.axis === axis && Math.abs(p.fixed - fixed) < .001 && p.min < along && p.max > along;
+    });
+    assert.equal(edge?.userData.parapet.height, height, `${axis}/${fixed}: outer and inner height`);
+  }
 });
 
 test('Nanjing battlefield provides its own gate, river crossings, dock, ferries and civilian flow', () => {
@@ -1052,7 +1126,7 @@ test('infantry can walk up the ramp and across the connected wall tops without j
   world.moveInfantry(position, wallCenterX - position.x, 0, .42);
   assert.ok(Math.abs(position.x - wallCenterX) < .1, 'ramp should connect to the center of the wall walk');
   const startZ = position.z;
-  const northEnd = wallWalk.minZ + .3;
+  const northEnd = wallWalk.minZ + 1.15;
   world.moveInfantry(position, 0, northEnd - position.z, .42);
   assert.ok(position.z < startZ - 4, `wall top should remain passable across the gates, got z=${position.z}`);
   assert.ok(Math.abs(position.z - northEnd) < .1, `wall top should reach the new north end, got z=${position.z}`);
@@ -1064,7 +1138,7 @@ test('both wall walks connect to the flanking rooftops and every gate crown', ()
   for (const side of [-1, 1]) {
     const wall = NANJING_WALL_WALKS.find(walk => Math.sign(walk.minX) === side);
     const wallX = (wall.minX + wall.maxX) / 2;
-    const southEnd = wall.maxZ - .3, northEnd = wall.minZ + .3;
+    const southEnd = wall.maxZ - 1.15, northEnd = wall.minZ + 1.15;
     const alongWall = { x: wallX, z: southEnd, y: wall.height };
     world.moveInfantry(alongWall, 0, northEnd - southEnd, .42);
     assert.ok(Math.abs(alongWall.z - northEnd) < .02, 'solid battlements must not block the continuous wall passage');
@@ -1086,6 +1160,54 @@ test('both wall walks connect to the flanking rooftops and every gate crown', ()
     assert.ok(Math.abs(position.x - 21.5) < .02, 'gate crown should link the east and west walls');
     assert.equal(position.y, NANJING_WALL_WALK.height);
   }
+});
+
+test('gate crown joins both city walls while terminal wall walks are protected', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const mainGate = world.landmarks.gatehouse.gates.find(gate => gate.main);
+  for (const side of [-1, 1]) {
+    const position = { x: side * 21.5, z: mainGate.z, y: NANJING_WALL_WALK.height };
+    world.moveInfantry(position, side * 7.5, 0, .42);
+    assert.ok(Math.abs(position.x - side * 29) < .02,
+      `${side}: gate crown should connect to the city wall, got ${position.x}`);
+    world.moveInfantry(position, -side * 7.5, 0, .42);
+    assert.ok(Math.abs(position.x - side * 21.5) < .02,
+      `${side}: city wall should connect back to the gate crown`);
+    for (const z of [NANJING_GATE_NORTH_EDGE + .3, NANJING_GATE_SOUTH_EDGE - .3]) {
+      assert.equal(circleBlocked(side * 21.5, z, .42, world.obstacles, NANJING_WALL_WALK.height), true,
+        `${side}: the unsupported end at z=${z} needs a protective parapet`);
+    }
+  }
+});
+
+test('gate crown masonry top has two-dimensional paving texture coordinates', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const gate = world.solids.find(mesh => mesh.userData.nanjingFeature === 'gate-above-arch-masonry');
+  const { position, normal, uv } = gate.geometry.attributes;
+  const top = [];
+  for (let i = 0; i < position.count; i++) {
+    if (normal.getY(i) > .99 && Math.abs(position.getY(i) - NANJING_WALL_WALK.height) < .001)
+      top.push({ z: position.getZ(i), v: uv.getY(i) });
+  }
+  assert.ok(top.length > 0);
+  assert.ok(Math.max(...top.map(p => p.z)) - Math.min(...top.map(p => p.z)) > 1);
+  assert.ok(Math.max(...top.map(p => p.v)) - Math.min(...top.map(p => p.v)) > .1,
+    'gate paving must not collapse to stripes along the depth axis');
+});
+
+test('southwest city wall turns onto the west wall without an exposed end', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const position = { x: -65, z: 18.2, y: NANJING_WALL_WALK.height };
+  world.moveInfantry(position, -7, 0, .42);
+  assert.ok(Math.abs(position.x + 72) < .02, `west end of wall is reachable: ${position.x}`);
+  world.moveInfantry(position, 0, -6.2, .42);
+  assert.ok(Math.abs(position.z - 12) < .02, `corner connects northwards: ${position.z}`);
+  world.moveInfantry(position, 0, 6.2, .42);
+  world.moveInfantry(position, 7, 0, .42);
+  assert.ok(Math.abs(position.x + 65) < .02 && Math.abs(position.z - 18.2) < .02,
+    'corner remains passable in the return direction');
+  assert.equal(circleBlocked(-73.9, 18.2, .42, world.obstacles, NANJING_WALL_WALK.height), true,
+    'the exposed western end has a protective parapet');
 });
 
 test('both ramps have grounded masonry steps and are approachable and reversible from the courtyard', () => {

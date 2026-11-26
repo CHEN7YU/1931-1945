@@ -66,6 +66,15 @@ try {
             return { stage: nanjingCampaign.stage, position: controlledSoldier(entities).position.toArray(),
               remaining: nanjingCampaign.stageRemaining };
           },
+          approach() {
+            const actor = controlledSoldier(entities);
+            actor.position.set(NANJING_DOCK.x + 10.5, 0, NANJING_DOCK.z);
+            actor.position.y = world.walkHeight(actor.position.x, actor.position.z, 0);
+            actor.nativeMotion.position = { x: actor.position.x, z: actor.position.z };
+            actor.heading = controlPose.yaw = Math.PI / 2;
+            stopLocomotion(actor.locomotion);
+            updateNanjingMission(0);
+          },
         };
       ` });
     });
@@ -146,14 +155,22 @@ try {
       assert.equal(beforeGate.stage, 'withdrawal');
       await page.keyboard.down('KeyW');
       try {
-        await page.waitForFunction(() => window.gateExitReview.snapshot().stage === 'dock-defense',
+        await page.waitForFunction(() => window.gateExitReview.snapshot().position[0] <= -75,
           null, { timeout: 90000 });
       } finally { await page.keyboard.up('KeyW'); }
       const atGate = await page.evaluate(() => window.gateExitReview.snapshot());
-      assert.ok(atGate.position[0] <= -74.2 && Math.abs(atGate.position[2] + 60) <= 3.4 &&
-        atGate.remaining > 179 && atGate.position[0] > -78.2, JSON.stringify(atGate));
+      assert.equal(atGate.stage, 'withdrawal', JSON.stringify(atGate));
+      await page.evaluate(() => window.gateExitReview.approach());
+      assert.equal((await page.evaluate(() => window.gateExitReview.snapshot())).stage, 'withdrawal');
+      await page.keyboard.down('KeyW');
+      try {
+        await page.waitForFunction(() => window.gateExitReview.snapshot().stage === 'dock-defense',
+          null, { timeout: 90000 });
+      } finally { await page.keyboard.up('KeyW'); }
+      const atDock = await page.evaluate(() => window.gateExitReview.snapshot());
+      assert.ok(atDock.remaining > 179, JSON.stringify(atDock));
       assert.deepEqual(errors, []);
-      console.log(JSON.stringify({ campaign, inputTop, inputBottom, beforeGate, atGate }));
+      console.log(JSON.stringify({ campaign, inputTop, inputBottom, beforeGate, atGate, atDock }));
     }
     console.log(JSON.stringify({ campaign, result }));
     await page.close();

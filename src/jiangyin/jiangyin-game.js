@@ -666,7 +666,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       if (t !== null && t < best.distance) best = { distance: t, target: soldier, kind: 'troop' };
     }
     if (includeTroops) for (const vehicle of vehicles) {
-      if (vehicle.health <= 0) continue;
+      if (vehicle.health <= 0 && vehicle.type !== 'tank') continue;
       const tank = vehicle.type === 'tank';
       const center = { x: vehicle.position.x, y: vehicle.position.y + (tank ? 1.1 : 0), z: vehicle.position.z };
       const t = raySphere(center, tank ? 2.4 : ENEMY_TYPES.aircraft.radius, origin, dir, Math.min(best.distance, maxDistance));

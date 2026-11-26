@@ -80,7 +80,8 @@ export function createNanjingCityLayout() {
     const floors = z < -60 || x < -50 ? 1 : 1 + Math.floor(random() * 4);
     lots.push([...lot, floors]);
   }
-  lots.push([-81, -49, 5, 5, 1], [-88, -49, 5, 5, 1], [-81, -103, 5, 5, 1], [-81, -96, 5, 5, 1]);
+  lots.push([-81, -49, 5, 5, 1], [-88, -49, 5, 5, 1], [-98, -46, 5, 5, 1], [-97, -66, 5, 5, 1],
+    [-81, -103, 5, 5, 1], [-81, -96, 5, 5, 1]);
   for (const lot of lots) {
     const [x, z] = lot;
     let nearest = Infinity, facing = 0;

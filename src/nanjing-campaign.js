@@ -109,15 +109,12 @@ export const NANJING_OBJECTIVES = Object.freeze([
   Object.freeze({ id: 'dock', name: '上新河渡口', x: NANJING_DOCK.x, z: NANJING_DOCK.z, radius: 15, capturePoint: false }),
 ]);
 
-export function nanjingWithdrawalExitReached(position) {
+export const NANJING_DOCK_TRIGGER_RADIUS = 10;
+
+export function nanjingDockApproachReached(position) {
   if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y) ||
       !Number.isFinite(position.z) || position.y < -1 || position.y >= 2.4) return false;
-  const outsideWall = position.x <= NANJING_WEST_BREACH.minX && position.x >= NANJING_WEST_BREACH.minX - 4;
-  const atGate = Math.abs(position.z - NANJING_WEST_GATE_Z) <= NANJING_WEST_GATE_HALF_WIDTH;
-  const atBreach = position.z >= NANJING_WEST_BREACH.minZ && position.z <= NANJING_WEST_BREACH.maxZ;
-  const dock = NANJING_OBJECTIVES.find(objective => objective.id === 'dock');
-  return outsideWall && (atGate || atBreach) ||
-    Math.hypot(position.x - dock.x, position.z - dock.z) <= dock.radius;
+  return Math.hypot(position.x - NANJING_DOCK.x, position.z - NANJING_DOCK.z) <= NANJING_DOCK_TRIGGER_RADIUS;
 }
 
 export function nanjingWallExitWaypoint(position) {
@@ -369,12 +366,30 @@ export function recordNanjingSquadEvacuation(campaign, squadId, isPlayer = false
   if (campaign.stage !== 'withdrawal-to-boats') return false;
   if (isPlayer && !nanjingAISquadsBoarded(campaign)) return false;
   if (!isPlayer && campaign.evacuatedSquads.some(squad => squad.isPlayer)) return false;
+  return commitNanjingSquadEvacuation(campaign, squadId, isPlayer);
+}
+
+function commitNanjingSquadEvacuation(campaign, squadId, isPlayer) {
   campaign.evacuatedSquads.push({ id: squadId, isPlayer });
   if (isPlayer) {
     campaign.playerEscaped = true;
     advanceNanjingCampaign(campaign, 0);
   }
   return true;
+}
+
+export function recordNanjingPlayerDeparture(campaign, ferry, player) {
+  const data = ferry?.userData;
+  if (campaign.outcome || campaign.stage !== 'withdrawal-to-boats' ||
+    campaign.playerBoardingBoatId == null || data?.ferryId !== campaign.playerBoardingBoatId ||
+    data.state !== 'outbound' || !Number.isFinite(data.originX) ||
+    !Number.isFinite(ferry.position?.x) || ferry.position.x > data.originX - 1 ||
+    player?.health <= 0 || !player?.playerUnit ||
+    player.tactics?.nanjingFerry?.phase !== 'aboard' ||
+    player.tactics.nanjingFerry.ferryId !== data.ferryId ||
+    !data.troopPassengers?.some(passenger => passenger.actor === player) ||
+    campaign.evacuatedSquads.some(squad => squad.id === 'friendly-0' || squad.isPlayer)) return false;
+  return commitNanjingSquadEvacuation(campaign, 'friendly-0', true);
 }
 
 export function recordNanjingAISquadBoarding(campaign, squadId) {

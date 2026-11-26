@@ -485,7 +485,7 @@ export function makeWorld(scene, surface, options = {}) {
     dust.rotation.x = -Math.PI / 2; dust.userData.keepUV = true; dust.castShadow = false;
     sceneArt.contactPatches++;
   }
-  const wrecks = addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber: charred });
+  const wrecks = addStaticWrecks(scene, { mesh, box, obstacles, groundHeight, timber: charred });
   for (const house of outskirts.sideBuildings) {
     building(house.x, house.z, house.w, house.d, 6 + random() * 3, random() < (house.x < 0 ? .3 : .25));
   }

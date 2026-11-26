@@ -7,6 +7,7 @@ import { groundHeight, BRIDGE } from '../src/ground.js';
 import { makeTownLayout } from '../src/town-layout.js';
 import { makeBaseSpawns } from '../src/spawns.js';
 import { PAVED_AREAS } from '../src/battlefield.js';
+import { createSolidIndex } from '../src/solid-index.js';
 
 test('shell holes have actual depth, continuous rims and no remaining flat ground cap', () => {
   const ground = new THREE.Mesh(damagedSurfaceGeometry(0, 0, 800, 800), new THREE.MeshBasicMaterial());
@@ -78,13 +79,7 @@ test('static vehicle wreck geometry has blocking bounds but leaves the central i
   const box = (x, y, z, w, h, d, material, solid, parent) => {
     const object = mesh(boxGeometry, material, x, y, z, solid, parent); object.scale.set(w, h, d); return object;
   };
-  const beam = (a, b, radius, material, parent) => {
-    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
-    const object = mesh(new THREE.CylinderGeometry(radius, radius, start.distanceTo(end), 6), material,
-      (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, false, parent);
-    object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.sub(start).normalize()); return object;
-  };
-  const wrecks = addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber: new THREE.MeshBasicMaterial() });
+  const wrecks = addStaticWrecks(scene, { mesh, box, obstacles, groundHeight, timber: new THREE.MeshBasicMaterial() });
   assert.equal(wrecks.length, 3);
   assert.equal(obstacles.length, 3);
   assert.ok(wrecks.some(wreck => wreck.type === 'tank') && wrecks.some(wreck => wreck.type === 'truck'));
@@ -96,5 +91,30 @@ test('static vehicle wreck geometry has blocking bounds but leaves the central i
       assert.ok(home.x + home.w / 2 < wreck.minX || home.x - home.w / 2 > wreck.maxX ||
         home.z + home.d / 2 < wreck.minZ || home.z - home.d / 2 > wreck.maxZ, home.id);
     }
+  }
+});
+
+test('default wreck hulls are candidates for the real projectile collision index', () => {
+  const scene = new THREE.Scene(), solids = [], obstacles = [], boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const mesh = (geometry, material, x, y, z, solid, parent = scene) => {
+    const object = new THREE.Mesh(geometry, material);
+    object.position.set(x, y, z); parent.add(object);
+    if (solid) solids.push(object);
+    return object;
+  };
+  const box = (x, y, z, w, h, d, material, solid, parent) => {
+    const object = mesh(boxGeometry, material, x, y, z, solid, parent);
+    object.scale.set(w, h, d); return object;
+  };
+  const wrecks = addStaticWrecks(scene, { mesh, box, obstacles, groundHeight, timber: new THREE.MeshBasicMaterial() });
+  scene.updateMatrixWorld(true);
+  const index = createSolidIndex(solids), ray = new THREE.Raycaster();
+  for (const wreck of wrecks) {
+    const target = new THREE.Vector3(wreck.x, groundHeight(wreck.x, wreck.z) + .75, wreck.z);
+    const start = target.clone().add(new THREE.Vector3(Math.cos(wreck.heading) * 5, 0, -Math.sin(wreck.heading) * 5));
+    const direction = target.clone().sub(start).normalize();
+    ray.set(start, direction); ray.far = 10;
+    const hits = ray.intersectObjects(index.candidates(start, direction, ray.far), false);
+    assert.ok(hits.some(hit => `wreck-${hit.object.parent?.userData.staticWreckId}` === wreck.id), wreck.id);
   }
 });

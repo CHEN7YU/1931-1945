@@ -45,19 +45,27 @@ export function craterGeometry(crater, base, craters = SHELL_CRATERS, sectors = 
   return geometry;
 }
 
-export function addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeight, timber }) {
+export function addStaticWrecks(scene, { mesh, box, obstacles, groundHeight, timber, wrecks = STATIC_WRECKS }) {
   const metal = new THREE.MeshStandardMaterial({ color: 0x484338, roughness: .97, metalness: .55 });
   const burned = new THREE.MeshStandardMaterial({ color: 0x242421, roughness: 1, metalness: .3 });
   const wheel = new THREE.CylinderGeometry(.48, .48, .24, 12);
   wheel.rotateZ(Math.PI / 2);
+  const beamGeometry = new THREE.CylinderGeometry(1, 1, 1, 10);
   const tyre = new THREE.TorusGeometry(.36, .12, 6, 14); tyre.rotateY(Math.PI / 2);
   const rim = new THREE.CylinderGeometry(.22, .22, .25, 10); rim.rotateZ(Math.PI / 2);
   const bounds = [];
-  for (const wreck of STATIC_WRECKS) {
+  for (const wreck of wrecks) {
     const root = new THREE.Group();
+    root.userData.staticWreckId = wreck.id;
     root.position.set(wreck.x, groundHeight(wreck.x, wreck.z), wreck.z); root.rotation.y = wreck.heading;
     scene.add(root);
     const part = (x, y, z, w, h, d, material = metal) => box(x, y, z, w, h, d, material, true, root);
+    const beam = (a, b, radius, material) => {
+      const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
+      const object = mesh(beamGeometry, material, ...start.clone().add(end).multiplyScalar(.5).toArray(), true, root);
+      object.scale.set(radius, start.distanceTo(end), radius);
+      object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.sub(start).normalize());
+    };
     if (wreck.type === 'truck') {
       part(0, .63, 0, 1.8, .25, 4.8, burned);
       part(0, .99, -1.65, .96, .44, 1.1, burned);
@@ -65,8 +73,8 @@ export function addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeigh
       part(0, 1.11, -.45, 1.9, .8, 1.25);
       part(0, 2.04, -.44, 2, .14, 1.36, burned).rotation.z = -.1;
       for (const side of [-1, 1]) {
-        beam([side * .89, 1.38, -1.04], [side * .89, 2.03, -.99], .045, burned, root);
-        beam([side * .89, 1.38, .11], [side * .89, 2.03, .17], .045, burned, root);
+        beam([side * .89, 1.38, -1.04], [side * .89, 2.03, -.99], .045, burned);
+        beam([side * .89, 1.38, .11], [side * .89, 2.03, .17], .045, burned);
         for (const z of [-1.6, 1.65]) {
           if (!(side < 0 && z < 0)) mesh(tyre, burned, side * 1.02, .48, z, true, root);
           const hub = mesh(rim, metal, side * 1.02, side < 0 && z < 0 ? .25 : .48, z, true, root);
@@ -90,7 +98,7 @@ export function addStaticWrecks(scene, { mesh, box, beam, obstacles, groundHeigh
         }
       }
       const turret = part(.17, 1.52, -.15, 1.5, .75, 1.65); turret.rotation.set(.1, -.35, -.17);
-      beam([.2, 1.61, -.8], [-.65, 1.15, -3.1], .085, burned, root);
+      beam([.2, 1.61, -.8], [-.65, 1.15, -3.1], .085, burned);
       part(.23, 1.97, -.14, .7, .09, .65, burned).rotation.x = -.9;
       part(1.7, .12, 1.45, .45, .12, 1.1, burned).rotation.y = .6;
     }

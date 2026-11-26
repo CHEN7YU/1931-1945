@@ -185,11 +185,11 @@ import { updateMortarModel } from './mortar-model.js';
 import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from './player-aircraft.js';
 import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOCK, NANJING_DOCK_SHIFT, NANJING_MAP_BOUNDS, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
-  nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
+  nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
   NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
   nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady,
-  recordNanjingCivilianCityEntry, nanjingWithdrawalExitReached } from './nanjing-campaign.js';
+  recordNanjingCivilianCityEntry, nanjingDockApproachReached } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint, nanjingCoreGuard } from './nanjing-defense.js';
 import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjingDockYardContains, nanjingDockPathClear,
   nanjingDockOutsideGoal, nanjingDockAssaultGoal, nanjingDockPostOutsideBuildings, assignNanjingDockDefense,
@@ -4578,6 +4578,27 @@ function updatePlayer(dt) {
   if (forward || sideways || keys.has('KeyQ') || keys.has('KeyE')) releaseWeaponMount(mount);
   const wasVaulting = traversal.kind === 'vaulting';
   if (!actor.vehicleId && !wasVaulting) {
+    let movePlayer = moveInfantry;
+    if (stance === 'prone' && traversal.kind === 'grounded' && actor.nativeMotion?.profile?.headAim) {
+      const eye = soldierEyePosition(actor);
+      const offset = { x: eye.x - position.x, y: eye.y - position.y, z: eye.z - position.z };
+      const clear = () => !postureReady(actor) ? proneSpaceClear(actor, yaw) :
+        !circleBlocked(position.x + offset.x, position.z + offset.z, .32,
+          movementObstacles(position.x + offset.x, position.z + offset.z), position.y + offset.y - .1, .2);
+      movePlayer = (point, dx, dz, radius, obstacles, bodyHeight) => {
+        const before = point.clone(), wasClear = clear();
+        moveInfantry(point, dx, dz, radius, obstacles, bodyHeight);
+        if (wasClear && !clear()) {
+          point.copy(before);
+          moveInfantry(point, dx, 0, radius, obstacles, bodyHeight);
+          if (!clear()) point.copy(before);
+          const xOnly = point.clone();
+          moveInfantry(point, 0, dz, radius, obstacles, bodyHeight);
+          if (!clear()) point.copy(xOnly);
+        }
+        return point;
+      };
+    }
     const steps = advanceLocomotion(motion, position, {
       type: unit.type, forward, sideways, yaw, stance, aiming: held.aiming, playerControlled: true,
       bodyHeight: Math.min(1.75, soldierPostureHeight(actor, 'body')),
@@ -4588,7 +4609,7 @@ function updatePlayer(dt) {
         (!dadaoEquipped && unit.type === 'infantry' && actor.rifle.action !== 'idle') ||
         dadaoEquipped && actor.dadao.startedAt !== null || toolEquipped || fireRequested,
     }, infantryMovementObstacles(actor, position.x, position.z), dt,
-    traversal.kind !== 'grounded' ? moveAirborne : moveInfantry);
+    traversal.kind !== 'grounded' ? moveAirborne : movePlayer);
     for (let i = 0; i < steps; i++) emitFootstep(position, motion.speed);
   }
   if (!actor.vehicleId) {
@@ -5189,6 +5210,15 @@ function proneSpaceClear(actor, heading) {
       Math.abs(world.walkHeight(point.x, point.z, base) - base) > .16) return false;
   }
   return true;
+}
+
+function proneEyeClear(actor, heading = actor.heading) {
+  const eye = soldierEyePosition(actor);
+  const delta = heading - actor.heading, c = Math.cos(delta), s = Math.sin(delta);
+  const x = eye.x - actor.position.x, z = eye.z - actor.position.z;
+  const projectedX = actor.position.x + x * c + z * s;
+  const projectedZ = actor.position.z - x * s + z * c;
+  return !circleBlocked(projectedX, projectedZ, .32, movementObstacles(projectedX, projectedZ), eye.y - .1, .2);
 }
 
 function clearAIRifleLine(actor, from, threat) {
@@ -7719,7 +7749,7 @@ function updateNanjingMission(dt) {
 
   if (nanjingCampaign.stage === 'withdrawal') {
     const player = allies[current];
-    if (player?.health > 0 && nanjingWithdrawalExitReached(player.position)) {
+    if (player?.health > 0 && nanjingDockApproachReached(player.position)) {
       activateNanjingDock(nanjingCampaign);
     }
   }
@@ -7750,12 +7780,7 @@ function updateNanjingMission(dt) {
       world.ferries.some(ferry => ferry.userData.troopBoarding?.actor?.health > 0 &&
         !ferry.userData.troopBoarding.actor.playerUnit));
     if (evacuationVoice) battleVoiceEvent(evacuationVoice, { soldierId: 'nanjing-command', eventKey: evacuationVoice });
-    const playerBoat = nanjingPlayerFerry(), player = controlledSoldier(entities);
-    if (playerBoat?.userData.state === 'outbound' && player?.health > 0 &&
-      player.tactics.nanjingFerry?.phase === 'aboard' &&
-      player.tactics.nanjingFerry.ferryId === playerBoat.userData.ferryId &&
-      playerBoat.position.x <= playerBoat.userData.originX - 1)
-      recordNanjingSquadEvacuation(nanjingCampaign, 'friendly-0', true);
+    recordNanjingPlayerDeparture(nanjingCampaign, nanjingPlayerFerry(), controlledSoldier(entities));
   }
 
   if (nanjingCampaign.dockActivated && !nanjingCampaign.outcome) {
@@ -8830,7 +8855,7 @@ function updateHUD() {
     document.querySelector('.capture-track').hidden = false;
     const stageNames = {
       'gate-defense': ['第一阶段 · 中华门防守', '守住第二道门内西侧阵地 · 坚守3分钟'],
-      withdrawal: ['撤退阶段 · 前往西北上新河渡口', '穿过水西门或附近破口后开始第二阶段 · 继续前往渡口'],
+      withdrawal: ['撤退阶段 · 前往西北上新河渡口', '抵达渡口附近开始第二阶段'],
       'dock-defense': ['第二阶段 · 上新河渡口', '掩护百姓登船 · 坚守3分钟'],
       'withdrawal-to-boats': ['撤退阶段 · 登船撤离', '掩护友军登船，随后撤离南京'],
     };
@@ -9609,6 +9634,9 @@ function performControlCommand(command) {
       movementObstacles(actor.position.x, actor.position.z), actor.position.y, height)) {
       toast('上方空间不足，无法抬高身体。'); return;
     }
+    if (next === 'prone' && !proneSpaceClear(actor, controlPose.yaw)) {
+      toast('空间不足，后退后再卧倒。'); return;
+    }
     controlPose.stance = next;
   }
   else if (action === 'mountWeapon') {
@@ -9692,7 +9720,23 @@ function performControlCommand(command) {
       aircraftMouseLook(aircraft, payload.x, payload.y, sensitivity, keys.has('KeyC'));
       return;
     }
-    controlPose.yaw -= payload.x * sensitivity;
+    const previousYaw = controlPose.yaw;
+    const protectProneEye = !aircraft && !actor.emplacementId && actor.stance === 'prone' &&
+      actor.traversal.kind === 'grounded' && actor.nativeMotion?.profile?.headAim;
+    const clearAt = heading => postureReady(actor) ? proneEyeClear(actor, heading) : proneSpaceClear(actor, heading);
+    const wasClear = protectProneEye && clearAt(previousYaw);
+    const targetYaw = previousYaw - payload.x * sensitivity;
+    controlPose.yaw = targetYaw;
+    if (wasClear) {
+      const steps = Math.ceil(Math.abs(targetYaw - previousYaw) / .05);
+      for (let i = 1; i <= steps; i++) {
+        const heading = previousYaw + (targetYaw - previousYaw) * i / steps;
+        if (!clearAt(heading)) {
+          controlPose.yaw = previousYaw + (targetYaw - previousYaw) * (i - 1) / steps;
+          break;
+        }
+      }
+    }
     const point = emplacements.get(actor.emplacementId);
     if (point) {
       if(point.position==='march')return;

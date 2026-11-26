@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createJiangyinGame } from '../src/jiangyin/jiangyin-game.js';
 import { JIANGYIN_SQUAD, groundHeight } from '../src/jiangyin/jiangyin-rules.js';
+import { emplacementPose } from '../src/emplacements.js';
 
 const stub = point => { const group = new THREE.Group(); group.userData.update = () => {}; return group; };
 function makeGame(seed = 11, effects = null) {
@@ -99,6 +100,40 @@ test('the player can zoom every gun with the right mouse button', () => {
   game.skipIntro();
   game.step(.05, {});
   assert.ok(game.hud().zoom >= 4, 'ship turret zoom');
+});
+
+test('a destroyed tank stops a machine-gun shot before it reaches a vehicle behind it', () => {
+  const fire = blocked => {
+    const { game } = makeGame();
+    game.skipIntro();
+    for (const post of game.posts.filter(post => post.boat)) {
+      post.point.health = 0;
+      post.boat.sunk = true;
+    }
+    for (let i = 0; i < 1200 && game.state.phase !== 'scuttle'; i++) game.step(.05, {});
+    assert.equal(game.state.phase, 'scuttle');
+    game.skipScuttle();
+    run(game, 4);
+    assert.equal(game.switchPost('south-mg'), true);
+    run(game, 4);
+    const post = game.posts.find(post => post.id === game.controlledId);
+    post.floor += 30;
+    post.point.yaw = 0; post.point.pitch = 0;
+    const muzzle = emplacementPose(post.point, post.floor).muzzle;
+    const target = { id: 'target', type: 'tank', bank: 'fixture', health: 1, heading: 0,
+      position: new THREE.Vector3(muzzle.x, muzzle.y - 1.1, muzzle.z - 10) };
+    game.vehicles.push(target);
+    if (blocked) game.vehicles.push({ id: 'wreck', type: 'tank', bank: 'fixture', health: 0,
+      destroyedAt: game.now, heading: 0,
+      position: new THREE.Vector3(muzzle.x, muzzle.y - 1.1, muzzle.z - 5) });
+    const shots = game.state.stats.shots;
+    game.step(.05, { fireHeld: true });
+    assert.equal(game.state.stats.shots, shots + 1);
+    return { health: target.health, id: post.id, settings: post.point.weapon.settings, muzzle, position: target.position.toArray() };
+  };
+  const clear = fire(false), blocked = fire(true);
+  assert.equal(clear.health, 0, `the unobstructed shot reaches the target: ${JSON.stringify(clear)}`);
+  assert.equal(blocked.health, 1, 'the wreck intercepts the shot');
 });
 
 test('shore cannon shells retain the tank-shell soil aftermath through the projectile update', () => {
