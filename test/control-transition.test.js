@@ -33,7 +33,7 @@ test('pause/disabled visual feedback cannot shorten the simulation-clock transfe
 });
 test('a new selected member dying restarts feedback, while resetting removes pending work', () => {
   const state = createDeathTransfer();
-  const memorial = { name: '汪洋', unitName: '国民革命军第88师战士', birthYear: 1912, deathYear: 1937 };
+  const memorial = { name: '汪洋', unitName: '国民革命军第88师', birthYear: 1912, deathYear: 1937 };
   startDeathTransfer(state, 's1', 'rifle', memorial); advanceDeathTransfer(state, .7);
   assert.deepEqual(state.memorial, memorial);
   assert.equal(startDeathTransfer(state, 's2', 'blast', { ...memorial, name: '王勇' }), true);

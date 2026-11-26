@@ -127,7 +127,7 @@ describe('independent Sihang Warehouse battlefield', () => {
       'fa3a6c76b3f30b3931e309826763f68240a36a8025d57adac564c1d7b2a0da3c',
       'Existing house heights and openings retain their original contract');
     assert.equal(createHash('sha256').update(JSON.stringify(layout)).digest('hex'),
-      'e325687ef2b06078d64cd79209f9f15a3c2dfa4c58b60bf6557ec46009a10209',
+      'aba3338cc475c398929225f5635d20e0fd4a00a94a1b24449b9940423fc1ed8b',
       'Warehouse geometry, bridge water collision, gun cover and south-bank buildings remain deterministic');
   });
   beforeEach(() => world.resetCampaign());
@@ -151,15 +151,15 @@ describe('independent Sihang Warehouse battlefield', () => {
     }
   });
 
-  it('detonation opens a real jagged north-wall breach, preserves the warehouse, and resets its collision and navigation', () => {
+  it('starts and resets with a real jagged north-wall breach and working collision and navigation', () => {
     const solids = world.solids.length, obstacles = world.obstacles.length;
     for (let cycle = 0; cycle < 2; cycle++) {
-      assert.equal(world.northWallBreached, false);
-      assert.ok(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length);
+      assert.equal(world.northWallBreached, true);
+      assert.equal(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length, 0);
       world.elevatedPath({ x: 0, y: 0, z: -60 }, { x: 0, y: 0, z: -60 });
       world.elevatedPath({ x: 0, y: W.floorHeight, z: -38 }, { x: 0, y: W.floorHeight, z: -38 });
       const builds = world.navigationStats.builds;
-      assert.equal(world.breachNorthWall(), true); assert.equal(world.breachNorthWall(), false);
+      assert.equal(world.breachNorthWall(), false);
       assert.equal(world.warehouseRuined, false);
       assert.equal(world.landmarks.warehouse.intact.visible, true);
       assert.equal(scene.getObjectByName('sihang-north-wall-intact').visible, false);
@@ -175,13 +175,13 @@ describe('independent Sihang Warehouse battlefield', () => {
       }
       assert.ok(horizontalHits(8, 1.75, -46, [0, 0, 1], 9).length, 'adjacent masonry stays solid');
       world.elevatedPath({ x: 0, y: W.floorHeight, z: -38 }, { x: 0, y: W.floorHeight, z: -38 });
-      assert.equal(world.navigationStats.builds, builds, 'detonation refreshes local cells instead of rebuilding floor grids');
+      assert.equal(world.navigationStats.builds, builds, 'the open breach does not rebuild floor grids');
       assert.equal(world.walkHeight(0, -40, W.floorHeight), W.floorHeight);
       assert.equal(new Set(world.solids).size, world.solids.length);
       world.resetCampaign();
       assert.equal(world.solids.length, solids); assert.equal(world.obstacles.length, obstacles);
-      assert.ok(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length);
-      assert.equal(circleBlocked(0, -42, .42, world.doorSystem.navigationObstacles), true);
+      assert.equal(horizontalHits(0, 1.2, -46, [0, 0, 1], 9).length, 0);
+      assert.equal(circleBlocked(0, -42, .42, world.doorSystem.navigationObstacles), false);
     }
   });
 

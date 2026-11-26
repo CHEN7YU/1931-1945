@@ -405,8 +405,8 @@ function renderHud() {
     const helm = hud.weapon.helm;
     const rudder = helm ? (Math.abs(helm.rudder) < .05 ? '正舵' : `${helm.rudder > 0 ? '左' : '右'}舵 ${Math.round(Math.abs(helm.rudder) * 35)}°`) : '';
     $('jy-help').textContent = hud.weapon.ship && integrity <= 0 ? '本舰已被击沉 · 稍后自动转到下一艘仍在作战的舰艇' : hud.weapon.ship ? (helm === null
-      ? `舰艇由 AI 航行（${hud.weapon.speed.toFixed(1)} m/s）· WASD 接管操舰 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
-      : `手动操舰 · 车钟：${helm.bell} · ${rudder} · ${hud.weapon.speed.toFixed(1)} m/s · W/S 车钟进退一档 · A/D 转舵（大舰惯性大，提前操舵）· 换舰后交回 AI`)
+      ? `舰艇由舰员操纵航行（${hud.weapon.speed.toFixed(1)} m/s）· WASD 接管操舰 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图`
+      : `手动操舰 · 车钟：${helm.bell} · ${rudder} · ${hud.weapon.speed.toFixed(1)} m/s · W/S 车钟进退一档 · A/D 转舵（大舰惯性大，提前操舵）· 换舰后交还舰员`)
       : '鼠标瞄准 · 左键开火 · 右键放大 · V 第一/第三人称 · 1–8 或 Q/E 换炮位 · M 地图';
   }
   // 辅助瞄准（按住右键）：显示预测落点距离、弹丸飞行时间与散布；落点椭圆罩住日舰提前量位置时提示“可命中”

@@ -208,6 +208,7 @@ try {
   assert.ok([2, 3].includes(firstDeath.transfer.memorial.name.length));
   assert.equal(await page.locator('#death-transfer-name').textContent(), firstDeath.transfer.memorial.name);
   assert.equal(await page.locator('#death-transfer-unit').textContent(), firstDeath.transfer.memorial.unitName);
+  assert.doesNotMatch(firstDeath.transfer.memorial.unitName, /战士$/);
   assert.equal(firstDeath.control.soldierId, personId, 'death is visible before control moves to another soldier');
   assert.equal(firstDeath.own[0].health, 0);
   assert.equal(firstDeath.weaponVisible, false);

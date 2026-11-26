@@ -27,7 +27,7 @@ export const CAMPAIGNS = Object.freeze([
     history: '1937年淞沪会战后期，第88师第262旅第524团一部坚守四行仓库，掩护主力撤退。游戏采用三层仓库、东侧桥梁与夜间分批撤退的改编布局。',
     historySource: Object.freeze({ name: '南京大屠杀遇难同胞纪念馆 · 第88师史料',
       url: 'https://www.19371213.com.cn/information/news/202112/t20211209_3226524.html' }),
-    goals: Object.freeze(['坚守仓库一楼3分钟，阻止日军占领与北墙爆破。',
+    goals: Object.freeze(['北墙已有缺口，坚守仓库一楼3分钟，阻止日军占领。',
       '两阶段共用260人兵力；首批先保留幸存者，再补至约50人，每批不超过50人，波次间无固定等待。',
       '北岸工事掩护友军过桥，南岸禁止开火；撤退结束后进入纪念结局，不判胜负。']) }),
   Object.freeze({ id: 'nanjing', name: '南京保卫战', year: 1937, region: '南京',

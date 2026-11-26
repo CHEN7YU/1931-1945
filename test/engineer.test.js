@@ -6,7 +6,28 @@ import { createEngineerState, consumeEngineerMaterial, selectEngineerEquipment, 
 import { advanceConstruction, selectConstructionBlueprint } from '../src/construction.js';
 import { infantryEquipment } from '../src/battle-roster.js';
 import { createEmplacement, damageEmplacement, artilleryPositionTargets, fireEmplacement,
-  canOperateEmplacement } from '../src/emplacements.js';
+  canOperateEmplacement, emplacementCanAimAt } from '../src/emplacements.js';
+import { nanjingEngineerThreatHeading } from '../src/nanjing-dock-defense.js';
+
+test('Nanjing friendly engineers face the nearest attacker or the relevant assault route', () => {
+  const engineer = { team: 'friendly', position: { x: -64, y: 0, z: -60 } };
+  for (const [x, z] of [[-64, -90], [-24, -60], [-64, -20]]) {
+    const enemy = { team: 'enemy', health: 100, position: { x, y: 1.1, z } };
+    const heading = nanjingEngineerThreatHeading(engineer, [enemy], 'dock-defense');
+    for (const profile of ['maxim24', 'bofors75']) {
+      const point = createEmplacement({ id: profile, profile, x: -64, z: -60, heading });
+      assert.equal(emplacementCanAimAt(point, enemy.position), true);
+    }
+  }
+  const friendly = { team: 'friendly', health: 100, position: { x: -63, z: -60 } };
+  const fallen = { team: 'enemy', health: 0, position: { x: -63, z: -60 } };
+  const mounted = { team: 'enemy', health: 100, vehicleId: 'tank', position: { x: -63, z: -60 } };
+  const dockHeading = nanjingEngineerThreatHeading(engineer, [friendly, fallen, mounted], 'dock-defense');
+  assert.ok(-Math.sin(dockHeading) > 0, 'the dock fallback faces the landward assault routes, not the ferry');
+  const gate = { team: 'friendly', position: { x: 0, y: 0, z: 27 } };
+  const gateHeading = nanjingEngineerThreatHeading(gate, [], 'gate-defense');
+  assert.ok(-Math.cos(gateHeading) > 0, 'the gate fallback faces the southern approach');
+});
 
 test('each whole infantry squad replaces one ordinary rifleman without changing dischargers, LMGs, sniper or demolition', () => {
   for (const team of ['friendly', 'enemy']) for (const count of [11, 14, 22]) {

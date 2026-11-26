@@ -30,7 +30,7 @@ export function createSoldierMemorialAllocator(seed = Date.now()) {
       }
       const person = SOLDIER_MEMORIAL_ROSTER[order[cursor++ % order.length]];
       return Object.freeze({ id: person.id, name: person.name,
-        unitName: unitName.trim().endsWith('战士') ? unitName.trim() : `${unitName.trim()}战士`,
+        unitName: unitName.trim(),
         birthYear: year - person.ageAtDeath, deathYear: year });
     },
   };

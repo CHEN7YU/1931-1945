@@ -27,7 +27,7 @@ export function createSihangCampaign() {
   return {
     stage: 'sihang-defense', stageElapsed: 0, stageRemaining: SIHANG_RULES.defenseSeconds,
     elapsed: 0, reserve: SIHANG_RULES.troopLimit, deployed: 0, retreatDeployed: 0, outcome: null,
-    retreatIds: [], aiRetreatIds: [], evacuatedIds: [], warnings: [], northWallBreached: false,
+    retreatIds: [], aiRetreatIds: [], evacuatedIds: [], warnings: [], northWallBreached: true,
     retreatTotal: 0, retreatReserve: 0, retreatLostIds: [],
     counterattack: false, counterattackAt: null, assemblyPrepared: false, assemblyReleased: false, coverRespawnAt: 0,
     withdrawalWave: null, withdrawalWaveNumber: 0, waveAssemblyAt: null, retreatNextSpawnAt: 0, retreatNextSpawnSlot: 0,

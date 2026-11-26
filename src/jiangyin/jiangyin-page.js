@@ -44,7 +44,7 @@ export const JIANGYIN_MARKUP = `
   <div class="jy-dialog">
     <span class="jy-kicker" id="jy-kicker">1937 · 江阴</span>
     <h1 id="jy-title">江阴要塞阻击战</h1>
-    <p id="jy-text">日军舰队自下游（吴淞方向）逆流而上，企图摧毁江阴要塞。你随“平海”“宁海”“逸仙”三舰出战：舰艇由 AI 航行，你可在任一舰上操纵舰艏主炮塔。<br />
+    <p id="jy-text">日军舰队自下游（吴淞方向）逆流而上，企图摧毁江阴要塞。你随“平海”“宁海”“逸仙”三舰出战：舰艇由舰员操纵航行，你可在任一舰上操纵舰艏主炮塔。<br />
 鼠标瞄准 · 左键开火 · 右键放大 · V 视角 · Q/E 或 1–3 换舰 · M 地图 · Esc 暂停</p>
     <div id="jy-stats"></div>
     <button id="jy-start" class="jy-primary">进入战场 ↗</button>

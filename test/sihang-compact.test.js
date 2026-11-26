@@ -34,21 +34,16 @@ test('the two rear rows are never generated, including their doors, road and veg
   assert.equal(SIHANG_MAP_BOUNDS.maxZ, 74);
 });
 
-test('all twenty sappers traverse the narrower street without penetrating the warehouse wall', () => {
+test('all twenty infantry can deploy and traverse the narrower street toward the existing breach', () => {
   const spawn = sihangSpawns().find(s => s.id === 'sihang-enemy-9');
   assert.equal(formationPositions(spawn, 20, world.obstacles).length, 20);
-  assert.equal(sihangBattleRoster().find(f => f.sihangDemolition).memberCount, 20);
+  assert.equal(sihangBattleRoster().find(f => f.id === 'enemy-9').memberCount, 20);
   for (let slot = 0; slot < 20; slot++) {
     const offset = sihangShieldLayout(slot, 20);
     const feet = new THREE.Vector3(offset.x, 0, -72 + offset.z);
     world.moveInfantry(feet, 0, 25.2, .5);
     const targetZ = -46.8 + offset.z;
-    if (targetZ > SIHANG_WAREHOUSE.minZ - .5) {
-      assert.ok(feet.z <= SIHANG_WAREHOUSE.minZ - .5, `sapper ${slot} penetrated the warehouse wall`);
-      assert.ok(feet.z > SIHANG_WAREHOUSE.minZ - 1, `sapper ${slot} stopped short of the warehouse wall`);
-    } else {
-      assert.ok(Math.abs(feet.z - targetZ) < .025, `sapper ${slot} is blocked`);
-    }
+    assert.ok(Math.abs(feet.z - targetZ) < .025, `infantry ${slot} is blocked`);
   }
 });
 

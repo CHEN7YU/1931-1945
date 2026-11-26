@@ -18,7 +18,7 @@ test('death cards receive a deterministic shuffled identity, unit, and campaign-
   const cards = createCards();
   assert.deepEqual(cards, createCards());
   assert.equal(new Set(cards.map(card => card.name)).size, 100);
-  assert.ok(cards.every(card => card.unitName === '国民革命军第88师战士' &&
+  assert.ok(cards.every(card => card.unitName === '国民革命军第88师' &&
     card.birthYear < card.deathYear && card.deathYear === 1937));
   assert.throws(() => createSoldierMemorialAllocator(NaN), /seed/);
   assert.throws(() => createSoldierMemorialAllocator(1).next({ year: 1937, unitName: '' }), /year and unit name/);

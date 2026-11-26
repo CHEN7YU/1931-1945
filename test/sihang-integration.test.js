@@ -17,18 +17,20 @@ import { friendlyAIFormationName, campaignUnitName } from '../src/battle-units.j
 import { PERFORMANCE_MAPS } from '../src/performance-schema.js';
 import { SIHANG_WAREHOUSE as W } from '../src/sihang-layout.js';
 
-test('Sihang deploys four eleven-person squads and ten distinct enemy units without reducing the 20 sappers', () => {
+test('Sihang starts with the breach open and retains the former squad as twenty armed infantry', () => {
   const roster = sihangBattleRoster(), friendly = roster.filter(unit => unit.team === 'friendly');
   const enemy = roster.filter(unit => unit.team === 'enemy');
   assert.equal(friendly.length, 4); assert.equal(enemy.length, 10);
   assert.equal(friendly.reduce((sum, unit) => sum + unit.memberCount, 0), 44);
-  assert.equal(enemy.filter(unit => unit.type === 'infantry' && !unit.sihangDemolition).length, 6);
+  assert.equal(enemy.filter(unit => unit.type === 'infantry' && !unit.sihangDemolition).length, 7);
   assert.deepEqual(enemy.filter(unit => unit.type === 'tank').map(unit => [unit.armorSlot, unit.memberCount]), [[0, 4], [1, 4]]);
   assert.equal(enemy.find(unit => unit.type === 'plane').aircraftCount, 3);
-  assert.equal(enemy.find(unit => unit.sihangDemolition).memberCount, 20);
+  assert.equal(enemy.find(unit => unit.id === 'enemy-9').memberCount, 20);
+  assert.equal(enemy.some(unit => unit.sihangDemolition), false);
+  assert.equal(createSihangCampaign().northWallBreached, true);
   assert.equal(new Set(roster.map(unit => unit.id)).size, 14);
   assert.throws(() => sihangBattleRoster('tank'), /步兵/);
-  assert.match(campaignUnitName(enemy.at(-1)), /爆破/);
+  assert.doesNotMatch(campaignUnitName(enemy.at(-1)), /爆破/);
   assert.match(friendlyAIFormationName('sihang', playerUnitOptions('sihang')[0].name, 1), /524团/);
 });
 

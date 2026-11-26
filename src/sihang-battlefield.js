@@ -1004,8 +1004,8 @@ export function makeSihangBattlefield(scene, surface) {
       if (ruined) {
         solids.push(...standingSolids); obstacles.push(...standingObstacles);
       }
-      if (northWallBreached) switchNorthWall(false);
-      northWallBreached = false;
+      if (!northWallBreached) switchNorthWall(true);
+      northWallBreached = true;
       ruined = false; intact.visible = true; rubble.visible = false;
       marker.material.color.setHex(0x557ca5); smoke.length = 0; flagAnimation.update(0);
       smoke.push(...city.smoke);

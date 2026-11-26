@@ -426,6 +426,7 @@ test('finite waves release every remaining identity and never recycle saved or d
 
 test('installation, 25-second fuse and four-second defuse are independent; a short interruption preserves shared progress', () => {
   const state = createSihangCampaign();
+  state.northWallBreached = false;
   assert.equal(advanceSihangDemolition(state, 5, { operatorId: 'engineer' }), 'installing');
   advanceSihangDemolition(state, 0, { operatorId: 'engineer' });
   assert.equal(state.demolition.installProgress, 5);
@@ -451,6 +452,7 @@ test('installation, 25-second fuse and four-second defuse are independent; a sho
 
 test('an installed charge survives its installer and is no longer a defense objective after the withdrawal order', () => {
   const state = createSihangCampaign();
+  state.northWallBreached = false;
   advanceSihangDemolition(state, 10, { operatorId: 'engineer' });
   assert.equal(advanceSihangDemolition(state, 25, {}), 'detonated');
   assert.equal(state.outcome, null); assert.equal(state.northWallBreached, true);
@@ -458,6 +460,7 @@ test('an installed charge survives its installer and is no longer a defense obje
   advanceSihangCampaign(state, 1, { friendly: [soldier('p', true)] });
   assert.equal(state.stage, 'sihang-defense'); assert.equal(state.outcome, null);
   const withdrawing = createSihangCampaign(), player = soldier('p', true);
+  withdrawing.northWallBreached = false;
   advanceSihangDemolition(withdrawing, 10, { operatorId: 'engineer' });
   advanceSihangCampaign(withdrawing, SIHANG_RULES.defenseSeconds, { friendly: [player] });
   advanceSihangDemolition(withdrawing, 30, {});

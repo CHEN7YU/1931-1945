@@ -20,7 +20,7 @@ try {
   await page.waitForFunction(() => window.__nanjingPreview?.ready, null, { timeout: 30000 });
   assert.equal(await page.locator('#battle-map').getAttribute('data-phase'), 'defense');
   assert.equal(await page.locator('#boarded-count').textContent(), '—');
-  assert.match(await page.locator('#force-summary').innerText(), /3队.*玩家小队.*2支AI小队/);
+  assert.match(await page.locator('#force-summary').innerText(), /3队.*玩家小队.*2支友军小队/);
 
   const capture = async name => {
     if (!out) return;
@@ -37,6 +37,8 @@ try {
 
   await page.locator('[data-phase-button="ferry"]').click();
   assert.equal(await page.locator('#battle-map').getAttribute('data-phase'), 'ferry');
+  assert.match(await page.locator('#phase-rule').textContent(), /友军小队先撤/);
+  assert.doesNotMatch(await page.locator('#phase-rule').textContent(), /AI/);
   assert.match(await page.locator('#force-summary').innerText(), /5队.*3队.*2支增援/);
   assert.equal(await page.locator('#boarded-count').textContent(), '86');
   assert.equal(await page.locator('#waiting-count').textContent(), '42');

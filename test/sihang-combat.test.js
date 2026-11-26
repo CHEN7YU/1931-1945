@@ -16,6 +16,7 @@ const fixture = () => {
     elevatedPath: (_from, to) => [{ ...to }],
     moveInfantry(position, dx, dz) { position.x += dx; position.z += dz; } };
   const combat = createSihangCombat(scene, world), campaign = createSihangCampaign();
+  campaign.northWallBreached = false;
   const actors = Array.from({ length: 20 }, (_, index) => soldier(index));
   const player = { id: 'player', health: 100, position: new THREE.Vector3(10, 0, 0), tactics: {} };
   const keys = new Set();

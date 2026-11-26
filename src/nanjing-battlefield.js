@@ -776,6 +776,9 @@ export function makeNanjingBattlefield(scene, surface) {
     const wall = addBox(x, WALL_WALK.height / 2, z, 4.4, WALL_WALK.height, depth, brick, true, true);
     wall.userData.nanjingFeature = feature;
     applyWallDamage(wall, 'west');
+    if (feature === 'west-city-wall' && minZ === NANJING_WEST_BREACH.maxZ) {
+      flankWalkSupports.push({ minX: x - 2.2, maxX: x + 2.2, minZ, maxZ, height: WALL_WALK.height });
+    }
     for (let offset = -depth / 2 + 1; offset < depth / 2; offset += 2.2) {
       if (damagedMerlon('west', -(z + offset))) continue;
       const merlon = addBox(x + .4, WALL_WALK.height + .4, z + offset, .8, .8, 1.2, stone, true);
@@ -839,6 +842,37 @@ export function makeNanjingBattlefield(scene, surface) {
   scene.add(westGate); solids.push(westGate);
   obstacles.push({ minX: -74.2, maxX: -69.8, minZ: NANJING_WEST_GATE_Z - westGateRadius,
     maxZ: NANJING_WEST_GATE_Z + westGateRadius, minY: westGateSpring, height: WALL_WALK.height });
+  flankWalkSupports.push({ minX: -74.2, maxX: -69.8,
+    minZ: NANJING_WEST_GATE_Z - westGateRadius, maxZ: NANJING_WEST_GATE_Z + westGateRadius,
+    height: WALL_WALK.height });
+  const westGateStair = { minX: -69.8, maxX: -67.7, groundX: -63.95,
+    minZ: -79.9, turnZ: -77.8, topZ: -74.05, height: WALL_WALK.height };
+  const stairHalfHeight = westGateStair.height / 2;
+  const stairSteps = Math.ceil(stairHalfHeight / .15);
+  const flightLength = 3.75, stepDepth = flightLength / stairSteps;
+  const stairWidth = westGateStair.maxX - westGateStair.minX;
+  for (let step = 0; step < stairSteps; step++) {
+    const height = stairHalfHeight * (step + 1) / stairSteps;
+    const lower = addBox(westGateStair.groundX - (step + .5) * stepDepth, height / 2,
+      (westGateStair.minZ + westGateStair.turnZ) / 2, stepDepth, height, stairWidth, stone);
+    lower.userData.nanjingFeature = 'west-gate-stair-tread';
+    const upperHeight = stairHalfHeight + height;
+    const upper = addBox((westGateStair.minX + westGateStair.maxX) / 2, upperHeight / 2,
+      westGateStair.turnZ + (step + .5) * stepDepth, stairWidth, upperHeight, stepDepth, stone);
+    upper.userData.nanjingFeature = 'west-gate-stair-tread';
+  }
+  for (const landing of [
+    { minX: westGateStair.minX, maxX: westGateStair.maxX, minZ: westGateStair.minZ,
+      maxZ: westGateStair.turnZ, height: stairHalfHeight },
+    { minX: westGateStair.minX, maxX: westGateStair.maxX, minZ: westGateStair.topZ,
+      maxZ: westGateStair.topZ + .6, height: westGateStair.height },
+  ]) {
+    const mesh = addBox((landing.minX + landing.maxX) / 2, landing.height / 2,
+      (landing.minZ + landing.maxZ) / 2, landing.maxX - landing.minX, landing.height,
+      landing.maxZ - landing.minZ, stone);
+    mesh.userData.nanjingFeature = 'west-gate-stair-tread';
+    flankWalkSupports.push(landing);
+  }
   for (const side of [-1, 1]) {
     const plaque = makePlaque('水西門', side < 0 ? -74.2 : -69.8, 6.4,
       NANJING_WEST_GATE_Z, 2.5, .8, true, side, 'x');
@@ -2005,6 +2039,14 @@ export function makeNanjingBattlefield(scene, surface) {
       const rampHeight = progress * ramp.height;
       if (rampHeight <= referenceY + step && rampHeight > height) height = rampHeight;
     }
+    let stairHeight = null;
+    if (x >= westGateStair.maxX && x <= westGateStair.groundX &&
+      z >= westGateStair.minZ && z <= westGateStair.turnZ)
+      stairHeight = (westGateStair.groundX - x) / flightLength * stairHalfHeight;
+    else if (x >= westGateStair.minX && x <= westGateStair.maxX &&
+      z >= westGateStair.turnZ && z <= westGateStair.topZ)
+      stairHeight = stairHalfHeight + (z - westGateStair.turnZ) / flightLength * stairHalfHeight;
+    if (stairHeight !== null && stairHeight <= referenceY + step && stairHeight > height) height = stairHeight;
     return height;
   }
   function moveNanjingInfantry(position, dx, dz, radius, movementObstacles = obstacles, bodyHeight = 1.75) {
@@ -2104,7 +2146,60 @@ export function makeNanjingBattlefield(scene, surface) {
     if (!ground.length) return [];
     return [...path, ...ground.map(node => ({ ...node, y: 0 }))];
   }
+  function westGateStairPath(start, goal) {
+    const high = point => (point.y ?? 0) > 8.3 && point.x >= -74.2 && point.x <= -69.8 &&
+      point.z >= NANJING_WEST_BREACH.maxZ && point.z <= NANJING_WEST_GATE_Z + westGateRadius;
+    const onStair = point => {
+      const { x, z, y = 0 } = point;
+      const inLower = x >= westGateStair.maxX && x <= westGateStair.groundX &&
+        z >= westGateStair.minZ && z <= westGateStair.turnZ;
+      const inUpper = x >= westGateStair.minX && x <= westGateStair.maxX &&
+        z >= westGateStair.minZ && z <= westGateStair.topZ + .6;
+      return y >= .3 && (inLower || inUpper) && Math.abs(walkHeight(x, z, y) - y) < .15;
+    };
+    const kind = point => high(point) ? 'high' : onStair(point) ? 'stair' : (point.y ?? 0) < .3 ? 'ground' : null;
+    const startKind = kind(start), goalKind = kind(goal);
+    if (!startKind || !goalKind || startKind === 'ground' && goalKind === 'ground') return null;
+    if (startKind === 'high' && goalKind === 'high') return null;
+    if (!groundNavigation) throw new Error('West gate routing requires the battle ground navigator');
+    const bottom = { x: westGateStair.groundX + .2, y: 0,
+      z: (westGateStair.minZ + westGateStair.turnZ) / 2 };
+    const turn = { x: (westGateStair.minX + westGateStair.maxX) / 2, y: stairHalfHeight, z: bottom.z };
+    const stairTop = { x: turn.x, y: WALL_WALK.height, z: westGateStair.topZ + .3 };
+    const wallTop = { x: -70.25, y: WALL_WALK.height, z: stairTop.z };
+    const lowerFlight = casemateConnection(bottom, turn);
+    const upperFlight = casemateConnection(turn, stairTop);
+    const crossing = casemateConnection(stairTop, wallTop);
+    if (!lowerFlight.length || !upperFlight.length || !crossing.length) return [];
+    const spine = [bottom, ...lowerFlight, ...upperFlight, ...crossing];
+    const connect = (point, type) => {
+      if (type === 'ground') {
+        const path = Math.hypot(point.x - bottom.x, point.z - bottom.z) < .05
+          ? [] : groundNavigation(point, bottom).map(node => ({ ...node, y: 0 }));
+        return path.length || Math.hypot(point.x - bottom.x, point.z - bottom.z) < .05
+          ? { index: 0, path } : null;
+      }
+      if (type === 'high') {
+        const path = wallElevatedPath(point, wallTop);
+        return path?.length ? { index: spine.length - 1, path } : null;
+      }
+      let index = 0, distance = Infinity;
+      for (let i = 0; i < spine.length; i++) {
+        const node = spine[i], d = Math.hypot(node.x - point.x, node.y - point.y, node.z - point.z);
+        if (d < distance) { distance = d; index = i; }
+      }
+      const path = casemateConnection(point, spine[index]);
+      return path.length ? { index, path } : null;
+    };
+    const from = connect(start, startKind), to = connect(goal, goalKind);
+    if (!from || !to) return [];
+    const between = from.index <= to.index ? spine.slice(from.index, to.index + 1)
+      : spine.slice(to.index, from.index + 1).reverse();
+    return [...from.path, ...between, ...[{ ...goal }, ...to.path].reverse()];
+  }
   function elevatedPath(start, goal) {
+    const westGateRoute = westGateStairPath(start, goal);
+    if (westGateRoute !== null) return westGateRoute;
     const roomRoute = casemateRoute(start, goal, casemateConnection, routeToCasemateEntrance);
     return roomRoute ?? wallElevatedPath(start, goal);
   }
@@ -2113,7 +2208,7 @@ export function makeNanjingBattlefield(scene, surface) {
     : Math.abs(z - 52) < 13 || Math.abs(x - RIVERS[1].x) < 12
       ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
   const masonryFeatures = new Set(['battlement-coping', 'northern-city-wall-merlon',
-    'west-wall-stair-tread', 'east-wall-stair-tread', 'river-stone-bank', 'city-wall-merlon',
+    'west-wall-stair-tread', 'east-wall-stair-tread', 'west-gate-stair-tread', 'river-stone-bank', 'city-wall-merlon',
     'wall-merlon', 'city-lane', 'arched-gateway', 'soldier-cave-frame', 'flanking-masonry-core',
     'curtain-merlon', 'gate-tower-crenel', 'flanking-ramp-cheek', 'wall-walk',
     'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall',

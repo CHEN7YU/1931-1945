@@ -1192,7 +1192,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       const { top } = shipPerformance(boat), keep = Math.max(0, boat.speed / top) ** 2;
       boat.bell = SHIP_HANDLING.notches.reduce((best, n, i) => Math.abs(n - keep) < Math.abs(SHIP_HANDLING.notches[best] - keep) ? i : best, 2);
       boat.throttle = SHIP_HANDLING.notches[boat.bell]; boat.thrust = keep;
-      emit({ type: 'toast', text: `${post.name}：你已接管操舰 · W/S 车钟 · A/D 转舵（换舰后交回 AI）` });
+      emit({ type: 'toast', text: `${post.name}：你已接管操舰 · W/S 车钟 · A/D 转舵（换舰后交还舰员）` });
     }
     if (!helm && boat.manual) { boat.manual = false; boat.drift = 0; }
     if (!boat.manual) { boat.heel = (boat.heel ?? 0) * Math.max(0, 1 - dt / 3); boat.drift = 0; }

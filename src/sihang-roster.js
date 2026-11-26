@@ -17,7 +17,7 @@ export function sihangBattleRoster(playerType = 'infantry') {
     ...Array.from({ length: 6 }, (_, index) => formation('enemy', index, 'infantry', 11)),
     ...[0, 1].map(armorSlot => formation('enemy', armorSlot + 6, 'tank', 4, { variant: CHI_HA.id, armorSlot })),
     formation('enemy', 8, 'plane', 3, { aircraftCount: 3, aerialSupport: true }),
-    formation('enemy', 9, 'infantry', 20, { sihangDemolition: true }),
+    formation('enemy', 9, 'infantry', 20),
   ];
 }
 
@@ -80,7 +80,7 @@ export function sihangSpawns() {
       kind: 'garage', aiOnly: true, altitude: 0, ...point,
     })),
     { id: 'sihang-enemy-8', name: '日军航空入场', team: 'enemy', kind: 'air', aiOnly: true, x: -24, z: -112, altitude: 45 },
-    { id: 'sihang-enemy-9', name: '日军爆破队集结区', team: 'enemy', kind: 'base', aiOnly: true, x: 0, z: -72, altitude: 0 },
+    { id: 'sihang-enemy-9', name: '日军北侧步兵集结区 7', team: 'enemy', kind: 'base', aiOnly: true, x: 0, z: -72, altitude: 0 },
   ];
 }
 

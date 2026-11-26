@@ -21,11 +21,64 @@ import { casemateGateSlices } from '../src/nanjing-casemate.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
 import { NANJING_EMPLACEMENTS } from '../src/emplacements.js';
 import { NANJING_WALL_PLUMES } from '../src/nanjing-wall-damage.js';
+import { moveSupported } from '../src/infantry-traversal.js';
 
 function housePoint(home, x, z) {
   const c = [1, 0, -1, 0][home.facing], s = [0, 1, 0, -1][home.facing];
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
+
+test('west gate stairs turn at an intermediate landing and connect to the gate crown in both directions', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  const position = new THREE.Vector3(-63.75, 0, -78.85);
+  const move = (dx, dz) => moveSupported(position, dx, dz, .4, world.obstacles,
+    world.walkHeight, world.moveInfantry, 1.75, 2);
+  move(-5, 0);
+  assert.ok(Math.abs(position.x + 68.75) < .05 && Math.abs(position.y - NANJING_WALL_WALK.height / 2) < .05,
+    `lower flight must reach the turn: ${JSON.stringify(position)}`);
+  move(0, 5.1);
+  assert.ok(Math.abs(position.z + 73.75) < .05 && Math.abs(position.y - NANJING_WALL_WALK.height) < .05,
+    `upper flight must reach the wall landing: ${JSON.stringify(position)}`);
+  move(-1.5, 0);
+  move(0, 13.75);
+  assert.ok(Math.abs(position.z - NANJING_WEST_GATE_Z) < .1 &&
+    Math.abs(position.y - NANJING_WALL_WALK.height) < .05,
+  `wall walk must reach the gate crown: ${JSON.stringify(position)}`);
+  move(0, -13.75);
+  move(1.5, 0);
+  move(0, -5.1);
+  move(5, 0);
+  assert.ok(Math.abs(position.x + 63.75) < .1 && position.y < .1,
+    `stairs must be traversable downhill: ${JSON.stringify(position)}`);
+  world.setGroundNavigation(createNavigator(world.doorSystem.navigationObstacles));
+  const ground = { x: -63.75, y: 0, z: -78.85 };
+  const gate = { x: -70.25, y: NANJING_WALL_WALK.height, z: NANJING_WEST_GATE_Z };
+  const lower = { x: -65.8, z: -78.4, y: world.walkHeight(-65.8, -78.4, 8.58) };
+  const turn = { x: -68.5, z: -79.2, y: NANJING_WALL_WALK.height / 2 };
+  const upper = { x: -68.4, z: -76, y: world.walkHeight(-68.4, -76, 8.58) };
+  for (const [start, goal] of [[ground, gate], [gate, ground], [lower, gate], [gate, lower],
+    [upper, ground], [ground, upper], [turn, gate], [turn, ground], [lower, upper], [upper, lower]]) {
+    const walker = new THREE.Vector3(start.x, start.y, start.z);
+    const route = world.elevatedPath(start, goal);
+    assert.ok(route?.length, `AI route missing: ${JSON.stringify({ start, goal })}`);
+    for (const waypoint of route) {
+      world.moveInfantry(walker, waypoint.x - walker.x, waypoint.z - walker.z, .42);
+      assert.ok(Math.hypot(walker.x - waypoint.x, walker.z - waypoint.z) < .1 &&
+        Math.abs(walker.y - waypoint.y) < .1, `route stalled at ${JSON.stringify(walker)}`);
+    }
+    assert.ok(Math.hypot(walker.x - goal.x, walker.z - goal.z) < .1 &&
+      Math.abs(walker.y - goal.y) < .1);
+  }
+  for (const [low, high] of [
+    [{ x: -63.95, z: -78.85 }, { x: -67.7, z: -78.85 }],
+    [{ x: -68.75, z: -77.8 }, { x: -68.75, z: -74.05 }],
+  ]) {
+    const rise = world.walkHeight(high.x, high.z, NANJING_WALL_WALK.height) -
+      world.walkHeight(low.x, low.z, NANJING_WALL_WALK.height);
+    const slope = Math.atan2(rise, Math.hypot(high.x - low.x, high.z - low.z)) * 180 / Math.PI;
+    assert.ok(slope > 48 && slope < 50, `unexpected stair slope: ${slope}`);
+  }
+});
 
 test('Nanjing wall slogans preserve their text without adding collision or shot blockers', () => {
   const scene = new THREE.Scene();

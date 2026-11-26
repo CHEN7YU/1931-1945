@@ -111,7 +111,7 @@
         <fieldset class="control-preferences menu-audio">
           <legend>声音</legend>
           <div data-audio-controls="menu"></div>
-          <small>静音保留原音量，取消静音即可恢复；不改变AI听觉或战斗事件。</small>
+          <small>静音保留原音量，取消静音即可恢复；不改变战场单位对声音的反应或战斗事件。</small>
           <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
         </fieldset>
         <p class="build-version" data-build-version aria-label="构建版本"></p>
@@ -253,7 +253,7 @@
             <legend>操作设置</legend>
             <label><input id="tank-crushing" data-tank-crushing type="checkbox" checked /> 坦克可碾压士兵（含敌我双方）</label>
             <label><input type="checkbox" data-blast-blur checked /> 爆炸失衡视线模糊</label>
-            <small>默认开启；关闭后停止碾压伤害，双方AI仍会避让行进中的坦克，并使用自带炸药包反坦克。</small>
+            <small>默认开启；关闭后停止碾压伤害，双方的其他士兵仍会避让行进中的坦克，并使用自带炸药包反坦克。</small>
             <label for="mouse-sensitivity">普通视角灵敏度 <output for="mouse-sensitivity">100%</output><input id="mouse-sensitivity" data-sensitivity="mouseSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
             <label for="aim-sensitivity">瞄准灵敏度 <output for="aim-sensitivity">100%</output><input id="aim-sensitivity" data-sensitivity="aimSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" /></label>
             <small>两种倍率独立生效；100%保持原手感，狙击镜仍保留原有降速。不改变射速、伤害或战局进度。</small>
@@ -264,7 +264,7 @@
           <fieldset id="audio-settings" class="control-preferences" hidden>
             <legend>声音设置</legend>
             <div data-audio-controls="pause"></div>
-            <small>主音量控制全部声音。枪炮含爆炸和装填；语音含受伤短喊。静音不改变AI听觉、伤害或事件归属。</small>
+            <small>主音量控制全部声音。枪炮含爆炸和装填；语音含受伤短喊。静音不改变战场单位对声音的反应、伤害或事件归属。</small>
             <button type="button" class="text-button" data-reset-audio>恢复声音默认值</button>
             <p class="preferences-status" data-preferences-status role="status"></p>
           </fieldset>

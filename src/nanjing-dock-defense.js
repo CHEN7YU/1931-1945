@@ -1,11 +1,24 @@
 import { circleBlocked, segmentClear } from './core.js';
-import { NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
+import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT,
+  NANJING_SPAWNS, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 
 // Waiting civilians and the ferry approaches are behind the landward fighting line.
 export const NANJING_DOCK_BUFFER = Object.freeze({
   minX: -74 + NANJING_DOCK_SHIFT, maxX: -79.5, minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
 });
 const buffer = [NANJING_DOCK_BUFFER];
+
+export function nanjingEngineerThreatHeading(actor, nearby, stage) {
+  const distance = point => Math.hypot(actor.position.x - point.x, actor.position.z - point.z);
+  const threat = nearby.filter(other => other.health > 0 && other.team !== actor.team &&
+    other.team && !other.vehicleId && distance(other.position) > .01)
+    .sort((a, b) => distance(a.position) - distance(b.position))[0]?.position;
+  const routes = NANJING_SPAWNS.filter(spawn => stage === 'gate-defense'
+    ? spawn.id.startsWith('nanjing-south-') && spawn.kind === 'base'
+    : NANJING_DOCK_ASSAULT_SPAWNS.includes(spawn.id));
+  const direction = threat ?? routes.sort((a, b) => distance(a) - distance(b))[0];
+  return Math.atan2(actor.position.x - direction.x, actor.position.z - direction.z);
+}
 
 export function nanjingDockYardContains(point) {
   return point.x >= NANJING_DOCK.x - 7 && point.x <= NANJING_DOCK_ENTRY_X &&

@@ -12,7 +12,7 @@ import { createEmplacement, emplacementObstacles } from '../src/emplacements.js'
 import { SIHANG_STAIRWELLS, SIHANG_STAIR_ROUTES } from '../src/sihang-layout.js';
 
 test('the completed demolition formation is replaced once with eleven genuinely armed infantry at its spawn', () => {
-  const formation = sihangBattleRoster().find(item => item.sihangDemolition);
+  const formation = { ...sihangBattleRoster().find(item => item.id === 'enemy-9'), sihangDemolition: true };
   assert.equal(infantryEquipment('enemy', 2, 'infantry', formation).unarmed, true);
   assert.equal(replaceSihangDemolition(formation), true);
   assert.equal(formation.memberCount, 11);

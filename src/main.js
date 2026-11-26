@@ -191,7 +191,8 @@ import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOC
   recordNanjingCivilianCityEntry } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint, nanjingCoreGuard } from './nanjing-defense.js';
 import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjingDockYardContains, nanjingDockPathClear,
-  nanjingDockOutsideGoal, nanjingDockAssaultGoal, nanjingDockPostOutsideBuildings, assignNanjingDockDefense } from './nanjing-dock-defense.js';
+  nanjingDockOutsideGoal, nanjingDockAssaultGoal, nanjingDockPostOutsideBuildings, assignNanjingDockDefense,
+  nanjingEngineerThreatHeading } from './nanjing-dock-defense.js';
 import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, civilianBoardingSpeed } from './civilian-crowd.js';
@@ -567,7 +568,7 @@ function engineerPlacementReason(actor, position) {
     return '装甲或爆破通路不能设置阵地';
   if (nanjingCampaignMode && nanjingDockBufferActive(nanjingCampaign.stage) && !actor.playerUnit &&
     bounds.minX < NANJING_DOCK_BUFFER.maxX && bounds.maxX > NANJING_DOCK_BUFFER.minX &&
-    bounds.minZ < NANJING_DOCK_BUFFER.maxZ && bounds.maxZ > NANJING_DOCK_BUFFER.minZ) return '候船区不能设置AI阵地';
+    bounds.minZ < NANJING_DOCK_BUFFER.maxZ && bounds.maxZ > NANJING_DOCK_BUFFER.minZ) return '候船区不能设置友军阵地';
   if (bounds.minX < battleArea.minX + .5 || bounds.maxX > battleArea.maxX - .5 ||
     bounds.minZ < battleArea.minZ + .5 || bounds.maxZ > battleArea.maxZ - .5) return '建造位置超出战区';
   const candidates = new Set();
@@ -729,7 +730,9 @@ function operateAIEngineer(actor, dt, combatTarget = null) {
     if (time < equipment.planAt || engineerPlanBudget <= 0) return false;
     engineerPlanBudget--; equipment.planAt = time + 2;
     equipment.selected = ENGINEER.profiles.find(profile => equipment.materials[profile]);
-    equipment.heading = Math.atan2(actor.position.x - objective.x, actor.position.z - objective.z);
+    equipment.heading = nanjingCampaignMode && actor.friendly
+      ? nanjingEngineerThreatHeading(actor, actorGrid.near(actor.position.x, actor.position.z, 90), nanjingCampaign.stage)
+      : Math.atan2(actor.position.x - objective.x, actor.position.z - objective.z);
     const center = engineerPlacement(actor.position, equipment.heading);
     for (const offset of [0, 4.8, -4.8]) {
       const candidate = { x: center.x + Math.cos(equipment.heading) * offset, y: actor.position.y,
@@ -2640,7 +2643,7 @@ function refreshDeployment() {
       : `仓库南面补充 · 剩余兵力 ${sihangCampaign.reserve}`}`
     : state === 'menu' ? '首次出击 · 初始阵地' : nanjingCampaignMode
     ? ({ 'gate-defense': '第一阶段 · 中华门第二道门内阵地防守', withdrawal: '撤往上新河渡口 · 第二阶段即将开始',
-      'dock-defense': '第二阶段 · 上新河渡口防守', 'withdrawal-to-boats': '撤退阶段 · AI小队先登船' }[nanjingCampaign.stage] ?? '南京保卫战')
+      'dock-defense': '第二阶段 · 上新河渡口防守', 'withdrawal-to-boats': '撤退阶段 · 友军小队先登船' }[nanjingCampaign.stage] ?? '南京保卫战')
     : encirclementMode && encirclement.phase === 2
     ? `第二阶段 · 守住东门 · 已歼 ${encirclement.breakout?.killed ?? 0}/${encirclement.breakout?.requiredKills ?? 0} · 突围 ${encirclement.breakout?.escapedIds.length ?? 0}/${encirclement.breakout?.escapeLimit ?? 0}`
     : `三点合围 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
@@ -7905,6 +7908,9 @@ function applyCivilianDamage(civilian, damage, source) {
   if (queued >= 0) world.civilianQueue.splice(queued, 1);
   for (const ferry of world.ferries) if (ferry.userData.boarding?.civilian === civilian) ferry.userData.boarding = null;
   data.boarding = false;
+  if (world.isDeepWater(civilian.position.x, civilian.position.z) &&
+    (ferry || civilian.position.y <= world.impactHeight(civilian.position.x, civilian.position.z) + .8))
+    civilian.visible = false;
   civilian.rotation.z = data.civilianId % 2 ? 1.4 : -1.4;
   civilian.position.y += .12;
 }
@@ -8757,16 +8763,9 @@ function updateHUD() {
     $('objective-title').textContent = defense ? '第一阶段 · 坚守仓库' : wave
       ? `第${wave.number}批 · ${waveIds.length}人 · 已撤${waveSaved} · 阵亡${waveLost}`
       : '第二阶段 · 掩护过桥撤离';
-    const demolitionDistance = Math.round(Math.hypot(position.x - SIHANG_DEMOLITION_POINT.x,
-      position.y - SIHANG_DEMOLITION_POINT.y, position.z - SIHANG_DEMOLITION_POINT.z));
     $('objective-help').textContent = defense
-      ? sihangCampaign.demolition.state === 'armed'
-        ? `北墙炸药 · ${demolitionDistance}米 · 引信${Math.ceil(sihangCampaign.demolition.fuseRemaining)}秒 · 按住F拆除${SIHANG_RULES.defuseSeconds}秒（拆除时暂停引信）`
-        : sihangCampaign.demolition.state === 'installing'
-          ? `北墙爆破点 · ${demolitionDistance}米 · 安装${sihangCampaign.demolition.installProgress.toFixed(1)}/${SIHANG_RULES.installSeconds}秒 · 立即阻止！`
-          : sihangCampaign.northWallBreached ? '北墙已被炸开 · 日军正从缺口突入！守住一楼，继续坚持到撤退命令'
-          : point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
-            : '守住一楼 · 阻止北墙爆破 · 一楼出生，楼梯通往窗口与屋顶'
+      ? point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
+        : '北墙已有缺口 · 守住一楼，继续坚持到撤退命令'
       : sihangCampaign.finalRetreatOrdered
         ? '掩护任务结束 · 立刻撤退到苏州河南岸'
       : !sihangCampaign.assemblyReleased
@@ -9146,7 +9145,7 @@ function renderSimulationStatus() {
   element.hidden = !status.active || !backlog && !reduced && !graphicsLevel;
   if (!element.hidden) {
     const text = [backlog ? `模拟积压 ${status.pendingSeconds.toFixed(1)}秒 · 缓慢追赶` : '',
-      reduced ? '自动减负 · 远处AI思考降频' : '',
+      reduced ? '自动减负 · 远处单位决策降频' : '',
       graphicsLevel ? `${automaticQuality.snapshot.reason === 'restored' ? '沿用上次画面减负' : '自动画面减负'} · ${graphicsLevel}档` : ''].filter(Boolean).join(' · ');
     if (element.textContent !== text) element.textContent = text;
     element.title = `模拟追赶上限${status.limits.maxRecoveryRate.toFixed(1)}倍，未丢弃时间；自动减负不暂停移动、交火、伤害或占点`;
@@ -9552,7 +9551,7 @@ function performControlCommand(command) {
       if (!nanjingPlayerBoardingReady(civilianEvacuation)) {
         toast(`仍有 ${civilianEvacuation.waiting} 名百姓候船，请先掩护他们登船。`);
       } else if (!nanjingAISquadsBoarded(nanjingCampaign)) {
-        toast('AI友军尚未全部登船，继续掩护渡口。');
+        toast('友军尚未全部登船，继续掩护渡口。');
       } else if (actor.traversal.kind !== 'grounded') {
         toast('落地后再登船。');
       } else if (toolEquipped && actor.mortar && actor.mortar.phase !== 'carrying') {
