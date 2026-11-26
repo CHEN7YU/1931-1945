@@ -102,17 +102,17 @@ export function fabricAlbedo(source, rgb, selective = false) {
   return texture;
 }
 
-export function createRemadeUniformMaps(textures) {
+export function createRemadeUniformMaps(textures, { blueFieldCap = false } = {}) {
   return new Map([
-    ['body', fabricAlbedo(textures.get('body'), [112, 117, 97], true)],
-    ['pants', fabricAlbedo(textures.get('pants'), [106, 112, 94], true)],
-    ['puttee', fabricAlbedo(textures.get('puttee'), [119, 113, 93])],
+    ['body', fabricAlbedo(textures.get('body'), blueFieldCap ? [48, 63, 80] : [112, 117, 97], true)],
+    ['pants', fabricAlbedo(textures.get('pants'), blueFieldCap ? [48, 63, 80] : [106, 112, 94], true)],
+    ['puttee', fabricAlbedo(textures.get('puttee'), blueFieldCap ? [48, 63, 80] : [119, 113, 93])],
     ['pouch', fabricAlbedo(textures.get('pouch'), [128, 121, 96], true)],
   ]);
 }
 
-export function createRemadeUniformMaterials(materialIds, textures) {
-  const maps = createRemadeUniformMaps(textures), clothIds = new Set(['body', 'pants', 'puttee']);
+export function createRemadeUniformMaterials(materialIds, textures, { blueFieldCap = false } = {}) {
+  const maps = createRemadeUniformMaps(textures, { blueFieldCap }), clothIds = new Set(['body', 'pants', 'puttee']);
   const cloth = createStudySurface('cloth'), leather = createStudySurface('leather'), paint = createStudySurface('paint');
   const variants = new Map();
   for (const [original, id] of materialIds) {

@@ -170,7 +170,7 @@ export function createWeaponHands(createHand) {
         if (appearance) skin.material.color.set(appearance.skin);
         else skin.material.color.copy(skin.original);
       }
-      for (const hand of Object.values(hands)) hand.setOfficerAppearance?.(officer);
+      for (const hand of Object.values(hands)) hand.setOfficerAppearance?.(officer, Boolean(appearance?.blueFieldCap));
       root.visible = !stowed;
       if (stowed) {
         if (observation) observation = { ...observation, visible: false, officer };

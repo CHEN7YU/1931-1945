@@ -44,7 +44,7 @@ export function attachNraHelmet(head, helmet, texture, settings) {
   return helmet;
 }
 
-export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudget = null, onPoseRecovery = null } = {}) {
+export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudget = null, onPoseRecovery = null, blueFieldCap = false } = {}) {
   const base = '/assets/game/nra-88/';
   const response = await fetch(`${base}source.json`);
   if (!response.ok) throw new Error(`Character manifest: HTTP ${response.status}`);
@@ -79,7 +79,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
     mesh.castShadow = mesh.receiveShadow = true;
     uniformGeometries.set(mesh.name, createRemadeUniformGeometry(mesh, referencePose));
   }
-  const uniformMaterials = createRemadeUniformMaterials(materialIds, textures);
+  const uniformMaterials = createRemadeUniformMaterials(materialIds, textures, { blueFieldCap });
   const uniformVariants = new Map(inspected.meshes.map(mesh => [mesh.name, {
     geometry: uniformGeometries.get(mesh.name),
     material: Array.isArray(mesh.material) ? mesh.material.map(material => uniformMaterials.get(material)) : uniformMaterials.get(mesh.material),
@@ -156,7 +156,7 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
   const appearance = createNraAppearanceApplicator(meshes, appearanceCache, uniformVariants);
   const clothingMeshes = [];
   avatar.traverse(node => { if (node.isMesh) clothingMeshes.push(node); });
-  const officer = createOfficerAppearance(root, canonical, clothingMeshes, 'friendly');
+  const officer = createOfficerAppearance(root, canonical, clothingMeshes, 'friendly', { blueFieldCap });
   const headProbe = createHeadAimProbe(root, canonical, meshes);
   const sharedSkeleton = meshes[0].skeleton;
   for (const mesh of meshes) {
@@ -184,8 +184,8 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
   for (const pose of Object.keys(postures)) actions[pose].setEffectiveWeight(0);
   root.visible = false;
   return {
-    root, uniformMaterials, officerAppearance: true, supportWeaponPoses: true,
-    optionalAttachments: [officer.attachment],
+    root, uniformMaterials, officerAppearance: true, blueFieldCap, supportWeaponPoses: true,
+    optionalAttachments: [officer.attachment, officer.blueOfficerAttachment, officer.capAttachment].filter(Boolean),
     get appearanceResources() {
       return { geometryIds: [...appearanceCache.geometries.values()].map(geometry => geometry.uuid),
         materialEntries: appearanceCache.materials.size, limits: nraAppearanceResourceBudget(meshes) };
@@ -196,8 +196,10 @@ export async function loadNraCharacter(walkHeightAt = walkHeight, { textureBudge
       return count;
     },
     createView,
-    createGrenadeHand: (side, { weaponRig = false } = {}) => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig }),
-    createWeaponHand: side => createNraGrenadeHand(normalized, side, { fullArm: true, weaponRig: true }),
+    createGrenadeHand: (side, { weaponRig = false } = {}) => createNraGrenadeHand(normalized, side,
+      { fullArm: true, weaponRig, blueUniformMaterials: blueFieldCap ? uniformMaterials : null }),
+    createWeaponHand: side => createNraGrenadeHand(normalized, side,
+      { fullArm: true, weaponRig: true, blueUniformMaterials: blueFieldCap ? uniformMaterials : null }),
     bind(id) {
       supportPose.reset();
       officer.restore();

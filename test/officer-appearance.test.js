@@ -6,15 +6,27 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { createOfficerAppearance, isNativeOfficer, officerSlot, nativeOfficerRegions, officerRegionShader,
   OFFICER_PROVENANCE, OFFICER_COLORS, createOfficerVisorGeometry, createOfficerCapCrown,
-  nativeOfficerHandWeights, createOfficerHandAppearance } from '../src/officer-appearance.js';
+  nativeOfficerHandWeights, createOfficerHandAppearance, createOfficerSleeveAppearance } from '../src/officer-appearance.js';
 import { createNraGrenadeHand } from '../src/nra-hand.js';
 import { createWeaponHands } from '../src/weapon-hands.js';
+import { createGrenadeRenderer } from '../src/grenade-renderer.js';
 import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
 import { prepareNraRig } from '../src/nra-rig.js';
 import { bakeNraGeometry, createNraForceRenderer } from '../src/nra-force-renderer.js';
 import { createNraMotion } from '../src/nra-motion.js';
 import { createRifleState } from '../src/rifle-action.js';
 import { nativeDischargerPresentation } from '../src/native-weapon-presentation.js';
+
+test('first-person sleeves switch to the blue uniform and restore the original on reuse', () => {
+  const original = new THREE.Texture(), blue = new THREE.Texture();
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ map: original }));
+  const sleeve = createOfficerSleeveAppearance(mesh, { map: blue });
+  sleeve.setBlueAppearance(true); assert.equal(mesh.material.map, blue);
+  sleeve.setBlueAppearance(false); assert.equal(mesh.material.map, original);
+  sleeve.setOfficerAppearance(true); assert.equal(mesh.material.map, original);
+  assert.throws(() => sleeve.setBlueAppearance('blue'), /boolean/);
+  mesh.geometry.dispose(); mesh.material.dispose(); original.dispose(); blue.dispose();
+});
 
 test('tube operation hides rifles only while alive, stationary and in the support-owned operation mode', () => {
   const actor = { health: 100, discharger: { phase: 'ready', presentationActive: true }, tactics: { mode: 'operate-grenade-discharger' } };
@@ -80,6 +92,105 @@ async function nativeNra() {
   helmet.name = '國民革命軍M35鋼盔'; avatar.getObjectByName('Head').add(helmet);
   return root;
 }
+
+test('blue field cap replaces only the ordinary soldier helmet and restores it on view reuse', async () => {
+  const avatar = await nativeNra(), root = new THREE.Group();
+  root.add(avatar); root.updateMatrixWorld(true);
+  const meshes = [];
+  avatar.traverse(node => { if (node.isMesh) meshes.push(node); });
+  const bones = new Map(meshes.find(mesh => mesh.isSkinnedMesh).skeleton.bones.map(bone => [bone.name, bone]));
+  const helmet = meshes.find(mesh => /鋼盔/.test(mesh.name));
+  const appearance = createOfficerAppearance(root, bones, meshes, 'friendly', { blueFieldCap: true });
+  const soldier = { team: 'friendly', index: 1, formation: { memberCount: 11 },
+    avatarAppearance: { blueFieldCap: true } };
+  const original = helmet.geometry;
+  appearance.apply(soldier);
+  assert.equal(helmet.visible, false);
+  assert.equal(appearance.capAttachment.mesh.visible, true);
+  assert.equal(appearance.mesh.visible, false);
+  assert.equal(helmet.geometry, original);
+  const indices = appearance.capAttachment.mesh.geometry.attributes.skinIndex;
+  const head = [...bones.keys()].indexOf('Head');
+  for (let vertex = 0; vertex < indices.count; vertex++) assert.equal(indices.getX(vertex), head);
+  const capPositions = appearance.capAttachment.mesh.geometry.attributes.position;
+  const parts = appearance.mesh.geometry.userData.officerParts;
+  const band = parts.find(part => part.name === 'cap-band');
+  const crown = parts.find(part => part.name === 'rounded-cap-crown');
+  const partBounds = part => {
+    const box = new THREE.Box3();
+    for (let i = part.start; i < part.start + part.count; i++)
+      box.expandByPoint(new THREE.Vector3().fromBufferAttribute(capPositions, i));
+    return box;
+  };
+  const bandBounds = partBounds(band), crownBounds = partBounds(crown);
+  const face = meshes.find(mesh => mesh.name === '臉部'), vertices = [];
+  for (let i = 0; i < face.geometry.attributes.position.count; i++) {
+    const point = face.getVertexPosition(i, new THREE.Vector3());
+    face.localToWorld(point); root.worldToLocal(point);
+    vertices.push(point);
+  }
+  const headPoints = vertices.filter(point => point.y >= crownBounds.min.y && point.y <= crownBounds.max.y);
+  const bandHead = [], faceIndices = face.geometry.index, planeY = bandBounds.getCenter(new THREE.Vector3()).y;
+  for (let i = 0; i < (faceIndices?.count ?? vertices.length); i += 3) {
+    const triangle = [0, 1, 2].map(n => vertices[faceIndices ? faceIndices.getX(i + n) : i + n]);
+    for (let edge = 0; edge < 3; edge++) {
+      const a = triangle[edge], b = triangle[(edge + 1) % 3];
+      if ((a.y <= planeY && b.y > planeY) || (b.y <= planeY && a.y > planeY))
+        bandHead.push(a.clone().lerp(b, (planeY - a.y) / (b.y - a.y)));
+    }
+  }
+  assert.ok(bandHead.length > 50);
+  const headBounds = new THREE.Box3().setFromPoints(bandHead);
+  for (const axis of ['x', 'z']) {
+    assert.ok(headBounds.min[axis] - bandBounds.min[axis] >= 0);
+    assert.ok(headBounds.min[axis] - bandBounds.min[axis] < .015);
+    assert.ok(bandBounds.max[axis] - headBounds.max[axis] >= 0);
+    assert.ok(bandBounds.max[axis] - headBounds.max[axis] < .015);
+  }
+  const crownGeometry = new THREE.BufferGeometry();
+  crownGeometry.setAttribute('position', new THREE.BufferAttribute(
+    capPositions.array.slice(crown.start * 3, (crown.start + crown.count) * 3), 3));
+  const crownMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const crownMesh = new THREE.Mesh(crownGeometry, crownMaterial);
+  const center = bandBounds.getCenter(new THREE.Vector3()), ray = new THREE.Raycaster();
+  crownMesh.updateMatrixWorld(true);
+  for (const point of headPoints) {
+    const origin = new THREE.Vector3(center.x, point.y, center.z);
+    const direction = point.clone().sub(origin); direction.y = 0;
+    const distance = direction.length();
+    if (distance < 1e-6) continue;
+    ray.set(origin, direction.normalize());
+    const hit = ray.intersectObject(crownMesh)[0];
+    assert.ok(hit && hit.distance + .001 >= distance, 'the native scalp must not protrude through the cap crown');
+  }
+  crownGeometry.dispose(); crownMaterial.dispose();
+  appearance.restore();
+  assert.equal(helmet.visible, true);
+  assert.equal(appearance.capAttachment.mesh.visible, false);
+  appearance.apply({ ...soldier, index: 2 });
+  assert.equal(appearance.mesh.visible, true);
+  assert.equal(appearance.capAttachment.mesh.visible, false);
+  assert.equal(appearance.blueOfficerAttachment.enabled({ ...soldier, index: 2 }), true);
+  assert.equal(appearance.attachment.enabled({ ...soldier, index: 2 }), false);
+  assert.equal(appearance.mesh.geometry, appearance.blueOfficerAttachment.mesh.geometry);
+  assert.equal(appearance.mesh.material, appearance.capAttachment.mesh.material);
+  const fittedOfficerCap = appearance.mesh.geometry.attributes.position;
+  for (let vertex = crown.start; vertex < band.start + band.count; vertex++)
+    assert.ok(new THREE.Vector3().fromBufferAttribute(fittedOfficerCap, vertex)
+      .distanceTo(new THREE.Vector3().fromBufferAttribute(capPositions, vertex)) < 1e-6);
+  const officerCoat = meshes.find(mesh => mesh.name === '衣服');
+  const blueShader = { vertexShader: '#include <common>\n#include <begin_vertex>',
+    fragmentShader: '#include <common>\n#include <color_fragment>' };
+  officerCoat.material.onBeforeCompile(blueShader);
+  assert.match(blueShader.fragmentShader, /if \(false\) diffuseColor\.rgb/);
+  appearance.restore();
+  appearance.apply({ ...soldier, index: 2, avatarAppearance: { blueFieldCap: false } });
+  assert.notEqual(appearance.mesh.geometry, appearance.blueOfficerAttachment.mesh.geometry);
+  assert.notEqual(appearance.mesh.material, appearance.capAttachment.mesh.material);
+  assert.equal(appearance.attachment.enabled({ ...soldier, index: 2, avatarAppearance: { blueFieldCap: false } }), true);
+  appearance.restore();
+  assert.equal(helmet.geometry, original);
+});
 
 for (const team of ['friendly', 'enemy']) test(`${team}: native helmet replacement, shared costume resources and all bones survive pose/death/rebinding`, async () => {
   const avatar = team === 'enemy' ? await nativeIja() : await nativeNra();
@@ -167,6 +278,10 @@ test('far shader replaces helmet fragments and colors only officers, preserving 
     assert.match(shader.fragmentShader, /discard/);
     assert.match(shader.fragmentShader, /dot\(diffuseColor\.rgb/, 'source cloth texture variation survives recoloring');
   }
+  const blue = { vertexShader: '#include <common>\n#include <begin_vertex>',
+    fragmentShader: '#include <common>\n#include <color_fragment>' };
+  officerRegionShader(blue, { instanced: true, team: 'friendly', blueFieldCap: true });
+  assert.match(blue.fragmentShader, /if \(vBlueFieldCap < 0\.5\) diffuseColor\.rgb/);
 });
 
 test('field-cap visor is a thin rounded taper with a bowed surface, not a rectangular box', () => {
@@ -272,6 +387,54 @@ test('native grenade/dadao and rifle hand hooks restore after officer switching 
   view.update(rifle, state, { stowed: true, officer: false });
   assert.ok(shaders.every(shader => shader.uniforms.nativeOfficerGloves.value === 0));
   assert.deepEqual(originalMaterial.color, originalColor); assert.equal(sourceFace.material, faceMaterial);
+});
+
+test('real rifle and grenade view paths select and restore blue soldier and officer sleeves', async () => {
+  const source = await nativeNra(), body = source.getObjectByName('衣服');
+  const original = Array.isArray(body.material) ? body.material[0] : body.material;
+  const blueMap = new THREE.Texture(), blueMaterial = original.clone();
+  blueMaterial.map = blueMap;
+  const blueUniformMaterials = new Map([[original, blueMaterial]]);
+  const createHand = (side, weaponRig = false) => createNraGrenadeHand(source, side,
+    { fullArm: true, weaponRig, blueUniformMaterials });
+  const view = createWeaponHands(side => createHand(side, true));
+  const state = createRifleState(), rifle = rifleModel(state);
+  rifle.position.set(.18, -.22, -.14); updateRifleModel(rifle, state);
+  const sleeves = view.root.children.map(hand => hand.getObjectByName('衣服'));
+  const updateRifle = (blueFieldCap, officer = false) => view.update(rifle, state,
+    { officer, appearance: { skin: '#d7b797', key: 'test', blueFieldCap } });
+  updateRifle(true);
+  assert.ok(sleeves.every(sleeve => sleeve.material.map === blueMap));
+  updateRifle(false);
+  assert.ok(sleeves.every(sleeve => sleeve.material.map === original.map));
+  updateRifle(true, true);
+  assert.ok(sleeves.every(sleeve => sleeve.material.map === blueMap));
+  for (const hand of view.root.children) {
+    const glove = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>',
+      fragmentShader: '#include <common>\n#include <color_fragment>' };
+    const sleeve = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>',
+      fragmentShader: '#include <common>\n#include <color_fragment>' };
+    hand.getObjectByName('手部').material.onBeforeCompile(glove);
+    hand.getObjectByName('衣服').material.onBeforeCompile(sleeve);
+    assert.equal(glove.uniforms.nativeOfficerGloves.value, 1);
+    assert.equal(sleeve.uniforms.nativeOfficerSleeves.value, 0);
+  }
+  updateRifle(false, true);
+  assert.ok(sleeves.every(sleeve => sleeve.material.map === original.map));
+
+  const hands = [], camera = new THREE.PerspectiveCamera();
+  const grenades = createGrenadeRenderer(new THREE.Scene(), camera, side => {
+    const hand = createHand(side); hands.push(hand); return hand;
+  });
+  const actor = { team: 'friendly', index: 1, health: 100, formation: { memberCount: 11 },
+    avatarAppearance: { blueFieldCap: true }, grenades: { action: null, ammo: 1, packs: 1 } };
+  grenades.update([], actor, true, true);
+  assert.ok(hands.every(hand => hand.getObjectByName('衣服').material.map === blueMap));
+  grenades.update([], { ...actor, index: 2 }, true, true);
+  assert.ok(hands.every(hand => hand.getObjectByName('衣服').material.map === blueMap));
+  grenades.update([], { ...actor, index: 2, avatarAppearance: { blueFieldCap: false } }, true, true);
+  assert.ok(hands.every(hand => hand.getObjectByName('衣服').material.map === original.map));
+  blueMaterial.dispose(); blueMap.dispose();
 });
 
 test('instanced officer attachment follows every morph bank without extra near slots, survives culling and removal', () => {

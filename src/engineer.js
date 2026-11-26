@@ -166,13 +166,13 @@ export function createEngineerTool(createHand) {
   return root;
 }
 
-export function updateEngineerTool(root, now, building, officer) {
+export function updateEngineerTool(root, now, building, officer, blueFieldCap = false) {
   const { hand, tool } = root.userData.engineerTool;
   const stroke = building ? Math.sin(now * 9) : 0;
   const orientation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.15 + stroke * .15, -.2, -.5));
   hand.poseArm(new THREE.Vector3(.25, -.28, -.38), new THREE.Vector3(.24, -.14 + stroke * .035, -.58),
     orientation.clone().multiply(DADAO_HAND_TO_BLADE), new THREE.Vector3(.8, -.6, .1));
-  hand.poseGrip(1, 0, 'dadao'); hand.setOfficerAppearance?.(officer);
+  hand.poseGrip(1, 0, 'dadao'); hand.setOfficerAppearance?.(officer, blueFieldCap);
   root.updateMatrixWorld(true);
   const relative = root.matrixWorld.clone().invert().multiply(hand.attachmentFrame.matrixWorld);
   relative.decompose(tool.position, tool.quaternion, new THREE.Vector3());

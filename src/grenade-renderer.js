@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GRENADE, grenadePose, throwableProfile } from './grenades.js';
 import { grenadeModel, explosivePackModel, grenadeHand, poseGrenadeHand, grenadeSleeve } from './grenade-model.js';
-import { isNativeOfficer } from './officer-appearance.js';
+import { isNativeOfficer, isBlueUniform } from './officer-appearance.js';
 
 const vector = values => new THREE.Vector3(...values);
 const orientation = values => new THREE.Quaternion().setFromEuler(new THREE.Euler(...values));
@@ -96,7 +96,7 @@ export function createGrenadeRenderer(scene, camera, createHand = grenadeHand) {
       const stock = pack ? actor?.grenades.packs : actor?.grenades.ammo;
       handView.visible = Boolean(playing && actor?.health > 0 && !actor.vehicleId && (pose || selected && stock > 0));
       if (!handView.visible) return;
-      for (const hand of hands) hand.setOfficerAppearance?.(isNativeOfficer(actor));
+      for (const hand of hands) hand.setOfficerAppearance?.(isNativeOfficer(actor), isBlueUniform(actor));
       const drawing = action?.phase === 'drawing', kind = pack ? 'explosive-pack' : 'grenade';
       const motion = throwableViewPose(action, kind);
       held.visible = (pose ? pose.visible : (pack ? actor.grenades.packs : actor.grenades.ammo) > 0);

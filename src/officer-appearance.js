@@ -20,7 +20,16 @@ export function isNativeOfficer(actor) {
     Number.isInteger(actor.index) && actor.index === officerSlot(actor.formation));
 }
 
-const variants = new WeakMap(), regions = new WeakMap(), palettes = new Map(), accessories = new Map();
+export function isBlueUniform(actor) {
+  return Boolean(actor?.team === 'friendly' && actor.avatarAppearance?.blueFieldCap);
+}
+
+export function isBlueFieldCap(actor) {
+  return isBlueUniform(actor) && !isNativeOfficer(actor);
+}
+
+const variants = new WeakMap(), regions = new WeakMap(), palettes = new Map(), accessories = new Map(),
+  fieldCaps = new Map(), blueOfficerAccessories = new Map();
 export const OFFICER_COLORS = Object.freeze({
   friendly: Object.freeze(['#52533d', '#62462f', '#20211e', '#a99565', '#786746', '#e1ded2', '#123d79', '#625e46']),
   enemy: Object.freeze(['#7d6d50', '#493b2b', '#3e3226', '#b8a06a', '#8c2926', '#e1ded2', '#b8a06a', '#948265']),
@@ -80,9 +89,10 @@ export function createOfficerHandAppearance(mesh, { geometryOwned = false } = {}
   };
 }
 
-export function createOfficerSleeveAppearance(mesh) {
+export function createOfficerSleeveAppearance(mesh, blueMaterial = null) {
   if (Array.isArray(mesh.material)) throw new Error('Officer sleeve appearance requires its isolated cloth material');
   const material = mesh.material.clone(), previousCompile = mesh.material.onBeforeCompile, enabled = { value: 0 };
+  const originalMap = material.map;
   material.onBeforeCompile = shader => {
     if (typeof previousCompile === 'function') previousCompile.call(material, shader);
     shader.uniforms.nativeOfficerSleeves = enabled;
@@ -100,6 +110,11 @@ export function createOfficerSleeveAppearance(mesh) {
     setOfficerAppearance(officer) {
       if (typeof officer !== 'boolean') throw new TypeError('Officer sleeve appearance requires a boolean');
       enabled.value = Number(officer);
+    },
+    setBlueAppearance(blue) {
+      if (typeof blue !== 'boolean') throw new TypeError('Blue sleeve appearance requires a boolean');
+      if (blue && !blueMaterial?.map) throw new Error('Blue sleeve material is unavailable');
+      material.map = blue ? blueMaterial.map : originalMap;
     },
   };
 }
@@ -151,10 +166,14 @@ export function createOfficerCapCrown(team = 'friendly') {
   return geometry;
 }
 
-function palette(team) {
-  if (!palettes.has(team)) {
-    const tile = 32, width = colors[team].length * tile, bytes = new Uint8Array(width * tile * 4);
-    const bases = colors[team].map(color => new THREE.Color(color).convertLinearToSRGB().toArray());
+function palette(team, blueFieldCap = false) {
+  const key = blueFieldCap ? `${team}-blue-field-cap` : team;
+  if (!palettes.has(key)) {
+    const paletteColors = blueFieldCap
+      ? colors[team].map((color, index) => index === 0 || index === 7 ? '#303f50' : index === 2 ? '#202d3a' : color)
+      : colors[team];
+    const tile = 32, width = paletteColors.length * tile, bytes = new Uint8Array(width * tile * 4);
+    const bases = paletteColors.map(color => new THREE.Color(color).convertLinearToSRGB().toArray());
     for (let y = 0; y < tile; y++) for (let x = 0; x < width; x++) {
       const slot = Math.floor(x / tile), base = bases[slot];
       const weave = slot === 0 || slot === 7 ? ((x + y) % 3 === 0 ? .95 : 1.025) : 1;
@@ -166,9 +185,9 @@ function palette(team) {
     const texture = new THREE.DataTexture(bytes, width, tile);
     texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true;
     texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true;
-    palettes.set(team, new THREE.MeshStandardMaterial({ map: texture, roughness: .95, side: THREE.DoubleSide }));
+    palettes.set(key, new THREE.MeshStandardMaterial({ map: texture, roughness: .95, side: THREE.DoubleSide }));
   }
-  return palettes.get(team);
+  return palettes.get(key);
 }
 
 export function nativeOfficerRegions(mesh, team) {
@@ -193,29 +212,34 @@ export function nativeOfficerRegions(mesh, team) {
   return attribute;
 }
 
-export function officerRegionShader(shader, { instanced = false, team = 'friendly' } = {}) {
+export function officerRegionShader(shader, { instanced = false, team = 'friendly', blueFieldCap = false, blueUniform = false } = {}) {
   const cloth = new THREE.Color(colors[team][0]), boot = new THREE.Color(colors[team][2]);
+  const recolorCloth = instanced && blueFieldCap ? 'vBlueFieldCap < 0.5' : blueUniform ? 'false' : 'true';
   shader.vertexShader = shader.vertexShader.replace('#include <common>',
-    `#include <common>\nattribute float nativeOfficerRegion;\nvarying float vOfficerRegion;\n${instanced ? 'attribute float nativeOfficer;\nvarying float vOfficer;' : ''}`)
-    .replace('#include <begin_vertex>', `#include <begin_vertex>\nvOfficerRegion = nativeOfficerRegion;${instanced ? '\nvOfficer = nativeOfficer;' : ''}`);
+    `#include <common>\nattribute float nativeOfficerRegion;\nvarying float vOfficerRegion;\n${instanced ? 'attribute float nativeOfficer;\nvarying float vOfficer;' : ''}${blueFieldCap ? '\nattribute float nativeBlueFieldCap;\nvarying float vBlueFieldCap;' : ''}`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>\nvOfficerRegion = nativeOfficerRegion;${instanced ? '\nvOfficer = nativeOfficer;' : ''}${blueFieldCap ? '\nvBlueFieldCap = nativeBlueFieldCap;' : ''}`);
   shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
-    `#include <common>\nvarying float vOfficerRegion;\n${instanced ? 'varying float vOfficer;' : ''}`)
+    `#include <common>\nvarying float vOfficerRegion;\n${instanced ? 'varying float vOfficer;' : ''}${blueFieldCap ? '\nvarying float vBlueFieldCap;' : ''}`)
     .replace('#include <color_fragment>', `#include <color_fragment>
+    ${blueFieldCap ? 'if (vBlueFieldCap > 0.5 && vOfficerRegion > 0.5 && vOfficerRegion < 1.5) discard;' : ''}
     if (${instanced ? 'vOfficer > 0.5 && ' : ''}vOfficerRegion > 0.5) {
       if (vOfficerRegion < 1.5) discard;
       float fabricShade = clamp(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) * 4.0, 0.58, 1.28);
-      diffuseColor.rgb = vOfficerRegion < 2.5 ? vec3(${cloth.toArray().join(',')}) * fabricShade
-        : vOfficerRegion < 3.5 ? vec3(${boot.toArray().join(',')}) * max(0.8, fabricShade)
-        : vec3(${new THREE.Color(colors[team][5]).toArray().join(',')}) * clamp(fabricShade, 0.82, 1.05);
+      if (vOfficerRegion < 2.5) {
+        if (${recolorCloth}) diffuseColor.rgb = vec3(${cloth.toArray().join(',')}) * fabricShade;
+      } else {
+        diffuseColor.rgb = vOfficerRegion < 3.5 ? vec3(${boot.toArray().join(',')}) * max(0.8, fabricShade)
+          : vec3(${new THREE.Color(colors[team][5]).toArray().join(',')}) * clamp(fabricShade, 0.82, 1.05);
+      }
     }`);
 }
 
-function officerVariant(mesh, team) {
+function officerVariant(mesh, team, blueUniform = false) {
   const region = nativeOfficerRegions(mesh, team);
   if (!region.array.some(value => value !== 0)) return { geometry: mesh.geometry, material: mesh.material };
   let entries = variants.get(mesh.geometry);
   if (!entries) { entries = new Map(); variants.set(mesh.geometry, entries); }
-  const key = `${team}:${mesh.material.uuid ?? mesh.material.map(m => m.uuid).join(':')}`;
+  const key = `${team}:${blueUniform}:${mesh.material.uuid ?? mesh.material.map(m => m.uuid).join(':')}`;
   if (!entries.has(key)) {
     const geometry = mesh.geometry.clone();
     geometry.setAttribute('nativeOfficerRegion', region);
@@ -233,8 +257,8 @@ function officerVariant(mesh, team) {
     geometry.setIndex(retained);
     const convert = material => {
       const copy = material.clone();
-      copy.onBeforeCompile = shader => officerRegionShader(shader, { team });
-      copy.customProgramCacheKey = () => `native-officer-${team}`;
+      copy.onBeforeCompile = shader => officerRegionShader(shader, { team, blueUniform });
+      copy.customProgramCacheKey = () => `native-officer-${team}-${blueUniform}`;
       return copy;
     };
     entries.set(key, { geometry, material: Array.isArray(mesh.material) ? mesh.material.map(convert) : convert(mesh.material) });
@@ -242,7 +266,7 @@ function officerVariant(mesh, team) {
   return entries.get(key);
 }
 
-export function createOfficerAppearance(root, bones, meshes, team) {
+export function createOfficerAppearance(root, bones, meshes, team, { blueFieldCap = false } = {}) {
   for (const part of meshes) part.userData.officerTeam = team;
   root.updateMatrixWorld(true);
   const boneList = [...bones.values()], joints = name => boneList.indexOf(bones.get(name));
@@ -354,21 +378,89 @@ export function createOfficerAppearance(root, bones, meshes, team) {
   mesh.name = `native-${team}-officer-insignia`; mesh.frustumCulled = false;
   mesh.castShadow = mesh.receiveShadow = true; mesh.bind(skeleton, new THREE.Matrix4());
   root.add(mesh); mesh.visible = false;
-  const originals = new Map();
+  let cap = null, blueOfficer = null;
+  if (blueFieldCap) {
+    if (team !== 'friendly') throw new Error('Blue field cap is only available to friendly soldiers');
+    const source = accessories.get(key), badge = source.userData.officerParts.find(part => part.name === 'faction-badge');
+    if (!badge) throw new Error('Officer cap badge geometry is missing');
+    const count = badge.start + badge.count;
+    if (!fieldCaps.has(key)) {
+      const capGeometry = new THREE.BufferGeometry();
+      for (const [name, attribute] of Object.entries(source.attributes))
+        capGeometry.setAttribute(name, new THREE.BufferAttribute(attribute.array.slice(0, count * attribute.itemSize), attribute.itemSize, attribute.normalized));
+      const buttons = [];
+      const fit = OFFICER_CAP_FIT.friendly, capY = crown.y + fit.crownOffset, front = crown.z + .03 - .074 * fit.radialScale;
+      for (const offset of [-.018, -.028]) {
+        const button = new THREE.CircleGeometry(.0025, 10);
+        button.translate(head.x, capY + offset, front - .025);
+        const vertices = button.attributes.position.count, indices = new Uint16Array(vertices * 4), weights = new Float32Array(vertices * 4);
+        for (let i = 0; i < vertices; i++) { indices[i * 4] = joints('Head'); weights[i * 4] = 1; }
+        button.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
+        button.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+        const uv = button.attributes.uv;
+        for (let i = 0; i < vertices; i++) uv.setXY(i, (5.5) / colors.friendly.length, .5);
+        buttons.push(button.toNonIndexed()); button.dispose();
+      }
+      const geometry = mergeGeometries([capGeometry, ...buttons]);
+      capGeometry.dispose(); buttons.forEach(button => button.dispose());
+      const capCenterZ = crown.z + .03;
+      geometry.translate(-head.x, 0, -capCenterZ);
+      geometry.scale(.84, 1, 1.04);
+      geometry.translate(head.x, 0, capCenterZ + .026);
+      geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+      fieldCaps.set(key, geometry);
+    }
+    if (!blueOfficerAccessories.has(key)) {
+      const geometry = source.clone(), fitted = fieldCaps.get(key);
+      for (const name of ['position', 'normal']) {
+        const target = geometry.getAttribute(name), adjusted = fitted.getAttribute(name);
+        target.array.set(adjusted.array.subarray(0, count * target.itemSize));
+        target.needsUpdate = true;
+      }
+      geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+      blueOfficerAccessories.set(key, geometry);
+    }
+    blueOfficer = new THREE.SkinnedMesh(blueOfficerAccessories.get(key), palette(team, true));
+    blueOfficer.name = 'native-friendly-blue-officer-insignia'; blueOfficer.frustumCulled = false;
+    blueOfficer.castShadow = blueOfficer.receiveShadow = true; blueOfficer.bind(skeleton, new THREE.Matrix4());
+    root.add(blueOfficer); blueOfficer.visible = false;
+    cap = new THREE.SkinnedMesh(fieldCaps.get(key), palette(team, true));
+    cap.name = 'native-friendly-blue-field-cap'; cap.frustumCulled = false;
+    cap.castShadow = cap.receiveShadow = true; cap.bind(skeleton, new THREE.Matrix4());
+    root.add(cap); cap.visible = false;
+  }
+  const originals = new Map(), hiddenParts = new Map();
   let enabled = false;
   return {
     mesh,
-    attachment: { mesh, enabled: isNativeOfficer, poseFollowing: true },
+    attachment: { mesh, enabled: actor => isNativeOfficer(actor) && (!blueOfficer || !isBlueUniform(actor)), poseFollowing: true },
+    blueOfficerAttachment: blueOfficer ? {
+      mesh: blueOfficer, enabled: actor => isNativeOfficer(actor) && isBlueUniform(actor), poseFollowing: true,
+    } : null,
+    capAttachment: cap ? { mesh: cap, enabled: isBlueFieldCap, poseFollowing: true } : null,
     restore() {
       for (const [part, original] of originals) { part.geometry = original.geometry; part.material = original.material; }
-      originals.clear(); mesh.visible = false; enabled = false;
+      for (const [part, visible] of hiddenParts) part.visible = visible;
+      hiddenParts.clear();
+      originals.clear(); mesh.visible = false; mesh.material = palette(team); mesh.geometry = accessories.get(key);
+      if (cap) cap.visible = false;
+      if (blueOfficer) blueOfficer.visible = false;
+      enabled = false;
     },
     apply(actor) {
+      if (cap && isBlueFieldCap(actor)) {
+        cap.visible = true;
+        for (const part of meshes) if (/鋼盔|helmet/i.test(part.name)) {
+          hiddenParts.set(part, part.visible); part.visible = false;
+        }
+      }
       enabled = isNativeOfficer(actor); mesh.visible = enabled;
       if (!enabled) return;
+      const blueUniform = Boolean(blueOfficer && isBlueUniform(actor));
+      mesh.material = palette(team, blueUniform); mesh.geometry = blueUniform ? blueOfficer.geometry : accessories.get(key);
       for (const part of meshes) {
         originals.set(part, { geometry: part.geometry, material: part.material });
-        const variant = officerVariant(part, team);
+        const variant = officerVariant(part, team, blueUniform);
         part.geometry = variant.geometry; part.material = variant.material;
       }
     },

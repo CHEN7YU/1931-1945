@@ -15,7 +15,7 @@ import { dadaoModel } from './dadao-model.js';
 import { RIFLE_HAND_SAMPLES, rifleHandAction, rifleHandWeights } from './rifle-hand-action.js';
 import { finishStartupWork, runStartupWork, yieldStartupTask } from './startup-work.js';
 import { SIHANG_SHIELD_BANKS, sihangShieldPoseIndex, sihangShieldInstalling, sihangShieldWalkWeights } from './sihang-shield-pose.js';
-import { isNativeOfficer, nativeOfficerRegions } from './officer-appearance.js';
+import { isNativeOfficer, isBlueFieldCap, isBlueUniform, nativeOfficerRegions } from './officer-appearance.js';
 import { nativeSupportWeaponPresentation, nativeEngineerPresentation } from './native-weapon-presentation.js';
 import { engineerAssemblyTools } from './engineer.js';
 import { SUPPORT_WEAPON_BANKS, supportWeaponPoseIndex, supportWeaponTargets } from './support-weapon-pose.js';
@@ -241,7 +241,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
   const optionalAttachments = bankTemplate.optionalAttachments ?? [];
   for (const attachment of optionalAttachments) attachment.mesh.visible = false;
   const atlas = createNraAtlas(bankTemplate.root, bankTemplate.uniformMaterials, template.officerAppearance ? team : null,
-    { tile: lowMemory ? 256 : 512 });
+    { tile: lowMemory ? 256 : 512, blueFieldCap: Boolean(template.blueFieldCap) });
   const phases = lowMemory ? 3 : 6;
   const travelPhases = lowMemory ? 4 : 6;
   const movingModes = profile.footCycleGait ? ['walk', 'short', 'charge', 'aim'] : profile.walk ? ['walk', 'run'] : ['run'];
@@ -522,6 +522,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage));
     if (template.officerAppearance) instance.geometry.setAttribute('nativeOfficer',
       new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage));
+    if (template.blueFieldCap) instance.geometry.setAttribute('nativeBlueFieldCap',
+      new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage));
     instance.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instance.count = 0;
     instance.frustumCulled = false; instance.castShadow = false; instance.receiveShadow = true;
     root.add(instance);
@@ -762,6 +764,8 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             if (uniform) { uniform.setX(index, Number(actor.avatarAppearance?.uniform === 'B')); uniform.needsUpdate = true; }
             const officer = mesh.geometry.attributes.nativeOfficer;
             if (officer) { officer.setX(index, Number(isNativeOfficer(actor))); officer.needsUpdate = true; }
+            const cap = mesh.geometry.attributes.nativeBlueFieldCap;
+            if (cap) { cap.setX(index, Number(isBlueUniform(actor))); cap.needsUpdate = true; }
             mesh.computeBoundingSphere();
           }
           total++;
@@ -987,6 +991,10 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
                 const flags = new Float32Array(bank.capacity); flags.set(mesh.geometry.attributes.nativeOfficer.array);
                 mesh.geometry.setAttribute('nativeOfficer', new THREE.InstancedBufferAttribute(flags, 1).setUsage(THREE.DynamicDrawUsage));
               }
+              if (mesh.geometry.attributes.nativeBlueFieldCap) {
+                const flags = new Float32Array(bank.capacity); flags.set(mesh.geometry.attributes.nativeBlueFieldCap.array);
+                mesh.geometry.setAttribute('nativeBlueFieldCap', new THREE.InstancedBufferAttribute(flags, 1).setUsage(THREE.DynamicDrawUsage));
+              }
             }
             for (const attachment of bank.attachments) {
               const matrices = new Float32Array(bank.capacity * 16); matrices.set(attachment.mesh.instanceMatrix.array);
@@ -1110,6 +1118,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
             mesh.geometry.attributes.nraSkinTint.setXYZ(bodyIndex, tint.r, tint.g, tint.b);
             mesh.geometry.attributes.nraUniformVariant?.setX(bodyIndex, actor.avatarAppearance?.uniform === 'B' ? 1 : 0);
             mesh.geometry.attributes.nativeOfficer?.setX(bodyIndex, Number(isNativeOfficer(actor)));
+            mesh.geometry.attributes.nativeBlueFieldCap?.setX(bodyIndex, Number(isBlueUniform(actor)));
           }
           if (coarse) { bank.coarseCount++; summary.coarse++; nextCoarseIds.add(actor.id); }
           for (const attachment of bank.attachments) if (attachment.enabled(actor)) {
@@ -1133,6 +1142,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
           if (mesh.morphTexture) mesh.morphTexture.needsUpdate = true;
           if (mesh.geometry.attributes.nraUniformVariant) mesh.geometry.attributes.nraUniformVariant.needsUpdate = true;
           if (mesh.geometry.attributes.nativeOfficer) mesh.geometry.attributes.nativeOfficer.needsUpdate = true;
+          if (mesh.geometry.attributes.nativeBlueFieldCap) mesh.geometry.attributes.nativeBlueFieldCap.needsUpdate = true;
           summary.batches += Array.isArray(mesh.material) ? mesh.geometry.groups.length : 1;
         }
       }
@@ -1159,7 +1169,7 @@ function* createNraForceRendererWork(scene, camera, template, capacity, { team, 
       coarseIds = nextCoarseIds;
       members = actors.filter(actor => actor.nativeMotion).map(actor => ({ id: actor.id, unitId: actor.unitId,
         health: actor.health, weaponModel: actor.rifle.model ?? 'rifle', stance: actor.stance ?? 'standing', firingPose: ownedFiringPose(actor), uniform,
-        uniformVariant: actor.avatarAppearance?.uniform ?? null, helmet: !isNativeOfficer(actor),
+        uniformVariant: actor.avatarAppearance?.uniform ?? null, helmet: !isNativeOfficer(actor) && !isBlueFieldCap(actor),
         officer: isNativeOfficer(actor), tier: tiers.get(actor.id),
         geometryLod: coarseIds.has(actor.id) ? 'coarse' : 'original',
         motionSpeed: actor.nativeMotion.speed, motionWeight: actor.nativeMotion.weight,

@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { finishStartupWork } from './startup-work.js';
 import { officerRegionShader } from './officer-appearance.js';
 
-export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam = null, { tile = 512 } = {}) {
+export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam = null, { tile = 512, blueFieldCap = false } = {}) {
   if (![256, 512].includes(tile)) throw new RangeError('Invalid native atlas tile budget');
   const materials = new Map(), keys = new Map();
   const uniformKeys = new Map();
@@ -62,11 +62,11 @@ export function createNraAtlas(root, uniformMaterials = new Map(), officerTeam =
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
       '#include <common>\nvarying vec3 vNraSkinTint;')
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vNraSkinTint;');
-    if (officerTeam) officerRegionShader(shader, { instanced: true, team: officerTeam });
+    if (officerTeam) officerRegionShader(shader, { instanced: true, team: officerTeam, blueFieldCap });
   };
   material.customProgramCacheKey = () => {
     const key = hasUniformVariants ? 'nra-atlas-squad-uniform-v2' : 'nra-atlas-skin-v1';
-    return officerTeam ? `${key}:${officerTeam}` : key;
+    return officerTeam ? `${key}:${officerTeam}${blueFieldCap ? ':blue-field-cap' : ''}` : key;
   };
   const point = new THREE.Vector2();
   return {

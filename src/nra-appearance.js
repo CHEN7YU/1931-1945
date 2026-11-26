@@ -20,13 +20,18 @@ export function nraUniformForSquad(index, campaign) {
   return index < 5 ? 'A' : 'B';
 }
 
-export function createNraAppearance(actor) {
+export function createNraAppearance(actor, { blueFieldCap = false, campaignId = null } = {}) {
   if (!actor?.id || !actor.unitId) throw new Error('Soldier appearance requires an owned identity');
-  const uniform = actor.formation ? nraUniformForSquad(actor.formation.index, actor.formation.campaign) : 'A';
+  const blueSquads = campaignId === 'nanjing' ? [1, 4]
+    : ['taierzhuang-fort', 'taierzhuang-streets'].includes(campaignId) ? [1, 3, 6, 8, 9] : null;
+  const uniform = blueFieldCap && blueSquads && actor.team === 'friendly' && actor.formation
+    ? !actor.formation.player && blueSquads.includes(actor.formation.index) ? 'B' : 'A'
+    : actor.formation ? nraUniformForSquad(actor.formation.index, actor.formation.campaign) : 'A';
   let seed = 2166136261;
   for (const letter of `${actor.unitId}:${actor.id}`) seed = Math.imul(seed ^ letter.charCodeAt(0), 16777619) >>> 0;
   const face = (seed >>> 8) % faces.length, complexion = seed % complexions.length, build = (seed >>> 16) % 3 - 1;
-  return Object.freeze({ key: `${uniform}-${face}-${complexion}-${build}`, uniform, face, complexion, skin: complexions[complexion], build });
+  return Object.freeze({ key: `${uniform}-${face}-${complexion}-${build}`, uniform, face, complexion, skin: complexions[complexion], build,
+    blueFieldCap: blueFieldCap && actor.team === 'friendly' && uniform === 'B' });
 }
 
 export function isNraSkin(name) { return name === NRA_FACE_NAME || name === NRA_HAND_NAME; }

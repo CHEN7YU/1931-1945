@@ -45,7 +45,7 @@ import { updateRifleModel, updateRifleArms, rifleTextureSnapshot } from './rifle
 import { RIFLE_IRON_AIM } from './rifle-contacts.js';
 import { createRifleRecoil } from './rifle-recoil.js';
 import { createWeaponHands } from './weapon-hands.js';
-import { isNativeOfficer } from './officer-appearance.js';
+import { isNativeOfficer, isBlueUniform } from './officer-appearance.js';
 import { supportWeaponTargets } from './support-weapon-pose.js';
 import { createSupportViewHands } from './support-view-hands.js';
 import { createOcclusionQuery, createClosestHitQuery } from './occlusion-query.js';
@@ -440,6 +440,7 @@ try {
 }
 const campaign = campaignById(new URLSearchParams(location.search).get('campaign') ?? 'taierzhuang-streets');
 if (campaign.locked) throw new RangeError('该战场等待设计图，当前不可进入');
+const blueFieldCaps = !benchmark && ['taierzhuang-fort', 'taierzhuang-streets', 'nanjing'].includes(campaign.id);
 const encirclementMode = !benchmark && campaign.id === 'taierzhuang-fort';
 const battleLayout = nanjingCampaignMode ? { campaign: 'nanjing' } : benchmark ? {} : campaignLayout(campaign.id);
 const world = makeWorld(scene, surface, battleLayout);
@@ -479,7 +480,8 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     reportLoading('friendly-model');
     const { loadNraCharacter } = await import('./nra-character.js');
     const { createNraForceRendererAsync } = await import('./nra-force-renderer.js');
-    const nraTemplate = await loadNraCharacter(world.walkHeight, { textureBudget, onPoseRecovery: recordRecoveredFailure });
+    const nraTemplate = await loadNraCharacter(world.walkHeight, { textureBudget, onPoseRecovery: recordRecoveredFailure,
+      blueFieldCap: blueFieldCaps });
     reportLoading('friendly-poses');
     nraCharacter = await createNraForceRendererAsync(scene, camera, nraTemplate, 330, {
       lowMemory: startupResources.lowMemory,
@@ -791,7 +793,7 @@ const weaponHands = nraCharacter ? createWeaponHands(nraCharacter.createWeaponHa
 const supportViewHands = nraCharacter ? createSupportViewHands(nraCharacter.createWeaponHand, {
   applyAppearance(root, actor) {
     const officer = isNativeOfficer(actor);
-    root.traverse(node => node.setOfficerAppearance?.(officer));
+    root.traverse(node => node.setOfficerAppearance?.(officer, isBlueUniform(actor)));
   },
 }) : null;
 if (supportViewHands) scene.add(supportViewHands.root);
@@ -1323,7 +1325,8 @@ function actorAt(friendly, x, z, index, spawn, formation) {
     groundType: formation.type === 'mortar' ? 'mortar' : 'infantry' });
   if (friendly && nraCharacter) {
     actor.nativeMotion = createNraMotion(nraCharacter.motionProfile, actor);
-    actor.avatarAppearance = createNraAppearance(actor);
+    actor.avatarAppearance = createNraAppearance(actor, { blueFieldCap: blueFieldCaps,
+      campaignId: campaign.id });
   } else if (!friendly && ijaCharacter) {
     actor.nativeMotion = createNraMotion(ijaCharacter.motionProfile, actor);
   }
@@ -4711,8 +4714,8 @@ function updateCamera(dt) {
       weaponObstruction = obstructionBlend = 0;
       dadaoViewRecovery.run(weapon, () => {
         updateDadaoView(weapon, dadaoPhase(allies[current].dadao, time), motion, camera);
-        weapon.userData.dadaoArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
-        weapon.userData.dadaoLeftArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]));
+        weapon.userData.dadaoArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]), isBlueUniform(allies[current]));
+        weapon.userData.dadaoLeftArm?.setOfficerAppearance?.(isNativeOfficer(allies[current]), isBlueUniform(allies[current]));
       }, { team: allies[current].team, position: allies[current].position.toArray() });
     } else if (unit.type === 'infantry' && !toolEquipped) {
       if (!weapon.userData.rifle?.bolt || !weapon.userData.rifle.clip || !weapon.userData.rifle.muzzle) {
@@ -4767,7 +4770,7 @@ function updateCamera(dt) {
     } else if (toolEquipped && weapon.userData.engineerTool) {
       weaponObstruction = obstructionBlend = 0;
       weapon.position.set(0, 0, 0); weapon.rotation.set(0, 0, 0);
-      updateEngineerTool(weapon, time, held.primary, isNativeOfficer(allies[current]));
+      updateEngineerTool(weapon, time, held.primary, isNativeOfficer(allies[current]), isBlueUniform(allies[current]));
     } else if (toolEquipped && weapon.userData.mortar) {
       weaponObstruction = obstructionBlend = 0;
       updateMortarModel(weapon, allies[current].mortar.distance);

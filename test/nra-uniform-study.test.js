@@ -6,7 +6,31 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { prepareNraRig } from '../src/nra-rig.js';
 import { bakeMesh, createStudyPose } from '../uniform-study/skin.js';
 import { fitUniformAttachment, refineUniformGeometry, sculptUniformPoint } from '../nra-study/model.js';
-import { createRemadeUniformGeometry, fitUniformAttachmentPoint } from '../src/nra-uniform.js';
+import { createRemadeUniformGeometry, createRemadeUniformMaps, fitUniformAttachmentPoint } from '../src/nra-uniform.js';
+
+test('blue field uniform recolors cloth while preserving other texture details and the default palette', () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => {
+    let pixels;
+    return { width: 0, height: 0, getContext: () => ({
+      drawImage: image => { pixels = new Uint8ClampedArray(image.pixels); },
+      getImageData: () => ({ data: pixels }), putImageData: image => { pixels = image.data; },
+    }), get pixels() { return pixels; } };
+  } };
+  try {
+    const image = { width: 2, height: 1, pixels: [80, 110, 75, 255, 120, 80, 60, 255] };
+    const textures = new Map(['body', 'pants', 'puttee', 'pouch'].map(id => [id, { image }]));
+    const normal = createRemadeUniformMaps(textures), blue = createRemadeUniformMaps(textures, { blueFieldCap: true });
+    for (const id of ['body', 'pants', 'puttee']) {
+      const pixels = blue.get(id).image.pixels;
+      assert.ok(pixels[2] > pixels[1] && pixels[1] > pixels[0], id);
+      assert.notDeepEqual([...pixels.slice(0, 3)], [...normal.get(id).image.pixels.slice(0, 3)]);
+    }
+    assert.deepEqual([...blue.get('body').image.pixels.slice(4, 8)], [120, 80, 60, 255]);
+    assert.deepEqual([...blue.get('pouch').image.pixels], [...normal.get('pouch').image.pixels]);
+    for (const map of [...normal.values(), ...blue.values()]) map.dispose();
+  } finally { globalThis.document = previous; }
+});
 
 test('uniform sculpture is local, bounded and leaves skin/helmet construction outside its API', () => {
   for (const part of ['tunic', 'trousers']) {

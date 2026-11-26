@@ -48,7 +48,7 @@ function trimSleeveAtShoulder(mesh, upper, lower) {
   mesh.geometry = trimmed; geometry.dispose();
 }
 
-export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig = false } = {}) {
+export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig = false, blueUniformMaterials = null } = {}) {
   if (!['left', 'right'].includes(side)) throw new Error('Inspected hand requires its side');
   const prefix = side === 'right' ? 'Right' : 'Left', root = new THREE.Group(), alignment = new THREE.Group(), avatar = clone(source);
   root.name = `${side}-grenade-hand`; root.add(alignment); alignment.add(avatar); root.updateMatrixWorld(true);
@@ -73,9 +73,12 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   const officerAppearance = createOfficerHandAppearance(handMesh, { geometryOwned: true });
   const officerSleeves = [];
   root.userData.officerGloves = false;
-  root.setOfficerAppearance = officer => {
+  root.setOfficerAppearance = (officer, blue = false) => {
     officerAppearance.setOfficerAppearance(officer);
-    for (const sleeve of officerSleeves) sleeve.setOfficerAppearance(officer);
+    for (const sleeve of officerSleeves) {
+      sleeve.setOfficerAppearance(officer && !blue);
+      sleeve.setBlueAppearance(blue);
+    }
     root.userData.officerGloves = officer;
   };
   Object.defineProperty(root, 'officerAppearanceSnapshot', {
@@ -116,7 +119,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
         trimSleeveAtShoulder(mesh, bones.get(prefix + 'Arm'), bones.get(prefix + 'ForeArm'));
       }
       if (Array.isArray(mesh.material)) mesh.material = mesh.material[0];
-      if (mesh.name === '衣服') officerSleeves.push(createOfficerSleeveAppearance(mesh));
+      if (mesh.name === '衣服') officerSleeves.push(createOfficerSleeveAppearance(mesh, blueUniformMaterials?.get(mesh.material)));
       sleeves.push(mesh);
     }
     if (!sleeves.length) throw new Error('Native throwable arm is missing its authorized sleeve');

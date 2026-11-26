@@ -3,6 +3,56 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createNraAppearance, nraUniformForSquad, sculptNraPoint, createNraAppearanceApplicator, NRA_FACE_NAME } from '../src/nra-appearance.js';
 import { sihangRetreatFormation } from '../src/sihang-roster.js';
+import { isBlueFieldCap } from '../src/officer-appearance.js';
+import { battleRoster, nanjingBattleRoster } from '../src/battle-roster.js';
+import { encirclementRoster } from '../src/encirclement.js';
+
+test('ordinary blue soldiers use field caps and officers retain their rank appearance', () => {
+  const person = (index, member = 1, team = 'friendly') => ({
+    id: `${team}-${index}-${member}`, unitId: `${team}-${index}`, team, index: member,
+    formation: { index, memberCount: 11 },
+  });
+  const blue = person(5), yellow = person(0), officer = person(5, 2), enemy = person(5, 1, 'enemy');
+  for (const actor of [blue, yellow, officer, enemy])
+    actor.avatarAppearance = createNraAppearance(actor, { blueFieldCap: true });
+  assert.equal(isBlueFieldCap(blue), true);
+  assert.equal(isBlueFieldCap(yellow), false);
+  assert.equal(isBlueFieldCap(officer), false);
+  assert.equal(isBlueFieldCap(enemy), false);
+  assert.equal(isBlueFieldCap({ ...blue, avatarAppearance: createNraAppearance(blue) }), false);
+  const replacement = { ...person(5), id: 'replacement', avatarAppearance: null };
+  replacement.avatarAppearance = createNraAppearance(replacement, { blueFieldCap: true });
+  assert.equal(isBlueFieldCap(replacement), true);
+});
+
+test('Nanjing and Taierzhuang distribute blue uniforms across AI squads and retain them on replacement', () => {
+  const maps = [
+    { campaignId: 'nanjing', roster: nanjingBattleRoster(), blue: [1, 4], initialBlue: 1, initialAI: 2 },
+    { campaignId: 'taierzhuang-streets', roster: battleRoster(), blue: [1, 3, 6, 8, 9], initialBlue: 5, initialAI: 9 },
+    { campaignId: 'taierzhuang-fort', roster: encirclementRoster('infantry'), blue: [1, 3, 6, 8, 9], initialBlue: 2, initialAI: 5 },
+  ];
+  for (const { campaignId, roster, blue, initialBlue, initialAI } of maps) {
+    const squads = roster.filter(formation => formation.team === 'friendly');
+    const ai = squads.filter(formation => !formation.player);
+    const opening = ai.filter(formation => formation.active !== false && !formation.reserve);
+    assert.equal(opening.length, initialAI);
+    assert.equal(opening.filter(formation => blue.includes(formation.index)).length, initialBlue);
+    assert.equal(ai.filter(formation => blue.includes(formation.index)).length, blue.length);
+    assert.ok(Math.abs(blue.length * 2 - ai.length) <= 1);
+    for (const formation of squads) for (let generation = 0; generation < 2; generation++) {
+      const index = formation.index;
+      const actor = { id: `soldier-${index}-${generation}`, unitId: formation.id, team: 'friendly', index: 1, formation };
+      const options = { blueFieldCap: true, campaignId };
+      const appearance = createNraAppearance(actor, options);
+      assert.equal(appearance.uniform, blue.includes(index) ? 'B' : 'A');
+      assert.equal(isBlueFieldCap({ ...actor, avatarAppearance: appearance }), blue.includes(index));
+      assert.equal(createNraAppearance({ ...actor, team: 'enemy' }, options).blueFieldCap, false);
+      assert.equal(createNraAppearance({ ...actor, formation: { ...formation, player: true } }, options).uniform, 'A');
+      assert.equal(createNraAppearance(actor, { ...options, blueFieldCap: false }).uniform,
+        nraUniformForSquad(index, formation.campaign));
+    }
+  }
+});
 
 test('five whole squad slots use each uniform and replacement generations retain their squad style', () => {
   const squads = Array.from({ length: 10 }, (_, index) => ({ index, id: `friendly-${index}` }));
