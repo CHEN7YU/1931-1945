@@ -144,6 +144,7 @@ import { advanceChiHaMachineGuns } from './chi-ha-machine-guns.js';
 import { createTankNavigation } from './tank-navigation.js';
 import { chooseTankCover } from './armor-cooperation.js';
 import { TRAVERSAL, findVault, findSillClimb, beginTraversal, advanceTraversal, moveAirborne, moveSupported, landingHeight, landingDamage, reservationMovementBlockers } from './infantry-traversal.js';
+import { beginFallbackVault, resolvePlayerInteractionFallback } from './player-vault-interaction.js';
 import { beginFatalFall, fatalFallExpired, fatalFallActionAllowed } from './fatal-fall.js';
 import { beginDying, dyingExpired, dyingActionAllowed, dyingMask, lastStandThrowable } from './dying.js';
 import { meleeEngagementRange, emptyMagazineMeleeCandidate } from './bayonet.js';
@@ -182,13 +183,13 @@ import { loadMortarLaunch, playMortarLaunch } from './mortar-audio.js';
 import { createAircraftFall, advanceAircraftFall, expiredAircraftWrecks } from './aircraft-wreck.js';
 import { updateMortarModel } from './mortar-model.js';
 import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from './player-aircraft.js';
-import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOCK, NANJING_DOCK_SHIFT, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
+import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOCK, NANJING_DOCK_SHIFT, NANJING_MAP_BOUNDS, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
   nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation,
   NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
   nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady,
-  recordNanjingCivilianCityEntry } from './nanjing-campaign.js';
+  recordNanjingCivilianCityEntry, nanjingWithdrawalExitReached } from './nanjing-campaign.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint, nanjingCoreGuard } from './nanjing-defense.js';
 import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjingDockYardContains, nanjingDockPathClear,
   nanjingDockOutsideGoal, nanjingDockAssaultGoal, nanjingDockPostOutsideBuildings, assignNanjingDockDefense,
@@ -849,12 +850,7 @@ const battleEnding = createBattleEnding({
       const h = document.createElement('h3'), p = document.createElement('p');
       h.textContent = heading; p.textContent = text; page.append(h, p);
     }
-    const sources = document.createElement('p'); sources.className = 'battle-ending-sources';
-    for (const [label, url] of history.sources) {
-      const link = document.createElement('a'); link.textContent = label; link.href = url;
-      link.target = '_blank'; link.rel = 'noopener noreferrer'; sources.append(link);
-    }
-    page.append(sources); page.hidden = false;
+    page.hidden = false;
     page.style.fontSize = '';
     const height = page.scrollHeight, available = innerHeight - 85;
     if (height > available)
@@ -2832,7 +2828,7 @@ function updateConstruction(dt, fireRequested = held.primary) {
   if (time < mortar.nextShot) { toast('正在装填迫击炮'); return; }
   if (shells.length >= PROJECTILE_LIMIT) { toast('在飞炮弹已达上限，请等待'); return; }
   const target = calculateMortarTarget(actor.position, controlPose.yaw, mortar.distance, world.groundHeight);
-  if (Math.abs(target.x) > 105 || Math.abs(target.z) > 105) { toast('弹着点位于地图外，请调整方向或射程'); return; }
+  if (target.x < (nanjingCampaignMode ? NANJING_MAP_BOUNDS.minX + 3 : -105) || target.x > 105 || Math.abs(target.z) > 105) { toast('弹着点位于地图外，请调整方向或射程'); return; }
   syncMortarDisplay();
   const start = emplacedMortar.userData.mortar.muzzle.getWorldPosition(new THREE.Vector3());
   const source = captureAttackSource(entities, actor, mortar);
@@ -3966,7 +3962,7 @@ function getMortarTarget() {
     mortarTarget.normalize().multiplyScalar(85).add(camera.position);
     mortarTarget.y = .1;
   }
-  mortarTarget.x = THREE.MathUtils.clamp(mortarTarget.x, -105, 105);
+  mortarTarget.x = THREE.MathUtils.clamp(mortarTarget.x, nanjingCampaignMode ? NANJING_MAP_BOUNDS.minX + 3 : -105, 105);
   mortarTarget.z = THREE.MathUtils.clamp(mortarTarget.z, -105, 105);
   mortarTarget.y = world.groundHeight(mortarTarget.x, mortarTarget.z) + .15;
   return mortarTarget;
@@ -7661,7 +7657,7 @@ function updateNanjingMission(dt) {
         }
       }
     } else if (stage === 'dock-defense') {
-      toast('抵达上新河渡口！守住阵地，掩护百姓登船。', 6);
+      toast('第二阶段开始！前往上新河渡口，掩护百姓登船。', 6);
       assaultAssignmentAt = 0;
       let reserveIndex = 0;
       for (const formation of formations.filter(item => item.team === 'friendly' && !item.player)) {
@@ -7722,9 +7718,8 @@ function updateNanjingMission(dt) {
   }
 
   if (nanjingCampaign.stage === 'withdrawal') {
-    const position = allies[current]?.position;
-    const dock = objectives.find(point => point.id === 'dock');
-    if (position && dock && Math.hypot(position.x - dock.x, position.z - dock.z) <= dock.radius) {
+    const player = allies[current];
+    if (player?.health > 0 && nanjingWithdrawalExitReached(player.position)) {
       activateNanjingDock(nanjingCampaign);
     }
   }
@@ -8835,7 +8830,7 @@ function updateHUD() {
     document.querySelector('.capture-track').hidden = false;
     const stageNames = {
       'gate-defense': ['第一阶段 · 中华门防守', '守住第二道门内西侧阵地 · 坚守3分钟'],
-      withdrawal: ['撤退阶段 · 前往西北上新河渡口', '先向北穿过城内街区，再向西抵达渡口 · 抵达后开始第二阶段'],
+      withdrawal: ['撤退阶段 · 前往西北上新河渡口', '穿过水西门或附近破口后开始第二阶段 · 继续前往渡口'],
       'dock-defense': ['第二阶段 · 上新河渡口', '掩护百姓登船 · 坚守3分钟'],
       'withdrawal-to-boats': ['撤退阶段 · 登船撤离', '掩护友军登船，随后撤离南京'],
     };
@@ -9574,9 +9569,24 @@ function performControlCommand(command) {
     else if (toolEquipped) toast('先按1收起工具，再按F操作房门');
     else {
       const door = world.doorSystem.focus(camera);
-      if (door) world.doorSystem.interact(door, allies[current].position);
-      else if (atNanjingDock && nanjingCampaign.stage !== 'withdrawal-to-boats') toast('船只仍在接运百姓，等待撤退命令。');
-      else if (!interactVehicle()) toast('靠近房门或原车，并看向交互目标再按 F');
+      const result = resolvePlayerInteractionFallback({
+        door,
+        interactDoor: focused => world.doorSystem.interact(focused, allies[current].position),
+        dockMessage: atNanjingDock && nanjingCampaign.stage !== 'withdrawal-to-boats',
+        showDockMessage: () => toast('船只仍在接运百姓，等待撤退命令。'),
+        interactVehicle,
+        tryVault: () => beginFallbackVault(actor, {
+          yaw: controlPose.yaw, obstacles: deploymentObstacles(), heightAt: world.walkHeight,
+          allowed: foot && controlPose.stance === 'standing' && !hasFerrySupport(actor),
+          onStart: () => {
+            stopLocomotion(actor.locomotion); playerInput.clearFire();
+            held.primary = held.aiming = held.secondary = false;
+            jumpVelocity = actor.traversal.velocity;
+          },
+        }),
+      });
+      if (result === 'stamina') toast('体力不足，暂时无法跳跃或翻越');
+      else if (result === 'unavailable') toast('靠近房门或原车，并看向交互目标再按 F');
     }
   } else if (action === 'reload') {
     if (toolEquipped && actor.engineer) {

@@ -1,7 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceCapture, makeObjectives, CAPTURE_SECONDS, DOMINATION_SECONDS, createConquest, advanceConquest, circleBlocked, segmentClear, moveGround, createNavigator, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
+import { advanceCapture, makeObjectives, CAPTURE_SECONDS, DOMINATION_SECONDS, createConquest, advanceConquest, circleBlocked, segmentClear, moveGround, createNavigator, setMapBounds, blastDamage, nextAlive, canDeploySquad, shotState, TYPES } from '../src/core.js';
 import { INFANTRY_WEAPONS } from '../src/rifle-action.js';
+
+test('asymmetric map bounds support collision and detours in the expanded west without changing default maps', () => {
+  const obstacles = [{ minX: -122, maxX: -121, minZ: -2, maxZ: 2 }];
+  assert.equal(circleBlocked(-125, 0, .4, obstacles), true);
+  try {
+    setMapBounds({ minX: -140, maxX: 108, minZ: -108, maxZ: 108 });
+    assert.equal(circleBlocked(-125, 0, .4, obstacles), false);
+    assert.equal(circleBlocked(-139.8, 0, .4, obstacles), true);
+    const navigate = createNavigator(obstacles, 1, .4);
+    const start = { x: -125, z: 0 }, goal = { x: -118, z: 0 };
+    const path = navigate(start, goal);
+    assert.ok(path.length && Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) < .01);
+    let from = start;
+    for (const point of path) {
+      assert.equal(segmentClear(from, point, .4, obstacles), true);
+      from = point;
+    }
+    obstacles[0].maxZ = -1;
+    navigate.refresh({ minX: -123, maxX: -120, minZ: -3, maxZ: 3 });
+    assert.ok(navigate(start, goal).length);
+  } finally { setMapBounds(); }
+  assert.equal(circleBlocked(-125, 0, .4, obstacles), true);
+});
 
 test('batched navigation regions preserve the exact paths of sequential refreshes after obstacle changes', () => {
   const obstacles = [

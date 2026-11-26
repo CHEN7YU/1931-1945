@@ -4,7 +4,8 @@ import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJIN
 
 // Waiting civilians and the ferry approaches are behind the landward fighting line.
 export const NANJING_DOCK_BUFFER = Object.freeze({
-  minX: -74 + NANJING_DOCK_SHIFT, maxX: -79.5, minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
+  minX: -74 + NANJING_DOCK_SHIFT, maxX: NANJING_DOCK_ENTRY_X + 1.7,
+  minZ: -91.5, maxZ: -69.5, minY: -10, height: 100,
 });
 const buffer = [NANJING_DOCK_BUFFER];
 
@@ -48,6 +49,16 @@ export function nanjingDockOutsideGoal(point, radius = .5) {
 }
 
 export function nanjingDockAssaultGoal(actor) {
+  if (actor.formation.index % 2 === 0) {
+    const approach = { x: -66, y: 0, z: NANJING_WEST_GATE_Z, transit: true };
+    if (!actor.tactics.nanjingGateAssaultReady &&
+      (Math.hypot(actor.position.x - approach.x, actor.position.z - approach.z) <= 2 ||
+        actor.position.x < -74.2 && Math.abs(actor.position.z - NANJING_WEST_GATE_Z) < 3))
+      actor.tactics.nanjingGateAssaultReady = true;
+    if (!actor.tactics.nanjingGateAssaultReady) return approach;
+    return { x: -78 - actor.index % 3, y: 0,
+      z: NANJING_WEST_GATE_Z + (Math.floor(actor.index % 11 / 3) - 1.5) * 1.2, transit: true };
+  }
   return { x: -58 + actor.index % 3 * 1.7, y: 0,
     z: NANJING_WEST_GATE_Z + (Math.floor(actor.index % 11 / 3) - 1.5) * 2, transit: true };
 }

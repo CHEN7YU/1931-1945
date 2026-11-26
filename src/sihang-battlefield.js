@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { circleBlocked, createNavigator } from './core.js';
+import { circleBlocked, createNavigator, setMapBounds } from './core.js';
 import { createDoorWorld } from './door-world.js';
 import { createCivilianCharacterFactory } from './civilian-character.js';
 import { advanceCivilianMotion } from './civilian-motion.js';
@@ -98,6 +98,7 @@ function createWarehouseName() {
 }
 
 export function makeSihangBattlefield(scene, surface) {
+  setMapBounds();
   const solids = [], obstacles = [], smoke = [], flags = [], civilians = [];
   const terrainSurfaces = [];
   let craterSupport = () => 0;

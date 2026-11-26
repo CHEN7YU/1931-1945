@@ -1,6 +1,6 @@
 import { circleBlocked, segmentClear } from './core.js';
 import { obstacleLookup } from './spatial.js';
-import { NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, nanjingPierHeight } from './nanjing-campaign.js';
+import { NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_DOCK_WEST_EXTENSION, nanjingPierHeight } from './nanjing-campaign.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
 export const NANJING_OPENING_CIVILIAN_COUNT = 60;
@@ -89,7 +89,7 @@ export function civilianWaypointReached(position, route, index, obstacles, looku
 const waitingSlots = [];
 for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
   const slot = index * 73 % 240;
-  waitingSlots.push({ x: -89 + slot % 10 * .78 + (variation(index, 701) - .5) * .024, y: 0,
+  waitingSlots.push({ x: -89 + NANJING_DOCK_WEST_EXTENSION + slot % 10 * .78 + (variation(index, 701) - .5) * .024, y: 0,
     z: -89 + Math.floor(slot / 10) * .76 + slot % 10 * .03 + (variation(index, 709) - .5) * .012 });
 }
 
@@ -112,7 +112,7 @@ export function placeCivilianWaitingSlots(clear) {
       const x = anchor.x + Math.cos(angle) * radius, z = anchor.z + Math.sin(angle) * radius;
       candidates.push({ x, z, y: 0 });
     }
-    const point = candidates.find(point => point.x > -90 && point.x < NANJING_DOCK_ENTRY_X - .5 &&
+    const point = candidates.find(point => point.x > -90 + NANJING_DOCK_WEST_EXTENSION && point.x < NANJING_DOCK_ENTRY_X - .5 &&
       point.z > -89.5 && point.z < -70.5 &&
       placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .74) && clear(point));
     if (!point) throw new Error(`No physically clear dock waiting place for civilian ${index}`);

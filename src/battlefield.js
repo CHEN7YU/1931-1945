@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTownLayout } from './town-layout.js';
 import { BRIDGE as DEFAULT_BRIDGE, RIVER, bridgeGroundHeight, riverBedHeight, configureWalkSupport } from './ground.js';
-import { OBJECTIVES } from './core.js';
+import { OBJECTIVES, setMapBounds } from './core.js';
 import { dryRiverGeometry, dryRiverDetails, crackedSiltTexture, siltPatchGeometry } from './dry-river.js';
 import { WOODLAND_SPECIES, woodlandLayout, woodlandTreeGeometry, woodlandGroundContactGeometry, woodlandGroundContactMask } from './woodland.js';
 import { createDoorWorld } from './door-world.js';
@@ -30,6 +30,7 @@ export const PAVED_AREAS = [[0, 30, 150, 12], [0, -51, 150, 11], [0, 43, 9, 82],
 
 export function makeWorld(scene, surface, options = {}) {
   if (options.campaign === 'nanjing') return makeNanjingBattlefield(scene, surface);
+  setMapBounds();
   if (options.campaign === 'sihang') return makeSihangBattlefield(scene, surface);
   const solids = [], obstacles = [], smoke = [], flags = [], staticMeshes = [];
   const town = options.town ?? makeTownLayout();

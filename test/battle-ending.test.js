@@ -37,6 +37,14 @@ test('history also auto-completes for defeat and separates Zhonghua Gate resista
   assert.match(ENDING_NARRATION.nanjing, /唐司令命令我们撤离南京/);
 });
 
+test('ending prose has no publication names while keeping historical qualifications and source records', () => {
+  for (const history of Object.values(BATTLE_HISTORY)) {
+    const text = history.sections.flat().join(' ');
+    assert.doesNotMatch(text, /新华网|新华社|人民日报|人民网/);
+    assert.ok(history.sources.length, 'research sources remain available outside the ending display');
+  }
+});
+
 test('narration pauses and resumes from its actual audio offset without restarting', () => {
   const sources = [], context = { currentTime: 0, createBufferSource() {
     const source = { connect() {}, disconnect() {}, stop() {}, start(when, offset) { this.offset = offset; } };

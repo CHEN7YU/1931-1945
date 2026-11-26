@@ -23,31 +23,49 @@ try {
             return result;
           }
           const actor = controlledSoldier(entities);
-          actor.position.set(-63.75, 0, -78.85);
+          actor.position.set(-67.1, 0, -73.85);
           const walk = (dx, dz) => {
             moveInfantry(actor.position, dx, dz, .4, movementObstacles(actor.position.x, actor.position.z));
             settleActorSupport(actor);
           };
-          walk(-5, 0); walk(0, 5.1); walk(-1.5, 0); walk(0, 13.75);
+          walk(0, -5); walk(-1.8, 0); walk(0, 5.1); walk(-1.35, 0); walk(0, 13.75);
           const top = actor.position.toArray();
-          walk(0, -13.75); walk(1.5, 0); walk(0, -5.1); walk(5, 0);
+          walk(0, -13.75); walk(1.35, 0); walk(0, -5.1); walk(1.8, 0); walk(0, 5);
           const bottom = actor.position.toArray();
-          camera.position.set(-58, 9, -87); camera.lookAt(-68, 4, -77);
+          camera.position.set(-58, 11, -68); camera.lookAt(-68, 4, -77);
           renderer.render(scene, camera);
           return { top, bottom };
         };
         window.stairInputReview = {
           start() {
             const actor = controlledSoldier(entities);
-            actor.position.set(-63.75, 0, -78.85);
+            actor.position.set(-67.1, 0, -73.85);
             actor.nativeMotion.position = { x: actor.position.x, z: actor.position.z };
             stopLocomotion(actor.locomotion);
-            actor.heading = controlPose.yaw = Math.PI / 2; controlPose.pitch = 0; controlPose.stance = 'standing';
+            actor.heading = controlPose.yaw = 0; controlPose.pitch = 0; controlPose.stance = 'standing';
             for (const enemy of enemies) { enemy.nextThink = Infinity; enemy.target = null; }
             setGameState('playing'); bindControlInput(); updateCamera(0);
           },
           turn(yaw) { controlledSoldier(entities).heading = controlPose.yaw = yaw; updateCamera(0); },
           position() { return controlledSoldier(entities).position.toArray(); },
+        };
+        window.gateExitReview = {
+          start() {
+            const actor = controlledSoldier(entities);
+            advanceNanjingCampaign(nanjingCampaign, nanjingCampaign.stageRemaining);
+            actor.position.set(-68, 0, -60);
+            actor.nativeMotion.position = { x: actor.position.x, z: actor.position.z };
+            actor.health = 100000;
+            stopLocomotion(actor.locomotion);
+            actor.heading = controlPose.yaw = Math.PI / 2; controlPose.pitch = 0;
+            for (const enemy of enemies) { enemy.nextThink = Infinity; enemy.target = null; }
+            updateNanjingMission(0); updateCamera(0);
+            return { stage: nanjingCampaign.stage, position: actor.position.toArray() };
+          },
+          snapshot() {
+            return { stage: nanjingCampaign.stage, position: controlledSoldier(entities).position.toArray(),
+              remaining: nanjingCampaign.stageRemaining };
+          },
         };
       ` });
     });
@@ -67,7 +85,7 @@ try {
       assert.doesNotMatch(result.text, /爆破|拆除炸药/);
     } else {
       assert.ok(Math.abs(result.top[1] - 8.58) < .05 && Math.abs(result.top[2] + 60) < .1);
-      assert.ok(result.bottom[1] < .1 && Math.abs(result.bottom[0] + 63.75) < .1);
+      assert.ok(result.bottom[1] < .1 && Math.abs(result.bottom[2] + 73.85) < .1);
     }
     assert.deepEqual(errors, []);
     if (process.env.ARTIFACT_DIR) await page.screenshot({ path: `${process.env.ARTIFACT_DIR}\\${campaign}-opening-review.png` });
@@ -75,16 +93,25 @@ try {
       await page.evaluate(() => window.stairInputReview.start());
       await page.keyboard.down('KeyW');
       try {
-        await page.waitForFunction(() => window.stairInputReview.position()[0] < -68.5,
+        await page.waitForFunction(() => window.stairInputReview.position()[2] < -78.5,
           null, { timeout: 90000 });
       } finally { await page.keyboard.up('KeyW'); }
       const inputTurn = await page.evaluate(() => window.stairInputReview.position());
       assert.ok(Math.abs(inputTurn[1] - 4.29) < .15);
+      await page.evaluate(() => window.stairInputReview.turn(Math.PI / 2));
+      await page.keyboard.down('KeyW');
+      try {
+        await page.waitForFunction(() => window.stairInputReview.position()[0] < -68.65,
+          null, { timeout: 90000 });
+      } finally { await page.keyboard.up('KeyW'); }
       await page.evaluate(() => window.stairInputReview.turn(Math.PI));
       await page.keyboard.down('KeyW');
       try {
         await page.waitForFunction(() => window.stairInputReview.position()[1] > 8.5,
           null, { timeout: 90000 });
+      } catch (error) {
+        console.error('Upper stair input stopped at', await page.evaluate(() => window.stairInputReview.position()));
+        throw error;
       } finally { await page.keyboard.up('KeyW'); }
       const inputTop = await page.evaluate(() => window.stairInputReview.position());
       await page.keyboard.down('KeyS');
@@ -99,16 +126,34 @@ try {
       try {
         await page.waitForFunction(() => {
           const position = window.stairInputReview.position();
-          return position[1] < .1 && position[0] > -63.85;
+          return position[0] > -67.3;
+        }, null, { timeout: 90000 });
+      } finally { await page.keyboard.up('KeyS'); }
+      await page.evaluate(() => window.stairInputReview.turn(0));
+      await page.keyboard.down('KeyS');
+      try {
+        await page.waitForFunction(() => {
+          const position = window.stairInputReview.position();
+          return position[1] < .1 && position[2] > -74.05;
         }, null, { timeout: 90000 });
       } finally { await page.keyboard.up('KeyS'); }
       const inputBottom = await page.evaluate(() => window.stairInputReview.position());
-      assert.ok(inputTop[0] > -69.8 && inputTop[0] < -67.7 &&
+      assert.ok(inputTop[0] > -69.8 && inputTop[0] < -68 &&
         inputTop[2] > -74.2 && inputTop[2] < -73.3 && inputTop[1] > 8.5,
         `unexpected input positions: ${JSON.stringify({ inputTurn, inputTop, inputBottom })}`);
       assert.ok(inputBottom[1] < .1);
+      const beforeGate = await page.evaluate(() => window.gateExitReview.start());
+      assert.equal(beforeGate.stage, 'withdrawal');
+      await page.keyboard.down('KeyW');
+      try {
+        await page.waitForFunction(() => window.gateExitReview.snapshot().stage === 'dock-defense',
+          null, { timeout: 90000 });
+      } finally { await page.keyboard.up('KeyW'); }
+      const atGate = await page.evaluate(() => window.gateExitReview.snapshot());
+      assert.ok(atGate.position[0] <= -74.2 && Math.abs(atGate.position[2] + 60) <= 3.4 &&
+        atGate.remaining > 179 && atGate.position[0] > -78.2, JSON.stringify(atGate));
       assert.deepEqual(errors, []);
-      console.log(JSON.stringify({ campaign, inputTop, inputBottom }));
+      console.log(JSON.stringify({ campaign, inputTop, inputBottom, beforeGate, atGate }));
     }
     console.log(JSON.stringify({ campaign, result }));
     await page.close();

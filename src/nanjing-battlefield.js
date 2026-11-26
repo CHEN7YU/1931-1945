@@ -3,11 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createCivilianCharacterFactory } from './civilian-character.js';
 import { resetCivilianStreetLife } from './civilian-street-life.js';
 import { placeRefugeeRestGroups, resetCivilianFlight } from './civilian-refugees.js';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { circleBlocked, createNavigator } from './core.js';
+import { circleBlocked, createNavigator, setMapBounds } from './core.js';
 import { createDoorWorld } from './door-world.js';
 import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_FERRY_BERTHS, NANJING_PIER,
-  nanjingPierHeight, NANJING_OBJECTIVES, NANJING_RIVER_SHORE_X, NANJING_SPAWNS, NANJING_WEST_BREACH,
+  nanjingPierHeight, NANJING_OBJECTIVES, NANJING_RIVER_SHORE_X, NANJING_SPAWNS, NANJING_WEST_BREACH, NANJING_MAP_BOUNDS, NANJING_DOCK_WEST_EXTENSION,
   NANJING_WEST_GATE_HALF_WIDTH, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 import { sandbagCollisionProxy, sandbagGeometry } from './scene-details.js';
 import { createRoofGeometry, createResidentialRoofGeometry } from './roof-geometry.js';
@@ -45,7 +44,7 @@ const SOUTH_RIVER_WATER = -1.9;
 const WALL_WALK = NANJING_WALL_WALK;
 const WALL_STAIR = NANJING_WALL_STAIR;
 const RIVERS = Object.freeze([
-  { id: 'qinhuai-south', name: '秦淮河南段', x: 0, z: 52, width: 210, depth: 26 },
+  { id: 'qinhuai-south', name: '秦淮河南段', x: (NANJING_RIVER_SHORE_X + 105) / 2, z: 52, width: 105 - NANJING_RIVER_SHORE_X, depth: 26 },
   { id: 'yangtze-west', name: '长江', x: NANJING_RIVER_SHORE_X - 12, z: 0, width: 24, depth: 300 },
 ].map(Object.freeze));
 const riverShoreDistance = (x, z) => {
@@ -61,6 +60,7 @@ const riverShoreDistance = (x, z) => {
 };
 
 export function makeNanjingBattlefield(scene, surface) {
+  setMapBounds(NANJING_MAP_BOUNDS);
   const solids = [], obstacles = [], smoke = [], flags = [], ferries = [], civilians = [], civilianQueue = [];
   const flankWalkSupports = [];
   const residentialBuildings = [];
@@ -142,6 +142,51 @@ export function makeNanjingBattlefield(scene, surface) {
       minY: y - h / 2, height: y + h / 2 });
     if (wallPiece) town.pieces.push({ x, y, z, w, h, d, material: 'stone', wall: true });
     return mesh;
+  }
+  function makeParapet(axis, min, max, fixed, base, { collision = true, damaged = null } = {}) {
+    if (max <= min) return null;
+    const height = 1, thickness = .6, pitch = 2.4, openingWidth = .28;
+    const openingBottom = .46, openingTop = .72, geometries = [], openings = [];
+    const piece = (start, end, bottom, top) => {
+      if (end <= start) return;
+      const length = end - start, h = top - bottom, along = (start + end) / 2;
+      const x = axis === 'x' ? along : fixed, z = axis === 'x' ? fixed : along;
+      const w = axis === 'x' ? length : thickness, d = axis === 'x' ? thickness : length;
+      const geometry = new THREE.BoxGeometry(w, h, d);
+      const positions = geometry.attributes.position, normals = geometry.attributes.normal, uv = geometry.attributes.uv;
+      const meters = brick.userData.metersPerTile ?? .9;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, (Math.abs(normals.getX(i)) > .5 ? positions.getZ(i) + z : positions.getX(i) + x) / meters,
+          (Math.abs(normals.getY(i)) > .5 ? positions.getZ(i) + z : positions.getY(i) + base + (bottom + top) / 2) / meters);
+      }
+      geometry.translate(x, base + (bottom + top) / 2, z);
+      geometries.push(geometry);
+      if (collision) obstacles.push({ minX: x - w / 2, maxX: x + w / 2,
+        minZ: z - d / 2, maxZ: z + d / 2, minY: base + bottom, height: base + top });
+    };
+    const cells = Math.ceil((max - min) / pitch), cellLength = (max - min) / cells;
+    for (let i = 0; i < cells; i++) {
+      const start = min + i * cellLength, end = min + (i + 1) * cellLength, center = (start + end) / 2;
+      if (damaged?.(center)) continue;
+      piece(start, end, 0, openingBottom);
+      piece(start, end, openingTop, height);
+      if (cellLength > openingWidth + .4) {
+        piece(start, center - openingWidth / 2, openingBottom, openingTop);
+        piece(center + openingWidth / 2, end, openingBottom, openingTop);
+        openings.push(center);
+      } else {
+        piece(start, end, openingBottom, openingTop);
+      }
+    }
+    if (!geometries.length) return null;
+    const geometry = mergeGeometries(geometries);
+    for (const part of geometries) part.dispose();
+    const wall = new THREE.Mesh(geometry, brick);
+    wall.castShadow = wall.receiveShadow = true;
+    wall.userData.nanjingFeature = 'brick-parapet';
+    wall.userData.parapet = { axis, min, max, fixed, base, height, thickness, openings, openingBottom, openingTop, openingWidth };
+    scene.add(wall); solids.push(wall);
+    return wall;
   }
   const cityPoleGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
   const cityBeam = (start, end, radius, material, blocksShots = false) => {
@@ -290,7 +335,7 @@ export function makeNanjingBattlefield(scene, surface) {
       // The two rivers meet here; neither embankment may divide the other waterway.
       const otherRiver = RIVERS.find(river => river.x !== x || river.z !== z);
       if (otherRiver && minX < otherRiver.x + otherRiver.width / 2 &&
-        maxX > otherRiver.x - otherRiver.width / 2 &&
+        (w < d ? maxX >= otherRiver.x - otherRiver.width / 2 - 1e-6 : maxX > otherRiver.x - otherRiver.width / 2) &&
         minZ < otherRiver.z + otherRiver.depth / 2 && maxZ > otherRiver.z - otherRiver.depth / 2) {
         if (w > d) {
           if (otherRiver.id !== 'yangtze-west' && minX < otherRiver.x - otherRiver.width / 2) {
@@ -510,11 +555,6 @@ export function makeNanjingBattlefield(scene, surface) {
     return { archstones };
   }
 
-  function intersectsWallPassage(x, halfWidth) {
-    return NANJING_WALL_WALKS.some(walk =>
-      Math.abs(x - (walk.minX + walk.maxX) / 2) < halfWidth + .8);
-  }
-
   function makeGate(z, main = false) {
     const height = main ? NANJING_GATE_HEIGHT : NANJING_RAMPART_HEIGHT;
     const wallHeight = Math.max(height, WALL_WALK.height);
@@ -586,31 +626,13 @@ export function makeNanjingBattlefield(scene, surface) {
         [8.2, 5.2, .63], [9.05, 4.65, .26], [7.6, 5.8, .21],
       ].entries()) shellPocks(x, y, front, radius, 105 + index, 1);
     }
-    const merlons = [];
-    for (let x = -width / 2 + 2 * DETAIL_SCALE; x <= width / 2 - 2 * DETAIL_SCALE; x += 4 * DETAIL_SCALE) {
-      if (Math.abs(x) < opening / 2 + 1.5 * DETAIL_SCALE) continue;
-      if (intersectsWallPassage(x, 1.35 * DETAIL_SCALE / 2)) continue;
-      for (const edge of [-1, 1]) {
-        const merlon = addBox(x, wallHeight + .575 * DETAIL_SCALE,
-          z + edge * (depth / 2 - .5 * DETAIL_SCALE),
-          1.35 * DETAIL_SCALE, 1.15 * DETAIL_SCALE, DETAIL_SCALE, stone, true);
-        merlon.userData.nanjingFeature = 'wall-merlon';
-        merlons.push(merlon);
-      }
-    }
+    const passageCenters = NANJING_WALL_WALKS.map(walk => (walk.minX + walk.maxX) / 2);
+    const intervals = [[-width / 2, passageCenters[0] - 1.45],
+      [passageCenters[0] + 1.45, passageCenters[1] - 1.45],
+      [passageCenters[1] + 1.45, width / 2]];
+    for (const edge of [-1, 1]) for (const [min, max] of intervals)
+      makeParapet('x', min, max, z + edge * (depth / 2 - .3), wallHeight);
     if (main) {
-      for (const side of [-1, 1]) {
-        const x = side * 25.8 * DETAIL_SCALE;
-        for (let notch = -3; notch <= 3; notch += 2) {
-          if (intersectsWallPassage(x + notch * DETAIL_SCALE, .9 * DETAIL_SCALE / 2)) continue;
-          for (const edge of [-1, 1]) {
-            const crenel = addBox(x + notch * DETAIL_SCALE, wallHeight + .25 * DETAIL_SCALE,
-              z + edge * 2.85 * DETAIL_SCALE,
-              .9 * DETAIL_SCALE, .5 * DETAIL_SCALE, .8 * DETAIL_SCALE, stone, true);
-            crenel.userData.nanjingFeature = 'gate-tower-crenel';
-          }
-        }
-      }
       for (let index = 0; index < 22; index++) {
         const rubbleHeight = (.3 + index % 3 * .14) * DETAIL_SCALE;
         const side = index % 2 ? 1 : -1;
@@ -623,7 +645,7 @@ export function makeNanjingBattlefield(scene, surface) {
       }
     }
     return { x: 0, z, width, height: wallHeight, opening, depth, main,
-      archstones: arch.archstones.length, merlons: merlons.length };
+      archstones: arch.archstones.length };
   }
 
   makeSurface(NANJING_DOCK_SHIFT / 2, 0, 216 - NANJING_DOCK_SHIFT, 216, ground);
@@ -691,7 +713,7 @@ export function makeNanjingBattlefield(scene, surface) {
   }
   makeSurface(-24, 76, 10, 58, road, -.07);
   makeSurface(-12, 38, 24, 8, road, -.06);
-  makeRiver(0, 52, 210, 26, [YUHUA_BRIDGE]);
+  makeRiver(RIVERS[0].x, 52, RIVERS[0].width, 26, [YUHUA_BRIDGE]);
   makeRiver(NANJING_RIVER_SHORE_X - 12, 0, 24, 300);
   const rippleMaterial = new THREE.MeshBasicMaterial({ color: 0xb4c3b4, transparent: true, opacity: .18, depthWrite: false });
   waterWaves.attach(rippleMaterial, 'z');
@@ -726,14 +748,18 @@ export function makeNanjingBattlefield(scene, surface) {
     scene.remove(wall);
   }
   const damagedMerlon = (side, x) => [-.65, -.3, 0, .3, .65].some(dx => nanjingWallNotch(side, x + dx) > .025);
+  const westInnerLedge = (minZ, maxZ) => {
+    const ledge = addBox(-69.775, WALL_WALK.height - .12, (minZ + maxZ) / 2,
+      .85, .24, maxZ - minZ, brick, true);
+    ledge.userData.nanjingFeature = 'brick-parapet-ledge';
+    obstacles.at(-1).walkable = true;
+    flankWalkSupports.push({ minX: -70.2, maxX: -69.35, minZ, maxZ, height: WALL_WALK.height });
+  };
   const northernWall = addBox(16, 5, -113, 180, 10, 4.4, brick);
   northernWall.userData.nanjingFeature = 'northern-city-wall';
   applyWallDamage(northernWall, 'north');
-  for (let x = -73; x <= 105; x += 2.4) {
-    if (damagedMerlon('north', x)) continue;
-    const merlon = addBox(x, 10.55, -111.2, 1.3, 1.1, .6, brick);
-    merlon.userData.nanjingFeature = 'northern-city-wall-merlon';
-  }
+  for (const z of [-114.9, -111.1])
+    makeParapet('x', -74, 106, z, 10, { collision: false, damaged: x => damagedMerlon('north', x) });
   for (const bounds of NANJING_CITY_WALLS) {
     const width = bounds.maxX - bounds.minX, depth = bounds.maxZ - bounds.minZ;
     const x = (bounds.minX + bounds.maxX) / 2, z = (bounds.minZ + bounds.maxZ) / 2;
@@ -755,16 +781,13 @@ export function makeNanjingBattlefield(scene, surface) {
       }
     }
     const horizontal = width > depth;
-    const length = horizontal ? width : depth;
-    for (let offset = 1; offset < length; offset += 2.2) {
-      if (breach && bounds.minX + offset > breach.minX - .6 &&
-        bounds.minX + offset < breach.maxX + .6) continue;
-      if (damagedMerlon(horizontal ? 'south' : 'west',
-        horizontal ? bounds.minX + offset : -(bounds.minZ + offset))) continue;
-      const merlon = addBox(horizontal ? bounds.minX + offset : bounds.minX + .4,
-        WALL_WALK.height + .4, horizontal ? bounds.maxZ - .4 : bounds.minZ + offset,
-        horizontal ? 1.2 : .8, .8, horizontal ? .8 : 1.2, stone, true);
-      merlon.userData.nanjingFeature = 'city-wall-merlon';
+    if (!horizontal && bounds.minX === -74.2) westInnerLedge(bounds.minZ, bounds.maxZ);
+    for (const section of sections) for (const edge of [-1, 1]) {
+      const fixed = horizontal ? (edge < 0 ? bounds.minZ + .3 : bounds.maxZ - .3)
+        : (edge < 0 ? bounds.minX + .3 : bounds.minX === -74.2 ? -69.45 : bounds.maxX - .3);
+      makeParapet(horizontal ? 'x' : 'z', horizontal ? section.minX : section.minZ,
+        horizontal ? section.maxX : section.maxZ, fixed, WALL_WALK.height,
+        { damaged: position => damagedMerlon(horizontal ? 'south' : 'west', horizontal ? position : -position) });
     }
   }
   for (const [x, minZ, maxZ, feature] of [
@@ -779,10 +802,19 @@ export function makeNanjingBattlefield(scene, surface) {
     if (feature === 'west-city-wall' && minZ === NANJING_WEST_BREACH.maxZ) {
       flankWalkSupports.push({ minX: x - 2.2, maxX: x + 2.2, minZ, maxZ, height: WALL_WALK.height });
     }
-    for (let offset = -depth / 2 + 1; offset < depth / 2; offset += 2.2) {
-      if (damagedMerlon('west', -(z + offset))) continue;
-      const merlon = addBox(x + .4, WALL_WALK.height + .4, z + offset, .8, .8, 1.2, stone, true);
-      merlon.userData.nanjingFeature = 'city-wall-merlon';
+    if (feature === 'west-city-wall') {
+      if (minZ < -74.05 && maxZ > -73.45) {
+        westInnerLedge(minZ, -80.3);
+        westInnerLedge(-73, maxZ);
+      } else westInnerLedge(minZ, maxZ);
+    }
+    for (const edge of [-1, 1]) {
+      const segments = feature === 'west-city-wall' && edge === 1 && minZ < -74.05 && maxZ > -73.45
+        ? [[minZ, -80.3], [-73, maxZ]] : [[minZ, maxZ]];
+      for (const [start, end] of segments)
+        makeParapet('z', start, end,
+          feature === 'west-city-wall' && edge === 1 ? -69.45 : x + edge * 1.9, WALL_WALK.height,
+          { damaged: position => damagedMerlon('west', -position) });
     }
   }
   for (const side of [-1, 1]) for (let level = 0; level < 8; level++) {
@@ -845,7 +877,7 @@ export function makeNanjingBattlefield(scene, surface) {
   flankWalkSupports.push({ minX: -74.2, maxX: -69.8,
     minZ: NANJING_WEST_GATE_Z - westGateRadius, maxZ: NANJING_WEST_GATE_Z + westGateRadius,
     height: WALL_WALK.height });
-  const westGateStair = { minX: -69.8, maxX: -67.7, groundX: -63.95,
+  const westGateStair = { minX: -69.8, maxX: -68, groundX: -66.2,
     minZ: -79.9, turnZ: -77.8, topZ: -74.05, height: WALL_WALK.height };
   const stairHalfHeight = westGateStair.height / 2;
   const stairSteps = Math.ceil(stairHalfHeight / .15);
@@ -853,8 +885,8 @@ export function makeNanjingBattlefield(scene, surface) {
   const stairWidth = westGateStair.maxX - westGateStair.minX;
   for (let step = 0; step < stairSteps; step++) {
     const height = stairHalfHeight * (step + 1) / stairSteps;
-    const lower = addBox(westGateStair.groundX - (step + .5) * stepDepth, height / 2,
-      (westGateStair.minZ + westGateStair.turnZ) / 2, stepDepth, height, stairWidth, stone);
+    const lower = addBox((westGateStair.maxX + westGateStair.groundX) / 2, height / 2,
+      westGateStair.topZ - (step + .5) * stepDepth, stairWidth, height, stepDepth, stone);
     lower.userData.nanjingFeature = 'west-gate-stair-tread';
     const upperHeight = stairHalfHeight + height;
     const upper = addBox((westGateStair.minX + westGateStair.maxX) / 2, upperHeight / 2,
@@ -862,7 +894,7 @@ export function makeNanjingBattlefield(scene, surface) {
     upper.userData.nanjingFeature = 'west-gate-stair-tread';
   }
   for (const landing of [
-    { minX: westGateStair.minX, maxX: westGateStair.maxX, minZ: westGateStair.minZ,
+    { minX: westGateStair.minX, maxX: westGateStair.groundX, minZ: westGateStair.minZ,
       maxZ: westGateStair.turnZ, height: stairHalfHeight },
     { minX: westGateStair.minX, maxX: westGateStair.maxX, minZ: westGateStair.topZ,
       maxZ: westGateStair.topZ + .6, height: westGateStair.height },
@@ -878,10 +910,10 @@ export function makeNanjingBattlefield(scene, surface) {
       NANJING_WEST_GATE_Z, 2.5, .8, true, side, 'x');
     plaque.userData.nanjingFeature = 'west-gate-name';
   }
-  for (const z of [-1.8, 0, 1.8].map(offset => NANJING_WEST_GATE_Z + offset)) {
-    const merlon = addBox(-71.6, WALL_WALK.height + .4, z, .8, .8, 1.2, stone, true);
-    merlon.userData.nanjingFeature = 'city-wall-merlon';
-  }
+  westInnerLedge(NANJING_WEST_GATE_Z - westGateRadius, NANJING_WEST_GATE_Z + westGateRadius);
+  for (const x of [-73.9, -69.45])
+    makeParapet('z', NANJING_WEST_GATE_Z - westGateRadius,
+      NANJING_WEST_GATE_Z + westGateRadius, x, WALL_WALK.height);
   const fallenBrick = new THREE.InstancedMesh(boxGeometry, brick, NANJING_WALL_PLUMES.length * 38);
   const fallenPose = new THREE.Object3D();
   for (const [side, { x, z, heading }] of NANJING_WALL_PLUMES.entries()) {
@@ -979,13 +1011,8 @@ export function makeNanjingBattlefield(scene, surface) {
       }
       startZ = gate.z + gate.depth / 2;
     }
-    for (const z of [-26, -20, -2, 2, 20, 26].map(value => value * DETAIL_SCALE)) {
-      if (z < NANJING_GATE_NORTH_EDGE || z > NANJING_GATE_SOUTH_EDGE) continue;
-      const merlon = addBox(x + side * 1.8 * DETAIL_SCALE,
-        WALL_WALK.height + .5 * DETAIL_SCALE, z,
-        1.2 * DETAIL_SCALE, DETAIL_SCALE, 1.6 * DETAIL_SCALE, stone, true);
-      merlon.userData.nanjingFeature = 'curtain-merlon';
-    }
+    makeParapet('z', NANJING_GATE_NORTH_EDGE, NANJING_GATE_SOUTH_EDGE,
+      side * (GATE_WIDTH / 2 - .3), WALL_WALK.height);
     for (const z of [-18, -6, 6, 18].map(value => value * DETAIL_SCALE)) {
       if (z < NANJING_GATE_NORTH_EDGE || z > NANJING_GATE_SOUTH_EDGE) continue;
       const niche = addBox(x - Math.sign(x) * .8 * DETAIL_SCALE,
@@ -1203,38 +1230,6 @@ export function makeNanjingBattlefield(scene, surface) {
   const bridges = [
     makeStoneBridge(YUHUA_BRIDGE.x, YUHUA_BRIDGE.z, YUHUA_BRIDGE.width, 44),
   ];
-  const battlements = solids.filter(mesh =>
-    ['wall-merlon', 'curtain-merlon', 'gate-tower-crenel', 'city-wall-merlon'].includes(mesh.userData.nanjingFeature));
-  const battlementBrick = brick.clone();
-  battlementBrick.onBeforeCompile = brick.onBeforeCompile;
-  battlementBrick.customProgramCacheKey = brick.customProgramCacheKey;
-  battlementBrick.vertexColors = true;
-  for (const [index, mesh] of battlements.entries()) {
-    const { x: width, y: height, z: depth } = mesh.scale;
-    const geometry = new RoundedBoxGeometry(width, height, depth, 1, .045);
-    const positions = geometry.attributes.position, normals = geometry.attributes.normal, uv = geometry.attributes.uv;
-    const colors = [], tint = new THREE.Color();
-    for (let vertex = 0; vertex < positions.count; vertex++) {
-      const px = positions.getX(vertex), py = positions.getY(vertex), pz = positions.getZ(vertex);
-      const corner = px > width * .25 && pz > depth * .25 && py > height * .25;
-      const chip = corner ? .025 + index % 3 * .012 : 0;
-      positions.setXYZ(vertex, px / width, (Math.min(py, height / 2 - .11) - chip) / height, pz / depth);
-      uv.setXY(vertex, (Math.abs(normals.getX(vertex)) > .5 ? pz : px) / .65,
-        (Math.abs(normals.getY(vertex)) > .5 ? pz : py) / .65);
-      const shade = .8 + index % 5 * .025 + (py / height + .5) * .08;
-      tint.setRGB(shade, shade * .98, shade * .93);
-      colors.push(tint.r, tint.g, tint.b);
-    }
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
-    mesh.geometry.dispose();
-    mesh.geometry = geometry;
-    mesh.material = battlementBrick;
-    mesh.userData.battlementFinish = 'weathered-beveled-brick';
-    const coping = addBox(mesh.position.x, mesh.position.y + height / 2 - .05,
-      mesh.position.z, width, .1, depth, stone);
-    coping.userData.nanjingFeature = 'battlement-coping';
-  }
   const roofMaterial = surface('tiles', 0x89918c, 1.4);
   roofMaterial.side = THREE.DoubleSide;
   for (let index = 0; index < 24; index++) {
@@ -1578,11 +1573,11 @@ export function makeNanjingBattlefield(scene, surface) {
   addForwardDefense(-58.5, NANJING_WEST_GATE_Z + 6, 'west-gate-south', 4, 1, Math.PI / 2, dockDefenses);
   for (const [label, z] of [['north', -89.4], ['south', -70.6]]) {
     for (let row = 0; row < 3; row++) for (let column = 0; column < 4; column++) {
-      placeForwardSandbag(-92 + (column - 1.5) * .55 + (row % 2 ? .12 : 0), z, row,
+      placeForwardSandbag(-92 + NANJING_DOCK_WEST_EXTENSION + (column - 1.5) * .55 + (row % 2 ? .12 : 0), z, row,
         `dock-platform-${label}-${row}-${column}`, 0, 'dock-platform-sandbag');
     }
-    town.covers.push({ id: `dock-platform-${label}`, x: -92, z: z + (label === 'north' ? 1 : -1), kind: 'low' });
-    dockDefenses.push({ id: `dock-platform-${label}`, x: -92, z, width: 2.83, depth: .88, height: 1.16 });
+    town.covers.push({ id: `dock-platform-${label}`, x: -92 + NANJING_DOCK_WEST_EXTENSION, z: z + (label === 'north' ? 1 : -1), kind: 'low' });
+    dockDefenses.push({ id: `dock-platform-${label}`, x: -92 + NANJING_DOCK_WEST_EXTENSION, z, width: 2.83, depth: .88, height: 1.16 });
   }
   const dockTimber = surface('timber', 0xc3b29a, 2);
   const aaDeckGeometry = new THREE.BufferGeometry();
@@ -1740,7 +1735,7 @@ export function makeNanjingBattlefield(scene, surface) {
     updateNanjingFerryRower(boat, 0);
     const endBerth = index === 4;
     const gangplank = endBerth
-      ? addBox(-105.7, .42, boat.position.z, 1.8, .12, .8, dockTimber)
+      ? addBox(-105.7 + NANJING_DOCK_WEST_EXTENSION, .42, boat.position.z, 1.8, .12, .8, dockTimber)
       : addBox(berth.x, .42, NANJING_DOCK.z + Math.sign(berth.z - NANJING_DOCK.z) * 2.8,
         .8, .12, 1.8, dockTimber);
     gangplank.userData.nanjingFeature = 'ferry-gangplank';
@@ -1943,7 +1938,7 @@ export function makeNanjingBattlefield(scene, surface) {
     data.waitingSlot = waitingPlaces[data.civilianId];
     if (!homeRoutes.has(data.civilianId)) {
       const start = { x: data.startX, z: data.startZ };
-      const entry = { x: -85, z: NANJING_DOCK.z };
+      const entry = { x: NANJING_DOCK_ENTRY_X + 3.8, z: NANJING_DOCK.z };
       const stops = data.civilianId >= 60
         ? [{ x: -37, z: -62 }, data.waitingSlot]
         : [{ x: -24, z: 31 }, { x: 0, z: 24 }, { x: 0, z: 15 },
@@ -2040,9 +2035,9 @@ export function makeNanjingBattlefield(scene, surface) {
       if (rampHeight <= referenceY + step && rampHeight > height) height = rampHeight;
     }
     let stairHeight = null;
-    if (x >= westGateStair.maxX && x <= westGateStair.groundX &&
-      z >= westGateStair.minZ && z <= westGateStair.turnZ)
-      stairHeight = (westGateStair.groundX - x) / flightLength * stairHalfHeight;
+    if (x > westGateStair.maxX && x <= westGateStair.groundX &&
+      z >= westGateStair.turnZ && z <= westGateStair.topZ)
+      stairHeight = (westGateStair.topZ - z) / flightLength * stairHalfHeight;
     else if (x >= westGateStair.minX && x <= westGateStair.maxX &&
       z >= westGateStair.turnZ && z <= westGateStair.topZ)
       stairHeight = stairHalfHeight + (z - westGateStair.turnZ) / flightLength * stairHalfHeight;
@@ -2152,7 +2147,7 @@ export function makeNanjingBattlefield(scene, surface) {
     const onStair = point => {
       const { x, z, y = 0 } = point;
       const inLower = x >= westGateStair.maxX && x <= westGateStair.groundX &&
-        z >= westGateStair.minZ && z <= westGateStair.turnZ;
+        z >= westGateStair.minZ && z <= westGateStair.topZ;
       const inUpper = x >= westGateStair.minX && x <= westGateStair.maxX &&
         z >= westGateStair.minZ && z <= westGateStair.topZ + .6;
       return y >= .3 && (inLower || inUpper) && Math.abs(walkHeight(x, z, y) - y) < .15;
@@ -2162,16 +2157,18 @@ export function makeNanjingBattlefield(scene, surface) {
     if (!startKind || !goalKind || startKind === 'ground' && goalKind === 'ground') return null;
     if (startKind === 'high' && goalKind === 'high') return null;
     if (!groundNavigation) throw new Error('West gate routing requires the battle ground navigator');
-    const bottom = { x: westGateStair.groundX + .2, y: 0,
-      z: (westGateStair.minZ + westGateStair.turnZ) / 2 };
-    const turn = { x: (westGateStair.minX + westGateStair.maxX) / 2, y: stairHalfHeight, z: bottom.z };
+    const bottom = { x: (westGateStair.maxX + westGateStair.groundX) / 2, y: 0,
+      z: westGateStair.topZ + .2 };
+    const lowerTurn = { x: bottom.x, y: stairHalfHeight, z: (westGateStair.minZ + westGateStair.turnZ) / 2 };
+    const turn = { x: (westGateStair.minX + westGateStair.maxX) / 2, y: stairHalfHeight, z: lowerTurn.z };
     const stairTop = { x: turn.x, y: WALL_WALK.height, z: westGateStair.topZ + .3 };
     const wallTop = { x: -70.25, y: WALL_WALK.height, z: stairTop.z };
-    const lowerFlight = casemateConnection(bottom, turn);
+    const lowerFlight = casemateConnection(bottom, lowerTurn);
+    const landing = casemateConnection(lowerTurn, turn);
     const upperFlight = casemateConnection(turn, stairTop);
     const crossing = casemateConnection(stairTop, wallTop);
-    if (!lowerFlight.length || !upperFlight.length || !crossing.length) return [];
-    const spine = [bottom, ...lowerFlight, ...upperFlight, ...crossing];
+    if (!lowerFlight.length || !landing.length || !upperFlight.length || !crossing.length) return [];
+    const spine = [bottom, ...lowerFlight, ...landing, ...upperFlight, ...crossing];
     const connect = (point, type) => {
       if (type === 'ground') {
         const path = Math.hypot(point.x - bottom.x, point.z - bottom.z) < .05
@@ -2207,10 +2204,10 @@ export function makeNanjingBattlefield(scene, surface) {
     x >= NANJING_PIER.minX && x <= NANJING_PIER.maxX && z >= NANJING_PIER.minZ && z <= NANJING_PIER.maxZ ? 'wood'
     : Math.abs(z - 52) < 13 || Math.abs(x - RIVERS[1].x) < 12
       ? 'earth' : Math.abs(x) < 6 || Math.abs(x + 40) < 30 && Math.abs(z) < 6 ? 'stone' : 'earth';
-  const masonryFeatures = new Set(['battlement-coping', 'northern-city-wall-merlon',
-    'west-wall-stair-tread', 'east-wall-stair-tread', 'west-gate-stair-tread', 'river-stone-bank', 'city-wall-merlon',
-    'wall-merlon', 'city-lane', 'arched-gateway', 'soldier-cave-frame', 'flanking-masonry-core',
-    'curtain-merlon', 'gate-tower-crenel', 'flanking-ramp-cheek', 'wall-walk',
+  const masonryFeatures = new Set(['brick-parapet', 'brick-parapet-ledge',
+    'west-wall-stair-tread', 'east-wall-stair-tread', 'west-gate-stair-tread', 'river-stone-bank',
+    'city-lane', 'arched-gateway', 'soldier-cave-frame', 'flanking-masonry-core',
+    'flanking-ramp-cheek', 'wall-walk',
     'soldier-cave-wing', 'barbican-curtain-wall', 'city-wall', 'northern-city-wall',
     'casemate-stair-tread', 'casemate-stair-ceiling', 'casemate-floor', 'casemate-ceiling', 'casemate-plaster']);
   shellCraters.push(...selectBattlefieldCraters({
@@ -2260,7 +2257,7 @@ export function makeNanjingBattlefield(scene, surface) {
     isDeepWater: (x, z) => x < NANJING_RIVER_SHORE_X && x > NANJING_RIVER_SHORE_X - NANJING_FERRY_ROUTE.riverWidth &&
       Math.abs(z) < NANJING_FERRY_ROUTE.riverDepth / 2 &&
       !(x >= NANJING_PIER.minX && z >= NANJING_PIER.minZ && z <= NANJING_PIER.maxZ) ||
-      Math.abs(z - 52) < 13 && x > -105 && x < 105,
+      Math.abs(z - 52) < 13 && x > NANJING_RIVER_SHORE_X && x < 105,
     landmarks: {
       temple: templeLandmark,
       gatehouse: { style: 'arched-stone-gate', gates: gateways, barbicans: NANJING_COURTYARDS.length,

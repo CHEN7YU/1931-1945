@@ -7,7 +7,7 @@ import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockYardContains, nanjin
   nanjingDockAssaultGoal, nanjingDockBufferActive, nanjingDockPathClear,
   nanjingDockPostOutsideBuildings, assignNanjingDockDefense } from '../src/nanjing-dock-defense.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingCoreGuard } from '../src/nanjing-defense.js';
-import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_SHIFT, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT } from '../src/civilian-crowd.js';
 import { formationPositions } from '../src/battle-roster.js';
 
@@ -22,9 +22,9 @@ test('the real civilian queue is behind the exclusion boundary, not just its vis
     assert.ok(nanjingDockInside(civilianWaitingSlot(index)));
   assert.ok(world.civilians.every(person => nanjingDockYardContains(person.userData.waitingSlot)),
     'every physically placed waiting slot is inside the fenced yard');
-  assert.equal(nanjingDockYardContains({ x: -81.1, z: -80 }), false);
-  assert.equal(nanjingDockYardContains({ x: -81.3, z: -80 }), true);
-  assert.equal(nanjingDockYardContains({ x: -85, z: -69.9 }), false);
+  assert.equal(nanjingDockYardContains({ x: NANJING_DOCK_ENTRY_X + .1, z: -80 }), false);
+  assert.equal(nanjingDockYardContains({ x: NANJING_DOCK_ENTRY_X - .1, z: -80 }), true);
+  assert.equal(nanjingDockYardContains({ x: NANJING_DOCK_ENTRY_X - 4, z: -69.9 }), false);
   assert.equal(nanjingDockBufferActive('gate-defense'), false);
   assert.equal(nanjingDockBufferActive('withdrawal'), false);
   assert.equal(nanjingDockBufferActive('dock-defense'), true);
@@ -82,7 +82,8 @@ test('all four autonomous squads have distinct reachable outer posts, without re
   assert.deepEqual(guards.map(a => a.tactics.nanjingDockDefense), posts, 'quiet posts do not churn every update');
   for (const spawnId of NANJING_DOCK_ASSAULT_SPAWNS) {
     const start = NANJING_SPAWNS.find(spawn => spawn.id === spawnId);
-    const actor = { formation: { index: NANJING_DOCK_ASSAULT_SPAWNS.indexOf(spawnId) }, index: 0 };
+    const actor = { formation: { index: NANJING_DOCK_ASSAULT_SPAWNS.indexOf(spawnId) }, index: 0,
+      tactics: {}, position: start };
     const goal = nanjingDockAssaultGoal(actor), path = planner(start, goal);
     assert.ok(!nanjingDockInside(goal));
     assert.ok(path.length, `assault lane cannot reach the front: ${spawnId}`);
@@ -96,6 +97,47 @@ test('all four autonomous squads have distinct reachable outer posts, without re
   const original = new THREE.Vector3(-57, 0, -80);
   world.moveInfantry(original, -6, 0, .42, world.obstacles);
   assert.ok(original.x < -59, 'the exclusion must not physically wall off civilian or friendly boarding');
+});
+
+test('four assault formations route through the west gate while the others retain the inner line', () => {
+  const planner = createNavigator([...world.doorSystem.navigationObstacles, NANJING_DOCK_BUFFER]);
+  for (const [formationIndex, spawnId] of NANJING_DOCK_ASSAULT_SPAWNS.entries()) {
+    const spawn = NANJING_SPAWNS.find(point => point.id === spawnId);
+    const position = new THREE.Vector3(spawn.x, 0, spawn.z);
+    const actor = { index: 0, formation: { index: formationIndex }, tactics: {}, position };
+    const first = nanjingDockAssaultGoal(actor);
+    if (formationIndex % 2) {
+      assert.ok(first.x > -69.8);
+      continue;
+    }
+    assert.deepEqual(first, { x: -66, y: 0, z: -60, transit: true });
+    const approach = planner(position, first);
+    assert.ok(approach.length, `gate approach unreachable: ${spawnId}`);
+    for (const point of approach) {
+      world.moveInfantry(position, point.x - position.x, point.z - position.z, .42,
+        [...world.obstacles, NANJING_DOCK_BUFFER]);
+      assert.ok(Math.hypot(position.x - point.x, position.z - point.z) < .15,
+        `gate approach blocked for ${spawnId}`);
+    }
+    const outside = nanjingDockAssaultGoal(actor);
+    assert.ok(outside.x < -74.2 && !nanjingDockInside(outside));
+    const crossing = planner(position, outside);
+    assert.ok(crossing.length, `gate crossing unreachable: ${spawnId}`);
+    for (const point of crossing) {
+      const before = position.clone();
+      const steps = Math.ceil(Math.hypot(point.x - position.x, point.z - position.z) / .2);
+      for (let step = 0; step < steps; step++) {
+        world.moveInfantry(position, (point.x - before.x) / steps, (point.z - before.z) / steps, .42,
+          [...world.obstacles, NANJING_DOCK_BUFFER]);
+        if (position.x >= -74.2 && position.x <= -69.8)
+          assert.ok(Math.abs(position.z + 60) < 3.4, 'crossing must use the gate opening');
+      }
+      assert.ok(Math.hypot(position.x - point.x, position.z - point.z) < .15,
+        `gate crossing blocked for ${spawnId}`);
+    }
+    assert.ok(position.x < -74.2);
+    assert.equal(actor.tactics.nanjingGateAssaultReady, true);
+  }
 });
 
 test('all six core positions are physically clear, reachable, and cannot be reassigned to autonomous weapons', () => {

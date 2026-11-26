@@ -2,6 +2,13 @@ import { RIFLE, INFANTRY_WEAPONS } from './rifle-action.js';
 import { obstacleLookup } from './spatial.js';
 
 export const MAP_LIMIT = 108;
+export const DEFAULT_MAP_BOUNDS = Object.freeze({ minX: -MAP_LIMIT, maxX: MAP_LIMIT, minZ: -MAP_LIMIT, maxZ: MAP_LIMIT });
+let mapBounds = DEFAULT_MAP_BOUNDS;
+export function setMapBounds(bounds = DEFAULT_MAP_BOUNDS) {
+  if (!bounds || !['minX', 'maxX', 'minZ', 'maxZ'].every(key => Number.isFinite(bounds[key])) ||
+    bounds.minX >= bounds.maxX || bounds.minZ >= bounds.maxZ) throw new RangeError('Invalid map bounds');
+  mapBounds = { ...bounds };
+}
 export const MATCH_SECONDS = 600;
 export const CAPTURE_SECONDS = 12;
 export const DOMINATION_SECONDS = 20;
@@ -88,7 +95,8 @@ export function circleBlocked(x, z, radius, obstacles, feetY = 0, bodyHeight = 1
     const count = obstacles.length;
     probe.candidateHistogram[count === 0 ? 0 : count <= 8 ? 1 : count <= 32 ? 2 : count <= 128 ? 3 : count <= 512 ? 4 : 5]++;
   }
-  if (Math.abs(x) > MAP_LIMIT - radius || Math.abs(z) > MAP_LIMIT - radius) {
+  if (x < mapBounds.minX + radius || x > mapBounds.maxX - radius ||
+    z < mapBounds.minZ + radius || z > mapBounds.maxZ - radius) {
     if (probe) { probe.boundaryHits++; probe.blocked++; }
     return true;
   }
@@ -156,9 +164,10 @@ export function segmentClear(start, end, radius, obstacles, candidatesAt = null,
 
 export function createNavigator(obstacles, step = .75, radius = .46) {
   if (!(step > 0) || !(radius > 0)) throw new RangeError('Navigation resolution and clearance must be positive');
-  const half = Math.floor((MAP_LIMIT - 1) / step);
-  const width = half * 2 + 1;
-  const count = width * width;
+  const minCellX = Math.ceil((mapBounds.minX + 1) / step), maxCellX = Math.floor((mapBounds.maxX - 1) / step);
+  const minCellZ = Math.ceil((mapBounds.minZ + 1) / step), maxCellZ = Math.floor((mapBounds.maxZ - 1) / step);
+  const width = maxCellX - minCellX + 1, depth = maxCellZ - minCellZ + 1;
+  const count = width * depth;
   const blocked = new Uint8Array(count);
   const links = new Uint8Array(count);
   const lookup = obstacleLookup(obstacles, Math.max(radius, .6));
@@ -171,8 +180,8 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   };
   const parents = new Int32Array(count), costs = new Float32Array(count), closed = new Uint8Array(count);
   const heapNodes = [], heapScores = [];
-  const point = index => ({ x: (index % width - half) * step, z: (Math.floor(index / width) - half) * step });
-  const linkPairs = (minX = 0, maxX = width - 1, minZ = 0, maxZ = width - 1) => {
+  const point = index => ({ x: (index % width + minCellX) * step, z: (Math.floor(index / width) + minCellZ) * step });
+  const linkPairs = (minX = 0, maxX = width - 1, minZ = 0, maxZ = depth - 1) => {
     for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
       const index = z * width + x, a = point(index);
       if (x + 1 < width) {
@@ -180,7 +189,7 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
         links[index] &= ~2; links[other] &= ~1;
         if (!blocked[index] && !blocked[other] && clear(a, point(other))) { links[index] |= 2; links[other] |= 1; }
       }
-      if (z + 1 < width) {
+      if (z + 1 < depth) {
         const other = index + width;
         links[index] &= ~8; links[other] &= ~4;
         if (!blocked[index] && !blocked[other] && clear(a, point(other))) { links[index] |= 8; links[other] |= 4; }
@@ -200,12 +209,12 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   const nearest = target => {
     let best = -1;
     let distance = Infinity;
-    const tx = Math.max(0, Math.min(width - 1, Math.round(target.x / step) + half));
-    const tz = Math.max(0, Math.min(width - 1, Math.round(target.z / step) + half));
+    const tx = Math.max(0, Math.min(width - 1, Math.round(target.x / step) - minCellX));
+    const tz = Math.max(0, Math.min(depth - 1, Math.round(target.z / step) - minCellZ));
     const targetClear = !blockedAt(target.x, target.z);
     const connectionRadius = targetClear ? radius : .42;
     const physicalClear = !blockedAt(target.x, target.z, connectionRadius);
-    for (let z = Math.max(0, tz - 8); z <= Math.min(width - 1, tz + 8); z++) for (let x = Math.max(0, tx - 8); x <= Math.min(width - 1, tx + 8); x++) {
+    for (let z = Math.max(0, tz - 8); z <= Math.min(depth - 1, tz + 8); z++) for (let x = Math.max(0, tx - 8); x <= Math.min(width - 1, tx + 8); x++) {
       const index = z * width + x;
       if (blocked[index]) continue;
       const p = point(index);
@@ -306,15 +315,15 @@ export function createNavigator(obstacles, step = .75, radius = .46) {
   };
   findPath.rebuild = rebuild;
   const refreshRegion = bounds => {
-    const minX = Math.max(0, Math.floor((bounds.minX - radius) / step) + half);
-    const maxX = Math.min(width - 1, Math.ceil((bounds.maxX + radius) / step) + half);
-    const minZ = Math.max(0, Math.floor((bounds.minZ - radius) / step) + half);
-    const maxZ = Math.min(width - 1, Math.ceil((bounds.maxZ + radius) / step) + half);
+    const minX = Math.max(0, Math.floor((bounds.minX - radius) / step) - minCellX);
+    const maxX = Math.min(width - 1, Math.ceil((bounds.maxX + radius) / step) - minCellX);
+    const minZ = Math.max(0, Math.floor((bounds.minZ - radius) / step) - minCellZ);
+    const maxZ = Math.min(depth - 1, Math.ceil((bounds.maxZ + radius) / step) - minCellZ);
     for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
       const index = z * width + x, p = point(index);
       blocked[index] = Number(blockedAt(p.x, p.z));
     }
-    linkPairs(Math.max(0, minX - 1), Math.min(width - 1, maxX + 1), Math.max(0, minZ - 1), Math.min(width - 1, maxZ + 1));
+    linkPairs(Math.max(0, minX - 1), Math.min(width - 1, maxX + 1), Math.max(0, minZ - 1), Math.min(depth - 1, maxZ + 1));
   };
   findPath.refreshMany = regions => {
     if (!Array.isArray(regions) || !regions.length) throw new RangeError('Navigation refresh requires changed regions');

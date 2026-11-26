@@ -1,7 +1,7 @@
 const streets = [
   { id: 'gate-high-street', width: 4.8, points: [[0, -108], [2, -86], [-2, -64], [2, -41], [0, -12]] },
   { id: 'dock-approach', width: 3, points: [[-10, -16], [-25, -33], [-38, -47], [-48, -60], [-56, -73], [-56, -92]] },
-  { id: 'west-gate-dock-road', width: 5, points: [[-56, NANJING_WEST_GATE_Z], [-72, NANJING_WEST_GATE_Z], [-82, -66], [-91, -80]] },
+  { id: 'west-gate-dock-road', width: 5, points: [[-56, NANJING_WEST_GATE_Z], [-72, NANJING_WEST_GATE_Z], [-82, -66], [-91, -80], [NANJING_DOCK_ENTRY_X - 2, -80]] },
   { id: 'cross-market-lane', width: 2.6, points: [[-68, -60], [-48, -60], [-29, -63], [-12, -59],
     [6, -58], [25, -62], [44, -59], [66, -64], [103, -60]] },
   { id: 'east-neighborhood-lane', width: 3.2, points: [[18, -12], [27, -31], [38, -44], [43, -60],
@@ -103,4 +103,4 @@ export function createNanjingCityLayout() {
     streetFixtures: streetFixtures.map(fixture => ({ ...fixture })),
   };
 }
-import { NANJING_DOCK_ASSAULT_SPAWNS, NANJING_SPAWNS, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
+import { NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJING_SPAWNS, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';

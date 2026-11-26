@@ -31,7 +31,7 @@ try {
 
   await page.locator('[data-phase-button="withdrawal"]').click();
   assert.equal(await page.locator('#battle-map').getAttribute('data-phase'), 'withdrawal');
-  assert.match(await page.locator('#phase-rule').textContent(), /抵达渡口.*第二阶段/);
+  assert.match(await page.locator('#phase-rule').textContent(), /水西门.*第二阶段/);
   assert.match(await page.locator('#force-summary').innerText(), /停止新增援.*持续逼近/);
   await capture('nanjing-withdrawal');
 

@@ -34,15 +34,18 @@ try {
           const actor = enemies.find(a => a.health > 0 && !a.vehicleId);
           if (!actor) throw new Error('Missing actual attacker for movement verification');
           const old = actor.position.clone();
-          actor.position.set(-82, 0, -68);
-          moveInfantry(actor.position, 0, -8, .42, movementObstacles(-82, -68));
+          actor.position.set(NANJING_DOCK_BUFFER.maxX - 2, 0, NANJING_DOCK_BUFFER.maxZ + 2);
+          moveInfantry(actor.position, 0, -8, .42, movementObstacles(actor.position.x, actor.position.z));
           const blockedPosition = actor.position.toArray(); actor.position.copy(old);
           return { stage: nanjingCampaign.stage, outcome: nanjingCampaign.outcome, incursions, blockedPosition,
+            buffer: NANJING_DOCK_BUFFER, dock: NANJING_DOCK,
             posts: friendlyAI.filter(a => a.health > 0).map(a => ({ point: a.tactics.nanjingDockDefense,
               position: a.position.toArray(), spawn: a.formation.spawnId, mode: a.tactics.mode })),
             playerOrders: allies.map(a => a.order),
-            goals: enemies.filter(a => a.health > 0 && !a.vehicleId).map(a => formationDestination(a, objectives[1])),
-            dockEnemyPath: dockNavigate({ x: -92, z: -95 }, { x: -92, z: -65 }) };
+            goals: enemies.filter(a => a.health > 0 && !a.vehicleId).map(a => ({
+              formation: a.formation.index, goal: formationDestination(a, objectives[1]) })),
+            dockEnemyPath: dockNavigate({ x: NANJING_DOCK_BUFFER.maxX - 2, z: NANJING_DOCK_BUFFER.minZ - 3 },
+              { x: NANJING_DOCK_BUFFER.maxX - 2, z: NANJING_DOCK_BUFFER.maxZ + 3 }) };
         },
         respawn() {
           setGameState('playing');
@@ -81,21 +84,86 @@ try {
           const oldTarget = actor.tactics.civilianTarget, oldThink = actor.tactics.civilianThinkAt;
           const oldVisible = person.visible, oldActive = world.civilians.map(c => c.userData.active);
           for (const civilian of world.civilians) civilian.userData.active = false;
-          actor.position.set(-77, 0, -80); person.position.set(-80, 0, -80);
+          actor.position.set(NANJING_DOCK.x + 21, 0, NANJING_DOCK.z);
+          person.position.set(NANJING_DOCK.x + 18, 0, NANJING_DOCK.z);
           person.visible = true; person.userData.active = true; actor.tactics.civilianThinkAt = 0;
           civilianCombatTime = -1;
           const selectedOutside = nanjingCivilianPursuitTarget(actor) === person;
-          person.position.set(-82, 0, -80); time += .05; civilianCombatTime = -1;
+          person.position.set(NANJING_DOCK.x + 16, 0, NANJING_DOCK.z); time += .05; civilianCombatTime = -1;
           const selectedInside = nanjingCivilianPursuitTarget(actor) === person;
           const attackInside = nanjingCivilianAttackTargets().some(target => target.civilian === person);
           const physicalInside = nanjingCivilianCombatTargets().some(target => target.civilian === person);
-          const soldierOutside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: -80, z: -80 } });
-          const soldierInside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: -82, z: -80 } });
+          const soldierOutside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: NANJING_DOCK.x + 18, z: NANJING_DOCK.z } });
+          const soldierInside = nanjingEnemyPersonTargetAllowed({ targetKind: 'person', position: { x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z } });
           actor.position.copy(oldActor); person.position.copy(oldPerson); person.visible = oldVisible;
           world.civilians.forEach((civilian, index) => { civilian.userData.active = oldActive[index]; });
           actor.tactics.civilianTarget = oldTarget; actor.tactics.civilianThinkAt = oldThink;
           civilianCombatTime = -1;
           return { selectedOutside, selectedInside, attackInside, physicalInside, soldierOutside, soldierInside };
+        },
+        gateAssault() {
+          setGameState('pause');
+          const units = formations.filter(unit => unit.team === 'enemy' && unit.type === 'infantry' &&
+            unit.index % 2 === 0);
+          const actors = units.map(unit => unit.members.find(actor => actor.index === 2));
+          if (actors.length !== 4 || actors.some(actor => !actor)) throw new Error('Missing assault formations');
+          for (const actor of allForces) actor.health = 0;
+          for (const actor of actors) { actor.health = 100; actor.vehicleId = 'fixture-inactive'; }
+          for (const civilian of world.civilians) civilian.visible = false;
+          const results = [];
+          for (const actor of actors) {
+            actor.vehicleId = null;
+            actor.position.set(-64, 0, -60);
+            actor.path = actor.pathGoal = actor.target = null;
+            actor.blastReaction = actor.dying = null;
+            actor.traversal.kind = 'grounded';
+            actor.grenades.action = null;
+            cancelAIMelee(actor);
+            actor.tactics.lastSeen = null;
+            actor.tactics.civilianTarget = null;
+            actor.tactics.nanjingGateAssaultReady = false;
+            rebuildForces();
+            const samples = [];
+            for (let frame = 0; frame < 600 && actor.position.x > -75; frame++) {
+              time += .05;
+              aiDecisions.beginFrame();
+              updateAI(.05);
+              samples.push(actor.position.toArray());
+            }
+            results.push({ formation: actor.formation.index, position: actor.position.toArray(),
+              mode: actor.tactics.mode, goal: formationDestination(actor, objectives[1]),
+              ready: actor.tactics.nanjingGateAssaultReady, health: actor.health,
+              vehicleId: actor.vehicleId, emplacementId: actor.emplacementId,
+              traversal: actor.traversal.kind, dying: actor.dying, blastReaction: actor.blastReaction,
+              state, present: allForces.includes(actor), pathReason: actor.tactics.pathReason,
+              path: actor.path, samples });
+            actor.health = 0;
+          }
+          return results;
+        },
+        positionFenceVault() {
+          setGameState('pause');
+          const actor = controlledSoldier(entities);
+          const x = NANJING_DOCK.x + 9.25;
+          actor.position.set(x, world.groundHeight(x, -90.7), -90.7);
+          if (circleBlocked(actor.position.x, actor.position.z, .4, deploymentObstacles(), actor.position.y))
+            throw new Error('Fence vault starting point is blocked');
+          actor.traversal.kind = 'grounded'; actor.locomotion.stamina = 1;
+          controlPose.yaw = Math.PI;
+          setGameState('playing');
+          return actor.position.toArray();
+        },
+        fenceVaultStatus() {
+          const actor = controlledSoldier(entities);
+          return { position: actor.position.toArray(), traversal: actor.traversal.kind };
+        },
+        ending() {
+          battleEnding.reset();
+          const now = performance.now();
+          battleEnding.start('commemoration', now - 9000);
+          battleEnding.update(now);
+          const page = $('battle-ending-page');
+          return { text: page.textContent, links: page.querySelectorAll('a').length, hidden: page.hidden };
         },
         view(direction) {
           setGameState('pause');
@@ -104,6 +172,9 @@ try {
           if (direction === 'north') {
             camera.position.set(-91, 1.65, -103);
             camera.lookAt(-91, 1.4, -150);
+          } else if (direction === 'dock') {
+            camera.position.set(-78, 4, -72);
+            camera.lookAt(NANJING_DOCK.x + 16.8, 1.5, NANJING_DOCK.z);
           } else {
             const gate = scene.children.find(object => object.userData.nanjingFeature === 'west-gate-name');
             if (!gate) throw new Error('Missing western gate name');
@@ -130,36 +201,40 @@ try {
   assert.equal(dock.stage, 'dock-defense');
   assert.equal(dock.outcome, null);
   assert.equal(dock.incursions, 0, 'normal attackers cannot enter the civilian queue');
-  assert.ok(dock.blockedPosition[2] >= -69.08, 'actual actor movement must respect the buffer');
+  assert.ok(dock.blockedPosition[2] >= dock.buffer.maxZ + .42 - .01, 'actual actor movement must respect the buffer');
   assert.ok(dock.posts.length >= 22);
   assert.ok(dock.posts.every(a => a.point && a.point.x >= -68 && a.point.x <= -54 &&
     Math.abs(a.point.z + 60) <= 10), 'AI defense posts are near the west gate');
   assert.deepEqual(dock.playerOrders, gate.playerOrders);
-  assert.ok(dock.goals.every(goal => goal.x >= -58 && goal.x <= -54 &&
-    Math.abs(goal.z + 60) <= 4));
+  assert.ok(dock.goals.every(({ formation, goal }) => formation % 2
+    ? goal.x >= -58 && goal.x <= -54 && Math.abs(goal.z + 60) <= 4
+    : (goal.x === -66 && goal.z === -60 || goal.x <= -78 && Math.abs(goal.z + 60) < 3)),
+  'alternating formations advance through the gate or hold the inner line');
   assert.ok(dock.dockEnemyPath.length > 0);
   const respawn = await page.evaluate(() => nanjingDockReview.respawn());
   assert.equal(respawn.newGeneration, respawn.generation + 1, 'a lost squad actually respawns');
   assert.equal(respawn.positions.length, 11, 'the full squad respawns');
   assert.ok(respawn.positions.every(position => position[0] < -74.2 &&
-    position[2] < -80 && Math.hypot(position[0] + 98, position[2] + 80) < 30),
+    position[2] < dock.dock.z && Math.hypot(position[0] - dock.dock.x, position[2] - dock.dock.z) < 30),
     'the squad starts north of the ferry and outside the west wall');
   assert.ok(respawn.positions.every(position => position[2] >= -104 && position[2] <= 96),
     'the complete AI squad respawns inside the real battle boundary');
   assert.ok(respawn.posts.length && respawn.posts.every(post => post &&
     post.x >= -68 && post.x <= -54 && Math.abs(post.z + 60) <= 10), 'respawned AI is assigned to the west gate');
   await page.evaluate(() => nanjingDockReview.preparePlayerRespawn());
-  const marker = page.locator('[data-spawn="nanjing-west-dock"]');
+  const marker = page.locator('[data-spawn="nanjing-west-dock-south"]');
   await marker.click();
   await page.screenshot({ path: join(directory, 'dock-deployment.png') });
   await page.locator('#confirm-deploy').click();
   const playerBoundary = await page.evaluate(() => nanjingDockReview.playerBoundary());
   assert.equal(playerBoundary.positions.length, 11);
+  assert.ok(playerBoundary.positions.every(([x, , z]) => z > dock.dock.z &&
+    x < -74.2 && x > dock.dock.x + 4), 'the whole squad deploys south of the dock on land outside the wall');
   assert.ok(playerBoundary.positions.every(([x, , z]) => x >= playerBoundary.area.minX &&
     x <= playerBoundary.area.maxX && z >= playerBoundary.area.minZ && z <= playerBoundary.area.maxZ));
   assert.ok(playerBoundary.outside.every(outside => !outside), 'no player squad member starts outside');
   assert.deepEqual(playerBoundary.after, playerBoundary.before, 'spawning never causes boundary damage');
-  for (const direction of ['north', 'gate']) {
+  for (const direction of ['north', 'gate', 'dock']) {
     await page.evaluate(direction => nanjingDockReview.view(direction), direction);
     await page.screenshot({ path: join(directory, `dock-${direction}.png`) });
   }
@@ -167,6 +242,25 @@ try {
   assert.deepEqual(protection, { selectedOutside: true, selectedInside: false,
     attackInside: false, physicalInside: true, soldierOutside: true, soldierInside: false },
     'AI drops the target when a person crosses the entrance');
+  const vaultStart = await page.evaluate(() => nanjingDockReview.positionFenceVault());
+  await page.keyboard.press('f');
+  await page.waitForTimeout(1800);
+  const vaultEnd = await page.evaluate(() => nanjingDockReview.fenceVaultStatus());
+  assert.ok(vaultEnd.position[2] > -90 + .4 && vaultEnd.position[2] > vaultStart[2],
+    `F must cross the actual fence: ${JSON.stringify({ vaultStart, vaultEnd })}`);
+  assert.equal(vaultEnd.traversal, 'grounded');
+  const crossings = await page.evaluate(() => nanjingDockReview.gateAssault());
+  await writeFile(join(directory, 'gate-crossings.json'), JSON.stringify(crossings, null, 2));
+  for (const crossing of crossings) {
+    assert.ok(crossing.position[0] < -74.2, `formation ${crossing.formation} did not cross the wall`);
+    assert.ok(crossing.samples.filter(([x]) => x >= -74.2 && x <= -69.8)
+      .every(([, , z]) => Math.abs(z + 60) < 3.4), 'actual AI must cross through the gate opening');
+  }
+  const ending = await page.evaluate(() => nanjingDockReview.ending());
+  assert.equal(ending.hidden, false);
+  assert.match(ending.text, /中华门/);
+  assert.doesNotMatch(ending.text, /新华网|新华社|人民日报|人民网/);
+  assert.equal(ending.links, 0, 'the ending screen does not show source links');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, coreGuards: 6, dockPosts: dock.posts.length,
     enemyIncursions: dock.incursions, errors }));

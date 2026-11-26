@@ -1,5 +1,5 @@
 export const BATTLE_AREA = Object.freeze({ minX: -100, maxX: 100, minZ: -96, maxZ: 96 });
-export const NANJING_BATTLE_AREA = Object.freeze({ ...BATTLE_AREA, minX: -106, minZ: -104 });
+export const NANJING_BATTLE_AREA = Object.freeze({ ...BATTLE_AREA, minX: -132, minZ: -104 });
 export const AIR_BATTLE_AREA = Object.freeze({ minX: -600, maxX: 600, minZ: -600, maxZ: 600 });
 export const BOUNDARY_RULES = Object.freeze({ graceSeconds: 8, damagePerSecond: 10 });
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deploymentMapPoint, deploymentMapView } from '../src/deployment-map.js';
-import { NANJING_SPAWNS, isNanjingSpawnAvailable } from '../src/nanjing-campaign.js';
+import { NANJING_FERRY_BERTHS, NANJING_DOCK_ENTRY_X, NANJING_SPAWNS, isNanjingSpawnAvailable } from '../src/nanjing-campaign.js';
 import { NANJING_BATTLE_AREA } from '../src/battle-boundary.js';
 
 test('deployment zoom follows the active defense while keeping its selectable spawns inside the map', () => {
@@ -28,6 +28,10 @@ test('the dock marker and deployment zone are on the safe side of the drawn nort
     const [, zoneTop] = deploymentMapPoint(view, point.x, point.deploymentZone.minZ);
     assert.ok(boundary >= 0 && markerX >= 0 && markerX <= 176 && markerY <= 176);
     assert.ok(markerY > zoneTop && zoneTop > boundary);
+    for (const location of [...NANJING_FERRY_BERTHS, { x: NANJING_DOCK_ENTRY_X, z: -80 }, { x: -72, z: -60 }]) {
+      assert.ok(deploymentMapPoint(view, location.x, location.z).every(value => value >= 0 && value <= 176),
+        'the relocated ferries, entrance and west gate remain on the tactical map');
+    }
   }
 });
 

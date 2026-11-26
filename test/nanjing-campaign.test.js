@@ -8,7 +8,7 @@ import {
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
   NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady,
-  recordNanjingCivilianRiverCrossing,
+  recordNanjingCivilianRiverCrossing, nanjingWithdrawalExitReached,
 } from '../src/nanjing-campaign.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
 import { BATTLE_AREA } from '../src/battle-boundary.js';
@@ -194,7 +194,7 @@ test('Nanjing campaign uses dedicated gate, dock, and three-direction assault po
   assert.deepEqual(
     NANJING_SPAWNS.filter(spawn => spawn.team === 'friendly' && !spawn.aiOnly &&
       isNanjingSpawnAvailable(spawn, true)).map(spawn => spawn.id),
-    ['nanjing-west-dock'],
+    ['nanjing-west-dock', 'nanjing-west-dock-south'],
   );
   assert.deepEqual(
     ['nanjing-north-1', 'nanjing-east-1', 'nanjing-south-1'].filter(id => NANJING_SPAWNS.some(spawn => spawn.id === id)),
@@ -203,7 +203,7 @@ test('Nanjing campaign uses dedicated gate, dock, and three-direction assault po
   assert.equal(NANJING_SPAWNS.filter(spawn => spawn.team === 'enemy').length, 27);
 });
 
-test('three-minute gate defense ends reinforcements and requires reaching the dock to start its defense', () => {
+test('three-minute gate defense ends reinforcements and waits for withdrawal to finish', () => {
   const campaign = createNanjingCampaign();
   assert.equal(campaign.stageRemaining, NANJING_STAGE_SECONDS);
   assert.equal(campaign.reinforcementStopped, false);
@@ -220,6 +220,18 @@ test('three-minute gate defense ends reinforcements and requires reaching the do
   assert.equal(campaign.stageRemaining, NANJING_STAGE_SECONDS);
   assert.equal(campaign.reinforcementStopped, false, 'dock attack must allow its own reinforcements');
   assert.equal(activateNanjingDock(campaign), false);
+});
+
+test('withdrawal exit covers the west gate and breach without triggering from inside or the wall top', () => {
+  for (const point of [
+    { x: -74.19, y: 0, z: -60 }, { x: -72, y: 0, z: -60 },
+    { x: -75, y: 8.58, z: -60 }, { x: -75, y: 0, z: -70 },
+    { x: -60, y: 0, z: -89 }, { x: NaN, y: 0, z: -60 }, null,
+  ]) assert.equal(nanjingWithdrawalExitReached(point), false, JSON.stringify(point));
+  for (const point of [
+    { x: -74.2, y: 0, z: -60 }, { x: -75, y: 0, z: -63.4 },
+    { x: -74.2, y: .5, z: -89 }, { x: NANJING_OBJECTIVES[1].x, y: 0, z: NANJING_OBJECTIVES[1].z },
+  ]) assert.equal(nanjingWithdrawalExitReached(point), true, JSON.stringify(point));
 });
 
 test('dock evacuation keeps the player last and distinguishes successful escape from being overrun', () => {
@@ -266,7 +278,7 @@ test('civilians board five ten-person boats without losing count', () => {
     campaign.civiliansWaiting + campaign.civiliansAboard);
 });
 
-test('civilians can gather at the dock but cannot board or depart before the defenders arrive', () => {
+test('civilians can gather at the dock but cannot board or depart before withdrawal reaches the exit', () => {
   const campaign = createNanjingCampaign();
   registerCivilianArrival(campaign, 5);
   assert.equal(boardCivilian(campaign, 0), false);
