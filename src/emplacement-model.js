@@ -168,11 +168,15 @@ export function createEmplacementModel(point) {
     firingPose: profile.antiAircraft ? null : 'kneeling' };
   if (cannon) root.userData.artilleryTrails = trailConnections;
   root.userData.update = () => {
-    root.position.x = point.x; root.position.z = point.z; root.rotation.y = point.heading;
+    const recoil = point.recoil ?? 0;
+    const carriageRecoil = cannon ? recoil * .25 : 0;
+    root.position.x = point.x + Math.sin(point.yaw) * carriageRecoil;
+    root.position.z = point.z + Math.cos(point.yaw) * carriageRecoil;
+    root.rotation.y = point.heading;
     swivel.rotation.y = point.yaw - point.heading;
     barrel.rotation.x = point.pitch;
-    barrel.position.set(0, -Math.sin(point.pitch) * (point.recoil ?? 0),
-      Math.cos(point.pitch) * (point.recoil ?? 0));
+    barrel.position.set(0, -Math.sin(point.pitch) * recoil,
+      Math.cos(point.pitch) * recoil - carriageRecoil);
     const standing = profile.antiAircraft || cannon && point.position === 'march';
     root.userData.supportWeapon.stance = standing ? 'standing' : 'crouched';
     root.userData.supportWeapon.firingPose = standing ? null : 'kneeling';

@@ -5,7 +5,8 @@ import { obstacleLookup } from '../src/spatial.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
   releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute,
-  activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed } from '../src/civilian-crowd.js';
+  activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed,
+  prepareOpeningCivilian, openingSourceHiddenByCover } from '../src/civilian-crowd.js';
 
 test('boarding chooses the physically nearest waiting civilian independently of queue order and uses a jog', () => {
   const queue = [8, 2, 5].map(x => ({ position: { x, y: 0, z: 0 } }));
@@ -39,6 +40,74 @@ test('visible residents can start evacuating at legal crowd spacing without appl
   assert.equal(people.length, 3, 'already-active people are not inserted again');
 });
 
+test('opening refugees select an unseen clear south-bank source before joining their existing bridge route', () => {
+  const bridge = { x: -24, z: 31 };
+  const homeRoute = [{ x: -24, z: 45 }, bridge, { x: 0, z: -12 }, { x: -105, z: -80 }];
+  const restRoute = [{ x: -24, z: 45 }, bridge, { x: 0, z: -12 }, { x: -4, z: -20 }];
+  const person = { visible: false, position: { x: -24, y: 0, z: 45,
+    set(x, y, z) { Object.assign(this, { x, y, z }); } },
+    userData: { civilianId: 0, startX: -24, startZ: 45, openingWave: true, active: false, releaseAt: 0,
+      fleeReleased: false, homeRoute, refugeeRestRoute: restRoute, route: restRoute, waypoint: 0 } };
+  const sources = [-25, -40, 5].map(x => ({ x, z: 70, path: [{ x: -24, z: 70 }, bridge] }));
+  const peers = [{ position: { x: -40, z: 70 } }];
+  assert.equal(prepareOpeningCivilian(person, sources, peers, () => true, () => true, () => 0), false);
+  assert.equal(person.userData.route, restRoute);
+  assert.equal(person.position.z, 45, 'waiting does not relocate an inactive person');
+  assert.equal(prepareOpeningCivilian(person, sources, peers, point => point.x === -25,
+    () => true, () => .1), true);
+  assert.deepEqual({ x: person.position.x, y: person.position.y, z: person.position.z }, { x: 5, y: .1, z: 70 });
+  assert.deepEqual(person.userData.refugeeRestRoute, [...sources[2].path, ...restRoute.slice(2)]);
+  assert.deepEqual(person.userData.homeRoute, [...sources[2].path, ...homeRoute.slice(2)]);
+  assert.equal(person.userData.route, person.userData.refugeeRestRoute);
+  assert.equal(activateCivilianEvacuation(person, 0, peers), true);
+  assert.throws(() => prepareOpeningCivilian(person, sources, peers, () => false, () => true, () => 0));
+});
+
+test('opening refugees choose the nearest safe concealed source to their original start', () => {
+  const bridge = { x: -24, z: 31 };
+  const route = [bridge, { x: 0, z: -12 }];
+  const createPerson = () => ({ visible: false, position: { x: -24, y: 0, z: 55,
+    set(x, y, z) { Object.assign(this, { x, y, z }); } },
+    userData: { civilianId: 1, startX: -24, startZ: 55, openingWave: true, active: false,
+      fleeReleased: false, homeRoute: route, refugeeRestRoute: route, route, waypoint: 0 } });
+  const near = { x: -25, z: 40, path: [bridge] };
+  const far = { x: -11.1, z: 76, path: [bridge] };
+  const person = createPerson();
+  assert.equal(prepareOpeningCivilian(person, [near, far], [], () => false, () => true, () => 0), true);
+  assert.equal(person.position.z, 40);
+  const fallback = createPerson();
+  assert.equal(prepareOpeningCivilian(fallback, [near, far], [], point => point === near, () => true, () => 0), true);
+  assert.equal(fallback.position.z, 76, 'a visible nearby source cannot override a hidden fallback');
+});
+
+test('opening cover must hide the entire body behind one solid, not only its center', () => {
+  const roof = { minX: -3, maxX: 3, minY: 2.5, height: 2.7, minZ: -3, maxZ: 3 };
+  const source = { x: 0, z: 0, cover: [roof] };
+  assert.equal(openingSourceHiddenByCover(source, { x: 0, y: 12, z: 0 }, () => 0), true);
+  assert.equal(openingSourceHiddenByCover(source, { x: 100, y: 12, z: 0 }, () => 0), false);
+  assert.equal(openingSourceHiddenByCover(source, { x: 0, y: 1, z: 0 }, () => 0), false);
+  assert.equal(openingSourceHiddenByCover({ x: 0, z: 0 }, { x: 0, y: 12, z: 0 }, () => 0), false);
+});
+
+test('opening refugees wait for an occupied house to clear rather than filling its doorway', () => {
+  const bridge = { x: -24, z: 31 }, street = { exit: { x: -9, z: 71 } };
+  const source = { x: -10, z: 73, path: [street.exit, bridge], street };
+  const route = [bridge, { x: 0, z: -12 }];
+  const person = { visible: false, position: { x: -24, y: 0, z: 45,
+    set(x, y, z) { Object.assign(this, { x, y, z }); } },
+    userData: { civilianId: 1, startX: -24, startZ: 45, openingWave: true, active: false,
+      fleeReleased: true, homeRoute: route, refugeeRestRoute: route, route, waypoint: 0 } };
+  const peer = { position: { x: -8, z: 72 }, userData: { openingInside: true, streetLife: street } };
+  assert.equal(prepareOpeningCivilian(person, [source], [peer], () => false, () => true, () => 0, true), false);
+  assert.equal(prepareOpeningCivilian(person, [source], [peer], () => false, () => true, () => 0), true,
+    'normal opening release retains its previous schedule');
+  Object.assign(person.userData, { streetLife: null, streetEvacuating: false, openingInside: false,
+    homeRoute: route, refugeeRestRoute: route, route, waypoint: 0 });
+  peer.userData.openingInside = false;
+  assert.equal(prepareOpeningCivilian(person, [source], [peer], () => false, () => true, () => 0, true), true);
+  assert.equal(person.userData.streetEvacuating, true);
+});
+
 test('sixty bridge refugees have independent exterior positions, and the 120 residents do not emerge before the retreat order', () => {
   const starts = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianStart(index));
   for (let index = 0; index < starts.length; index++) {
@@ -59,14 +128,9 @@ test('sixty bridge refugees have independent exterior positions, and the 120 res
   }
 });
 
-test('opening refugees arrive in two uneven waves with a real release gap and independently varying walking speeds', () => {
+test('opening refugees are released together with independently varying walking speeds', () => {
   const releases = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianReleaseAt(index));
-  assert.equal(releases[0], 0);
-  assert.ok(releases[47] < 38);
-  assert.equal(releases[48], 46);
-  assert.ok(releases[48] - releases[47] >= 8);
-  assert.ok(releases[59] < 66);
-  assert.ok(new Set(releases.slice(1, 48).map((value, index) => (value - releases[index]).toFixed(3))).size > 30);
+  assert.ok(releases.every(release => release === 0));
   const speeds = Array.from({ length: 180 }, (_, index) => civilianPaceMultiplier(index, 20));
   assert.ok(Math.max(...speeds) - Math.min(...speeds) > .3);
   assert.ok(speeds.every(speed => speed > .77 && speed < 1.26));

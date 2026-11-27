@@ -1,9 +1,15 @@
 import { circleBlocked, segmentClear } from './core.js';
 import { obstacleLookup } from './spatial.js';
-import { NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_DOCK_WEST_EXTENSION, nanjingPierHeight } from './nanjing-campaign.js';
+import { NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_DOCK_WEST_EXTENSION,
+  NANJING_OPENING_CIVILIAN_COUNT, nanjingPierHeight } from './nanjing-campaign.js';
+export { NANJING_OPENING_CIVILIAN_COUNT } from './nanjing-campaign.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
-export const NANJING_OPENING_CIVILIAN_COUNT = 60;
+export const NANJING_OPENING_BRIDGE_TARGET = Object.freeze({ x: -24, z: 31 });
+export const NANJING_OPENING_SOURCES = Object.freeze(
+  [...[40, 42, 44, 45, 50, 55, 60, 64].flatMap(z => [-27, -25, -23, -21].map(x => Object.freeze({ x, z }))),
+    ...[-55, -40, -25, -10, 5].map(x => Object.freeze({ x, z: 70 }))],
+);
 
 const variation = (index, salt) => {
   let value = Math.imul(index + salt, 0x45d9f3b);
@@ -19,13 +25,6 @@ for (let candidate = 0; openingStarts.length < NANJING_OPENING_CIVILIAN_COUNT; c
     openingStarts.push(point);
 }
 openingStarts.sort((a, b) => a.z - b.z);
-const openingReleaseTimes = [];
-for (let index = 0, releaseAt = 0; index < NANJING_OPENING_CIVILIAN_COUNT; index++) {
-  if (index === 48) releaseAt = 46;
-  else if (index > 0) releaseAt += index < 48 ? .25 + variation(index, 103) * .55 : .8 + variation(index, 103) * .9;
-  openingReleaseTimes.push(releaseAt);
-}
-
 export function nanjingOpeningCivilianStart(index) {
   if (!Number.isInteger(index) || index < 0 || index >= NANJING_OPENING_CIVILIAN_COUNT)
     throw new RangeError('Invalid opening civilian');
@@ -35,7 +34,7 @@ export function nanjingOpeningCivilianStart(index) {
 export function nanjingOpeningCivilianReleaseAt(index) {
   if (!Number.isInteger(index) || index < 0 || index >= NANJING_OPENING_CIVILIAN_COUNT)
     throw new RangeError('Invalid opening civilian');
-  return openingReleaseTimes[index];
+  return 0;
 }
 
 export function civilianPaceMultiplier(index, now) {
@@ -69,6 +68,65 @@ export function activateCivilianEvacuation(civilian, now, peers) {
     peers.push(civilian);
   }
   data.active = true;
+  return true;
+}
+
+export function openingSourceHiddenByCover(source, eye, groundHeight) {
+  const intersects = (target, box) => {
+    let near = 0, far = 1;
+    for (const [axis, min, max] of [
+      ['x', box.minX + .02, box.maxX - .02],
+      ['y', box.minY + .02, box.height - .02],
+      ['z', box.minZ + .02, box.maxZ - .02],
+    ]) {
+      if (min >= max) return false;
+      const direction = target[axis] - eye[axis];
+      if (Math.abs(direction) < 1e-9) {
+        if (eye[axis] <= min || eye[axis] >= max) return false;
+      } else {
+        const a = (min - eye[axis]) / direction, b = (max - eye[axis]) / direction;
+        near = Math.max(near, Math.min(a, b));
+        far = Math.min(far, Math.max(a, b));
+        if (near >= far) return false;
+      }
+    }
+    return near > 0 && far < 1;
+  };
+  const ground = groundHeight(source.x, source.z);
+  return (source.cover ?? []).some(box => {
+    for (const x of [-.8, .8]) for (const y of [0, 2.4]) for (const z of [-.8, .8])
+      if (!intersects({ x: source.x + x, y: ground + y, z: source.z + z }, box)) return false;
+    return true;
+  });
+}
+
+export function prepareOpeningCivilian(civilian, sources, peers, isVisible, canSpawn, groundHeight, evacuationInProgress = false) {
+  const data = civilian.userData;
+  if (data.active || civilian.visible || !data.openingWave)
+    throw new Error('Only an unreleased opening refugee can select a source');
+  const source = [...sources].sort((a, b) =>
+    Math.hypot(a.x - data.startX, a.z - data.startZ) - Math.hypot(b.x - data.startX, b.z - data.startZ))
+    .find(point => !isVisible(point) && canSpawn(point) &&
+      (!evacuationInProgress || !point.street ||
+        !peers.some(other => other.userData.openingInside && other.userData.streetLife === point.street)) &&
+      peers.every(other => Math.hypot(other.position.x - point.x, other.position.z - point.z) >= .74));
+  if (!source) return false;
+  const join = route => {
+    const index = route.findIndex(point => Math.hypot(point.x - NANJING_OPENING_BRIDGE_TARGET.x,
+      point.z - NANJING_OPENING_BRIDGE_TARGET.z) < .02);
+    if (index < 0) throw new Error(`Opening refugee ${data.civilianId} has no bridge waypoint`);
+    return [...source.path, ...route.slice(index + 1)];
+  };
+  data.homeRoute = join(data.homeRoute);
+  data.refugeeRestRoute = join(data.refugeeRestRoute);
+  data.route = data.fleeReleased ? data.homeRoute : data.refugeeRestRoute;
+  data.waypoint = 0;
+  if (source.street) {
+    data.streetLife = source.street;
+    data.streetEvacuating = true;
+    data.openingInside = true;
+  }
+  civilian.position.set(source.x, groundHeight(source.x, source.z), source.z);
   return true;
 }
 
@@ -295,7 +353,10 @@ function civilianYieldTarget(civilian, peers, obstacles, spacing) {
   const moving = other => !other.userData.arrived && !other.userData.dead &&
     (!Array.isArray(other.userData.route) || other.userData.waypoint < other.userData.route.length);
   let leader = data.crowdYieldTo == null ? null : peers.find(other => other.userData.civilianId === data.crowdYieldTo);
-  if (leader && (!moving(leader) || relative(leader).ahead < -.85)) {
+  const finishedYield = data.crowdYieldPoint &&
+    Math.hypot(position.x - data.crowdYieldPoint.x, position.z - data.crowdYieldPoint.z) < .1;
+  if (leader && (!moving(leader) || relative(leader).ahead < -.85 ||
+    finishedYield && relative(leader).ahead <= 0)) {
     data.crowdYieldTo = null; data.crowdYieldPoint = null; leader = null;
   }
   if (!leader) {

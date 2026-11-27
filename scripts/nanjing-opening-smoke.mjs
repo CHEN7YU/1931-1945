@@ -16,6 +16,8 @@ try {
           const originalEnemies = enemies;
           enemies = []; rebuildForces(); combatSounds.length = 0;
           world.resetCampaign(); time = 0; aiDecisions.reset(); nanjingCampaign = createNanjingCampaign();
+          const allReady = world.civilians.filter(person => person.userData.openingWave)
+            .every(person => person.userData.releaseAt === 0);
           let bridgePeak = 0, separation = Infinity, atFiveSeconds = 0, mainReleased = 0, lateReleased = 0;
           for (let frame = 0; frame < 2600; frame++) {
             time += .05;
@@ -89,7 +91,7 @@ try {
           camera.position.set(-5, 10, 28); camera.lookAt(-24, 1, 49);
           for (const child of camera.children) child.visible = false;
           renderer.render(scene, camera);
-          return { bridgePeak, atFiveSeconds, mainReleased, lateReleased, separation, entered, prematureResidents, audio,
+          return { bridgePeak, atFiveSeconds, mainReleased, lateReleased, allReady, separation, entered, prematureResidents, audio,
             pursued, firstMode, trailingStart, shots, blocked, proximityCasualties, spoken, paused };
         },
       };
@@ -101,13 +103,13 @@ try {
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing');
+  await page.waitForFunction(() => window.__battle?.campaign?.openingAssaultReleased, null, { timeout: 180000 });
   const result = await page.evaluate(() => openingReview.run());
   if (process.env.OPENING_SCREENSHOT) await page.screenshot({ path: process.env.OPENING_SCREENSHOT });
   console.log(JSON.stringify(result));
   assert.ok(result.bridgePeak >= 8 && result.bridgePeak < 48, 'bridge refugees must flow in rather than appear all at once');
-  assert.ok(result.atFiveSeconds < 15, 'the opening frames must not activate sixty crowd agents together');
-  assert.equal(result.mainReleased, 48, 'the main wave must leave a gap before the smaller pursued wave');
-  assert.equal(result.lateReleased, 60);
+  assert.equal(result.allReady, true, 'all opening refugees are eligible together');
+  assert.ok(result.mainReleased >= result.atFiveSeconds && result.lateReleased >= result.mainReleased);
   assert.ok(result.separation >= .719, 'bridge refugees must not merge into one another');
   assert.equal(result.entered, 60, 'every unopposed opening refugee must cross all gate tunnels');
   assert.equal(result.prematureResidents, 0, 'residential wave stays reserved for the retreat order');

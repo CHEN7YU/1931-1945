@@ -186,7 +186,7 @@ import { createAircraftControl, aircraftMouseLook, advancePlayerAircraft } from 
 import { NANJING_BOAT_CAPACITY, NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_DOCK, NANJING_DOCK_SHIFT, NANJING_MAP_BOUNDS, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_GATE_CAPTURE_SECONDS, NANJING_CIVILIAN_FINAL_WAIT, NANJING_SPAWNS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian, createNanjingCampaign,
   completeNanjingCrossing, createNanjingObjectives, departNanjingBoat, isNanjingSpawnAvailable,
   nanjingDefensePost, nanjingGateRegroupPost, nanjingMissionVoice, nanjingEvacuationVoice, nanjingWallExitWaypoint, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
-  NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
+  NANJING_OPENING_CIVILIAN_COUNT, nanjingOpeningAssaultReady, recordNanjingCivilianRiverCrossing, recordNanjingAISquadBoarding,
   nanjingAISquadsBoarded, nanjingAIBoardedCount, registerCivilianArrival,
   registerCivilianCasualties, returnNanjingBoat, nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady,
   recordNanjingCivilianCityEntry, nanjingDockApproachReached } from './nanjing-campaign.js';
@@ -196,7 +196,7 @@ import { NANJING_DOCK_BUFFER, nanjingDockBufferActive, nanjingDockInside, nanjin
   nanjingEngineerThreatHeading } from './nanjing-dock-defense.js';
 import { civilianWaypointReached, moveCivilianInCrowd,
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
-  activateCivilianEvacuation, civilianBoardingSpeed } from './civilian-crowd.js';
+  activateCivilianEvacuation, prepareOpeningCivilian, openingSourceHiddenByCover, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
 import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
@@ -1627,7 +1627,11 @@ function presentCombatEvents(bornAt = time) {
       if (event.end) {
         const end = position(event.end);
         tracer(start, end, event.color, .08, bornAt);
-        if (event.muzzle) combatEffects.muzzle(start, end.clone().sub(start).normalize(), bornAt);
+        if (event.muzzle) {
+          const direction = end.clone().sub(start).normalize();
+          if (event.fieldGunBase) combatEffects.fieldGunMuzzle(start, direction, position(event.fieldGunBase), bornAt);
+          else combatEffects.muzzle(start, direction, bornAt);
+        }
       }
       if (state === 'playing' && event.source.soldierId === entities.control.soldierId &&
         event.source.weaponId === controlOwner(entities)?.weaponId) {
@@ -3231,7 +3235,8 @@ function fireFixedWeapon(point, actor) {
   mesh.position.copy(start); mesh.userData.projectileId = shell.id;
   scene.add(mesh); shellViews.set(shell.id, mesh); shells.push(shell);
   combatEvents.publish('shot', { source, weaponType: 'tank', start,
-    end: target, muzzle: true, sound: 'blast', recoil: .04 }, time);
+    end: target, muzzle: true, fieldGunBase: { x: point.x, y: point.altitude ?? world.groundHeight(point.x, point.z), z: point.z },
+    sound: 'blast', recoil: .04 }, time);
   combatSounds.push({ id: ++soundSerial, friendly: actor.friendly, x: start.x, y: start.y, z: start.z, time, radius: 85 });
   if (combatSounds.length > 32) combatSounds.shift();
 }
@@ -7661,14 +7666,14 @@ function updateObjectives(dt) {
 
 function updateNanjingMission(dt) {
   const stage = nanjingCampaign.stage;
-  if (nanjingOpeningAssaultReady(nanjingCampaign)) {
+  if (nanjingOpeningAssaultReady(nanjingCampaign, world.civilians)) {
     nanjingCampaign.openingAssaultReleased = true;
     let blocked = 0;
     for (const formation of formations.filter(item => item.team === 'enemy' && item.active !== false)) {
       formation.reserve = false;
       if (!spawnFormation(formation, true)) blocked++;
     }
-    toast('百姓大部已渡过秦淮河，日军从南岸向中华门推进。', 6);
+    toast('日军从南岸向中华门推进。', 6);
     if (blocked) toast(`${blocked} 个日军编队暂未能集结，将继续尝试。`, 5);
   }
   if (stage === 'gate-defense') {
@@ -7972,6 +7977,7 @@ function updateNanjingCivilians(dt) {
     new THREE.Vector3(from.x, from.y + 1.1, from.z), new THREE.Vector3(enemy.x, enemy.y + 1.2, enemy.z), 30,vehicleId);
   const concealed = (from, enemy) => !hasLine(
     new THREE.Vector3(from.x, from.y + .65, from.z), new THREE.Vector3(enemy.x, enemy.y + 1.2, enemy.z), 36,enemy.vehicleId);
+  let openingFrustum = null;
   const firstCivilian = Math.floor(time / .05) % world.civilians.length;
   for (let index = 0; index < world.civilians.length; index++) {
     const civilian = world.civilians[(index + firstCivilian) % world.civilians.length];
@@ -7980,6 +7986,12 @@ function updateNanjingCivilians(dt) {
       continue;
     }
     if (data.boarding || civilian.parent !== scene) continue;
+    if (data.openingInside && !circleBlocked(civilian.position.x, civilian.position.z, .36,
+      civilianNavigationLookup.at(civilian.position.x, civilian.position.z))) {
+      data.openingInside = false;
+      data.streetEvacuating = false;
+      data.streetLife = null;
+    }
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && !data.arrived && !data.evacuated && !data.unrescued &&
       civilianRecoveryDue(data, civilian.position, time) && civilianCrowdPlanner.take()) {
       const recovery = data.finalRecovery;
@@ -8045,6 +8057,19 @@ function updateNanjingCivilians(dt) {
       }
       if (danger?.threats.length) data.releaseAt = time;
       beginCivilianStreetEvacuation(civilian);
+    }
+    if (data.openingWave && !data.active && !civilian.visible && time >= data.releaseAt) {
+      if (!openingFrustum) {
+        camera.updateMatrixWorld(true);
+        openingFrustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4()
+          .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+      }
+      if (!prepareOpeningCivilian(civilian, world.openingCivilianSources, peers,
+        point => openingFrustum.intersectsSphere(new THREE.Sphere(new THREE.Vector3(
+          point.x, world.groundHeight(point.x, point.z) + 1.2, point.z), 1.7)) &&
+          !openingSourceHiddenByCover(point, camera.position, world.groundHeight),
+        point => !circleBlocked(point.x, point.z, .45, movementObstacles(point.x, point.z)),
+        world.groundHeight, world.civilianFlight.encounterAt !== null || world.civilianFlight.allReleasedAt !== null)) continue;
     }
     if (!activateCivilianEvacuation(civilian, time, peers)) continue;
     frightenCivilian(data, civilian.position, combatSounds, time);
@@ -8894,7 +8919,7 @@ function updateHUD() {
     $('objective-title').textContent = title;
     document.querySelector('.objective-banner').hidden = false;
     $('objective-help').textContent = nanjingCampaign.stage === 'gate-defense'
-      ? `${gateLabel} · 已过河 ${nanjingCampaign.civiliansCrossedRiver} · ${nanjingCampaign.openingAssaultReleased ? '日军已开始进攻' : `日军进攻倒计时 ${Math.max(0, Math.ceil(NANJING_OPENING_ASSAULT_DELAY - nanjingCampaign.stageElapsed))}秒`} · 已安全进城 ${nanjingCampaign.civiliansEnteredCity} · 遭日军残害致死 ${nanjingCampaign.civilianCasualties}`
+      ? `${gateLabel} · 已过河 ${nanjingCampaign.civiliansCrossedRiver}/${NANJING_OPENING_CIVILIAN_COUNT} · ${nanjingCampaign.openingAssaultReleased ? '日军已开始进攻' : '等待百姓过桥'} · 已安全进城 ${nanjingCampaign.civiliansEnteredCity} · 遭日军残害致死 ${nanjingCampaign.civilianCasualties}`
       : nanjingCampaign.stage === 'dock-defense' ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
@@ -8915,10 +8940,12 @@ function updateHUD() {
   }
   $('objective-help').hidden = !$('objective-help').textContent;
   const timedDefense = sihangCampaignMode ? sihangCampaign.stage === 'sihang-defense'
-    : !nanjingCampaignMode || ['gate-defense', 'dock-defense'].includes(nanjingCampaign.stage);
+    : !nanjingCampaignMode || nanjingCampaign.stage === 'dock-defense' ||
+      nanjingCampaign.stage === 'gate-defense' && nanjingCampaign.openingAssaultReleased;
   const timerLabel = sihangCampaignMode ? sihangCampaign.stage === 'sihang-defense' ? '仓库防守倒计时' : '夜间撤离 · 无时限'
     : !nanjingCampaignMode ? encirclementMode ? '作战时间' : '剩余作战时间'
-    : nanjingCampaign.stage === 'gate-defense' ? '中华门防守倒计时'
+    : nanjingCampaign.stage === 'gate-defense' ? nanjingCampaign.openingAssaultReleased
+      ? '中华门防守倒计时' : '等待百姓过桥'
       : nanjingCampaign.stage === 'dock-defense' ? '渡口防守倒计时' : '撤退阶段';
   $('timer-label').textContent = timerLabel;
   $('timer').setAttribute('aria-label', timerLabel);

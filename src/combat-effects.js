@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
+import { PARTICLE_LIMITS, createParticleState, emitCombatParticles, emitFieldGunMuzzleParticles, emitExplosionParticles, advanceCombatParticles, clearCombatParticles, trimCombatParticles } from './combat-particles.js';
 import { createTankFireEffects } from './tank-fire.js';
 import { createAircraftSmokeEffects } from './aircraft-smoke.js';
 import { createPresentationView } from './presentation-view.js';
@@ -77,7 +77,7 @@ export function createCombatEffects(scene, camera, groundHeight, isGround = () =
   const tankFire = createTankFireEffects(scene, camera, blastTexture);
   const aircraftSmoke = createAircraftSmokeEffects(scene, blastTexture);
   const bombAftermath = createBombAftermath(scene, view, groundHeight, shellTexture);
-  const clouds = Array.from({ length: PARTICLE_LIMITS.clouds }, () => {
+  const clouds = Array.from({ length: PARTICLE_LIMITS.clouds + PARTICLE_LIMITS.fieldGunClouds }, () => {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0 }));
     sprite.visible = false; scene.add(sprite); return sprite;
   });
@@ -111,10 +111,11 @@ export function createCombatEffects(scene, camera, groundHeight, isGround = () =
       if (fragments.instanceColor) fragments.instanceColor.needsUpdate = true;
     }
     clouds.forEach((sprite, index) => {
-      const cloud = state.clouds[index], wave = waves[index], shockwave = cloud?.kind === 'blast-wave';
+      const cloud = index < PARTICLE_LIMITS.clouds ? state.clouds[index] : state.fieldGunClouds[index - PARTICLE_LIMITS.clouds];
+      const wave = waves[index], shockwave = cloud?.kind === 'blast-wave';
       const visible = Boolean(cloud) && view.intersects(cloud, cloud.size * 4);
       sprite.visible = visible && !shockwave;
-      wave.visible = visible && Boolean(shockwave);
+      if (wave) wave.visible = visible && Boolean(shockwave);
       if (!visible) return;
       const t = cloud.age / cloud.life;
       if (shockwave) {
@@ -162,8 +163,9 @@ export function createCombatEffects(scene, camera, groundHeight, isGround = () =
     aircraftSmoke.configure(value);
     const low = settings.preset === 'low';
     trimCombatParticles(state, { fragments: settings.effects.hitParticles ? low ? 32 : PARTICLE_LIMITS.fragments : 0,
-      clouds: low ? 6 : PARTICLE_LIMITS.clouds, lights: low || !settings.effects.muzzle || !settings.effects.muzzleLight ? 0 : PARTICLE_LIMITS.lights },
-    cloud => cloud.kind === 'muzzle' ? settings.effects.muzzle : Boolean(blastProfile(cloud.style)) || settings.effects.hitParticles);
+      clouds: low ? 6 : PARTICLE_LIMITS.clouds, fieldGunClouds: low ? 7 : PARTICLE_LIMITS.fieldGunClouds,
+      lights: low || !settings.effects.muzzle || !settings.effects.muzzleLight ? 0 : PARTICLE_LIMITS.lights },
+    cloud => cloud.kind === 'muzzle' || cloud.style === 'field-gun-muzzle' ? settings.effects.muzzle : Boolean(blastProfile(cloud.style)) || settings.effects.hitParticles);
     display();
   };
   const emit = (position, normal, kind, time) => {
@@ -223,6 +225,11 @@ export function createCombatEffects(scene, camera, groundHeight, isGround = () =
       if (!settings.effects.muzzle || camera.position.distanceTo(position) > 35) return;
       emit(position, direction, 'muzzle', time);
     },
+    fieldGunMuzzle(position, direction, base, time) {
+      if (!settings.effects.muzzle || camera.position.distanceTo(position) > 100) return;
+      emitFieldGunMuzzleParticles(state, position, direction, base, time,
+        { low: settings.preset === 'low', lights: settings.effects.muzzleLight });
+    },
     hit(impact, time) {
       const position = new THREE.Vector3(impact.position.x, impact.position.y, impact.position.z);
       if (!settings.effects.hitParticles || camera.position.distanceTo(position) > 100) return;
@@ -249,12 +256,15 @@ export function createCombatEffects(scene, camera, groundHeight, isGround = () =
     render(time, vehicles = []) { update(time - state.time, time, vehicles); },
     clear() { clearCombatParticles(state); tankFire.clear(); aircraftSmoke.clear(); bombAftermath.clear(); lastImpact = lastExplosion = null; presentationPasses = 0; display(); },
     get snapshot() {
-      return { fragments: state.fragments.length, clouds: state.clouds.length, lights: state.lights.length,
+      const allClouds = [...state.clouds, ...state.fieldGunClouds];
+      return { fragments: state.fragments.length, clouds: allClouds.length, lights: state.lights.length,
         renderedFragments: fragments.count, renderedClouds: clouds.filter(sprite => sprite.visible).length + waves.filter(mesh => mesh.visible).length,
-        blastClouds: state.clouds.filter(cloud => cloud.kind.startsWith('blast-')).length,
-        fireClouds: state.clouds.filter(cloud => cloud.kind === 'blast-fire').length,
-        sootClouds: state.clouds.filter(cloud => cloud.kind === 'blast-soot').length,
-        shellClouds: state.clouds.filter(cloud => cloud.kind.startsWith('blast-') && cloud.style === 'tank-shell').length,
+        fieldGunClouds: state.fieldGunClouds.length,
+        renderedFieldGunClouds: clouds.slice(PARTICLE_LIMITS.clouds).filter(sprite => sprite.visible).length,
+        blastClouds: allClouds.filter(cloud => cloud.kind.startsWith('blast-')).length,
+        fireClouds: allClouds.filter(cloud => cloud.kind === 'blast-fire').length,
+        sootClouds: allClouds.filter(cloud => cloud.kind === 'blast-soot').length,
+        shellClouds: allClouds.filter(cloud => cloud.kind.startsWith('blast-') && cloud.style === 'tank-shell').length,
         lastExplosion: lastExplosion ? { ...lastExplosion, position: [...lastExplosion.position],
           projected: new THREE.Vector3(...lastExplosion.position).project(camera).toArray(),
           surface: lastExplosion.surface ? { kind: lastExplosion.surface.kind, normal: { ...lastExplosion.surface.normal } } : null } : null,

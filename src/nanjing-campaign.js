@@ -2,6 +2,7 @@ import { NANJING_COURTYARDS, NANJING_SOLDIER_CAVE,
   NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK, NANJING_WALL_WALKS } from './nanjing-layout.js';
 
 export const NANJING_STAGE_SECONDS = 3 * 60;
+export const NANJING_OPENING_CIVILIAN_COUNT = 60;
 
 export function nanjingGateRegroupPost(index) {
   if (!Number.isInteger(index) || index < 0) throw new RangeError('Invalid gate regroup slot');
@@ -221,6 +222,7 @@ export function advanceNanjingGateCapture(campaign, dt, friendlyInside, enemyIns
 
 export function nanjingMissionVoice(campaign) {
   const stage = campaign.stage;
+  if (stage === 'gate-defense' && !campaign.openingAssaultReleased) return null;
   const defense = stage === 'gate-defense' ? 'gate' : stage === 'dock-defense' ? 'dock' : null;
   const cue = defense && campaign.stageRemaining > 0
     ? `nanjing-${defense}-${Math.min(7, Math.ceil(campaign.stageRemaining / 60))}`
@@ -261,17 +263,19 @@ export function recordNanjingCivilianRiverCrossing(campaign, civilian) {
   return true;
 }
 
-export function nanjingOpeningAssaultReady(campaign) {
-  return campaign.stage === 'gate-defense' && !campaign.openingAssaultReleased &&
-    !campaign.outcome && campaign.stageElapsed >= NANJING_OPENING_ASSAULT_DELAY;
+export function nanjingOpeningAssaultReady(campaign, civilians) {
+  if (!Array.isArray(civilians)) throw new TypeError('Opening assault requires the civilian roster');
+  if (campaign.stage !== 'gate-defense' || campaign.openingAssaultReleased || campaign.outcome) return false;
+  const opening = civilians.filter(civilian => civilian.userData.openingWave);
+  return opening.length === NANJING_OPENING_CIVILIAN_COUNT &&
+    opening.every(civilian => civilian.userData.crossedRiver || civilian.userData.dead);
 }
-
-export const NANJING_OPENING_ASSAULT_DELAY = 20;
 
 export function advanceNanjingCampaign(campaign, dt) {
   if (!Number.isFinite(dt) || dt < 0) throw new RangeError('Nanjing campaign time must be finite and non-negative');
   if (campaign.outcome) return campaign.outcome;
   if (campaign.stage === 'gate-defense') {
+    if (!campaign.openingAssaultReleased) return null;
     campaign.stageElapsed += dt;
     campaign.stageRemaining = Math.max(0, NANJING_STAGE_SECONDS - campaign.stageElapsed);
     if (campaign.stageRemaining === 0) {

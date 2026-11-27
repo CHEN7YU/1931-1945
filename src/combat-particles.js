@@ -1,11 +1,11 @@
 import { blastProfile, BLAST_PROFILES } from './blast-profiles.js';
 
-export const PARTICLE_LIMITS = Object.freeze({ fragments: 96, clouds: 18, lights: 2 });
+export const PARTICLE_LIMITS = Object.freeze({ fragments: 96, clouds: 18, fieldGunClouds: 10, lights: 2 });
 export const EXPLOSION_STYLES = Object.freeze(['default', ...Object.keys(BLAST_PROFILES), 'tank-shell', 'tank-destruction', 'aircraft-hit']);
 const valid = point => point && ['x', 'y', 'z'].every(axis => Number.isFinite(point[axis]));
 
 export function createParticleState() {
-  return { fragments: [], clouds: [], lights: [], serial: 0, emitted: 0, time: 0,
+  return { fragments: [], clouds: [], fieldGunClouds: [], lights: [], serial: 0, emitted: 0, time: 0,
     free: Object.fromEntries(Object.entries(PARTICLE_LIMITS).map(([name, count]) => [name, Array.from({ length: count }, () => ({}))])) };
 }
 
@@ -19,8 +19,11 @@ function take(state, name, limit) {
 }
 
 export function trimCombatParticles(state, limits, keepCloud = () => true) {
-  for (let i = state.clouds.length - 1; i >= 0; i--) if (!keepCloud(state.clouds[i])) state.free.clouds.push(...state.clouds.splice(i, 1));
-  for (const name of Object.keys(PARTICLE_LIMITS)) while (state[name].length > limits[name]) state.free[name].push(state[name].shift());
+  for (const name of ['clouds', 'fieldGunClouds'])
+    for (let i = state[name].length - 1; i >= 0; i--)
+      if (!keepCloud(state[name][i])) state.free[name].push(...state[name].splice(i, 1));
+  for (const name of Object.keys(PARTICLE_LIMITS))
+    while (state[name].length > (limits[name] ?? PARTICLE_LIMITS[name])) state.free[name].push(state[name].shift());
 }
 
 export function emitCombatParticles(state, position, normal, kind, options) {
@@ -51,6 +54,40 @@ export function emitCombatParticles(state, position, normal, kind, options) {
     kind, rotation: random() * 6.28, bornAt });
   if (kind === 'muzzle' && options.lightLimit > 0) Object.assign(take(state, 'lights', options.lightLimit),
     { ...origin, age: 0, life: .05, intensity: 9, distance: 3, bornAt });
+  state.emitted++;
+}
+
+export function emitFieldGunMuzzleParticles(state, position, direction, base, time, { low = false, lights = true } = {}) {
+  if (!valid(position) || !valid(direction) || !valid(base) || !Number.isFinite(time) || time < 0 ||
+    typeof low !== 'boolean' || typeof lights !== 'boolean') throw new RangeError('Field gun effects require finite positions, direction and time');
+  const length = Math.hypot(direction.x, direction.y, direction.z);
+  if (length < .001) throw new RangeError('Field gun direction cannot be zero');
+  const n = { x: direction.x / length, y: direction.y / length, z: direction.z / length };
+  const limit = low ? 7 : PARTICLE_LIMITS.fieldGunClouds, smokeCount = low ? 4 : 6;
+  for (let i = 0; i < smokeCount; i++) {
+    const flash = i === 0, spread = (i - 3.5) * .17, forward = .15 + i * .24;
+    Object.assign(take(state, 'fieldGunClouds', limit), { style: 'field-gun-muzzle',
+      x: position.x + n.x * forward - n.z * spread, y: position.y + n.y * forward,
+      z: position.z + n.z * forward + n.x * spread,
+      vx: n.x * 1.8 - n.z * spread, vy: .45 + n.y * 1.8,
+      vz: n.z * 1.8 + n.x * spread, age: 0, life: flash ? .12 : 1.5 + i * .08,
+      size: flash ? .85 : .48 + i * .07, kind: flash ? 'blast-flash' : 'blast-smoke',
+      rotation: i * 2.4, bornAt: time });
+  }
+  const horizontal = Math.hypot(n.x, n.z);
+  const forward = horizontal > .001 ? { x: n.x / horizontal, z: n.z / horizontal } : { x: 0, z: -1 };
+  for (let i = 0; i < (low ? 3 : 4); i++) {
+    const side = i === 0 ? -1 : i === 1 ? 1 : 0;
+    const along = i < 2 ? .35 : i === 2 ? 1.15 : -.65;
+    Object.assign(take(state, 'fieldGunClouds', limit), { style: 'field-gun-muzzle',
+      x: base.x + forward.x * along - forward.z * side * .9, y: base.y + .18,
+      z: base.z + forward.z * along + forward.x * side * .9,
+      vx: forward.x * .4 - forward.z * side * .75, vy: .35,
+      vz: forward.z * .4 + forward.x * side * .75,
+      age: 0, life: 1.35, size: .7, kind: 'blast-dust', rotation: i * 2.4, bornAt: time });
+  }
+  if (!low && lights) Object.assign(take(state, 'lights', PARTICLE_LIMITS.lights),
+    { ...position, age: 0, life: .12, intensity: 30, distance: 7, bornAt: time });
   state.emitted++;
 }
 
@@ -184,7 +221,7 @@ export function advanceCombatParticles(state, dt, groundHeight, now = state.time
     }
     particle.age = age;
   }
-  for (const cloud of state.clouds) {
+  for (const name of ['clouds', 'fieldGunClouds']) for (const cloud of state[name]) {
     const age = Math.max(0, now - cloud.bornAt), elapsed = age - cloud.age;
     cloud.x += cloud.vx * elapsed; cloud.y += cloud.vy * elapsed; cloud.z += cloud.vz * elapsed; cloud.age = age;
   }
@@ -196,7 +233,7 @@ export function advanceCombatParticles(state, dt, groundHeight, now = state.time
 }
 
 export function clearCombatParticles(state) {
-  trimCombatParticles(state, { fragments: 0, clouds: 0, lights: 0 });
+  trimCombatParticles(state, { fragments: 0, clouds: 0, fieldGunClouds: 0, lights: 0 });
   state.time = state.serial = state.emitted = 0;
 }
 // ---模块结束---

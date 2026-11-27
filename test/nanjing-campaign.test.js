@@ -7,7 +7,7 @@ import {
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
   isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
-  NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_ASSAULT_DELAY, nanjingOpeningAssaultReady,
+  NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_CIVILIAN_COUNT, nanjingOpeningAssaultReady,
   recordNanjingCivilianRiverCrossing, nanjingDockApproachReached,
 } from '../src/nanjing-campaign.js';
 import { NANJING_COURTYARDS, NANJING_GATE_NORTH_EDGE, NANJING_GATE_POSITIONS, NANJING_GATE_TUNNEL, NANJING_WALL_RAMPS, NANJING_WALL_WALK } from '../src/nanjing-layout.js';
@@ -29,11 +29,13 @@ test('only living opening refugees who pass the inner gate count as safely enter
   assert.equal(campaign.civiliansEnteredCity, 1);
 });
 
-test('opening assault waits 20 seconds independently of civilian crossings', () => {
+test('opening assault waits for every opening refugee to cross or die without consuming defense time', () => {
   const campaign = createNanjingCampaign();
-  const refugee = { userData: { openingWave: true }, position: { z: NANJING_CIVILIAN_RIVER_NORTH_BANK_Z } };
+  const refugees = Array.from({ length: NANJING_OPENING_CIVILIAN_COUNT }, () =>
+    ({ userData: { openingWave: true }, position: { z: NANJING_CIVILIAN_RIVER_NORTH_BANK_Z } }));
+  const refugee = refugees[0];
   assert.equal(campaign.civiliansCrossedRiver, 0);
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees), false);
   assert.equal(recordNanjingCivilianRiverCrossing(campaign, refugee), false,
     'standing at the north bridge bank is not a completed crossing');
   refugee.position.z = NANJING_CIVILIAN_RIVER_NORTH_BANK_Z - .1;
@@ -44,22 +46,29 @@ test('opening assault waits 20 seconds independently of civilian crossings', () 
     { userData: { openingWave: false }, position: refugee.position }), false);
   assert.equal(recordNanjingCivilianRiverCrossing(campaign,
     { userData: { openingWave: true, dead: true }, position: refugee.position }), false);
-  campaign.civiliansCrossedRiver = 60;
-  advanceNanjingCampaign(campaign, NANJING_OPENING_ASSAULT_DELAY - .01);
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
-  advanceNanjingCampaign(campaign, 0);
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
-  campaign.civiliansCrossedRiver = 0;
-  advanceNanjingCampaign(campaign, .01);
-  assert.equal(nanjingOpeningAssaultReady(campaign), true);
+  advanceNanjingCampaign(campaign, 600);
+  assert.equal(campaign.stage, 'gate-defense');
+  assert.equal(campaign.stageRemaining, NANJING_STAGE_SECONDS);
+  assert.equal(campaign.stageElapsed, 0);
+  for (const person of refugees.slice(1, -1)) {
+    person.position.z = NANJING_CIVILIAN_RIVER_NORTH_BANK_Z - .1;
+    assert.equal(recordNanjingCivilianRiverCrossing(campaign, person), true);
+  }
+  assert.equal(nanjingOpeningAssaultReady(campaign, [...refugees, { userData: { openingWave: false } }]), false);
+  refugees.at(-1).userData.dead = true;
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees.slice(0, -1)), false);
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees), true);
+  assert.equal(campaign.civiliansCrossedRiver, NANJING_OPENING_CIVILIAN_COUNT - 1);
   campaign.openingAssaultReleased = true;
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees), false);
+  advanceNanjingCampaign(campaign, 1);
+  assert.equal(campaign.stageRemaining, NANJING_STAGE_SECONDS - 1);
   campaign.openingAssaultReleased = false;
   campaign.outcome = 'gate-overrun';
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees), false);
   campaign.outcome = null;
   campaign.stage = 'withdrawal';
-  assert.equal(nanjingOpeningAssaultReady(campaign), false);
+  assert.equal(nanjingOpeningAssaultReady(campaign, refugees), false);
 });
 
 test('opening Japanese infantry, armor and aircraft stage south of the river', () => {
@@ -122,6 +131,7 @@ test('only enemy infantry holding the west side inside the second gate alone can
   advanceNanjingGateCapture(campaign, .01, false, true);
   assert.equal(campaign.outcome, 'gate-overrun');
   const withdrawing = createNanjingCampaign();
+  withdrawing.openingAssaultReleased = true;
   advanceNanjingCampaign(withdrawing, NANJING_STAGE_SECONDS);
   advanceNanjingGateCapture(withdrawing, 30, false, true);
   assert.equal(withdrawing.outcome, null);
@@ -131,6 +141,8 @@ test('only enemy infantry holding the west side inside the second gate alone can
 
 test('mission voice announces each remaining minute once, withdraws at zero and restarts at the dock', () => {
   const campaign = createNanjingCampaign();
+  assert.equal(nanjingMissionVoice(campaign), null);
+  campaign.openingAssaultReleased = true;
   assert.equal(NANJING_STAGE_SECONDS, 180);
   for (let minute = 3; minute > 0; minute--) {
     assert.equal(nanjingMissionVoice(campaign), `nanjing-gate-${minute}`);
@@ -149,7 +161,7 @@ test('mission voice announces each remaining minute once, withdraws at zero and 
   advanceNanjingCampaign(campaign, 60);
   assert.equal(nanjingMissionVoice(campaign), 'nanjing-dock-2');
   assert.equal(nanjingMissionVoice(campaign), null);
-  assert.equal(nanjingMissionVoice(createNanjingCampaign()), 'nanjing-gate-3');
+  assert.equal(nanjingMissionVoice(createNanjingCampaign()), null);
 });
 
 test('evacuation reminder is issued once when the player may board, even with troops left ashore', () => {
@@ -201,6 +213,7 @@ test('Nanjing campaign uses dedicated gate, dock, and three-direction assault po
 
 test('three-minute gate defense ends reinforcements and waits for withdrawal to finish', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   assert.equal(campaign.stageRemaining, NANJING_STAGE_SECONDS);
   assert.equal(campaign.reinforcementStopped, false);
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS - 1);
@@ -236,6 +249,7 @@ test('withdrawal triggers after the west gate or within 20 meters of the dock en
 
 test('dock evacuation keeps the player last and distinguishes successful escape from being overrun', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS);
   activateNanjingDock(campaign);
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS);
@@ -249,6 +263,7 @@ test('dock evacuation keeps the player last and distinguishes successful escape 
   assert.equal(campaign.outcome, 'evacuated');
 
   const fallen = createNanjingCampaign();
+  fallen.openingAssaultReleased = true;
   overrunNanjingDock(fallen);
   assert.equal(fallen.outcome, 'fallen');
 });
@@ -279,6 +294,7 @@ test('confirmed player departure finishes even if civilian counts change after b
 
 test('civilians board five ten-person boats without losing count', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   assert.equal(campaign.boats.length, NANJING_BOAT_COUNT);
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS);
   assert.equal(activateNanjingDock(campaign), true);
@@ -304,6 +320,7 @@ test('civilians board five ten-person boats without losing count', () => {
 
 test('civilians can gather at the dock but cannot board or depart before withdrawal reaches the exit', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   registerCivilianArrival(campaign, 5);
   assert.equal(boardCivilian(campaign, 0), false);
   assert.equal(departNanjingBoat(campaign, 0), false);
@@ -317,6 +334,7 @@ test('civilians can gather at the dock but cannot board or depart before withdra
 
 test('the last partially loaded boat can cross and civilians must be safe before any squad withdraws', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS);
   activateNanjingDock(campaign);
   advanceNanjingCampaign(campaign, NANJING_STAGE_SECONDS);
@@ -338,6 +356,7 @@ test('the last partially loaded boat can cross and civilians must be safe before
 
 test('a dock overrun is terminal and en-route civilian losses do not subtract from the dock queue', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   registerCivilianArrival(campaign, 5);
   registerCivilianCasualties(campaign, 2, false);
   assert.equal(campaign.civiliansWaiting, 5);
@@ -357,6 +376,7 @@ test('a dock overrun is terminal and en-route civilian losses do not subtract fr
 
 test('a complete six-minute defense waits for arrival, actual crossings, and surviving AI squads', () => {
   const campaign = createNanjingCampaign();
+  campaign.openingAssaultReleased = true;
   for (let second = 0; second < NANJING_STAGE_SECONDS - 1; second++) advanceNanjingCampaign(campaign, 1);
   assert.equal(campaign.stage, 'gate-defense');
   assert.equal(campaign.stageRemaining, 1);

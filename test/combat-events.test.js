@@ -40,6 +40,14 @@ test('automatic fire classification is copied and validated at the original shot
   assert.throws(() => events.publish('shot', { ...shot(), automatic: 'yes' }, 0), /Invalid shot/);
   assert.throws(() => events.publish('shot', { ...shot(), weaponType: 'tank', automatic: true }, 0), /Invalid shot/);
 });
+test('field gun shot keeps its original muzzle and ground position for presentation', () => {
+  const events = createCombatEvents(), base = { x: 1, y: 2, z: 3 };
+  const event = events.publish('shot', { ...shot(), weaponType: 'tank', fieldGunBase: base }, 1);
+  base.y = 999;
+  assert.deepEqual(event.fieldGunBase, { x: 1, y: 2, z: 3 });
+  assert.throws(() => events.publish('shot', { ...shot(), fieldGunBase: base }, 1), /cannon shot/);
+  assert.throws(() => events.publish('shot', { ...shot(), weaponType: 'tank', muzzle: false, fieldGunBase: base }, 1), /cannon shot/);
+});
 test('shot, impact and explosion render in order exactly once and publishing never requires a live shooter', () => {
   const events = createCombatEvents(), rendered = [], original = source();
   events.publish('shot', shot(), 1);

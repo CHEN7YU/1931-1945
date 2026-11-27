@@ -56,6 +56,10 @@ export function createCombatEvents() {
         payload = { source, weaponType, start: point(data.start), end: data.end == null ? null : point(data.end), muzzle, color, sound, recoil };
         if (automatic) payload.automatic = true;
         if (muzzle && !payload.end) throw new Error('Muzzle feedback requires a shot direction');
+        if (data.fieldGunBase != null) {
+          if (weaponType !== 'tank' || !muzzle) throw new RangeError('Field gun muzzle feedback requires a cannon shot');
+          payload.fieldGunBase = point(data.fieldGunBase);
+        }
       } else if (type === 'impact') {
         const kind = data.kind ?? null;
         if (![null, 'stone', 'soil', 'wood', 'generic'].includes(kind)) throw new RangeError('Invalid impact material');

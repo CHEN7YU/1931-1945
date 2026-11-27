@@ -40,7 +40,8 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
 
   // ---------- 我方火力点 ----------
   const posts = JIANGYIN_POSTS.map(spec => {
-    const point = createEmplacement({ id: spec.id, profile: spec.profile, x: spec.x, z: spec.z, heading: postFacing(spec) });
+    const point = createEmplacement({ id: spec.id, profile: spec.profile, x: spec.x, z: spec.z,
+      heading: postFacing(spec), cannonRecoil: false });
     const override = { ...(JIANGYIN_PROFILE_OVERRIDES[spec.profile] ?? {}), ...(JIANGYIN_MOUNTS[spec.mount] ?? {}) };
     point.weapon.settings = Object.freeze({ ...point.weapon.settings, ...override });
     if (Number.isFinite(override.reserve)) point.weapon.reserve = override.reserve;

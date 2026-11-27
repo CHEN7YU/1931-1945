@@ -29,7 +29,7 @@ try {
   await page.goto(gameUrl.href, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
-  for (const seconds of [15, 35, 60, 90, 120, 180]) {
+  for (const seconds of [10, 30, 60, 90, 120, 180, 240, 300]) {
     await page.waitForFunction(({ seconds, endings }) => window.__battle.time >= seconds ||
       endings.includes(window.__battle.state), { seconds, endings: BATTLE_END_STATES }, { timeout: 360000 });
     const sample = await page.evaluate(() => {
@@ -56,18 +56,16 @@ try {
     if (seconds >= 180 && samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 15.2))) &&
       samples.some(sample => sample.vehicles.some(vehicle => vehicle.position.z < 38))) break;
   }
-  const opening = samples[0];
-  assert.equal(opening.campaign.openingAssaultReleased, false,
-    'Japanese forces must remain in reserve during the first 20 seconds');
-  assert.ok(opening.units.every(unit => unit.members.length === 0),
-    'the opening attack must not spawn before 20 seconds');
-  assert.equal(opening.campaign.airSupport.count, 0,
-    'Japanese aircraft must also wait for 20 seconds');
-  assert.equal(samples[1].campaign.openingAssaultReleased, true,
-    'the Japanese assault must release after 20 seconds regardless of civilian crossings');
+  const held = samples.filter(sample => !sample.campaign.openingAssaultReleased);
+  assert.ok(held.length, 'the opening must begin with the attackers in reserve');
+  assert.ok(held.every(sample => sample.units.every(unit => unit.members.length === 0) &&
+    sample.campaign.airSupport.count === 0 && sample.campaign.stageElapsed === 0),
+    'infantry and aircraft must remain in reserve without consuming defense time');
+  assert.ok(samples.some(sample => sample.campaign.openingAssaultReleased),
+    'the Japanese assault must release after the opening refugees finish crossing');
   const firstWave = samples.find(sample => sample.units.length === 8 &&
     sample.units.every(unit => unit.members.length > 0));
-  assert.ok(firstWave, 'all eight Japanese squads must spawn after the opening delay');
+  assert.ok(firstWave, 'all eight Japanese squads must spawn after the opening evacuation');
   assert.ok(firstWave.units.every(unit => unit.members.every(member =>
     member.spawnPosition.z > 65 && member.spawnPosition.z <= 96)),
     'the opening Japanese assault must spawn south of the river and within the battle boundary');

@@ -31,13 +31,18 @@ try {
           const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
           const aircraft=formations.find(unit=>unit.team==='enemy'&&unit.type==='plane');
           const armor=formations.find(unit=>unit.team==='enemy'&&unit.variant===CHI_HA.id);
-          nanjingCampaign.civiliansCrossedRiver=60;
-          advanceNanjingCampaign(nanjingCampaign,19.99);updateNanjingMission(0);
+          const opening=world.civilians.filter(person=>person.userData.openingWave);
+          for(const person of opening.slice(0,-1)) {
+            person.position.z=37.9;
+            recordNanjingCivilianRiverCrossing(nanjingCampaign,person);
+          }
+          advanceNanjingCampaign(nanjingCampaign,600);updateNanjingMission(0);
           const held={released:nanjingCampaign.openingAssaultReleased,
             squads:infantry.filter(unit=>unit.members.length).length,
             vehicles:[...entities.vehicles.values()].filter(vehicle=>vehicle.team==='enemy').length};
-          nanjingCampaign.civiliansCrossedRiver=0;
-          advanceNanjingCampaign(nanjingCampaign,.01);updateNanjingMission(0);
+          opening.at(-1).position.z=37.9;
+          recordNanjingCivilianRiverCrossing(nanjingCampaign,opening.at(-1));
+          updateNanjingMission(0);
           return {held,released:nanjingCampaign.openingAssaultReleased,
             squads:infantry.filter(unit=>unit.members.length===11).length,
             aircraft:aircraft.members.length,armor:armor.members.length,
@@ -57,7 +62,7 @@ try {
           setGameState('menu');beginMatch();
           await ready();
           const opening=world.civilians.filter(civilian=>civilian.userData.openingWave);
-          for(const civilian of opening.slice(0,54)) {
+          for(const civilian of opening) {
             civilian.position.z=37.9;
             recordNanjingCivilianRiverCrossing(nanjingCampaign,civilian);
           }
@@ -71,21 +76,25 @@ try {
           }
           const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
           const progress=[];
-          for(const civilian of opening.slice(0,54)) {
+          let beforeLast=false;
+          for(const civilian of opening) {
             const data=civilian.userData;
             civilian.position.set(-24,0,38.01);civilian.visible=true;
             data.active=true;data.route=[{x:-24,z:37}];data.waypoint=0;
-            updateNanjingCivilians(.05);updateNanjingMission(0);
+            updateNanjingCivilians(.05);
+            if(progress.length===59) beforeLast=nanjingCampaign.openingAssaultReleased;
+            updateNanjingMission(0);
             progress.push(nanjingCampaign.civiliansCrossedRiver);
             civilian.visible=false;data.active=false;data.releaseAt=Infinity;
           }
-          const beforeDelay=nanjingCampaign.openingAssaultReleased;
-          advanceNanjingCampaign(nanjingCampaign,20);updateNanjingMission(0);
-          return {reset,progress,beforeDelay,released:nanjingCampaign.openingAssaultReleased,
+          return {reset,progress,beforeLast,released:nanjingCampaign.openingAssaultReleased,
             squads:infantry.filter(unit=>unit.members.length===11).length};
         },
         releaseAssault() {
-          advanceNanjingCampaign(nanjingCampaign,Math.max(0,20-nanjingCampaign.stageElapsed));
+          for(const person of world.civilians.filter(person=>person.userData.openingWave)) {
+            person.position.z=37.9;
+            recordNanjingCivilianRiverCrossing(nanjingCampaign,person);
+          }
           updateNanjingMission(0);
         },
         fieldReload() {
@@ -499,7 +508,7 @@ try {
   if (process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY === '1') {
     assert.deepEqual(result.openingAssault.held,
       { released:false,squads:0,vehicles:0 },
-      'Japanese forces must not spawn before 20 seconds, even if everyone has crossed');
+      'Japanese forces must remain in reserve while an opening refugee has not crossed');
     assert.equal(result.openingAssault.released,true);
     assert.equal(result.openingAssault.squads,8);
     assert.equal(result.openingAssault.aircraft,3);
@@ -518,9 +527,9 @@ try {
     assert.equal(result.movingPursuit.shots, 0);
     const restarted = await page.evaluate(() => civilianDefenseReview.restartCrossing());
     assert.equal(restarted.reset, 0, 'starting a new match must clear previous civilian crossings');
-    assert.deepEqual(restarted.progress, Array.from({length:54}, (_,index)=>index+1),
+    assert.deepEqual(restarted.progress, Array.from({length:60}, (_,index)=>index+1),
       'actual civilian movement must count every crossing after restarting');
-    assert.equal(restarted.beforeDelay, false);
+    assert.equal(restarted.beforeLast, false);
     assert.equal(restarted.released, true);
     assert.equal(restarted.squads, 8);
     assert.deepEqual(errors, []);

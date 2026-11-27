@@ -207,6 +207,42 @@ test('machine-gun recoil follows successful shots without changing the next shot
   }
 });
 
+test('field gun recoil follows a shot and returns to the original firing pose before reload', () => {
+  const point = createEmplacement({ id: 'gun', profile: 'bofors75', x: 4, z: 7, heading: .6 });
+  point.operatorId = 'operator';
+  emplacementLook(point, .8, .2);
+  const model = createEmplacementModel(point), barrel = model.children[0].children[0];
+  const base = emplacementPose(point), before = point.weapon.ammo;
+  assert.equal(fireEmplacement(point, 1), true);
+  advanceEmplacement(point, .275, 1.275);
+  model.userData.update();
+  const kick = emplacementPose(point);
+  assert.ok(point.recoil > .179 && point.recoil <= .18);
+  assert.ok(Math.abs(model.position.x - point.x - Math.sin(point.yaw) * .045) < 1e-10);
+  assert.ok(Math.abs(model.position.z - point.z - Math.cos(point.yaw) * .045) < 1e-10);
+  const tip = barrel.localToWorld(new THREE.Vector3(0, 0, -point.weapon.settings.barrel));
+  assert.ok(tip.distanceTo(new THREE.Vector3(kick.muzzle.x, kick.muzzle.y, kick.muzzle.z)) < 1e-10);
+  const eyeShift = new THREE.Vector3(kick.eye.x - base.eye.x, kick.eye.y - base.eye.y, kick.eye.z - base.eye.z);
+  const muzzleShift = new THREE.Vector3(kick.muzzle.x - base.muzzle.x, kick.muzzle.y - base.muzzle.y, kick.muzzle.z - base.muzzle.z);
+  assert.ok(eyeShift.distanceTo(muzzleShift) < 1e-10);
+  advanceEmplacement(point, 0, 1.275);
+  assert.ok(point.recoil > .179, 'pausing cannot advance recoil');
+  advanceEmplacement(point, .275, 1.55);
+  model.userData.update();
+  assert.equal(point.recoil, 0);
+  assert.equal(model.position.x, point.x);
+  assert.equal(model.position.z, point.z);
+  assert.deepEqual(emplacementPose(point), base);
+  assert.equal(point.weapon.ammo, before - 1);
+  assert.equal(fireEmplacement(point, 1.55), false, 'reload timing is unchanged');
+  const coastal = createEmplacement({ id: 'coastal', profile: 'bofors75', x: 4, z: 7,
+    heading: .6, cannonRecoil: false });
+  coastal.operatorId = 'operator';
+  assert.equal(fireEmplacement(coastal, 1), true);
+  advanceEmplacement(coastal, .275, 1.275);
+  assert.equal(coastal.recoil, 0, 'separate coastal models keep their existing motion');
+});
+
 test('gunner sights remain open through the cannon shield and machine-gun nests retain rear access', () => {
   for (const spec of NANJING_EMPLACEMENTS) {
     const point = createEmplacement(spec), model = createEmplacementModel(point);

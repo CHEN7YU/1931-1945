@@ -25,7 +25,8 @@ import { createNanjingDockDetails, createNanjingFerryFactory, createShoreReeds, 
 import { obstacleLookup } from './spatial.js';
 import { planeModel } from './world.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStart,
-  NANJING_OPENING_CIVILIAN_COUNT, nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
+  NANJING_OPENING_CIVILIAN_COUNT, NANJING_OPENING_BRIDGE_TARGET, NANJING_OPENING_SOURCES,
+  nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from './nanjing-city-layout.js';
 import { WOODLAND_SPECIES, woodlandTreeGeometry } from './woodland.js';
 import { NANJING_CASEMATE, subtractCasemateBox, casemateGateSlices, casemateFloorAt,
@@ -65,6 +66,7 @@ export function makeNanjingBattlefield(scene, surface) {
   const solids = [], obstacles = [], smoke = [], flags = [], ferries = [], civilians = [], civilianQueue = [];
   const flankWalkSupports = [];
   const residentialBuildings = [];
+  const openingHouseCovers = new Map();
   const northernBackdrop = [];
   const residentialMeshes = [];
   let groundNavigation = null;
@@ -1483,6 +1485,8 @@ export function makeNanjingBattlefield(scene, surface) {
       }
     }
     const home = residentialBuildings.at(-1), passage = town.passages.at(-1);
+    if (z === 75 && !damaged && facing === 0)
+      openingHouseCovers.set(home.id, obstacles.slice(firstObstacle, firstObstacle + 7));
     home.width = footprintWidth; home.depth = footprintDepth;
     home.facing = facing;
     if (facing) {
@@ -1801,7 +1805,7 @@ export function makeNanjingBattlefield(scene, surface) {
     group.position.set(startX, 0, startZ);
     group.visible = false;
     Object.assign(group.userData, { civilianId: index, homeId: home.id, startX, startZ,
-      openingWave: index < 60, openingStraggler: index >= 48 && index < 60,
+      openingWave: index < NANJING_OPENING_CIVILIAN_COUNT,
       populationKind: index < 60 ? 'refugee' : 'resident', flightReleaseAt: null, fleeReleased: false,
       resting: false, restPoseWeight: 0,
       withdrawalWave: index >= NANJING_OPENING_CIVILIAN_COUNT,
@@ -2006,6 +2010,52 @@ export function makeNanjingBattlefield(scene, surface) {
       minZ: home.z - home.depth / 2, maxZ: home.z + home.depth / 2, height: home.height, civilianHomeId: home.id,
     }))];
   const civilianNavigate = createNavigator(civilianNavigationObstacles, .5, .45);
+  const openingCivilianSources = NANJING_OPENING_SOURCES.filter(point =>
+    !circleBlocked(point.x, point.z, .45, civilianNavigationObstacles)).map(point => ({
+    ...point, path: civilianNavigate(point, NANJING_OPENING_BRIDGE_TARGET),
+  })).filter(point => point.path.length &&
+    Math.hypot(point.path.at(-1).x - NANJING_OPENING_BRIDGE_TARGET.x,
+      point.path.at(-1).z - NANJING_OPENING_BRIDGE_TARGET.z) < .02);
+  for (const home of residentialBuildings.filter(item => openingHouseCovers.has(item.id))) {
+    const door = doorSystem.doors.find(item => item.id === `${home.id}-door`);
+    if (!door) throw new Error(`Opening refugee house ${home.id} has no door`);
+    const navigationObstacles = civilianNavigationObstacles.filter(obstacle =>
+      obstacle.civilianHomeId !== home.id && (obstacle.height ?? Infinity) > .24);
+    const navigate = createNavigator(navigationObstacles, .5, .36);
+    const onward = civilianNavigate(home.exit, NANJING_OPENING_BRIDGE_TARGET);
+    if (!onward.length) throw new Error(`Opening refugee house ${home.id} cannot reach the bridge`);
+    const street = { navigate, door, exit: home.exit, navigationObstacles,
+      navigationLookup: obstacleLookup(navigationObstacles, .8),
+      movementObstacles: obstacles.filter(obstacle => (obstacle.height ?? Infinity) > .24) };
+    const doorObstacle = obstacles.find(obstacle => obstacle.door && obstacle.id === door.id);
+    if (!doorObstacle) throw new Error(`Opening refugee house ${home.id} has no door collider`);
+    doorSystem.addNavigationListener(() => {
+      const active = doorSystem.navigationObstacles.includes(doorObstacle);
+      const index = navigationObstacles.indexOf(doorObstacle);
+      if (active === (index >= 0)) return;
+      if (active) navigationObstacles.push(doorObstacle);
+      else navigationObstacles.splice(index, 1);
+      street.navigationLookup.rebuild();
+      navigate.refresh({ minX: door.x - door.width - 1, maxX: door.x + door.width + 1,
+        minZ: door.z - door.width - 1, maxZ: door.z + door.width + 1 });
+    });
+    for (const offset of [-2.1, -1, 1, 2.1]) {
+      const point = { x: home.x + offset, z: home.z + 1 };
+      const exit = navigate(point, home.exit);
+      if (!exit.length) throw new Error(`Opening refugee house ${home.id} has no interior exit`);
+      openingCivilianSources.push({ ...point, path: [...exit, ...onward],
+        cover: openingHouseCovers.get(home.id), street });
+    }
+    for (const offset of [-2, -1, 0, 1, 2]) {
+      const point = { x: home.x + offset, z: home.z + home.depth / 2 + 1.5 };
+      if (circleBlocked(point.x, point.z, .45, civilianNavigationObstacles)) continue;
+      const path = civilianNavigate(point, NANJING_OPENING_BRIDGE_TARGET);
+      if (path.length && Math.hypot(path.at(-1).x - NANJING_OPENING_BRIDGE_TARGET.x,
+        path.at(-1).z - NANJING_OPENING_BRIDGE_TARGET.z) < .02)
+        openingCivilianSources.push({ ...point, path, cover: openingHouseCovers.get(home.id) });
+    }
+  }
+  if (!openingCivilianSources.length) throw new Error('No reachable south-bank source for opening refugees');
   const waitingPlaces = placeCivilianWaitingSlots(point =>
     !circleBlocked(point.x, point.z, .45, civilianNavigationObstacles));
   const homeRoutes = new Map();
@@ -2018,7 +2068,7 @@ export function makeNanjingBattlefield(scene, surface) {
       const entry = { x: NANJING_DOCK_ENTRY_X + 3.8, z: NANJING_DOCK.z };
       const stops = data.civilianId >= 60
         ? [{ x: -37, z: -62 }, data.waitingSlot]
-        : [{ x: -24, z: 31 }, { x: 0, z: 24 }, { x: 0, z: 15 },
+        : [NANJING_OPENING_BRIDGE_TARGET, { x: 0, z: 24 }, { x: 0, z: 15 },
           { x: 0, z: 3 }, { x: 0, z: -12 }, { x: -56, z: -60 }, entry, data.waitingSlot];
       const route = [];
       let from = start;
@@ -2330,7 +2380,7 @@ export function makeNanjingBattlefield(scene, surface) {
     town, outskirts: { buildings: [], hills: [] }, visibility: {}, doorSystem, sceneArt,
     buildingFire, staticDamage: { craters: shellCraters, ruinedShops: [], wrecks },
     ferries, ferryRowers, civilianVisuals: [...civilians, ...ferryRowers], civilians, civilianQueue, civilianFlight,
-    civilianNavigate, civilianNavigationObstacles, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
+    civilianNavigate, civilianNavigationObstacles, openingCivilianSources, aircraft, objectives: NANJING_OBJECTIVES, impactHeight,
     isDeepWater: (x, z) => x < NANJING_RIVER_SHORE_X && x > NANJING_RIVER_SHORE_X - NANJING_FERRY_ROUTE.riverWidth &&
       Math.abs(z) < NANJING_FERRY_ROUTE.riverDepth / 2 &&
       !(x >= NANJING_PIER.minX && z >= NANJING_PIER.minZ && z <= NANJING_PIER.maxZ) ||
@@ -2379,6 +2429,7 @@ export function makeNanjingBattlefield(scene, surface) {
         civilian.removeFromParent();
         scene.add(civilian);
         const data = civilian.userData;
+        if (data.openingInside) data.streetLife = null;
         civilian.position.set(data.startX, 0, data.startZ);
         civilian.rotation.set(0, 0, 0);
         for (const limb of [...civilian.civilianArms, ...civilian.civilianLegs]) limb.rotation.set(0, 0, 0);
@@ -2397,7 +2448,7 @@ export function makeNanjingBattlefield(scene, surface) {
           unrescued: false, enteredCity: false, crossedRiver: false,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,
-          streetEvacuating: false, route: data.refugeeRestRoute ?? data.homeRoute,
+          streetEvacuating: false, openingInside: false, route: data.refugeeRestRoute ?? data.homeRoute,
           flightReleaseAt: null, fleeReleased: false, resting: false, restPoseWeight: 0,
           releaseAt: data.withdrawalWave ? Infinity : nanjingOpeningCivilianReleaseAt(data.civilianId) });
         for (const bone of civilian.civilianSkin.skeleton.bones) bone.rotation.set(0, 0, 0);

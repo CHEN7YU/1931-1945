@@ -218,8 +218,10 @@ export function emplacementCooldown(point, now) {
 export function advanceEmplacement(point, dt, now) {
   if (point.health <= 0) return;
   const age = point.recoilShotAt === null ? Infinity : now - point.recoilShotAt;
-  point.recoil = point.weapon.type !== 'field-gun' && age >= 0 && age < point.weapon.settings.interval
-    ? .025 * Math.sin(Math.PI * age / point.weapon.settings.interval) : 0;
+  const cannon = point.weapon.type === 'field-gun';
+  const recoilDuration = cannon ? .55 : point.weapon.settings.interval;
+  point.recoil = (!cannon || point.cannonRecoil !== false) && age >= 0 && age < recoilDuration
+    ? (cannon ? .18 : .025) * Math.sin(Math.PI * age / recoilDuration) : 0;
   point.heat = Math.max(0, point.heat - dt * .12);
   if (point.heat <= .35) point.overheated = false;
   const weapon = point.weapon;
@@ -234,8 +236,8 @@ export function fireEmplacement(point, now) {
   if (point.health <= 0 || !point.operatorId || point.position === 'march' || point.overheated || weapon.reloadUntil || now < weapon.nextShot) return false;
   if (weapon.ammo <= 0) { reloadEmplacement(point, now); return false; }
   weapon.ammo--; weapon.nextShot = now + weapon.settings.interval; point.shots++;
+  point.recoilShotAt = now;
   if (point.weapon.type !== 'field-gun') {
-    point.recoilShotAt = now;
     point.heat = Math.min(1, point.heat + .022);
     point.overheated = point.heat >= 1;
   } else reloadEmplacement(point, now);

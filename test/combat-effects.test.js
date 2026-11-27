@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createCombatEffects } from '../src/combat-effects.js';
+import { createParticleState, emitFieldGunMuzzleParticles, emitExplosionParticles, advanceCombatParticles } from '../src/combat-particles.js';
 
 const settings = { preset: 'high', effects: { muzzle: true, muzzleLight: true, hitParticles: true } };
 function fixture(isGround) {
@@ -22,6 +23,62 @@ function fixture(isGround) {
   return { scene, camera, effects, fragments, get queries() { return queries; } };
 }
 const impact = z => ({ position: { x: 0, y: .1, z }, normal: { x: 0, y: 1, z: 0 }, kind: 'stone' });
+
+test('field gun shot produces forward smoke and ground dust within its bounded effect budget', () => {
+  for (const low of [false, true]) {
+    const state = createParticleState();
+    emitFieldGunMuzzleParticles(state, { x: 0, y: 1.2, z: -2 }, { x: 0, y: 0, z: -1 },
+      { x: 0, y: 0, z: 0 }, 1, { low });
+    const smoke = state.fieldGunClouds.filter(cloud => cloud.kind === 'blast-smoke');
+    const dust = state.fieldGunClouds.filter(cloud => cloud.kind === 'blast-dust');
+    assert.ok(smoke.length && smoke.every(cloud => cloud.z < -2 && cloud.vz < 0));
+    assert.ok(dust.length >= 3 && dust.every(cloud => cloud.y === .18));
+    assert.ok(dust.some(cloud => cloud.x < 0) && dust.some(cloud => cloud.x > 0));
+    assert.ok(state.fieldGunClouds.length <= (low ? 7 : 10));
+  }
+  const { effects } = fixture();
+  effects.fieldGunMuzzle(new THREE.Vector3(0, 1.2, -2), new THREE.Vector3(0, 0, -1), new THREE.Vector3(), 0);
+  effects.render(0);
+  assert.ok(effects.snapshot.renderedClouds > 0);
+  effects.configure({ ...settings, effects: { ...settings.effects, muzzle: false } });
+  assert.equal(effects.snapshot.clouds, 0);
+});
+
+test('nearby shell impact does not replace the field gun muzzle smoke', () => {
+  for (const low of [false, true]) {
+    const state = createParticleState();
+    const pooled = new Set(state.free.fieldGunClouds);
+    emitFieldGunMuzzleParticles(state, { x: 0, y: 1.2, z: -2 }, { x: 0, y: 0, z: -1 },
+      { x: 0, y: 0, z: 0 }, 0, { low });
+    advanceCombatParticles(state, .15, () => 0, .15);
+    emitExplosionParticles(state, { x: 0, y: 0, z: -20 }, .15, { low });
+    assert.ok(state.fieldGunClouds.some(cloud => cloud.kind === 'blast-smoke'));
+    assert.ok(state.clouds.some(cloud => cloud.kind.startsWith('blast-')));
+    advanceCombatParticles(state, .85, () => 0, 1);
+    assert.ok(state.fieldGunClouds.some(cloud => cloud.kind === 'blast-smoke'));
+    advanceCombatParticles(state, 1, () => 0, 2);
+    assert.equal(state.fieldGunClouds.length, 0);
+    for (let i = 0; i < 10; i++)
+      emitFieldGunMuzzleParticles(state, { x: 0, y: 1.2, z: -2 }, { x: 0, y: 0, z: -1 },
+        { x: 0, y: 0, z: 0 }, 2, { low });
+    assert.equal(state.fieldGunClouds.length, low ? 7 : 10);
+    assert.ok(state.fieldGunClouds.every(cloud => pooled.has(cloud)));
+    assert.equal(state.fieldGunClouds.length + state.free.fieldGunClouds.length, 10);
+  }
+  const { effects } = fixture();
+  effects.configure({ ...settings, preset: 'low' });
+  effects.fieldGunMuzzle(new THREE.Vector3(0, 1.2, -2), new THREE.Vector3(0, 0, -1), new THREE.Vector3(), 0);
+  effects.render(.15);
+  effects.explosion(new THREE.Vector3(0, 0, -20), .15);
+  effects.render(.5);
+  assert.ok(effects.snapshot.renderedFieldGunClouds > 0);
+  assert.ok(effects.snapshot.clouds > effects.snapshot.fieldGunClouds);
+  effects.configure({ ...settings, preset: 'low', effects: { ...settings.effects, muzzle: false } });
+  assert.equal(effects.snapshot.fieldGunClouds, 0);
+  assert.ok(effects.snapshot.clouds > 0);
+  effects.clear();
+  assert.equal(effects.snapshot.clouds, 0);
+});
 
 test('tank fire and aircraft smoke both receive a single-use live vehicle registry iterator', () => {
   const { effects } = fixture();
