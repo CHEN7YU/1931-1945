@@ -103,6 +103,18 @@ export function nanjingDockPostOutsideBuildings(point, buildings) {
     Math.abs(point.z - home.z) > home.depth / 2 + .6);
 }
 
+export function nanjingDockDeploymentObstacles(spawn, obstacles, buildings) {
+  if (spawn.id !== 'nanjing-west-dock') return obstacles;
+  const zone = spawn.deploymentZone;
+  const footprints = buildings.map(home => ({
+    minX: home.x - home.width / 2, maxX: home.x + home.width / 2,
+    minZ: home.z - home.depth / 2, maxZ: home.z + home.depth / 2,
+    minY: 0, height: home.height,
+  })).filter(home => home.maxX >= zone.minX - .5 && home.minX <= zone.maxX + .5 &&
+    home.maxZ >= zone.minZ - .5 && home.minZ <= zone.maxZ + .5);
+  return [...obstacles, ...footprints];
+}
+
 export function assignNanjingDockDefense(actors, clear) {
   const defenders = actors.filter(actor => actor.health > 0 && actor.friendly &&
     !actor.playerUnit && !actor.vehicleId && !actor.formation.reserve);

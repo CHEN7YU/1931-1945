@@ -19,6 +19,21 @@ test('five open wooden ferries share finite low-cost hull geometry and have sepa
   assert.ok(NANJING_FERRY_FLOOR < .6, 'passengers stand inside the open hull rather than on a lid');
 });
 
+test('ferry ends and the seams between hull planks do not expose the water', () => {
+  const boat = createNanjingFerryFactory(new THREE.MeshStandardMaterial())();
+  boat.updateMatrixWorld(true);
+  const hull = boat.children[0];
+  for (const x of [-3.2, 3.2]) for (const z of [-.06, 0, .06]) {
+    const origin = new THREE.Vector3(Math.sign(x) * .6, 1.25, 0);
+    const direction = new THREE.Vector3(x, .8, z).sub(origin);
+    const ray = new THREE.Raycaster(origin, direction.clone().normalize(), 0, direction.length() + .01);
+    assert.ok(ray.intersectObject(hull).length, `ferry end at ${x}, ${z} must not expose the water`);
+  }
+  const seam = new THREE.Raycaster(new THREE.Vector3(0, -.30 + 1.12 * .4, 2),
+    new THREE.Vector3(0, 0, -1), 0, 1.6);
+  assert.ok(seam.intersectObject(hull).length, 'the narrow gap between planks has solid backing');
+});
+
 test('a dedicated boatman rows on empty inbound and outbound trips and rests when docked', () => {
   const ferry = createNanjingFerryFactory(new THREE.MeshStandardMaterial())();
   const rower = new THREE.Group();

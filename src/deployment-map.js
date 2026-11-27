@@ -4,7 +4,7 @@ import { NANJING_DOCK_WEST_EXTENSION } from './nanjing-campaign.js';
 export function deploymentMapView(stage) {
   if (stage === 'sihang') return { x: 0, z: (SIHANG_MAP_BOUNDS.minZ + SIHANG_MAP_BOUNDS.maxZ) / 2, span: 220 };
   if (stage === 'gate-defense') return { x: 0, z: 5, span: 76 };
-  if (stage === 'dock-defense' || stage === 'withdrawal-to-boats') return { x: -80 + NANJING_DOCK_WEST_EXTENSION / 2, z: -76, span: 78 };
+  if (stage === 'dock-defense' || stage === 'withdrawal-to-boats') return { x: -80 + NANJING_DOCK_WEST_EXTENSION / 2, z: -69, span: 78 };
   return { x: 0, z: 0, span: 220 };
 }
 

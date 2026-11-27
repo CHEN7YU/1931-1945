@@ -348,7 +348,7 @@ test('native grenade/dadao and rifle hand hooks restore after officer switching 
   const direct = createNraGrenadeHand(source, 'right');
   const sibling = createNraGrenadeHand(source, 'left');
   const geometryId = direct.getObjectByName('手部').geometry.uuid, materialId = direct.getObjectByName('手部').material.uuid;
-  for (const kind of ['grenade', 'explosive-pack', 'dadao']) {
+  for (const kind of ['grenade', 'explosive-pack', 'dadao', 'hammer']) {
     direct.setOfficerAppearance(true); direct.poseGrip(1, 0, kind);
     assert.equal(direct.officerAppearanceSnapshot.officer, true);
     assert.ok(direct.officerAppearanceSnapshot.gloveVertices > 100);

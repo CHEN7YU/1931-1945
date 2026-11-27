@@ -1,4 +1,4 @@
-import { deployFromMenu } from './game-entry.mjs';
+import { deployFromMenu, setQualityPreset } from './game-entry.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -35,50 +35,61 @@ async function luminance() {
 }
 try {
   await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
-  await wait(() => window.__battle?.state === 'menu');
+  await setQualityPreset(page, 'high');
+  if (new URL(page.url()).searchParams.has('benchmark'))
+    await page.waitForFunction(() => window.__battle?.state === 'menu', null, { timeout: 180000 });
   await deployFromMenu(page);
   await wait(() => window.__battle.fov > 71.9);
   assert.equal((await snapshot()).combatEffects.shaderLights, 2, 'high quality keeps two zero-intensity pooled lights in the shader before any shot');
   assert.equal((await snapshot()).combatEffects.visibleLights, 0, 'idle pooled lights do not illuminate the scene');
   await capture('daylight-cool.png');
   await page.keyboard.press('Escape');
+  await page.locator('#pause-settings summary').click();
   await page.locator('#quality-overcast').uncheck();
   assert.equal((await snapshot()).daylight.sunIntensity, 2.5);
   await page.locator('#resume').click(); await page.waitForTimeout(100);
   await capture('daylight-original.png');
-  await page.keyboard.press('Escape'); await page.locator('#quality-overcast').check(); await page.locator('#resume').click();
+  await page.keyboard.press('Escape'); await page.locator('#pause-settings summary').click();
+  await page.locator('#quality-overcast').check(); await page.locator('#resume').click();
   await page.mouse.down({ button: 'right' }); await look(0, -.6);
   const lit = await page.evaluate(() => new Promise((resolve, reject) => {
     const deadline = setTimeout(() => reject(new Error('No measurable first-shot muzzle light within 10s')), 10000);
     const observe = () => {
       const data = window.__battle;
-      if (data.combatEffects.muzzleLightIntensity > 1 && data.combatEffects.lastImpact?.kind === 'stone') {
+      const impact = data.combatEvents.history.find(event => event.type === 'impact' &&
+        event.source.credit === 'player' && event.source.soldierId === data.control.soldierId &&
+        event.source.weaponId === data.rifle.id && event.kind === 'stone' && event.normal.y > .95);
+      if (data.rifle.shots === 1 && data.combatEffects.muzzleLightIntensity > 1 && impact) {
         clearTimeout(deadline);
         document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
-        document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
-        document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape' }));
+        document.querySelector('#world').dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
+        document.querySelector('#world').dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape', bubbles: true }));
         resolve(data);
       } else requestAnimationFrame(observe);
     };
     // Observe before normal input so a 50ms pulse is not missed while the tool round-trip completes.
     requestAnimationFrame(observe);
     document.querySelector('#world').dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
   }));
   assert.equal(lit.rifle.ammo, 4);
   assert.equal(lit.combatEvents.pending, 0);
   assert.deepEqual(lit.combatEvents.published, lit.combatEvents.presented, 'accepted shot feedback is consumed exactly once in its simulation frame');
   assert.ok(lit.combatEvents.history.some(event => event.type === 'shot' && event.source.soldierId === lit.control.soldierId &&
     event.source.weaponId === lit.rifle.id), 'actual player shot feedback keeps original soldier and weapon ownership');
-  assert.ok(lit.combatEvents.history.some(event => event.type === 'impact' && event.kind === 'stone' && event.normal.y > .95));
+  const firstImpact = lit.combatEvents.history.find(event => event.type === 'impact' &&
+    event.source.credit === 'player' && event.source.soldierId === lit.control.soldierId &&
+    event.source.weaponId === lit.rifle.id && event.kind === 'stone' && event.normal.y > .95);
+  assert.ok(firstImpact, 'the player shot hits horizontal stone');
   assert.ok(lit.combatEffects.visibleLights > 0 && !lit.combatEffects.pointLightShadows);
   assert.equal(lit.combatEffects.shaderLights, 2, 'a shot does not change the shader light-count variant');
   assert.equal(lit.combatEffects.renderedFragments, lit.combatEffects.fragments);
-  assert.ok(lit.combatEffects.lastImpact.normal[1] > .95);
   const before = await luminance(), pausedTime = (await snapshot()).time;
   await page.waitForTimeout(200);
   assert.equal((await snapshot()).time, pausedTime);
   assert.equal((await snapshot()).combatEffects.lights, lit.combatEffects.lights, 'paused effects do not age in real wall-clock time');
   assert.deepEqual((await snapshot()).combatEvents, lit.combatEvents, 'pause does not replay shot or impact feedback');
+  await page.locator('#pause-settings summary').click();
   await page.locator('#quality-muzzleLight').uncheck();
   const after = await luminance();
   assert.ok(before > after + .0001, `real GPU image receives local muzzle illumination (${before.toFixed(4)} > ${after.toFixed(4)})`);
@@ -94,15 +105,21 @@ try {
   await look(Math.PI / 2, -.22);
   await page.mouse.down(); await wait(() => window.__battle.rifle.shots === 2); await page.mouse.up();
   data = await snapshot();
-  assert.equal(data.combatEffects.lastImpact.kind, 'soil', 'real earth-plane hits differ from paving/stone hits');
-  assert.ok(data.combatEffects.lastImpact.normal[1] > .95);
-  await page.keyboard.press('Escape'); await page.locator('#qualityToggle').selectOption('low'); await page.locator('#resume').click();
+  const secondImpact = data.combatEvents.history.find(event => event.type === 'impact' && event.id > firstImpact.id &&
+    event.source.credit === 'player' && event.source.soldierId === data.control.soldierId &&
+    event.source.weaponId === data.rifle.id);
+  assert.equal(secondImpact?.kind, 'soil', 'the player earth-plane hit differs from paving/stone hits');
+  assert.ok(secondImpact.normal.y > .95);
+  await page.keyboard.press('Escape'); await page.locator('#pause-settings summary').click();
+  await page.locator('#qualityToggle').selectOption('low'); await page.locator('#resume').click();
   await page.mouse.up({ button: 'right' }); await page.mouse.down({ button: 'right' });
   await wait(() => window.__battle.rifle.action === 'idle');
   await page.mouse.down(); await wait(() => window.__battle.rifle.shots === 3); await page.mouse.up();
   data = await snapshot();
   assert.equal(data.combatEffects.visibleLights, 0, 'low quality emits no muzzle point lights');
-  assert.ok(data.combatEffects.fragments <= 32 && data.combatEffects.clouds <= 6);
+  assert.ok(data.combatEffects.fragments <= 32 &&
+    data.combatEffects.clouds - data.combatEffects.fieldGunClouds <= 6 &&
+    data.combatEffects.fieldGunClouds <= 7);
   await page.waitForFunction(() => window.__battle.combatEffects.fragments + window.__battle.combatEffects.clouds === 0);
   await page.keyboard.press('Escape'); await page.locator('#back-menu').click();
   assert.equal((await snapshot()).combatEvents.pending, 0);
@@ -115,7 +132,10 @@ try {
   console.log(`PASS: cold/original light switch, real stone/soil impacts, GPU muzzle illumination ${before.toFixed(4)}→${after.toFixed(4)}, pause, independent disable and low-budget recovery.`);
 } catch (error) {
   const data = await snapshot();
-  console.error(JSON.stringify({ state: data?.state, look: data?.look, rifle: data?.rifle, effects: data?.combatEffects, errors }));
+  console.error(JSON.stringify({ state: data?.state, look: data?.look,
+    rifle: data?.rifle && { ownerId: data.rifle.ownerId, id: data.rifle.id, shots: data.rifle.shots, trace: data.rifle.trace },
+    playerEvents: data?.combatEvents?.history.filter(event => event.source.credit === 'player'),
+    lastImpact: data?.combatEffects?.lastImpact, errors }));
   throw error;
 } finally {
   await browser.close();

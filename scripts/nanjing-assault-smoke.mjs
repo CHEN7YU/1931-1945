@@ -14,6 +14,13 @@ const errors = [], samples = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 try {
+  await page.route('**/src/main.js*', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: await response.text() + `
+      window.nanjingAssaultGround = (x, z) => ({
+        height: world.groundHeight(x, z), deepWater: world.isDeepWater(x, z)
+      });` });
+  });
   if (wallRespawnFixture) {
     // Place one AI squad on the rampart to isolate its defensive firing behavior.
     await page.route('**/src/battle-roster.js', async route => {
@@ -34,9 +41,17 @@ try {
       endings.includes(window.__battle.state), { seconds, endings: BATTLE_END_STATES }, { timeout: 360000 });
     const sample = await page.evaluate(() => {
       const battle = window.__battle;
+      const units = battle.population.units.filter(unit => unit.team === 'enemy' && unit.type === 'infantry')
+        .map(unit => ({ ...unit, members: unit.members.map(member => ({
+          ...member, terrain: window.nanjingAssaultGround(member.x, member.z),
+        })) }));
       return {
         time: battle.time, state: battle.state, campaign: battle.campaign,
-        units: battle.population.units.filter(unit => unit.team === 'enemy' && unit.type === 'infantry'),
+        units,
+        belowZero: units.flatMap(unit => unit.members.filter(member => member.y < 0).map(member => ({
+          unit: unit.id, x: member.x, y: member.y, z: member.z,
+          ...member.terrain,
+        }))),
         vehicles: battle.vehicles.map(vehicle => ({
           position: vehicle.position, ai: vehicle.ai, trackDistance: vehicle.trackDistance,
         })),
@@ -83,9 +98,11 @@ try {
     sample.campaign.airSupport.aircraft.every(plane => plane.shots > 0 && plane.lastShot)),
   'all three circling aircraft must fire through the shared weapon path');
   assert.ok(samples.every(sample => sample.units.every(unit => unit.assaultCrossing === 'bridge' &&
-    unit.members.every(member => member.y >= 0 &&
+    unit.members.every(member => member.y + .05 >= member.terrain.height &&
+      (member.y >= 0 || !member.terrain.deepWater) &&
+      (!member.terrain.deepWater || (member.z > 39 && member.z < 65 && Math.abs(member.x + 24) < 5)) &&
       (member.z <= 39 || member.z >= 65 || Math.abs(member.x + 24) < 5)))),
-  'all eight Japanese squads must use the bridge without wading or standing in deep water');
+  'all eight Japanese squads must use the bridge without passing below the ground or wading in deep water');
   if (!wallRespawnFixture) {
     assert.ok(samples.some(sample => sample.units.some(unit => unit.members.some(member => member.z < 38))),
       'Japanese infantry must physically cross the Yuhua Road bridge');

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { defaultPreferences, PREFERENCES_KEY } from '../src/player-preferences.js';
+import { NANJING_EMPLACEMENTS } from '../src/emplacements.js';
 
 if (process.argv.includes('--campaign-behavior-only')) {
   process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY = '1';
@@ -16,6 +17,7 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 page.setDefaultTimeout(120000);
 try {
+  if (process.env.ARTIFACT_DIR) await mkdir(process.env.ARTIFACT_DIR, { recursive: true });
   const preferences=defaultPreferences();
   preferences.quality.preset='low';
   for(const effect of Object.keys(preferences.quality.effects))preferences.quality.effects[effect]=false;
@@ -26,6 +28,17 @@ try {
     await route.fulfill({ response, body: await response.text() + `
       window.civilianDefenseReview = {
         resume() { $('hud').hidden=false;setGameState('playing'); },
+        waitForPreparation() {
+          return new Promise((resolve, reject) => {
+            let frames = 0;
+            const check = () => {
+              if (!battlePreparing) resolve();
+              else if (++frames > 2400) reject(Error('Battle preparation did not finish'));
+              else setTimeout(check, 50);
+            };
+            check();
+          });
+        },
         openingAssault() {
           setGameState('menu');beginMatch();
           const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
@@ -76,13 +89,12 @@ try {
           }
           const infantry=formations.filter(unit=>unit.team==='enemy'&&unit.type==='infantry');
           const progress=[];
-          let beforeLast=false;
           for(const civilian of opening) {
             const data=civilian.userData;
             civilian.position.set(-24,0,38.01);civilian.visible=true;
             data.active=true;data.route=[{x:-24,z:37}];data.waypoint=0;
             updateNanjingCivilians(.05);
-            if(progress.length===59) beforeLast=nanjingCampaign.openingAssaultReleased;
+            if(progress.length===59) var beforeLast=nanjingCampaign.openingAssaultReleased;
             updateNanjingMission(0);
             progress.push(nanjingCampaign.civiliansCrossedRiver);
             civilian.visible=false;data.active=false;data.releaseAt=Infinity;
@@ -97,8 +109,10 @@ try {
           }
           updateNanjingMission(0);
         },
-        fieldReload() {
+        async fieldReload() {
+          await this.waitForPreparation();
           setGameState('menu');beginMatch();
+          await this.waitForPreparation();
           const actor=controlledSoldier(entities),point=emplacements.get('bridge-gun');
           const pose=emplacementPose(point,0);
           actor.position.set(pose.operator.x,0,pose.operator.z);
@@ -118,8 +132,11 @@ try {
           releaseEmplacement(actor);
           return {start,paused,half,left,resumed,complete};
         },
-        airframeBurst() {
+        async airframeBurst() {
+          const { aimEmplacement } = await import('/src/emplacements.js');
+          await this.waitForPreparation();
           setGameState('menu');beginMatch();
+          await this.waitForPreparation();
           this.releaseAssault();
           const crew=controlledSoldier(entities),point=emplacements.get('gate-aa'),floor=point.altitude;
           const pose=emplacementPose(point,floor);
@@ -215,7 +232,7 @@ try {
             unchangedAmmo: ammunitionBefore === operator.mortar.ammo };
           dispatchControlCommand('equipRifle');
           const originalEnemies = enemies;
-          const attacker = enemies.find(actor => !actor.vehicleId && actor.index % 11 === 10);
+          const attacker = enemies.find(actor => actor.health > 0 && !actor.vehicleId && actor.index % 11 === 10);
           if (!attacker) throw Error('No Japanese machine gunner available');
           enemies = [attacker];
           for (const person of world.civilians) {
@@ -225,11 +242,12 @@ try {
           const person = world.civilians.find(person => person.userData.ageGroup === 'adult' &&
             person.userData.carrying === 'none');
           const data = person.userData;
+          const fixture = { x: -62, z: -56 };
           Object.assign(data, { active: true, arrived: false, dead: false, health: 100,
-            streetLife: null, route: [{ x: -67, z: -85 }], waypoint: 0, threatResponse: null });
-          person.visible = true; person.position.set(-67, .36, -77);
-          attacker.position.set(-67, .36, -81);
-          attacker.target = null; attacker.tactics.suppressedUntil = 0;
+            streetLife: null, route: [{ x: fixture.x, z: fixture.z - 8 }], waypoint: 0, threatResponse: null });
+          person.visible = true; person.position.set(fixture.x, 0, fixture.z);
+          attacker.position.set(fixture.x, 0, fixture.z - 4);
+          attacker.target = null; attacker.tactics.suppressedUntil = 0; attacker.tactics.civilianThinkAt = 0;
           const beforeDistance = person.position.distanceTo(attacker.position);
           for (let frame = 0; frame < 20; frame++) { time += .05; updateNanjingCivilians(.05); }
           const afterDistance = person.position.distanceTo(attacker.position), mode = data.escapeMode;
@@ -240,11 +258,11 @@ try {
           updateCivilianAppearance(world.civilians, camera, 'high');
           const crouching = { root: person.civilianSkin.joints.root.position.y,
             knees: person.civilianSkin.joints.leftKnee.rotation.x,
-            arm: person.civilianSkin.joints.leftArm.rotation.x };
+            contacts: data.seatedContacts };
           data.escapeMotion = null;
-          person.position.set(-67, .36, -77);
+          person.position.set(fixture.x, 0, fixture.z);
           const source = captureAttackSource(entities, attacker, attacker.rifle);
-          const start = new THREE.Vector3(-67, 1.26, -73);
+          const start = new THREE.Vector3(fixture.x, 1.26, fixture.z + 4);
           const damageBefore = nanjingCampaign.civilianCasualties;
           const gun = { settings: { range: RIFLE.range, damage: TYPES.infantry.damage } };
           fireAutomaticShot({ id: null, team: 'friendly' }, { gun },
@@ -363,9 +381,12 @@ try {
             selectedByMachineGunner, crouching, friendlySafe, casualties, civilianDead: data.dead, bayonetPursuit, movingPursuit,
             houses: world.landmarks.residentialBuildings.length, mortarReadout };
         },
-        retreat() {
+        async retreat(seed) {
+          await this.waitForPreparation();
           setGameState('menu');
           beginMatch();
+          await this.waitForPreparation();
+          if (seed !== null) battleRandom = seededRandom(seed);
           const player = controlledSoldier(entities);
           enemies = []; rebuildForces();
           const follower = allies.find(actor => actor !== player);
@@ -396,45 +417,171 @@ try {
             pathReason:follower.tactics.pathReason, blockedBy:follower.tactics.blockedBy };
           nanjingCampaign.stage = 'dock-defense'; nanjingCampaign.dockActivated = true;
           nanjingCampaign.presentedStage = 'withdrawal';
-          camera.position.set(-60, 2, -80); camera.lookAt(-90, 1, -80);
+          camera.position.set(-60, 2, -80); camera.lookAt(-30, 1, -80);
           updateNanjingMission(0);
           const immediately = formations.filter(unit => unit.team === 'friendly' && unit.index >= 3)
             .map(unit=>unit.members.length);
+          player.position.set(-61, world.groundHeight(-61,-41), -41);
           time += 10; updateNanjingMission(0);
+          const blockedNearby = formations.find(unit => unit.id === 'friendly-3').members.length;
+          player.position.set(-60, world.groundHeight(-60,-80), -80);
+          time += 1.1; updateNanjingMission(0);
           const reserves = formations.filter(unit => unit.team === 'friendly' && unit.index >= 3)
             .map(unit=>({id:unit.id,members:unit.members.length,spawnId:unit.spawnId,
               spawnedAt:unit.members[0]?.spawnPosition}));
           const leaders=formations.filter(unit=>unit.team==='friendly'&&unit.index>=3).map(unit=>unit.members[0]);
           enemies=[];rebuildForces();
-          if(leaders.some(actor=>actor.health<=0))throw Error('Reserve march fixture starts with a dead leader');
+          if(leaders.some(actor=>!actor||actor.health<=0))throw Error('Reserve march fixture starts without a living leader');
+          const reserveMembers=formations.filter(unit=>unit.team==='friendly'&&unit.index>=3)
+            .flatMap(unit=>unit.members);
+          const memberMarch=reserveMembers.map(actor=>({id:actor.id,formation:actor.formation.id,
+            start:actor.position.toArray(),arrival:null,maxStep:0}));
           const reinforcementMarch=leaders.map(actor=>({id:actor.id,start:actor.position.toArray(),arrival:null,maxStep:0}));
-          for(let frame=0;frame<3000&&reinforcementMarch.some(record=>!record.arrival);frame++){
+          const crowdSamples=[], yielded=new Map();
+          for(let frame=0;frame<3000&&memberMarch.some(record=>!record.arrival);frame++){
             const before=leaders.map(actor=>actor.position.clone());
+            const beforeYield=new Map(friendlyForces.filter(actor=>actor.health>0)
+              .map(actor=>[actor.id,actor.position.clone()]));
             time+=.05;aiDecisions.beginFrame();updateWeaponSimulation(.05);updateAI(.05);
             world.doorSystem.update(.05,allForces.filter(actor=>actor.health>0).map(actor=>({
               x:actor.position.x,y:actor.position.y,z:actor.position.z,radius:.42})));
             for(const actor of allForces)if(actor.nativeMotion&&actor.health>0)advanceNraMotion(actor,.05);
             controlEvents.drain(()=>{});combatEvents.drain(()=>{});
+            for(const actor of friendlyForces) {
+              const active=actor.tactics.nanjingDockTrafficYield, previous=beforeYield.get(actor.id);
+              if(active&&previous&&!yielded.has(actor.id))yielded.set(actor.id,{id:actor.id,
+                waitingId:active.waitingId,start:previous.toArray(),maxDistance:0,maxStep:0});
+              const record=yielded.get(actor.id);
+              if(active&&record&&previous) {
+                record.maxDistance=Math.max(record.maxDistance,actor.position.distanceTo(new THREE.Vector3(...record.start)));
+                record.maxStep=Math.max(record.maxStep,actor.position.distanceTo(previous));
+              }
+            }
             for(let index=0;index<leaders.length;index++){
               const actor=leaders[index],record=reinforcementMarch[index];
               record.maxStep=Math.max(record.maxStep,actor.position.distanceTo(before[index]));
-              if(!record.arrival&&Math.hypot(actor.position.x-NANJING_DOCK.x,actor.position.z-NANJING_DOCK.z)<25)
-                record.arrival={seconds:(frame+1)*.05,position:actor.position.toArray()};
+              const post=actor.tactics.nanjingDockDefense;
+              if(!record.arrival&&post&&Math.hypot(actor.position.x-post.x,actor.position.z-post.z)<.8)
+                record.arrival={seconds:(frame+1)*.05,position:actor.position.toArray(),post};
+            }
+            for(let index=0;index<reserveMembers.length;index++){
+              const actor=reserveMembers[index],record=memberMarch[index],previous=beforeYield.get(actor.id);
+              if(previous)record.maxStep=Math.max(record.maxStep,actor.position.distanceTo(previous));
+              const post=actor.tactics.nanjingDockDefense;
+              if(!record.arrival&&actor.health>0&&post&&
+                Math.hypot(actor.position.x-post.x,actor.position.z-post.z)<.8)
+                record.arrival={seconds:(frame+1)*.05,position:actor.position.toArray(),duty:'post'};
+              const station=emplacements.get(actor.emplacementId);
+              if(!record.arrival&&actor.health>0&&station?.operatorId===actor.id)
+                record.arrival={seconds:(frame+1)*.05,position:actor.position.toArray(),
+                  duty:'emplacement',stationId:station.id};
+              record.final={health:actor.health,position:actor.position.toArray(),mode:actor.tactics.mode,
+                post,blockedBy:actor.tactics.blockedBy};
             }
             reinforcementMarch.forEach((record,index)=>{const actor=leaders[index];record.final={
-              health:actor.health,mode:actor.tactics.mode,pathReason:actor.tactics.pathReason,position:actor.position.toArray()};});
+              health:actor.health,mode:actor.tactics.mode,pathReason:actor.tactics.pathReason,
+              position:actor.position.toArray(), post:actor.tactics.nanjingDockDefense,
+              blockedBy:actor.tactics.blockedBy, stuckTime:actor.stuckTime, path:actor.path};});
+            if((frame+1)%600===0)crowdSamples.push({seconds:(frame+1)*.05,
+              actors:friendlyForces.filter(actor=>actor.health>0&&!actor.vehicleId&&actor.position.x<-50&&actor.position.z<-40)
+                .map(actor=>({id:actor.id,formation:actor.formation.id,index:actor.index,
+                  position:actor.position.toArray(),post:actor.tactics.nanjingDockDefense,
+                  mode:actor.tactics.mode,blockedBy:actor.tactics.blockedBy,
+                  traffic:actor.tactics.traffic&&{...actor.tactics.traffic}}))});
           }
           state='pause';
-          return {arrival,immediately,reserves,reinforcementMarch};
+          return {arrival,immediately,blockedNearby,reserves,reinforcementMarch,memberMarch,
+            yielded:[...yielded.values()],crowdSamples};
         },
-        operators() {
+        async yieldSpace() {
+          await this.waitForPreparation();
           setGameState('menu'); beginMatch();
+          await this.waitForPreparation();
+          const [guard, waiting] = friendlyAI.filter(actor => actor.health > 0 && !actor.vehicleId);
+          if (!guard || !waiting) throw Error('Missing actors for yield-space fixture');
+          guard.position.set(-61, 0, -55); waiting.position.set(-61, 0, -56.5);
+          waiting.tactics.blockedBy = guard.id;
+          waiting.tactics.traffic = { waitSeconds: 3, direction: { x: 0, z: 1 } };
+          guard.tactics.nanjingDockTrafficYield = null;
+          guard.tactics.nanjingDockYieldRetryAt = 0;
+          trafficGrid.rebuild([guard, waiting]);
+          const open = nanjingDockTrafficYield(guard);
+          guard.tactics.nanjingDockTrafficYield = null;
+          guard.tactics.nanjingDockYieldRetryAt = 0;
+          const blockers = [];
+          for (const radius of [1.2, 1.8]) for (let index = 0; index < 16; index++) {
+            const angle = index * Math.PI / 8;
+            blockers.push({ id: 'fixture-blocker-' + blockers.length, health: 100,
+              position: { x: guard.position.x + Math.cos(angle) * radius, y: 0,
+                z: guard.position.z + Math.sin(angle) * radius } });
+          }
+          trafficGrid.rebuild([guard, waiting, ...blockers]);
+          const enclosed = nanjingDockTrafficYield(guard);
+          return { open, enclosed, position: guard.position.toArray() };
+        },
+        yieldCombat() {
+          const unit = formations.find(formation => formation.team === 'enemy' && formation.type === 'infantry');
+          if (!unit) throw Error('Missing enemy infantry formation for yield-combat fixture');
+          unit.reserve = false;
+          if (!spawnFormation(unit, true)) throw Error('Cannot deploy enemy fixture: ' + unit.blockedReason);
+          const guard = friendlyAI.find(actor => actor.health > 0 && actor.role === 'rifleman' && !actor.vehicleId);
+          const waiting = friendlyAI.find(actor => actor !== guard && actor.health > 0 && !actor.vehicleId);
+          const enemy = enemies.find(actor => actor.health > 0 && !actor.vehicleId);
+          if (!guard || !waiting || !enemy) throw Error('Missing actors for yield-combat fixture: ' +
+            JSON.stringify({ guard: !!guard, waiting: !!waiting, enemy: !!enemy, roles: friendlyAI.map(actor => actor.role) }));
+          for (const actor of allForces) if (![guard, waiting, enemy].includes(actor)) actor.health = 0;
+          guard.blastReaction = guard.dying = null;
+          guard.traversal.kind = 'grounded'; guard.grenades.action = null;
+          if (guard.emplacementId || guard.tactics.stationId) releaseEmplacement(guard, false);
+          guard.position.set(-61, 0, -55); waiting.position.set(-61, 0, -56.5);
+          let target;
+          for (let x = -56; x <= -40 && !target; x += 2)
+            for (let z = -64; z <= -42 && !target; z += 2) {
+              const distance = Math.hypot(x - guard.position.x, z - guard.position.z);
+              if (distance < 10 || distance > 20 || circleBlocked(x, z, .5, movementObstacles(x, z), 0)) continue;
+              if (hasLine(new THREE.Vector3(guard.position.x, 1.4, guard.position.z),
+                new THREE.Vector3(x, 1.2, z), 30)) target = { x, z };
+            }
+          if (!target) throw Error('No visible target for yield-combat fixture');
+          enemy.position.set(target.x, 0, target.z);
+          enemy.health = 100000; enemy.traversal.kind = 'fixture';
+          guard.heading = Math.atan2(guard.position.x - target.x, guard.position.z - target.z);
+          guard.tactics.nanjingDockDefense = { x: guard.position.x, y: 0, z: guard.position.z, heading: guard.heading };
+          waiting.tactics.nanjingDockDefense = { x: waiting.position.x, y: 0, z: waiting.position.z };
+          waiting.tactics.blockedBy = guard.id;
+          waiting.tactics.traffic = { waitSeconds: 3, direction: { x: 0, z: 1 } };
+          guard.tactics.nanjingDockTrafficYield = {
+            goal: { x: guard.position.x + 1.2, y: 0, z: guard.position.z, transit: true },
+            waitingId: waiting.id, until: time + 8,
+          };
+          guard.target = enemy; guard.nextThink = time + 100;
+          rememberThreat(guard.tactics, targetAimPoint(enemy), time, enemy.targetKind, 'vision', enemy.id);
+          nanjingCampaign.stage = 'dock-defense'; nanjingCampaign.dockDefenseUpdateAt = time + 100;
+          rebuildForces();
+          const beforeShots = guard.rifle.shots;
+          let yieldedWithTarget = false;
+          for (let frame = 0; frame < 400 && guard.rifle.shots === beforeShots; frame++) {
+            time += .05; aiDecisions.beginFrame(); updateWeaponSimulation(.05); updateAI(.05);
+            yieldedWithTarget ||= guard.tactics.mode === 'dock-defense-yield';
+          }
+          const combat = { mode: guard.tactics.mode, targetId: guard.target?.id, enemyId: enemy.id,
+            beforeShots, shots: guard.rifle.shots, yieldedWithTarget };
+          enemy.health = 0; guard.target = null; guard.nextThink = time + 100;
+          for (let frame = 0; frame < 60 && guard.tactics.mode !== 'dock-defense-yield'; frame++) {
+            time += .05; aiDecisions.beginFrame(); updateAI(.05);
+          }
+          return { combat, after: guard.tactics.mode };
+        },
+        async operators() {
+          await this.waitForPreparation();
+          setGameState('menu'); beginMatch();
+          await this.waitForPreparation();
           this.releaseAssault();
           const player=controlledSoldier(entities), originalEnemies=[...enemies], results=[];
           const crew=friendlyAI.find(actor=>actor.health>0);
           for(const [index,friend] of friendlyForces.entries())if(friend!==crew)
             friend.position.set(-80+index%4*2,0,40+Math.floor(index/4)*2);
-          for(const point of [...emplacements.values()].filter(point=>!point.weapon.settings.antiAircraft)) {
+          for(const point of ['bridge-mg', 'bridge-gun', 'dock-mg', 'dock-gun'].map(id => emplacements.get(id))) {
             releaseEmplacement(crew,false);releaseEmplacement(player);
             nanjingCampaign.stage=point.id.startsWith('dock-')?'dock-defense':'gate-defense';
             nanjingCampaign.dockActivated=point.id.startsWith('dock-');
@@ -442,24 +589,17 @@ try {
             const pose=emplacementPose(point,floor);
             crew.position.set(pose.operator.x,floor,pose.operator.z);
             occupyEmplacement(point,crew);
-            let target;
-            if(point.weapon.settings.antiAircraft) {
-              target=[...entities.vehicles.values()].find(vehicle=>vehicle.type==='plane'&&vehicle.health>0);
-              target.position.set(point.x,floor+35,point.z+65);
-              vehicleRenderer.update(entities.vehicles.values(),time);
-              enemies=[];
-            } else {
-              target=originalEnemies.find(actor=>actor.health>0&&!actor.vehicleId);
-              const choices=point.id.startsWith('bridge-')?[[-24,45],[-24,48],[-24,52],[-22,44]]:
-                [[-35,-94],[-30,-93],[-40,-94],[-38,-92],[-32,-91]];
-              const location=choices.find(([x,z])=>!circleBlocked(x,z,.46,world.obstacles)&&
-                emplacementCanAimAt(point,{x,y:world.groundHeight(x,z)+1.1,z},floor)&&
-                hasLine(new THREE.Vector3(point.x,floor+2,point.z),
-                  new THREE.Vector3(x,world.groundHeight(x,z)+.9,z),point.weapon.settings.range));
-              if(!location)throw Error('No visible target fixture for '+point.id);
-              target.position.set(location[0],world.groundHeight(...location),location[1]);
-              enemies=[target];
-            }
+            const target=originalEnemies.find(actor=>actor.health>0&&!actor.vehicleId);
+            if(!target)throw Error('No living enemy for '+point.id);
+            const choices=point.id.startsWith('bridge-')?[[-24,45],[-24,48],[-24,52],[-22,44]]:
+              [[-35,-94],[-30,-93],[-40,-94],[-38,-92],[-32,-91]];
+            const location=choices.find(([x,z])=>!circleBlocked(x,z,.46,world.obstacles)&&
+              aiEmplacementCanAimAt(point,{x,y:world.groundHeight(x,z)+1.1,z},floor)&&
+              hasLine(new THREE.Vector3(point.x,floor+2,point.z),
+                new THREE.Vector3(x,world.groundHeight(x,z)+.9,z),point.weapon.settings.range));
+            if(!location)throw Error('No visible target fixture for '+point.id);
+            target.position.set(location[0],world.groundHeight(...location),location[1]);
+            enemies=[target];
             rebuildForces();
             const health=target.health,shots=point.shots;
             for(let step=0;step<600&&target.health===health;step++) {
@@ -534,9 +674,9 @@ try {
     assert.equal(restarted.squads, 8);
     assert.deepEqual(errors, []);
   } else {
-    assert.equal(result.checks.length, 7);
+    assert.deepEqual(result.checks.map(check => check.id).sort(), NANJING_EMPLACEMENTS.map(point => point.id).sort());
     assert.ok(result.checks.every(check => check.assigned === check.id && check.shots === 1 &&
-      check.stale === 'rejected' && check.released), 'all seven stations must really mount, shoot and release');
+      check.stale === 'rejected' && check.released), 'all stations must really mount, shoot and release');
     assert.equal(result.sharedPlanes.length, 3);
     assert.ok(result.sharedPlanes.every(plane => plane.health === 180 && plane.maxHealth === 180 &&
       plane.magazine <= 60 && plane.magazine >= 0 && plane.type === 'plane' && plane.pilot));
@@ -548,30 +688,50 @@ try {
       'bayonet-qualified Japanese infantry must charge and damage a nearby civilian');
     assert.equal(result.bayonetPursuit.shots, 0,
       'bayonet pursuit must not fire the rifle at the civilian, even with an empty magazine');
-    assert.ok(result.crouching.root < -.28 && result.crouching.knees < -1.7 && result.crouching.arm > 1.9);
+    assert.ok(result.crouching.root < -.28 && result.crouching.knees < -1.7);
+    assert.equal(result.crouching.contacts.hugging, true);
+    assert.equal(result.crouching.contacts.weight, 1);
+    assert.ok(['left', 'right'].every(side => result.crouching.contacts.hands[side].reachable &&
+      result.crouching.contacts.hands[side].error < .008), 'both hands must reach the knees');
     assert.ok(result.friendlySafe);
     assert.equal(result.casualties, 1);
     assert.ok(result.civilianDead);
   }
   }
   if (process.env.NANJING_CAMPAIGN_BEHAVIOR_ONLY !== '1') {
-  const retreat = await page.evaluate(() => civilianDefenseReview.retreat());
-  console.log(JSON.stringify({retreat}));
+  const seed = process.env.NANJING_SEED === undefined ? null : Number(process.env.NANJING_SEED);
+  if (seed !== null && !Number.isInteger(seed)) throw new Error('NANJING_SEED must be an integer');
+  const retreat = await page.evaluate(seed => civilianDefenseReview.retreat(seed), seed);
+  console.log(JSON.stringify({retreat:{...retreat,crowdSamples:retreat.crowdSamples.length}}));
+  if(process.env.ARTIFACT_DIR)await writeFile(join(process.env.ARTIFACT_DIR,'reinforcement-march.json'),
+    JSON.stringify({retreat,errors},null,2));
   assert.ok(retreat.arrival.distance < 12 && Math.abs(retreat.arrival.position[1]-retreat.arrival.floor)<.03,
     'a real wall-top squadmate must descend and physically catch up through the city');
   assert.deepEqual(retreat.immediately,[0,0], 'reserve squads cannot suddenly appear next to the player at stage start');
+  assert.equal(retreat.blockedNearby,0, 'a reserve cannot appear at the nearby shared player spawn');
+  assert.deepEqual(retreat.reserves.map(unit=>unit.spawnId),
+    ['nanjing-west-dock','nanjing-west-dock-south']);
   assert.ok(retreat.reserves.every(unit=>unit.members===11 &&
-    Math.hypot(unit.spawnedAt.x+60,unit.spawnedAt.z+80)>28 && unit.spawnId==='nanjing-west-dock'));
+    Math.hypot(unit.spawnedAt.x+60,unit.spawnedAt.z+80)>28 &&
+    (unit.spawnId==='nanjing-west-dock'
+      ? unit.spawnedAt.x>=-70 && unit.spawnedAt.x<=-51 && unit.spawnedAt.z>=-55 && unit.spawnedAt.z<=-29
+      : unit.spawnedAt.x>=-112 && unit.spawnedAt.x<=-101.5 && unit.spawnedAt.z>=-61 && unit.spawnedAt.z<=-49)));
   assert.equal(retreat.reinforcementMarch.length,2);
+  assert.equal(retreat.memberMarch.length,22);
+  assert.ok(retreat.memberMarch.every(record=>record.arrival&&record.maxStep<.6),
+    'every reserve member must reach a defense post or operate a real emplacement without teleporting');
+  if(process.env.REQUIRE_DOCK_YIELD==='1')
+    assert.ok(retreat.yielded.some(record=>record.maxDistance>.3 && record.maxStep<.6),
+      'a blocking guard must physically move aside rather than teleport');
   assert.ok(retreat.reinforcementMarch.every(record=>record.arrival&&record.maxStep<.6&&
     record.final.mode!=='withdrawal-wall'),
-    'both reserve squad leaders must actually march from the city to the dock defenses without teleporting');
+    'both reserve squad leaders must actually march from their shared spawns to the defense posts without teleporting');
   if(process.env.RETREAT_ONLY!=='1') {
   const operators=await page.evaluate(()=>civilianDefenseReview.operators());
   console.log(JSON.stringify({operators}));
   assert.equal(operators.length,4);
   assert.ok(operators.every(point=>point.fired>0&&point.damage>0&&point.takeover),
-    'AI must use all weapon types against real targets and allow resource-preserving player takeover');
+    'AI must use bridge and dock machine guns and field guns against real targets and allow resource-preserving player takeover');
   const fieldReload=await page.evaluate(()=>civilianDefenseReview.fieldReload());
   assert.deepEqual(fieldReload.start,{hidden:false,text:'5.5s',value:0});
   assert.deepEqual(fieldReload.paused,fieldReload.start);
@@ -595,6 +755,16 @@ try {
     if(process.env.ARTIFACT_DIR)await writeFile(join(process.env.ARTIFACT_DIR,'reinforcement-march.json'),
       JSON.stringify({retreat,errors},null,2));
   }
+  const yieldSpace = await page.evaluate(() => civilianDefenseReview.yieldSpace());
+  assert.ok(yieldSpace.open, 'a guard can select a clear route to let a waiting ally pass');
+  assert.equal(yieldSpace.enclosed, null, 'a guard must not choose an occupied yield route');
+  const yieldCombat = await page.evaluate(() => civilianDefenseReview.yieldCombat());
+  console.log(JSON.stringify({yieldSpace,yieldCombat}));
+  assert.equal(yieldCombat.combat.targetId, yieldCombat.combat.enemyId, 'the fixture retains its visible target');
+  assert.ok(yieldCombat.combat.shots > yieldCombat.combat.beforeShots, 'the guard must fire at the visible target');
+  assert.equal(yieldCombat.combat.yieldedWithTarget, false, 'a guard must not yield instead of engaging');
+  assert.equal(yieldCombat.after, 'dock-defense-yield', 'the same guard can yield once its target is gone');
+  assert.deepEqual(errors, []);
   }
 } catch (error) {
   const loading = await page.locator('#loading').count()

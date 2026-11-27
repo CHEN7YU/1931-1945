@@ -7,10 +7,11 @@ import { addSupportGrip } from './support-weapon-pose.js';
 export function createEmplacementModel(point) {
   const profile = EMPLACEMENT_PROFILES[point.profile], cannon = point.profile === 'bofors75';
   const root = new THREE.Group(), swivel = new THREE.Group(), barrel = new THREE.Group();
-  const steel = new THREE.MeshStandardMaterial({ color: 0x454c3c, roughness: .8, metalness: .3 });
+  const enemy = (point.builderTeam ?? point.team) === 'enemy';
+  const steel = new THREE.MeshStandardMaterial({ color: enemy ? 0x807951 : 0x454c3c, roughness: .8, metalness: .3 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x242823, roughness: .8 });
   const wood = new THREE.MeshStandardMaterial({ color: 0x68563d, roughness: 1 });
-  const sand = new THREE.MeshStandardMaterial({ color: 0x968363, roughness: 1 });
+  const sand = new THREE.MeshStandardMaterial({ color: enemy ? 0xb0a16d : 0x968363, roughness: 1 });
   const brass = new THREE.MeshStandardMaterial({ color: 0x9e8655, roughness: .48, metalness: .65 });
   const box = (parent, x, y, z, width, height, depth, material = steel) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
@@ -136,10 +137,10 @@ export function createEmplacementModel(point) {
     box(barrel, 0, .015, .42, .035, .05, .035, dark);
     if (profile.antiAircraft) {
       rod(barrel, [.1, .04, -.43], [.1, .25, -.43], .009);
-      const sight = ring(barrel, 0, .25, -.45, .09, .005, dark);
+      const sight = ring(barrel, 0, .25, -.45, .09, .005, steel);
       sight.userData.sightReticle = true;
       for (const [width, height] of [[.17, .004], [.004, .17]])
-        box(barrel, 0, .25, -.45, width, height, .004, dark).userData.sightReticle = true;
+        box(barrel, 0, .25, -.45, width, height, .004, steel).userData.sightReticle = true;
       root.userData.details = ['water-jacket', 'open-muzzle', 'receiver-cover', 'rivet-heads', 'feed-belt',
         'ammunition-box', 'spade-grips', 'trigger', 'trunnion-cradle', 'elevation-wheel',
         'tripod-braces', 'foot-plates', 'ring-sight'];

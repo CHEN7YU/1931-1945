@@ -117,8 +117,8 @@ try {
   const edge = await page.evaluate(async () => (await import('/src/nanjing-layout.js')).NANJING_GATE_NORTH_EDGE);
   const entry = await page.evaluate(edge => nanjingCountersReview.entry(edge), edge);
   assert.equal(entry.count, 1, JSON.stringify(entry));
-  assert.ok(entry.entered.includes('百姓已安全进城 1'), entry.entered);
-  assert.ok(entry.killed.includes('遭日军残害致死 1'), entry.killed);
+  assert.ok(entry.entered.includes('进城 1'), entry.entered);
+  assert.ok(entry.killed.includes('遇难 1'), entry.killed);
   const waiting = await page.evaluate(() => nanjingCountersReview.startWithdrawal());
   assert.equal(waiting.unrescued, 1); assert.equal(waiting.aboard, 1);
   assert.equal(waiting.evacuated, 4); assert.equal(waiting.ready, false);

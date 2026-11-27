@@ -5,7 +5,7 @@ import {
   NANJING_BOAT_CAPACITY, NANJING_BOAT_COUNT, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_OBJECTIVES, NANJING_SPAWNS,
   NANJING_GATE_CAPTURE_SECONDS, NANJING_STAGE_SECONDS, activateNanjingDock, advanceNanjingCampaign, advanceNanjingGateCapture, boardCivilian,
   completeNanjingCrossing, createNanjingCampaign, departNanjingBoat, overrunNanjingDock, recordNanjingSquadEvacuation, recordNanjingPlayerDeparture,
-  isNanjingSpawnAvailable, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
+  isNanjingSpawnAvailable, nanjingDockSpawnId, nanjingMissionVoice, nanjingEvacuationVoice, registerCivilianArrival, registerCivilianCasualties, returnNanjingBoat, nanjingWallExitWaypoint,
   nanjingCivilianEvacuationStatus, nanjingPlayerBoardingReady, recordNanjingCivilianCityEntry,
   NANJING_CIVILIAN_RIVER_NORTH_BANK_Z, NANJING_OPENING_CIVILIAN_COUNT, nanjingOpeningAssaultReady,
   recordNanjingCivilianRiverCrossing, nanjingDockApproachReached,
@@ -204,6 +204,8 @@ test('Nanjing campaign uses dedicated gate, dock, and three-direction assault po
       isNanjingSpawnAvailable(spawn, true)).map(spawn => spawn.id),
     ['nanjing-west-dock', 'nanjing-west-dock-south'],
   );
+  assert.deepEqual([1, 2, 3, 4].map(nanjingDockSpawnId),
+    ['nanjing-west-dock', 'nanjing-west-dock-south', 'nanjing-west-dock', 'nanjing-west-dock-south']);
   assert.deepEqual(
     ['nanjing-north-1', 'nanjing-east-1', 'nanjing-south-1'].filter(id => NANJING_SPAWNS.some(spawn => spawn.id === id)),
     ['nanjing-north-1', 'nanjing-east-1', 'nanjing-south-1'],

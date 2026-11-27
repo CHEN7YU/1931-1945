@@ -14,8 +14,13 @@ const streetFixtures = [
   { id: 'utility-west-south', kind: 'utility', x: -6, z: -40 },
   { id: 'utility-east-north', kind: 'utility', x: 6, z: -85 },
   { id: 'utility-east-south', kind: 'utility', x: 7, z: -30 },
+  { id: 'utility-market-west', kind: 'utility', x: -45, z: -65 },
+  { id: 'utility-market-east', kind: 'utility', x: 65, z: -67 },
+  { id: 'utility-outside-west-gate', kind: 'utility', x: -102, z: -58 },
   { id: 'streetlamp-west', kind: 'streetlamp', x: -6, z: -102.5 },
   { id: 'streetlamp-east', kind: 'streetlamp', x: 7, z: -15 },
+  { id: 'streetlamp-market', kind: 'streetlamp', x: -39, z: -57 },
+  { id: 'streetlamp-outside-west-gate', kind: 'streetlamp', x: -87, z: -58 },
 ];
 
 export function cityStreetIntersectsLot(lot, street, clearance = 0) {

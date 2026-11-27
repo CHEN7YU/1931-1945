@@ -7,10 +7,31 @@ import * as THREE from 'three';
 import { makeSihangBattlefield } from '../src/sihang-battlefield.js';
 import { createEngineerState, engineerConstructionReservations } from '../src/engineer.js';
 import { advanceConstruction, selectConstructionBlueprint } from '../src/construction.js';
+import { bridgeGroundHeight } from '../src/ground.js';
+import { PREVIEW_BRIDGE } from '../src/town-preview-layout.js';
 
 const ground = () => 0;
 const wall = { minX: -2, maxX: 2, minZ: -1.4, maxZ: -.6, height: 1.2 };
 const position = () => ({ x: 0, y: 0, z: 0 });
+
+test('airborne movement cannot enter the raised Taierzhuang bridge ramp from below', () => {
+  const heightAt = (x, z) => bridgeGroundHeight(x, z, PREVIEW_BRIDGE);
+  for (const fps of [30, 60, 144]) {
+    const p = { x: -.005, y: .1, z: -24 }, state = createTraversal();
+    beginTraversal(state, p);
+    state.velocity = -1;
+    for (let frame = 0; frame < fps && state.kind !== 'grounded'; frame++) {
+      moveAirborne(p, 2.7 / fps, 0, TRAVERSAL.radius, [], TRAVERSAL.bodyHeight, heightAt);
+      advanceTraversal(state, p, 1 / fps, [], heightAt);
+      assert.ok(p.y >= heightAt(p.x, p.z) - .025, `fell through terrain: ${JSON.stringify(p)}`);
+    }
+    assert.equal(state.kind, 'grounded');
+    assert.ok(p.x < PREVIEW_BRIDGE.minX);
+  }
+  const clear = { x: -.1, y: 1.2, z: -24 };
+  moveAirborne(clear, .3, 0, TRAVERSAL.radius, [], TRAVERSAL.bodyHeight, heightAt);
+  assert.ok(clear.x > 0, 'a jump above the ramp remains possible');
+});
 
 test('walking off an unobstructed edge allows up to two metres and falls naturally without a jump', () => {
   for (const height of [.66, 1, 1.99, 2, 2.01, 4]) {

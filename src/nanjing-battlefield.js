@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createCivilianCharacterFactory } from './civilian-character.js';
 import { resetCivilianStreetLife } from './civilian-street-life.js';
 import { placeRefugeeRestGroups, resetCivilianFlight } from './civilian-refugees.js';
 import { circleBlocked, createNavigator, setMapBounds } from './core.js';
 import { createDoorWorld } from './door-world.js';
-import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_FERRY_BERTHS, NANJING_PIER,
+import { NANJING_CITY_WALLS, NANJING_DOCK, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_FERRY_BERTHS, NANJING_PIER, NANJING_WAITING_DECK,
   nanjingPierHeight, NANJING_OBJECTIVES, NANJING_RIVER_SHORE_X, NANJING_SPAWNS, NANJING_WEST_BREACH, NANJING_MAP_BOUNDS, NANJING_DOCK_WEST_EXTENSION,
   NANJING_WEST_GATE_HALF_WIDTH, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 import { sandbagCollisionProxy, sandbagGeometry } from './scene-details.js';
@@ -18,7 +19,7 @@ import { NANJING_WALL_PLUMES, nanjingDamagedWallGeometry, nanjingWallNotch } fro
 import { createBuildingFire } from './building-fire.js';
 import { createWaterWaveClock } from './water-waves.js';
 import { selectBattlefieldCraters, addBattlefieldCraters } from './battlefield-craters.js';
-import { addStaticWrecks } from './war-damage.js';
+import { addStaticWrecks, agedSceneryTexture } from './war-damage.js';
 import { NANJING_EMPLACEMENTS, emplacementObstacles } from './emplacements.js';
 import { NANJING_FERRY_ROUTE, restoreFerryPassenger, updateFerryVisibility } from './nanjing-ferry.js';
 import { createNanjingDockDetails, createNanjingFerryFactory, createShoreReeds, NANJING_FERRY_FLOOR, updateNanjingFerryRower } from './nanjing-river-details.js';
@@ -663,6 +664,25 @@ export function makeNanjingBattlefield(scene, surface) {
   const northGround = makeSurface((NANJING_RIVER_SHORE_X + 600) / 2, -454,
     600 - NANJING_RIVER_SHORE_X, 692, ground, -.16, false);
   northGround.userData.nanjingFeature = 'north-distant-ground';
+  const southEnd = NANJING_FERRY_ROUTE.riverDepth / 2;
+  const southWidth = 600 - NANJING_RIVER_SHORE_X, southDepth = southEnd - 108;
+  const southX = (NANJING_RIVER_SHORE_X + 600) / 2, southZ = (108 + southEnd) / 2;
+  const southGeometry = new THREE.PlaneGeometry(southWidth, southDepth, 40, 96);
+  const southPositions = southGeometry.attributes.position, southUv = southGeometry.attributes.uv;
+  for (let i = 0; i < southPositions.count; i++) {
+    const x = southX + southPositions.getX(i), z = southZ - southPositions.getY(i);
+    const t = Math.max(0, Math.min(1, (z - 125) / 100));
+    const blend = t * t * (3 - 2 * t);
+    southPositions.setZ(i, blend * (8 + 2.5 * Math.sin(x * .016 + z * .006) +
+      1.2 * Math.sin(x * .037 - z * .008)));
+    const meters = ground.userData.metersPerTile ?? 3;
+    southUv.setXY(i, x / meters, -z / meters);
+  }
+  southGeometry.computeVertexNormals();
+  const southGround = new THREE.Mesh(southGeometry, ground);
+  southGround.rotation.x = -Math.PI / 2; southGround.position.set(southX, -.16, southZ);
+  southGround.receiveShadow = true; southGround.userData.nanjingFeature = 'south-distant-ground';
+  scene.add(southGround);
   const northBank = new THREE.Mesh(new THREE.BoxGeometry(3, 3.1, 650), stone);
   northBank.position.set(NANJING_RIVER_SHORE_X - 1.5, -1.5, -475);
   northBank.userData.nanjingFeature = 'north-distant-bank';
@@ -680,48 +700,45 @@ export function makeNanjingBattlefield(scene, surface) {
       paving.userData.streetId = street.id;
     }
   }
-  const utilityWire = new THREE.MeshStandardMaterial({ color: 0x343632, roughness: .88 });
   const utilityTimber = surface('timber', 0x554633, 2.6);
   const streetLampMetal = new THREE.MeshStandardMaterial({ color: 0x47483f, roughness: .82, metalness: .34 });
-  const streetLampGlass = new THREE.MeshStandardMaterial({
-    color: 0x9b8762, emissive: 0x302514, roughness: .8,
-  });
+  const streetLampGlass = new THREE.MeshStandardMaterial({ color: 0xd4cbb0, roughness: .4, metalness: .05 });
+  const streetLampShade = new THREE.CylinderGeometry(.055, .19, .12, 12, 1, true);
+  const streetLampBulb = new THREE.SphereGeometry(.055, 10, 8);
   for (const fixture of cityLayout.streetFixtures) {
     const { x, z } = fixture;
     if (fixture.kind === 'utility') {
-      cityBeam([x, 0, z], [x, 6, z], .12, utilityTimber, true);
-      cityBeam([x - .85, 5.55, z], [x + .85, 5.55, z], .055, utilityTimber, true);
-      for (const offset of [-.58, 0, .58]) {
+      const pole = cityBeam([x, 0, z], [x, 6, z], .12, utilityTimber, true);
+      pole.userData.nanjingFeature = 'damaged-utility-pole';
+      pole.userData.fixtureId = fixture.id;
+      cityBeam([x - .85, 5.55, z], [x + .45, 5.38, z], .055, utilityTimber, true);
+      for (const offset of [-.58, 0]) {
         const insulator = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .16, 6), stone);
-        insulator.position.set(x + offset, 5.65, z);
+        insulator.position.set(x + offset, 5.58 - offset * .13, z);
         scene.add(insulator);
         solids.push(insulator);
       }
+      cityBeam([x - .18, .8, z - .12], [x + .08, 1.8, z - .12], .028, dark);
       obstacles.push({ minX: x - .24, maxX: x + .24, minZ: z - .24, maxZ: z + .24,
         minY: 0, height: 6 });
       sceneArt.cityInfrastructure.utilityPoles++;
     } else if (fixture.kind === 'streetlamp') {
-      cityBeam([x, 0, z], [x, 4.5, z], .085, streetLampMetal, true);
-      const armX = x > 0 ? x - 1 : x + 1;
-      cityBeam([x, 4.18, z], [armX, 4.45, z], .045, streetLampMetal, true);
-      addBox(armX, 4.3, z, .3, .12, .23, streetLampMetal);
-      addBox(armX, 4.15, z, .2, .09, .16, streetLampGlass);
+      const pole = cityBeam([x, 0, z], [x, 4.5, z], .085, streetLampMetal, true);
+      pole.userData.nanjingFeature = 'damaged-streetlamp';
+      pole.userData.fixtureId = fixture.id;
+      const armX = x > 0 ? x - .85 : x + .85;
+      cityBeam([x, 4.18, z], [armX, 3.9, z], .045, streetLampMetal, true);
+      const shade = new THREE.Mesh(streetLampShade, streetLampMetal);
+      shade.position.set(armX, 3.83, z);
+      shade.userData.nanjingFeature = 'streetlamp-shade';
+      scene.add(shade);
+      const bulb = new THREE.Mesh(streetLampBulb, streetLampGlass);
+      bulb.position.set(armX, 3.75, z);
+      bulb.userData.nanjingFeature = 'streetlamp-bulb';
+      scene.add(bulb);
       obstacles.push({ minX: x - .2, maxX: x + .2, minZ: z - .2, maxZ: z + .2,
         minY: 0, height: 4.5 });
       sceneArt.cityInfrastructure.streetLamps++;
-    }
-  }
-  for (const side of [-1, 1]) {
-    const poles = cityLayout.streetFixtures.filter(fixture => fixture.kind === 'utility' &&
-      Math.sign(fixture.x) === side).sort((a, b) => a.z - b.z);
-    for (let index = 1; index < poles.length; index++) {
-      const a = poles[index - 1], b = poles[index];
-      for (const offset of [-.58, 0, .58]) {
-        const x = (a.x + b.x) / 2 + offset, midZ = (a.z + b.z) / 2;
-        cityBeam([x, 5.65, a.z], [x, 5.35, midZ], .018, utilityWire);
-        cityBeam([x, 5.35, midZ], [x, 5.65, b.z], .018, utilityWire);
-      }
-      sceneArt.cityInfrastructure.overheadWireSpans++;
     }
   }
   makeSurface(-24, 76, 10, 58, road, -.07);
@@ -906,11 +923,11 @@ export function makeNanjingBattlefield(scene, surface) {
   for (let step = 0; step < stairSteps; step++) {
     const height = stairHalfHeight * (step + 1) / stairSteps;
     const lower = addBox((westGateStair.maxX + westGateStair.groundX) / 2, height / 2,
-      westGateStair.topZ - (step + .5) * stepDepth, stairWidth, height, stepDepth, stone);
+      westGateStair.topZ - (step + .5) * stepDepth, stairWidth, height, stepDepth, brick);
     lower.userData.nanjingFeature = 'west-gate-stair-tread';
     const upperHeight = stairHalfHeight + height;
     const upper = addBox((westGateStair.minX + westGateStair.maxX) / 2, upperHeight / 2,
-      westGateStair.turnZ + (step + .5) * stepDepth, stairWidth, upperHeight, stepDepth, stone);
+      westGateStair.turnZ + (step + .5) * stepDepth, stairWidth, upperHeight, stepDepth, brick);
     upper.userData.nanjingFeature = 'west-gate-stair-tread';
   }
   for (const landing of [
@@ -921,7 +938,7 @@ export function makeNanjingBattlefield(scene, surface) {
   ]) {
     const mesh = addBox((landing.minX + landing.maxX) / 2, landing.height / 2,
       (landing.minZ + landing.maxZ) / 2, landing.maxX - landing.minX, landing.height,
-      landing.maxZ - landing.minZ, stone);
+      landing.maxZ - landing.minZ, brick);
     mesh.userData.nanjingFeature = 'west-gate-stair-tread';
     flankWalkSupports.push(landing);
   }
@@ -1306,6 +1323,21 @@ export function makeNanjingBattlefield(scene, surface) {
     }
     northernBackdrop.push({ x, z, width, depth, height, interactive: false });
   }
+  for (const [index, [x, z]] of [[-109, -106], [-99, -106]].entries()) {
+    const width = 4.2, depth = 3.2, height = 3.1 + index * .35;
+    const start = solids.length;
+    const body = addBox(x, height / 2, z, width, height, depth, index ? brick : stone, true);
+    body.userData.nanjingFeature = 'dock-north-house';
+    const roof = new THREE.Mesh(createRoofGeometry(width + .7, depth + .6, .9, 1.4), roofMaterial);
+    roof.position.set(x, height, z); roof.castShadow = roof.receiveShadow = true;
+    roof.userData.nanjingFeature = 'dock-north-house-roof';
+    scene.add(roof); solids.push(roof);
+    addBox(x, 1.05, z + depth / 2 + .03, .9, 2.1, .06, timber);
+    for (const mesh of solids.slice(start)) {
+      mesh.userData.staticResidential = true; residentialMeshes.push(mesh);
+    }
+    northernBackdrop.push({ x, z, width, depth, height, interactive: false });
+  }
   const residentialLots = cityLayout.lots;
   const plaster = surface('plaster', 0xaaa18b, 1.2);
   const templeLot = residentialLots.map((lot, index) => ({ lot, index }))
@@ -1483,6 +1515,11 @@ export function makeNanjingBattlefield(scene, surface) {
           .75, .84, .55, timber, true);
         stall.userData.nanjingFeature = 'residential-shop-stall';
       }
+      if (Math.hypot(x + 48, z + 52) < 26) {
+        const sign = makePlaque(['米行', '雜貨', '茶舖'][index % 3],
+          x, 2.78, frontZ - .17, Math.min(1.7, w - 1), .36, false, -1);
+        sign.userData.nanjingFeature = 'weathered-shop-sign';
+      }
     }
     const home = residentialBuildings.at(-1), passage = town.passages.at(-1);
     if (z === 75 && !damaged && facing === 0)
@@ -1617,6 +1654,10 @@ export function makeNanjingBattlefield(scene, surface) {
   addForwardDefense(-54, -74, 'dock-east-south', 4, 2, Math.PI / 2, dockDefenses);
   addForwardDefense(-63, NANJING_WEST_GATE_Z - 6, 'west-gate-north', 4, 1, Math.PI / 2, dockDefenses);
   addForwardDefense(-58.5, NANJING_WEST_GATE_Z + 6, 'west-gate-south', 4, 1, Math.PI / 2, dockDefenses);
+  addForwardDefense(-78, -83, 'ferry-approach-roadblock', 4, 1, 0, dockDefenses);
+  for (const z of [-87, -73]) for (const side of [-1, 1])
+    addForwardDefense(-95, z + side * (z === -87 && side === -1 ? 2.9 : 2.5),
+      `ferry-front-gun-${z}-${side}`, 3, 0, 0, dockDefenses);
   for (const [label, z] of [['north', -89.4], ['south', -70.6]]) {
     for (let row = 0; row < 3; row++) for (let column = 0; column < 4; column++) {
       placeForwardSandbag(-92 + NANJING_DOCK_WEST_EXTENSION + (column - 1.5) * .55 + (row % 2 ? .12 : 0), z, row,
@@ -1745,9 +1786,9 @@ export function makeNanjingBattlefield(scene, surface) {
   dockDetails.position.set(NANJING_DOCK.x, 0, NANJING_DOCK.z);
   scene.add(dockDetails);
   const rampGeometry = new THREE.BufferGeometry(), rampVertices = [], rampUVs = [], rampIndices = [];
-  const rampColumns = 10, rampRows = 15;
+  const rampColumns = 26, rampRows = 39;
   for (let row = 0; row < rampRows; row++) for (let column = 0; column < rampColumns; column++) {
-    const x = NANJING_RIVER_SHORE_X + column * .5, z = NANJING_DOCK.z - 3.5 + row * .5;
+    const x = NANJING_WAITING_DECK.minX + column * .5, z = NANJING_WAITING_DECK.minZ + row * .5;
     rampVertices.push(x, nanjingPierHeight(x, z), z);
     rampUVs.push(z / 2, x / 2);
     if (row && column) {
@@ -1762,6 +1803,7 @@ export function makeNanjingBattlefield(scene, surface) {
   rampGeometry.computeVertexNormals();
   const rampMaterial = dockTimber.clone(); rampMaterial.side = THREE.DoubleSide;
   const dockRamp = new THREE.Mesh(rampGeometry, rampMaterial);
+  dockRamp.userData.nanjingFeature = 'dock-waiting-deck';
   scene.add(dockRamp); solids.push(dockRamp);
   const civilianCharacters = createCivilianCharacterFactory();
   const makeFerry = createNanjingFerryFactory(dockTimber), ferryRowers = [];
@@ -1935,8 +1977,11 @@ export function makeNanjingBattlefield(scene, surface) {
       { id: 'nanjing-west-market-truck', type: 'truck', x: -15, z: -61, heading: 0 },
       { id: 'nanjing-east-market-tank', type: 'tank', x: 25, z: -65, heading: .18 },
       { id: 'nanjing-east-market-truck', type: 'truck', x: 80, z: -62, heading: -.2 },
+      { id: 'nanjing-west-market-bus', type: 'bus', x: -45, z: -63, heading: Math.PI / 2 },
+      { id: 'nanjing-ferry-approach-bus', type: 'bus', x: -90, z: -94, heading: 0 },
+      { id: 'nanjing-ferry-approach-truck', type: 'truck', x: -85, z: -64, heading: 0 },
     ],
-    obstacles, groundHeight, timber,
+    obstacles, groundHeight, timber, weathered: true,
     mesh: wreckMesh,
     box(x, y, z, width, height, depth, material, solid, parent) {
       const object = wreckMesh(boxGeometry, material, x, y, z, solid, parent);
@@ -1944,6 +1989,217 @@ export function makeNanjingBattlefield(scene, surface) {
       return object;
     },
   });
+  const refugeeProps = [
+    { id: 'market-cart', kind: 'cart', x: -52, z: -57.5, yaw: .15 },
+    { id: 'west-gate-cart', kind: 'cart', x: -91, z: -62, yaw: -.12 },
+    { id: 'market-case', kind: 'case', x: -38, z: -62, yaw: .35 },
+    { id: 'gate-case', kind: 'case', x: -57, z: -62, yaw: -.3 },
+    { id: 'outside-case', kind: 'case', x: -97, z: -67, yaw: .7 },
+    { id: 'dock-case', kind: 'case', x: -103, z: -75, yaw: -.4 },
+    { id: 'market-pole', kind: 'pole', x: -34, z: -62, yaw: .4 },
+    { id: 'gate-pole', kind: 'pole', x: -62, z: -62, yaw: -.25 },
+    { id: 'outside-pole', kind: 'pole', x: -98, z: -70, yaw: .5 },
+  ];
+  const luggageMaterial = new THREE.MeshStandardMaterial({ map: agedSceneryTexture('case'), roughness: 1 });
+  const caseTrim = new THREE.MeshStandardMaterial({ color: 0x3e3025, roughness: 1 });
+  const refugeeWood = surface('crate-timber', 0x766c60);
+  const propBox = (parts, size, position, rotation = 0) => {
+    const geometry = new THREE.BoxGeometry(...size);
+    geometry.rotateY(rotation); geometry.translate(...position); parts.push(geometry);
+  };
+  const propBeam = (parts, from, to, radius) => {
+    const start = new THREE.Vector3(...from), end = new THREE.Vector3(...to);
+    const geometry = new THREE.CylinderGeometry(radius, radius, start.distanceTo(end), 6);
+    geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()));
+    geometry.translate(...start.add(end).multiplyScalar(.5).toArray()); parts.push(geometry);
+  };
+  const makePropGeometry = kind => {
+    const parts = [];
+    if (kind === 'cart') {
+      propBox(parts, [1.25, .14, 1.8], [0, .7, 0]);
+      for (const side of [-1, 1]) {
+        propBox(parts, [.07, .35, 1.65], [side * .6, .9, .08]);
+        propBeam(parts, [side * .55, .7, -.75], [side * .55, .25, -2.05], .055);
+        const wheel = new THREE.TorusGeometry(.52, .055, 5, 16);
+        wheel.rotateY(Math.PI / 2); wheel.translate(side * .77, .57, .15); parts.push(wheel);
+        for (let spoke = 0; spoke < 8; spoke++) {
+          const angle = spoke * Math.PI / 4;
+          propBeam(parts, [side * .77, .57, .15],
+            [side * .77, .57 + Math.sin(angle) * .52, .15 + Math.cos(angle) * .52], .022);
+        }
+      }
+    } else if (kind === 'case') {
+      const body = new RoundedBoxGeometry(.55, .24, .38, 3, .025);
+      body.translate(0, .12, 0); parts.push(body);
+    } else {
+      propBeam(parts, [-.85, .045, 0], [.85, .045, 0], .04);
+    }
+    const geometry = mergeGeometries(parts);
+    for (const part of parts) part.dispose();
+    return geometry;
+  };
+  const refugeeGeometry = Object.fromEntries(['cart', 'case', 'pole'].map(kind => [kind, makePropGeometry(kind)]));
+  const caseDetails = [];
+  for (const x of [-.16, .16]) {
+    propBox(caseDetails, [.035, .012, .39], [x, .246, 0]);
+    for (const z of [-.191, .191]) propBox(caseDetails, [.035, .23, .012], [x, .12, z]);
+  }
+  for (const z of [-.191, .191]) propBox(caseDetails, [.50, .007, .01], [0, .176, z]);
+  propBeam(caseDetails, [-.12, .27, -.19], [-.12, .32, -.19], .013);
+  propBeam(caseDetails, [-.12, .32, -.19], [.12, .32, -.19], .013);
+  propBeam(caseDetails, [.12, .32, -.19], [.12, .27, -.19], .013);
+  const caseDetailGeometry = mergeGeometries(caseDetails);
+  for (const part of caseDetails) part.dispose();
+  const refugeeMeshes = [];
+  for (const prop of refugeeProps) {
+    const mesh = new THREE.Mesh(refugeeGeometry[prop.kind], prop.kind === 'case' ? luggageMaterial : refugeeWood);
+    if (prop.kind === 'case') mesh.add(new THREE.Mesh(caseDetailGeometry, caseTrim));
+    mesh.position.set(prop.x, 0, prop.z); mesh.rotation.y = prop.yaw;
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.nanjingFeature = 'abandoned-refugee-belonging';
+    mesh.userData.refugeePropId = prop.id;
+    scene.add(mesh); refugeeMeshes.push(mesh);
+    if (prop.kind === 'cart') {
+      mesh.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(mesh);
+      obstacles.push({ id: `refugee-${prop.id}`, minX: bounds.min.x, maxX: bounds.max.x,
+        minZ: bounds.min.z, maxZ: bounds.max.z, height: bounds.max.y });
+      solids.push(mesh);
+    }
+  }
+  const streetLife = [
+    { id: 'shop-frame', kind: 'stall', x: -44, z: -55, yaw: .2 },
+    { id: 'market-basket', kind: 'basket', x: -42.8, z: -55.4, yaw: -.3 },
+    { id: 'market-bundle', kind: 'bundle', x: -41.7, z: -55.7, yaw: .4 },
+    { id: 'market-vessel', kind: 'vessel', x: -24, z: -55, yaw: 0 },
+    { id: 'market-bench', kind: 'bench', x: -49, z: -54, yaw: .15, solid: true },
+    { id: 'market-well', kind: 'well', x: -28, z: -67, yaw: 0, solid: true },
+    { id: 'market-drain', kind: 'drain', x: -36, z: -56, yaw: 0 },
+    { id: 'west-board', kind: 'notice', x: -60, z: -72, yaw: .15, solid: true },
+    { id: 'west-stretcher', kind: 'stretcher', x: -58, z: -70, yaw: -.3 },
+    { id: 'west-ammunition', kind: 'crate', x: -61, z: -69, yaw: .2, solid: true },
+    { id: 'home-washpole', kind: 'washpole', x: -55, z: -35, yaw: .25 },
+    { id: 'home-bundle', kind: 'bundle', x: -60, z: -51, yaw: -.2 },
+    { id: 'home-vessel', kind: 'vessel', x: -57.5, z: -52, yaw: 0 },
+    { id: 'home-door', kind: 'panel', x: -57, z: -54.5, yaw: -.45 },
+    { id: 'home-basket', kind: 'basket', x: -62, z: -51.5, yaw: .25 },
+  ];
+  const streetCloth = surface('burlap', 0x62584a, 1.3);
+  const streetClay = new THREE.MeshStandardMaterial({ color: 0x65594b, roughness: 1 });
+  const noticePaper = new THREE.MeshStandardMaterial({ color: 0x988b70, roughness: 1 });
+  const streetKinds = {
+    stall: refugeeWood, basket: refugeeWood, bundle: streetCloth, vessel: streetClay,
+    bench: refugeeWood, well: brick, drain: dark, notice: refugeeWood,
+    stretcher: refugeeWood, crate: refugeeWood, washpole: refugeeWood, panel: refugeeWood,
+  };
+  const streetGeometry = {};
+  for (const kind of Object.keys(streetKinds)) {
+    const parts = [];
+    if (kind === 'stall') {
+      propBox(parts, [1.5, .08, .55], [0, .28, 0], .17);
+      for (const side of [-1, 1]) propBeam(parts, [side * .68, .05, -.15], [side * .52, .45, .2], .035);
+      propBeam(parts, [-.7, .08, -.4], [.72, .12, -.3], .035);
+    } else if (kind === 'basket') {
+      const body = new THREE.CylinderGeometry(.3, .22, .32, 12, 1, true);
+      body.translate(0, .17, 0); parts.push(body);
+      for (const y of [.05, .16, .32]) {
+        const rim = new THREE.TorusGeometry(.23 + y * .21, .018, 4, 12);
+        rim.rotateX(Math.PI / 2); rim.translate(0, y, 0); parts.push(rim);
+      }
+    } else if (kind === 'bundle') {
+      const body = new RoundedBoxGeometry(.65, .25, .42, 2, .08);
+      const positions = body.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i);
+        positions.setXYZ(i, x + .014 * Math.sin(z * 18 + y * 11),
+          y + .012 * Math.sin(x * 13 + z * 17), z + .01 * Math.sin(x * 19));
+      }
+      body.computeVertexNormals();
+      body.translate(0, .14, 0); parts.push(body);
+    } else if (kind === 'vessel') {
+      const body = new THREE.LatheGeometry([
+        new THREE.Vector2(.16, 0), new THREE.Vector2(.25, .08), new THREE.Vector2(.29, .3),
+        new THREE.Vector2(.22, .48), new THREE.Vector2(.14, .51),
+      ], 12);
+      parts.push(body);
+      const rim = new THREE.TorusGeometry(.14, .025, 5, 12);
+      rim.rotateX(Math.PI / 2); rim.translate(0, .51, 0); parts.push(rim);
+    } else if (kind === 'bench') {
+      propBox(parts, [1.25, .09, .35], [0, .45, 0]);
+      for (const x of [-.48, .48]) for (const z of [-.12, .12])
+        propBeam(parts, [x, 0, z], [x, .43, z], .035);
+    } else if (kind === 'well') {
+      for (let row = 0; row < 2; row++) for (let block = 0; block < 14; block++) {
+        const angle = (block + row * .5) * Math.PI * 2 / 14;
+        propBox(parts, [.27, .23, .21], [Math.cos(angle) * .55, .12 + row * .24,
+          Math.sin(angle) * .55], -angle - Math.PI / 2);
+      }
+    } else if (kind === 'drain') {
+      propBox(parts, [2.4, .035, .22], [0, .02, 0]);
+      for (let x = -1; x <= 1; x += .25) propBox(parts, [.035, .025, .24], [x, .04, 0]);
+    } else if (kind === 'notice') {
+      for (const x of [-.55, .55]) propBeam(parts, [x, 0, 0], [x, 2.1, 0], .045);
+      propBox(parts, [1.3, .8, .08], [0, 1.55, 0]);
+    } else if (kind === 'stretcher') {
+      for (const x of [-.34, .34]) propBeam(parts, [x, .08, -.95], [x, .08, .95], .035);
+      for (const z of [-.6, .6]) propBeam(parts, [-.34, .08, z], [.34, .08, z], .025);
+      propBox(parts, [.62, .035, 1.25], [0, .095, 0]);
+    } else if (kind === 'crate') {
+      propBox(parts, [.7, .42, .5], [0, .21, 0]);
+      for (const x of [-.26, .26]) propBox(parts, [.045, .43, .52], [x, .21, 0]);
+    } else if (kind === 'washpole') {
+      for (const x of [-.7, .7]) propBeam(parts, [x, 0, 0], [x, 2.1, 0], .035);
+      propBeam(parts, [-.85, 2.05, 0], [.85, 2.05, 0], .035);
+    } else {
+      propBox(parts, [.65, .06, 1.4], [0, .06, 0]);
+      for (const z of [-.48, .48]) propBox(parts, [.65, .025, .065], [0, .1, z]);
+    }
+    const compatible = parts.map(part => part.index ? part.toNonIndexed() : part);
+    streetGeometry[kind] = mergeGeometries(compatible);
+    if (!streetGeometry[kind]) throw new Error(`Street detail geometry could not be merged: ${kind}`);
+    for (const part of compatible) if (!parts.includes(part)) part.dispose();
+    for (const part of parts) part.dispose();
+  }
+  const tieParts = [];
+  propBeam(tieParts, [-.16, .265, -.2], [-.16, .265, .2], .008);
+  propBeam(tieParts, [.16, .265, -.2], [.16, .265, .2], .008);
+  propBeam(tieParts, [-.31, .265, 0], [.31, .265, 0], .008);
+  const bundleTies = mergeGeometries(tieParts);
+  for (const part of tieParts) part.dispose();
+  const streetMeshes = [];
+  for (const prop of streetLife) {
+    const mesh = new THREE.Mesh(streetGeometry[prop.kind], streetKinds[prop.kind]);
+    mesh.position.set(prop.x, groundHeight(prop.x, prop.z), prop.z);
+    mesh.rotation.y = prop.yaw;
+    mesh.castShadow = mesh.receiveShadow = true;
+    Object.assign(mesh.userData, { nanjingFeature: 'street-life-detail', streetLifeId: prop.id, streetLifeKind: prop.kind });
+    scene.add(mesh); streetMeshes.push(mesh);
+    if (prop.kind === 'bundle') {
+      const ties = new THREE.Mesh(bundleTies, caseTrim);
+      ties.position.copy(mesh.position); ties.rotation.copy(mesh.rotation);
+      ties.castShadow = ties.receiveShadow = true;
+      scene.add(ties); streetMeshes.push(ties);
+    }
+    if (prop.kind === 'notice') {
+      const papers = [];
+      for (const [x, y, width, height] of [[-.36, 1.65, .25, .31], [-.02, 1.48, .3, .39], [.33, 1.62, .2, .28]])
+        propBox(papers, [width, height, .008], [x, y, .044]);
+      const paperGeometry = mergeGeometries(papers);
+      for (const part of papers) part.dispose();
+      const paper = new THREE.Mesh(paperGeometry, noticePaper);
+      paper.position.copy(mesh.position); paper.rotation.copy(mesh.rotation);
+      paper.castShadow = paper.receiveShadow = true;
+      scene.add(paper); streetMeshes.push(paper);
+    }
+    if (prop.solid) {
+      mesh.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(mesh);
+      obstacles.push({ id: `street-life-${prop.id}`, minX: bounds.min.x, maxX: bounds.max.x,
+        minZ: bounds.min.z, maxZ: bounds.max.z, minY: bounds.min.y, height: bounds.max.y });
+      solids.push(mesh);
+    }
+  }
   const trees = [];
   const treeBark = Object.fromEntries(Object.keys(WOODLAND_SPECIES).map(species => {
     const material = surface(`bark-${species}`);
@@ -2349,12 +2605,16 @@ export function makeNanjingBattlefield(scene, surface) {
     dry: (x, z) => !(Math.abs(z - 52) < 16 || x < -70) && groundHeight(x, z) === 0,
   }));
   craterSupport = addBattlefieldCraters(scene, terrainSurfaces, solids, shellCraters, ground);
+  for (const mesh of refugeeMeshes) mesh.position.y = groundHeight(mesh.position.x, mesh.position.z);
   const buildingFire = createBuildingFire(scene, residentialBuildings, { flames: false });
   const masonryMeshes = [...damagedWallFaces, ...solids.filter(mesh => mesh.isMesh &&
     masonryFeatures.has(mesh.userData.nanjingFeature) && !mesh.userData.nanjingBattleDamage &&
     !mesh.isInstancedMesh && !mesh.isSkinnedMesh && !Array.isArray(mesh.material) && !mesh.material.transparent)];
   const staticRendering = batchStaticScene(scene, [...new Set([...residentialMeshes, ...masonryMeshes])]);
   staticRendering.masonrySources = masonryMeshes.length;
+  const beforeStreetBatches = new Set(scene.children);
+  staticRendering.streetLife = batchStaticScene(scene, streetMeshes);
+  for (const mesh of scene.children) if (!beforeStreetBatches.has(mesh)) mesh.userData.streetLifeBatch = true;
   sceneArt.staticRendering = staticRendering;
   return {
     solids, obstacles, smoke, flags, boxGeometry, groundSurface, groundHeight, walkHeight,
@@ -2406,6 +2666,8 @@ export function makeNanjingBattlefield(scene, surface) {
       gateInteriorDefenses,
       dockDefenses,
       cityRoadblocks,
+      refugeeProps,
+      streetLife,
       rivers: RIVERS,
       trees,
       cityStreets: cityLayout.streets,
@@ -2445,6 +2707,8 @@ export function makeNanjingBattlefield(scene, surface) {
           threatThinkCount:0,
           routeRejoinAt: 0, routeRejoins: 0, routeRejoinFailures: 0,
           finalRecovery: null,
+          waitingSlot: waitingPlaces[data.civilianId], waitingSlotReserved: false, waitingSlotReported: false,
+          waitingSlotSearchCursor: 0, waitingSlotRetryAt: 0,
           unrescued: false, enteredCity: false, crossedRiver: false,
           crowdDetourPoint: null, crowdPathStalled: 0, crowdPathBestDistance: Infinity,
           boarding: false, evacuated: false, deadAt: null,

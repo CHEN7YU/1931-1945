@@ -758,7 +758,7 @@ export function makeWorld(scene, surface, options = {}) {
   }
 
   scene.updateMatrixWorld(true);
-  for (const [mat, cells] of staticGeometryBatches(staticMeshes)) {
+  for (const [mat, cells] of staticGeometryBatches(staticMeshes.filter(object => !object.userData.collisionOnly))) {
     for (const [cell, geometries] of cells) {
       const combined = new THREE.Mesh(mergeGeometries(geometries), mat);
       combined.userData.staticCell = cell;

@@ -19,7 +19,7 @@ test('deployment zoom follows the active defense while keeping its selectable sp
   assert.equal(deploymentMapView(null).span, 220, 'Taierzhuang retains its whole battlefield');
 });
 
-test('the dock marker and deployment zone are on the safe side of the drawn northern boundary', () => {
+test('the city marker and deployment zone remain on the second-stage map', () => {
   const point = NANJING_SPAWNS.find(spawn => spawn.id === 'nanjing-west-dock');
   for (const stage of ['dock-defense', 'withdrawal-to-boats']) {
     const view = deploymentMapView(stage);

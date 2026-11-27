@@ -1,6 +1,6 @@
 import { NANJING_GATE_HEIGHT } from './nanjing-layout.js';
 import { NANJING_CASEMATE } from './nanjing-casemate.js';
-import { NANJING_DOCK } from './nanjing-campaign.js';
+import { NANJING_DOCK, NANJING_WEST_GATE_Z } from './nanjing-campaign.js';
 import { FOOT_SPEEDS } from './locomotion.js';
 
 const maxim24 = { type: 'infantry', model: 'zb26', magazine: 200, reserve: 1000, reload: 5,
@@ -21,10 +21,16 @@ export const NANJING_EMPLACEMENTS = Object.freeze([
   { id: 'gate-wall-mg', profile: 'maxim24', playerOnly: true, ...NANJING_CASEMATE.weapon },
   { id: 'dock-mg', profile: 'maxim24', x: -53.5, z: -92, heading: -Math.PI / 2 },
   { id: 'dock-gun', profile: 'bofors75', x: -63, z: -94, heading: -Math.PI / 2 },
-  { id: 'ferry-north-mg', profile: 'maxim24', x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z - 16, heading: -2.7 },
+  { id: 'ferry-north-mg', profile: 'maxim24aa', x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z - 16, heading: -2.7 },
   { id: 'ferry-south-mg', profile: 'maxim24', x: NANJING_DOCK.x + 12, z: NANJING_DOCK.z + 15, heading: -2 },
   { id: 'ferry-south-aa', profile: 'maxim24aa', x: NANJING_DOCK.x + 16, z: NANJING_DOCK.z + 15, heading: Math.PI },
   { id: 'ferry-south-gun', profile: 'bofors75', x: NANJING_DOCK.x + 7, z: NANJING_DOCK.z + 13, heading: Math.PI },
+  { id: 'ferry-front-north-gun', profile: 'bofors75', x: -95, z: -87, heading: Math.atan2(-95 + 72, -87 - NANJING_WEST_GATE_Z) },
+  { id: 'ferry-front-south-gun', profile: 'bofors75', x: -95, z: -73, heading: Math.atan2(-95 + 72, -73 - NANJING_WEST_GATE_Z) },
+  { id: 'ferry-front-north-mg', profile: 'maxim24', x: -86, z: -87, heading: -Math.PI / 2 },
+  { id: 'ferry-front-south-mg', profile: 'maxim24', x: -86, z: -73, heading: -2.32 },
+  { id: 'ferry-north-aa-west', profile: 'maxim24aa', x: -95, z: -98, heading: 0 },
+  { id: 'ferry-north-aa-east', profile: 'maxim24aa', x: -86, z: -98, heading: 0 },
   { id: 'gate-aa', profile: 'maxim24aa', x: 13.5, z: 20, altitude: NANJING_GATE_HEIGHT, heading: Math.PI },
   { id: 'dock-aa', profile: 'maxim24aa', x: -68, z: -71, altitude: .36, heading: -Math.PI / 2 },
 ].map(Object.freeze));
@@ -136,15 +142,17 @@ export function emplacementPose(point, floor = 0) {
   const operatorDistance = point.profile === 'bofors75' ? 1.02 : profile.antiAircraft ? .68 : .76;
   const standing = profile.antiAircraft || point.profile === 'bofors75' && point.position === 'march';
   const recoil = point.recoil ?? 0, horizontal = Math.cos(point.pitch), vertical = Math.sin(point.pitch);
+  const eyeBack = profile.antiAircraft ? .75 * horizontal + .25 * vertical : .75;
+  const eyeUp = profile.antiAircraft ? .25 * horizontal - .75 * vertical : .25;
   return {
     operator: { x: point.x + s * operatorDistance, y: floor,
       z: point.z + c * operatorDistance },
     operatorDistance,
     stance: standing ? 'standing' : 'crouched',
     firingPose: standing ? null : 'kneeling',
-    eye: { x: point.x + s * (.75 + recoil * horizontal),
-      y: floor + profile.muzzleHeight + .25 - recoil * vertical,
-      z: point.z + c * (.75 + recoil * horizontal) },
+    eye: { x: point.x + s * (eyeBack + recoil * horizontal),
+      y: floor + profile.muzzleHeight + eyeUp - recoil * vertical,
+      z: point.z + c * (eyeBack + recoil * horizontal) },
     muzzle: { x: point.x - s * horizontal * (profile.barrel - recoil),
       y: floor + profile.muzzleHeight + vertical * (profile.barrel - recoil),
       z: point.z - c * horizontal * (profile.barrel - recoil) },

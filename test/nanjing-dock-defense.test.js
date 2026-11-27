@@ -5,7 +5,8 @@ import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 import { createNavigator, segmentClear } from '../src/core.js';
 import { NANJING_DOCK_BUFFER, nanjingDockInside, nanjingDockYardContains, nanjingDockOutsideGoal,
   nanjingDockAssaultGoal, nanjingDockBufferActive, nanjingDockPathClear,
-  nanjingDockPostOutsideBuildings, assignNanjingDockDefense, assignNanjingOuterEnemyPosts } from '../src/nanjing-dock-defense.js';
+  nanjingDockPostOutsideBuildings, nanjingDockDeploymentObstacles,
+  assignNanjingDockDefense, assignNanjingOuterEnemyPosts } from '../src/nanjing-dock-defense.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingCoreGuard } from '../src/nanjing-defense.js';
 import { NANJING_DOCK, NANJING_DOCK_ASSAULT_SPAWNS, NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT } from '../src/civilian-crowd.js';
@@ -60,16 +61,18 @@ test('all four autonomous squads have distinct reachable outer posts, without re
     for (const other of posts.slice(index + 1)) assert.ok(Math.hypot(post.x - other.x, post.z - other.z) >= 1.45);
   }
   const planner = createNavigator([...world.doorSystem.navigationObstacles, NANJING_DOCK_BUFFER]);
-  for (const id of ['nanjing-west-ai-1', 'nanjing-west-ai-2']) {
+  for (const id of ['nanjing-west-dock', 'nanjing-west-dock-south']) {
     const spawn = NANJING_SPAWNS.find(point => point.id === id);
-    const positions = formationPositions(spawn, 11, world.obstacles);
+    const placementObstacles = nanjingDockDeploymentObstacles(spawn, world.obstacles, world.landmarks.residentialBuildings);
+    const positions = formationPositions(spawn, 11, placementObstacles);
     assert.equal(positions.length, 11);
     assert.ok(positions.every(point => !nanjingDockInside(point, .5)), 'reinforcements spawn outside the queue too');
-    assert.ok(Math.hypot(spawn.x - NANJING_DOCK.x, spawn.z - NANJING_DOCK.z) < 25);
-    for (const post of posts) {
-      const path = planner(positions[0], post);
-      assert.ok(path.length, `${id} cannot reach ${JSON.stringify(post)} from ${JSON.stringify(positions[0])}: ${planner.stats.reason}`);
-      assert.ok(path.some(point => point.x > -74), 'the squad must pass through the west wall');
+    assert.ok(id === 'nanjing-west-dock' ? spawn.x > -69.8 && spawn.z > -60
+      : spawn.x < -74.2 && spawn.z > NANJING_DOCK.z);
+    for (const start of positions) for (const post of posts) {
+      const path = planner(start, post);
+      assert.ok(path.length, `${id} cannot reach ${JSON.stringify(post)} from ${JSON.stringify(start)}: ${planner.stats.reason}`);
+      assert.ok(nanjingDockPathClear(start, path));
     }
   }
   const entrance = { x: -56, z: -61 };

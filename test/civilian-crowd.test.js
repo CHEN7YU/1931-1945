@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
+import { circleBlocked, createNavigator, segmentClear, setMapBounds } from '../src/core.js';
 import { obstacleLookup } from '../src/spatial.js';
 import { NANJING_CIVILIAN_COUNT, civilianWaitingSlot, civilianWaypointReached, moveCivilianInCrowd, animateCivilianWaiting,
   nanjingOpeningCivilianStart, nanjingOpeningCivilianReleaseAt, civilianPaceMultiplier,
   releaseNanjingCivilianWave, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, closestCivilianForBoat, civilianBoardingSpeed,
-  prepareOpeningCivilian, openingSourceHiddenByCover } from '../src/civilian-crowd.js';
+  civilianForwardWaypoint, reserveCivilianWaitingSlot, civilianWaitingDrift, prepareOpeningCivilian,
+  openingSourceHiddenByCover } from '../src/civilian-crowd.js';
+import { NANJING_MAP_BOUNDS, NANJING_WAITING_DECK, nanjingPierHeight } from '../src/nanjing-campaign.js';
 
 test('boarding chooses the physically nearest waiting civilian independently of queue order and uses a jog', () => {
   const queue = [8, 2, 5].map(x => ({ position: { x, y: 0, z: 0 } }));
@@ -138,6 +140,7 @@ test('opening refugees are released together with independently varying walking 
   const starts = Array.from({ length: 60 }, (_, index) => nanjingOpeningCivilianStart(index));
   assert.equal(new Set(starts.map(point => point.x)).size, 60);
 });
+
 test('crowds can spread through a shared street waypoint without cutting solid corners or missing their final slot', () => {
   const route = [{ x: 0, z: 0 }, { x: 0, z: -5 }];
   const position = { x: .7, z: 0 };
@@ -149,11 +152,40 @@ test('crowds can spread through a shared street waypoint without cutting solid c
   assert.equal(civilianWaypointReached({ x: .01, z: -5 }, route, 1, []), true);
 });
 
+test('a displaced refugee may bypass a waypoint only after passing it and with a clear continuation', () => {
+  const route = [{ x: 0, z: 0 }, { x: 0, z: -5 }, { x: 0, z: -10 }];
+  assert.equal(civilianForwardWaypoint({ x: .8, z: -2 }, route, 0, []), 1);
+  assert.equal(civilianForwardWaypoint({ x: .8, z: 1 }, route, 0, []), 0);
+  assert.equal(civilianForwardWaypoint({ x: .8, z: -2 }, route, 0,
+    [{ minX: .2, maxX: 2, minZ: -4, maxZ: -3, height: 3 }]), 0);
+  assert.equal(civilianForwardWaypoint({ x: 0, z: -11 }, route, 2, []), 2);
+});
+
+test('the first arrival reserves the westernmost reachable place without duplicating another assignment', () => {
+  const people = [-105, -112, -109].map((x, index) => ({
+    position: { x: -90, z: -80 }, userData: { civilianId: index, waitingSlot: { x, z: -80 } },
+  }));
+  const before = people.map(person => ({ ...person.userData.waitingSlot }));
+  assert.equal(reserveCivilianWaitingSlot(people[0], people, () => []), null);
+  assert.deepEqual(people.map(person => person.userData.waitingSlot), before);
+  assert.equal(people[0].userData.waitingSlotSearchCursor, 1, 'a failed search is bounded and advances on retry');
+  people[0].userData.waitingSlotSearchCursor = 0;
+  const first = reserveCivilianWaitingSlot(people[0], people, (_, target) => [{ ...target }]);
+  assert.equal(first.at(-1).x, -112);
+  assert.equal(people[0].userData.waitingSlotReserved, true);
+  assert.equal(people[1].userData.waitingSlot.x, -105);
+  const second = reserveCivilianWaitingSlot(people[1], people, (_, target) => [{ ...target }]);
+  assert.equal(second.at(-1).x, -109);
+  assert.equal(new Set(people.map(person => person.userData.waitingSlot.x)).size, 3);
+});
+
 test('sixty individual waiting places form a dense shore crowd without merged bodies', () => {
   const slots = Array.from({ length: 60 }, (_, index) => civilianWaitingSlot(index));
   for (const [index, slot] of slots.entries()) {
-    assert.ok(slot.x > -90 && slot.x < -81 && slot.z > -90 && slot.z < -70);
-    assert.equal(slot.y, 0);
+    assert.ok(slot.x > NANJING_WAITING_DECK.minX && slot.x < NANJING_WAITING_DECK.maxX &&
+      slot.z > NANJING_WAITING_DECK.minZ && slot.z < NANJING_WAITING_DECK.maxZ);
+    assert.equal(slot.y, nanjingPierHeight(slot.x, slot.z));
+    assert.ok(slot.y > .3);
     for (const other of slots.slice(index + 1)) assert.ok(Math.hypot(slot.x - other.x, slot.z - other.z) >= .74);
   }
   assert.throws(() => civilianWaitingSlot(NANJING_CIVILIAN_COUNT), RangeError);
@@ -166,10 +198,20 @@ test('sixty individual waiting places form a dense shore crowd without merged bo
 test('one hundred and eighty civilians prefer the western dock instead of the eastern fighting approach', () => {
   const slots = Array.from({ length: NANJING_CIVILIAN_COUNT }, (_, index) => civilianWaitingSlot(index));
   assert.equal(slots.length, 180);
-  assert.ok(slots.every(slot => slot.x < -59.8));
+  assert.ok(slots.every(slot => slot.x < -104 && slot.y > .3));
   for (let index = 0; index < slots.length; index++) for (const other of slots.slice(index + 1))
     assert.ok(Math.hypot(slots[index].x - other.x, slots[index].z - other.z) >= .74);
 });
+
+test('waiting drift pauses between movements and stays clear of neighboring reserved places', () => {
+  const anchor = { x: -110, z: -80 }, positions = Array.from({ length: 121 },
+    (_, step) => civilianWaitingDrift(3, step * .05, anchor));
+  assert.ok(positions.every(point => Math.hypot(point.x - anchor.x, point.z - anchor.z) <= .181));
+  assert.ok(positions.some((point, index) => index > 20 &&
+    point.x === positions[index - 20].x && point.z === positions[index - 20].z));
+  assert.ok(positions.some(point => Math.hypot(point.x - positions[0].x, point.z - positions[0].z) > .05));
+});
+
 test('a moving civilian cannot pass through a waiting person or a solid barrier', () => {
   const first = { position: { x: 0, y: 0, z: 0 }, userData: { civilianId: 0 } };
   const second = { position: { x: 1, y: 0, z: 0 }, userData: { civilianId: 1 } };
@@ -179,9 +221,34 @@ test('a moving civilian cannot pass through a waiting person or a solid barrier'
     assert.ok(Math.hypot(first.position.x - second.position.x, first.position.z - second.position.z) >= .72);
     assert.ok(first.position.x <= 1.64);
   }
-  const dock = { position: { x: -98, y: 0, z: -80 }, userData: { civilianId: 2 } };
-  moveCivilianInCrowd(dock, { x: -99, z: -80 }, .1, [dock], []);
+  const dock = { position: { x: -109, y: 0, z: -80 }, userData: { civilianId: 2 } };
+  moveCivilianInCrowd(dock, { x: -110, z: -80 }, .1, [dock], []);
   assert.equal(dock.position.y, .36, 'feet stand on the platform instead of sinking through its planks');
+});
+
+test('a dock civilian resumes its route after yielding when the leader is behind it', () => {
+  setMapBounds(NANJING_MAP_BOUNDS);
+  try {
+    const leader = { position: { x: -107.1323, y: .36, z: -78.2054 },
+      userData: { civilianId: 70, route: [{ x: -107.3268, z: -78.1811 }], waypoint: 0 } };
+    const yielding = { position: { x: -107.6995, y: .36, z: -78.1595 },
+      userData: { civilianId: 81, route: [{ x: -108.1011, z: -78.9696 }], waypoint: 0,
+        crowdTarget: { x: -108.1011, z: -78.9696 }, crowdBestDistance: .9, crowdStalled: 0,
+        crowdYieldTo: 70, crowdYieldPoint: { x: -107.6995, z: -78.1595 } } };
+    const initial = { ...yielding.position };
+    moveCivilianInCrowd(yielding, yielding.userData.route[0], .1, [leader, yielding], []);
+    assert.ok(Math.hypot(yielding.position.x - initial.x, yielding.position.z - initial.z) > .05);
+    assert.ok(Math.hypot(yielding.position.x - leader.position.x, yielding.position.z - leader.position.z) >= .52);
+
+    const ahead = { position: { x: -110.6, y: .36, z: -80 },
+      userData: { civilianId: 1, route: [{ x: -112, z: -80 }], waypoint: 0 } };
+    const behind = { position: { x: -110, y: .36, z: -80 },
+      userData: { civilianId: 2, route: [{ x: -112, z: -80 }], waypoint: 0,
+        crowdTarget: { x: -112, z: -80 }, crowdBestDistance: 2, crowdStalled: 0,
+        crowdYieldTo: 1, crowdYieldPoint: { x: -110, z: -80 } } };
+    moveCivilianInCrowd(behind, behind.userData.route[0], .1, [ahead, behind], []);
+    assert.equal(behind.userData.crowdYieldTo, 1, 'a leader still in front retains right of way');
+  } finally { setMapBounds(); }
 });
 
 test('civilians can step sideways away from a solid corner before continuing along a street', () => {

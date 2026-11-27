@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { makeTownLayout } from '../src/town-layout.js';
 import { createWalkSupport, TOWN_STOREYS } from '../src/multistory.js';
 import { BRIDGE, groundHeight, bridgeGroundHeight } from '../src/ground.js';
-import { OBJECTIVES, circleBlocked, segmentClear, createNavigator } from '../src/core.js';
+import { OBJECTIVES, objectiveContainsPosition, circleBlocked, segmentClear, createNavigator } from '../src/core.js';
 import { PREVIEW_OBJECTIVES, PREVIEW_BASES, PREVIEW_BRIDGE, PREVIEW_BOUNDS, makeTownPreviewLayout } from '../src/town-preview-layout.js';
 import { makeOutskirtsLayout } from '../src/outskirts-layout.js';
 
@@ -36,6 +36,14 @@ test('empty map proposal has three separated triangular landmarks within a compa
   }
   assert.ok(PREVIEW_BOUNDS.maxX - PREVIEW_BOUNDS.minX <= 144);
   assert.ok(PREVIEW_BOUNDS.maxZ - PREVIEW_BOUNDS.minZ <= 138);
+});
+
+test('bridge and east-gate objectives keep capture zones without flag poles', () => {
+  for (const id of ['B', 'C']) {
+    const point = PREVIEW_OBJECTIVES.find(objective => objective.id === id);
+    assert.equal(point.groundMarkerOnly, true);
+    assert.equal(objectiveContainsPosition(point, { x: point.x, y: 0, z: point.z }), true);
+  }
 });
 
 test('preview layout changes neither the default battle layout nor its bridge and objectives', () => {

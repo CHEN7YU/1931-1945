@@ -23,7 +23,7 @@ test('safe battle area covers ground spawns and objectives but leaves reachable 
 });
 
 test('Nanjing dock spawn candidates and full squads are inside the actual playable boundary', () => {
-  for (const point of NANJING_SPAWNS.filter(spawn => spawn.id === 'nanjing-west-dock' || spawn.id.startsWith('nanjing-west-ai-'))) {
+  for (const point of NANJING_SPAWNS.filter(spawn => ['nanjing-west-dock', 'nanjing-west-dock-south'].includes(spawn.id))) {
     const candidates = groundSpawnCandidates(point);
     assert.ok(candidates.length >= 11);
     for (const candidate of candidates) {

@@ -1,7 +1,7 @@
 import { circleBlocked, segmentClear } from './core.js';
 import { obstacleLookup } from './spatial.js';
-import { NANJING_DOCK_ENTRY_X, NANJING_DOCK_SHIFT, NANJING_DOCK_WEST_EXTENSION,
-  NANJING_OPENING_CIVILIAN_COUNT, nanjingPierHeight } from './nanjing-campaign.js';
+import { NANJING_DOCK_SHIFT, NANJING_DOCK_WEST_EXTENSION, NANJING_OPENING_CIVILIAN_COUNT,
+  NANJING_WAITING_DECK, nanjingPierHeight } from './nanjing-campaign.js';
 export { NANJING_OPENING_CIVILIAN_COUNT } from './nanjing-campaign.js';
 
 export const NANJING_CIVILIAN_COUNT = 180;
@@ -144,11 +144,42 @@ export function civilianWaypointReached(position, route, index, obstacles, looku
     lookup ? (x, z) => lookup.at(x, z) : undefined);
 }
 
+export function civilianForwardWaypoint(position, route, index, obstacles, lookup = null) {
+  const target = route[index], next = route[index + 1];
+  if (!target || !next) return index;
+  const dx = next.x - target.x, dz = next.z - target.z;
+  if ((position.x - target.x) * dx + (position.z - target.z) * dz <= 0 ||
+    Math.hypot(next.x - position.x, next.z - position.z) > 8 ||
+    !segmentClear(position, next, .36, obstacles, lookup ? (x, z) => lookup.at(x, z) : undefined)) return index;
+  return index + 1;
+}
+
+export function reserveCivilianWaitingSlot(person, civilians, navigate) {
+  const data = person.userData;
+  if (data.waitingSlotReserved) return null;
+  const available = civilians.filter(other => !other.userData.waitingSlotReserved)
+    .sort((a, b) => a.userData.waitingSlot.x - b.userData.waitingSlot.x ||
+      Math.abs(a.userData.waitingSlot.z - person.position.z) - Math.abs(b.userData.waitingSlot.z - person.position.z));
+  if (!available.length) return null;
+  const index = (data.waitingSlotSearchCursor ?? 0) % available.length;
+  const owner = available[index], target = owner.userData.waitingSlot;
+  const path = navigate(person.position, target);
+  if (!path.length || Math.hypot(path.at(-1).x - target.x, path.at(-1).z - target.z) > .015) {
+    data.waitingSlotSearchCursor = index + 1;
+    return null;
+  }
+  owner.userData.waitingSlot = data.waitingSlot;
+  data.waitingSlot = target;
+  data.waitingSlotReserved = true;
+  return path;
+}
+
 const waitingSlots = [];
 for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
   const slot = index * 73 % 240;
-  waitingSlots.push({ x: -89 + NANJING_DOCK_WEST_EXTENSION + slot % 10 * .78 + (variation(index, 701) - .5) * .024, y: 0,
-    z: -89 + Math.floor(slot / 10) * .76 + slot % 10 * .03 + (variation(index, 709) - .5) * .012 });
+  const x = -92 + NANJING_DOCK_WEST_EXTENSION + slot % 10 * .78 + (variation(index, 701) - .5) * .024;
+  const z = -89 + Math.floor(slot / 10) * .76 + slot % 10 * .03 + (variation(index, 709) - .5) * .012;
+  waitingSlots.push({ x, y: nanjingPierHeight(x, z), z });
 }
 
 export function civilianWaitingSlot(index) {
@@ -157,8 +188,12 @@ export function civilianWaitingSlot(index) {
 }
 
 export function civilianWaitingDrift(index, now, anchor) {
-  const phase = now * (.35 + variation(index, 719) * .2) + index * 2.17;
-  return { x: anchor.x + Math.sin(phase) * .32, z: anchor.z + Math.sin(phase * .73 + 1.4) * .38 };
+  const clock = now + variation(index, 727) * 6;
+  const motionTime = Math.floor(clock / 6) * 4 + Math.max(0, clock % 6 - 2);
+  const phase = motionTime * (.35 + variation(index, 719) * .2) + index * 2.17;
+  const x = Math.sin(phase) * .32, z = Math.sin(phase * .73 + 1.4) * .38;
+  const scale = Math.min(1, .18 / Math.hypot(x, z));
+  return { x: anchor.x + x * scale, z: anchor.z + z * scale };
 }
 
 export function placeCivilianWaitingSlots(clear) {
@@ -168,10 +203,11 @@ export function placeCivilianWaitingSlots(clear) {
     for (const radius of [.6, 1.2, 1.8, 2.4, 3.6, 5]) for (let side = 0; side < 24; side++) {
       const angle = side * Math.PI / 12 + index * 2.17;
       const x = anchor.x + Math.cos(angle) * radius, z = anchor.z + Math.sin(angle) * radius;
-      candidates.push({ x, z, y: 0 });
+      candidates.push({ x, z, y: nanjingPierHeight(x, z) });
     }
-    const point = candidates.find(point => point.x > -90 + NANJING_DOCK_WEST_EXTENSION && point.x < NANJING_DOCK_ENTRY_X - .5 &&
+    const point = candidates.find(point => point.x > NANJING_WAITING_DECK.minX + .45 && point.x < NANJING_WAITING_DECK.maxX - .5 &&
       point.z > -89.5 && point.z < -70.5 &&
+      point.y > .3 &&
       placed.every(other => Math.hypot(point.x - other.x, point.z - other.z) >= .74) && clear(point));
     if (!point) throw new Error(`No physically clear dock waiting place for civilian ${index}`);
     placed.push(point);
@@ -397,9 +433,11 @@ function civilianYieldTarget(civilian, peers, obstacles, spacing) {
   return { x: position.x - direction.x, z: position.z - direction.z };
 }
 
-export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles, canStep = null, planner = null) {
+export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles, navigationObstacles = obstacles,
+  canStep = null, planner = null, allowYield = true) {
   if (!Number.isFinite(distance) || distance < 0) throw new RangeError('Invalid civilian movement distance');
   const position = civilian.position, radius = .36, data = civilian.userData;
+  if (!allowYield) { data.crowdYieldTo = null; data.crowdYieldPoint = null; }
   const crowdedDock = position.x < -45 + NANJING_DOCK_SHIFT && position.z < -65;
   const spacing = crowdedDock ? .52 : radius * 2;
   const remaining = Math.hypot(target.x - position.x, target.z - position.z);
@@ -439,7 +477,7 @@ export function moveCivilianInCrowd(civilian, target, distance, peers, obstacles
   for (let step = 0; step < steps; step++) {
     while (data.crowdPath?.length &&
       Math.hypot(data.crowdPath[0].x - position.x, data.crowdPath[0].z - position.z) < .1) data.crowdPath.shift();
-    const yieldTarget = data.crowdDirection ? civilianYieldTarget(civilian, peers, obstacles, spacing) : null;
+    const yieldTarget = allowYield && data.crowdDirection ? civilianYieldTarget(civilian, peers, obstacles, spacing) : null;
     const waypoint = yieldTarget ?? data.crowdPath?.[0] ?? target;
     const dx = waypoint.x - position.x, dz = waypoint.z - position.z, remaining = Math.hypot(dx, dz);
     if (remaining < .01) break;

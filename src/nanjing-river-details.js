@@ -67,6 +67,25 @@ export function createNanjingDockDetails(timber) {
 export function createNanjingFerryFactory(timber) {
   const wood = timber.clone(); wood.vertexColors = true; wood.side = THREE.DoubleSide;
   const parts = [];
+  for (const side of [-1, 1]) {
+    const positions = [], uvs = [], colors = [], indices = [];
+    for (const x of stations) for (const t of [0, 1]) {
+      positions.push(x, -.30 + (sheer(x) + .30) * t,
+        side * Math.max(0, beam(x) * (.46 + .54 * t) - .006));
+      uvs.push(x / 2, t);
+      colors.push(.35, .29, .22);
+    }
+    for (let i = 0; i < stations.length - 1; i++) {
+      const a = i * 2; indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setIndex(indices); geometry.computeVertexNormals(); parts.push(geometry);
+  }
+  for (const x of [-3.2, 3.2])
+    box(parts, [.12, sheer(x) + .3, beam(x) * 2], [x, (sheer(x) - .3) / 2, 0], 0x75634e);
   // Separate strakes leave fine dark seams and form a genuinely open, flared hull.
   for (const side of [-1, 1]) for (let plank = 0; plank < 5; plank++) {
     const positions = [], uvs = [], colors = [], indices = [];

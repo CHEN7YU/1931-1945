@@ -17,24 +17,71 @@ import { circleBlocked, createNavigator, segmentClear } from '../src/core.js';
 import { createSolidIndex } from '../src/solid-index.js';
 import { createOcclusionQuery } from '../src/occlusion-query.js';
 import { assignNanjingDefense, nanjingDefenseGoal, nanjingWallEntryWaypoint } from '../src/nanjing-defense.js';
+import { nanjingDockDeploymentObstacles } from '../src/nanjing-dock-defense.js';
 import { casemateGateSlices } from '../src/nanjing-casemate.js';
 import { BATTLE_AREA, NANJING_BATTLE_AREA } from '../src/battle-boundary.js';
 import { NANJING_EMPLACEMENTS } from '../src/emplacements.js';
 import { NANJING_WALL_PLUMES } from '../src/nanjing-wall-damage.js';
 import { moveSupported } from '../src/infantry-traversal.js';
+import { openingSourceHiddenByCover } from '../src/civilian-crowd.js';
 
 function housePoint(home, x, z) {
   const c = [1, 0, -1, 0][home.facing], s = [0, 1, 0, -1][home.facing];
   return { x: home.x + x * c + z * s, z: home.z - x * s + z * c };
 }
 
+test('opening refugee house navigation tracks its actual open and closed door', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const source = world.openingCivilianSources.find(point => point.x === -10 && point.z === 76);
+  assert.ok(source?.street);
+  const { door, exit, navigate, navigationObstacles } = source.street;
+  const collider = world.obstacles.find(obstacle => obstacle.door && obstacle.id === door.id);
+  assert.ok(collider);
+  assert.equal(navigationObstacles.includes(collider), false);
+  world.doorSystem.interact(door, exit);
+  world.doorSystem.update(2, []);
+  assert.equal(navigationObstacles.includes(collider), true);
+  const start = { x: -10.08, z: 72.8 }, path = navigate(start, exit);
+  assert.ok(path.length, 'the refugee can replan around the opened door');
+  let previous = start;
+  for (const point of path) {
+    assert.ok(segmentClear(previous, point, .36, navigationObstacles), 'the path avoids the real door leaf');
+    previous = point;
+  }
+  world.doorSystem.interact(door, exit);
+  world.doorSystem.update(2, []);
+  assert.equal(navigationObstacles.includes(collider), false);
+});
+
+test('opening refugees can use the concealed exterior of a south-bank house', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const source = world.openingCivilianSources.find(point => point.x === -11 && point.z === 79.5 && !point.street);
+  assert.ok(source);
+  assert.equal(circleBlocked(source.x, source.z, .45, world.civilianNavigationObstacles), false);
+  assert.equal(world.isDeepWater(source.x, source.z), false);
+  assert.equal(openingSourceHiddenByCover(source, { x: -1.255, y: 1.668, z: 12.957 }, world.groundHeight), true);
+  const last = source.path.at(-1);
+  assert.ok(Math.hypot(last.x + 24, last.z - 31) < .02);
+  const route = [source, ...source.path];
+  for (let index = 1; index < route.length; index++)
+    assert.equal(segmentClear(route[index - 1], route[index], .45, world.civilianNavigationObstacles), true);
+});
+
 test('city wrecks and roadside barricades block the indexed projectile ray without closing the dock approach', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
   const index = createSolidIndex(world.solids), ray = new THREE.Raycaster();
-  assert.equal(world.staticDamage.wrecks.length, 3);
+  assert.equal(world.staticDamage.wrecks.length, 6);
   assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'tank'));
   assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'truck'));
+  const bus = world.staticDamage.wrecks.find(wreck => wreck.id === 'wreck-nanjing-west-market-bus');
+  assert.ok(bus && Math.hypot(bus.x + 48, bus.z + 60) < 6, 'the bus is visible near the retreat street');
+  for (const type of ['bus', 'truck']) {
+    const wreck = world.staticDamage.wrecks.find(item => item.id === `wreck-nanjing-ferry-approach-${type}`);
+    assert.ok(wreck && wreck.type === type && wreck.x < -74 && wreck.x > NANJING_DOCK_ENTRY_X,
+      `${type} wreck is outside the ferry entrance`);
+  }
+  assert.ok(world.landmarks.dockDefenses.some(block => block.id === 'ferry-approach-roadblock'));
   for (const wreck of world.staticDamage.wrecks) {
     assert.ok(world.obstacles.some(obstacle => obstacle.id === wreck.id));
     const target = new THREE.Vector3(wreck.x, world.groundHeight(wreck.x, wreck.z) + .75, wreck.z);
@@ -54,6 +101,52 @@ test('city wrecks and roadside barricades block the indexed projectile ray witho
   }
   for (const [x, z] of [[-72, -60], [-82, -66], [-91, -80], [NANJING_DOCK_ENTRY_X - 2, -80]])
     assert.equal(circleBlocked(x, z, .45, world.obstacles), false, `dock road at ${x},${z}`);
+  const navigate = createNavigator(world.doorSystem.navigationObstacles);
+  for (const [from, to] of [[{ x: -12, z: -59 }, { x: -56, z: -60 }],
+    [{ x: -56, z: -60 }, { x: -78, z: -60 }], [{ x: -78, z: -60 }, { x: -99, z: -80 }]]) {
+    const path = navigate(from, to), walker = new THREE.Vector3(from.x, 0, from.z);
+    assert.ok(path.length, `retreat route unavailable: ${navigate.stats.reason}`);
+    for (const point of path) world.moveInfantry(walker, point.x - walker.x, point.z - walker.z, .42);
+    assert.ok(Math.hypot(walker.x - to.x, walker.z - to.z) < .1, 'retreat path remains physically traversable');
+  }
+  assert.equal(world.sceneArt.cityInfrastructure.overheadWireSpans, 0);
+  for (const fixture of world.landmarks.cityFixtures) {
+    const feature = fixture.kind === 'utility' ? 'damaged-utility-pole' : 'damaged-streetlamp';
+    const pole = scene.children.find(child => child.userData.nanjingFeature === feature &&
+      child.userData.fixtureId === fixture.id);
+    assert.ok(pole && world.solids.includes(pole), `${fixture.id} remains upright and blocks shots`);
+    assert.ok(pole.scale.y > 4 && Math.abs(pole.position.x - fixture.x) < .001);
+  }
+  const lamps = world.landmarks.cityFixtures.filter(fixture => fixture.kind === 'streetlamp');
+  for (const feature of ['streetlamp-shade', 'streetlamp-bulb']) {
+    const parts = scene.children.filter(child => child.userData.nanjingFeature === feature);
+    assert.equal(parts.length, lamps.length);
+    assert.ok(parts.every(part => part.geometry.type !== 'BoxGeometry'));
+  }
+  for (const kind of ['cart', 'case', 'pole']) {
+    const props = world.landmarks.refugeeProps.filter(prop => prop.kind === kind);
+    assert.ok(props.some(prop => prop.x > -70) && props.some(prop => prop.x < -74),
+      `${kind} appears on both sides of the west gate`);
+    for (const prop of props) {
+      const mesh = scene.children.find(child => child.userData.refugeePropId === prop.id);
+      assert.ok(mesh && Math.abs(mesh.position.y - world.groundHeight(prop.x, prop.z)) < .001, prop.id);
+      if (kind === 'cart') {
+        assert.ok(world.solids.includes(mesh));
+        assert.ok(world.obstacles.some(obstacle => obstacle.id === `refugee-${prop.id}`));
+      }
+    }
+  }
+  const streetLife = world.landmarks.streetLife;
+  for (const kind of ['stall', 'basket', 'bundle', 'vessel', 'bench', 'well', 'drain',
+    'notice', 'stretcher', 'crate', 'washpole', 'panel'])
+    assert.ok(streetLife.some(prop => prop.kind === kind), `missing ${kind}`);
+  assert.ok(world.staticRendering.streetLife.batches < world.staticRendering.streetLife.sources);
+  for (const prop of streetLife) {
+    const obstacle = world.obstacles.find(item => item.id === `street-life-${prop.id}`);
+    const solid = world.solids.find(item => item.userData.streetLifeId === prop.id);
+    assert.equal(Boolean(obstacle), Boolean(prop.solid));
+    assert.equal(Boolean(solid), Boolean(prop.solid));
+  }
 });
 
 test('expanded dock has safe southern squad deployment and navigable waiting and boarding routes', () => {
@@ -68,6 +161,18 @@ test('expanded dock has safe southern squad deployment and navigable waiting and
     assert.equal(circleBlocked(point.x, point.z, .48, world.obstacles), false);
   }
   assert.equal(world.civilians.length, 180);
+  scene.updateMatrixWorld(true);
+  const deck = world.solids.find(object => object.userData.nanjingFeature === 'dock-waiting-deck');
+  assert.ok(deck, 'the waiting area has a rendered and ray-testable wooden surface');
+  for (const civilian of world.civilians) {
+    const slot = civilian.userData.waitingSlot;
+    assert.ok(slot.x < -102 && slot.y > .3);
+    assert.equal(world.isDeepWater(slot.x, slot.z), false);
+    assert.ok(Math.abs(world.groundHeight(slot.x, slot.z) - slot.y) < .001);
+    const ray = new THREE.Raycaster(new THREE.Vector3(slot.x, 2, slot.z), new THREE.Vector3(0, -1, 0), 0, 3);
+    assert.ok(ray.intersectObject(deck).some(hit => Math.abs(hit.point.y - slot.y) < .02),
+      `civilian ${civilian.userData.civilianId} waits on the actual wooden deck`);
+  }
   const navigate = createNavigator(world.civilianNavigationObstacles, .75, .36);
   for (const ferry of world.ferries) {
     const target = ferryBoardingPoints(ferry).shore;
@@ -138,6 +243,11 @@ test('west gate stairs ascend north then south and connect to the gate crown in 
     mesh.scale.z < .2);
   assert.ok(flights.length > 0 && flights.every(mesh => Math.abs(mesh.scale.x - 1.8) < .001),
     'both flights must retain their narrower 1.8-unit treads');
+  const gateMasonry = world.solids.find(mesh => mesh.userData.nanjingFeature === 'west-city-gate');
+  const stairPieces = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'west-gate-stair-tread');
+  assert.ok(gateMasonry && stairPieces.length > flights.length);
+  assert.ok(stairPieces.every(piece => piece.material === gateMasonry.material),
+    'both flights and landings should use the west gate masonry');
 });
 
 test('Nanjing wall slogans preserve their text without adding collision or shot blockers', () => {
@@ -174,12 +284,16 @@ test('Nanjing wall slogans preserve their text without adding collision or shot 
     assert.equal(circleBlocked(x, z, .42, world.obstacles), false, 'the reviewed viewpoint is walkable');
 });
 
-test('dock north deployment reaches the city through both the ruined wall and the west gate', () => {
+test('the north bank reaches the city through both the ruined wall and the west gate', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
-  const spawn = NANJING_SPAWNS.find(point => point.id === 'nanjing-west-dock');
+  const spawn = { id: 'north-bank-route-fixture', x: -109, z: -100, altitude: 0,
+    deploymentZone: { minX: -112, maxX: -104.5, minZ: -102, maxZ: -89 } };
   const positions = formationPositions(spawn, 11, world.obstacles);
   assert.equal(positions.length, 11);
   assert.ok(positions.every(point => point.z < NANJING_DOCK.z && point.x < NANJING_WEST_BREACH.minX));
+  assert.ok(world.landmarks.northernBackdrop.filter(home =>
+    home.z === -106 && home.x >= -110 && home.x <= -98).length >= 2,
+  'the north bank has nearby houses');
   const navigate = createNavigator(world.doorSystem.navigationObstacles);
   for (const target of [{ x: -78, z: -89 }, { x: -78, z: NANJING_WEST_GATE_Z }]) {
     const path = navigate(positions[0], target);
@@ -214,6 +328,49 @@ test('dock north deployment reaches the city through both the ruined wall and th
   assert.ok(scene.children.some(object => object.userData.nanjingFeature === 'north-distant-house'));
   assert.equal(world.solids.includes(ground), false);
   assert.equal(world.solids.includes(bank), false);
+});
+
+test('second-stage player and AI spawn together south of the west gate and reach the ferry', () => {
+  const world = makeNanjingBattlefield(new THREE.Scene(), () => new THREE.MeshStandardMaterial());
+  const spawn = NANJING_SPAWNS.find(point => point.id === 'nanjing-west-dock');
+  const placementObstacles = nanjingDockDeploymentObstacles(spawn, world.obstacles, world.landmarks.residentialBuildings);
+  const positions = formationPositions(spawn, 11, placementObstacles);
+  assert.ok(spawn.x > NANJING_WEST_BREACH.maxX && spawn.z > NANJING_WEST_GATE_Z);
+  assert.ok(world.landmarks.residentialBuildings.some(home => Math.hypot(home.x - spawn.x, home.z - spawn.z) < 15));
+  assert.equal(positions.length, 11);
+  const navigate = createNavigator(world.doorSystem.navigationObstacles);
+  for (const point of positions) {
+    assert.ok(point.x >= spawn.deploymentZone.minX && point.x <= spawn.deploymentZone.maxX &&
+      point.z >= spawn.deploymentZone.minZ && point.z <= spawn.deploymentZone.maxZ);
+    assert.equal(circleBlocked(point.x, point.z, .48, world.obstacles), false);
+    assert.equal(world.isDeepWater(point.x, point.z), false);
+  }
+  const occupied = positions.map(point => ({ ...point, y: 0 }));
+  for (let squad = 0; squad < 2; squad++) {
+    const members = formationPositions(spawn, 11, placementObstacles, occupied);
+    assert.equal(members.length, 11);
+    for (const member of members) {
+      assert.ok(occupied.every(other => Math.hypot(member.x - other.x, member.z - other.z) >= 1.25));
+      occupied.push({ ...member, y: 0 });
+    }
+  }
+  for (const point of occupied) {
+    assert.equal(circleBlocked(point.x, point.z, .48, placementObstacles), false);
+    assert.ok(world.landmarks.residentialBuildings.every(home =>
+      Math.abs(point.x - home.x) > home.width / 2 || Math.abs(point.z - home.z) > home.depth / 2));
+    const path = navigate(point, { x: -66, z: -60 });
+    assert.ok(path.length, `cannot reach defense area from ${JSON.stringify(point)}: ${navigate.stats.reason}`);
+    const walker = new THREE.Vector3(point.x, 0, point.z);
+    for (const node of path) world.moveInfantry(walker, node.x - walker.x, node.z - walker.z, .42);
+    assert.ok(Math.hypot(walker.x + 66, walker.z + 60) < .1);
+  }
+  for (const target of [{ x: -66, z: -60 }, { x: -78, z: -60 }, { x: -99, z: -80 }]) {
+    const path = navigate(positions[0], target);
+    assert.ok(path.length, `cannot reach ${JSON.stringify(target)}: ${navigate.stats.reason}`);
+    const walker = new THREE.Vector3(positions[0].x, 0, positions[0].z);
+    for (const node of path) world.moveInfantry(walker, node.x - walker.x, node.z - walker.z, .42);
+    assert.ok(Math.hypot(walker.x - target.x, walker.z - target.z) < .1);
+  }
 });
 
 test('the west breach has a rendered and physically walkable rubble slope in both directions', () => {
@@ -552,6 +709,29 @@ test('both rivers block wading and the stone bridge remains the only ground cros
   assert.ok(path.length);
   assert.ok(path.some(point => Math.abs(point.x + 24) < 6), 'armor routes over the stone bridge');
   assert.equal(segmentClear({ x: -54, z: 70 }, { x: -54, z: 35 }, 3.1, world.armorObstacles), false);
+});
+
+test('southern distant land covers the exposed far-water horizon without covering the Yangtze', () => {
+  const scene = new THREE.Scene();
+  makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  scene.updateMatrixWorld(true);
+  const terrain = scene.children.find(object => object.userData.nanjingFeature === 'south-distant-ground');
+  const water = scene.children.filter(object => object.userData.nanjingFeature === 'river-water');
+  assert.ok(terrain);
+  const camera = new THREE.PerspectiveCamera(65, 1440 / 900, .1, 2000);
+  camera.position.set(-16.42013550841302, 4.7, 19.154172531191275);
+  camera.lookAt(camera.position.clone().add(new THREE.Vector3(-.3731526554493083, 0, .9277699584116366)));
+  camera.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
+  for (const [x, y] of [[.42, .505], [.44, .508], [.46, .51]]) {
+    ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
+    assert.equal(ray.intersectObjects([terrain, ...water], false)[0]?.object, terrain,
+      'the land-side view must not reveal the distant extended river');
+  }
+  for (const z of [-80, 52, 200, 400]) {
+    ray.set(new THREE.Vector3(NANJING_RIVER_SHORE_X - 20, 40, z), new THREE.Vector3(0, -1, 0));
+    assert.equal(ray.intersectObject(terrain, false).length, 0, `river remains uncovered at z=${z}`);
+  }
 });
 
 test('river water is exposed in the rendered scene, with only stone bridges crossing it', () => {
@@ -1364,7 +1544,8 @@ test('northwest dock, boats and civilian route stay accessible behind the connec
   }
   assert.deepEqual(world.ferries.map(ferry => [ferry.position.x, ferry.position.z]),
     NANJING_FERRY_BERTHS.map(berth => [berth.x, berth.z]));
-  assert.equal(world.landmarks.dockDefenses.length, 8);
+  assert.equal(world.landmarks.dockDefenses.length, 13);
+  assert.ok(world.landmarks.dockDefenses.some(defense => defense.id === 'ferry-approach-roadblock'));
   assert.ok(['west-gate-north', 'west-gate-south'].every(id =>
     world.landmarks.dockDefenses.some(defense => defense.id === id)));
   const dockBags = world.solids.filter(mesh => mesh.userData.nanjingFeature === 'dock-sandbag-collision');

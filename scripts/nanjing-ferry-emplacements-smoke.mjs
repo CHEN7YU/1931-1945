@@ -51,7 +51,9 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   await page.locator('#world').click();
   const results = [];
-  for (const id of ['ferry-north-mg', 'ferry-south-aa', 'ferry-south-gun']) {
+  for (const id of ['ferry-north-mg', 'ferry-south-aa', 'ferry-south-gun',
+    'ferry-front-north-gun', 'ferry-front-south-gun', 'ferry-front-north-mg',
+    'ferry-front-south-mg', 'ferry-north-aa-west', 'ferry-north-aa-east']) {
     const before = await page.evaluate(id => ferryEmplacementReview.setup(id), id);
     await page.screenshot({ path: join(directory, `${id}-approach.png`) });
     await page.keyboard.press('KeyF');
@@ -61,6 +63,7 @@ try {
     await page.waitForFunction(shots => ferryEmplacementReview.sample().shots > shots, before.shots, { timeout: 15000 });
     await page.mouse.up();
     const fired = await page.evaluate(() => ferryEmplacementReview.sample());
+    if (id.includes('gun')) await page.screenshot({ path: join(directory, `${id}-fired.png`) });
     assert.equal(fired.operator, fired.actor);
     assert.ok(fired.ammo < before.ammo);
     await page.keyboard.press('KeyF');

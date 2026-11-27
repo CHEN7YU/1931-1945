@@ -115,3 +115,20 @@ test('final deadline marks only people on shore unrescued while boats must reall
   campaign.civiliansAboard = 0; aboard.userData.evacuated = true;
   assert.equal(nanjingCivilianEvacuationStatus(campaign, people).ready, true);
 });
+
+test('deadline returns an interrupted gangplank boarder to shore before releasing the ferry', () => {
+  const campaign = createNanjingCampaign();
+  Object.assign(campaign, { stage: 'withdrawal-to-boats', finalWithdrawalElapsed: NANJING_CIVILIAN_FINAL_WAIT,
+    civiliansWaiting: 1 });
+  const civilian = { userData: { ...dataFor(), arrived: true, boarding: true } };
+  const returnPath = [{ x: -120, y: .47, z: -83.2 }, { x: -120, y: 0, z: -81.6 }];
+  const boarding = { civilian, path: [{ x: -120, y: .47, z: -85 }], returnPath };
+  const ferry = { userData: { passengers: [], boarding } };
+  assert.equal(expireCivilianShoreWait(campaign, [civilian], [ferry], []), 1);
+  assert.equal(civilian.userData.unrescued, true);
+  assert.equal(civilian.userData.boarding, true);
+  assert.equal(ferry.userData.boarding, boarding);
+  assert.equal(boarding.returningToShore, true);
+  assert.deepEqual(boarding.path, returnPath);
+  assert.equal(campaign.civiliansWaiting, 0);
+});

@@ -5,7 +5,7 @@ import { sihangNorthBank, sihangBlastClearOfSouthBank } from './sihang-layout.js
 // Gameplay values; the compact model is original geometry, not a measured historical asset.
 export const GRENADE_DISCHARGER = Object.freeze({
   name: '八九式掷弹筒', minRange: 18, maxRange: 210, ammo: 12, reserve: 12,
-  setupSeconds: 1.2, reloadSeconds: 6, querySeconds: 1.5, spread: 18,
+  setupSeconds: 1.2, reloadSeconds: 8, querySeconds: 1.5, spread: 18,
   closeAimRadius: 3, missMinRadius: 8, baseAccuracy: .25, movingAccuracyScale: .5, suppressedAccuracyScale: .6,
   damage: BLAST_PROFILES['grenade-discharger'].damage, radius: BLAST_PROFILES['grenade-discharger'].radius, activeLimit: 8, trajectorySegments: 24,
 });

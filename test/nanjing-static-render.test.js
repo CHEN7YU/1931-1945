@@ -6,12 +6,15 @@ import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 test('Nanjing batches residential and castle rendering but retains collision geometry and all moving actors', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   const originals = world.solids.filter(object => object.userData.staticResidential);
-  const batches = scene.children.filter(object => object.userData.staticSceneBatch);
+  const batches = scene.children.filter(object => object.userData.staticSceneBatch && !object.userData.streetLifeBatch);
+  const streetBatches = scene.children.filter(object => object.userData.staticSceneBatch && object.userData.streetLifeBatch);
   assert.ok(originals.length > 2000, 'verify the real residential meshes rather than a proxy scene');
   assert.ok(batches.length < originals.length / 10, 'material/cell batching must materially reduce submissions');
   assert.ok(world.staticRendering.masonrySources > 600, 'the actual castle and bank decorations are batched too');
   assert.equal(world.staticRendering.sources, originals.length + world.staticRendering.masonrySources);
   assert.equal(world.staticRendering.batches, batches.length);
+  assert.equal(world.staticRendering.streetLife.batches, streetBatches.length);
+  assert.ok(streetBatches.length > 0);
   assert.ok(originals.every(object => object.parent === null));
   assert.ok(world.flags.every(flag => flag.parent === scene));
   assert.ok(world.ferries.every(boat => boat.parent === scene));
@@ -21,6 +24,9 @@ test('Nanjing batches residential and castle rendering but retains collision geo
   const triangles = batches.reduce((sum, mesh) =>
     sum + (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3, 0);
   assert.equal(triangles, world.staticRendering.triangles);
+  const streetTriangles = streetBatches.reduce((sum, mesh) =>
+    sum + (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3, 0);
+  assert.equal(streetTriangles, world.staticRendering.streetLife.triangles);
   for (const home of world.landmarks.residentialBuildings.slice(0, 20)) for (const [dx, dz] of [[.17, .13], [-.21, .19], [.24, -.11]]) {
     const origin = new THREE.Vector3(home.x + dx, home.height + 5, home.z + dz);
     const ray = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0));

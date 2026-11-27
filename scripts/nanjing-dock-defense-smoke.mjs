@@ -39,6 +39,9 @@ try {
           const blockedPosition = actor.position.toArray(); actor.position.copy(old);
           return { stage: nanjingCampaign.stage, outcome: nanjingCampaign.outcome, incursions, blockedPosition,
             buffer: NANJING_DOCK_BUFFER, dock: NANJING_DOCK,
+            friendlySpawns: formations.filter(unit => unit.team === 'friendly' && !unit.player)
+              .map(unit => ({ index: unit.index, spawnId: unit.spawnId, reserve: unit.reserve,
+                spawnedAt: unit.members[0]?.spawnPosition })),
             posts: friendlyAI.filter(a => a.health > 0).map(a => ({ point: a.tactics.nanjingDockDefense,
               position: a.position.toArray(), spawn: a.formation.spawnId, mode: a.tactics.mode })),
             playerOrders: allies.map(a => a.order),
@@ -47,10 +50,10 @@ try {
             dockEnemyPath: dockNavigate({ x: NANJING_DOCK_BUFFER.maxX - 2, z: NANJING_DOCK_BUFFER.minZ - 3 },
               { x: NANJING_DOCK_BUFFER.maxX - 2, z: NANJING_DOCK_BUFFER.maxZ + 3 }) };
         },
-        respawn() {
+        respawn(spawnId) {
           setGameState('playing');
           const formation = formations.find(item => item.team === 'friendly' && !item.player && !item.reserve &&
-            item.members.some(actor => actor.health > 0));
+            item.spawnId === spawnId && item.members.some(actor => actor.health > 0));
           if (!formation) throw new Error('Missing living AI formation');
           const generation = formation.generation;
           for (const actor of formation.members) actor.health = 0;
@@ -107,6 +110,10 @@ try {
             unit.index % 2 === 0);
           const actors = units.map(unit => unit.members.find(actor => actor.index === 2));
           if (actors.length !== 4 || actors.some(actor => !actor)) throw new Error('Missing assault formations');
+          const friendlyRespawns = formations.filter(unit => unit.team === 'friendly' && !unit.player)
+            .map(unit => ({ unit, enabled: unit.respawnEnabled }));
+          for (const { unit } of friendlyRespawns) unit.respawnEnabled = false;
+          rebuildForces();
           for (const actor of allForces) actor.health = 0;
           for (const actor of actors) { actor.health = 100; actor.vehicleId = 'fixture-inactive'; }
           for (const civilian of world.civilians) civilian.visible = false;
@@ -146,10 +153,15 @@ try {
               vehicleId: actor.vehicleId, emplacementId: actor.emplacementId,
               traversal: actor.traversal.kind, dying: actor.dying, blastReaction: actor.blastReaction,
               state, present: allForces.includes(actor), pathReason: actor.tactics.pathReason,
+              target: actor.target && { id: actor.target.id, health: actor.target.health,
+                team: actor.target.team, kind: actor.target.targetKind },
+              livingFriends: friendlyForces.filter(friend => friend.health > 0).length,
+              civilianTarget: Boolean(actor.tactics.civilianTarget),
               path: actor.path, samples });
             this.guard = actor;
             actor.health = 0;
           }
+          for (const { unit, enabled } of friendlyRespawns) unit.respawnEnabled = enabled;
           return results;
         },
         guardCombat() {
@@ -243,6 +255,8 @@ try {
   assert.equal(dock.incursions, 0, 'normal attackers cannot enter the civilian queue');
   assert.ok(dock.blockedPosition[2] >= dock.buffer.maxZ + .42 - .01, 'actual actor movement must respect the buffer');
   assert.ok(dock.posts.length >= 22);
+  assert.deepEqual(dock.friendlySpawns.map(unit => unit.spawnId),
+    ['nanjing-west-dock', 'nanjing-west-dock-south', 'nanjing-west-dock', 'nanjing-west-dock-south']);
   assert.ok(dock.posts.every(a => a.point && a.point.x >= -68 && a.point.x <= -54 &&
     Math.abs(a.point.z + 60) <= 10), 'AI defense posts are near the west gate');
   assert.deepEqual(dock.playerOrders, gate.playerOrders);
@@ -251,16 +265,23 @@ try {
     : (goal.x === -66 && goal.z === -60 || goal.x <= -78 && Math.abs(goal.z + 60) < 3)),
   'alternating formations advance through the gate or hold the inner line');
   assert.ok(dock.dockEnemyPath.length > 0);
-  const respawn = await page.evaluate(() => nanjingDockReview.respawn());
-  assert.equal(respawn.newGeneration, respawn.generation + 1, 'a lost squad actually respawns');
-  assert.equal(respawn.positions.length, 11, 'the full squad respawns');
-  assert.ok(respawn.positions.every(position => position[0] < -74.2 &&
-    position[2] < dock.dock.z && Math.hypot(position[0] - dock.dock.x, position[2] - dock.dock.z) < 30),
-    'the squad starts north of the ferry and outside the west wall');
-  assert.ok(respawn.positions.every(position => position[2] >= -104 && position[2] <= 96),
-    'the complete AI squad respawns inside the real battle boundary');
-  assert.ok(respawn.posts.length && respawn.posts.every(post => post &&
-    post.x >= -68 && post.x <= -54 && Math.abs(post.z + 60) <= 10), 'respawned AI is assigned to the west gate');
+  const respawns = [];
+  for (const spawnId of ['nanjing-west-dock', 'nanjing-west-dock-south']) {
+    const respawn = await page.evaluate(id => nanjingDockReview.respawn(id), spawnId);
+    respawns.push(respawn);
+    assert.equal(respawn.newGeneration, respawn.generation + 1, 'a lost squad actually respawns');
+    assert.equal(respawn.positions.length, 11, 'the full squad respawns');
+    assert.equal(respawn.spawn, spawnId);
+    assert.ok(respawn.positions.every(position => respawn.spawn === 'nanjing-west-dock'
+      ? position[0] >= -70 && position[0] <= -51 && position[2] >= -55 && position[2] <= -29
+      : position[0] >= -112 && position[0] <= -101.5 && position[2] >= -61 && position[2] <= -49),
+    'the full AI squad starts at the shared player deployment zone');
+    assert.ok(respawn.positions.every(position => position[2] >= -104 && position[2] <= 96),
+      'the complete AI squad respawns inside the real battle boundary');
+    assert.ok(respawn.posts.length && respawn.posts.every(post => post &&
+      post.x >= -68 && post.x <= -54 && Math.abs(post.z + 60) <= 10), 'respawned AI is assigned to the west gate');
+  }
+  await writeFile(join(directory, 'shared-ai-respawns.json'), JSON.stringify(respawns, null, 2));
   await page.evaluate(() => nanjingDockReview.preparePlayerRespawn());
   const marker = page.locator('[data-spawn="nanjing-west-dock-south"]');
   await marker.click();
@@ -274,6 +295,15 @@ try {
     x <= playerBoundary.area.maxX && z >= playerBoundary.area.minZ && z <= playerBoundary.area.maxZ));
   assert.ok(playerBoundary.outside.every(outside => !outside), 'no player squad member starts outside');
   assert.deepEqual(playerBoundary.after, playerBoundary.before, 'spawning never causes boundary damage');
+  await page.evaluate(() => nanjingDockReview.preparePlayerRespawn());
+  await page.locator('[data-spawn="nanjing-west-dock"]').click();
+  await page.locator('#confirm-deploy').click();
+  const cityPlayer = await page.evaluate(() => nanjingDockReview.playerBoundary());
+  assert.equal(cityPlayer.positions.length, 11);
+  assert.ok(cityPlayer.positions.every(([x, , z]) => x >= -70 && x <= -51 && z >= -55 && z <= -29));
+  assert.ok(cityPlayer.outside.every(outside => !outside));
+  assert.deepEqual(cityPlayer.after, cityPlayer.before);
+  await writeFile(join(directory, 'shared-player-respawns.json'), JSON.stringify({ playerBoundary, cityPlayer }, null, 2));
   for (const direction of ['north', 'gate', 'dock']) {
     await page.evaluate(direction => nanjingDockReview.view(direction), direction);
     await page.screenshot({ path: join(directory, `dock-${direction}.png`) });

@@ -27,6 +27,18 @@ export function attackSourceLabel(source) {
   return weapon ? `${credit}·${weapon}` : credit;
 }
 
+export function deathCauseLabel(source, weaponKind) {
+  if (weaponKind === 'boundary') return '脱离战区';
+  const credit = creditNames[source.credit];
+  if (!credit) throw new RangeError('Unknown attack credit');
+  if (source.credit === 'environment' && causeNames[source.cause]) return causeNames[source.cause];
+  if (weaponKind === 'collision') return '坦克碾压';
+  if (weaponKind === 'bayonet') return `${credit}·刺刀突刺`;
+  if (weaponKind === 'dadao') return `${credit}·大刀斩击`;
+  if (weaponKind === 'aircraft-bomb' && source.weaponClass === 'plane') return `${credit}·航空炸弹`;
+  return attackSourceLabel(source);
+}
+
 export function createCombatFeedback() {
   let flash = 0, markerUntil = 0, markerSource = null;
   const feed = [];

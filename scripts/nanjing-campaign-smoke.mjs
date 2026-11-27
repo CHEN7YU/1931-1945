@@ -1,4 +1,3 @@
-import { deployFromMenu } from './game-entry.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,10 +21,17 @@ await page.route('**/src/main.js*', async route => {
   await route.fulfill({ response, body: await response.text() + `
     window.__waterCasualtyHidden = id =>
       ijaCharacter.snapshot.members.some(member => member.id === id && member.tier === 'hidden');
+    window.__releaseOpening = () => {
+      for (const civilian of world.civilians.filter(person => person.userData.openingWave))
+        civilian.userData.crossedRiver = true;
+      updateNanjingMission(0);
+    };
+    window.__waterCasualtyReady = () => allForces.some(actor =>
+      actor.team === 'enemy' && actor.health > 0 && !actor.vehicleId && actor.nativeMotion);
     window.__testWaterCasualty = () => {
       if (!nanjingCampaignMode || typeof world.isDeepWater !== 'function')
         throw new Error('Water casualty test requires the Nanjing campaign water query');
-      const x = -80, z = 0;
+      const x = NANJING_DOCK.x, z = 0;
       if (!world.isDeepWater(x, z)) throw new Error('Water casualty fixture is not in deep water');
       const actor = allForces.find(candidate => candidate.team === 'enemy' &&
         candidate.health > 0 && !candidate.vehicleId && candidate.nativeMotion);
@@ -73,17 +79,18 @@ await page.route('**/src/main.js*', async route => {
 
 try {
   await page.goto(gameUrl.href);
-  await page.waitForFunction(() => window.__battle?.state === 'menu' && !document.querySelector('#menu').hidden,
+  await page.waitForFunction(() => window.__battle?.state === 'menu' &&
+    document.querySelector('#overlay').dataset.deploymentStep === 'identity',
     null, { timeout: 180000 });
   assert.equal(await page.locator('#game-title').textContent(), '南京保卫战');
-  assert.equal(await page.locator('.deployment-note').isVisible(), true);
   assert.equal(await page.locator('.deployment-note').textContent(), '我方3支小队 · 日军10支小队 · 两阶段撤离战役');
-  assert.equal(await page.locator('#back-campaign').isVisible(), true);
-  assert.deepEqual(await page.locator('#squad-choices [data-type]:visible').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
-    ['infantry']);
+  assert.equal(await page.locator('#confirm-identity').isVisible(), true);
+  await page.locator('#confirm-identity').click();
+  await page.waitForFunction(() => document.querySelector('#overlay').dataset.deploymentStep === 'squad',
+    null, { timeout: 30000 });
   assert.deepEqual(await page.locator('#redeploy-choices [data-type]').evaluateAll(buttons => buttons.map(button => button.dataset.type)),
     ['infantry']);
-  await deployFromMenu(page);
+  await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 30000 });
 
   const data = await page.evaluate(() => window.__battle);
@@ -95,12 +102,11 @@ try {
   const gate = data.objectives.find(point => point.id === 'gate');
   assert.equal(gate.name, '中华门第二道门内西侧');
   assert.ok(gate.x < 0 && Math.abs(gate.z) < .1);
-  assert.ok((await page.locator('#objective-help').textContent()).includes('第二道门内左侧'));
+  assert.ok((await page.locator('#objective-help').textContent()).includes('第二道门西侧'));
   const gateSpawn = data.spawnPoints.find(point => point.id === 'nanjing-gate');
   assert.ok(gateSpawn.z < 0 && gateSpawn.z > -1);
   assert.equal(gateSpawn.name, '中华门北墙内侧');
-  assert.equal(data.campaign.airSupport.count, 3);
-  assert.ok(data.campaign.airSupport.aircraft.every(plane => plane.team === 'enemy' && plane.model === 'ki-10'));
+  assert.equal(data.campaign.airSupport.count, 0);
   for (const [width, height] of [[960, 540], [1280, 720], [1440, 900], [1920, 1080]]) {
     await page.setViewportSize({ width, height });
     const spacing = await page.evaluate(() => {
@@ -123,16 +129,17 @@ try {
   assert.ok(Math.abs(data.look.yaw - Math.PI) < .001, 'gate deployment should face the southern assault, not the inner city');
   assert.ok(data.campaign.stageRemaining <= 180 && data.campaign.stageRemaining > 178,
     `Unexpected initial stage clock: ${data.campaign.stageRemaining}`);
-  assert.equal(await page.locator('#timer-label').textContent(), '中华门防守倒计时');
+  assert.equal(await page.locator('#timer-label').textContent(), '等待百姓过桥');
   const displayedClock = await page.locator('#timer').textContent();
-  assert.match(displayedClock, /^0[23]:\d{2}$/);
+  assert.equal(displayedClock, '--:--');
   assert.equal(data.campaign.map.ferries, 5);
   assert.deepEqual(data.campaign.map.cityWalls, NANJING_CITY_WALLS);
   const dock = data.objectives.find(point => point.id === 'dock');
   assert.deepEqual({ x: dock.x, z: dock.z }, { x: NANJING_DOCK.x, z: NANJING_DOCK.z });
   assert.ok(dock.x < -60 && dock.z < -70, 'the dock must be in the northwest corner');
   const dockSpawn = data.spawnPoints.find(point => point.id === 'nanjing-west-dock');
-  assert.deepEqual({ x: dockSpawn.x, z: dockSpawn.z }, { x: dock.x, z: dock.z });
+  assert.equal(dockSpawn.name, '水西门南侧居民区');
+  assert.ok(dockSpawn.x > -70 && dockSpawn.z > -60, 'player deployment is inside the city south of the west gate');
   assert.equal(data.campaign.map.bridges.length, 1, 'only the southern gate assault bridge remains');
   assert.equal(data.campaign.map.gateBarbicans, 2);
   assert.equal(data.campaign.map.alignedGateways, 3);
@@ -160,6 +167,9 @@ try {
   assert.equal(data.population.units.filter(unit => unit.team === 'friendly' && unit.memberCount === 0).length, 2);
   assert.equal(data.campaign.civilianVisuals.active > 0, true);
   assert.equal(data.campaign.civilianVisuals.arrived, 0);
+  await page.evaluate(() => window.__releaseOpening());
+  await page.waitForFunction(() => window.__waterCasualtyReady(),
+    null, { timeout: 90000 });
   const waterCasualty = await page.evaluate(() => window.__testWaterCasualty());
   assert.equal(waterCasualty.health, 0);
   assert.equal(waterCasualty.corpseRemoved, true);

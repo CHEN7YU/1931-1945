@@ -82,6 +82,27 @@ test('gait uses real displacement and turns toward actual motion at a bounded sp
   assert.equal(actor.userData.walkPhase, phase, 'a stationary sheltered person cannot march in place');
 });
 
+test('a stopped civilian settles into a stable leg pose without marching in place', () => {
+  for (const age of ['adult', 'elderly', 'child']) {
+    const actor = person('none', age);
+    for (let frame = 0; frame < 60; frame++)
+      advanceCivilianMotion(actor, { dt: 1 / 60, now: frame / 60, moved: 2 / 60, dz: -2 / 60 });
+    for (let frame = 0; frame < 60; frame++)
+      advanceCivilianMotion(actor, { dt: 1 / 60, now: 1 + frame / 60, moved: 0, mode: 'waiting' });
+    const phase = actor.userData.walkPhase;
+    const joints = actor.civilianSkin.joints;
+    const names = ['leftLeg', 'leftKnee', 'leftFoot', 'rightLeg', 'rightKnee', 'rightFoot'];
+    const angles = names.map(name => joints[name].rotation.x);
+    for (let frame = 0; frame < 120; frame++) {
+      advanceCivilianMotion(actor, { dt: 1 / 60, now: 2 + frame / 60, moved: 0, mode: 'waiting' });
+      updateCivilianAppearance([actor], camera);
+      assert.equal(actor.userData.walkPhase, phase);
+      for (let index = 0; index < names.length; index++)
+        assert.ok(Math.abs(joints[names[index]].rotation.x - angles[index]) < .005);
+    }
+  }
+});
+
 test('street corner heading follows actual travel without an instantaneous half-turn', () => {
   const actor = person();
   actor.userData.streetLife = { wakeAt: 0, waypoint: 0, route: [{ x: 0, z: 100 }],

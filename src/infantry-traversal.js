@@ -40,14 +40,17 @@ export function reservationMovementBlockers(position, radius, obstacles, bodyHei
     !circleBlocked(position.x, position.z, radius, [obstacle], position.y, bodyHeight));
 }
 
-export function moveAirborne(position, dx, dz, radius, obstacles, bodyHeight = TRAVERSAL.bodyHeight) {
+export function moveAirborne(position, dx, dz, radius, obstacles, bodyHeight = TRAVERSAL.bodyHeight, heightAt = null) {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / .04));
   const reserved = obstacles.some(obstacle => obstacle.nonSupporting);
+  const terrainClear = (x, z) => !heightAt || heightAt(x, z, position.y) <= position.y + .025;
   for (let i = 0; i < steps; i++) {
     let blockers = reserved ? reservationMovementBlockers(position, radius, obstacles, bodyHeight) : obstacles;
-    if (!circleBlocked(position.x + dx / steps, position.z, radius, blockers, position.y, bodyHeight)) position.x += dx / steps;
+    if (terrainClear(position.x + dx / steps, position.z) &&
+      !circleBlocked(position.x + dx / steps, position.z, radius, blockers, position.y, bodyHeight)) position.x += dx / steps;
     blockers = reserved ? reservationMovementBlockers(position, radius, obstacles, bodyHeight) : obstacles;
-    if (!circleBlocked(position.x, position.z + dz / steps, radius, blockers, position.y, bodyHeight)) position.z += dz / steps;
+    if (terrainClear(position.x, position.z + dz / steps) &&
+      !circleBlocked(position.x, position.z + dz / steps, radius, blockers, position.y, bodyHeight)) position.z += dz / steps;
   }
   return position;
 }

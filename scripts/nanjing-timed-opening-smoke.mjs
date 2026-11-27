@@ -105,7 +105,8 @@ try {
           late: ${process.env.TIMED_DIAGNOSTIC === '1' ? `world.civilians.filter(c=>c.userData.openingWave&&c.userData.civilianId>=48)
             .map(c=>({id:c.userData.civilianId,active:c.userData.active,dead:c.userData.dead,
               crossed:c.userData.crossedRiver,x:c.position.x,z:c.position.z,waypoint:c.userData.waypoint}))` : 'undefined'},
-          firstOverlap:firstOpeningBridgeOverlap,assaultSnapshot,hud:$('objective-help').textContent };
+          firstOverlap:firstOpeningBridgeOverlap,assaultSnapshot,hud:$('objective-help').textContent,
+          timerLabel:$('timer-label').textContent };
       };` });
   });
   const url = new URL('/?campaign=nanjing&character=procedural', process.env.GAME_URL ?? 'http://127.0.0.1:5173');
@@ -128,14 +129,16 @@ try {
   for (const sample of samples.filter(sample => !sample.released)) {
     assert.equal(sample.squads, 0);
     assert.equal(sample.elapsed, 0);
-    assert.match(sample.hud, /等待百姓过桥/);
+    assert.match(sample.hud, /百姓过河 \d+\/60/);
+    assert.equal(sample.timerLabel, '等待百姓过桥');
   }
   const attack = samples.find(sample => sample.assaultSnapshot);
   assert.ok(attack, 'the opening attack must start after the refugees finish crossing');
   assert.deepEqual(attack.assaultSnapshot.pending, []);
   assert.equal(attack.assaultSnapshot.crossed + attack.assaultSnapshot.deadBeforeCrossing, 60);
-  assert.equal(attack.squads, 8);
-  assert.match(attack.hud, /日军已开始进攻/);
+  await page.waitForFunction(() => timedOpeningSample().squads === 8, null, { timeout: 180000 });
+  assert.match(attack.hud, /百姓过河 \d+\/60/);
+  assert.ok(['中华门防守倒计时', '日军集结中 · 防守倒计时'].includes(attack.timerLabel));
   assert.deepEqual(errors, []);
 } finally {
   console.log(JSON.stringify({ samples, errors }));

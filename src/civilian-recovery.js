@@ -65,11 +65,18 @@ export function expireCivilianShoreWait(campaign, civilians, ferries, queue) {
     throw new Error('Final civilian waiting count does not match people remaining on shore');
   for (const person of remaining) {
     person.userData.unrescued = true;
-    person.userData.boarding = false;
   }
   for (const ferry of ferries) {
-    if (ferry.userData.boarding && remaining.includes(ferry.userData.boarding.civilian))
+    const boarding = ferry.userData.boarding;
+    if (!boarding || !remaining.includes(boarding.civilian)) continue;
+    if (boarding.path?.[0] && !boarding.path[0].land) {
+      if (!boarding.returnPath?.length) throw new Error('Civilian boarding has no route back to shore');
+      boarding.path = boarding.returnPath.map(point => ({ ...point }));
+      boarding.returningToShore = true;
+    } else {
+      boarding.civilian.userData.boarding = false;
       ferry.userData.boarding = null;
+    }
   }
   queue.length = 0;
   campaign.civiliansWaiting = 0;

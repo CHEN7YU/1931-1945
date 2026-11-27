@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCombatEvents } from '../src/combat-events.js';
-import { attackSourceLabel, createCombatFeedback } from '../src/combat-feedback.js';
+import { attackSourceLabel, deathCauseLabel, createCombatFeedback } from '../src/combat-feedback.js';
 import { SCORE_ICON_PATHS } from '../src/score-icons.js';
 import { KILL_COLUMNS } from '../src/battle-stats.js';
 
@@ -33,6 +33,16 @@ test('friendly casualties identify the actual weapon instead of hiding their cau
   assert.equal(attackSourceLabel({ credit: 'environment' }), '事故');
   assert.equal(attackSourceLabel({ credit: 'environment', cause: 'abandoned-squad' }), '放弃小队');
   assert.throws(() => attackSourceLabel({ credit: 'unknown' }), /Unknown attack credit/);
+});
+
+test('death causes retain specific remote weapons and distinguish bombs from aircraft fire', () => {
+  const enemy = { ...source('enemy'), squadId: 'enemy-8', unitName: '日军小队' };
+  assert.equal(deathCauseLabel({ ...enemy, weaponClass: 'grenade-discharger' }, 'grenade-discharger'), '日军·八九式掷弹筒');
+  assert.equal(deathCauseLabel({ ...enemy, weaponClass: 'plane' }, 'aircraft-bomb'), '日军·航空炸弹');
+  assert.equal(deathCauseLabel({ ...enemy, weaponClass: 'plane' }, 'rifle'), '日军·航空');
+  assert.equal(deathCauseLabel(enemy, 'bayonet'), '日军·刺刀突刺');
+  assert.equal(deathCauseLabel({ credit: 'environment', cause: 'crash', vehicleId: 'v' }, 'collision'), '坠毁');
+  assert.equal(deathCauseLabel({ credit: 'environment', cause: 'crash', vehicleId: 'v' }, 'explosion'), '坠毁');
 });
 
 test('fall casualties retain environmental credit and show the actual cause', () => {

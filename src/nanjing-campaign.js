@@ -20,12 +20,18 @@ export const NANJING_RIVER_SHORE_X = NANJING_DOCK.x + 4;
 export const NANJING_DOCK_ENTRY_X = NANJING_DOCK.x + 16.8;
 export const NANJING_PIER = Object.freeze({ minX: NANJING_DOCK.x - 7, maxX: NANJING_DOCK.x + 7,
   minZ: NANJING_DOCK.z - 2.5, maxZ: NANJING_DOCK.z + 2.5 });
+export const NANJING_WAITING_DECK = Object.freeze({ minX: NANJING_RIVER_SHORE_X,
+  maxX: NANJING_DOCK_ENTRY_X - .3, minZ: NANJING_DOCK.z - 9.5, maxZ: NANJING_DOCK.z + 9.5 });
 export function nanjingPierHeight(x, z) {
-  if (x < NANJING_PIER.minX || x > NANJING_PIER.maxX + 1.5) return 0;
   const across = Math.abs(z - NANJING_DOCK.z);
-  if (x < NANJING_RIVER_SHORE_X && across > 2.5 || across > 3.5) return 0;
-  return .36 * Math.min(1, Math.max(0, (NANJING_PIER.maxX + 1.5 - x) / 1.5),
-    Math.max(0, 3.5 - across));
+  const pier = x >= NANJING_PIER.minX && x <= NANJING_PIER.maxX + 1.5 &&
+    !(x < NANJING_RIVER_SHORE_X && across > 2.5) && across <= 3.5
+    ? .36 * Math.min(1, Math.max(0, (NANJING_PIER.maxX + 1.5 - x) / 1.5),
+      Math.max(0, 3.5 - across)) : 0;
+  const deck = .36 * Math.max(0, Math.min(1, (x - NANJING_WAITING_DECK.minX) / .5,
+    (NANJING_WAITING_DECK.maxX - x) / .5, (z - NANJING_WAITING_DECK.minZ) / .5,
+    (NANJING_WAITING_DECK.maxZ - z) / .5));
+  return Math.max(pier, deck);
 }
 export const NANJING_FERRY_BERTHS = Object.freeze([
   Object.freeze({ x: -97.5 + NANJING_DOCK_WEST_EXTENSION, z: -84 }),
@@ -47,6 +53,18 @@ export const NANJING_DOCK_ASSAULT_SPAWNS = Object.freeze([
   'nanjing-north-4', 'nanjing-north-5', 'nanjing-north-6',
   'nanjing-east-2', 'nanjing-east-4', 'nanjing-east-6', 'nanjing-south-3', 'nanjing-south-6',
 ]);
+
+const WEST_GATE_RESIDENTIAL_DEPLOYMENT = Object.freeze({
+  x: -61, z: -41, altitude: 0, allowNearbyEnemies: true,
+  deploymentZone: Object.freeze({ minX: -70, maxX: -51, minZ: -55, maxZ: -29 }),
+});
+
+export const NANJING_DOCK_SPAWN_IDS = Object.freeze(['nanjing-west-dock', 'nanjing-west-dock-south']);
+
+export function nanjingDockSpawnId(formationIndex) {
+  if (!Number.isInteger(formationIndex) || formationIndex < 0) throw new RangeError('Invalid Nanjing formation index');
+  return NANJING_DOCK_SPAWN_IDS[(formationIndex + 1) % NANJING_DOCK_SPAWN_IDS.length];
+}
 
 const assaultLanes = Array.from({ length: 8 }, (_, index) => {
   const across = -84 + index * 24;
@@ -84,19 +102,12 @@ export const NANJING_SPAWNS = Object.freeze([
   Object.freeze({ id: 'nanjing-south-armor', name: 'Yuhua Road桥南日军装甲点', team: 'enemy', kind: 'garage', x: -24, z: 90, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-north-armor', name: '渡口北路日军装甲点', team: 'enemy', kind: 'garage', x: 90, z: -93, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-south-air', name: '日军空中入场点', team: 'enemy', kind: 'air', x: 0, z: 102, altitude: 28, aiOnly: true }),
-  Object.freeze({ id: 'nanjing-west-dock', name: '上新河渡口北侧', team: 'friendly', kind: 'base',
-    x: -89 + NANJING_DOCK_WEST_EXTENSION, z: -100, altitude: 0, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92 + NANJING_DOCK_WEST_EXTENSION, maxX: -84.5 + NANJING_DOCK_WEST_EXTENSION, minZ: -102, maxZ: -89 }) }),
+  Object.freeze({ id: 'nanjing-west-dock', name: '水西门南侧居民区', team: 'friendly', kind: 'base',
+    ...WEST_GATE_RESIDENTIAL_DEPLOYMENT }),
   Object.freeze({ id: 'nanjing-west-dock-south', name: '上新河渡口南侧江岸', team: 'friendly', kind: 'base',
     x: NANJING_RIVER_SHORE_X + 7, z: -55, altitude: 0, allowNearbyEnemies: true,
     deploymentZone: Object.freeze({ minX: NANJING_RIVER_SHORE_X + 2, maxX: NANJING_RIVER_SHORE_X + 12.5,
       minZ: -61, maxZ: -49 }) }),
-  Object.freeze({ id: 'nanjing-west-ai-1', name: '渡口北侧集结点', team: 'friendly', kind: 'base',
-    x: -89 + NANJING_DOCK_WEST_EXTENSION, z: -100, altitude: 0, aiOnly: true, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92 + NANJING_DOCK_WEST_EXTENSION, maxX: -84.5 + NANJING_DOCK_WEST_EXTENSION, minZ: -102, maxZ: -89 }) }),
-  Object.freeze({ id: 'nanjing-west-ai-2', name: '渡口北侧后备集结点', team: 'friendly', kind: 'base',
-    x: -87 + NANJING_DOCK_WEST_EXTENSION, z: -98, altitude: 0, aiOnly: true, allowNearbyEnemies: true,
-    deploymentZone: Object.freeze({ minX: -92 + NANJING_DOCK_WEST_EXTENSION, maxX: -84.5 + NANJING_DOCK_WEST_EXTENSION, minZ: -102, maxZ: -89 }) }),
   Object.freeze({ id: 'nanjing-reserve-1', name: '城内中部预备队集结点', team: 'friendly', kind: 'base',
     x: -16, z: -42, altitude: 0, aiOnly: true }),
   Object.freeze({ id: 'nanjing-reserve-2', name: '城内东街预备队集结点', team: 'friendly', kind: 'base',
@@ -159,7 +170,7 @@ export function nanjingDefensePost(position, index, anchor) {
 export function isNanjingSpawnAvailable(point, dockActivated) {
   if (point.initialOnly) return false;
   if (point.kind === 'rally') return true;
-  return dockActivated ? ['nanjing-west-dock', 'nanjing-west-dock-south'].includes(point.id)
+  return dockActivated ? NANJING_DOCK_SPAWN_IDS.includes(point.id)
     : ['nanjing-gate', 'nanjing-gate-north-wall'].includes(point.id);
 }
 

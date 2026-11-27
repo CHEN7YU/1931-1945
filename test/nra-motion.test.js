@@ -9,8 +9,36 @@ import { RIFLE_CONTACTS } from '../src/rifle-contacts.js';
 import { FIRING_POSES } from '../src/combat-posture.js';
 import { createRifleState, shootRifle } from '../src/rifle-action.js';
 import { RIFLE_HAND_SAMPLES, rifleHandWeights } from '../src/rifle-hand-action.js';
+import { rifleWorldModel, syncWorldWeapon } from '../src/rifle-model.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/assets/game/nra-88/animations.json', import.meta.url), 'utf8'));
+
+test('SMG first-person changes leave the native world and anatomical reload path unchanged', () => {
+  const person = { health: 100, rifleReady: false, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
+    stance: 'standing', locomotion: { speed: 0, mode: 'idle' },
+    rifle: { ...createRifleState('sigm1920'), action: 'reload', ammo: 0 } };
+  person.nativeMotion = createNraMotion(createNativeGaitProfile(data.motion.idle), person);
+  const gun = rifleWorldModel('near', person.rifle);
+  const smooth = value => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
+  const mix = (a, b, t) => a.map((value, index) => value + (b[index] - value) * smooth(t));
+  const zero = [0, 0, 0], away = [-.14, -.08, .05], grip = [-.20, -.043, -.15], ready = [0, -.095, -.34];
+  for (let frame = 0; frame <= 200; frame++) {
+    const t = frame / 200;
+    person.rifle.elapsed = 3.2 * t;
+    const motion = sampleNraMotion(person), pose = motion.automaticReload;
+    const feed = t < .15 ? zero : t < .35 ? mix(zero, away, (t - .15) / .2) : t < .45 ? away
+      : t < .8 ? mix(away, zero, (t - .45) / .35) : zero;
+    const palm = t < .15 ? mix(ready, grip, t / .15) : t < .8
+      ? grip.map((value, index) => value + feed[index]) : mix(grip, ready, (t - .8) / .2);
+    for (let index = 0; index < 3; index++) {
+      assert.ok(Math.abs(pose.feed[index] - feed[index]) < 1e-12);
+      assert.ok(Math.abs(pose.palm[index] - palm[index]) < 1e-12);
+    }
+    syncWorldWeapon(gun, person.rifle, pose);
+    assert.deepEqual(gun.getObjectByName('feed').position.toArray(), pose.feed);
+  }
+});
+
 test('automatic chest fire is distinct, simulation-blended, and never replaces player shoulder ADS or supported firing', () => {
   const person = { health: 100, rifleReady: true, position: { x: 0, y: 0, z: 0 }, walkPhase: 0,
     stance: 'standing', locomotion: { speed: 0, mode: 'idle' }, rifle: createRifleState('sigm1920') };

@@ -135,10 +135,15 @@ test('obstructed trajectories reject before firing, clear trajectories actually 
 });
 
 test('ammo/reload and active-shell caps use simulation time and never allocate new model geometry', () => {
-  const weapon = createGrenadeDischarger();
+  let weapon = createGrenadeDischarger();
   assert.equal(loadDischargerRound(weapon, 0, 0), false);
   weapon.phase = 'ready';
   assert.equal(loadDischargerRound(weapon, 0, RULES.activeLimit), false);
+  assert.equal(loadDischargerRound(weapon, 0, 0), true);
+  assert.equal(loadDischargerRound(weapon, 6, 0), false);
+  assert.equal(loadDischargerRound(weapon, 8, 0), true);
+  weapon = createGrenadeDischarger();
+  weapon.phase = 'ready';
   for (let index = 0; index < 24; index++) {
     assert.equal(loadDischargerRound(weapon, index * RULES.reloadSeconds, 0), true);
     assert.equal(loadDischargerRound(weapon, index * RULES.reloadSeconds, 0), false);
@@ -160,7 +165,7 @@ test('ammo/reload and active-shell caps use simulation time and never allocate n
 
 test('native integration uses actual collision/explosion, rifle fallback, ownership cleanup and bounded AI queries', () => {
   const source = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-  assert.match(source, /if \(operateAIDischarger\(actor, dt\)\) continue/);
+  assert.match(source, /if \(!sihangRegroup && operateAIDischarger\(actor, dt\)\) continue/);
   assert.match(source, /dischargerQueryBudget = 2/);
   assert.match(source, /advanceDischargerShell\(shell, dt, \(from, to\) => traceDischargerSegment\(from, to, shell\)\)/);
   assert.match(source, /dischargerTrajectoryClear\(aimShell, traceDischargerSegment\)/);

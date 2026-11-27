@@ -37,8 +37,8 @@ test('city layout is deterministic, varied and street-facing rather than aligned
     assert.ok(layout.streets.every(street => !cityStreetIntersectsLot(home, street, .65)),
       'street ribbons and their verge must never pass through houses');
   }
-  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'utility').length, 4);
-  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'streetlamp').length, 2);
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'utility').length, 7);
+  assert.equal(layout.streetFixtures.filter(fixture => fixture.kind === 'streetlamp').length, 4);
   for (const fixture of layout.streetFixtures) {
     assert.ok(layout.streets.every(street => !cityStreetIntersectsLot(
       [fixture.x, fixture.z, .5, .5], street, .2)), `${fixture.id} stays off vehicle lanes`);

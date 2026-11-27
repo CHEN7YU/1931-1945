@@ -7,13 +7,14 @@ import { NANJING_EMPLACEMENTS, createEmplacement, emplacementLook, emplacementPo
   aiEmplacementCanAimAt, aimAIEmplacement } from '../src/emplacements.js';
 import { FOOT_SPEEDS } from '../src/locomotion.js';
 import { createEmplacementModel } from '../src/emplacement-model.js';
+import { engineerBuiltSpec } from '../src/engineer.js';
 import { NANJING_MAP_BOUNDS, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 import { spawnBlockReason } from '../src/spawns.js';
 import { circleBlocked, createNavigator, setMapBounds } from '../src/core.js';
 import { makeNanjingBattlefield } from '../src/nanjing-battlefield.js';
 
 test('bridge and dock each include a shared-profile heavy machine gun and 75mm mountain gun', () => {
-  assert.equal(NANJING_EMPLACEMENTS.length, 11);
+  assert.equal(NANJING_EMPLACEMENTS.length, 17);
   assert.equal(NANJING_EMPLACEMENTS.find(point => point.id === 'gate-wall-mg').enclosed, true);
   for (const place of ['bridge', 'dock']) {
     assert.deepEqual(NANJING_EMPLACEMENTS.filter(point => point.id.startsWith(place) && !point.id.endsWith('-aa')).map(point => point.profile),
@@ -56,9 +57,10 @@ test('predefined weapons never obstruct the three opening squad assembly zones',
 
 test('anti-aircraft mounts share the Maxim weapon specification, traverse all directions and only fire after alignment', () => {
   const specs = NANJING_EMPLACEMENTS.filter(point => point.profile === 'maxim24aa');
-  assert.equal(specs.length, 3);
+  assert.equal(specs.length, 6);
   assert.ok(specs.some(point => point.id === 'gate-aa' && point.altitude > 8));
   assert.ok(specs.some(point => point.id === 'dock-aa'));
+  assert.ok(specs.some(point => point.id === 'ferry-north-mg' && point.x === -102 && point.z === -96));
   for (const spec of specs) {
     const point = createEmplacement(spec), floor = spec.altitude ?? 0;
     const target = { x: point.x + 30, y: floor + 50, z: point.z - 30 };
@@ -263,6 +265,39 @@ test('gunner sights remain open through the cannon shield and machine-gun nests 
   }
 });
 
+test('AA eye stays aligned with the actual ring sight and firing direction across elevation and recoil', () => {
+  const point = createEmplacement(NANJING_EMPLACEMENTS.find(spec => spec.id === 'dock-aa'));
+  const model = createEmplacementModel(point), floor = point.altitude ?? 0;
+  model.position.y = floor;
+  for (const pitch of [.05, .6, 1.3, 1.45]) for (const yaw of [-2, .4]) for (const recoil of [0, .025]) {
+    point.pitch = pitch; point.yaw = yaw; point.recoil = recoil;
+    model.userData.update();
+    let sight;
+    model.traverse(object => { if (object.userData.sightReticle) sight = object; });
+    assert.ok(sight);
+    const center = new THREE.Vector3(0, .25, -.45).applyMatrix4(sight.parent.matrixWorld);
+    const pose = emplacementPose(point, floor);
+    const eye = new THREE.Vector3(pose.eye.x, pose.eye.y, pose.eye.z);
+    const forward = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    const offset = center.sub(eye);
+    assert.ok(offset.dot(forward) > 0);
+    assert.ok(offset.clone().cross(forward).length() < 1e-10);
+    const muzzle = new THREE.Vector3(pose.muzzle.x, pose.muzzle.y, pose.muzzle.z);
+    assert.ok(Math.abs(muzzle.clone().sub(eye).cross(forward).length() - .25) < 1e-10);
+  }
+});
+
+test('AA ring sight uses the same material as the gun body for each side', () => {
+  for (const team of ['friendly', 'enemy']) {
+    const point = createEmplacement({ id: `aa-${team}`, profile: 'maxim24aa', team, x: 0, z: 0, heading: 0 });
+    const model = createEmplacementModel(point), barrel = model.children[0].children[0];
+    const sight = barrel.children.find(object => object.userData.sightReticle);
+    assert.ok(sight);
+    assert.ok(barrel.children.some(object => object.isMesh && !object.userData.sightReticle &&
+      object.material === sight.material), `${team}: sight and gun body must share the same material`);
+  }
+});
+
 test('AA detail includes the feed, controls, cradle and true tripod without excessive draw submissions', () => {
   const model = createEmplacementModel(createEmplacement(NANJING_EMPLACEMENTS.find(spec => spec.id === 'dock-aa')));
   for (const detail of ['water-jacket','open-muzzle','feed-belt','spade-grips','trunnion-cradle',
@@ -297,7 +332,74 @@ test('northern dock weapons face clear eastern streets and AA stays behind their
   assert.ok(aa.x<NANJING_EMPLACEMENTS.find(point=>point.id==='dock-mg').x-8);
 });
 
-test('the two new ferry machine guns have supported, reachable crew positions and clear outward fire', () => {
+test('engineer machine-gun cover retains its original builder faction color', () => {
+  const cover = team => {
+    const actor = { id: team, unitId: team, team, engineer: { selected: 'maxim24' } };
+    const point = createEmplacement(engineerBuiltSpec(actor, { x: 0, y: 0, z: 0 }, 0));
+    point.team = team === 'enemy' ? 'friendly' : 'enemy';
+    const model = createEmplacementModel(point);
+    return model.children.find(mesh => mesh.userData.emplacementCover);
+  };
+  const friendly = cover('friendly'), enemy = cover('enemy');
+  assert.ok(friendly && enemy);
+  assert.notEqual(friendly.material.color.getHex(), enemy.material.color.getHex());
+  assert.equal(friendly.userData.partCount, enemy.userData.partCount);
+});
+
+test('engineer artillery and anti-aircraft mounts retain their original builder faction color', () => {
+  for (const profile of ['bofors75', 'maxim24aa']) {
+    const mount = team => {
+      const actor = { id: team, unitId: team, team, engineer: { selected: profile } };
+      const point = createEmplacement(engineerBuiltSpec(actor, { x: 0, y: 0, z: 0 }, 0));
+      point.team = team === 'enemy' ? 'friendly' : 'enemy';
+      return createEmplacementModel(point);
+    };
+    const colors = model => {
+      const materials = [];
+      model.traverse(object => { if (object.isMesh) materials.push(object.material.color.getHex()); });
+      return new Set(materials);
+    };
+    const friendly = colors(mount('friendly')), enemy = colors(mount('enemy'));
+    assert.ok(friendly.has(0x454c3c));
+    assert.ok(enemy.has(0x807951));
+    assert.ok(!enemy.has(0x454c3c));
+  }
+});
+
+test('new ferry guns and machine guns fire clear of sandbags and walls from their actual muzzles', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  const weapons = [];
+  for (const spec of NANJING_EMPLACEMENTS) {
+    const point = createEmplacement(spec), model = createEmplacementModel(point);
+    model.position.y = point.altitude ?? world.groundHeight(point.x, point.z);
+    scene.add(model);
+    model.traverse(object => { if (object.isMesh) weapons.push(object); });
+  }
+  scene.updateMatrixWorld(true);
+  for (const id of ['ferry-front-north-gun', 'ferry-front-south-gun',
+    'ferry-front-north-mg', 'ferry-front-south-mg']) {
+    const spec = NANJING_EMPLACEMENTS.find(point => point.id === id);
+    const point = createEmplacement(spec), pose = emplacementPose(point, world.groundHeight(point.x, point.z));
+    const ray = new THREE.Raycaster(new THREE.Vector3(pose.muzzle.x, pose.muzzle.y, pose.muzzle.z),
+      new THREE.Vector3(-Math.sin(point.yaw), 0, -Math.cos(point.yaw)), 0, 25);
+    const hits = ray.intersectObjects(world.solids, true);
+    assert.equal(hits.length, 0, `${id}: ${JSON.stringify(hits.slice(0, 1).map(hit =>
+      ({ distance: hit.distance, feature: hit.object.userData.nanjingFeature })))}`);
+  }
+  for (const id of ['ferry-front-north-gun', 'ferry-front-south-gun']) {
+    const point = createEmplacement(NANJING_EMPLACEMENTS.find(spec => spec.id === id));
+    const pose = emplacementPose(point, world.groundHeight(point.x, point.z));
+    const origin = new THREE.Vector3(pose.muzzle.x, pose.muzzle.y, pose.muzzle.z);
+    const direction = new THREE.Vector3(-Math.sin(point.yaw), 0, -Math.cos(point.yaw));
+    const distanceToGate = (-72 - origin.x) / direction.x;
+    const hits = new THREE.Raycaster(origin, direction, 0, distanceToGate + 5)
+      .intersectObjects([...world.solids, ...weapons.filter(object => object.userData.emplacementId !== id)], true);
+    assert.equal(hits.length, 0, `${id} cannot fire through the gate: ${JSON.stringify(hits.slice(0, 1).map(hit =>
+      ({ distance: hit.distance, feature: hit.object.userData.nanjingFeature })))}`);
+  }
+});
+
+test('the north anti-aircraft and south ferry machine guns have supported, reachable crew positions and clear outward fire', () => {
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
   const guns = NANJING_EMPLACEMENTS.filter(spec => ['ferry-north-mg', 'ferry-south-mg'].includes(spec.id));
