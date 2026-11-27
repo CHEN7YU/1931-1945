@@ -7,8 +7,8 @@ import { lightMachineGunModel, configureLightMachineGunMaterials } from './light
 import { RIFLE_PBR_ASSETS } from './weapon-assets.js';
 import { applyRifleTextures } from './optional-rifle-textures.js';
 import { RIFLE_STOCK_SECTIONS, rifleStockSection, BOLT_HANDLE, RIFLE_IRON_SIGHTS } from './rifle-contacts.js';
-import { machineGunReloadPose, ZB26_HAND } from './machine-gun-reload.js';
-import { submachineGunModel } from './submachine-gun-model.js';
+import { machineGunReloadPose, smgMagazinePresentationRotation, ZB26_HAND } from './machine-gun-reload.js';
+import { SMG_MAGAZINE, submachineGunModel } from './submachine-gun-model.js';
 
 let template;
 let distantTemplate;
@@ -546,6 +546,22 @@ function updateRifleClip(clip, state, pose) {
 function applyMachineGunFeed(model, reload) {
   const feed = model.getObjectByName('feed');
   feed.position.fromArray(reload.feed); feed.visible = reload.feedVisible;
+  const spare = model.getObjectByName('spare-magazine');
+  if (spare) {
+    if (reload.handRotation) {
+      const rotation = smgMagazinePresentationRotation(reload.handRotation);
+      const center = new THREE.Vector3(...SMG_MAGAZINE.center);
+      const rotatedCenter = center.clone().applyQuaternion(rotation);
+      feed.position.fromArray(reload.feed).add(center).sub(rotatedCenter);
+      feed.quaternion.copy(rotation);
+      spare.position.fromArray(reload.spareFeed).add(center).sub(rotatedCenter);
+      spare.quaternion.copy(rotation);
+    } else {
+      feed.quaternion.identity(); spare.quaternion.identity();
+      spare.position.fromArray(reload.spareFeed);
+    }
+    spare.visible = reload.spareVisible;
+  }
   const lid = model.getObjectByName('hopper-lid-pivot');
   if (lid) lid.rotation.z = reload.lidAngle;
   const clip = model.getObjectByName('loading-clip');
@@ -561,7 +577,7 @@ export function updateRifleModel(model, state) {
     parts.clip.visible = false;
     parts.flash.visible = state.action === 'cycle' && state.elapsed < .045;
     parts.casing.visible = false;
-    const reload = machineGunReloadPose(state);
+    const reload = machineGunReloadPose(state, { firstPerson: true });
     applyMachineGunFeed(model, reload);
     parts.rightHand.position.set(0, 0, 0);
     parts.rightHand.rotation.set(0, 0, 0);
@@ -580,7 +596,7 @@ export function updateRifleModel(model, state) {
           .add(variant.position).add(parts.leftHand.position).toArray()) };
     }
     model.userData.reloadContact = { stage: reload.stage, palm: [...reload.palm],
-      feed: [...reload.feed], press: reload.press, handWeight: reload.handWeight };
+      feed: [...reload.feed], press: reload.press, handWeight: reload.handWeight, viewDrop: reload.viewDrop };
     return pose;
   }
   parts.bolt.rotation.z = pose.boltLift;

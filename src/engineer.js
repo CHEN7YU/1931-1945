@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createConstructionState, resetConstructionState } from './construction.js';
-import { DADAO_HAND_TO_BLADE } from './dadao-model.js';
+import { hammerHandFrame, HAMMER_GRIP_RADIUS } from './engineer-hammer-pose.js';
 import { createEmplacement, emplacementObstacles } from './emplacements.js';
 import { RIFLE_CONTACTS } from './rifle-contacts.js';
 
@@ -139,7 +139,7 @@ export function engineerFootprintBlocked(footprint, obstacle, clearance = .25) {
 
 export function engineerHammerModel() {
   const tool = new THREE.Group();
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .34, 16), toolWood);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(HAMMER_GRIP_RADIUS, HAMMER_GRIP_RADIUS, .34, 16), toolWood);
   handle.position.y = .06;
   const head = new THREE.Mesh(new THREE.BoxGeometry(.19, .07, .075), toolSteel);
   head.position.y = .24; tool.add(handle, head);
@@ -160,23 +160,52 @@ export function engineerAssemblyTools() {
 export function createEngineerTool(createHand) {
   if (typeof createHand !== 'function') throw new Error('Engineer equipment requires the native hand factory');
   const root = new THREE.Group(), hand = createHand('right'), tool = engineerHammerModel();
+  hand.poseGrip(1, 0, 'hammer');
   root.add(hand, tool);
   root.userData.engineerTool = { hand, tool };
   root.traverse(node => { if (node.isMesh) { node.castShadow = false; node.frustumCulled = false; } });
   return root;
 }
 
+// The native grip wraps around hand-local +X; the hammer's long head axis is its striking axis.
+const hammerToHand = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 2.05, -Math.PI / 2, 'ZXY'));
+const hammerRest = new THREE.Vector3(.28, -.13, -.59);
+const hammerRaised = new THREE.Vector3(.30, -.045, -.57);
+const hammerImpact = new THREE.Vector3(.21, -.26, -.78);
+const hammerRestShaft = new THREE.Vector3(.05, .86, -.51);
+const hammerRaisedShaft = new THREE.Vector3(.14, .91, -.39);
+const hammerImpactShaft = new THREE.Vector3(-.12, .70, -.70);
+
 export function updateEngineerTool(root, now, building, officer, blueFieldCap = false) {
   const { hand, tool } = root.userData.engineerTool;
-  const stroke = building ? Math.sin(now * 9) : 0;
-  const orientation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.15 + stroke * .15, -.2, -.5));
-  hand.poseArm(new THREE.Vector3(.25, -.28, -.38), new THREE.Vector3(.24, -.14 + stroke * .035, -.58),
-    orientation.clone().multiply(DADAO_HAND_TO_BLADE), new THREE.Vector3(.8, -.6, .1));
-  hand.poseGrip(1, 0, 'dadao'); hand.setOfficerAppearance?.(officer, blueFieldCap);
+  const shoulder = new THREE.Vector3(.25, -.28, -.38), pole = new THREE.Vector3(.60, -.15, .70);
+  const wrist = hammerRest.clone(), shaft = hammerRestShaft.clone();
+  if (building) {
+    const cycle = ((now * 9 / (2 * Math.PI)) % 1 + 1) % 1;
+    const move = (from, to, fromShaft, toShaft, t, arc) => {
+      const progress = t * t * (3 - 2 * t);
+      wrist.copy(from).lerp(to, progress).addScaledVector(arc, 4 * progress * (1 - progress));
+      shaft.copy(fromShaft).lerp(toShaft, progress);
+    };
+    if (cycle < .28) {
+      move(hammerRest, hammerRaised, hammerRestShaft, hammerRaisedShaft,
+        cycle / .28, new THREE.Vector3(.015, .02, .014));
+    } else if (cycle < .58) {
+      move(hammerRaised, hammerImpact, hammerRaisedShaft, hammerImpactShaft,
+        (cycle - .28) / .30, new THREE.Vector3(0, .018, -.035));
+    } else if (cycle < .84) {
+      move(hammerImpact, hammerRest, hammerImpactShaft, hammerRestShaft,
+        (cycle - .58) / .26, new THREE.Vector3(.018, -.026, -.018));
+    }
+    shoulder.z -= .1 * (hammerRest.z - Math.min(wrist.z, hammerRest.z));
+  }
+  const orientation = hammerHandFrame(shoulder, wrist, pole, hand.userData.armLengths, shaft);
+  hand.poseArm(shoulder, wrist, orientation, pole, 0);
+  hand.poseGrip(1, 0, 'hammer'); hand.setOfficerAppearance?.(officer, blueFieldCap);
   root.updateMatrixWorld(true);
   const relative = root.matrixWorld.clone().invert().multiply(hand.attachmentFrame.matrixWorld);
   relative.decompose(tool.position, tool.quaternion, new THREE.Vector3());
-  tool.position.add(new THREE.Vector3(...hand.userData.throwableGrips.dadao).applyQuaternion(tool.quaternion));
-  tool.quaternion.multiply(DADAO_HAND_TO_BLADE.clone().invert());
+  tool.position.add(new THREE.Vector3(...hand.userData.throwableGrips.hammer).applyQuaternion(tool.quaternion));
+  tool.quaternion.multiply(hammerToHand);
   root.updateMatrixWorld(true);
 }

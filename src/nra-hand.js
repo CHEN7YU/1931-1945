@@ -3,8 +3,9 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { solveArm, solveCylinderGripFinger } from './nra-rifle-pose.js';
 import { throwableGripPoint } from './grenade-model.js';
 import { DADAO_GRIP } from './dadao.js';
+import { HAMMER_GRIP_RADIUS } from './engineer-hammer-pose.js';
 import { createOfficerHandAppearance, createOfficerSleeveAppearance } from './officer-appearance.js';
-import { weaponGripFingerRotation } from './weapon-hands.js';
+import { WEAPON_RELOAD_FRAMES, weaponGripFingerRotation } from './weapon-hands.js';
 
 function trimSleeveAtShoulder(mesh, upper, lower) {
   const origin = upper.getWorldPosition(new THREE.Vector3()), axis = lower.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
@@ -167,7 +168,8 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   root.userData.grenadeGrip = gripCenter.toArray();
   root.userData.throwableGrips = Object.freeze({ grenade: Object.freeze(gripCenter.toArray()),
     'explosive-pack': Object.freeze([gripCenter.x, gripCenter.y, .056]),
-    dadao: Object.freeze([gripCenter.x, gripCenter.y, DADAO_GRIP.palmDepth]) });
+    dadao: Object.freeze([gripCenter.x, gripCenter.y, DADAO_GRIP.palmDepth]),
+    hammer: Object.freeze([gripCenter.x, gripCenter.y, DADAO_GRIP.palmDepth]) });
   root.userData.fingerCount = 5;
   const weaponGrips = new Map();
   root.prepareWeaponGrip = (name, { center, depth, thickness, round = false }) => {
@@ -177,7 +179,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     }
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
-    if (weaponRig && name !== 'machine') {
+    if (weaponRig && !['machine', 'smg-magazine'].includes(name)) {
       for (const finger of fingerNames) {
         const chain = chains.get(finger);
         for (let joint = 0; joint < 3; joint++) {
@@ -205,6 +207,12 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     }
     const facing = root.getWorldQuaternion(new THREE.Quaternion()), sign = root.userData.palmFacingAxis;
     const contact = (angle, x) => {
+      if (name === 'smg-magazine') {
+        const c = Math.cos(angle), s = Math.sin(angle);
+        const ray = new THREE.Vector3(0, c, -sign * s).applyQuaternion(WEAPON_RELOAD_FRAMES.smgMagazine);
+        const extent = Math.max(Math.abs(ray.y) / (thickness + .005), Math.abs(ray.z) / (depth + .005));
+        return new THREE.Vector3(x, center[1] + c / extent, center[2] - sign * s / extent);
+      }
       const curve = value => Math.sign(value) * Math.abs(value) ** (round ? 1 : .5);
       return new THREE.Vector3(x, center[1] + (depth + .005) * curve(Math.cos(angle)),
         center[2] - sign * (thickness + .005) * curve(Math.sin(angle)));
@@ -276,22 +284,23 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
   };
   root.poseGrip = (closure, pinPull = 0, kind = 'grenade') => {
     if (![closure, pinPull].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) throw new RangeError('Invalid native finger pose');
-    if (!['grenade', 'explosive-pack', 'dadao'].includes(kind)) throw new RangeError('Hand contact needs a supported held object');
+    if (!['grenade', 'explosive-pack', 'dadao', 'hammer'].includes(kind)) throw new RangeError('Hand contact needs a supported held object');
     if (solutions.has(kind)) { applySolution(solutions.get(kind), closure, pinPull, kind); return; }
     for (const [name, rotation] of rest) bones.get(name).quaternion.copy(rotation);
     root.updateMatrixWorld(true);
     const facing = root.getWorldQuaternion(new THREE.Quaternion()), pack = kind === 'explosive-pack';
+    const cylindrical = kind === 'dadao' || kind === 'hammer';
     const center = new THREE.Vector3().fromArray(root.userData.throwableGrips[kind]);
     // The cylindrical grip includes finger-pad clearance: bones cannot lie on the handle surface.
-    const surface = (x, angle) => kind === 'dadao'
-      ? new THREE.Vector3(x, Math.sin(angle) * (DADAO_GRIP.radiusX + DADAO_GRIP.fingerPad),
-        -Math.cos(angle) * (DADAO_GRIP.radiusZ + DADAO_GRIP.fingerPad))
+    const surface = (x, angle) => cylindrical
+      ? new THREE.Vector3(x, Math.sin(angle) * ((kind === 'hammer' ? HAMMER_GRIP_RADIUS : DADAO_GRIP.radiusX) + DADAO_GRIP.fingerPad),
+        -Math.cos(angle) * ((kind === 'hammer' ? HAMMER_GRIP_RADIUS : DADAO_GRIP.radiusZ) + DADAO_GRIP.fingerPad))
       : throwableGripPoint(kind, x, angle);
     let reachAdjustment = 0;
     for (const [index, finger] of fingerNames.entries()) {
       const [first, second, third, end] = chains.get(finger), base = localPoint(first);
       const x = pack ? base.x : THREE.MathUtils.clamp(base.x, center.x - .030, center.x + .030);
-      let angle = (kind === 'dadao' ? [2.45, 2.6, 2.6, 2.3]
+      let angle = (cylindrical ? [2.45, 2.6, 2.6, 2.3]
         : pack ? [1.0, 1.15, 1.2, .7] : [1.4, 1.55, 1.55, .8])[index];
       const origin = first.getWorldPosition(new THREE.Vector3()), elbow = second.getWorldPosition(new THREE.Vector3()), dip = third.getWorldPosition(new THREE.Vector3());
       const a = origin.distanceTo(elbow), b = elbow.distanceTo(dip);
@@ -314,13 +323,15 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
       rotateEnd(third, end, root.localToWorld(contact((low + high) / 2)));
     }
     const [first, second, third, end] = chains.get('Thumb');
-    const target = root.localToWorld(surface(kind === 'dadao' ? .04 : .032, kind === 'dadao' ? -.2 : -.45).add(center));
+    const target = root.localToWorld(surface(kind === 'hammer' ? .07 : cylindrical ? .04 : .032,
+      kind === 'hammer' ? 1.8 : cylindrical ? -.2 : -.45).add(center));
     const delta = target.sub(first.getWorldPosition(new THREE.Vector3()));
     const a = first.getWorldPosition(new THREE.Vector3()).distanceTo(second.getWorldPosition(new THREE.Vector3()));
     const b = second.getWorldPosition(new THREE.Vector3()).distanceTo(third.getWorldPosition(new THREE.Vector3()));
     delta.clampLength(Math.abs(a - b) + .001, a + b - .001).add(first.getWorldPosition(new THREE.Vector3()));
     solveArm(first, second, third, delta, new THREE.Vector3(1, .3, -.25).applyQuaternion(facing));
-    rotateEnd(third, end, root.localToWorld(surface(kind === 'dadao' ? .014 : .006, kind === 'dadao' ? 1.05 : .02).add(center)));
+    rotateEnd(third, end, root.localToWorld(surface(kind === 'hammer' ? .035 : cylindrical ? .014 : .006,
+      kind === 'hammer' ? 3 : cylindrical ? 1.05 : .02).add(center)));
     const solution = { reachAdjustment, rotations: new Map([...rest.keys()].map(name => [name, bones.get(name).quaternion.clone()])) };
     solutions.set(kind, solution); applySolution(solution, closure, pinPull, kind);
   };
@@ -377,7 +388,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     root.userData.armLengths = Object.freeze([...lengths]);
     root.attachmentFrame = attachment;
     root.userData.armSource = 'nra-authorized-skinned-sleeve';
-    root.poseArm = (origin, target, facing, pole) => {
+    root.poseArm = (origin, target, facing, pole, twistWeight = .65) => {
       for (const [bone, rotation] of armRest) bone.quaternion.copy(rotation);
       alignment.matrix.copy(new THREE.Matrix4().makeTranslation(...origin.clone().sub(shoulder).toArray()).multiply(frame));
       root.updateMatrixWorld(true);
@@ -389,7 +400,7 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
       const projected = axis.clone().multiplyScalar(new THREE.Vector3(delta.x, delta.y, delta.z).dot(axis));
       const twist = new THREE.Quaternion(projected.x, projected.y, projected.z, delta.w);
       if (twist.lengthSq() > 1e-8) {
-        const shared = new THREE.Quaternion().slerp(twist.normalize(), .65).multiply(lower.getWorldQuaternion(new THREE.Quaternion()));
+        const shared = new THREE.Quaternion().slerp(twist.normalize(), twistWeight).multiply(lower.getWorldQuaternion(new THREE.Quaternion()));
         lower.quaternion.copy(lower.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(shared));
         root.updateMatrixWorld(true);
       }

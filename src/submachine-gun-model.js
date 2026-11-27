@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { RIFLE_STOCK_SECTIONS } from './rifle-contacts.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+export const SMG_MAGAZINE = Object.freeze({
+  center: Object.freeze([-.175, -.014, -.15]),
+  size: Object.freeze([.25, .044, .035]),
+});
+
 const templates = new Map();
 export function submachineGunModel(detail = 'near', materials = {}) {
   if (!['near', 'far'].includes(detail)) throw new RangeError('Invalid submachine-gun detail');
@@ -45,7 +50,9 @@ export function submachineGunModel(detail = 'near', materials = {}) {
     guard.rotation.y = Math.PI / 2; guard.position.set(0, -.076, -.055); root.add(guard);
     box(root, [.005, .025, .005], [0, -.063, -.051], dark);
     const feed = new THREE.Group(); feed.name = 'feed'; root.add(feed);
-    box(feed, [.25, .044, .035], [-.175, -.014, -.15], dark);
+    box(feed, SMG_MAGAZINE.size, SMG_MAGAZINE.center, dark);
+    const spareMagazine = new THREE.Group(); spareMagazine.name = 'spare-magazine'; spareMagazine.visible = false;
+    box(spareMagazine, SMG_MAGAZINE.size, SMG_MAGAZINE.center, dark); root.add(spareMagazine);
     box(root, [.06, .047, .055], [-.05, -.004, -.15], steel);
     const batches = new Map();
     for (const mesh of [...root.children].filter(child => child.isMesh)) {

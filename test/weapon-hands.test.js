@@ -10,6 +10,8 @@ import { rifleModel, updateRifleModel } from '../src/rifle-model.js';
 import { createRifleState, infantryWeaponProfile, rifleReloadSeconds } from '../src/rifle-action.js';
 import { applyCloseWeaponPose } from '../src/weapon-close-pose.js';
 import { RIFLE_IRON_AIM, RIFLE_IRON_SIGHTS } from '../src/rifle-contacts.js';
+import { SMG_MAGAZINE } from '../src/submachine-gun-model.js';
+import { machineGunReloadPose } from '../src/machine-gun-reload.js';
 
 const manager = new T.LoadingManager();
 manager.addHandler(/\.(png|jpe?g|dds)$/i, { setPath() { return this; }, load() { return new T.Texture(); } });
@@ -19,6 +21,116 @@ prepareNraRig(model);
 const source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
+
+test('SMG reload uses the real magazine dimensions and keeps both native arms reachable', () => {
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  const state = { ...createRifleState('sigm1920'), action: 'reload', ammo: 0 }, gun = rifleModel(state);
+  const previous = {};
+  for (let frame = 0; frame <= 1000; frame++) {
+    const fraction = frame / 1000;
+    state.elapsed = 3.2 * fraction;
+    const pose = updateRifleModel(gun, state);
+    gun.position.set(.18, -.22 + .125 * pose.lower - gun.userData.reloadContact.viewDrop, -.14 - .1 * pose.lower);
+    gun.rotation.set(-.14 * pose.lower, 0, .02 * pose.lower);
+    view.update(gun, state);
+    assert.equal(view.snapshot.visible, true, `frame ${frame}`);
+    for (const side of ['left', 'right']) {
+      const arm = view.snapshot[side].arm;
+      assert.ok(arm.reachable && arm.error < .002, `${side} frame ${frame}`);
+      assert.ok(Math.abs(new T.Vector3(...arm.shoulder).distanceTo(new T.Vector3(...arm.elbow)) - arm.lengths[0]) < 1e-6);
+      assert.ok(Math.abs(new T.Vector3(...arm.elbow).distanceTo(new T.Vector3(...arm.wrist)) - arm.lengths[1]) < 1e-6);
+      const joints = ['elbow', 'wrist'].map(name => new T.Vector3(...arm[name]).applyMatrix4(gun.matrix));
+      const rotation = gun.quaternion.clone().multiply(new T.Quaternion(...view.snapshot[side].rotation));
+      if (previous[side]) {
+        joints.forEach((point, index) => assert.ok(point.distanceTo(previous[side].joints[index]) < .012,
+          `${side} frame ${frame}: ${index ? 'wrist' : 'elbow'} jumps`));
+        assert.ok(rotation.angleTo(previous[side].rotation) < .08, `${side} frame ${frame}: hand turns discontinuously`);
+      }
+      previous[side] = { joints, rotation };
+    }
+    if (fraction >= .15 && fraction <= .8) {
+      const feed = gun.getObjectByName(gun.getObjectByName('spare-magazine').visible ? 'spare-magazine' : 'feed');
+      const hand = view.root.getObjectByName('left-grenade-hand');
+      assert.equal(view.snapshot.left.grip.weights['smg-magazine'], 1);
+      for (const finger of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+        const tip = feed.worldToLocal(hand.getObjectByName(`LeftHand${finger}4`).getWorldPosition(new T.Vector3()));
+        tip.sub(new T.Vector3(...SMG_MAGAZINE.center));
+        const clearance = Math.max(Math.abs(tip.y) - SMG_MAGAZINE.size[1] / 2,
+          Math.abs(tip.z) - SMG_MAGAZINE.size[2] / 2);
+        assert.ok(Math.abs(tip.x) < SMG_MAGAZINE.size[0] / 2 && clearance > .0024 && clearance < .008,
+          `${finger} frame ${frame}: ${tip.toArray()} clearance ${clearance}`);
+      }
+      assert.ok(view.snapshot.left.wristAngle < 65 * Math.PI / 180,
+        `left wrist frame ${frame}: ${view.snapshot.left.wristAngle * 180 / Math.PI}`);
+    }
+  }
+});
+
+test('SMG changes magazines only after the actual left hand and magazine leave the view', () => {
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  const state = { ...createRifleState('sigm1920'), action: 'reload', ammo: 0 }, gun = rifleModel(state);
+  const camera = new T.PerspectiveCamera(72, 1.6, .1, 1000);
+  camera.updateMatrixWorld(true);
+  let previous = null;
+  for (let frame = 240; frame <= 650; frame++) {
+    const fraction = frame / 1000;
+    state.elapsed = 3.2 * fraction;
+    const pose = updateRifleModel(gun, state);
+    const reload = machineGunReloadPose(state, { firstPerson: true });
+    gun.position.set(.18, -.22 + .125 * pose.lower - reload.viewDrop, -.14 - .1 * pose.lower);
+    gun.rotation.set(-.14 * pose.lower, 0, .02 * pose.lower);
+    view.update(gun, state);
+    assert.equal(view.snapshot.visible, true, `frame ${frame}`);
+    const joints = ['left', 'right'].flatMap(side => ['elbow', 'wrist'].map(name =>
+      new T.Vector3(...view.snapshot[side].arm[name]).applyMatrix4(gun.matrix)));
+    if (previous) joints.forEach((point, index) => assert.ok(point.distanceTo(previous[index]) < .012,
+      `frame ${frame}: ${index < 2 ? 'left' : 'right'} ${index % 2 ? 'wrist' : 'elbow'} jumps`));
+    previous = joints;
+    if (frame < 390 || frame > 410) continue;
+    const hand = view.root.getObjectByName('left-grenade-hand');
+    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+      for (let joint = 1; joint <= 4; joint++) {
+        const point = hand.getObjectByName(`LeftHand${finger}${joint}`).getWorldPosition(new T.Vector3()).project(camera);
+        assert.ok(point.y < -1, `${fraction}: ${finger}${joint} remains in view at ${point.y}`);
+      }
+    }
+    const feed = gun.getObjectByName(reload.spareVisible ? 'spare-magazine' : 'feed');
+    const center = new T.Vector3(...SMG_MAGAZINE.center);
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+      const point = center.clone().add(new T.Vector3(x, y, z).multiply(new T.Vector3(...SMG_MAGAZINE.size)).multiplyScalar(.5));
+      const screen = feed.localToWorld(point).project(camera);
+      assert.ok(screen.y < -1, `${fraction}: magazine remains in view at ${screen.y}`);
+    }
+  }
+});
+
+test('SMG reload keeps its owned arm contacts while entering and leaving close-ready presentation', () => {
+  const view = createWeaponHands(side => createNraGrenadeHand(source, side, { fullArm: true, weaponRig: true }));
+  const state = { ...createRifleState('sigm1920'), action: 'reload', ammo: 0 }, gun = rifleModel(state);
+  for (const fraction of [0, .08, .15, .23, .35, .45, .65, .79, .9, 1]) {
+    state.elapsed = 3.2 * fraction;
+    const pose = updateRifleModel(gun, state), original = structuredClone(state);
+    const drop = machineGunReloadPose(state, { firstPerson: true }).viewDrop;
+    let previous = null;
+    for (let frame = 0; frame <= 800; frame++) {
+      const blend = frame <= 400 ? frame / 400 : (800 - frame) / 400;
+      gun.position.set(.18, -.22 + .125 * pose.lower - drop, -.14 - .1 * pose.lower);
+      gun.rotation.set(-.14 * pose.lower, 0, .02 * pose.lower);
+      applyCloseWeaponPose(gun, blend);
+      view.update(gun, state);
+      assert.equal(view.snapshot.visible, true, `${fraction}/${frame}: close-ready stowed the hands`);
+      const joints = ['left', 'right'].flatMap(side => ['elbow', 'wrist'].map(name =>
+        new T.Vector3(...view.snapshot[side].arm[name]).applyMatrix4(gun.matrix)));
+      for (const side of ['left', 'right'])
+        assert.ok(view.snapshot[side].arm.reachable && view.snapshot[side].arm.error < .002);
+      if (previous) joints.forEach((point, index) => assert.ok(point.distanceTo(previous[index]) < .005,
+        `${fraction}/${frame}: ${index < 2 ? 'left' : 'right'} ${index % 2 ? 'wrist' : 'elbow'} ` +
+          `jumps ${point.distanceTo(previous[index])} from ${previous[index].toArray()} to ${point.toArray()}`));
+      previous = joints;
+      assert.deepEqual(state, original);
+    }
+  }
+});
 
 test('iron aiming aligns the visible rear shoulders with the front tip without moving the real grips', () => {
   const state = createRifleState(), gun = rifleModel(state);

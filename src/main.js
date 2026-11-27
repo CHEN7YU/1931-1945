@@ -4740,9 +4740,13 @@ function updateCamera(dt) {
       base.y = THREE.MathUtils.lerp(base.y, targetY, response);
       base.z = THREE.MathUtils.lerp(base.z, targetZ, response);
       weapon.position.copy(base);
+      if (profile.smg) {
+        weapon.position.y += .17 * pose.lower - weapon.userData.reloadContact.viewDrop;
+        weapon.position.z -= .10 * pose.lower;
+      }
       weapon.position.z += kick.rear;
       weapon.rotation.set((ironAim?.pitch ?? 0) * supportAim + motion.weaponPitch * swayScale - pose.lower * .14 + kick.weaponPitch,
-        kick.weaponYaw, -motion.sprintBlend * .12 - pose.lower * .08);
+        kick.weaponYaw, -motion.sprintBlend * .12 - pose.lower * .08 + (profile.smg ? pose.lower * .10 : 0));
       weapon.updateMatrixWorld(true);
       // Test the intended shoulder-to-muzzle segment, not the already-retracted gun.
       const start = new THREE.Vector3(targetX, targetY, -.1).applyMatrix4(camera.matrixWorld);

@@ -15,7 +15,9 @@ import { DADAO_DIMENSIONS, dadaoViewModel, updateDadaoView } from '../src/dadao-
 import { loadDadaoSurfaces } from '../src/dadao-surface.js';
 import { createNraDadaoPose } from '../src/nra-dadao-pose.js';
 import { applyNativeBodyLean } from '../src/nra-gait.js';
-import { dadaoBodyMotion } from '../src/dadao.js';
+import { DADAO_GRIP, dadaoBodyMotion } from '../src/dadao.js';
+import { createEngineerTool, updateEngineerTool } from '../src/engineer.js';
+import { HAMMER_GRIP_RADIUS } from '../src/engineer-hammer-pose.js';
 
 await loadDadaoSurfaces(1, { async loadAsync(url) { return new T.Texture({ src: url }); } });
 
@@ -26,6 +28,65 @@ const model = new FBXLoader(manager).parse(bytes.buffer.slice(bytes.byteOffset, 
 const rig = prepareNraRig(model), source = new T.Group(), bounds = new T.Box3().setFromObject(model);
 source.scale.setScalar(1.78 / (bounds.max.y - bounds.min.y)); source.rotation.y = Math.PI;
 model.position.y -= bounds.min.y; source.add(model); source.updateMatrixWorld(true);
+
+test('engineer hammer follows the native wrist and its fingers grip the real handle during the whole swing', () => {
+  const view = createEngineerTool(side => createNraGrenadeHand(source, side, { fullArm: true }));
+  const camera = new T.PerspectiveCamera(72, 1.6, .025, 20);
+  camera.position.set(1, 2, 3); camera.rotation.set(.3, -.5, .2); camera.add(view); camera.updateMatrixWorld(true);
+  const { hand, tool } = view.userData.engineerTool, bones = [];
+  hand.traverse(node => { if (node.isBone) bones.push([node, node.position.clone(), node.scale.clone()]); });
+  let previous = null, raisedHead, strikingHead;
+  for (let frame = 0; frame <= 120; frame++) {
+    updateEngineerTool(view, frame / 120 * Math.PI * 2 / 9, true, false);
+    if (frame === 34 || frame === 70) {
+      const head = view.worldToLocal(tool.localToWorld(new T.Vector3(0, .24, 0)));
+      if (frame === 34) raisedHead = head; else strikingHead = head;
+    }
+    const arm = hand.armSnapshot, forearm = new T.Vector3(...arm.wrist).sub(new T.Vector3(...arm.elbow)).normalize();
+    const handleAxis = new T.Vector3(0, 1, 0).applyQuaternion(tool.quaternion);
+    const thumb = tool.worldToLocal(hand.getObjectByName('RightHandThumb4').getWorldPosition(new T.Vector3()));
+    const rotation = view.getWorldQuaternion(new T.Quaternion()).invert()
+      .multiply(hand.attachmentFrame.getWorldQuaternion(new T.Quaternion()));
+    assert.ok(arm.reachable && arm.error < 1e-6);
+    const alignment = new T.Vector3(0, 1, 0).applyQuaternion(rotation).dot(forearm);
+    assert.ok(alignment > .65, `hammer grip folds against the forearm at ${frame}: ${alignment}`);
+    assert.ok(Math.abs(handleAxis.x) < .16 && handleAxis.y > .69 && handleAxis.z < -.37,
+      'hammer shaft points up and forward, not across the screen');
+    assert.ok(thumb.y > .02, 'right thumb must sit on the head side of the grip');
+    if (frame >= 44 && frame <= 70) {
+      const face = new T.Vector3(1, 0, 0).applyQuaternion(tool.quaternion);
+      assert.ok(face.z < -.55 && face.y < -.15, `striking face must point forward and down: ${frame} ${face.toArray()}`);
+      assert.ok(forearm.z < -.7, `the forearm must drive the strike forward at ${frame}: ${forearm.toArray()}`);
+    }
+    const elbow = new T.Vector3(...arm.elbow), wrist = new T.Vector3(...arm.wrist);
+    assert.ok(elbow.y < wrist.y - .02, `elbow rides above the grip at ${frame}`);
+    if (previous) {
+      assert.ok(elbow.distanceTo(previous.elbow) < .02 && wrist.distanceTo(previous.wrist) < .02,
+        `arm joints jump at frame ${frame}: elbow ${elbow.distanceTo(previous.elbow)}, wrist ${wrist.distanceTo(previous.wrist)}`);
+      assert.ok(rotation.angleTo(previous.rotation) < .06,
+        `hammer wrist must not snap between stroke phases at frame ${frame}: ${rotation.angleTo(previous.rotation)}`);
+    }
+    previous = { elbow, wrist, rotation };
+    const grip = hand.attachmentFrame.localToWorld(new T.Vector3(...hand.userData.throwableGrips.hammer));
+    assert.ok(tool.localToWorld(new T.Vector3()).distanceTo(grip) < 1e-6);
+    assert.equal(hand.gripSnapshot.kind, 'hammer');
+    assert.ok(hand.gripSnapshot.reachAdjustment < .001);
+    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+      const tip = tool.worldToLocal(hand.getObjectByName(`RightHand${finger}4`).getWorldPosition(new T.Vector3()));
+      assert.ok(Math.abs(Math.hypot(tip.x, tip.z) - HAMMER_GRIP_RADIUS - DADAO_GRIP.fingerPad) < .001,
+        `${finger} frame ${frame}: ${tip.toArray()}`);
+      assert.ok(tip.y > -.11 && tip.y < .23);
+      if (finger === 'Thumb') {
+        const eye = tool.worldToLocal(camera.getWorldPosition(new T.Vector3()));
+        const visibility = new T.Vector2(tip.x, tip.z).normalize().dot(new T.Vector2(eye.x, eye.z).normalize());
+        assert.ok(visibility > .5, `thumb hides behind the handle at ${frame}: ${visibility}`);
+      }
+    }
+    for (const [bone, position, scale] of bones) { assert.deepEqual(bone.position, position); assert.deepEqual(bone.scale, scale); }
+  }
+  assert.ok(strikingHead.z < raisedHead.z - .1 && strikingHead.y < raisedHead.y - .1,
+    'the hammer head must strike forward and down from its raised position');
+});
 
 test('sword legs absorb weight, the forward foot steps with clearance and the rear heel pivots around a planted toe', () => {
   const root = clone(source), bones = new Map();

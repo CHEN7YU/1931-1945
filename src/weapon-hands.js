@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { riflePose, infantryWeaponProfile } from './rifle-action.js';
-import { machineGunReloadPose } from './machine-gun-reload.js';
+import { machineGunReloadPose, smgMagazinePresentationRotation, SMG_RELOAD_FRAMES } from './machine-gun-reload.js';
 import { BOLT_HANDLE } from './rifle-contacts.js';
+import { SMG_MAGAZINE } from './submachine-gun-model.js';
 
 export const WEAPON_HAND_GRIPS = Object.freeze({
   left: Object.freeze({
     support: { center: [0, .115, -.03], depth: .022, thickness: .028 },
     magazine: { center: [0, .108, -.05], depth: .0145, thickness: .038 },
+    'smg-magazine': { center: [0, .108, -.05], depth: SMG_MAGAZINE.size[2] / 2, thickness: SMG_MAGAZINE.size[1] / 2 },
     press: { center: [0, .115, -.035], depth: .017, thickness: .025 },
   }),
   right: Object.freeze({
@@ -30,7 +32,10 @@ const supportFrame = frame([-1, 0, -1], [.641, .423, -.641]);
 const pressFrame = frame([0, 0, 1], [1, 0, 0]);
 const boltFrame = frame([0, 0, 1], [-.8, .6, 0]);
 const magazineFrame = frame([0, -1, 0], [1, 0, 0]);
-export const WEAPON_RELOAD_FRAMES = Object.freeze({ magazine: magazineFrame, press: pressFrame });
+const smgMagazineFrame = SMG_RELOAD_FRAMES.magazine;
+const smgCarryFrame = SMG_RELOAD_FRAMES.carry;
+export const WEAPON_RELOAD_FRAMES = Object.freeze({ magazine: magazineFrame, smgMagazine: smgMagazineFrame,
+  smgCarry: smgCarryFrame, press: pressFrame });
 
 export function weaponGripFingerRotation(name, rest, side, kind) {
   const joint = Number(name.at(-1)) - 1, euler = new THREE.Euler().setFromQuaternion(rest, 'XYZ');
@@ -49,7 +54,7 @@ export function weaponGripFingerRotation(name, rest, side, kind) {
   return new THREE.Quaternion().setFromEuler(euler);
 }
 
-function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, outward = null) {
+function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, outward = null, constraintWeight = 1) {
   const axis = wrist.clone().sub(shoulder), distance = axis.length(), [upper, lower] = lengths;
   axis.normalize();
   const along = (upper * upper - lower * lower + distance * distance) / (2 * distance);
@@ -59,6 +64,7 @@ function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, o
   desired.addScaledVector(axis, -desired.dot(axis));
   const downInPlane = down.clone().addScaledVector(axis, -down.dot(axis));
   if (desired.lengthSq() < 1e-10) desired.copy(downInPlane);
+  const unconstrained = desired.clone().normalize();
   if (outward) {
     const lateral = outward.clone().addScaledVector(axis, -outward.dot(axis)).normalize();
     // Keep the loading elbow on the outside branch, including while the palm turns.
@@ -78,6 +84,7 @@ function alignedElbowPole(shoulder, wrist, forward, lengths, down, belowWrist, o
         Math.sqrt(1 - along * along) * direction);
     }
   }
+  if (constraintWeight < 1) desired.lerp(unconstrained, 1 - constraintWeight).normalize();
   return { pole: desired, constraint: { requested: belowWrist, available, limited } };
 }
 
@@ -111,7 +118,7 @@ export function createWeaponHands(createHand) {
       total += goal.weight;
     }
     wrist.divideScalar(total);
-    const loading = side === 'left' ? Math.min(1, (weights.magazine ?? 0) + (weights.press ?? 0)) : 0;
+    const loading = side === 'left' ? Math.min(1, (weights.magazine ?? 0) + (weights['smg-magazine'] ?? 0) + (weights.press ?? 0)) : 0;
     const supportWeight = weights.support ?? 0, triggerWeight = Math.min(1, (weights.trigger ?? 0) + (weights.pistol ?? 0));
     const shoulder = new THREE.Vector3(side === 'left' ? -.18 : .22 + (weights.bolt ?? 0) * .025,
       side === 'left' ? -.31 + loading * .06 - supportWeight * supportDrop : -.20,
@@ -135,11 +142,14 @@ export function createWeaponHands(createHand) {
     }
     const defaultPole = new THREE.Vector3(side === 'left' ? -.5 : .5, -1, -.15).transformDirection(inverse);
     const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
+    const smgLoading = weights['smg-magazine'] ?? 0;
     const down = new THREE.Vector3(0, -1, 0).transformDirection(inverse);
     const elbow = alignedElbowPole(shoulder, wrist, forward, hand.userData.armLengths, down,
-      loading > 0 ? .05 * smooth(shoulder.clone().sub(wrist).dot(down), -.05, .1) : supportWeight > .999 ? .05 : 0,
-      loading > 0 ? new THREE.Vector3(-1, -.5, .1).transformDirection(inverse)
-        .multiplyScalar(.1 * smooth(loading, 0, .2) + .8 * loading * (1 - loading)) : null);
+      (loading > 0 ? .05 * smooth(shoulder.clone().sub(wrist).dot(down), -.05, .1) : supportWeight > .999 ? .05 : 0) *
+        (1 - smgLoading),
+      loading > 0 && smgLoading < 1 ? new THREE.Vector3(-1, -.5, .1).transformDirection(inverse)
+        .multiplyScalar((.1 * smooth(loading, 0, .2) + .8 * loading * (1 - loading)) * (1 - smgLoading)) : null,
+      1 - smgLoading);
     // Choose the elbow on its two-bone circle to align the forearm with the palm,
     // rather than solving a hand target with an unrelated, fixed elbow direction.
     elbow.pole.lerp(defaultPole.clone().multiplyScalar(.25), 1 - Math.max(supportWeight + loading, triggerWeight));
@@ -199,13 +209,19 @@ export function createWeaponHands(createHand) {
       const support = goal('left', 'support', [0, supportHeight, -.34], supportFrame);
       let left = [support];
       if (profile.automatic && state.action === 'reload') {
-        const reload = machineGunReloadPose(state), t = state.elapsed / profile.reloadSeconds;
+        const reload = machineGunReloadPose(state, { firstPerson: true }), t = state.elapsed / profile.reloadSeconds;
         const reach = reload.handWeight;
         const pressing = reload.pressWeight;
-        const carry = state.model === 'zb26' ? [.065, .127, -.247].map((value, i) => value + reload.feed[i])
-          : [reload.palm[0] + .035, reload.palm[1] - .025, reload.palm[2]];
+        const smgFeed = reload.spareVisible ? reload.spareFeed : reload.feed;
+        const smgOffset = new THREE.Vector3(-.025, 0, 0)
+          .applyQuaternion(smgMagazinePresentationRotation(reload.handRotation));
+        const carry = profile.smg ? SMG_MAGAZINE.center.map((value, i) => value + smgFeed[i] + smgOffset.getComponent(i))
+          : state.model === 'zb26' ? [.065, .127, -.247].map((value, i) => value + reload.feed[i])
+            : [reload.palm[0] + .035, reload.palm[1] - .025, reload.palm[2]];
         const top = state.model === 'zb26' ? [.065, .182 - reload.press, -.247] : reload.palm;
-        const magazine = goal('left', 'magazine', carry, magazineFrame, reach * (1 - pressing));
+        const smgFrame = smgMagazineFrame.clone().slerp(smgCarryFrame, reload.handRotation);
+        const magazine = goal('left', profile.smg ? 'smg-magazine' : 'magazine', carry,
+          profile.smg ? smgFrame : magazineFrame, reach * (1 - pressing));
         if (state.model === 'zb26' && t >= .7 && t < .78) magazine.wrist.y += Math.sin((t - .7) / .08 * Math.PI) * .10;
         left = [
           { ...support, weight: 1 - reach }, magazine,
