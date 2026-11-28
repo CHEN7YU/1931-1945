@@ -42,15 +42,15 @@ try {
           controlPose.yaw = -Math.PI / 2; controlPose.pitch = -.1;
           setGameState('playing'); bindControlInput(); updateCamera(0);
         },
-        setupWalkRamp() {
+        setupWalkRamp(x, z, direction) {
           setGameState('pause'); missionBriefing.hide();
           for (const enemy of enemies) enemy.health = 0;
-          const actor = controlledSoldier(entities), x = .02, z = -24;
+          const actor = controlledSoldier(entities);
           actor.position.set(x, world.groundHeight(x, z), z);
           if (actor.nativeMotion) actor.nativeMotion.position = { x, z };
           stopLocomotion(actor.locomotion);
           Object.assign(actor.traversal, { kind: 'grounded', velocity: 0, plan: null });
-          controlPose.yaw = Math.PI / 2; controlPose.pitch = -.1;
+          controlPose.yaw = direction * Math.PI / 2; controlPose.pitch = -.1;
           setGameState('playing'); bindControlInput(); updateCamera(0);
         },
         sample() {
@@ -72,7 +72,7 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
   await page.locator('#world').click();
   const runs = [];
-  for (const x of process.env.RAMP_ONLY === '1' ? [] : [-1, 17]) {
+  for (const x of process.env.RAMP_ONLY === '1' || process.env.WALK_ONLY === '1' ? [] : [-1, 17]) {
     await page.evaluate(x => bridgeSideReview.setup(x), x);
     await page.keyboard.down('w');
     const samples = [], deadline = Date.now() + 45000;
@@ -96,50 +96,62 @@ try {
     }
     runs.push({ x, samples });
   }
-  await page.evaluate(() => bridgeSideReview.setupAirborneRamp());
-  await page.keyboard.down('w');
   const rampSamples = [];
-  try {
-    for (let frame = 0; frame < 60; frame++) {
-      rampSamples.push(await page.evaluate(() => bridgeSideReview.sample()));
-      await page.waitForTimeout(20);
+  if (process.env.WALK_ONLY !== '1') {
+    await page.evaluate(() => bridgeSideReview.setupAirborneRamp());
+    await page.keyboard.down('w');
+    try {
+      for (let frame = 0; frame < 60; frame++) {
+        rampSamples.push(await page.evaluate(() => bridgeSideReview.sample()));
+        await page.waitForTimeout(20);
+      }
+    } finally {
+      await page.keyboard.up('w');
     }
-  } finally {
-    await page.keyboard.up('w');
+    if (process.env.BRIDGE_BASELINE === '1') console.log(JSON.stringify({
+      rampSamples: [rampSamples[0], rampSamples[1], rampSamples.at(-1)],
+    }));
+    for (const sample of rampSamples)
+      assert.ok(sample.y >= sample.floor - .06, `airborne ramp crossing below terrain: ${JSON.stringify(sample)}`);
+    assert.equal(rampSamples.at(-1).traversal, 'grounded');
+    assert.ok(rampSamples.at(-1).x < 0, 'raised ramp should block entry from below');
+    await page.screenshot({ path: join(directory, 'airborne-ramp.png') });
   }
-  if (process.env.BRIDGE_BASELINE === '1') console.log(JSON.stringify({
-    rampSamples: [rampSamples[0], rampSamples[1], rampSamples.at(-1)],
-  }));
-  for (const sample of rampSamples)
-    assert.ok(sample.y >= sample.floor - .06, `airborne ramp crossing below terrain: ${JSON.stringify(sample)}`);
-  assert.equal(rampSamples.at(-1).traversal, 'grounded');
-  assert.ok(rampSamples.at(-1).x < 0, 'raised ramp should block entry from below');
-  await page.screenshot({ path: join(directory, 'airborne-ramp.png') });
-  await page.evaluate(() => bridgeSideReview.setupWalkRamp());
-  await page.keyboard.down('w');
-  try {
-    await page.waitForFunction(() => {
-      const sample = bridgeSideReview.sample();
-      return sample.x < -.03 && sample.traversal === 'jumping' && sample.y < .54;
-    }, null, { timeout: 5000, polling: 10 });
-  } finally {
-    await page.keyboard.up('w');
-  }
-  await page.keyboard.down('s');
-  const rampWalkSamples = [];
-  try {
-    for (let frame = 0; frame < 60; frame++) {
-      rampWalkSamples.push(await page.evaluate(() => bridgeSideReview.sample()));
-      await page.waitForTimeout(20);
+  const rampWalks = [];
+  for (const slow of [false, true]) for (const z of [-24, -8]) for (const direction of [1, -1]) {
+    const x = direction === 1 ? .02 : 15.98;
+    await page.evaluate(({ x, z, direction }) => bridgeSideReview.setupWalkRamp(x, z, direction), { x, z, direction });
+    const initial = await page.evaluate(() => bridgeSideReview.sample());
+    if (slow) await page.keyboard.down('c');
+    await page.keyboard.down('w');
+    try {
+      await page.waitForFunction(({ direction, initialY, slow }) => {
+        const sample = bridgeSideReview.sample();
+        const edge = slow ? 0 : .03;
+        return (direction === 1 ? sample.x < -edge : sample.x > 16 + edge) &&
+          sample.traversal === 'jumping' && sample.y < initialY - (slow ? .005 : .04);
+      }, { direction, initialY: initial.y, slow }, { timeout: 5000, polling: 10 });
+    } finally {
+      await page.keyboard.up('w');
     }
-  } finally {
-    await page.keyboard.up('s');
+    await page.keyboard.down('s');
+    const samples = [];
+    try {
+      for (let frame = 0; frame < 60; frame++) {
+        samples.push(await page.evaluate(() => bridgeSideReview.sample()));
+        await page.waitForTimeout(20);
+      }
+    } finally {
+      await page.keyboard.up('s');
+      if (slow) await page.keyboard.up('c');
+    }
+    for (const sample of samples)
+      assert.ok(sample.y >= sample.floor - .06, `walk-off return below terrain: ${JSON.stringify(sample)}`);
+    assert.equal(samples.at(-1).traversal, 'grounded');
+    rampWalks.push({ x, z, direction, slow, samples });
   }
-  for (const sample of rampWalkSamples)
-    assert.ok(sample.y >= sample.floor - .06, `walk-off return below terrain: ${JSON.stringify(sample)}`);
-  assert.equal(rampWalkSamples.at(-1).traversal, 'grounded');
   assert.deepEqual(errors, []);
-  await writeFile(join(directory, 'review.json'), JSON.stringify({ runs, rampSamples, rampWalkSamples, errors,
+  await writeFile(join(directory, 'review.json'), JSON.stringify({ runs, rampSamples, rampWalks, errors,
     limitation: 'Low-quality gameplay diagnostic: player placed at each starting pose, enemies disabled, then moved by real keyboard input. Neither ramp case establishes the original screenshot path.' }, null, 2));
 } finally {
   await browser.close();
