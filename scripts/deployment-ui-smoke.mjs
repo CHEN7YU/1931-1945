@@ -20,11 +20,17 @@ try {
   await page.route(/\/src\/main\.js(?:\?|$)/, async route => {
     const response = await route.fetch();
     const original = await response.text();
+    await page.waitForFunction(() => !document.getElementById('loading').hidden, null, { timeout: 180000 });
     loadingMusic = await page.evaluate(() => {
       const audio = document.getElementById('menu-music');
       return { playing: !audio.paused, time: audio.currentTime, loading: !document.getElementById('loading').hidden };
     });
     await route.fulfill({ response, body: original + `
+window.__baseSpawnReview = () => ({
+  spawns: spawnPoints.filter(point => ['china-base', 'china-garage', 'japan-base'].includes(point.id))
+    .map(point => ({ id: point.id, kind: point.kind, flag: Boolean(baseSpawnViews.get(point.id)?.getObjectByName('spawn-flag')),
+      pole: Boolean(baseSpawnViews.get(point.id)?.getObjectByName('spawn-flagpole')) })),
+});
 window.__deploymentFixture = (owned = true) => {
   for (const actor of allies) actor.health = 0;
   const point = objectives.find(point => point.id === 'A');
@@ -114,6 +120,14 @@ window.__deploymentFixture = (owned = true) => {
   await page.locator('#spawn-choices [data-spawn="china-base"]').click();
   await page.locator('#confirm-deploy').click();
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 120000 });
+  const baseSpawns = await page.evaluate(() => window.__baseSpawnReview().spawns);
+  for (const id of ['china-base', 'china-garage']) {
+    const spawn = baseSpawns.find(point => point.id === id);
+    assert.ok(spawn, `${id} must remain available for deployment`);
+    assert.equal(spawn.flag, false); assert.equal(spawn.pole, false);
+  }
+  assert.equal(baseSpawns.find(point => point.id === 'japan-base').flag, true);
+  await page.screenshot({ path: join(directory, 'spawn-without-flags.png') });
   assert.ok(loadingMusic?.playing && loadingMusic.loading && loadingMusic.time > 0, 'music continues during actual main-module loading');
   await page.waitForFunction(() => document.getElementById('menu-music').paused && document.getElementById('menu-music').currentTime === 0);
   await page.evaluate(() => window.__deploymentFixture(true));
@@ -139,7 +153,13 @@ window.__deploymentFixture = (owned = true) => {
   await page.waitForFunction(() => window.__battle.state === 'playing' && window.__battle.deployments === 2);
   assert.equal(await page.evaluate(() => window.__battle.type), 'infantry');
   assert.equal(await page.evaluate(() => window.__battle.allies.length), 11);
+  await page.keyboard.down('Tab');
+  await page.keyboard.down('Alt');
+  await page.waitForFunction(() => document.pointerLockElement === null);
   await page.locator('#pause-button').click();
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Tab');
+  await page.waitForFunction(() => window.__battle.state === 'pause');
   await page.locator('#back-menu').click();
   await page.locator('#deploy').click();
   await page.locator('#confirm-identity').click();

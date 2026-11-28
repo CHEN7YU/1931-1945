@@ -51,7 +51,7 @@ const activateMusic = event => {
 document.addEventListener('pointerdown', activateMusic, { capture: true });
 document.addEventListener('keydown', activateMusic, { capture: true });
 for (const button of document.querySelectorAll('[data-menu-music-toggle]'))
-  button.addEventListener('click', () => { menuMusic.toggle(); endingMusic.setMuted(menuMusic.snapshot.muted); });
+  button.addEventListener('click', () => menuMusic.toggle());
 menuMusic.setState('menu');
 if (launcherPreferences.status.problem) {
   document.querySelector('#menu [data-preferences-status]').textContent = launcherPreferences.status.message;

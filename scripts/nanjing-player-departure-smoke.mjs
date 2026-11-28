@@ -52,6 +52,14 @@ try {
           const shore = ferryBoardingPoints(world.ferries[2]).shore;
           teammate.position.set(shore.x, world.groundHeight(shore.x, shore.z), shore.z);
           teammate.nativeMotion.position = { x: shore.x, z: shore.z };
+          const approaching = allies.find(actor => actor !== controlledSoldier(entities) && actor !== teammate);
+          approaching.health = 100;
+          const goal = nanjingBoardingGoal(approaching);
+          approaching.position.set(goal.x + 6, world.groundHeight(goal.x + 6, goal.z), goal.z);
+          approaching.nativeMotion.position = { x: approaching.position.x, z: approaching.position.z };
+          approaching.nextThink = 0;
+          this.approaching = approaching; this.approachGoal = goal;
+          this.approachStart = Math.hypot(approaching.position.x - goal.x, approaching.position.z - goal.z);
           other.health = 100; other.position.set(50, 0, 40);
           other.nextThink = Infinity;
           rebuildForces(); updateNanjingMission(0);
@@ -59,11 +67,14 @@ try {
           return { required: nanjingCampaign.requiredAISquads, ready: nanjingAISquadsBoarded(nanjingCampaign) };
         },
         waitForTeammate() {
-          for (let i = 0; i < 600 && this.teammate.tactics.nanjingFerry?.phase !== 'aboard' &&
-            this.teammate.tactics.nanjingFerry?.phase !== 'evacuated'; i++)
+          for (let i = 0; i < 600; i++)
             advanceBattleStep(.05, time + .05);
           return { phase: this.teammate.tactics.nanjingFerry?.phase,
-            playerSelected: nanjingCampaign.playerBoardingBoatId, otherHealth: this.other.health };
+            playerSelected: nanjingCampaign.playerBoardingBoatId, otherHealth: this.other.health,
+            approachStart: this.approachStart,
+            approachEnd: Math.hypot(this.approaching.position.x - this.approachGoal.x,
+              this.approaching.position.z - this.approachGoal.z),
+            approachPhase: this.approaching.tactics.nanjingFerry?.phase };
         },
         advance() {
           for (let i = 0; i < 400 && !nanjingCampaign.outcome; i++) {
@@ -81,6 +92,12 @@ try {
   });
   await page.goto(new URL('/?campaign=nanjing&resources=low-memory',
     process.env.GAME_URL ?? 'http://127.0.0.1:5376/').href);
+  if (process.env.REVIEW_MUSIC === '1') {
+    const toggle = page.locator('#overlay [data-menu-music-toggle]');
+    if ((await toggle.textContent()).includes('点击开启')) await toggle.click();
+    await toggle.click();
+    assert.match(await toggle.textContent(), /静音/);
+  }
   await setQualityPreset(page, 'low');
   await deployFromMenu(page);
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 180000 });
@@ -91,9 +108,11 @@ try {
   if (stuck) {
     assert.deepEqual(start, { ready: false, required: 1 });
     const teammate = await page.evaluate(() => departureReview.waitForTeammate());
-    assert.ok(['aboard', 'evacuated'].includes(teammate.phase), JSON.stringify(teammate));
-    assert.equal(teammate.playerSelected, null, 'the teammate boards without a player interaction');
+    assert.equal(teammate.phase, undefined, 'the player squad must wait on shore before F');
+    assert.equal(teammate.playerSelected, null, 'waiting does not select a boat for the player');
     assert.equal(teammate.otherHealth, 100, 'an unboarded AI remains alive');
+    assert.ok(teammate.approachEnd < teammate.approachStart - 1, JSON.stringify(teammate));
+    assert.equal(teammate.approachPhase, undefined, 'approaching teammate remains on shore');
   } else assert.deepEqual(start, { ready: true, waiting: 0, aboard, unrescued: 1 });
   await page.keyboard.press('f');
   const result = await page.evaluate(() => departureReview.advance());
@@ -104,6 +123,13 @@ try {
   await page.waitForFunction(() => departureReview.ending().opacity > .05, null, { timeout: 30000 });
   const ending = await page.evaluate(() => departureReview.ending());
   assert.ok(ending.opacity > .05, 'the fade actually darkens the scene');
+  if (process.env.REVIEW_MUSIC === '1') {
+    await page.waitForFunction(() => window.__battle.battleEnding.phase === 'history', null, { timeout: 60000 });
+    await page.waitForFunction(() => {
+      const audio = document.getElementById('ending-music');
+      return !audio.paused && audio.currentTime > .1 && audio.volume > 0;
+    }, null, { timeout: 15000 });
+  }
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

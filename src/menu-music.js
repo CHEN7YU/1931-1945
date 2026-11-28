@@ -149,7 +149,7 @@ export function getMenuMusic() {
         for (const button of document.querySelectorAll('[data-menu-music-toggle]')) {
           button.textContent = `背景音乐：${failure ? '加载失败' : muted ? '静音' : waiting ? '点击开启' : '开启'}`;
           button.setAttribute('aria-pressed', String(!muted));
-          button.title = failure ?? '背景音乐 · 受总音量控制，可单独静音；大厅和片尾分别播放';
+          button.title = failure ?? '大厅背景音乐 · 受总音量控制，静音不影响片尾音乐';
         }
       },
       onError: error => console.error('大厅背景音乐不可用：', error),

@@ -215,7 +215,7 @@ export function rallyPointModel(team = 'friendly', preview = false) {
   return group;
 }
 
-export function baseSpawnModel(team = 'friendly') {
+export function baseSpawnModel(team = 'friendly', { showFlag = true } = {}) {
   const group = new THREE.Group();
   const cloth = team === 'friendly' ? actorMaterials.friendly : actorMaterials.enemy;
   for (const x of [-4.5, 4.5]) {
@@ -223,7 +223,9 @@ export function baseSpawnModel(team = 'friendly') {
     part(group, x, 1.15, 1, 1.2, .5, .9, cloth);
     for (const offset of [-.55, .55]) part(group, x + offset, .45, 1.67, .1, .9, .08, actorMaterials.leather);
   }
-  cylinder(group, 4.5, 2.4, 1, .03, 2.1, actorMaterials.wood);
-  part(group, 5, 3.1, 1, .95, .55, .04, cloth);
+  if (showFlag) {
+    cylinder(group, 4.5, 2.4, 1, .03, 2.1, actorMaterials.wood).name = 'spawn-flagpole';
+    part(group, 5, 3.1, 1, .95, .55, .04, cloth).name = 'spawn-flag';
+  }
   return group;
 }

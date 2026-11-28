@@ -1,4 +1,4 @@
-import { createMenuMusic, getMenuMusic } from './menu-music.js';
+import { createMenuMusic } from './menu-music.js';
 import { getPlayerPreferences } from './player-preferences.js';
 
 export function createEndingMusic(options) {
@@ -13,7 +13,6 @@ export function getEndingMusic() {
     if (!audio) throw new Error('Ending soundtrack audio element is missing');
     shared = createEndingMusic({
       audio, settings: getPlayerPreferences().snapshot.audio,
-      initialMuted: getMenuMusic().snapshot.muted,
       onChange({ failure }) {
         if (!failure) return;
         const warning = document.getElementById('battle-ending-warning');

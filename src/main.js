@@ -1085,7 +1085,7 @@ stopAfterFailure = releaseMouse;
 const mortarTarget = new THREE.Vector3();
 const baseSpawnViews = new Map();
 for (const point of spawnPoints.filter(point => !nanjingCampaignMode && !sihangCampaignMode && !point.aiOnly && (point.kind === 'base' || point.kind === 'garage'))) {
-  const model = baseSpawnModel(point.team);
+  const model = baseSpawnModel(point.team, { showFlag: !['china-base', 'china-garage'].includes(point.id) });
   model.position.set(point.x, 0, point.z);
   scene.add(model);
   baseSpawnViews.set(point.id, model);
@@ -8348,7 +8348,7 @@ function updateNanjingCivilians(dt) {
         player.tactics.nanjingFerry.ferryId === ferry.userData.ferryId;
       const selected = selectedPlayerFerry;
       const boarders = personal && !playerAboard ? player ? [player] : []
-        : [...(troopsMayBoard ? friendlyAI : []), ...(ownMayBoard ? allies.filter(actor => actor !== player) : [])];
+        : troopsMayBoard ? friendlyAI : [];
       const reserved = !selected && ferry === world.ferries[0];
       const canStart = !reserved || (ferry.userData.troopPassengers?.length ?? 0) < NANJING_BOAT_CAPACITY - 1;
       const started = !playerAboard && canStart && beginTroopFerryBoarding(ferry, boarders, time, (actor, shore) => {

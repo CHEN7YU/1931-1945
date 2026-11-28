@@ -46,7 +46,7 @@ test('an ending plays once, stays finished after result clicks, and can start fr
   music.dispose();
 });
 
-test('shared music mute preserves an ending playhead and master settings still apply', async () => {
+test('ending music mute preserves its playhead and master settings still apply', async () => {
   const { audio, music } = fixture();
   music.setState('history'); await settle(); audio.currentTime = 22;
   music.setMuted(true); assert.equal(audio.paused, true);
