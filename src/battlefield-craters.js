@@ -93,6 +93,8 @@ export function cutCraterSurfaces(surfaces, craters) {
 export function addBattlefieldCraters(scene, surfaces, solids, craters, material) {
   cutCraterSurfaces(surfaces, craters);
   const earth = material.clone(); earth.vertexColors = true;
+  earth.onBeforeCompile = material.onBeforeCompile;
+  earth.customProgramCacheKey = material.customProgramCacheKey;
   for (const crater of craters) {
     const mesh = new THREE.Mesh(craterGeometry(crater, 0, craters, 32, 12, .25), earth);
     mesh.name = crater.id; mesh.receiveShadow = true; scene.add(mesh); solids.push(mesh);

@@ -42,7 +42,7 @@ try {
     await page.evaluate(() => window.deathCauseFixture.hit());
     assert.equal((await page.evaluate(() => window.__battle.dying))?.reason, '日军·八九式掷弹筒');
     await page.waitForFunction(() => window.__battle?.state === 'transferring', null, { timeout: 90000 });
-    assert.equal(await page.locator('#death-transfer-reason').textContent(), '阵亡原因：日军·八九式掷弹筒');
+    assert.equal(await page.locator('#death-transfer-reason').textContent(), '被日军八九式掷弹筒击中');
     assert.equal(await page.locator('#death-transfer-reason').isVisible(), true);
     assert.equal(await page.locator('#death-transfer-name').isVisible(), false);
     await page.waitForFunction(() => window.__battle?.deathTransfer.active &&
@@ -55,7 +55,7 @@ try {
     await page.evaluate(() => window.deathCauseFixture.finishSquad());
     await page.waitForFunction(() => !document.getElementById('deployment-death-reason').hidden,
       null, { timeout: 90000 });
-    assert.equal(await page.locator('#deployment-death-reason').textContent(), '阵亡原因：高处坠落');
+    assert.equal(await page.locator('#deployment-death-reason').textContent(), '高处坠落');
   }
   url.searchParams.set('benchmark', 'control');
   await page.goto(url.href);
@@ -65,10 +65,10 @@ try {
   await page.waitForFunction(() => window.__battle?.state === 'playing', null, { timeout: 60000 });
   await page.evaluate(() => window.deathCauseFixture.bombVehicle());
   await page.waitForFunction(() => window.__battle?.state === 'transferring', null, { timeout: 90000 });
-  assert.equal(await page.locator('#death-transfer-reason').textContent(), '阵亡原因：载具被毁 · 日军·航空炸弹');
+  assert.equal(await page.locator('#death-transfer-reason').textContent(), '载具被毁 · 日军·九五式战斗机投下的炸弹');
   await page.waitForFunction(() => !document.getElementById('deployment-death-reason').hidden,
     null, { timeout: 90000 });
-  assert.equal(await page.locator('#deployment-death-reason').textContent(), '阵亡原因：载具被毁 · 日军·航空炸弹');
+  assert.equal(await page.locator('#deployment-death-reason').textContent(), '载具被毁 · 日军·九五式战斗机投下的炸弹');
   assert.deepEqual(errors, []);
   console.log(process.env.BOMB_VEHICLE_ONLY === '1'
     ? 'PASS: vehicle bomb cause follows the real damage and transfer paths.'

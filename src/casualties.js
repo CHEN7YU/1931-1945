@@ -257,10 +257,10 @@ export function createCasualtyPose(root, bones, gun, groundAt) {
       const drive = Math.sin(Math.PI * (c.recovery ?? 0));
       const hip = (index ? .16 : .32) + c.fold * .2 + drive * (index ? .25 : .55);
       const knee = (index ? .65 : 1.05) + c.fold * .3 + drive * (index ? .35 : .65);
-      for (const [part, bend] of [['UpLeg', -hip * (prone > .5 ? .35 : 1) - response.buckle * .65*joint],
-        ['Leg', knee * (prone > .5 ? .6 : 1) +
+      for (const [part, bend] of [['UpLeg', hip * (prone > .5 ? .35 : 1) + response.buckle * .65*joint],
+        ['Leg', -knee * (prone > .5 ? .6 : 1) -
           response.buckle * (c.hitZone === 'limb' ? 1.1 : .85)*joint],
-        ['Foot', -.12 - response.buckle * .25*joint]]) {
+        ['Foot', .12 + response.buckle * .25*joint]]) {
         const name = side + part;
         bones.get(name).quaternion.slerp(rest.get(name).clone()
           .multiply(new Quaternion().setFromAxisAngle(hinges.get(name), bend)), Math.max(response.relax, response.buckle));

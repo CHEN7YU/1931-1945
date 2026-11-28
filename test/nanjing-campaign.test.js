@@ -85,7 +85,7 @@ test('final evacuation status distinguishes civilians still on the road, waiting
     { userData: { arrived: false, dead: true } }];
   registerCivilianArrival(campaign);
   assert.deepEqual(nanjingCivilianEvacuationStatus(campaign, civilians),
-    { enRoute: 1, waiting: 1, aboard: 0, evacuated: 0, ready: false });
+    { enRoute: 1, waiting: 1, aboard: 0, evacuated: 0, leftOnShore: 0, ready: false });
   assert.equal(nanjingPlayerBoardingReady(nanjingCivilianEvacuationStatus(campaign, civilians)), false);
   campaign.dockActivated = true;
   boardCivilian(campaign, 0);

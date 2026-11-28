@@ -14,7 +14,7 @@ export function createSupportViewHands(createHand, { applyAppearance = null } = 
   root.name = 'native-support-view-arms'; root.visible = false;
   for (const side of ['left', 'right']) {
     const hand = createHand(side);
-    if (!hand.poseArm || !hand.prepareWeaponGrip || !hand.poseWeaponGrip || !hand.userData.armLengths)
+    if (!hand.poseArm || !hand.prepareWeaponGrip || !hand.poseWeaponGrip || !hand.setArmVisible || !hand.userData.armLengths)
       throw new Error('Support view requires the isolated native articulated weapon arms');
     hand.prepareWeaponGrip('support', { center: [0, .055, 0], depth: .022, thickness: .022 });
     hand.prepareWeaponGrip('press', { center: [0, .055, 0], depth: .036, thickness: .036 });
@@ -68,6 +68,7 @@ export function createSupportViewHands(createHand, { applyAppearance = null } = 
       for (const side of ['left', 'right']) {
         const { hand, wrist: wristBone, middle } = hands[side], target = targets[side];
         const machine = ['maxim24', 'maxim24aa'].includes(marker.kind);
+        hand.setArmVisible(!machine);
         const orientation = machine ? { ...target,
           forward: new THREE.Vector3(...target.normal).cross(new THREE.Vector3(...target.axis))
             .multiplyScalar(side === 'left' ? 1 : -1).normalize().toArray() } : target;

@@ -58,13 +58,15 @@ export function expireCivilianShoreWait(campaign, civilians, ferries, queue) {
   const aboard = new Set(ferries.flatMap(ferry => ferry.userData.passengers));
   const remaining = civilians.filter(person => {
     const data = person.userData;
-    return !data.dead && !data.evacuated && !data.unrescued && !aboard.has(person);
+    return !data.dead && !data.evacuated && !aboard.has(person);
   });
-  const waiting = remaining.filter(person => person.userData.arrived).length;
+  const waiting = remaining.filter(person => person.userData.arrived && !person.userData.unrescued).length;
   if (waiting !== campaign.civiliansWaiting)
     throw new Error('Final civilian waiting count does not match people remaining on shore');
+  const newlyUnrescued = remaining.filter(person => !person.userData.unrescued).length;
   for (const person of remaining) {
     person.userData.unrescued = true;
+    person.userData.withdrawalCutoff = true;
   }
   for (const ferry of ferries) {
     const boarding = ferry.userData.boarding;
@@ -80,7 +82,15 @@ export function expireCivilianShoreWait(campaign, civilians, ferries, queue) {
   }
   queue.length = 0;
   campaign.civiliansWaiting = 0;
-  campaign.civiliansUnrescued += remaining.length;
+  campaign.civiliansUnrescued += newlyUnrescued;
   campaign.finalShoreWaitExpired = true;
   return remaining.length;
+}
+
+export function civilianWithdrawalCorpseReady(civilian, now, inView) {
+  if (!Number.isFinite(now) || now < 0 || typeof inView !== 'boolean')
+    throw new RangeError('Civilian corpse cleanup requires simulation time and visibility');
+  const data = civilian.userData;
+  return Boolean(data.withdrawalCutoff && data.dead && data.health === 0 &&
+    Number.isFinite(data.deadAt) && now - data.deadAt >= 2 && !inView);
 }

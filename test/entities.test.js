@@ -151,6 +151,10 @@ test('attack sources keep the original soldier, weapon, team and credit after sw
   assert.equal(rifleSource.weaponId, actors[0].rifle.id);
   assert.equal(rifleSource.credit, 'ally');
   assert.equal(rifleSource.vehicleId, null);
+  assert.equal(rifleSource.weaponName, '中正式步枪');
+  actors[0].rifle.model = 'type11';
+  assert.equal(rifleSource.weaponName, '中正式步枪', 'captured label must not follow subsequent weapon changes');
+  assert.equal(captureAttackSource(world, actors[0]).weaponName, '大正十一年式轻机枪');
   actors[0].health = 0;
   world.soldiers.delete(actors[0].id);
   world.weapons.delete(actors[0].rifle.id);

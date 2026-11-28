@@ -30,6 +30,8 @@ import { civilianWaitingSlot, NANJING_CIVILIAN_COUNT, nanjingOpeningCivilianStar
   nanjingOpeningCivilianReleaseAt, placeCivilianWaitingSlots } from './civilian-crowd.js';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from './nanjing-city-layout.js';
 import { WOODLAND_SPECIES, woodlandTreeGeometry } from './woodland.js';
+import { createNanjingSouthBackdrop } from './nanjing-south-backdrop.js';
+import { nanjingEarth } from './nanjing-earth.js';
 import { NANJING_CASEMATE, subtractCasemateBox, casemateGateSlices, casemateFloorAt,
   inNanjingCasemate, nearNanjingCasemate, casemateRoute } from './nanjing-casemate.js';
 import { NANJING_COURTYARDS, NANJING_COURTYARD_HALF_WIDTH,
@@ -102,7 +104,7 @@ export function makeNanjingBattlefield(scene, surface) {
     return groundHeight(x, z);
   };
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-  const ground = surface('earth', 0x777361, 4);
+  const ground = nanjingEarth(surface, 0xc0ad8e, 4);
   const road = surface('paving', 0x77766a, 2.4);
   const brick = surface('brick', 0x989d91, .9);
   brick.onBeforeCompile = shader => {
@@ -115,7 +117,7 @@ export function makeNanjingBattlefield(scene, surface) {
   warmBrick.onBeforeCompile = brick.onBeforeCompile;
   warmBrick.customProgramCacheKey = brick.customProgramCacheKey;
   const stone = surface('paving', 0x96896f, 2.4);
-  const courtyardGround = surface('earth', 0x62634e, 1.8);
+  const courtyardGround = nanjingEarth(surface, 0x62634e, 1.8);
   const timber = surface('timber', 0x594a35, 2);
   const water = new THREE.MeshStandardMaterial({ color: 0x514b3b, roughness: .38, metalness: .02, envMapIntensity: .9 });
   const waterWaves = createWaterWaveClock({ hazeColor: 0x858b7c, reflection: .72 });
@@ -670,7 +672,12 @@ export function makeNanjingBattlefield(scene, surface) {
   const southGeometry = new THREE.PlaneGeometry(southWidth, southDepth, 40, 96);
   const southPositions = southGeometry.attributes.position, southUv = southGeometry.attributes.uv;
   for (let i = 0; i < southPositions.count; i++) {
-    const x = southX + southPositions.getX(i), z = southZ - southPositions.getY(i);
+    const z = southZ - southPositions.getY(i);
+    const bend = Math.max(0, Math.min(1, (z - 108) / 132));
+    const westBank = NANJING_RIVER_SHORE_X - 220 * bend * bend * (3 - 2 * bend);
+    const across = (southPositions.getX(i) + southWidth / 2) / southWidth;
+    const x = westBank + (600 - westBank) * across;
+    southPositions.setX(i, x - southX);
     const t = Math.max(0, Math.min(1, (z - 125) / 100));
     const blend = t * t * (3 - 2 * t);
     southPositions.setZ(i, blend * (8 + 2.5 * Math.sin(x * .016 + z * .006) +
@@ -1281,6 +1288,21 @@ export function makeNanjingBattlefield(scene, surface) {
   ];
   const roofMaterial = surface('tiles', 0x89918c, 1.4);
   roofMaterial.side = THREE.DoubleSide;
+  southGround.updateMatrixWorld(true);
+  const southGroundRay = new THREE.Raycaster();
+  const southBackdrop = createNanjingSouthBackdrop(scene, {
+    surface, brick, stone, timber, roofMaterial,
+    heightAt(x, z) {
+      southGroundRay.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0));
+      const hit = southGroundRay.intersectObject(southGround, false)[0];
+      if (!hit) throw new Error(`Southern backdrop has no ground at ${x}, ${z}`);
+      return hit.point.y;
+    },
+  });
+  sceneArt.southBackdrop = { houses: southBackdrop.houses.length, fields: southBackdrop.fields.length,
+    trees: southBackdrop.trees.length, wrecks: southBackdrop.wrecks.length,
+    streetLamps: southBackdrop.fixtures.filter(fixture => fixture.kind === 'streetlamp').length,
+    rendering: southBackdrop.rendering };
   const distantHouse = (x, z, width, depth, height, material) => {
     const house = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
     house.position.set(x, height / 2, z);
@@ -1339,6 +1361,7 @@ export function makeNanjingBattlefield(scene, surface) {
     northernBackdrop.push({ x, z, width, depth, height, interactive: false });
   }
   const residentialLots = cityLayout.lots;
+  const riversideLots = new Set(cityLayout.riversideLots);
   const plaster = surface('plaster', 0xaaa18b, 1.2);
   const templeLot = residentialLots.map((lot, index) => ({ lot, index }))
     .filter(({ lot }) => lot[4] > 1 && lot[0] > -51 && lot[0] < -24 && lot[1] > -68 && lot[1] < -28 && lot[2] > 5 && lot[3] > 5)
@@ -1346,7 +1369,8 @@ export function makeNanjingBattlefield(scene, surface) {
   if (!templeLot) throw new Error('No existing roadside parcel is available for the small temple');
   const templeRed = new THREE.MeshStandardMaterial({ color: 0x62382c, roughness: .95 });
   const templeBronze = new THREE.MeshStandardMaterial({ color: 0x887344, roughness: .78, metalness: .25 });
-  for (const [index, [x, z, footprintWidth, footprintDepth, sourceFloors, facing]] of residentialLots.entries()) {
+  for (const [index, lot] of residentialLots.entries()) {
+    const [x, z, footprintWidth, footprintDepth, sourceFloors, facing] = lot;
     const temple = index === templeLot.index, floors = temple ? 1 : sourceFloors;
     const w = facing % 2 ? footprintDepth : footprintWidth;
     const d = facing % 2 ? footprintWidth : footprintDepth;
@@ -1522,6 +1546,7 @@ export function makeNanjingBattlefield(scene, surface) {
       }
     }
     const home = residentialBuildings.at(-1), passage = town.passages.at(-1);
+    if (riversideLots.has(lot)) home.riverside = true;
     if (z === 75 && !damaged && facing === 0)
       openingHouseCovers.set(home.id, obstacles.slice(firstObstacle, firstObstacle + 7));
     home.width = footprintWidth; home.depth = footprintDepth;
@@ -1832,7 +1857,8 @@ export function makeNanjingBattlefield(scene, surface) {
     ferries.push(boat);
   }
 
-  const civilianHomes = residentialBuildings.filter(house => house.floors === 1 && house.z < 0 && !house.damaged && house.use !== 'temple');
+  const civilianHomes = residentialBuildings.filter(house => house.floors === 1 && house.z < 0 &&
+    !house.damaged && house.use !== 'temple' && !house.riverside);
   for (let index = 0; index < NANJING_CIVILIAN_COUNT; index++) {
     const ageGroup = index % 10 === 0 ? 'child' : index % 10 === 1 ? 'elderly' : 'adult';
     const presentation = (ageGroup === 'adult' ? index : Math.floor(index / 10)) % 2 === 0 ? 'woman' : 'man';
@@ -1980,6 +2006,9 @@ export function makeNanjingBattlefield(scene, surface) {
       { id: 'nanjing-west-market-bus', type: 'bus', x: -45, z: -63, heading: Math.PI / 2 },
       { id: 'nanjing-ferry-approach-bus', type: 'bus', x: -90, z: -94, heading: 0 },
       { id: 'nanjing-ferry-approach-truck', type: 'truck', x: -85, z: -64, heading: 0 },
+      { id: 'nanjing-riverside-truck', type: 'truck', x: -91, z: -32, heading: .25 },
+      { id: 'nanjing-riverside-tank', type: 'tank', x: -101, z: 8.5, heading: -.15 },
+      { id: 'nanjing-riverside-bus', type: 'bus', x: -92, z: 20.5, heading: .12 },
     ],
     obstacles, groundHeight, timber, weathered: true,
     mesh: wreckMesh,
@@ -2222,11 +2251,12 @@ export function makeNanjingBattlefield(scene, surface) {
     ...[-100, -54, -34, -14, 8, 28, 76].map(z => [-67, z]),
     ...[-81, -61, -41, -21, 9].flatMap(z => [-56, -43, -33, -23, -13, 17, 29, 41, 51, 61, 83, 95].map(x => [x, z])),
     ...[-49, -34, 18, 38, 58, 78, 96].map(x => [x, 34]),
-    [-92, -70, true], [-104, -67, true],
+    [-92, -70, true], [-104, -67, true], [-111, -32, true],
+    [-111, 3, true], [-111, 24, true], [-78, -4, true],
   ];
   for (const [index, [baseX, baseZ, riverside]] of candidates.entries()) {
     const x = baseX + Math.sin(index * 2.71) * .32, z = baseZ + Math.cos(index * 1.79) * .3;
-    if (trees.length >= (riverside ? 42 : 40) || Math.abs(x) < 7 || Math.abs(z + 60) < 3 ||
+    if (trees.length >= (riverside ? 46 : 40) || Math.abs(x) < 7 || Math.abs(z + 60) < 3 ||
       !riverside && x < -39 && z < -64 && z > -97 || Math.abs(x + 24) < 9 && z > 25 ||
       circleBlocked(x, z, 1, obstacles) ||
       NANJING_SPAWNS.some(spawn => spawn.id.startsWith('nanjing-reserve-') &&
@@ -2674,6 +2704,7 @@ export function makeNanjingBattlefield(scene, surface) {
       cityFixtures: cityLayout.streetFixtures,
       residentialBuildings,
       northernBackdrop,
+      southBackdrop,
       primaryAssaultRoute: 'yuhua-road-bridge-through-jubaomen',
       wallWalk: WALL_WALK,
       wallWalks: NANJING_WALL_WALKS,

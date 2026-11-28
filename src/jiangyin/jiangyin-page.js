@@ -7,7 +7,7 @@ export const JIANGYIN_MARKUP = `
 <div id="jy-caption" class="jy-caption" hidden></div>
 <div id="jy-hud" hidden>
   <div class="jy-top">
-    <div><small id="jy-top-0-label">第一阶段</small><strong id="jy-top-0">江面决战</strong></div>
+    <div><small id="jy-top-0-label">当前任务</small><strong id="jy-top-0">江面决战</strong></div>
     <div><small id="jy-top-1-label">我舰尚存</small><strong id="jy-top-1">3/3</strong></div>
     <div><small id="jy-top-2-label">在场日舰</small><strong id="jy-top-2">0</strong></div>
   </div>

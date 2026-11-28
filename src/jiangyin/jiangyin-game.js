@@ -918,7 +918,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     for (const ship of ships) assignHold(ship);
     beginTransfer(controlledId, 'start', 1.6);
     emit({ type: 'phase', phase: 'naval' });
-    emit({ type: 'toast', text: '第一阶段 · 江面决战：操纵我舰艏主炮迎击日舰（1–3 或 Q/E 换舰）', alert: true, voice: 'jiangyin-naval-start' });
+    emit({ type: 'toast', text: '操纵我舰艏主炮迎击日舰（1–3 或 Q/E 换舰）', alert: true, voice: 'jiangyin-naval-start' });
   }
   const introCaption = () => {
     if (state.phase !== 'intro') return '';
@@ -986,7 +986,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     if (!id || id === controlledId) return false;
     const post = postById(id);
     if (!post || !eligiblePosts().includes(post)) {
-      emit({ type: 'toast', text: state.phase === 'naval' ? '第一阶段只能在我舰上复生' : '我舰已全部沉没，只能接管两岸阵地' }); return false;
+      emit({ type: 'toast', text: state.phase === 'naval' ? '只能在我舰上复生' : '我舰已全部沉没，只能接管两岸阵地' }); return false;
     }
     if (!alive(post)) { emit({ type: 'toast', text: `${post.name}已${post.boat ? '沉没' : '被摧毁'}，无法接管` }); return false; }
     return beginTransfer(id, 'manual');
@@ -2098,7 +2098,7 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
     for (const ship of ships) if (!ship.withdrawing) assignHold(ship);
     deployNow();
     emit({ type: 'phase', phase: 'hold' });
-    emit({ type: 'toast', text: `第二阶段 · 死守两岸阵地 ${Math.round(JIANGYIN_RULES.durationSeconds / 60)} 分钟：日军海空来攻，目标是摧毁我军全部阵地`, alert: true });
+    emit({ type: 'toast', text: `守住两岸阵地 ${Math.round(JIANGYIN_RULES.durationSeconds / 60)} 分钟，抵御日军海空进攻`, alert: true });
   }
 
   // 烟源：日舰烟囱煤烟、正在下沉的舰船、开场被炸沉的宁海/平海、我方炮艇
@@ -2266,13 +2266,13 @@ export function createJiangyinGame({ scene, camera, createGunModel, createSoldie
       wave: state.waveIndex, waves: JIANGYIN_WAVES.length,
       // 顶部三栏：随阶段变化
       top: state.phase === 'naval' ? [
-        { label: '第一阶段', value: '江面决战' },
+        { label: '当前任务', value: '江面决战' },
         { label: '我舰尚存', value: `${shipPosts().filter(alive).length}/3`, alert: shipPosts().some(p => !alive(p)) },
         { label: '在场日舰', value: String(ships.filter(s => s.sinking === null).length) },
       ] : state.phase === 'scuttle' ? [
         { label: '过渡', value: '自沉封江' },
         { label: '已自沉', value: `${blockships.filter(b => b.state === 'sunk').length}/${blockships.length}` },
-        deployed ? { label: '接管岸防', value: postById(controlledId)?.name ?? '' } : { label: '提前转入第二阶段', value: '空格' },
+        deployed ? { label: '接管岸防', value: postById(controlledId)?.name ?? '' } : { label: '登岸接管阵地', value: '空格' },
       ] : [
         { label: '剩余坚守时间', value: (s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)(Math.ceil(Math.max(0, JIANGYIN_RULES.durationSeconds - state.elapsed))) },
         { label: '两岸阵地（日军目标）', value: `${shorePosts().filter(alive).length}/${shorePosts().length}`, alert: shorePosts().some(p => !alive(p)) },

@@ -22,11 +22,14 @@ export function stowGrenadeDischarger(weapon) {
 }
 
 export function dischargerTargetAllowed(operator, target, { sihang = false, nanjingStage = null,
-  eastAssembly = false } = {}) {
+  eastAssembly = false, nanjingShoreCutoff = false } = {}) {
   if (eastAssembly || operator.team !== 'enemy' || operator.health <= 0 || operator.vehicleId ||
     operator.formation?.sihangDemolition || !target?.position || target.team !== 'friendly' ||
     target.health <= 0 || target.vehicleId || target.targetKind === 'aircraft' ||
     target.targetKind === 'closed-armor') return false;
+  if (target.civilian && (!nanjingShoreCutoff || nanjingStage !== 'withdrawal-to-boats' ||
+    !target.civilian.userData.withdrawalCutoff || !target.civilian.userData.unrescued ||
+    target.civilian.userData.dead || target.civilian.userData.evacuated)) return false;
   const range = Math.hypot(target.position.x - operator.position.x, target.position.z - operator.position.z);
   if (range < GRENADE_DISCHARGER.minRange || range > GRENADE_DISCHARGER.maxRange) return false;
   // Leave a blast/spread margin in front of the neutral bank, not merely a legal centre point.
@@ -38,6 +41,7 @@ export function dischargerTargetAllowed(operator, target, { sihang = false, nanj
 }
 
 export function dischargerPriority(target, emplacements) {
+  if (target.civilian) return -1;
   const point = target.emplacementId && emplacements.get(target.emplacementId);
   if (point?.operatorId === target.id && point.team === 'friendly') return 0;
   if (target.mortar?.phase === 'ready' || target.mortar?.phase === 'setting-up') return 1;

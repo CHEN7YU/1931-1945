@@ -24,6 +24,7 @@ test('blue field uniform recolors cloth while preserving other texture details a
     for (const id of ['body', 'pants', 'puttee']) {
       const pixels = blue.get(id).image.pixels;
       assert.ok(pixels[2] > pixels[1] && pixels[1] > pixels[0], id);
+      assert.ok((pixels[2] - pixels[0]) / pixels[2] < .2, 'cloth remains muted blue-grey, not saturated blue');
       assert.notDeepEqual([...pixels.slice(0, 3)], [...normal.get(id).image.pixels.slice(0, 3)]);
     }
     assert.deepEqual([...blue.get('body').image.pixels.slice(4, 8)], [120, 80, 60, 255]);

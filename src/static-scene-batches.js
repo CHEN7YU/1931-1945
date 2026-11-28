@@ -24,7 +24,7 @@ export function staticGeometryBatches(objects, { spatial = false, preserveUV = f
   return batches;
 }
 
-export function batchStaticScene(scene, objects) {
+export function batchStaticScene(scene, objects, { spatial = true } = {}) {
   const groups = new Map(), meshes = [];
   let triangles = 0;
   for (const object of objects) {
@@ -40,7 +40,7 @@ export function batchStaticScene(scene, objects) {
   scene.updateMatrixWorld(true);
   for (const group of groups.values()) {
     const source = group[0];
-    for (const [material, cells] of staticGeometryBatches(group, { spatial: true, preserveUV: true })) {
+    for (const [material, cells] of staticGeometryBatches(group, { spatial, preserveUV: true })) {
       for (const [cell, geometries] of cells) {
         const geometry = mergeGeometries(geometries);
         if (!geometry) throw new Error('Compatible static scene geometry failed to merge');

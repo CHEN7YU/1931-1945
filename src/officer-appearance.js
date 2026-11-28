@@ -170,7 +170,7 @@ function palette(team, blueFieldCap = false) {
   const key = blueFieldCap ? `${team}-blue-field-cap` : team;
   if (!palettes.has(key)) {
     const paletteColors = blueFieldCap
-      ? colors[team].map((color, index) => index === 0 || index === 7 ? '#303f50' : index === 2 ? '#202d3a' : color)
+      ? colors[team].map((color, index) => index === 0 || index === 7 ? '#4a5158' : index === 2 ? '#333a41' : color)
       : colors[team];
     const tile = 32, width = paletteColors.length * tile, bytes = new Uint8Array(width * tile * 4);
     const bases = paletteColors.map(color => new THREE.Color(color).convertLinearToSRGB().toArray());

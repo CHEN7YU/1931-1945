@@ -41,7 +41,8 @@ function fixture() {
       gun.quaternion.identity();
       root.updateMatrixWorld(true);
       apply(actor, time);
-      return Object.fromEntries([...bones].map(([name, bone]) => [name, bone.getWorldPosition(new T.Vector3())]));
+      return { ...Object.fromEntries([...bones].map(([name, bone]) => [name, bone.getWorldPosition(new T.Vector3())])),
+        kneeHingeAxis: new T.Vector3(1, 0, 0).transformDirection(root.matrixWorld) };
     },
   };
 }
@@ -64,6 +65,10 @@ test('real soldier rig settles with bent asymmetric knees and relaxed grounded e
       bend(points, 'Right', 'UpLeg', 'Leg', 'Foot')) > .2, `asymmetric knees ${description}`);
     assert.ok(points.Head.y - floor < .5 && points.Spine2.y - floor < .4, `grounded trunk ${description}`);
     for (const side of ['Left', 'Right']) {
+      const thigh = points[side + 'Leg'].clone().sub(points[side + 'UpLeg']).normalize();
+      const shin = points[side + 'Foot'].clone().sub(points[side + 'Leg']).normalize();
+      assert.ok(thigh.cross(shin).dot(points.kneeHingeAxis) < -.1,
+        `knee must flex backwards rather than hyperextend ${description}/${side}`);
       assert.ok(bend(points, side, 'Arm', 'ForeArm', 'Hand') > .8, `unlocked elbow ${description}/${side}`);
       for (const part of ['UpLeg', 'Leg', 'Foot', 'Arm', 'ForeArm', 'Hand']) {
         assert.ok(points[side + part].y - floor >= .015, `ground clearance ${description}/${side}${part}: ${points[side + part].y - floor}`);

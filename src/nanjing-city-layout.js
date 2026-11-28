@@ -8,6 +8,7 @@ const streets = [
     [53, -78], [61, -104]] },
   { id: 'north-bank-lane', width: 5.5, points: [[-68, -96], [-40, -94], [-19, -98], [0, -94],
     [26, -98], [51, -93], [79, -97], [104, -93]] },
+  { id: 'riverside-lane', width: 2.8, points: [[-95, -39], [-96, -24], [-94, -9], [-95, 8], [-95, 25], [-93, 34]] },
 ];
 const streetFixtures = [
   { id: 'utility-west-north', kind: 'utility', x: -6, z: -85 },
@@ -87,24 +88,37 @@ export function createNanjingCityLayout() {
   }
   lots.push([-81, -49, 5, 5, 1], [-88, -49, 5, 5, 1], [-98, -46, 5, 5, 1], [-97, -66, 5, 5, 1],
     [-81, -103, 5, 5, 1], [-81, -96, 5, 5, 1]);
+  const riversideLots = [
+    [-107, -38, 4.8, 6.8, 1], [-82, -38, 6.8, 4.8, 1],
+    [-103, -27, 6, 5.2, 1], [-89, -24, 5.2, 4.8, 1],
+    [-109, -12, 5.6, 5, 1], [-80, -14, 5.8, 5.1, 1],
+    [-103, 1, 5, 5.8, 1], [-85, 1, 6.2, 4.7, 1],
+    [-108, 15, 5.5, 5.4, 1], [-80, 13, 5.2, 6, 1],
+    [-104, 30, 5.4, 4.8, 1], [-86, 28, 5.6, 5.6, 1],
+  ];
+  lots.push(...riversideLots);
   for (const lot of lots) {
-    const [x, z] = lot;
+    const [x, z] = lot, riverside = riversideLots.includes(lot);
     let nearest = Infinity, facing = 0;
-    if (z < -12) for (const street of streets) for (let index = 1; index < street.points.length; index++) {
-      const [ax, az] = street.points[index - 1], [bx, bz] = street.points[index];
-      const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) /
-        ((bx - ax) ** 2 + (bz - az) ** 2)));
-      const dx = ax + t * (bx - ax) - x, dz = az + t * (bz - az) - z;
-      const distance = Math.hypot(dx, dz);
-      if (distance < nearest) {
-        nearest = distance;
-        facing = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? 1 : 3) : dz < 0 ? 0 : 2;
+    if (z < -12 || riverside) for (const street of streets) {
+      if (street.id === 'riverside-lane' && !riverside) continue;
+      for (let index = 1; index < street.points.length; index++) {
+        const [ax, az] = street.points[index - 1], [bx, bz] = street.points[index];
+        const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) /
+          ((bx - ax) ** 2 + (bz - az) ** 2)));
+        const dx = ax + t * (bx - ax) - x, dz = az + t * (bz - az) - z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < nearest) {
+          nearest = distance;
+          facing = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? 1 : 3) : dz < 0 ? 0 : 2;
+        }
       }
     }
     lot.push(facing);
   }
   return {
     lots,
+    riversideLots,
     streets: streets.map(street => ({ ...street, points: street.points.map(point => [...point]) })),
     streetFixtures: streetFixtures.map(fixture => ({ ...fixture })),
   };

@@ -124,6 +124,22 @@ test('real curved shells retain owned source, bounded spread, collision, one imp
   assert.equal(stats.snapshot[0].kills['grenade-discharger'], 1);
 });
 
+test('only shore civilians left after the final Nanjing deadline become tube targets', () => {
+  const civilian = soldier('civilian:1', 0, 0, { civilian: { userData: { withdrawalCutoff: true, unrescued: true } } });
+  const context = { nanjingStage: 'withdrawal-to-boats', nanjingShoreCutoff: true };
+  assert.equal(dischargerTargetAllowed(operator(), civilian, {}), false);
+  assert.equal(dischargerTargetAllowed(operator(), civilian, { ...context, nanjingShoreCutoff: false }), false);
+  assert.equal(dischargerTargetAllowed(operator(), civilian, context), true);
+  assert.equal(selectDischargerTargets(operator(), [soldier('military', 0, 0), civilian],
+    new Map(), context)[0].target, civilian);
+  civilian.civilian.userData.dead = true;
+  assert.equal(dischargerTargetAllowed(operator(), civilian, context), false);
+  civilian.civilian.userData.dead = false; civilian.civilian.userData.evacuated = true;
+  assert.equal(dischargerTargetAllowed(operator(), civilian, context), false);
+  civilian.civilian.userData.evacuated = false; civilian.civilian.userData.withdrawalCutoff = false;
+  assert.equal(dischargerTargetAllowed(operator(), civilian, context), false);
+});
+
 test('obstructed trajectories reject before firing, clear trajectories actually reach the target', () => {
   const { shell } = ownedShell();
   assert.equal(dischargerTrajectoryClear(shell, () => ({ x: 0, y: 5, z: -40 })), false);

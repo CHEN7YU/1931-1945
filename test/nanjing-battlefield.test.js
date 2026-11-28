@@ -71,7 +71,7 @@ test('city wrecks and roadside barricades block the indexed projectile ray witho
   const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
   scene.updateMatrixWorld(true);
   const index = createSolidIndex(world.solids), ray = new THREE.Raycaster();
-  assert.equal(world.staticDamage.wrecks.length, 6);
+  assert.equal(world.staticDamage.wrecks.length, 9);
   assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'tank'));
   assert.ok(world.staticDamage.wrecks.some(wreck => wreck.type === 'truck'));
   const bus = world.staticDamage.wrecks.find(wreck => wreck.id === 'wreck-nanjing-west-market-bus');
@@ -146,6 +146,48 @@ test('city wrecks and roadside barricades block the indexed projectile ray witho
     const solid = world.solids.find(item => item.userData.streetLifeId === prop.id);
     assert.equal(Boolean(obstacle), Boolean(prop.solid));
     assert.equal(Boolean(solid), Boolean(prop.solid));
+  }
+});
+
+test('riverside outside the west wall has real homes, ruins and wrecks without closing the shore route', () => {
+  const scene = new THREE.Scene(), world = makeNanjingBattlefield(scene, () => new THREE.MeshStandardMaterial());
+  const homes = world.landmarks.residentialBuildings.filter(home => home.riverside);
+  assert.ok(homes.length >= 10);
+  assert.ok(homes.some(home => !home.damaged) && homes.some(home => home.damaged));
+  for (const home of homes) {
+    assert.ok(home.x - home.width / 2 > NANJING_RIVER_SHORE_X &&
+      home.x + home.width / 2 < -74.2 && home.z + home.depth / 2 < 39);
+    assert.equal(world.isDeepWater(home.x, home.z), false);
+    const meshes = world.solids.filter(mesh => mesh.userData.residentialId === home.id);
+    const wall = meshes.find(mesh => mesh.userData.nanjingFeature === 'residential-house');
+    assert.ok(wall && circleBlocked(wall.position.x, wall.position.z, .1, world.obstacles), home.id);
+    assert.ok(meshes.some(mesh => mesh.userData.nanjingFeature === 'residential-tile-roof'));
+    assert.ok(world.doorSystem.doors.some(door => door.id === `${home.id}-door`));
+    if (home.damaged) assert.ok(meshes.some(mesh => mesh.userData.nanjingFeature === 'collapsed-house-rubble'));
+  }
+  assert.ok(world.civilians.every(person => !homes.some(home => home.id === person.userData.homeId)),
+    'adding scenery must not silently redistribute the existing civilian population');
+  const trees = world.landmarks.trees.filter(tree => tree.x > NANJING_RIVER_SHORE_X &&
+    tree.x < -74.2 && tree.z > -42 && tree.z < 35);
+  assert.ok(trees.length >= 2 && trees.every(tree => world.solids.some(mesh =>
+    mesh.userData.nanjingFeature === 'city-tree' && Math.hypot(mesh.position.x - tree.x, mesh.position.z - tree.z) < .001)));
+  const wrecks = world.staticDamage.wrecks.filter(wreck => wreck.id.startsWith('wreck-nanjing-riverside-'));
+  assert.deepEqual(wrecks.map(wreck => wreck.type).sort(), ['bus', 'tank', 'truck']);
+  for (const wreck of wrecks) {
+    assert.ok(world.obstacles.some(obstacle => obstacle.id === wreck.id));
+    assert.equal(world.isDeepWater(wreck.x, wreck.z), false);
+    for (const home of homes) assert.ok(
+      wreck.maxX + .5 < home.x - home.width / 2 || wreck.minX - .5 > home.x + home.width / 2 ||
+      wreck.maxZ + .5 < home.z - home.depth / 2 || wreck.minZ - .5 > home.z + home.depth / 2,
+      `${wreck.id} overlaps ${home.id}`);
+  }
+  const lane = world.landmarks.cityStreets.find(street => street.id === 'riverside-lane');
+  assert.ok(lane);
+  const walker = new THREE.Vector3(lane.points[0][0], 0, lane.points[0][1]);
+  for (const [x, z] of lane.points.slice(1)) {
+    assert.ok(segmentClear(walker, { x, z }, .65, world.obstacles), 'the shore route keeps physical clearance');
+    world.moveInfantry(walker, x - walker.x, z - walker.z, .42);
+    assert.ok(Math.hypot(walker.x - x, walker.z - z) < .05, 'infantry can traverse the shore route');
   }
 });
 

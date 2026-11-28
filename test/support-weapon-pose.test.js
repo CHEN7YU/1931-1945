@@ -346,7 +346,10 @@ test('first-person uses two native sleeve/hand skins with real contacts, shared 
       assert.equal(automatic.contactLimited, false, `profile-only ${bank.kind} ${pitch}: ${JSON.stringify(automatic)}`);
       const visible = [];
       view.root.traverseVisible(node => { if (node.isMesh) visible.push(node); });
-      assert.ok(visible.length >= 4);
+      const machine = ['maxim24', 'maxim24aa'].includes(bank.kind);
+      assert.ok(machine ? visible.length === 2 : visible.length >= 4);
+      if (machine) assert.ok(visible.every(mesh => mesh.name === '手部'), 'machine-gun view retains only hands, not sleeves');
+      assert.ok(view.root.children.every(hand => hand.userData.armVisible === !machine));
       assert.ok(visible.every(mesh => ['手部', '衣服', '臂章'].includes(mesh.name)));
       assert.equal(view.root.getObjectByName('owned-muzzle'), undefined);
     }

@@ -126,6 +126,23 @@ export function createNraGrenadeHand(source, side, { fullArm = false, weaponRig 
     if (!sleeves.length) throw new Error('Native throwable arm is missing its authorized sleeve');
   }
   avatar.traverse(node => { if (node.isMesh) node.visible = node === handMesh || sleeves.includes(node); });
+  if (weaponRig) {
+    const fullIndex = handMesh.geometry.index, handIndices = [];
+    const handOwned = index => [0, 1, 2, 3].some(slot => attributes.skinWeight.getComponent(index, slot) > .05 &&
+      handMesh.skeleton.bones[attributes.skinIndex.getComponent(index, slot)].name.startsWith(prefix + 'Hand'));
+    for (let at = 0; at < fullIndex.count; at += 3) {
+      const ids = [0, 1, 2].map(corner => fullIndex.getX(at + corner));
+      if (ids.every(handOwned)) handIndices.push(...ids);
+    }
+    if (handIndices.length < 60) throw new Error('Weapon hand has no isolated palm and finger surface');
+    const handIndex = new THREE.BufferAttribute(new fullIndex.array.constructor(handIndices), 1);
+    root.setArmVisible = visible => {
+      handMesh.geometry.setIndex(visible ? fullIndex : handIndex);
+      for (const sleeve of sleeves) sleeve.visible = visible;
+      root.userData.armVisible = visible;
+    };
+    root.userData.armVisible = true;
+  }
   const point = name => bones.get(prefix + name).getWorldPosition(new THREE.Vector3());
   const origin = point('Hand'), forward = point('HandMiddle1').sub(origin).normalize();
   const across = point('HandIndex1').sub(point('HandPinky1')).normalize();

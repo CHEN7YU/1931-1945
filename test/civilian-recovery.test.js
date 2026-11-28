@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from '../src/civilian-recovery.js';
+import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait, civilianWithdrawalCorpseReady } from '../src/civilian-recovery.js';
 import { createNanjingCampaign, nanjingCivilianEvacuationStatus, advanceNanjingCampaign, NANJING_CIVILIAN_FINAL_WAIT } from '../src/nanjing-campaign.js';
 
 const dataFor = () => ({ waitingSlot: { x: 10, z: 0 }, route: [{ x: 5, z: 0 }, { x: 10, z: 0 }],
@@ -106,7 +106,12 @@ test('final deadline marks only people on shore unrescued while boats must reall
   assert.equal(campaign.civiliansEvacuated, 4);
   assert.equal(campaign.civiliansAboard, 1);
   assert.equal(campaign.civiliansWaiting, 0);
+  assert.equal(nanjingCivilianEvacuationStatus(campaign, people).leftOnShore, 3,
+    'empty boarding queue must not hide living people left on shore');
   assert.equal(aboard.userData.unrescued, undefined);
+  assert.ok([road, waiting, boarding].every(person => person.userData.withdrawalCutoff));
+  assert.equal(aboard.userData.withdrawalCutoff, undefined);
+  assert.equal(campaign.civilianCasualties, 0, 'deadline alone is not an actual Japanese hit');
   assert.equal(boarding.userData.boarding, false);
   assert.equal(ferry.userData.boarding, null);
   assert.deepEqual(queue, []);
@@ -114,6 +119,17 @@ test('final deadline marks only people on shore unrescued while boats must reall
   assert.equal(expireCivilianShoreWait(campaign, people, [ferry], queue), 0);
   campaign.civiliansAboard = 0; aboard.userData.evacuated = true;
   assert.equal(nanjingCivilianEvacuationStatus(campaign, people).ready, true);
+});
+
+test('cutoff cleanup cannot erase a living civilian or a corpse still in the player view', () => {
+  const civilian = { userData: { withdrawalCutoff: true, dead: false, health: 100, deadAt: 120 } };
+  assert.equal(civilianWithdrawalCorpseReady(civilian, 130, false), false);
+  civilian.userData.dead = true; civilian.userData.health = 0;
+  assert.equal(civilianWithdrawalCorpseReady(civilian, 121, false), false);
+  assert.equal(civilianWithdrawalCorpseReady(civilian, 122, true), false);
+  assert.equal(civilianWithdrawalCorpseReady(civilian, 122, false), true);
+  civilian.userData.withdrawalCutoff = false;
+  assert.equal(civilianWithdrawalCorpseReady(civilian, 130, false), false);
 });
 
 test('deadline returns an interrupted gangplank boarder to shore before releasing the ferry', () => {

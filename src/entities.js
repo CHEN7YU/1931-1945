@@ -198,10 +198,14 @@ export function captureAttackSource(registry, actor, weapon = soldierWeapon(regi
   if (!actor || registry.soldiers.get(actor.id) !== actor || actor.health <= 0) throw new Error('Attack source requires a living registered soldier');
   if (!weapon?.ownerId || registry.weapons.get(weapon.id) !== weapon ||
     ![actor.id, actor.unitId, actor.vehicleId].includes(weapon.ownerId)) throw new Error('Attack source requires an owned registered weapon');
+  const weaponName = weapon.type === 'tank' && !weapon.mount
+    ? weapon.settings?.id === CHI_HA.id ? '九七式中战车57毫米主炮' : TYPES.tank.weapon.replace(' · ', '')
+    : weapon.settings?.name ?? (weapon.type === 'infantry' ? infantryWeaponProfile(weapon).name : null);
   return Object.freeze({ credit: actor === controlledSoldier(registry) ? 'player' : actor.team === 'friendly' ? 'ally' : 'enemy',
     team: actor.team, unitId: actor.unitId, soldierId: actor.id, weaponId: weapon.id,
     weaponClass: attackCategory(weapon), squadId: registry.units.get(actor.unitId).squadId ?? actor.unitId,
     unitName: registry.units.get(actor.unitId).scoreLabel ?? actor.unitId,
+    ...(weaponName ? { weaponName: weaponName.split(' · ')[0] } : {}),
     vehicleId: actor.vehicleId, seatId: actor.seatId });
 }
 

@@ -20,6 +20,10 @@ const copySource = value => {
     value.team !== (value.credit === 'enemy' ? 'enemy' : 'friendly') ||
     !['vehicleId', 'seatId'].every(field => value[field] == null || typeof value[field] === 'string')) throw new Error('Combat feedback requires an original attack source');
   const classification = {};
+  if (value.weaponName != null) {
+    if (typeof value.weaponName !== 'string' || !value.weaponName) throw new Error('Attack weapon name must be a nonempty label');
+    classification.weaponName = value.weaponName;
+  }
   if (value.cause === 'tank-crush') classification.cause = value.cause;
   if (value.weaponClass != null) {
     if (!['weaponClass', 'squadId', 'unitName'].every(field => typeof value[field] === 'string' && value[field])) throw new Error('Attack classification requires immutable weapon and squad labels');

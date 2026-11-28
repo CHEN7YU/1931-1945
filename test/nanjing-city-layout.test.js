@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cityStreetIntersectsLot, createNanjingCityLayout } from '../src/nanjing-city-layout.js';
-import { NANJING_SPAWNS } from '../src/nanjing-campaign.js';
+import { NANJING_RIVER_SHORE_X, NANJING_SPAWNS } from '../src/nanjing-campaign.js';
 
 function segmentDistance(point, start, end) {
   const dx = end.x - start.x, dz = end.z - start.z;
@@ -79,4 +79,22 @@ test('street reservation tests full segments, including diagonal edges and paral
   assert.equal(cityStreetIntersectsLot([0, 5, 2, 2], street), false);
   assert.equal(cityStreetIntersectsLot([0, 5, 2, 2], street, 1), true);
   assert.equal(cityStreetIntersectsLot([8, 0, 2, 2], { width: 2, points: [[0, -10], [0, 10]] }), false);
+});
+
+test('riverside parcels fill the open land between the west wall and the Yangtze without occupying their lane', () => {
+  const layout = createNanjingCityLayout();
+  const lane = layout.streets.find(street => street.id === 'riverside-lane');
+  assert.ok(lane && lane.points.length >= 4);
+  assert.ok(layout.riversideLots.length >= 10);
+  for (const lot of layout.riversideLots) {
+    const [x, z, width, depth] = lot;
+    assert.ok(x - width / 2 > NANJING_RIVER_SHORE_X && x + width / 2 < -74.2 && z + depth / 2 < 39);
+    assert.ok(layout.streets.every(street => !cityStreetIntersectsLot(lot, street, .65)));
+    for (const spawn of NANJING_SPAWNS.filter(point => point.deploymentZone)) {
+      const zone = spawn.deploymentZone;
+      assert.ok(x + width / 2 < zone.minX - .5 || x - width / 2 > zone.maxX + .5 ||
+        z + depth / 2 < zone.minZ - .5 || z - depth / 2 > zone.maxZ + .5,
+      'riverside homes must not occupy squad deployment zones');
+    }
+  }
 });

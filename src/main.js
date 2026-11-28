@@ -114,7 +114,7 @@ import { getPerformanceDiagnostics } from './performance-diagnostics.js';
 import { tankSweptContact, chooseTankEvasion as planTankEvasion } from './tank-infantry.js';
 import { createPresentationView } from './presentation-view.js';
 import { createCombatEvents } from './combat-events.js';
-import { deathCauseLabel, createCombatFeedback } from './combat-feedback.js';
+import { deathCauseLabel, deathNoticeText, createCombatFeedback } from './combat-feedback.js';
 import { createVehicleRenderer } from './vehicle-renderer.js';
 import { createSimulationClock, SIMULATION_CLOCK } from './simulation-clock.js';
 import { BATTLE_AREA, NANJING_BATTLE_AREA, AIR_BATTLE_AREA, BOUNDARY_RULES, createBoundaryState, advanceBoundary } from './battle-boundary.js';
@@ -199,7 +199,7 @@ import { civilianWaypointReached, civilianForwardWaypoint, reserveCivilianWaitin
   civilianPaceMultiplier, civilianWaitingDrift, createCivilianCrowdPlanner, rejoinCivilianRoute,
   activateCivilianEvacuation, prepareOpeningCivilian, openingSourceHiddenByCover, civilianBoardingSpeed } from './civilian-crowd.js';
 import { updateCivilianAppearance } from './civilian-character.js';
-import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait } from './civilian-recovery.js';
+import { civilianRecoveryDue, installCivilianRecovery, stalledCivilianCandidates, endCivilianRecoveryWait, expireCivilianShoreWait, civilianWithdrawalCorpseReady } from './civilian-recovery.js';
 import { beginCivilianStreetEvacuation, openCivilianHomeDoor, updateCivilianStreetLife } from './civilian-street-life.js';
 import { loadCivilianVoices } from './civilian-voices.js';
 import { BREAKOUT_FORCE, breakoutRestorationPlan, hiddenBreakoutPositions, breakoutSpawnAttempts } from './breakout-restoration.js';
@@ -427,12 +427,12 @@ configureSunShadow(sun);
 scene.add(sun);
 let surface;
 try {
-  setLoadingProgress(5, '第一阶段 · 加载已选战场的地形与建筑材质…');
+  setLoadingProgress(5, '加载战场地形与建筑材质…');
   reportLoading('scene-materials');
   surface = await loadSceneMaterials(renderer, scene, { textureBudget, lowMemory: startupResources.lowMemory });
-  setLoadingProgress(35, '第二阶段 · 加载战局所需枪械与装备…');
+  setLoadingProgress(35, '加载枪械与装备…');
   await setModelSurfaces(surface, renderer.capabilities.getMaxAnisotropy(), textureBudget);
-  setLoadingProgress(45, '第二阶段 · 准备近战装备材质…');
+  setLoadingProgress(45, '准备近战装备材质…');
   await loadDadaoSurfaces(renderer.capabilities.getMaxAnisotropy(), new THREE.TextureLoader(), textureBudget);
   setLoadingProgress(55, '正在构建战场与双方部队…');
 } catch (error) {
@@ -477,7 +477,7 @@ let ijaCharacter = null;
 const uniformExcludedIds = new Set();
 if (new URLSearchParams(location.search).get('character') !== 'procedural') {
   try {
-    setLoadingProgress(60, '第三阶段 · 加载我军士兵与人物动作…');
+    setLoadingProgress(60, '加载我军士兵与人物动作…');
     reportLoading('friendly-model');
     const { loadNraCharacter } = await import('./nra-character.js');
     const { createNraForceRendererAsync } = await import('./nra-force-renderer.js');
@@ -487,9 +487,9 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     nraCharacter = await createNraForceRendererAsync(scene, camera, nraTemplate, 330, {
       lowMemory: startupResources.lowMemory,
       onProgress: ({ completed, total }) =>
-        setLoadingProgress(Math.floor(62 + 16 * completed / total), `第三阶段 · 准备我军人物动作 ${completed}/${total}…`),
+        setLoadingProgress(Math.floor(62 + 16 * completed / total), `准备我军人物动作 ${completed}/${total}…`),
     });
-    setLoadingProgress(80, '第三阶段 · 加载日军士兵与人物动作…');
+    setLoadingProgress(80, '加载日军士兵与人物动作…');
     reportLoading('enemy-model');
     const { loadIjaCharacter, createIjaForceRendererAsync } = await import('./ija-character.js');
     const ijaTemplate = await loadIjaCharacter(world.walkHeight, { textureBudget, onPoseRecovery: recordRecoveredFailure });
@@ -497,7 +497,7 @@ if (new URLSearchParams(location.search).get('character') !== 'procedural') {
     ijaCharacter = await createIjaForceRendererAsync(scene, camera, ijaTemplate, 330, {
       lowMemory: startupResources.lowMemory,
       onProgress: ({ completed, total }) =>
-        setLoadingProgress(Math.floor(81 + 8 * completed / total), `第三阶段 · 准备日军人物动作 ${completed}/${total}…`),
+        setLoadingProgress(Math.floor(81 + 8 * completed / total), `准备日军人物动作 ${completed}/${total}…`),
     });
     setLoadingProgress(90, '正在准备人物呈现与战场入口…');
   } catch (error) {
@@ -2466,7 +2466,7 @@ function showOverlay(kind = 'pause', deathReason = null) {
   $('back-menu').textContent = '返回作战大厅';
   const dead = kind === 'dead';
   $('deployment-death-reason').hidden = !dead || !deathReason;
-  $('deployment-death-reason').textContent = dead && deathReason ? `阵亡原因：${deathReason}` : '';
+  $('deployment-death-reason').textContent = dead ? deathNoticeText(deathReason) : '';
   if (ended || dead) missionBriefing.hide();
   $('battle-results').hidden = !ended;
   if (ended) {
@@ -2493,13 +2493,13 @@ function showOverlay(kind = 'pause', deathReason = null) {
     : kind === 'defeat' ? '日军连续控制三个据点90秒，反夺宽限耗尽，我方合围失败。'
     : '三点合围后转为城东突围阻击。'
     : conquest.dominationTime >= DOMINATION_SECONDS ? '连续控制三点20秒。' : '时间结束：先比较控制点数，同分比较累计控制点秒。';
-  $('overlay-description').textContent = ended ? victoryRule : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。'   : encirclementMode ? '第一阶段占领三个据点形成合围；第二阶段我军向C点集结，日军先在A点西北角重整，20秒后向C点反扑并冲击东门。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
+  $('overlay-description').textContent = ended ? victoryRule : dead ? '选择小队卡片，点击地图上的己方出生标记，再确认出击。允许再次选择同类型新小队；战斗与计时仍在继续。'   : encirclementMode ? '占领三个据点形成合围，然后在C点布防，阻击日军反扑与东门突围。' : '三点同时争夺，双方可占领和反夺；连续控制三点20秒获胜。整队阵亡后才能换单位。';
   if (nanjingCampaignMode) $('overlay-description').textContent = ended
     ? `已掩护 ${nanjingCampaign.civiliansArrived} 名百姓到达上新河渡口，其中 ${nanjingCampaign.civiliansEvacuated} 名已渡江。${nanjingCampaign.playerEscaped ? '你已登船离岸。' : nanjingCampaign.outcome === 'gate-overrun' ? '中华门第二道门内阵地被突破。' : '上新河渡口失守。'}`
     : dead ? '选择其他小队和可用重生点，再确认出击。战斗与计时仍在继续。'
       : '守住中华门防线，随后撤往上新河渡口掩护百姓登船，最后撤离。';
   else if (encirclementMode && !ended && !dead) $('overlay-description').textContent =
-    '第一阶段夺取三点形成合围；第二阶段先在C点周围布防20秒，日军分组集结后向东门突围并还击。歼灭至少2/3、逃脱不超过1/3为胜利目标；全部地面敌军被歼或逃脱后才结算。';
+    '夺取三点形成合围，然后在C点周围布防，阻击日军向东门突围。歼灭至少2/3、逃脱不超过1/3为胜利目标。';
   $('resume').hidden = ended || dead;
   const stranded = nanjingCampaignMode && kind === 'pause' && nanjingCampaign.stage === 'withdrawal-to-boats'
     ? stalledCivilianCandidates(world.civilians, time).length : 0;
@@ -2714,10 +2714,10 @@ function refreshDeployment() {
     ? `四行仓库 · ${sihangCampaign.stage === 'sihang-defense' ? `一楼集结 · 后备 ${sihangCampaign.reserve}/${SIHANG_RULES.troopLimit}`
       : `仓库南面补充 · 剩余兵力 ${sihangCampaign.reserve}`}`
     : state === 'menu' ? '首次出击 · 初始阵地' : nanjingCampaignMode
-    ? ({ 'gate-defense': '第一阶段 · 中华门第二道门内阵地防守', withdrawal: '撤往上新河渡口 · 第二阶段即将开始',
-      'dock-defense': '第二阶段 · 上新河渡口防守', 'withdrawal-to-boats': '撤退阶段 · 友军小队先登船' }[nanjingCampaign.stage] ?? '南京保卫战')
+    ? ({ 'gate-defense': '守住中华门第二道门', withdrawal: '撤往上新河渡口',
+      'dock-defense': '掩护上新河渡口', 'withdrawal-to-boats': '掩护友军登船' }[nanjingCampaign.stage] ?? '南京保卫战')
     : encirclementMode && encirclement.phase === 2
-    ? `第二阶段 · 守住东门 · 已歼 ${encirclement.breakout?.killed ?? 0}/${encirclement.breakout?.requiredKills ?? 0} · 突围 ${encirclement.breakout?.escapedIds.length ?? 0}/${encirclement.breakout?.escapeLimit ?? 0}`
+    ? `守住东门 · 已歼 ${encirclement.breakout?.killed ?? 0}/${encirclement.breakout?.requiredKills ?? 0} · 突围 ${encirclement.breakout?.escapedIds.length ?? 0}/${encirclement.breakout?.escapeLimit ?? 0}`
     : `三点合围 · 我方 ${objectives.filter(point => point.owner === 'friendly').length}/3 · 日军 ${objectives.filter(point => point.owner === 'enemy').length}/3`;
   const pendingType = SQUADS[pendingSquad]?.type;
   refreshCapturedSpawns(pendingType);
@@ -3589,7 +3589,7 @@ function renderDeathFeedback() {
     $('death-transfer-unit').textContent = deathTransfer.memorial?.unitName ?? '';
     $('death-transfer-years').textContent = deathTransfer.memorial
       ? `${deathTransfer.memorial.birthYear}-${deathTransfer.memorial.deathYear}` : '';
-    $('death-transfer-reason').textContent = deathTransfer.reason ? `阵亡原因：${deathTransfer.reason}` : '';
+    $('death-transfer-reason').textContent = deathNoticeText(deathTransfer.reason);
     const showReason = deathTransfer.elapsed < 1;
     $('death-transfer-reason').hidden = !showReason;
     for (const id of ['death-transfer-name', 'death-transfer-unit', 'death-transfer-years'])
@@ -5996,6 +5996,7 @@ function moveNanjingDefender(actor, goal, dt) {
 
 function dischargerContext() {
   return { sihang: sihangCampaignMode, nanjingStage: nanjingCampaignMode ? nanjingCampaign.stage : null,
+    nanjingShoreCutoff: nanjingCampaignMode && nanjingCampaign.finalShoreWaitExpired,
     eastAssembly: encirclementMode && encirclement.phase === 2 && encirclement.breakout?.stage !== 'breakout' };
 }
 
@@ -6049,12 +6050,14 @@ function operateAIDischarger(actor, dt) {
   if (!view || actor.grenades.action || !weapon.ammo && !weapon.reserve || context.eastAssembly) {
     stowGrenadeDischarger(weapon); return false;
   }
-  let target = entities.soldiers.get(weapon.targetId);
+  let target = entities.soldiers.get(weapon.targetId) ??
+    (context.nanjingShoreCutoff ? nanjingCivilianCombatTargets().find(target => target.id === weapon.targetId) : null);
   if (time >= weapon.queryAt && dischargerQueryBudget > 0) {
     dischargerQueryBudget--;
     weapon.queryAt = time + GRENADE_DISCHARGER.querySeconds;
     const candidates = selectDischargerTargets(actor,
-      actorGrid.near(actor.position.x, actor.position.z, GRENADE_DISCHARGER.maxRange)
+      [...actorGrid.near(actor.position.x, actor.position.z, GRENADE_DISCHARGER.maxRange),
+        ...(context.nanjingShoreCutoff ? nanjingCivilianCombatTargets() : [])]
         .filter(target => (target.id !== weapon.blockedTargetId || time >= (weapon.blockedUntil ?? 0)) &&
           (!nanjingCampaignMode || actor.friendly || nanjingEnemyPersonTargetAllowed(target))),
       emplacements, context);
@@ -7763,7 +7766,7 @@ function updateObjectives(dt) {
       }
       resetObjectiveMovement(actor, actor.orderObjectiveId ?? actor.formation.objectiveId ?? objectives[0].id);
     }
-    toast('第二阶段 · 我军向C点集结！日军先在A点西北角重整，随后反扑C点并冲击东门。', 7);
+    toast('前往C点布防，阻击日军反扑与东门突围。', 7);
   }
   if(encirclementMode&&encirclement.phase===2){
     restoreBreakoutForces();
@@ -7824,7 +7827,7 @@ function updateNanjingMission(dt) {
         }
       }
     } else if (stage === 'dock-defense') {
-      toast('第二阶段开始！前往上新河渡口，掩护百姓登船。', 6);
+      toast('前往上新河渡口，掩护百姓登船。', 6);
       assaultAssignmentAt = 0;
       let reserveIndex = 0;
       for (const formation of formations.filter(item => item.team === 'friendly' && !item.player)) {
@@ -7944,6 +7947,8 @@ function nanjingCivilianCombatTargets(){
 }
 
 function nanjingEnemyPersonTargetAllowed(target){
+  if (target.civilian?.userData.withdrawalCutoff && target.civilian.userData.unrescued &&
+    nanjingCampaign.stage === 'withdrawal-to-boats' && nanjingCampaign.finalShoreWaitExpired) return true;
   return target.targetKind !== 'person' || !nanjingDockYardContains(target.position);
 }
 
@@ -8082,7 +8087,7 @@ function updateNanjingCivilians(dt) {
   const threatBudget={remaining:6};
   const queue = world.civilianQueue;
   const leftBehind = expireCivilianShoreWait(nanjingCampaign, world.civilians, world.ferries, queue);
-  if (leftBehind) toast(`撤退等待结束：${leftBehind} 名百姓未救出；已登船百姓继续过江。`, 8);
+  if (leftBehind) toast('登船等待结束。岸上百姓无法再登船，已登船百姓继续过江。', 6);
   const peers = world.civilians.filter(other => other.visible && other.parent === scene && !other.userData.dead);
   const visibleThreat = (from, enemy, vehicleId=null) => hasLine(
     new THREE.Vector3(from.x, from.y + 1.1, from.z), new THREE.Vector3(enemy.x, enemy.y + 1.2, enemy.z), 30,vehicleId);
@@ -8970,9 +8975,9 @@ function updateHUD() {
     const assemblyRemaining = sihangWaveAssemblyRemaining(sihangCampaign);
     $('objectives').textContent = defense ? `四行仓库 · 参战 ${sihangCampaign.deployed}/${SIHANG_RULES.troopLimit} · 后备 ${sihangCampaign.reserve}`
       : `将士${SIHANG_RULES.troopLimit} · 牺牲 ${retreat.casualties} · 撤离 ${retreat.saved} · 尚未撤离 ${retreat.unresolved}`;
-    $('objective-title').textContent = defense ? '第一阶段 · 坚守仓库' : wave
+    $('objective-title').textContent = defense ? '坚守仓库' : wave
       ? `第${wave.number}批 · ${waveIds.length}人 · 已撤${waveSaved} · 阵亡${waveLost}`
-      : '第二阶段 · 掩护过桥撤离';
+      : '掩护过桥撤离';
     $('objective-help').textContent = defense
       ? point.status === 'contested' ? '一楼争夺中 · 守军在区域内可中断占领'
         : '北墙已有缺口 · 守住一楼，继续坚持到撤退命令'
@@ -9018,8 +9023,8 @@ function updateHUD() {
     }).join('') + `<span class="control-count enemy" aria-label="日军控制${controlCount('enemy')}点">敌 ${controlCount('enemy')}</span>`;
   const inCaptureArea = unit.type !== 'plane' && (!active.captureArea || !transport) && objectiveContainsPosition(active, position);
   document.querySelector('.capture-track').hidden = !(encirclementMode && encirclement.phase === 2) && !inCaptureArea;
-  $('objective-title').textContent = encirclementMode && encirclement.phase === 2 ? '第二阶段 · 全歼日军'
-    : inCaptureArea ? `${active.id} · ${active.name} · ${ownerLabel(active)}` : encirclementMode ? '第一阶段 · 三点合围' : '三据点争夺';
+  $('objective-title').textContent = encirclementMode && encirclement.phase === 2 ? '阻击日军突围'
+    : inCaptureArea ? `${active.id} · ${active.name} · ${ownerLabel(active)}` : encirclementMode ? '夺取三点，形成合围' : '三据点争夺';
   const domination = conquest.dominationTeam ? ` · ${conquest.dominationTeam === 'friendly' ? '我方' : '日军'}全控 ${Math.floor(conquest.dominationTime)}/${DOMINATION_SECONDS}秒` : '';
   document.querySelector('.objective-banner').hidden = !encirclementMode && !inCaptureArea && !conquest.dominationTeam;
   $('objective-help').textContent = !encirclementMode
@@ -9044,10 +9049,10 @@ function updateHUD() {
   } else {
     document.querySelector('.capture-track').hidden = false;
     const stageNames = {
-      'gate-defense': ['第一阶段 · 中华门防守', '守住第二道门内西侧阵地 · 坚守3分钟'],
-      withdrawal: ['撤退阶段 · 前往西北上新河渡口', '穿过水西门或接近渡口大门后开始第二阶段'],
-      'dock-defense': ['第二阶段 · 上新河渡口', '掩护百姓登船 · 坚守3分钟'],
-      'withdrawal-to-boats': ['撤退阶段 · 登船撤离', '掩护友军登船，随后撤离南京'],
+      'gate-defense': ['守住中华门', '守住第二道门内西侧阵地 · 坚守3分钟'],
+      withdrawal: ['撤往上新河渡口', '穿过水西门，前往渡口掩护百姓'],
+      'dock-defense': ['掩护上新河渡口', '掩护百姓登船 · 坚守3分钟'],
+      'withdrawal-to-boats': ['登船撤离', '掩护友军登船，随后撤离南京'],
     };
     const [title, help] = stageNames[nanjingCampaign.stage];
     const aiBoarded = nanjingAIBoardedCount(nanjingCampaign);
@@ -9066,16 +9071,16 @@ function updateHUD() {
       : nanjingCampaign.stage === 'dock-defense' ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`
         : nanjingCampaign.stage === 'withdrawal-to-boats'
           ? !civilianEvacuation.ready
-            ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}${nanjingPlayerBoardingReady(civilianEvacuation) ? ' · 无候船百姓，可按F登船' : !nanjingCampaign.finalShoreWaitExpired ? ` · 等待 ${Math.max(0, Math.ceil(NANJING_CIVILIAN_FINAL_WAIT - nanjingCampaign.finalWithdrawalElapsed))}秒` : ''}`
+            ? `百姓撤离 · 已过江 ${civilianEvacuation.evacuated} · 在途 ${civilianEvacuation.enRoute} · 候船 ${civilianEvacuation.waiting} · 在船 ${civilianEvacuation.aboard} · 被日军击毙 ${nanjingCampaign.civilianCasualties}${nanjingPlayerBoardingReady(civilianEvacuation) ? civilianEvacuation.leftOnShore > 0 ? ` · 岸上仍有 ${civilianEvacuation.leftOnShore} 人未撤离，可按F登船` : ' · 可按F登船' : !nanjingCampaign.finalShoreWaitExpired ? ` · 等待 ${Math.max(0, Math.ceil(NANJING_CIVILIAN_FINAL_WAIT - nanjingCampaign.finalWithdrawalElapsed))}秒` : ''}`
             : nanjingPlayerFerry() ? '正在登船 · 上船后立即离岸'
               : nanjingAISquadsBoarded(nanjingCampaign) ? nanjingCampaign.requiredAISquads === 0
-                ? '撤离条件已满足 · 靠近木船按F登船'
+                ? '接应船已就绪 · 靠近木船按F登船'
                 : '友军已登船 · 随后登船撤离南京'
                 : `友军登船 ${aiBoarded}/${nanjingCampaign.requiredAISquads} · 可靠近木船按F撤离` : help;
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && civilianEvacuation.ready)
       $('objective-help').textContent += ` · 百姓已过江 ${civilianEvacuation.evacuated} · 被日军击毙 ${nanjingCampaign.civilianCasualties}`;
     if (nanjingCampaign.stage === 'withdrawal-to-boats' && nanjingCampaign.civiliansUnrescued > 0)
-      $('objective-help').textContent += ` · 未救出 ${nanjingCampaign.civiliansUnrescued}`;
+      $('objective-help').textContent += ` · 岸上未撤离 ${civilianEvacuation.leftOnShore}${nanjingCampaign.finalShoreWaitExpired ? ' · 撤离等待已结束' : ''}`;
     $('capture-fill').style.width = `${nanjingCampaign.stage === 'gate-defense'
       ? nanjingCampaign.gateCaptureSeconds / NANJING_GATE_CAPTURE_SECONDS * 100
       : Math.min(100, aiBoarded / Math.max(1, nanjingCampaign.requiredAISquads) * 100)}%`;
@@ -9091,7 +9096,7 @@ function updateHUD() {
       ? formations.some(formation => formation.team === 'enemy' && formation.generation > 0)
         ? '中华门防守倒计时' : '日军集结中 · 防守倒计时'
       : '等待百姓过桥'
-      : nanjingCampaign.stage === 'dock-defense' ? '渡口防守倒计时' : '撤退阶段';
+      : nanjingCampaign.stage === 'dock-defense' ? '渡口防守倒计时' : '撤往渡口';
   $('timer-label').textContent = timerLabel;
   $('timer').setAttribute('aria-label', timerLabel);
   const clockTime = encirclementMode ? time : remaining;
@@ -9340,7 +9345,21 @@ function advanceBattleStep(dt, presentationTime) {
 function cleanupBattleCorpses() {
   if (time >= corpseCleanupAt) {
     corpseCleanupAt = time + 1;
-    for (const actor of expiredCorpses([...corpses.values(), ...civilianCorpses.values()], time)) {
+    camera.updateMatrixWorld(true);
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const visible = civilian => civilian.visible &&
+      frustum.intersectsBox(new THREE.Box3().setFromObject(civilian));
+    const visibleCutoffCorpses = new Set(), cutoffExpired = [];
+    for (const actor of civilianCorpses.values()) {
+      if (!actor.civilian.userData.withdrawalCutoff) continue;
+      const inView = visible(actor.civilian);
+      if (inView) visibleCutoffCorpses.add(actor);
+      if (civilianWithdrawalCorpseReady(actor.civilian, time, inView)) cutoffExpired.push(actor);
+    }
+    const expired = expiredCorpses([...corpses.values(), ...civilianCorpses.values()], time);
+    for (const actor of new Set([...expired, ...cutoffExpired])) {
+      if (visibleCutoffCorpses.has(actor)) continue;
       if (actor.civilian) {
         actor.civilian.visible = false; civilianCorpses.delete(actor.id);
       } else {

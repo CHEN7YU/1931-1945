@@ -1,4 +1,5 @@
 import { KILL_COLUMNS } from './battle-stats.js';
+import { JAPANESE_AIRCRAFT_PROFILE, VEHICLE_PROFILES } from './vehicle-model.js';
 
 const creditNames = { player: '你', ally: '友军', enemy: '日军', environment: '事故' };
 const causeNames = { fall: '高处坠落', crash: '坠毁', boundary: '脱离战区',
@@ -35,8 +36,20 @@ export function deathCauseLabel(source, weaponKind) {
   if (weaponKind === 'collision') return '坦克碾压';
   if (weaponKind === 'bayonet') return `${credit}·刺刀突刺`;
   if (weaponKind === 'dadao') return `${credit}·大刀斩击`;
-  if (weaponKind === 'aircraft-bomb' && source.weaponClass === 'plane') return `${credit}·航空炸弹`;
+  if (source.weaponClass === 'plane') {
+    const aircraft = source.team === 'enemy' ? JAPANESE_AIRCRAFT_PROFILE.name.split(' · ')[0] : VEHICLE_PROFILES.plane.name;
+    return `${credit}·${aircraft}${weaponKind === 'aircraft-bomb' ? '投下的炸弹' : '机枪'}`;
+  }
+  if (source.weaponName) return `${credit}·${source.weaponName}`;
   return attackSourceLabel(source);
+}
+
+export function deathNoticeText(reason) {
+  if (!reason) return '';
+  const attack = reason.match(/^(你|友军|日军)·(.+)$/);
+  if (!attack) return reason;
+  if (/刺刀|大刀/.test(attack[2])) return `遭${attack[1]}${attack[2]}`;
+  return `被${attack[1]}${attack[2]}击中`;
 }
 
 export function createCombatFeedback() {
